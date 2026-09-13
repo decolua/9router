@@ -181,7 +181,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, customToolNames, trackDone, appendLog, reqTag, log, thinkingIntent }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, customToolNames, trackDone, appendLog, reqTag, log, thinkingIntent, thinkingSynthesis }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -189,9 +189,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   trackDone();
 
   // Hidden-thinking synthesis on the SSE→JSON path — same gate as the
-  // streaming seam. Returns a NEW usage object (or the input untouched), so
-  // the stats objects captured below keep the raw upstream numbers.
-  const synthesize = (u) => (shouldSynthesizeReasoning(body, model, thinkingIntent) ? synthesizeThinkingTokens(u, sourceFormat) : u);
+  // streaming seam. thinkingSynthesis is the pre-resolved per-request
+  // decision (per-combo mode + ratio drawn once); without it the legacy
+  // request-driven gate applies. Returns a NEW usage object (or the input
+  // untouched), so the stats objects captured below keep the raw upstream
+  // numbers.
+  const synthesisEnabled = thinkingSynthesis ? thinkingSynthesis.enabled === true : shouldSynthesizeReasoning(body, model, thinkingIntent);
+  const synthesize = (u) => (synthesisEnabled ? synthesizeThinkingTokens(u, sourceFormat, thinkingSynthesis?.ratio) : u);
 
   const ctx = {
     provider, model, connectionId,

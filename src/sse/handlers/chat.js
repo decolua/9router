@@ -9,7 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings, getComboByName } from "@/lib/localDb";
-import { getModelInfo, resolveComboSystemPrompt } from "../services/model.js";
+import { getModelInfo, resolveComboSystemPrompt, resolveComboThinkingUsage } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -101,6 +101,9 @@ export async function handleChat(request, clientRawRequest = null) {
     // Per-combo identity system prompt — injected into every member request and
     // stripped from the final response (defense-in-depth against leaks).
     const comboPrompt = resolveComboSystemPrompt(comboRow);
+    // Per-combo hidden-thinking usage-synthesis config (off/auto/always +
+    // ratio bounds); null = nothing explicitly configured → legacy gate.
+    const comboThinkingUsage = resolveComboThinkingUsage(comboRow);
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -123,7 +126,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, modelStr, comboPrompt);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, modelStr, comboPrompt, comboThinkingUsage);
         },
         log,
         comboName: modelStr,
@@ -139,7 +142,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, comboPrompt),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, modelStr, comboPrompt, comboThinkingUsage),
         adapterAdded
       ),
       log,
@@ -179,8 +182,11 @@ export async function handleChat(request, clientRawRequest = null) {
  *   combos keep the outer (client-visible) name.
  * @param {string|null} [comboSystemPrompt] - Resolved identity prompt of the
  *   owning combo; injected into the upstream request (outermost combo wins).
+ * @param {object|null} [comboThinkingUsage] - Resolved hidden-thinking
+ *   usage-synthesis config of the owning combo ({mode, minRatio, maxRatio});
+ *   null keeps the legacy request-driven gate (outermost EXPLICIT combo wins).
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, comboSystemPrompt = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, comboSystemPrompt = null, comboThinkingUsage = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -193,6 +199,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const comboRequestedModel = requestedModel || modelStr;
       // Identity prompt: outermost combo wins (client-visible identity).
       const nestedPrompt = comboSystemPrompt || resolveComboSystemPrompt(nestedRow);
+      // Thinking-usage config: outermost EXPLICIT combo wins — a null (nothing
+      // configured) must not shadow the nested combo's own setting.
+      const nestedThinkingUsage = comboThinkingUsage || resolveComboThinkingUsage(nestedRow);
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
@@ -213,7 +222,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboRequestedModel, nestedPrompt);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, comboRequestedModel, nestedPrompt, nestedThinkingUsage);
           },
           log,
           comboName: modelStr,
@@ -228,7 +237,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboRequestedModel, nestedPrompt),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, comboRequestedModel, nestedPrompt, nestedThinkingUsage),
           adapterAdded
         ),
         log,
@@ -300,6 +309,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       requestedModel: requestedModel || undefined,
       comboSystemPrompt: comboSystemPrompt || undefined,
+      comboThinkingUsage: comboThinkingUsage || undefined,
       rtkEnabled: !!chatSettings.rtkEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,

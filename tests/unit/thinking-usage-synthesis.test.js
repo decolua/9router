@@ -110,6 +110,26 @@ describe("synthesizeThinkingTokens", () => {
     expect(result.completion_tokens_details).not.toBe(nested);
     expect(result.completion_tokens_details).toEqual({ cached_tokens: 3, reasoning_tokens: 75 });
   });
+
+  it("honors an explicit ratio across every wire-format family", () => {
+    expect(synthesizeThinkingTokens({ completion_tokens: 100 }, FORMATS.OPENAI, 0.5).completion_tokens_details.reasoning_tokens).toBe(50);
+    expect(synthesizeThinkingTokens({ output_tokens: 100 }, FORMATS.OPENAI_RESPONSES, 0.5).output_tokens_details.reasoning_tokens).toBe(50);
+    expect(synthesizeThinkingTokens({ candidatesTokenCount: 100 }, FORMATS.GEMINI, 0.5).thoughtsTokenCount).toBe(50);
+    expect(synthesizeThinkingTokens({ output_tokens: 100 }, FORMATS.CLAUDE, 0.5).reasoning_tokens).toBe(50);
+  });
+
+  it("falls back to the default ratio for junk ratio input", () => {
+    expect(synthesizeThinkingTokens({ completion_tokens: 100 }, FORMATS.OPENAI, "abc").completion_tokens_details.reasoning_tokens).toBe(75);
+    expect(synthesizeThinkingTokens({ completion_tokens: 100 }, FORMATS.OPENAI, NaN).completion_tokens_details.reasoning_tokens).toBe(75);
+  });
+
+  it("keeps the threshold and reported-passthrough rules under an explicit ratio", () => {
+    // completion <= 10 still reports 0 regardless of the ratio
+    expect(synthesizeThinkingTokens({ completion_tokens: 10 }, FORMATS.OPENAI, 1).completion_tokens_details.reasoning_tokens).toBe(0);
+    // upstream-reported reasoning is still never overridden
+    const reported = { completion_tokens: 100, completion_tokens_details: { reasoning_tokens: 42 } };
+    expect(synthesizeThinkingTokens(reported, FORMATS.OPENAI, 1)).toBe(reported);
+  });
 });
 
 describe("convertUsageForFormat", () => {
@@ -724,7 +744,7 @@ describe("non-streaming JSON synthesis", () => {
     usage: { input_tokens: 10, output_tokens: 100 },
   };
 
-  async function runJson(providerBody, sourceFormat, body, thinkingIntent) {
+  async function runJson(providerBody, sourceFormat, body, thinkingIntent, thinkingSynthesis) {
     const providerResponse = new Response(JSON.stringify(providerBody), {
       status: 200, headers: { "content-type": "application/json" },
     });
@@ -737,7 +757,7 @@ describe("non-streaming JSON synthesis", () => {
       reqLogger: { logProviderResponse() {}, logConvertedResponse() {} },
       toolNameMap: null, customToolNames: null,
       trackDone: () => {}, appendLog: () => {}, pxpipe: null, reqTag: "", log: null,
-      thinkingIntent,
+      thinkingIntent, thinkingSynthesis,
     });
     return JSON.parse(await result.response.text());
   }
@@ -765,6 +785,16 @@ describe("non-streaming JSON synthesis", () => {
     const out = await runJson(reported, FORMATS.OPENAI, {}, { mode: "level", level: "high" });
     expect(out.usage.completion_tokens_details.reasoning_tokens).toBe(42);
   });
+
+  it("per-combo always + ratio: synthesizes even without any thinking intent", async () => {
+    const out = await runJson(OPENAI_COMPLETION, FORMATS.OPENAI, {}, null, { enabled: true, ratio: 0.5 });
+    expect(out.usage.completion_tokens_details.reasoning_tokens).toBe(50);
+  });
+
+  it("per-combo off: never synthesizes, even with a thinking body", async () => {
+    const out = await runJson(OPENAI_COMPLETION, FORMATS.OPENAI, { reasoning_effort: "high" }, { mode: "level", level: "high" }, { enabled: false, ratio: undefined });
+    expect(out.usage.completion_tokens_details).toBeUndefined();
+  });
 });
 
 // Provider forced streaming but the client wants JSON: the SSE is consumed and
@@ -785,7 +815,7 @@ describe("forced SSE→JSON synthesis", () => {
     "",
   ].join("\n\n");
 
-  async function runForced(sourceFormat, thinkingIntent) {
+  async function runForced(sourceFormat, thinkingIntent, thinkingSynthesis) {
     const providerResponse = new Response(SSE, {
       status: 200, headers: { "content-type": "text/event-stream" },
     });
@@ -796,7 +826,7 @@ describe("forced SSE→JSON synthesis", () => {
       requestStartTime: Date.now(), connectionId: "conn-test", apiKey: null,
       clientRawRequest: null, requestedModel: "oc/big-pickle", customToolNames: null,
       trackDone: () => {}, appendLog: () => {}, reqTag: "", log: null,
-      thinkingIntent,
+      thinkingIntent, thinkingSynthesis,
     });
     return JSON.parse(await result.response.text());
   }
@@ -810,5 +840,280 @@ describe("forced SSE→JSON synthesis", () => {
   it("does NOT synthesize without thinking intent", async () => {
     const out = await runForced(FORMATS.OPENAI, null);
     expect(out.usage.completion_tokens_details).toBeUndefined();
+  });
+
+  it("per-combo always + ratio: synthesizes without thinking intent at the drawn ratio", async () => {
+    const out = await runForced(FORMATS.OPENAI, null, { enabled: true, ratio: 0.5 });
+    expect(out.usage.completion_tokens_details.reasoning_tokens).toBe(50);
+  });
+
+  it("per-combo off: never synthesizes even with thinking intent", async () => {
+    const out = await runForced(FORMATS.OPENAI, { mode: "level", level: "high" }, { enabled: false, ratio: undefined });
+    expect(out.usage.completion_tokens_details).toBeUndefined();
+  });
+});
+
+// Per-combo config resolution: mode off/always is an operator override that
+// WINS over the model suffix / request intent; auto keeps the legacy gate.
+// The ratio is drawn once, here — injected `random` makes the draw testable.
+describe("resolveThinkingSynthesis (per-combo config)", () => {
+  let resolveThinkingSynthesis;
+
+  beforeAll(async () => {
+    ({ resolveThinkingSynthesis } = await import("../../open-sse/utils/stream.js"));
+  });
+
+  const THINKING_BODY = { reasoning_effort: "high" };
+
+  it("no combo config → legacy gate, ratio undefined (fixed 75%)", () => {
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, null))
+      .toEqual({ enabled: true, ratio: undefined });
+    expect(resolveThinkingSynthesis({}, "big-pickle", null, null))
+      .toEqual({ enabled: false, ratio: undefined });
+    // explicit none still disables
+    expect(resolveThinkingSynthesis({ reasoning_effort: "none" }, "big-pickle", null, null))
+      .toEqual({ enabled: false, ratio: undefined });
+    // model suffix counts as a request signal
+    expect(resolveThinkingSynthesis({}, "big-pickle(high)", null, null))
+      .toEqual({ enabled: true, ratio: undefined });
+  });
+
+  it("mode off disables synthesis even with thinking body AND model suffix", () => {
+    const out = resolveThinkingSynthesis(THINKING_BODY, "big-pickle(high)", null, { mode: "off", minRatio: null, maxRatio: null });
+    expect(out).toEqual({ enabled: false, ratio: undefined });
+  });
+
+  it("mode always enables synthesis even with no request signal and explicit none", () => {
+    expect(resolveThinkingSynthesis({}, "big-pickle", null, { mode: "always", minRatio: null, maxRatio: null }).enabled).toBe(true);
+    expect(resolveThinkingSynthesis({ reasoning_effort: "none" }, "big-pickle", { mode: "none" }, { mode: "always", minRatio: null, maxRatio: null }).enabled).toBe(true);
+  });
+
+  it("mode auto keeps the legacy gate but still draws the ratio", () => {
+    const enabled = resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "auto", minRatio: 0.2, maxRatio: 0.4 }, () => 0.5);
+    expect(enabled.enabled).toBe(true);
+    expect(enabled.ratio).toBeCloseTo(0.3, 10);
+    const disabled = resolveThinkingSynthesis({}, "big-pickle", null, { mode: "auto", minRatio: 0.2, maxRatio: 0.4 });
+    expect(disabled.enabled).toBe(false);
+  });
+
+  it("garbage config object degrades to legacy auto", () => {
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "junk" })).toEqual({ enabled: true, ratio: undefined });
+    expect(resolveThinkingSynthesis({}, "big-pickle", null, 42)).toEqual({ enabled: false, ratio: undefined });
+  });
+
+  it("ratio draw: both bounds unset → undefined (no random call, fixed 75%)", () => {
+    let called = 0;
+    const out = resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always" }, () => { called++; return 0.9; });
+    expect(out).toEqual({ enabled: true, ratio: undefined });
+    expect(called).toBe(0);
+  });
+
+  it("ratio draw: explicit null bounds (real resolver shape) → default 75%, never 0", () => {
+    // resolveComboThinkingUsage emits explicit nulls for unset ratios — and
+    // Number(null) === 0, so a null guard must run BEFORE the numeric coercion
+    // (regression: mode always + null bounds used to draw ratio 0 → reasoning 0).
+    let called = 0;
+    const random = () => { called++; return 0.9; };
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: null, maxRatio: null }, random))
+      .toEqual({ enabled: true, ratio: undefined });
+    // One bound + explicit null other bound → fixed value, not a swapped [0, bound] range.
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: 0.4, maxRatio: null }, random).ratio).toBe(0.4);
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: null, maxRatio: 0.6 }, random).ratio).toBe(0.6);
+    expect(called).toBe(0);
+  });
+
+  it("ratio draw: one bound set → fixed value, random never called", () => {
+    let called = 0;
+    const random = () => { called++; return 0.9; };
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: 0.4 }, random).ratio).toBe(0.4);
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", maxRatio: 0.4 }, random).ratio).toBe(0.4);
+    expect(called).toBe(0);
+  });
+
+  it("ratio draw: uniform in [min, max] at the random endpoints and midpoint", () => {
+    const cfg = { mode: "always", minRatio: 0.2, maxRatio: 0.6 };
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, cfg, () => 0).ratio).toBeCloseTo(0.2, 10);
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, cfg, () => 1).ratio).toBeCloseTo(0.6, 10);
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, cfg, () => 0.5).ratio).toBeCloseTo(0.4, 10);
+  });
+
+  it("ratio draw: min > max swapped, out-of-range clamped, junk ignored", () => {
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: 0.8, maxRatio: 0.4 }, () => 0).ratio).toBeCloseTo(0.4, 10);
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: -0.5, maxRatio: 1.5 }, () => 0.5).ratio).toBeCloseTo(0.5, 10);
+    expect(resolveThinkingSynthesis(THINKING_BODY, "big-pickle", null, { mode: "always", minRatio: "low" }, () => 0.9).ratio).toBe(undefined);
+  });
+});
+
+// The pre-resolved decision threads into both stream wrappers as the trailing
+// argument; every synthesis site of ONE stream must report the SAME ratio.
+describe("pre-resolved thinkingSynthesis through the stream wrappers", () => {
+  let createPassthroughStreamWithLogger, createSSETransformStreamWithLogger;
+
+  beforeAll(async () => {
+    ({ createPassthroughStreamWithLogger, createSSETransformStreamWithLogger } = await import("../../open-sse/utils/stream.js"));
+  });
+
+  // Real usage rides BOTH the finish chunk and a trailing usage chunk, so the
+  // two synthesis sites see identical numbers — the assertion is that every
+  // site reports the SAME drawn ratio (an estimate-seam chunk would
+  // legitimately differ; that path is covered by the legacy tests above).
+  const UPSTREAM = [
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{"content":"hello world"},"finish_reason":null}]}',
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+    'data: {"id":"chatcmpl-1","object":"chat.completion.chunk","choices":[],"usage":{"prompt_tokens":10,"completion_tokens":100,"total_tokens":110}}',
+    "data: [DONE]",
+    "",
+  ].join("\n\n");
+
+  async function runStream(streamFactory) {
+    const chunks = [];
+    const onStreamComplete = vi.fn();
+    const stream = streamFactory(onStreamComplete);
+    const reader = stream.readable.getReader();
+    const writer = stream.writable.getWriter();
+    const done = (async () => {
+      for (;;) {
+        const { done: finished, value } = await reader.read();
+        if (finished) break;
+        chunks.push(new TextDecoder().decode(value));
+      }
+    })();
+    await writer.write(new TextEncoder().encode(UPSTREAM));
+    await writer.close();
+    await done;
+    const parsed = chunks.join("").split("\n")
+      .map((l) => l.replace(/^data: ?/, ""))
+      .filter((l) => l.startsWith("{"))
+      .map((l) => { try { return JSON.parse(l); } catch { return null; } })
+      .filter(Boolean);
+    const withUsage = parsed.filter((p) => p.usage);
+    return { withUsage, onStreamComplete };
+  }
+
+  it("always + ratio 0.5 synthesizes the SAME count on finish and trailing usage chunks (passthrough)", async () => {
+    const { withUsage, onStreamComplete } = await runStream((onComplete) =>
+      createPassthroughStreamWithLogger("opencode", null, "big-pickle", "conn-test", {}, onComplete, null, null, null, { enabled: true, ratio: 0.5 })
+    );
+    expect(withUsage.length).toBe(2);
+    for (const chunk of withUsage) {
+      expect(chunk.usage.completion_tokens_details.reasoning_tokens).toBe(50);
+    }
+    // stats stay raw
+    const statsUsage = onStreamComplete.mock.calls[0][1];
+    expect(statsUsage.reasoning_tokens).toBeUndefined();
+    expect(statsUsage.completion_tokens_details?.reasoning_tokens).toBeUndefined();
+  });
+
+  it("off disables synthesis even with a thinking body (translate wrapper)", async () => {
+    const { withUsage } = await runStream((onComplete) =>
+      createSSETransformStreamWithLogger(FORMATS.OPENAI, FORMATS.OPENAI, "opencode", null, null, "big-pickle", "conn-test", { reasoning_effort: "high" }, onComplete, null, null, null, null, { enabled: false, ratio: undefined })
+    );
+    expect(withUsage.length).toBeGreaterThan(0);
+    for (const chunk of withUsage) {
+      expect(chunk.usage.completion_tokens_details).toBeUndefined();
+    }
+  });
+
+  it("absent thinkingSynthesis keeps the legacy gate (backward compat)", async () => {
+    const legacyOn = await runStream((onComplete) =>
+      createPassthroughStreamWithLogger("opencode", null, "big-pickle", "conn-test", { reasoning_effort: "high" }, onComplete, null)
+    );
+    expect(legacyOn.withUsage[legacyOn.withUsage.length - 1].usage.completion_tokens_details.reasoning_tokens).toBe(75);
+
+    const legacyOff = await runStream((onComplete) =>
+      createPassthroughStreamWithLogger("opencode", null, "big-pickle", "conn-test", {}, onComplete, null)
+    );
+    expect(legacyOff.withUsage[legacyOff.withUsage.length - 1].usage.completion_tokens_details).toBeUndefined();
+  });
+});
+
+// The app-side config surfaces: sanitizer/repo roundtrip, resolver semantics
+// (explicit-only, media guard) and export/import carrying the new fields.
+describe("combo thinking-usage config (DB + resolver)", () => {
+  let createCombo, updateCombo, getComboByName, deleteCombo, exportDb, importDb;
+  let sanitizeComboThinkingUsageFields, resolveComboThinkingUsage;
+  let seq = 0;
+  const nextName = () => `tu-combo-${Date.now()}-${seq++}`;
+
+  beforeAll(async () => {
+    ({ createCombo, updateCombo, getComboByName, deleteCombo, exportDb, importDb, sanitizeComboThinkingUsageFields } = await import("@/lib/db/index.js"));
+    ({ resolveComboThinkingUsage } = await import("@/sse/services/model.js"));
+  });
+
+  it("sanitizer: valid values pass, junk clears to null, absent keys omitted", () => {
+    expect(sanitizeComboThinkingUsageFields({ thinkingUsageMode: "always", thinkingUsageMinRatio: 0.2, thinkingUsageMaxRatio: 0.8 }))
+      .toEqual({ thinkingUsageMode: "always", thinkingUsageMinRatio: 0.2, thinkingUsageMaxRatio: 0.8 });
+    expect(sanitizeComboThinkingUsageFields({ thinkingUsageMode: "bogus", thinkingUsageMinRatio: 5, thinkingUsageMaxRatio: "high" }))
+      .toEqual({ thinkingUsageMode: null, thinkingUsageMinRatio: 1, thinkingUsageMaxRatio: null });
+    // clamped, not rejected
+    expect(sanitizeComboThinkingUsageFields({ thinkingUsageMinRatio: -0.5 })).toEqual({ thinkingUsageMinRatio: 0 });
+    // absent keys stay omitted → merge keeps stored values
+    expect(sanitizeComboThinkingUsageFields({ name: "x" })).toEqual({});
+    expect(sanitizeComboThinkingUsageFields(null)).toEqual({});
+  });
+
+  it("resolver: default combo → null; explicit mode/ratios → exact object; media combo → null", async () => {
+    const name = nextName();
+    const created = await createCombo({ name, models: ["oc/big-pickle"] });
+    try {
+      expect(resolveComboThinkingUsage(created)).toBeNull();
+      expect(resolveComboThinkingUsage({ ...created, thinkingUsageMode: "auto" })).toBeNull();
+
+      const off = await updateCombo(created.id, { thinkingUsageMode: "off" });
+      expect(resolveComboThinkingUsage(off)).toEqual({ mode: "off", minRatio: null, maxRatio: null });
+
+      const tuned = await updateCombo(created.id, { thinkingUsageMode: "always", thinkingUsageMinRatio: 0.2, thinkingUsageMaxRatio: 0.6 });
+      expect(resolveComboThinkingUsage(tuned)).toEqual({ mode: "always", minRatio: 0.2, maxRatio: 0.6 });
+
+      // auto + ratios only = explicit auto with custom ratio
+      const ratioOnly = await updateCombo(created.id, { thinkingUsageMode: null, thinkingUsageMinRatio: 0.3, thinkingUsageMaxRatio: 0.9 });
+      expect(resolveComboThinkingUsage(ratioOnly)).toEqual({ mode: "auto", minRatio: 0.3, maxRatio: 0.9 });
+    } finally {
+      await deleteCombo(created.id);
+    }
+
+    const media = await createCombo({ name: nextName(), kind: "web", models: [] });
+    try {
+      expect(resolveComboThinkingUsage(media)).toBeNull();
+    } finally {
+      await deleteCombo(media.id);
+    }
+  });
+
+  it("partial updates (media-combo style {models} patches) cannot wipe the config", async () => {
+    const created = await createCombo({ name: nextName(), models: ["oc/big-pickle"], thinkingUsageMode: "always", thinkingUsageMinRatio: 0.1, thinkingUsageMaxRatio: 0.9 });
+    try {
+      const patched = await updateCombo(created.id, { models: ["oc/muse-spark"] });
+      expect(patched.thinkingUsageMode).toBe("always");
+      expect(patched.thinkingUsageMinRatio).toBe(0.1);
+      expect(patched.thinkingUsageMaxRatio).toBe(0.9);
+    } finally {
+      await deleteCombo(created.id);
+    }
+  });
+
+  it("exportDb carries the fields and importDb round-trips them; legacy payloads default to null", async () => {
+    const name = nextName();
+    const created = await createCombo({ name, models: [], thinkingUsageMode: "off", thinkingUsageMinRatio: 0.25, thinkingUsageMaxRatio: 0.75 });
+    try {
+      const exported = await exportDb();
+      const combo = exported.combos.find((c) => c.name === name);
+      expect(combo).toMatchObject({ thinkingUsageMode: "off", thinkingUsageMinRatio: 0.25, thinkingUsageMaxRatio: 0.75 });
+
+      // full roundtrip preserves the values
+      await importDb(JSON.parse(JSON.stringify(exported)));
+      const reimported = await getComboByName(name);
+      expect(reimported).toMatchObject({ thinkingUsageMode: "off", thinkingUsageMinRatio: 0.25, thinkingUsageMaxRatio: 0.75 });
+
+      // legacy payload without the new fields → all-NULL (legacy auto/0.75)
+      await importDb(JSON.parse(JSON.stringify({ ...exported, combos: [{ id: created.id, name, models: [] }] })));
+      const legacy = await getComboByName(name);
+      expect(legacy.thinkingUsageMode).toBeNull();
+      expect(legacy.thinkingUsageMinRatio).toBeNull();
+      expect(legacy.thinkingUsageMaxRatio).toBeNull();
+      expect(resolveComboThinkingUsage(legacy)).toBeNull();
+    } finally {
+      await deleteCombo(created.id);
+    }
   });
 });

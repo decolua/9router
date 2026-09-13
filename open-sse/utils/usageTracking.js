@@ -23,11 +23,13 @@ const BUFFER_TOKENS = 2000;
 // Hidden-thinking synthesis (synthesizeThinkingTokens): some upstreams (e.g.
 // opencode big-pickle) think without ever reporting reasoning_tokens, and
 // client tools require the field. Callers gate it on the request's thinking
-// intent (shouldSynthesizeReasoning in stream.js). Completions at or below the
-// threshold are assumed reasoning-free; above it, a fixed share of the output
-// tokens is attributed to thinking.
+// intent (shouldSynthesizeReasoning / resolveThinkingSynthesis in stream.js).
+// Completions at or below the threshold are assumed reasoning-free; above it,
+// a share of the output tokens is attributed to thinking. The share defaults
+// to HIDDEN_THINKING_RATIO but callers may pass their own (per-combo config,
+// drawn randomly in [min, max] once per request).
 const HIDDEN_THINKING_MAX_OUTPUT = 10;
-const HIDDEN_THINKING_RATIO = 0.75;
+export const HIDDEN_THINKING_RATIO = 0.75;
 
 // Group a wire format into the usage-field family it shares. Mirrors the
 // grouping filterUsageForFormat already applies (gemini-cli/antigravity use
@@ -83,7 +85,7 @@ export function addBufferToUsage(usage) {
  * result), never the usage object kept for stats — the result is a NEW
  * object, so the stats side stays untouched.
  *   completion <= 10 → reasoning = 0
- *   completion  > 10 → reasoning = floor(75% of completion)
+ *   completion  > 10 → reasoning = floor(ratio × completion)
  * Format-aware: completion is read from OpenAI/Claude/Gemini field names and
  * the synthesized count lands in the field the target wire format actually
  * carries. Claude's Messages usage object has NO native reasoning field
@@ -93,9 +95,12 @@ export function addBufferToUsage(usage) {
  *
  * @param {object} usage - usage object in any known shape
  * @param {string} targetFormat - client wire format (FORMATS.*)
+ * @param {number} [ratio] - share of completion tokens to attribute to
+ *   thinking; defaults to HIDDEN_THINKING_RATIO (non-finite falls back too).
+ *   Pass the SAME value to every seam of one request so chunks agree.
  * @returns {object} usage with the reasoning field synthesized when absent
  */
-export function synthesizeThinkingTokens(usage, targetFormat = FORMATS.OPENAI) {
+export function synthesizeThinkingTokens(usage, targetFormat = FORMATS.OPENAI, ratio = HIDDEN_THINKING_RATIO) {
   if (!usage || typeof usage !== "object") return usage;
 
   const completion = Number(usage.completion_tokens ?? usage.output_tokens ?? usage.candidatesTokenCount);
@@ -110,7 +115,8 @@ export function synthesizeThinkingTokens(usage, targetFormat = FORMATS.OPENAI) {
   if (reported > 0) return usage;
 
   const family = usageFormatFamily(targetFormat);
-  const synthesized = completion <= HIDDEN_THINKING_MAX_OUTPUT ? 0 : Math.floor(completion * HIDDEN_THINKING_RATIO);
+  const r = Number.isFinite(Number(ratio)) ? Number(ratio) : HIDDEN_THINKING_RATIO;
+  const synthesized = completion <= HIDDEN_THINKING_MAX_OUTPUT ? 0 : Math.floor(completion * r);
 
   // Claude Messages wire format has no native reasoning field — annotate
   // top-level reasoning_tokens (thinking is already inside output_tokens).

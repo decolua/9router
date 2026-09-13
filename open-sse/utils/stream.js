@@ -38,6 +38,45 @@ export function shouldSynthesizeReasoning(body, model, thinkingIntent = null) {
   }
 }
 
+// Draw the synthesis share once per request. comboConfig carries the app-side
+// per-combo ratio bounds (0..1): both unset → undefined (the caller's default
+// param 0.75, bit-identical to the pre-config behavior), one bound set →
+// fixed value, otherwise uniform in [min, max] (clamped/swapped to be safe).
+// `random` is injectable for tests.
+function drawSynthesisRatio(comboConfig, random) {
+  // null-guard BEFORE Number(): Number(null) === 0 and Number("") === 0, so a
+  // "not configured" null/"" from the app resolver would otherwise read as an
+  // explicit ratio of 0 (mode always without ratios synthesized reasoning=0).
+  const num = (v) => (v == null || v === "" ? null : (Number.isFinite(Number(v)) ? Number(v) : null));
+  let min = num(comboConfig?.minRatio);
+  let max = num(comboConfig?.maxRatio);
+  if (min === null && max === null) return undefined;
+  if (min === null) min = max;
+  if (max === null) max = min;
+  min = Math.min(Math.max(min, 0), 1);
+  max = Math.min(Math.max(max, 0), 1);
+  if (min > max) [min, max] = [max, min];
+  return min === max ? min : min + random() * (max - min);
+}
+
+// Per-request hidden-thinking synthesis decision, combining the legacy
+// request-driven gate with the app-side per-combo config (plain options —
+// open-sse stays DB/UI-agnostic): mode off/always is an operator override
+// that WINS over the model suffix / request intent; auto keeps the legacy
+// gate. The ratio is drawn exactly once here so every client-facing seam of
+// the request reports the same share. Fail-open: on any error, leave usage
+// untouched.
+export function resolveThinkingSynthesis(body, model, thinkingIntent = null, comboConfig = null, random = Math.random) {
+  try {
+    const mode = (comboConfig?.mode === "off" || comboConfig?.mode === "always") ? comboConfig.mode : "auto";
+    if (mode === "off") return { enabled: false, ratio: undefined };
+    const enabled = mode === "always" ? true : shouldSynthesizeReasoning(body, model, thinkingIntent);
+    return { enabled, ratio: drawSynthesisRatio(comboConfig, random) };
+  } catch {
+    return { enabled: false, ratio: undefined };
+  }
+}
+
 /**
  * Stream modes
  */
@@ -75,7 +114,8 @@ export function createSSEStream(options = {}) {
     onStreamComplete = null,
     apiKey = null,
     credentials = null,
-    thinkingIntent = null
+    thinkingIntent = null,
+    thinkingSynthesis = null
   } = options;
 
   // PASSTHROUGH runs same-format, so the client format IS the seam format
@@ -111,10 +151,15 @@ export function createSSEStream(options = {}) {
   // for CLIENT-facing copies only: rename to the client's wire format,
   // synthesize the reasoning field when the request asked for thinking, then
   // filter to the format's whitelist. Stats-side usage objects never pass
-  // through it.
-  const synthesizeReasoning = shouldSynthesizeReasoning(body, model, thinkingIntent);
+  // through it. thinkingSynthesis is the pre-resolved per-request decision
+  // (chatCore: per-combo mode + ratio drawn once); without it the legacy
+  // request-driven gate applies.
+  const synthesizeReasoning = thinkingSynthesis
+    ? thinkingSynthesis.enabled === true
+    : shouldSynthesizeReasoning(body, model, thinkingIntent);
+  const synthesisRatio = thinkingSynthesis?.ratio;
   const buildClientUsage = (u, targetFormat) => filterUsageForFormat(
-    synthesizeReasoning ? synthesizeThinkingTokens(convertUsageForFormat(u, targetFormat), targetFormat) : convertUsageForFormat(u, targetFormat),
+    synthesizeReasoning ? synthesizeThinkingTokens(convertUsageForFormat(u, targetFormat), targetFormat, synthesisRatio) : convertUsageForFormat(u, targetFormat),
     targetFormat
   );
 
@@ -135,7 +180,7 @@ export function createSSEStream(options = {}) {
   // un-synthesized (missing/0) reasoning numbers. Items that already carry
   // the upstream's real numbers keep them untouched — only the reasoning
   // field is added; the +2000 buffer applies solely to copies we INJECT.
-  const synthesizeClient = (u) => (synthesizeReasoning ? synthesizeThinkingTokens(u, sourceFormat) : u);
+  const synthesizeClient = (u) => (synthesizeReasoning ? synthesizeThinkingTokens(u, sourceFormat, synthesisRatio) : u);
   const applyUsageSeam = (item) => {
     const isFinishChunk = item.type === "message_delta" || item.choices?.[0]?.finish_reason;
     const carriesUsage = hasValidUsage(item.usage) || hasValidUsage(item.response?.usage);
@@ -158,7 +203,7 @@ export function createSSEStream(options = {}) {
     // numbers already there.
     if (synthesizeReasoning && item.response?.candidates?.[0]?.finishReason) {
       const base = item.response.usageMetadata || (hasValidUsage(state.usage) ? convertUsageForFormat(state.usage, sourceFormat) : null);
-      if (base) item.response.usageMetadata = synthesizeThinkingTokens(base, sourceFormat);
+      if (base) item.response.usageMetadata = synthesizeThinkingTokens(base, sourceFormat, synthesisRatio);
     }
     return item;
   };
@@ -302,7 +347,7 @@ export function createSSEStream(options = {}) {
                 usage = estimated;
                 injectedUsage = true;
               } else if (carriesUsage) {
-                parsed.usage = synthesizeReasoning ? synthesizeThinkingTokens(parsed.usage, passthroughFormat) : parsed.usage;
+                parsed.usage = synthesizeReasoning ? synthesizeThinkingTokens(parsed.usage, passthroughFormat, synthesisRatio) : parsed.usage;
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
@@ -587,7 +632,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, thinkingIntent = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, thinkingIntent = null, thinkingSynthesis = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -602,11 +647,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     onStreamComplete,
     apiKey,
     credentials,
-    thinkingIntent
+    thinkingIntent,
+    thinkingSynthesis
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, thinkingIntent = null, sourceFormat = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, thinkingIntent = null, sourceFormat = null, thinkingSynthesis = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -617,6 +663,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     onStreamComplete,
     apiKey,
     thinkingIntent,
-    sourceFormat
+    sourceFormat,
+    thinkingSynthesis
   });
 }

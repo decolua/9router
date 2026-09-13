@@ -34,6 +34,7 @@ vi.mock("../../src/sse/services/model.js", () => ({
     return { provider: null };
   },
   resolveComboSystemPrompt: (combo) => (combo?.systemPromptEnabled ? `You are ${combo.name}.` : null),
+  resolveComboThinkingUsage: () => null,
 }));
 vi.mock("../../open-sse/handlers/chatCore.js", () => ({
   handleChatCore: mocks.handleChatCore,

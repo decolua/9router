@@ -109,3 +109,23 @@ export function resolveComboSystemPrompt(combo) {
   const prompt = template.replaceAll("{name}", name).trim();
   return prompt || null;
 }
+
+/**
+ * Resolve the per-combo hidden-thinking usage-synthesis config (see
+ * resolveThinkingSynthesis in open-sse/utils/stream.js for how it applies).
+ * Returns null when nothing EXPLICIT is configured — a combo left at defaults
+ * must not shadow a nested combo's explicit setting (outermost-explicit
+ * wins, same rule as resolveComboSystemPrompt's nesting in chat.js) — or for
+ * media combos.
+ * @param {object} combo - Full combo row (from getComboByName)
+ * @returns {{mode: "auto"|"off"|"always", minRatio: number|null, maxRatio: number|null}|null}
+ */
+export function resolveComboThinkingUsage(combo) {
+  if (!combo || combo.kind) return null;
+  const mode = (combo.thinkingUsageMode === "off" || combo.thinkingUsageMode === "always") ? combo.thinkingUsageMode : null;
+  const num = (v) => (typeof v === "number" && Number.isFinite(v) ? Math.min(Math.max(v, 0), 1) : null);
+  const minRatio = num(combo.thinkingUsageMinRatio);
+  const maxRatio = num(combo.thinkingUsageMaxRatio);
+  if (!mode && minRatio === null && maxRatio === null) return null;
+  return { mode: mode || "auto", minRatio, maxRatio };
+}

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName, sanitizeComboSystemPromptFields } from "@/lib/localDb";
+import { getComboById, updateCombo, deleteCombo, getComboByName, sanitizeComboSystemPromptFields, sanitizeComboThinkingUsageFields } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
@@ -43,10 +43,10 @@ export async function PUT(request, { params }) {
     
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);
-    // Identity-prompt fields go through the sanitizer only — drop raw values so
-    // wrongly-typed payloads can't leak into the merge.
-    const { systemPromptEnabled, systemPrompt, ...rest } = body;
-    const combo = await updateCombo(id, { ...rest, ...sanitizeComboSystemPromptFields(body) });
+    // Identity-prompt + thinking-usage fields go through the sanitizers only —
+    // drop raw values so wrongly-typed payloads can't leak into the merge.
+    const { systemPromptEnabled, systemPrompt, thinkingUsageMode, thinkingUsageMinRatio, thinkingUsageMaxRatio, ...rest } = body;
+    const combo = await updateCombo(id, { ...rest, ...sanitizeComboSystemPromptFields(body), ...sanitizeComboThinkingUsageFields(body) });
     
     if (!combo) {
       return NextResponse.json({ error: "Combo not found" }, { status: 404 });

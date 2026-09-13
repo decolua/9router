@@ -283,7 +283,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log, thinkingIntent }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, requestedModel, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log, thinkingIntent, thinkingSynthesis }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -364,10 +364,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     // Hidden-thinking synthesis on the JSON path mirrors the streaming seam:
     // when the request asked for thinking and the upstream never reported a
     // reasoning count, add it to the CLIENT-facing usage only — the stats
-    // object extracted above stays raw. Same gate, same intent snapshot.
+    // object extracted above stays raw. thinkingSynthesis is the pre-resolved
+    // per-request decision (per-combo mode + ratio); without it, same gate +
+    // intent snapshot as the streaming seam.
+    const synthesisEnabled = thinkingSynthesis ? thinkingSynthesis.enabled === true : shouldSynthesizeReasoning(body, model, thinkingIntent);
     const buffered = addBufferToUsage(translatedResponse.usage);
     translatedResponse.usage = filterUsageForFormat(
-      shouldSynthesizeReasoning(body, model, thinkingIntent) ? synthesizeThinkingTokens(buffered, sourceFormat) : buffered,
+      synthesisEnabled ? synthesizeThinkingTokens(buffered, sourceFormat, thinkingSynthesis?.ratio) : buffered,
       sourceFormat
     );
   }
