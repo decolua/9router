@@ -1,10 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
+import { runModelBatchTest } from "@/shared/utils/modelBatchTester";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
+
+function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting, latencyMs, error }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
     : testStatus === "error"
@@ -17,8 +20,14 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
     ? "#ef4444"
     : undefined;
 
+  const statusTitle = error
+    ? `Error: ${error}`
+    : latencyMs != null
+    ? `${latencyMs}ms`
+    : undefined;
+
   return (
-    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`flex items-center gap-3 p-3 rounded-lg border ${borderColor} hover:bg-sidebar/50`} title={statusTitle}>
       <span
         className="material-symbols-outlined text-base text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
@@ -29,6 +38,9 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         <p className="text-sm font-medium truncate">{modelId}</p>
         <div className="flex items-center gap-1 mt-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          {latencyMs != null && (
+            <span className="text-[10px] tabular-nums text-text-muted/70">{latencyMs}ms</span>
+          )}
           <div className="relative group/btn">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
@@ -59,6 +71,9 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
             </div>
           )}
         </div>
+        {error && (
+          <p className="text-[10px] text-red-500 mt-1 truncate" title={error}>{error}</p>
+        )}
       </div>
       <button
         onClick={onDeleteAlias}
@@ -77,6 +92,31 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [modelSearchQuery, setModelSearchQuery] = useState("");
+  const [batchTesting, setBatchTesting] = useState(false);
+  const [batchStopping, setBatchStopping] = useState(false);
+  const [batchResults, setBatchResults] = useState({});
+  const [batchSummary, setBatchSummary] = useState(null);
+  const stopBatchTestRef = useRef(false);
+  const notify = useNotificationStore();
+
+  const allModels = getProviderCustomModelRows({
+    customModels,
+    modelAliases,
+    providerAlias: providerStorageAlias,
+    type: "llm",
+  });
+
+  const modelSearch = modelSearchQuery.trim().toLowerCase();
+  const filteredModels = allModels.filter((model) =>
+    !modelSearch ||
+    (model.id || "").toLowerCase().includes(modelSearch) ||
+    (model.name || "").toLowerCase().includes(modelSearch) ||
+    (model.fullModel || "").toLowerCase().includes(modelSearch)
+  );
+  const shownCount = filteredModels.length;
+  const canTest = connections.length > 0;
+  const batchRunning = batchTesting || batchStopping;
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -96,12 +136,55 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
-  const allModels = getProviderCustomModelRows({
-    customModels,
-    modelAliases,
-    providerAlias: providerStorageAlias,
-    type: "llm",
-  });
+  // Batch-test every model currently shown (respects the search filter),
+  // with the shared bounded-concurrency pool. Per-model state lands in
+  // batchResults; rows render it through the same testStatus/isTesting props.
+  const handleTestModels = async () => {
+    if (shownCount === 0 || batchTesting) return;
+
+    const initial = {};
+    filteredModels.forEach((m) => {
+      initial[m.id] = { state: "queued", latencyMs: null, error: null };
+    });
+
+    stopBatchTestRef.current = false;
+    setBatchTesting(true);
+    setBatchStopping(false);
+    setBatchResults(initial);
+    setBatchSummary(null);
+
+    try {
+      const finalSummary = await runModelBatchTest({
+        models: filteredModels.map((m) => ({ id: m.id, fullModel: `${providerStorageAlias}/${m.id}` })),
+        buildFullModel: (m) => m.fullModel,
+        onResult: (modelId, result) =>
+          setBatchResults((prev) => ({ ...prev, [modelId]: result })),
+        onSummary: setBatchSummary,
+        stopRef: stopBatchTestRef,
+      });
+
+      if (finalSummary.stopped) {
+        notify.warning(`Stopped: ${finalSummary.passed}/${finalSummary.completed} passed`);
+      } else if (finalSummary.failed === 0) {
+        notify.success(`All ${finalSummary.total} models passed`);
+      } else {
+        notify.warning(`${finalSummary.passed}/${finalSummary.total} passed, ${finalSummary.failed} failed`);
+      }
+    } catch (error) {
+      notify.error("Model batch test failed");
+      console.log("Error in batch model test:", error);
+    } finally {
+      setBatchTesting(false);
+      setBatchStopping(false);
+      stopBatchTestRef.current = false;
+    }
+  };
+
+  const handleStopTestModels = () => {
+    if (!batchTesting) return;
+    stopBatchTestRef.current = true;
+    setBatchStopping(true);
+  };
 
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
@@ -194,21 +277,81 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       )}
 
       {allModels.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {allModels.map(({ id, alias, source }) => (
-            <CompatibleModelRow
-              key={`${source}-${providerStorageAlias}/${id}`}
-              modelId={id}
-              fullModel={`${providerDisplayAlias}/${id}`}
-              copied={copied}
-              onCopy={onCopy}
-              onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
-              onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
-              testStatus={modelTestResults[id]}
-              isTesting={testingModelId === id}
-            />
-          ))}
-        </div>
+        <>
+          <div className="flex flex-col gap-2 border-t border-black/[0.03] pt-3 dark:border-white/[0.03] lg:flex-row lg:items-center lg:justify-between">
+            <div className="relative w-full lg:max-w-xs">
+              <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
+                search
+              </span>
+              <input
+                type="text"
+                value={modelSearchQuery}
+                onChange={(e) => setModelSearchQuery(e.target.value)}
+                placeholder="Search models..."
+                className="w-full h-9 pl-8 pr-7 rounded-lg border border-border bg-surface-2 text-sm focus:outline-none focus:border-primary/50 transition-colors"
+              />
+              {modelSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setModelSearchQuery("")}
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-main p-0.5 rounded"
+                  aria-label="Clear model search"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              {batchSummary && (
+                <span className="text-xs text-text-muted tabular-nums">
+                  {batchSummary.completed}/{batchSummary.total} · {batchSummary.passed} ok{batchSummary.failed > 0 ? ` · ${batchSummary.failed} fail` : ""}{batchSummary.avgLatencyMs != null ? ` · avg ${batchSummary.avgLatencyMs}ms` : ""}{batchSummary.stopped ? " · stopped" : ""}
+                </span>
+              )}
+              {batchRunning ? (
+                <Button size="sm" variant="ghost" icon="stop" onClick={handleStopTestModels} disabled={batchStopping}>
+                  {batchStopping ? "Stopping..." : "Stop"}
+                </Button>
+              ) : (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  icon="science"
+                  onClick={handleTestModels}
+                  disabled={!canTest || shownCount === 0}
+                  title={canTest ? `Test the ${shownCount} model(s) shown` : "Add a connection to test models"}
+                >
+                  Test {shownCount} Model{shownCount === 1 ? "" : "s"}
+                </Button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {filteredModels.map(({ id, alias, source }) => (
+              <CompatibleModelRow
+                key={`${source}-${providerStorageAlias}/${id}`}
+                modelId={id}
+                fullModel={`${providerDisplayAlias}/${id}`}
+                copied={copied}
+                onCopy={onCopy}
+                onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
+                onTest={canTest ? () => handleTestModel(id) : undefined}
+                testStatus={batchResults[id]?.state === "ok" ? "ok" : batchResults[id]?.state === "error" ? "error" : modelTestResults[id]}
+                isTesting={testingModelId === id || batchResults[id]?.state === "testing"}
+                latencyMs={batchResults[id]?.latencyMs ?? null}
+                error={batchResults[id]?.error ?? null}
+              />
+            ))}
+            {modelSearch && shownCount === 0 && (
+              <div className="flex w-full flex-col items-center gap-1 py-6 text-center">
+                <span className="material-symbols-outlined text-[28px] text-text-muted">
+                  search_off
+                </span>
+                <p className="text-sm text-text-muted">No models match &quot;{modelSearchQuery}&quot;</p>
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
