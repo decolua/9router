@@ -8,7 +8,7 @@ import { pingModelByKind } from "@/app/api/models/test/ping";
 /**
  * POST /api/providers/[id]/test-models
  * id = connectionId — used only to resolve provider + model list.
- * Actual requests go through the internal endpoint that matches each model kind.
+ * LLM models only; each is pinged through the internal chat completions endpoint.
  */
 export async function POST(request, { params }) {
   try {
@@ -37,6 +37,13 @@ export async function POST(request, { params }) {
       } catch { /* fallback to empty */ }
     }
 
+    // LLM models only — the dashboard manages chat models; media-kind models
+    // (tts/embedding/...) are not pingable through the chat completions probe.
+    models = models.filter((m) => {
+      const k = m.kind || m.type;
+      return !k || k === "llm";
+    });
+
     if (models.length === 0) {
       return NextResponse.json({ error: "No models configured for this provider" }, { status: 400 });
     }
@@ -44,14 +51,13 @@ export async function POST(request, { params }) {
     // Warm up with first model to trigger token refresh (if needed) before parallel calls.
     // This prevents race condition where multiple requests concurrently refresh the same token.
     const [first, ...rest] = models;
-    const firstKind = first.kind || first.type || "llm";
-    const firstResult = await pingModelByKind(`${alias}/${first.id}`, firstKind, baseUrl);
+    const firstResult = await pingModelByKind(`${alias}/${first.id}`, "llm", baseUrl);
     const results = [{ modelId: first.id, name: first.name || first.id, ...firstResult }];
 
     if (rest.length > 0) {
       const restResults = await Promise.all(
         rest.map(async (model) => {
-          const result = await pingModelByKind(`${alias}/${model.id}`, model.kind || model.type || "llm", baseUrl);
+          const result = await pingModelByKind(`${alias}/${model.id}`, "llm", baseUrl);
           return { modelId: model.id, name: model.name || model.id, ...result };
         })
       );

@@ -7,80 +7,6 @@ import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-t
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
-// Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
-// Returns true if API key is accepted (status !== 401 && !== 403).
-async function probeWebProvider(provider, apiKey) {
-  const p = AI_PROVIDERS[provider];
-  if (!p) return null;
-  // Skip if provider has dual-purpose (LLM + search), let LLM validate handle it
-  const kinds = p.serviceKinds || ["llm"];
-  const isWebOnly = kinds.every((k) => k === "webSearch" || k === "webFetch");
-  if (!isWebOnly) return null;
-  const cfg = p.searchConfig || p.fetchConfig;
-  if (!cfg) return null;
-  if (cfg.authType === "none") return true; // no-auth (e.g. searxng)
-
-  let url = cfg.validateUrl || cfg.baseUrl;
-  const headers = { "Content-Type": "application/json" };
-  let body;
-
-  // Apply auth based on authHeader
-  switch (cfg.authHeader) {
-    case "bearer":              headers["Authorization"] = `Bearer ${apiKey}`; break;
-    case "x-api-key":           headers["x-api-key"] = apiKey; break;
-    case "x-subscription-token":headers["x-subscription-token"] = apiKey; break;
-    case "key":                 url += `?key=${encodeURIComponent(apiKey)}&q=ping&cx=test`; break; // google-pse
-    case "api_key":             url += `?api_key=${encodeURIComponent(apiKey)}&q=ping&engine=google`; break; // searchapi
-  }
-
-  // Minimal body for POST endpoints; GET sends nothing
-  if (cfg.method === "POST") {
-    body = JSON.stringify({ query: "ping", q: "ping", url: "https://example.com" });
-  }
-
-  const res = await fetch(url, { method: cfg.method, headers, body, signal: AbortSignal.timeout(8000) });
-  return res.status !== 401 && res.status !== 403;
-}
-
-// Probe a media provider (tts/embedding/stt/image/video) using *Config.
-// Returns true if API key is accepted; null to skip (let default handler decide).
-async function probeMediaProvider(provider, apiKey) {
-  const p = AI_PROVIDERS[provider];
-  if (!p) return null;
-  const MEDIA_KINDS = new Set(["tts", "embedding", "stt", "image", "video", "music", "imageToText"]);
-  const kinds = p.serviceKinds || ["llm"];
-  const isMediaOnly = kinds.every((k) => MEDIA_KINDS.has(k));
-  if (!isMediaOnly) return null;
-  const cfg = p.ttsConfig || p.sttConfig || p.embeddingConfig || p.imageConfig || p.videoConfig || p.musicConfig;
-  // No probe config → best-effort accept (validate at usage time)
-  if (!cfg) return true;
-  if (p.noAuth || cfg.authType === "none") return true;
-  // Skip auth schemes that need provider-specific data
-  if (cfg.authHeader === "playht" || cfg.authHeader === "aws-sigv4") return true;
-
-  const headers = { "Content-Type": "application/json", ...(cfg.extraHeaders || {}) };
-
-  switch (cfg.authHeader) {
-    case "bearer":     headers["Authorization"] = `Bearer ${apiKey}`; break;
-    case "key":        headers["Authorization"] = `Key ${apiKey}`; break;
-    case "x-api-key":  headers["x-api-key"] = apiKey; break;
-    case "x-key":      headers["x-key"] = apiKey; break;
-    case "xi-api-key": headers["xi-api-key"] = apiKey; break;
-    case "token":      headers["Authorization"] = `Token ${apiKey}`; break;
-    case "basic":      headers["Authorization"] = `Basic ${apiKey}`; break;
-    default: return null;
-  }
-
-  const method = cfg.method || "POST";
-  const res = await fetch(cfg.baseUrl, {
-    method,
-    headers,
-    body: method === "GET" ? undefined : JSON.stringify({ input: "ping", text: "ping", prompt: "ping", model: getDefaultModel(provider) || "test" }),
-    signal: AbortSignal.timeout(8000),
-  });
-  return res.status !== 401 && res.status !== 403;
-}
-
 // POST /api/providers/validate - Validate API key with provider
 export async function POST(request) {
   try {
@@ -231,24 +157,6 @@ export async function POST(request) {
         return NextResponse.json({
           valid: isValid,
           error: isValid ? null : "Invalid API key or Azure configuration",
-        });
-      }
-
-      // Generic probe for webSearch/webFetch providers (config-driven)
-      const webResult = await probeWebProvider(provider, apiKey);
-      if (webResult !== null) {
-        return NextResponse.json({
-          valid: webResult,
-          error: webResult ? null : "Invalid API key",
-        });
-      }
-
-      // Generic probe for tts/embedding providers (config-driven)
-      const mediaResult = await probeMediaProvider(provider, apiKey);
-      if (mediaResult !== null) {
-        return NextResponse.json({
-          valid: mediaResult,
-          error: mediaResult ? null : "Invalid API key",
         });
       }
 

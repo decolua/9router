@@ -71,8 +71,7 @@ export default function CombosPage() {
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       
-      // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
-      if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
+      if (combosRes.ok) setCombos((combosData.combos || []).filter((combo) => !combo.kind || combo.kind === "llm"));
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
       }
@@ -650,7 +649,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -845,7 +844,6 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           activeProviders={activeProviders}
           modelAliases={modelAliases}
           title="Add Model to Combo"
-          kindFilter={kindFilter}
           addedModelValues={models}
           closeOnSelect={false}
         />

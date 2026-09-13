@@ -1092,7 +1092,7 @@ export default function ProviderDetailPage() {
       );
     }
     // Combine hardcoded models with Kilo free models (deduplicated)
-    // Exclude non-llm models (embedding, tts, etc.) — they have dedicated pages under media-providers
+    // Exclude non-llm models (embedding, tts, etc.) — LLM-only model management here
     const allModels = [
       ...models,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),

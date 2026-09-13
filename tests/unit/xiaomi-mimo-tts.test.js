@@ -4,7 +4,6 @@ import { buildTtsProviderModels, getTtsVoicesForModel } from "../../open-sse/con
 import { AI_PROVIDERS } from "../../src/shared/constants/providers.js";
 import { getTtsAdapter } from "../../open-sse/handlers/ttsProviders/index.js";
 import { PROVIDER_MODELS } from "../../open-sse/config/providerModels.js";
-import { TTS_PROVIDER_CONFIG } from "../../src/shared/constants/ttsProviders.js";
 
 const originalFetch = global.fetch;
 
@@ -134,17 +133,12 @@ describe("Xiaomi MiMo TTS", () => {
     expect(user.content).toBe("Speak in English.");
   });
 
-  it("wires the provider into media-providers TTS (serviceKind, adapter, UI config)", () => {
+  it("wires the provider into the TTS engine (serviceKind, adapter, catalog)", () => {
     expect(AI_PROVIDERS["xiaomi-mimo"].serviceKinds).toContain("tts");
     expect(AI_PROVIDERS["xiaomi-mimo"].ttsConfig.baseUrl).toBe("https://api.xiaomimimo.com/v1/chat/completions");
     expect(getTtsAdapter("xiaomi-mimo")).toBeTruthy();
 
     const ttsModels = PROVIDER_MODELS["xiaomi-mimo"].filter((m) => (m.kind || m.type) === "tts").map((m) => m.id);
     expect(ttsModels).toEqual(["mimo-v2.5-tts"]);
-
-    expect(TTS_PROVIDER_CONFIG["xiaomi-mimo"].hasStyleInput).toBe(true);
-    expect(TTS_PROVIDER_CONFIG["xiaomi-mimo"].hasLanguageHint).toBe(true);
-    expect(TTS_PROVIDER_CONFIG["xiaomi-mimo"].languageOptions).toEqual(["Chinese", "English"]);
-    expect(TTS_PROVIDER_CONFIG["xiaomi-mimo"].hasVoiceIdInput).toBe(false);
   });
 });

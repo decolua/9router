@@ -306,10 +306,14 @@ export default function ProvidersPage() {
     return ["oauth", "apikey", "api_key"];
   };
 
+  // LLM-only dashboard: media-only providers (tts/embedding/web-search-only, …)
+  // are managed through the engine, not the generic provider grid.
+  const isLlmProvider = (info) => (info.serviceKinds ?? ["llm"]).includes("llm");
   const oauthEntries = sortByPriority(
     Object.entries(OAUTH_PROVIDERS).filter(
       ([key, info]) =>
         !info.hidden &&
+        isLlmProvider(info) &&
         matchSearch(info.name) &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
     ),
@@ -319,6 +323,7 @@ export default function ProvidersPage() {
     .filter(
       ([key, info]) =>
         !info.hidden &&
+        isLlmProvider(info) &&
         matchSearch(info.name) &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
     )

@@ -59,7 +59,6 @@ const PROTECTED_API_PATHS = [
   "/api/usage",
   "/api/oauth",
   "/api/cloud",
-  "/api/media-providers",
   "/api/pricing",
   "/api/tags",
   "/api/cli-tools",

@@ -13,8 +13,6 @@ const KIND_ENDPOINT = {
   webFetch: "/v1/fetch",
 };
 
-const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
-
 function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
     id: `${alias}/${model.id}`,
@@ -28,9 +26,6 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   if (model.options) out.options = model.options;
   if (model.dimensions) out.dimensions = model.dimensions;
   if (model.contextWindow) out.contextWindow = model.contextWindow;
-  if (kind === "tts" && TTS_VOICES_API.has(providerId)) {
-    out.voicesUrl = `/v1/audio/voices?provider=${providerId}`;
-  }
   if (kind === "webSearch" && providerInfo?.searchConfig) {
     const cfg = providerInfo.searchConfig;
     if (cfg.searchTypes) out.searchTypes = cfg.searchTypes;
