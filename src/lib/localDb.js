@@ -13,7 +13,7 @@ export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
   getCombos, getComboById, getComboByName,
   createCombo, updateCombo, deleteCombo,
-  sanitizeComboSystemPromptFields, MAX_COMBO_SYSTEM_PROMPT_CHARS,
+  sanitizeComboSystemPromptFields, sanitizeComboThinkingUsageFields, MAX_COMBO_SYSTEM_PROMPT_CHARS,
   getModelAliases, setModelAlias, deleteModelAlias,
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
