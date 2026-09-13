@@ -47,18 +47,6 @@ function buildCoreBody(providerId, args) {
   };
 }
 
-// Empty/default settings.webSearchFallbackProvider -> first search-capable provider that
-// actually has usable credentials at runtime (noAuth providers count as configured).
-async function pickDefaultProvider() {
-  for (const [id, def] of Object.entries(AI_PROVIDERS)) {
-    if (!def || (!def.searchConfig && !def.searchViaChat)) continue;
-    if (def.noAuth) return id;
-    const creds = await getProviderCredentials(id, new Set(), `websearch:${id}`);
-    if (creds && !creds.allRateLimited) return id;
-  }
-  return null;
-}
-
 // Credential + account-fallback loop, adapted from src/sse/handlers/search.js.
 // handleSearchCore ignores the two callbacks below (refresh happens via the explicit
 // checkAndRefreshToken call); they are passed for parity with the upstream handler.
@@ -154,11 +142,11 @@ async function executeWebSearch(args, log) {
   let providerInput = typeof settings.webSearchFallbackProvider === "string"
     ? settings.webSearchFallbackProvider.trim()
     : "";
+  // Off until configured: an empty provider (the default, and what the dashboard's
+  // toggle-off writes) declines the search instead of auto-selecting a provider the
+  // user never chose.
   if (!providerInput) {
-    providerInput = await pickDefaultProvider();
-    if (!providerInput) {
-      return { success: false, error: "No search-capable provider configured (set webSearchFallbackProvider)" };
-    }
+    return { success: false, error: "Web search redirect is disabled (enable it in profile settings)" };
   }
 
   const combos = await getCombos();
@@ -254,23 +242,27 @@ function rewriteClaude(response, toolName, handled, outcomes) {
     handled.map((call, i) => [call.id, searchBlocks(toolName, call, outcomes[i])]),
   );
   const content = [];
-  let inserted = false;
+  const insertedIds = new Set();
+  const insertAll = () => {
+    for (const call of handled) {
+      if (insertedIds.has(call.id)) continue;
+      insertedIds.add(call.id);
+      content.push(...blocksById.get(call.id));
+    }
+  };
   for (const block of response.content) {
     if (block?.type === CLAUDE_BLOCK.TOOL_USE && blocksById.has(block.id)) {
-      content.push(...blocksById.get(block.id));
-      inserted = true;
+      if (!insertedIds.has(block.id)) {
+        insertedIds.add(block.id);
+        content.push(...blocksById.get(block.id));
+      }
       continue;
     }
     // Results must precede any remaining (client-owned) tool_use blocks.
-    if (!inserted && block?.type === CLAUDE_BLOCK.TOOL_USE) {
-      for (const call of handled) content.push(...blocksById.get(call.id));
-      inserted = true;
-    }
+    if (block?.type === CLAUDE_BLOCK.TOOL_USE) insertAll();
     content.push(block);
   }
-  if (!inserted) {
-    for (const call of handled) content.push(...blocksById.get(call.id));
-  }
+  insertAll();
   const hasRemainingToolUse = content.some((b) => b?.type === CLAUDE_BLOCK.TOOL_USE);
   return {
     ...response,

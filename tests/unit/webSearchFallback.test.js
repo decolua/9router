@@ -96,6 +96,28 @@ describe("prepareWebSearchFallbackBody (layer 1)", () => {
     });
     expect(fallback.enabled).toBe(false);
   });
+
+  it("skips conversion when the tool is scoped with external_web_access:false", () => {
+    // Routing a non-public search through external providers would break the scope,
+    // so the whole request is left for the upstream to handle.
+    const body = { tools: [{ ...nativeTool, external_web_access: false }] };
+    const { body: next, fallback } = prepareWebSearchFallbackBody(body, {
+      provider: "minimax", sourceFormat: CLAUDE, targetFormat: OPENAI, nativePassthrough: false,
+    });
+    expect(fallback.enabled).toBe(false);
+    expect(next).toBe(body);
+  });
+
+  it("skips conversion when the client already owns the reserved fallback tool name", () => {
+    // Converting anyway would make the interceptor run the client's own tool as a search.
+    const ownedByClient = { type: "function", function: { name: NINEROUTER_WEB_SEARCH_FALLBACK_TOOL_NAME, parameters: {} } };
+    const body = { tools: [{ ...nativeTool }, ownedByClient] };
+    const { body: next, fallback } = prepareWebSearchFallbackBody(body, {
+      provider: "minimax", sourceFormat: CLAUDE, targetFormat: OPENAI, nativePassthrough: false,
+    });
+    expect(fallback.enabled).toBe(false);
+    expect(next).toBe(body);
+  });
 });
 
 describe("supportsNativeWebSearchFallbackBypass", () => {

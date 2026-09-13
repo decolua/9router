@@ -115,6 +115,26 @@ describe("applyWebSearchFallback", () => {
     expect(out.stop_reason).toBe("tool_use"); // not rewritten while a real tool_use remains
   });
 
+  it("emits the search triple once even when a client tool_use precedes it", async () => {
+    // The early insertAll (results must precede remaining tool_use blocks) and the
+    // later match on the search block itself must not push the same triple twice.
+    const response = {
+      type: "message",
+      content: [
+        { type: "tool_use", id: "tu_2", name: "Read", input: { path: "x" } },
+        { type: "tool_use", id: "tu_1", name: "9router_web_search", input: { query: "q" } },
+      ],
+      stop_reason: "tool_use",
+    };
+    const out = await applyWebSearchFallback({ translatedResponse: response, sourceFormat: "claude", fallbackPlan: PLAN, log: {} });
+    expect(out.content.map((b) => b.type)).toEqual([
+      "server_tool_use", "web_search_tool_result", "text", "tool_use",
+    ]);
+    expect(out.content.filter((b) => b.type === "server_tool_use")).toHaveLength(1);
+    expect(out.content[3].id).toBe("tu_2");
+    expect(out.usage.server_tool_use.web_search_requests).toBe(1);
+  });
+
   it("appends function_call_output for a Responses client", async () => {
     const response = {
       object: "response",
@@ -177,5 +197,16 @@ describe("applyWebSearchFallback", () => {
     await applyWebSearchFallback({ translatedResponse: response, sourceFormat: "claude", fallbackPlan: PLAN, log: {} });
     expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.handleSearchCore.mock.calls[0][0].credentials).toBeNull();
+  });
+
+  it("declines searches when no provider is configured (feature off by default)", async () => {
+    // No auto-pick: an empty webSearchFallbackProvider must not silently route the
+    // request through some credentialed provider the user never chose.
+    mocks.getSettings.mockResolvedValue({ webSearchFallbackProvider: "" });
+    const response = { type: "message", content: [{ type: "tool_use", id: "t", name: PLAN.toolName, input: { query: "q" } }] };
+    const out = await applyWebSearchFallback({ translatedResponse: response, sourceFormat: "claude", fallbackPlan: PLAN, log: {} });
+    expect(mocks.handleSearchCore).not.toHaveBeenCalled();
+    expect(out.content[1].content).toMatchObject({ error_code: "9router_search_error" });
+    expect(String(out.content[1].content.error_message)).toMatch(/disabled/);
   });
 });

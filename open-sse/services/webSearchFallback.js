@@ -35,12 +35,12 @@ function searchContextSize(tool) {
 }
 
 function buildFallbackDescription(tool) {
-  const externalWebAccess = tool.external_web_access !== false;
+  // Tools with external_web_access:false are never converted (see prepareWebSearchFallbackBody),
+  // so the description can always promise the public web.
   const defaultMaxResults =
     SEARCH_CONTEXT_DEFAULTS[searchContextSize(tool)] || SEARCH_CONTEXT_DEFAULTS.medium;
-  const accessMode = externalWebAccess ? "public web" : "configured search index";
   return [
-    `Search the ${accessMode} for recent, factual information and return cited results.`,
+    "Search the public web for recent, factual information and return cited results.",
     "Use this when the answer depends on current events, external documents, or fresh facts.",
     `If max_results is omitted, prefer about ${defaultMaxResults} results.`,
   ].join(" ");
@@ -167,6 +167,12 @@ export function prepareWebSearchFallbackBody(body, options) {
   const builtInSearchTools = tools.filter(isBuiltInWebSearchTool);
   if (builtInSearchTools.length === 0) return { body, fallback: disabled };
 
+  // A tool scoped with external_web_access:false asks for a non-public search; routing it
+  // through our external providers would violate that scope, so we leave the request alone.
+  if (builtInSearchTools.some((tool) => toRecord(tool).external_web_access === false)) {
+    return { body, fallback: disabled };
+  }
+
   if (supportsNativeWebSearchFallbackBypass(options)) return { body, fallback: disabled };
 
   const toolNames = new Set();
@@ -184,9 +190,12 @@ export function prepareWebSearchFallbackBody(body, options) {
     return true;
   });
 
-  if (!toolNames.has(NINEROUTER_WEB_SEARCH_FALLBACK_TOOL_NAME)) {
-    preservedTools.unshift(buildFallbackTool(toRecord(builtInSearchTools[0]), options.sourceFormat));
+  // The client already owns our reserved tool name: converting anyway would make the
+  // interceptor execute the client's own tool calls as searches. Skip conversion entirely.
+  if (toolNames.has(NINEROUTER_WEB_SEARCH_FALLBACK_TOOL_NAME)) {
+    return { body, fallback: disabled };
   }
+  preservedTools.unshift(buildFallbackTool(toRecord(builtInSearchTools[0]), options.sourceFormat));
 
   const nextBody = { ...body, tools: preservedTools };
   if (isBuiltInWebSearchToolChoice(body.tool_choice)) {
