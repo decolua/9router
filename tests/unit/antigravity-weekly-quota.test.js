@@ -103,7 +103,10 @@ describe("parseWeeklyQuotaSummary", () => {
     expect(result).toEqual({});
   });
 
-  it("skips disabled weekly buckets", () => {
+  it("parses disabled weekly buckets with a disabled flag (weekly exhausted upstream)", () => {
+    // Pool-aware routing NEEDS the disabled flag: a disabled 5h/weekly bucket
+    // tells us the weekly window is the binding constraint for that pool, so
+    // the entry must be parsed and flagged rather than dropped.
     const data = {
       groups: [{
         displayName: "Gemini Models",
@@ -117,7 +120,11 @@ describe("parseWeeklyQuotaSummary", () => {
       }],
     };
     const result = parseWeeklyQuotaSummary(data);
-    expect(result).toEqual({});
+    expect(result.gemini_weekly).toMatchObject({
+      remainingPercentage: 75,
+      disabled: true,
+      resetAt: "2026-09-15T00:00:00.000Z",
+    });
   });
 
   it("returns empty object for null/undefined input", () => {

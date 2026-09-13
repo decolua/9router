@@ -151,7 +151,14 @@ export default function QuotaTable({
       <div className="space-y-px">
         {currentPageRows.map((quota) => {
           const isUnlimited = quota.unlimited === true;
-          const colors = getColorClasses(quota.remaining);
+          // Upstream semantics (matches Antigravity CLI): a disabled window
+          // means its parent window (weekly) is exhausted — the percentage is
+          // meaningless until the weekly refresh, so render "Disabled" with
+          // the weekly's reset time instead of a misleading number.
+          const isDisabledWindow = quota.disabled === true && !isUnlimited;
+          const colors = isDisabledWindow
+            ? getColorClasses(0)
+            : getColorClasses(quota.remaining);
           const countdown = formatResetTime(quota.resetAt);
           const resetDisplay = formatResetTimeDisplay(quota.resetAt);
           // recurring defaults true: a missing flag means the quota
@@ -175,7 +182,7 @@ export default function QuotaTable({
 
               {/* Progress + used/total */}
               <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
-                {!isUnlimited && (
+                {!isUnlimited && !isDisabledWindow && (
                 <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                   quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
                 }`}>
@@ -185,22 +192,31 @@ export default function QuotaTable({
                   />
                 </div>
                 )}
+                {isDisabledWindow && (
+                <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border border-black/10 dark:border-white/10 ${colors.bgLight}`}>
+                  <div className={`h-full ${colors.bg}`} style={{ width: "0%" }} />
+                </div>
+                )}
 
                 <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
                   <span
                     className="text-text-muted truncate"
                     title={
-                      isUnlimited
+                      isDisabledWindow
+                        ? "Disabled: the weekly limit is exhausted — this window does not currently apply"
+                        : isUnlimited
                         ? `${quota.used.toLocaleString()} used · Unlimited`
                         : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`
                     }
                   >
-                    {isUnlimited
+                    {isDisabledWindow
+                      ? "Weekly limit hit — window paused"
+                      : isUnlimited
                       ? `${quota.used.toLocaleString()} used · Unlimited`
                       : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
                   </span>
                   <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : colors.text} shrink-0`}>
-                    {isUnlimited ? "Unlimited" : `${quota.remaining}%`}
+                    {isDisabledWindow ? "Disabled" : isUnlimited ? "Unlimited" : `${quota.remaining}%`}
                   </span>
                 </div>
               </div>

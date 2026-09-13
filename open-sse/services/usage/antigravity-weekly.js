@@ -1,12 +1,25 @@
 /**
- * Antigravity weekly quota — best-effort retrieval from retrieveUserQuotaSummary.
+ * Antigravity quota summary — best-effort retrieval from retrieveUserQuotaSummary.
  * Failure never breaks existing per-model quota display.
+ *
+ * Google meters Antigravity quota in TWO SHARED POOLS per account:
+ *   - "Gemini Models"      → all gemini-* models (incl. image & pro-agent)
+ *   - "Claude and GPT models" → claude-* and gpt-oss-* models
+ * Each pool can have up to two windows, each a bucket in the summary:
+ *   - Weekly window  (all tiers)
+ *   - 5-hour window  (paid tiers; reported disabled=true when the weekly
+ *     window is exhausted — its reading is then meaningless until the weekly
+ *     refresh, so the weekly resetAt must win)
+ *
+ * Tier detection: loadCodeAssist returns currentTier.id="free-tier" for ALL
+ * accounts (even paid ones) — the real subscription lives in paidTier.id:
+ *   free-tier | g1-plus-tier | g1-pro-tier | g1-ultra-tier
  */
 
 import { U, parseResetTime, fetchWithTimeout } from "./shared.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "../../providers/shared.js";
 
-// — Weekly quota summary config ——————————————————————————————
+// — Quota summary config ——————————————————————————————
 const WEEKLY_CONFIG = {
   ...U("antigravity"),
   userAgent: ANTIGRAVITY_IDE_USER_AGENT,
@@ -27,16 +40,49 @@ export function _clearWeeklyCache() {
 
 // — Group-name to stable key mapping ——————————————————————
 const GROUP_MATCHERS = [
-  { pattern: /gemini/i, key: "gemini_weekly", displayName: "Gemini (Weekly)" },
-  { pattern: /claude|gpt/i, key: "claude_gpt_weekly", displayName: "Claude & GPT (Weekly)" },
+  { pattern: /gemini/i, key: "gemini", displayName: "Gemini" },
+  { pattern: /claude|gpt/i, key: "claude_gpt", displayName: "Claude & GPT" },
 ];
 
+// — Window detection inside a pool group ————————————————
+// Buckets carry their window in bucketId/displayName ("weekly", "five hour"/"5h").
+function detectWindow(bucketText) {
+  if (bucketText.includes("weekly")) return "weekly";
+  if (bucketText.includes("five") || bucketText.includes("5h") || bucketText.includes("5-hour")) return "5h";
+  return null;
+}
+
+// — paidTier.id → human tier label ————————————————————————
+const TIER_LABELS = [
+  [/^free/i, "Free"],
+  [/plus/i, "Plus"],
+  [/pro/i, "Pro"],
+  [/ultra/i, "Ultra"],
+];
+
+export function tierFromPaidTierId(paidTierId) {
+  if (!paidTierId || typeof paidTierId !== "string") return null;
+  for (const [pattern, label] of TIER_LABELS) {
+    if (pattern.test(paidTierId)) return label;
+  }
+  return null;
+}
+
 /**
- * Parse a retrieveUserQuotaSummary response into normalized weekly quotas.
+ * Parse a retrieveUserQuotaSummary response into normalized pool quotas.
  * Pure function — safe to unit-test without network.
  *
+ * Emits BOTH shapes so callers can pick what they need:
+ *  - Legacy flat keys (backward compat with the old weekly-only parser):
+ *      gemini_weekly, claude_gpt_weekly
+ *  - Pool-scoped window keys (routing + grouped dashboard):
+ *      gemini_5h, claude_gpt_5h
+ *
+ * Disabled 5h buckets (weekly exhausted upstream) are parsed but flagged
+ * `disabled: true` so routing can prefer the weekly resetAt.
+ *
  * @param {Object|null} data  Raw JSON response
- * @returns {Object}  e.g. { gemini_weekly: { used, total, ... }, claude_gpt_weekly: { ... } }
+ * @returns {Object}  e.g. { gemini_weekly: {...}, gemini_5h: {...}, claude_gpt_weekly: {...} }
  */
 export function parseWeeklyQuotaSummary(data) {
   if (!data || typeof data !== "object") return {};
@@ -60,33 +106,31 @@ export function parseWeeklyQuotaSummary(data) {
     for (const bucket of buckets) {
       if (!bucket || typeof bucket !== "object") continue;
 
-      // Identify weekly buckets by checking bucketId + displayName for "weekly"
       const bucketText = `${bucket.bucketId || ""} ${bucket.displayName || ""}`.toLowerCase();
-      if (!bucketText.includes("weekly")) continue;
-
-      // Skip disabled buckets
-      if (bucket.disabled === true) continue;
+      const window = detectWindow(bucketText);
+      if (!window) continue;
 
       const remainingFraction = Number(bucket.remainingFraction);
       if (!Number.isFinite(remainingFraction)) continue;
 
       // Match group to a known family
       for (const matcher of GROUP_MATCHERS) {
-        if (matcher.pattern.test(displayName)) {
-          const total = 1000;
-          const remaining = Math.round(total * remainingFraction);
-          const used = Math.max(0, total - remaining);
+        if (!matcher.pattern.test(displayName)) continue;
 
-          result[matcher.key] = {
-            used,
-            total,
-            resetAt: parseResetTime(bucket.resetTime),
-            remainingPercentage: remainingFraction * 100,
-            unlimited: false,
-            displayName: matcher.displayName,
-          };
-          break; // first matching bucket per family wins
-        }
+        const total = 1000;
+        const remaining = Math.round(total * remainingFraction);
+        const used = Math.max(0, total - remaining);
+
+        result[`${matcher.key}_${window}`] = {
+          used,
+          total,
+          resetAt: parseResetTime(bucket.resetTime),
+          remainingPercentage: remainingFraction * 100,
+          unlimited: false,
+          disabled: bucket.disabled === true,
+          displayName: `${matcher.displayName} (${window === "weekly" ? "Weekly" : "5h"})`,
+        };
+        break; // first matching bucket per family wins
       }
     }
   }
@@ -95,7 +139,7 @@ export function parseWeeklyQuotaSummary(data) {
 }
 
 /**
- * Fetch weekly quota summary — cached, deduped, never throws.
+ * Fetch quota summary — cached, deduped, never throws.
  */
 export async function fetchAntigravityWeeklyQuota(accessToken, projectId, proxyOptions = null) {
   const key = cacheKey(accessToken, projectId);

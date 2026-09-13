@@ -9,6 +9,7 @@ import { calculatePercentage } from "./utils";
 
 const planVariants = {
   free: "default",
+  plus: "info",
   pro: "primary",
   ultra: "success",
   enterprise: "info",

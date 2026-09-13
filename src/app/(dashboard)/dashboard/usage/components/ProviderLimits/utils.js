@@ -375,74 +375,63 @@ export function parseQuotaData(provider, data) {
 
       case "antigravity":
         if (data.quotas) {
-          const entries = Object.entries(data.quotas);
-          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly"]);
-          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
-          const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
-          const imageModels = entries.filter(([k]) => k.includes("image"));
-          const weeklyModels = entries.filter(([k]) => weeklyKeys.has(k));
-          const otherModels = entries.filter(([k]) => !k.startsWith("gemini-") && !k.startsWith("claude-") && !k.includes("image") && !weeklyKeys.has(k));
+          // Pool-grouped display: Google meters quota per POOL (Gemini vs
+          // Claude & GPT), each with a weekly window (all tiers) and — on
+          // paid tiers — a 5h window. Never render per-model rows: they are
+          // just different views of the same shared pool.
+          const summaryOrder = [
+            "gemini_5h", "gemini_weekly",
+            "claude_gpt_5h", "claude_gpt_weekly",
+          ];
 
-          if (geminiModels.length > 0) {
-            const rep = geminiModels.reduce((min, cur) =>
-              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
-            )[1];
+          for (const [modelKey, quota] of Object.entries(data.quotas)) {
+            if (!summaryOrder.includes(modelKey)) continue;
+            // Upstream marks the 5h window disabled:true when the pool's
+            // weekly limit is exhausted — its reading is meaningless and the
+            // official Antigravity app hides the row entirely. Do the same:
+            // the weekly row already tells the full story.
+            if (quota.disabled === true) continue;
             normalizedQuotas.push({
-              name: "Gemini (Flash / Pro)",
-              modelKey: "gemini",
-              used: rep.used || 0,
-              total: rep.total || 0,
-              resetAt: rep.resetAt || null,
-              remainingPercentage: rep.remainingPercentage,
+              name: quota.displayName || modelKey,
+              modelKey,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              disabled: quota.disabled === true,
             });
           }
 
-          if (claudeModels.length > 0) {
-            const rep = claudeModels.reduce((min, cur) =>
-              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
-            )[1];
-            normalizedQuotas.push({
-              name: "Claude (Sonnet / Opus)",
-              modelKey: "claude",
-              used: rep.used || 0,
-              total: rep.total || 0,
-              resetAt: rep.resetAt || null,
-              remainingPercentage: rep.remainingPercentage,
-            });
+          // Stable display order: 5h window first, then weekly, per pool.
+          normalizedQuotas.sort((a, b) =>
+            summaryOrder.indexOf(a.modelKey) - summaryOrder.indexOf(b.modelKey));
+
+          // Fallback for snapshots without summary entries (very old cache):
+          // derive one row per family from per-model entries.
+          if (normalizedQuotas.length === 0) {
+            const families = [
+              { match: (k) => k.startsWith("gemini-"), name: "Gemini (Weekly)", key: "gemini_weekly" },
+              { match: (k) => k.startsWith("claude-") || k.startsWith("gpt-oss"), name: "Claude & GPT (Weekly)", key: "claude_gpt_weekly" },
+            ];
+            for (const fam of families) {
+              const candidates = Object.entries(data.quotas)
+                .filter(([k, q]) => fam.match(k) && q && Number.isFinite(Number(q.remainingPercentage)));
+              if (candidates.length === 0) continue;
+              const rep = candidates.reduce((min, cur) =>
+                (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+              );
+              if (rep) {
+                normalizedQuotas.push({
+                  name: fam.name,
+                  modelKey: fam.key,
+                  used: rep[1].used || 0,
+                  total: rep[1].total || 0,
+                  resetAt: rep[1].resetAt || null,
+                  remainingPercentage: rep[1].remainingPercentage,
+                });
+              }
+            }
           }
-
-          weeklyModels.forEach(([modelKey, quota]) => {
-            normalizedQuotas.push({
-              name: quota.displayName || modelKey,
-              modelKey,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              remainingPercentage: quota.remainingPercentage,
-            });
-          });
-
-          imageModels.forEach(([modelKey, quota]) => {
-            normalizedQuotas.push({
-              name: quota.displayName || modelKey,
-              modelKey,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              remainingPercentage: quota.remainingPercentage,
-            });
-          });
-
-          otherModels.forEach(([modelKey, quota]) => {
-            normalizedQuotas.push({
-              name: quota.displayName || modelKey,
-              modelKey,
-              used: quota.used || 0,
-              total: quota.total || 0,
-              resetAt: quota.resetAt || null,
-              remainingPercentage: quota.remainingPercentage,
-            });
-          });
         }
         break;
 
