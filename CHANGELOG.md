@@ -1,3 +1,9 @@
+# Unreleased
+
+## Fixes
+- **Cursor**: stop AgentService empty turns (`OUT 0`) and silent hangs — fold system prompts instead of `custom_system_prompt`, send `ModelDetails`, read Composer/Grok `thinking_delta`, ack request-context without echoing MCP tools, and reject IDE execs so the model can continue
+- **RTK**: compress source-format `tool_result` / `role:tool` **before** translation so Cursor (and other rewritten tool shapes) still get git/grep/ls/tree/log savings
+
 # v0.5.75 (2026-09-10)
 
 ## Features
