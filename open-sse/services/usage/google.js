@@ -5,7 +5,7 @@
 import { CLIENT_METADATA } from "../../config/appConstants.js";
 import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION, ANTIGRAVITY_OAUTH_CLIENT } from "../../providers/shared.js";
 import { U, parseResetTime, normalizeCloudCodeProjectId, fetchWithTimeout } from "./shared.js";
-import { fetchAntigravityWeeklyQuota } from "./antigravity-weekly.js";
+import { tierFromPaidTierId, fetchAntigravityWeeklyQuota } from "./antigravity-weekly.js";
 
 // Antigravity API config (from Quotio) — urls from registry, oauth client + dynamic UA kept here
 const ANTIGRAVITY_CONFIG = {
@@ -158,10 +158,10 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     const data = await response.json();
     const quotas = {};
 
-    // Detect tier: free-tier accounts only have weekly quotas (no separate 5h window).
-    // On free-tier, fetchAvailableModels returns misleading per-model quota info
-    // (missing remainingFraction defaults to 0, or reflects the weekly limit not a 5h window).
-    const paidTierId = subscriptionInfo?.paidTier?.id;
+    // Detect tier: currentTier.id is "free-tier" for ALL accounts (even paid),
+    // the real subscription lives in paidTier.id — free-tier | g1-plus-tier |
+    // g1-pro-tier | g1-ultra-tier.
+    const paidTierId = subscriptionInfo?.paidTier?.id || subscriptionInfo?.currentTier?.id;
     const isFreeTier = !paidTierId || paidTierId === "free-tier";
 
     // Parse model quotas only for paid-tier accounts.
@@ -271,7 +271,12 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     }
 
     return {
-      plan: subscriptionInfo?.currentTier?.name || "Unknown",
+      // Tier label from paidTier (currentTier.id is "free-tier" even for paid
+      // accounts) so the dashboard shows Free / Plus / Pro / Ultra correctly.
+      plan: tierFromPaidTierId(subscriptionInfo?.paidTier?.id)
+        || subscriptionInfo?.currentTier?.name
+        || "Unknown",
+      paidTierId: subscriptionInfo?.paidTier?.id || null,
       quotas,
       subscriptionInfo,
     };

@@ -84,6 +84,21 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       ? connection.displayName.trim()
       : null;
 
+  // Antigravity only: subscription tier badge (Free/Plus/Pro/Ultra) persisted
+  // on the connection by the usage API from Google's paidTier.id.
+  const tierId = connection.provider === "antigravity"
+    ? connection.providerSpecificData?.subscriptionTierId
+    : null;
+  const TIER_LABELS = [
+    [/^free/i, { label: "Free", variant: "bg-black/5 text-text-muted dark:bg-white/10" }],
+    [/plus/i, { label: "Plus", variant: "bg-blue-500/10 text-blue-600 dark:text-blue-400" }],
+    [/pro/i, { label: "Pro", variant: "bg-primary/10 text-primary" }],
+    [/ultra/i, { label: "Ultra", variant: "bg-green-500/10 text-green-600 dark:text-green-400" }],
+  ];
+  const tierBadge = tierId
+    ? (TIER_LABELS.find(([pattern]) => pattern.test(tierId))?.[1] || null)
+    : null;
+
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
 
@@ -170,6 +185,14 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
+            {tierBadge && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${tierBadge.variant}`}
+                title={`Google AI ${tierBadge.label} subscription`}
+              >
+                {tierBadge.label}
+              </span>
+            )}
             {hasAnyProxy && (
               <Badge variant={proxyBadgeVariant} size="sm">
                 Proxy

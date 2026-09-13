@@ -1061,6 +1061,9 @@ export default function ProviderLimits() {
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
+          // Subscription tier (Antigravity: Free / Plus / Pro / Ultra) from the
+          // quota fetch — paidTier-based, set by open-sse usage parser.
+          const tierLabel = conn.provider === "antigravity" ? quota?.plan : null;
 
           return (
             <Card
@@ -1086,11 +1089,28 @@ export default function ProviderLimits() {
                       <h3 className="text-sm font-semibold text-text-primary truncate">
                         {providerLabel(conn.provider)}
                       </h3>
-                      {getConnectionLabel(conn) ? (
-                        <p className="text-xs text-text-muted truncate">
-                          {getConnectionLabel(conn)}
-                        </p>
-                      ) : null}
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {getConnectionLabel(conn) ? (
+                          <p className="text-xs text-text-muted truncate">
+                            {getConnectionLabel(conn)}
+                          </p>
+                        ) : null}
+                        {tierLabel && (
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                              tierLabel === "Pro"
+                                ? "bg-primary/10 text-primary dark:text-primary"
+                                : tierLabel === "Ultra"
+                                  ? "bg-green-500/10 text-green-600 dark:text-green-400"
+                                  : tierLabel === "Plus"
+                                    ? "bg-blue-500/10 text-blue-600 dark:text-blue-400"
+                                    : "bg-black/5 text-text-muted dark:bg-white/10"
+                            }`}
+                          >
+                            {tierLabel}
+                          </span>
+                        )}
+                      </div>
                       {getConnectionSecondaryLabel(conn) ? (
                         <p className="text-[11px] text-text-muted/80 truncate">
                           {getConnectionSecondaryLabel(conn)}
