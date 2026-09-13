@@ -24,9 +24,7 @@ export function SttExampleCard({ providerId }) {
   const [responseFormat, setResponseFormat] = useState("json");
   const [temperature, setTemperature] = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [useTunnel, setUseTunnel] = useState(false);
   const [localEndpoint, setLocalEndpoint] = useState("");
-  const [tunnelEndpoint, setTunnelEndpoint] = useState("");
   const [result, setResult] = useState(null);
   const [latency, setLatency] = useState(null);
   const [running, setRunning] = useState(false);
@@ -39,10 +37,6 @@ export function SttExampleCard({ providerId }) {
     fetch("/api/keys")
       .then((r) => r.json())
       .then((d) => { setApiKey((d.keys || []).find((k) => k.isActive !== false)?.key || ""); })
-      .catch(() => {});
-    fetch("/api/tunnel/status")
-      .then((r) => r.json())
-      .then((d) => { if (d.publicUrl) setTunnelEndpoint(d.publicUrl); })
       .catch(() => {});
     const loadCustom = () => {
       fetch("/api/models/custom", { cache: "no-store" })
@@ -62,7 +56,7 @@ export function SttExampleCard({ providerId }) {
     };
   }, [providerAlias]);
 
-  const endpoint = useTunnel ? tunnelEndpoint : localEndpoint;
+  const endpoint = localEndpoint;
   const modelFull = selectedModel ? `${providerAlias}/${selectedModel}` : "";
 
   const curlSnippet = `curl -X POST ${endpoint}/v1/audio/transcriptions \\
@@ -139,18 +133,6 @@ export function SttExampleCard({ providerId }) {
             <span className="w-full min-w-0 flex-1 px-3 py-1.5 text-sm font-mono text-text-main bg-sidebar rounded-lg truncate">
               {endpoint}/v1/audio/transcriptions
             </span>
-            {tunnelEndpoint && (
-              <button
-                onClick={() => setUseTunnel((v) => !v)}
-                title={useTunnel ? "Using tunnel" : "Using local"}
-                className={`flex items-center gap-1 text-xs px-2 py-1.5 rounded-lg border shrink-0 transition-colors ${
-                  useTunnel ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"
-                }`}
-              >
-                <span className="material-symbols-outlined text-[14px]">wifi_tethering</span>
-                Tunnel
-              </button>
-            )}
           </div>
         </Row>
 

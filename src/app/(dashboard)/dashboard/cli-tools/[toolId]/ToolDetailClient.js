@@ -20,20 +20,15 @@ export default function ToolDetailClient({ toolId, machineId }) {
   const [loading, setLoading] = useState(true);
   const [modelMappings, setModelMappings] = useState({});
   const [cloudEnabled, setCloudEnabled] = useState(false);
-  const [tunnelEnabled, setTunnelEnabled] = useState(false);
-  const [tunnelPublicUrl, setTunnelPublicUrl] = useState("");
-  const [tailscaleEnabled, setTailscaleEnabled] = useState(false);
-  const [tailscaleUrl, setTailscaleUrl] = useState("");
   const [apiKeys, setApiKeys] = useState([]);
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const [provRes, settingsRes, tunnelRes, keysRes] = await Promise.all([
+        const [provRes, settingsRes, keysRes] = await Promise.all([
           fetch("/api/providers"),
           fetch("/api/settings"),
-          fetch("/api/tunnel/status"),
           fetch("/api/keys"),
         ]);
         if (!mounted) return;
@@ -44,13 +39,6 @@ export default function ToolDetailClient({ toolId, machineId }) {
         if (settingsRes.ok) {
           const data = await settingsRes.json();
           setCloudEnabled(data.cloudEnabled || false);
-        }
-        if (tunnelRes.ok) {
-          const data = await tunnelRes.json();
-          setTunnelEnabled(!!(data.tunnel?.enabled || data.tunnel?.settingsEnabled));
-          setTunnelPublicUrl(data.tunnel?.publicUrl || "");
-          setTailscaleEnabled(!!(data.tailscale?.enabled || data.tailscale?.settingsEnabled));
-          setTailscaleUrl(data.tailscale?.tunnelUrl || "");
         }
         if (keysRes.ok) {
           const data = await keysRes.json();
@@ -120,7 +108,6 @@ export default function ToolDetailClient({ toolId, machineId }) {
   }, []);
 
   const getBaseUrl = () => {
-    if (tunnelEnabled && tunnelPublicUrl) return tunnelPublicUrl;
     if (cloudEnabled && CLOUD_URL) return CLOUD_URL;
     if (typeof window !== "undefined") return window.location.origin;
     return "http://localhost:20128";
@@ -135,10 +122,6 @@ export default function ToolDetailClient({ toolId, machineId }) {
       onToggle: () => {},
       baseUrl: getBaseUrl(),
       apiKeys,
-      tunnelEnabled,
-      tunnelPublicUrl,
-      tailscaleEnabled,
-      tailscaleUrl,
     };
 
     switch (toolId) {
@@ -149,7 +132,7 @@ export default function ToolDetailClient({ toolId, machineId }) {
       case "opencode":
         return <OpenCodeToolCard {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
       case "cowork":
-        return <CoworkToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} cloudUrl={CLOUD_URL} tunnelEnabled={tunnelEnabled} tunnelPublicUrl={tunnelPublicUrl} tailscaleEnabled={tailscaleEnabled} tailscaleUrl={tailscaleUrl} />;
+        return <CoworkToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} cloudUrl={CLOUD_URL} />;
       case "droid":
         return <DroidToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       case "openclaw":
@@ -167,7 +150,7 @@ export default function ToolDetailClient({ toolId, machineId }) {
       case "grok-build":
         return <GrokBuildToolCard {...commonProps} activeProviders={getActiveProviders()} hasActiveProviders={hasActiveProviders} cloudEnabled={cloudEnabled} />;
       default:
-        return <DefaultToolCard toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} tunnelEnabled={tunnelEnabled} />;
+        return <DefaultToolCard toolId={toolId} {...commonProps} activeProviders={getActiveProviders()} cloudEnabled={cloudEnabled} />;
     }
   };
 

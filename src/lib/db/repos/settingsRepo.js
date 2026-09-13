@@ -6,11 +6,6 @@ const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787"
 
 const DEFAULT_SETTINGS = {
   cloudEnabled: false,
-  tunnelEnabled: false,
-  tunnelUrl: "",
-  tunnelProvider: "cloudflare",
-  tailscaleEnabled: false,
-  tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
   quotaVisibility: {},
@@ -29,7 +24,6 @@ const DEFAULT_SETTINGS = {
   },
   requireLogin: true,
   requireApiKey: true,
-  tunnelDashboardAccess: true,
   authMode: "password",
   ssoType: "oidc",
   oidcIssuerUrl: "",

@@ -20,10 +20,6 @@ export default function DeepSeekTuiToolCard({
   activeProviders,
   cloudEnabled,
   initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
 }) {
   const [deepseekStatus, setDeepseekStatus] = useState(initialStatus || null);
   const [checking, setChecking] = useState(false);
@@ -44,7 +40,7 @@ export default function DeepSeekTuiToolCard({
     if (!deepseekStatus?.installed) return null;
     const openaiSection = deepseekStatus.settings?.["providers.openai"];
     if (!openaiSection?.base_url) return "not_configured";
-    if (matchKnownEndpoint(openaiSection.base_url, { tunnelPublicUrl, tailscaleUrl })) return "configured";
+    if (matchKnownEndpoint(openaiSection.base_url)) return "configured";
     return "other";
   };
 
@@ -132,7 +128,7 @@ export default function DeepSeekTuiToolCard({
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -264,10 +260,6 @@ model = "${selectedModel || "provider/model-id"}"
                     value={customBaseUrl || getEffectiveBaseUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                     currentUrl={currentBaseUrl}
                   />
                 </div>

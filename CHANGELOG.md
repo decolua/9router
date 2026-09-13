@@ -1,3 +1,8 @@
+# Unreleased
+
+## Breaking Changes
+- **Tunnel**: remove Cloudflare Tunnel and Tailscale Funnel remote-access features — the dashboard Endpoint page UI, `/api/tunnel` routes, CLI settings menu and tunnel commands, and the background watchdog/monitoring. The gateway is now local-only
+
 # v0.5.75 (2026-09-10)
 
 ## Features

@@ -9,14 +9,13 @@ const COLORS = {
   green: "\x1b[32m",
   red: "\x1b[31m",
   yellow: "\x1b[33m",
-  dim: "\x1b[2m",
-  cyan: "\x1b[36m"
+  dim: "\x1b[2m"
 };
 
 const DEFAULT_PASSWORD = "123456";
 
 /**
- * Show settings menu (tunnel + RTK + reset password)
+ * Show settings menu (RTK + reset password)
  * @param {Array<string>} breadcrumb - Breadcrumb path
  */
 async function showSettingsMenu(breadcrumb = []) {
@@ -25,16 +24,6 @@ async function showSettingsMenu(breadcrumb = []) {
     breadcrumb,
     headerContent: async (data) => {
       const lines = [];
-
-      // Tunnel section
-      const tunnel = data?.tunnel || {};
-      if (tunnel.enabled && tunnel.publicUrl) {
-        lines.push(`  Endpoint: ${COLORS.green}${tunnel.publicUrl}/v1${COLORS.reset}`);
-        lines.push(`  Tunnel:   ${COLORS.green}ON${COLORS.reset} ${COLORS.dim}(${tunnel.shortId})${COLORS.reset}`);
-      } else {
-        lines.push(`  Endpoint: http://localhost:20128/v1`);
-        lines.push(`  Tunnel:   ${COLORS.red}OFF${COLORS.reset} ${COLORS.dim}(local only)${COLORS.reset}`);
-      }
 
       // RTK section
       const rtkOn = data?.settings?.rtkEnabled !== false;
@@ -50,24 +39,12 @@ async function showSettingsMenu(breadcrumb = []) {
       return lines.join("\n");
     },
     refresh: async () => {
-      const [tunnelRes, settingsRes] = await Promise.all([
-        api.getTunnelStatus(),
-        api.getSettings()
-      ]);
+      const result = await api.getSettings();
       return {
-        tunnel: tunnelRes.success ? (tunnelRes.data || {}) : {},
-        settings: settingsRes.success ? (settingsRes.data || {}) : {}
+        settings: result.success ? (result.data || {}) : {}
       };
     },
     items: [
-      {
-        label: "Tunnel ON",
-        action: async () => { await enableTunnel(); return true; }
-      },
-      {
-        label: "Tunnel OFF",
-        action: async () => { await disableTunnel(); return true; }
-      },
       {
         label: (d) => {
           const on = d?.settings?.rtkEnabled !== false;
@@ -115,42 +92,6 @@ async function resetAuthMode() {
   } else {
     showStatus(`Failed: ${result.error}`, "error");
   }
-  await pause();
-}
-
-/**
- * Enable tunnel via API
- */
-async function enableTunnel() {
-  showStatus("Creating tunnel...", "info");
-  const result = await api.enableTunnel();
-
-  if (result.success) {
-    const { publicUrl, shortId, alreadyRunning } = result.data || {};
-    if (alreadyRunning) {
-      showStatus(`Tunnel already running: ${publicUrl}`, "success");
-    } else {
-      showStatus(`Tunnel enabled: ${publicUrl} (${shortId})`, "success");
-    }
-  } else {
-    showStatus(`Failed: ${result.error}`, "error");
-  }
-
-  await pause();
-}
-
-/**
- * Disable tunnel via API
- */
-async function disableTunnel() {
-  const result = await api.disableTunnel();
-
-  if (result.success) {
-    showStatus("Tunnel disabled", "success");
-  } else {
-    showStatus(`Failed: ${result.error}`, "error");
-  }
-
   await pause();
 }
 

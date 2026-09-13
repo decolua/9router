@@ -1,6 +1,6 @@
 import initializeApp from "./initializeApp.js";
 
-// Skip during Next.js build/prerender — bootstrap would download cloudflared, init DNS, etc.
+// Skip during Next.js build/prerender — bootstrap would init MITM, start schedulers, etc.
 const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build"
   || process.env.NEXT_PHASE === "phase-export"
   || process.env.NEXT_PHASE === "phase-static";

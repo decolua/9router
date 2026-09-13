@@ -62,8 +62,8 @@ function collectAppPids() {
       });
     } catch { /* no processes */ }
 
-    // Kill cloudflared + tray binaries (hold app dir lock)
-    for (const procName of ["cloudflared", "tray_windows_release"]) {
+    // Kill tray binary (holds app dir lock)
+    for (const procName of ["tray_windows_release"]) {
       try {
         const cmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-Process ${procName} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`;
         const out = execSync(cmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
@@ -79,7 +79,6 @@ function collectAppPids() {
       output.split("\n").forEach(line => {
         const isAppProcess = line.includes("9router") ||
           line.includes("next-server") ||
-          line.includes("cloudflared") ||
           line.includes("/bin/app/") ||
           line.includes("tray_darwin") ||
           line.includes("tray_linux");

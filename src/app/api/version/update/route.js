@@ -10,7 +10,7 @@ export async function POST() {
   }
 
   try {
-    // Kill sibling processes (cloudflared, MITM, stray next-server) to release file locks on Windows
+    // Kill sibling processes (MITM, stray next-server) to release file locks on Windows
     await killAppProcesses();
   } catch { /* best effort */ }
 

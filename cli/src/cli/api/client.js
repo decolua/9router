@@ -463,34 +463,6 @@ async function validateProviderNode(data) {
 }
 
 // ============================================================================
-// TUNNEL API
-// ============================================================================
-
-/**
- * Get tunnel status
- * @returns {Promise<Object>} { success, data: { enabled, tunnelUrl, shortId, running } }
- */
-async function getTunnelStatus() {
-  return makeRequest("GET", "/api/tunnel/status");
-}
-
-/**
- * Enable tunnel
- * @returns {Promise<Object>} { success, data: { tunnelUrl, shortId } }
- */
-async function enableTunnel() {
-  return makeRequest("POST", "/api/tunnel/enable");
-}
-
-/**
- * Disable tunnel
- * @returns {Promise<Object>} { success, data: { success } }
- */
-async function disableTunnel() {
-  return makeRequest("POST", "/api/tunnel/disable");
-}
-
-// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -537,12 +509,7 @@ module.exports = {
   getSettings,
   updateSettings,
   resetPassword,
-  
-  // Tunnel
-  getTunnelStatus,
-  enableTunnel,
-  disableTunnel,
-  
+
   // Models
   getModels,
   getAvailableModels,

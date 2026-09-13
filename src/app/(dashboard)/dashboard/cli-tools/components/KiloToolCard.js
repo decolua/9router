@@ -8,7 +8,7 @@ import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
-export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
+export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus }) {
   const [status, setStatus] = useState(initialStatus || null);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -90,7 +90,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -209,10 +209,6 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
                     value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                   />
                 </div>
 

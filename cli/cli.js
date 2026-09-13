@@ -192,71 +192,15 @@ function getAppDataDir() {
     : path.join(os.homedir(), ".9router");
 }
 
-// Kill PID from file (best-effort, removes file after)
-function killByPidFile(pidFile) {
-  try {
-    if (!fs.existsSync(pidFile)) return;
-    const pid = parseInt(fs.readFileSync(pidFile, "utf8").trim(), 10);
-    if (!pid) return;
-    try {
-      if (process.platform === "win32") {
-        execSync(`taskkill /F /T /PID ${pid}`, { stdio: "ignore", windowsHide: true, timeout: 3000 });
-      } else {
-        process.kill(pid, "SIGKILL");
-      }
-    } catch { }
-    try { fs.unlinkSync(pidFile); } catch { }
-  } catch { }
-}
-
-// Kill tunnel processes (cloudflared/tailscale) by their PID files
-function killTunnelByPidFile() {
-  const tunnelDir = path.join(getAppDataDir(), "tunnel");
-  killByPidFile(path.join(tunnelDir, "cloudflared.pid"));
-  killByPidFile(path.join(tunnelDir, "tailscale.pid"));
-}
-
-// Kill cloudflared whose --url targets this app's port (covers stale PID file case)
-function killCloudflaredByAppPort(appPort) {
-  if (!appPort) return [];
-  const portMatchers = [`localhost:${appPort}`, `127.0.0.1:${appPort}`];
-  const pids = [];
-  try {
-    if (process.platform === "win32") {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"cloudflared.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: 5000 });
-      const lines = output.split("\n").slice(1).filter(l => l.trim());
-      lines.forEach(line => {
-        if (portMatchers.some(m => line.includes(m))) {
-          const match = line.match(/^"(\d+)"/);
-          if (match && match[1]) pids.push(match[1]);
-        }
-      });
-    } else {
-      const output = execSync("ps -eo pid,command 2>/dev/null", { encoding: "utf8", timeout: 5000 });
-      output.split("\n").forEach(line => {
-        if (line.includes("cloudflared") && portMatchers.some(m => line.includes(m))) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[0];
-          if (pid && !isNaN(pid)) pids.push(pid);
-        }
-      });
-    }
-  } catch { }
-  return pids;
-}
-
 // Kill all 9router processes
-function killAllAppProcesses(appPort) {
+function killAllAppProcesses() {
   return new Promise((resolve) => {
     try {
-      // Background: MITM + tunnel/cloudflared run on separate ports/processes —
-      // killing them doesn't free the app port, so don't block the critical path.
+      // Background: MITM runs on a separate port/process — killing it doesn't
+      // free the app port, so don't block the critical path.
       // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
       setImmediate(() => {
         try { killProxyByPidFile(); } catch {}
-        try { killTunnelByPidFile(); } catch {}
-        try { killCloudflaredByAppPort(appPort); } catch {}
       });
 
       const platform = process.platform;
@@ -540,7 +484,7 @@ if (!fs.existsSync(serverPath)) {
 
 // Start server immediately; run update check in parallel (not on the critical path).
 const updatePromise = checkForUpdate();
-killAllAppProcesses(port)
+killAllAppProcesses()
   .then(() => killProcessOnPort(port))
   .then(() => startServer(updatePromise));
 
@@ -548,20 +492,11 @@ killAllAppProcesses(port)
 async function showInterfaceMenu(latestVersion) {
   const { selectMenu } = require("./src/cli/utils/input");
   const { clearScreen } = require("./src/cli/utils/display");
-  const { getEndpoint } = require("./src/cli/utils/endpoint");
 
   clearScreen();
 
   const displayHost = getDisplayHost();
-
-  // Detect tunnel/local mode for server URL display
-  let serverUrl;
-  try {
-    const { endpoint, tunnelEnabled } = await getEndpoint(port);
-    serverUrl = tunnelEnabled ? endpoint.replace(/\/v1$/, "") : `http://${displayHost}:${port}`;
-  } catch (e) {
-    serverUrl = `http://${displayHost}:${port}`;
-  }
+  const serverUrl = `http://${displayHost}:${port}`;
 
   const subtitle = `🚀 Server: \x1b[32m${serverUrl}\x1b[0m`;
 
@@ -648,8 +583,6 @@ function startServer(updatePromise) {
       } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
-      // Kill cloudflared/tailscale via PID file (only this app's tunnel)
-      killTunnelByPidFile();
       // Kill server process directly
       if (server.pid) {
         process.kill(server.pid, "SIGKILL");
@@ -743,7 +676,7 @@ function startServer(updatePromise) {
           console.log(`Run this after exit:\n`);
           console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
           cleanup();
-          await killAllAppProcesses(port);
+          await killAllAppProcesses();
           await killProcessOnPort(port);
           setTimeout(() => process.exit(0), 200);
           return;

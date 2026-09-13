@@ -76,11 +76,11 @@ export const upsertKeyPreset = apiKeys.upsert;
 export const deleteKeyPreset = apiKeys.remove;
 
 // Save an applied endpoint unless it exactly matches a built-in dropdown option
-export function rememberEndpoint(baseUrl, { tunnelPublicUrl, tailscaleUrl, cloudUrl } = {}) {
+export function rememberEndpoint(baseUrl, { cloudUrl } = {}) {
   const url = stripSlash(baseUrl);
   if (!url) return null;
 
-  const builtIns = [`http://127.0.0.1:${UPDATER_CONFIG.appPort}`, tunnelPublicUrl, tailscaleUrl, cloudUrl]
+  const builtIns = [`http://127.0.0.1:${UPDATER_CONFIG.appPort}`, cloudUrl]
     .filter(Boolean)
     .flatMap((u) => [stripSlash(u), `${stripSlash(u)}/v1`]);
   if (builtIns.includes(url)) return null;

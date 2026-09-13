@@ -7,7 +7,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Image from "next/image";
 import ApiKeySelect from "./ApiKeySelect";
 
-export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false, tunnelEnabled = false }) {
+export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders = [], cloudEnabled = false }) {
   const [copiedField, setCopiedField] = useState(null);
   const [showModelModal, setShowModelModal] = useState(false);
   const [modelValue, setModelValue] = useState("");
@@ -104,11 +104,11 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     return (
       <div className="flex flex-col gap-2 mb-4">
         {tool.notes.map((note, index) => {
-          // Skip cloudCheck note if tunnel or cloud is enabled
-          if (note.type === "cloudCheck" && (cloudEnabled || tunnelEnabled)) return null;
-          
+          // Skip cloudCheck note if cloud is enabled
+          if (note.type === "cloudCheck" && cloudEnabled) return null;
+
           const isWarning = note.type === "warning";
-          const isError = note.type === "cloudCheck" && !cloudEnabled && !tunnelEnabled;
+          const isError = note.type === "cloudCheck" && !cloudEnabled;
           
           let bgClass = "bg-blue-500/10 border-blue-500/30";
           let textClass = "text-blue-600 dark:text-blue-400";
@@ -139,7 +139,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
   };
 
   const canShowGuide = () => {
-    if (tool.requiresExternalUrl && !cloudEnabled && !tunnelEnabled) return false;
+    if (tool.requiresExternalUrl && !cloudEnabled) return false;
     if (tool.requiresCloud && !cloudEnabled) return false;
     return true;
   };

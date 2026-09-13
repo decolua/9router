@@ -8,7 +8,7 @@ import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { rememberEndpoint } from "./cliEndpointPresets";
 
-export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
+export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
   const [checkingCodex, setCheckingCodex] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -73,7 +73,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   const getConfigStatus = () => {
     if (!codexStatus?.installed) return null;
     if (!codexStatus.config) return "not_configured";
-    return matchKnownEndpoint(currentBaseUrl, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
+    return matchKnownEndpoint(currentBaseUrl) ? "configured" : "other";
   };
 
   const configStatus = getConfigStatus();
@@ -121,7 +121,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkCodexStatus();
       } else {
@@ -277,10 +277,6 @@ default_subagent_model = "${effectiveSubagentModel}"
                     value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                     currentUrl={currentBaseUrl}
                   />
                 </div>

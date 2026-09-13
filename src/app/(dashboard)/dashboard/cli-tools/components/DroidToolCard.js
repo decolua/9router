@@ -20,10 +20,6 @@ export default function DroidToolCard({
   activeProviders,
   cloudEnabled,
   initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
 }) {
   const [droidStatus, setDroidStatus] = useState(initialStatus || null);
   const [checkingDroid, setCheckingDroid] = useState(false);
@@ -47,7 +43,7 @@ export default function DroidToolCard({
     // Check for any 9Router model entry (support multi-model: custom:9Router-0, custom:9Router-1, ...)
     const currentConfig = droidStatus.settings?.customModels?.find(m => m.id?.startsWith("custom:9Router"));
     if (!currentConfig) return "not_configured";
-    return matchKnownEndpoint(currentConfig.baseUrl, { tunnelPublicUrl, tailscaleUrl, cloudUrl: cloudEnabled ? CLOUD_URL : null }) ? "configured" : "other";
+    return matchKnownEndpoint(currentConfig.baseUrl, { cloudUrl: cloudEnabled ? CLOUD_URL : null }) ? "configured" : "other";
   };
 
   const configStatus = getConfigStatus();
@@ -158,7 +154,7 @@ export default function DroidToolCard({
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkDroidStatus();
       } else {
@@ -300,10 +296,6 @@ export default function DroidToolCard({
                     value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                     currentUrl={currentBaseUrl}
                   />
                 </div>

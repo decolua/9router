@@ -32,10 +32,6 @@ export default function ClaudeToolCard({
   apiKeys,
   cloudEnabled,
   initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
 }) {
   const [claudeStatus, setClaudeStatus] = useState(initialStatus || null);
   const [checkingClaude, setCheckingClaude] = useState(false);
@@ -60,7 +56,7 @@ export default function ClaudeToolCard({
     if (!claudeStatus?.installed) return null;
     const currentUrl = claudeStatus.settings?.env?.ANTHROPIC_BASE_URL;
     if (!currentUrl) return "not_configured";
-    if (matchKnownEndpoint(currentUrl, { tunnelPublicUrl, tailscaleUrl, cloudUrl: cloudEnabled ? CLOUD_URL : null })) return "configured";
+    if (matchKnownEndpoint(currentUrl, { cloudUrl: cloudEnabled ? CLOUD_URL : null })) return "configured";
     return "other";
   };
 
@@ -193,7 +189,7 @@ export default function ClaudeToolCard({
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         setClaudeStatus(prev => ({ ...prev, hasBackup: true, settings: { ...prev?.settings, env }, exaMcpEnabled }));
       } else {
@@ -335,10 +331,6 @@ export default function ClaudeToolCard({
                     value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                     currentUrl={currentBaseUrl}
                   />
                 </div>

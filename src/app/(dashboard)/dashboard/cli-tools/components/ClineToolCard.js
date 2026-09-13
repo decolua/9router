@@ -8,7 +8,7 @@ import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
-export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
+export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus }) {
   const [status, setStatus] = useState(initialStatus || null);
   const [checking, setChecking] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -57,7 +57,7 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
     if (!status?.installed) return null;
     if (!status.has9Router) return "not_configured";
     const url = status.settings?.openAiBaseUrl || "";
-    return matchKnownEndpoint(url, { tunnelPublicUrl, tailscaleUrl }) ? "configured" : "other";
+    return matchKnownEndpoint(url) ? "configured" : "other";
   };
 
   const configStatus = getConfigStatus();
@@ -98,7 +98,7 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -227,10 +227,6 @@ export default function ClineToolCard({ tool, isExpanded, onToggle, baseUrl, api
                     value={customBaseUrl || getDisplayUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                     currentUrl={currentBaseUrl}
                   />
                 </div>

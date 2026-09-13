@@ -69,10 +69,6 @@ export default function GrokBuildToolCard({
   activeProviders,
   cloudEnabled,
   initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
 }) {
   const { getCaps } = useModelCaps();
   const getContextWindow = (model) => getCaps(model)?.contextWindow || null;
@@ -102,7 +98,7 @@ export default function GrokBuildToolCard({
     ? null
     : !configuredModel?.base_url
       ? "not_configured"
-      : matchKnownEndpoint(configuredModel.base_url, { tunnelPublicUrl, tailscaleUrl })
+      : matchKnownEndpoint(configuredModel.base_url)
         ? "configured"
         : "other";
 
@@ -187,7 +183,7 @@ export default function GrokBuildToolCard({
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Main and subagent models applied successfully!" });
         checkStatus();
       } else {
@@ -314,7 +310,7 @@ export default function GrokBuildToolCard({
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
-                  <BaseUrlSelect value={customBaseUrl || getEffectiveBaseUrl()} onChange={setCustomBaseUrl} requiresExternalUrl={tool.requiresExternalUrl} tunnelEnabled={tunnelEnabled} tunnelPublicUrl={tunnelPublicUrl} tailscaleEnabled={tailscaleEnabled} tailscaleUrl={tailscaleUrl} currentUrl={currentBaseUrl} />
+                  <BaseUrlSelect value={customBaseUrl || getEffectiveBaseUrl()} onChange={setCustomBaseUrl} requiresExternalUrl={tool.requiresExternalUrl} currentUrl={currentBaseUrl} />
                 </div>
 
                 {configuredModel?.base_url && (

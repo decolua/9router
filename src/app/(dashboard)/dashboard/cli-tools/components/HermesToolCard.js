@@ -20,10 +20,6 @@ export default function HermesToolCard({
   activeProviders,
   cloudEnabled,
   initialStatus,
-  tunnelEnabled,
-  tunnelPublicUrl,
-  tailscaleEnabled,
-  tailscaleUrl,
 }) {
   const [hermesStatus, setHermesStatus] = useState(initialStatus || null);
   const [checking, setChecking] = useState(false);
@@ -44,7 +40,7 @@ export default function HermesToolCard({
     if (!hermesStatus?.installed) return null;
     const cfg = hermesStatus.settings?.model;
     if (!cfg?.base_url) return "not_configured";
-    if (matchKnownEndpoint(cfg.base_url, { tunnelPublicUrl, tailscaleUrl })) return "configured";
+    if (matchKnownEndpoint(cfg.base_url)) return "configured";
     return "other";
   };
 
@@ -132,7 +128,7 @@ export default function HermesToolCard({
       const data = await res.json();
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
-        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
+        rememberEndpoint(getEffectiveBaseUrl());
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -243,10 +239,6 @@ export default function HermesToolCard({
                     value={customBaseUrl || getEffectiveBaseUrl()}
                     onChange={setCustomBaseUrl}
                     requiresExternalUrl={tool.requiresExternalUrl}
-                    tunnelEnabled={tunnelEnabled}
-                    tunnelPublicUrl={tunnelPublicUrl}
-                    tailscaleEnabled={tailscaleEnabled}
-                    tailscaleUrl={tailscaleUrl}
                     currentUrl={currentBaseUrl}
                   />
                 </div>
