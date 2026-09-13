@@ -294,6 +294,12 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
+const THINKING_USAGE_MODES = [
+  { value: "auto", label: "Auto — only when the request asks for thinking" },
+  { value: "always", label: "Always — synthesize for every request" },
+  { value: "off", label: "Off — never synthesize" },
+];
+
 function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
@@ -656,6 +662,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [models, setModels] = useState(combo?.models || []);
   const [systemPromptEnabled, setSystemPromptEnabled] = useState(!!combo?.systemPromptEnabled);
   const [systemPrompt, setSystemPrompt] = useState(combo?.systemPrompt || "");
+  const [thinkingUsageMode, setThinkingUsageMode] = useState(combo?.thinkingUsageMode || "auto");
+  // Percent strings; "" means "not set" → fixed 75% default (stored as null).
+  const [thinkingMinPct, setThinkingMinPct] = useState(combo?.thinkingUsageMinRatio != null ? String(Math.round(combo.thinkingUsageMinRatio * 100)) : "");
+  const [thinkingMaxPct, setThinkingMaxPct] = useState(combo?.thinkingUsageMaxRatio != null ? String(Math.round(combo.thinkingUsageMaxRatio * 100)) : "");
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -746,7 +756,23 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models, systemPromptEnabled, systemPrompt });
+    // Percent → 0..1 ratio; ""/invalid → null (fixed 75% default). Swap so
+    // min <= max regardless of the order the fields were filled in.
+    const pct = (s) => {
+      const n = Number(s);
+      return s !== "" && Number.isFinite(n) && n >= 0 && n <= 100 ? n / 100 : null;
+    };
+    let minRatio = pct(thinkingMinPct);
+    let maxRatio = pct(thinkingMaxPct);
+    if (minRatio !== null && maxRatio !== null && minRatio > maxRatio) {
+      [minRatio, maxRatio] = [maxRatio, minRatio];
+    }
+    await onSave({
+      name: name.trim(), models, systemPromptEnabled, systemPrompt,
+      thinkingUsageMode,
+      thinkingUsageMinRatio: minRatio,
+      thinkingUsageMaxRatio: maxRatio,
+    });
     setSaving(false);
   };
 
@@ -841,6 +867,42 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                 />
                 <p className="text-[10px] text-text-muted mt-0.5">
                   Injected before your system prompt on every request; stripped from responses if a model leaks it.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Simulated thinking usage */}
+          <div className="pt-1 border-t border-black/5 dark:border-white/5">
+            <Select
+              label="Simulated thinking usage"
+              options={THINKING_USAGE_MODES}
+              value={thinkingUsageMode}
+              onChange={(e) => setThinkingUsageMode(e.target.value)}
+              hint="Add a reasoning-token count to usage when the routed model thinks without reporting one. Always/Off override the client's per-request thinking signal."
+            />
+            {thinkingUsageMode !== "off" && (
+              <div className="mt-2 grid grid-cols-2 gap-2">
+                <Input
+                  label="Min (%)"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={thinkingMinPct}
+                  onChange={(e) => setThinkingMinPct(e.target.value)}
+                  placeholder="75"
+                />
+                <Input
+                  label="Max (%)"
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={thinkingMaxPct}
+                  onChange={(e) => setThinkingMaxPct(e.target.value)}
+                  placeholder="75"
+                />
+                <p className="col-span-2 text-[10px] text-text-muted">
+                  Share of output tokens attributed to thinking — drawn randomly in [min, max] once per request. Leave both empty for a fixed 75%. Upstream-reported reasoning counts are never overridden.
                 </p>
               </div>
             )}
