@@ -23,11 +23,32 @@ const navItems = [
   // { href: "/dashboard/basic-chat", label: "Basic Chat", icon: "chat" }, // Hidden
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
+  { href: "/dashboard/statistics", label: "Statistics", icon: "insights" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
+  { href: "/dashboard/claude-compat", label: "Claude Compat", icon: "smart_toy" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
 ];
+
+// Entries hideable via Settings → Claude Code Minimal Mode. Persisted as
+// settings.hiddenNavItems (array of ids); missing/empty = show everything.
+export const HIDEABLE_NAV_ITEMS = [
+  { id: "combos", label: "Combo & Vision Adapter", href: "/dashboard/combos" },
+  { id: "usage", label: "Usage", href: "/dashboard/usage" },
+  { id: "quota", label: "Quota Tracker", href: "/dashboard/quota" },
+  { id: "tokenSaver", label: "Token Saver", href: "/dashboard/token-saver" },
+  { id: "cliTools", label: "CLI Tools", href: "/dashboard/cli-tools" },
+  { id: "mediaProviders", label: "Media Providers" },
+  { id: "proxyPools", label: "Proxy Pools", href: "/dashboard/proxy-pools" },
+  { id: "skills", label: "Skills", href: "/dashboard/skills" },
+  { id: "nineRemote", label: "9Remote" },
+  { id: "nineEnglish", label: "9English" },
+];
+
+const NAV_ID_BY_HREF = Object.fromEntries(
+  HIDEABLE_NAV_ITEMS.filter((i) => i.href).map((i) => [i.href, i.id]),
+);
 
 const debugItems = [
   { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
@@ -37,6 +58,7 @@ const debugItems = [
 const systemItems = [
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
+  { href: "/dashboard/model-context", label: "Model Context", icon: "memory" },
 ];
 
 export default function Sidebar({ onClose }) {
@@ -49,15 +71,23 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [hiddenNav, setHiddenNav] = useState(new Set());
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
-    fetch("/api/settings")
+    const load = () => fetch("/api/settings")
       .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
+      .then(data => {
+        if (data.enableTranslator) setEnableTranslator(true);
+        if (Array.isArray(data.hiddenNavItems)) setHiddenNav(new Set(data.hiddenNavItems));
+      })
       .catch(() => {});
+    load();
+    // Settings 页编辑 hiddenNavItems 后即时刷新侧栏
+    window.addEventListener("hidden-nav-changed", load);
+    return () => window.removeEventListener("hidden-nav-changed", load);
   }, []);
 
   // Lazy check for new npm version on mount
@@ -74,6 +104,9 @@ export default function Sidebar({ onClose }) {
     }
     return pathname.startsWith(href);
   };
+
+  // Minimal-mode filter: drop nav entries whose id is in settings.hiddenNavItems.
+  const isNavHidden = (id) => hiddenNav.has(id);
 
   // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
   const handleUpdate = () => {
@@ -158,7 +191,7 @@ export default function Sidebar({ onClose }) {
 
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
-          {navItems.map((item) => (
+          {navItems.filter((item) => !isNavHidden(NAV_ID_BY_HREF[item.href])).map((item) => (
             <Link
               key={item.href}
               href={item.href}
@@ -189,6 +222,8 @@ export default function Sidebar({ onClose }) {
             </p>
 
             {/* Media Providers accordion */}
+            {!isNavHidden("mediaProviders") && (
+              <>
             <button
               onClick={() => setMediaOpen((v) => !v)}
               className={cn(
@@ -238,8 +273,10 @@ export default function Sidebar({ onClose }) {
                 </Link>
               </div>
             )}
+              </>
+            )}
 
-            {systemItems.map((item) => (
+            {systemItems.filter((item) => !isNavHidden(NAV_ID_BY_HREF[item.href])).map((item) => (
               <Link
                 key={item.href}
                 href={item.href}
@@ -292,6 +329,7 @@ export default function Sidebar({ onClose }) {
             })}
 
             {/* Remote */}
+            {!isNavHidden("nineRemote") && (
             <button
               onClick={() => setShowRemoteModal(true)}
               className={cn(
@@ -304,8 +342,10 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">9Remote</span>
             </button>
+            )}
 
             {/* 9English */}
+            {!isNavHidden("nineEnglish") && (
             <a
               href="https://9english.net/"
               target="_blank"
@@ -321,6 +361,7 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">9English</span>
             </a>
+            )}
 
             {/* Settings */}
             <Link

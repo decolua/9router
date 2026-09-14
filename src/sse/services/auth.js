@@ -77,6 +77,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
+    // Filter out model-locked and excluded connections.
+    // ignoreModelLockConnId: a same-account retry must still reach the just-
+    // failed connection (its transient model-lock would otherwise force a
+    // switch), so skip the lock check for that one connection only.
+    const ignoreLockConn = options?.ignoreModelLockConnId || null;
+
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
@@ -84,6 +90,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
+      if (c.id === ignoreLockConn) return true;
       if (isModelLockActive(c, model)) return false;
       // Antigravity: skip if live quota exhausted for this model
       if (isAntigravity && model && antigravityQuotaCache) {

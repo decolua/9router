@@ -6,6 +6,7 @@ import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 // Module cache: one /api/models fetch shared by every useModelCaps instance.
 let cache = null; // { byFull, byId } | null
 let inflight = null;
+let gen = 0; // bumped on invalidate so a late in-flight response can't repopulate stale cache
 
 function buildMaps(models) {
   const byFull = {};
@@ -22,12 +23,14 @@ function buildMaps(models) {
 function loadModelCaps() {
   if (cache) return Promise.resolve(cache);
   if (inflight) return inflight;
+  const myGen = gen;
   inflight = fetch("/api/models")
     .then(async (res) => {
       if (!res.ok) throw new Error(`models ${res.status}`);
       const data = await res.json();
-      cache = buildMaps(data.models);
-      return cache;
+      const maps = buildMaps(data.models);
+      if (myGen === gen) cache = maps;
+      return maps;
     })
     .catch(() => {
       // Keep null so a later mount can retry
@@ -35,6 +38,13 @@ function loadModelCaps() {
     })
     .finally(() => { inflight = null; });
   return inflight;
+}
+
+// Drop the shared cache (e.g. after a context-window override changes
+// server-side caps). The next useModelCaps mount refetches /api/models.
+export function invalidateModelCaps() {
+  cache = null;
+  gen++;
 }
 
 // Resolve caps from a "provider/model" string or a bare model id.
@@ -60,18 +70,20 @@ export function useModelCaps() {
 
   useEffect(() => {
     let alive = true;
-    const sync = (maps) => {
+    const apply = (maps) => {
       if (alive) { setByFull(maps.byFull); setById(maps.byId); }
     };
+    // Deferred one tick: keeps the setState out of the effect's synchronous
+    // body (react-hooks/set-state-in-effect) — same pattern as providers page.
+    const deferred = (maps) => { const t = setTimeout(() => apply(maps), 0); return () => clearTimeout(t); };
     if (cache) {
-      sync(cache);
-    } else {
-      loadModelCaps().then(sync);
+      return deferred(cache);
     }
+    loadModelCaps().then(apply);
     // Custom models change at runtime — drop the shared cache and refetch
     const invalidate = () => {
       cache = null;
-      loadModelCaps().then(sync);
+      loadModelCaps().then(apply);
     };
     window.addEventListener("customModelChanged", invalidate);
     return () => {
