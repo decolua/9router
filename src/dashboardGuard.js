@@ -56,6 +56,7 @@ const PROTECTED_API_PATHS = [
   "/api/proxy-pools",
   "/api/combos",
   "/api/models",
+ "/api/model-editor",
   "/api/usage",
   "/api/oauth",
   "/api/cloud",
@@ -149,12 +150,16 @@ function extractApiKey(request) {
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  const valid = await validateApiKey(apiKey);
+  // A validator reason string still lets the request reach its handler, which answers
+  // with the precise status, except for a key the owner switched off.
+  return valid === true || (typeof valid === "string" && valid !== "KEY_DISABLED");
 }
 
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
+  if (await hasValidToken(request)) return true;
   return await hasValidApiKey(request);
 }
 

@@ -35,7 +35,7 @@ export const UPDATER_CONFIG = {
 // Theme configuration
 export const THEME_CONFIG = {
   storageKey: "theme",
-  defaultTheme: "system", // "light" | "dark" | "system"
+  defaultTheme: "dark", // "light" | "dark" | "system"
 };
 
 // Subscription
@@ -90,6 +90,14 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingReasoningEffort: "none",
     },
   },
+};
+
+// Telegram auto-backup: send the full DB export (same payload as the manual
+// Download Backup) to the owner chat on an interval.
+export const AUTO_BACKUP_CONFIG = {
+  minIntervalHours: 1, // refuse schedules tighter than hourly
+  retryDelayMs: 1800000, // retry after a failed send (30min)
+  maxBytes: 45 * 1024 * 1024, // Telegram bot upload cap is 50MB. stay under it
 };
 
 // Re-export from providers.js for backward compatibility

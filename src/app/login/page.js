@@ -251,13 +251,8 @@ export default function LoginPage() {
                 </Button>
 
                 <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                  Default password is <code className="bg-sidebar px-1 rounded">seren123</code>
                 </p>
-                {hasPassword === false && (
-                  <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                    Security risk: no password set. You will be asked to set one when logging in remotely.
-                  </p>
-                )}
               </form>
             ) : (
               error && <p className="text-xs text-red-500">{error}</p>

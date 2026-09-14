@@ -53,19 +53,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   const { copied, copy } = useCopyToClipboard();
 
   // State for client-only values to avoid hydration mismatch
-  const [isLocalhost, setIsLocalhost] = useState(false);
-  const [placeholderUrl, setPlaceholderUrl] = useState("/callback?code=...");
+  const [isLocalhost] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  });
+  const [placeholderUrl] = useState(() => {
+    if (typeof window === "undefined") return "/callback?code=...";
+    return `${window.location.origin}/callback?code=...`;
+  });
   const callbackProcessedRef = useRef(false);
-
-  // Detect if running on localhost (client-side only)
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
-      );
-      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
-    }
-  }, []);
 
   // Define all useCallback hooks BEFORE the useEffects that reference them
 
@@ -298,8 +294,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         redirectUri = "http://localhost:1455/auth/callback";
       } else if (provider === "xai") {
         redirectUri = "http://127.0.0.1:56121/callback";
+ } else if (provider === "antigravity" || provider === "gemini-cli") {
+ // Google Client ID is registered only with localhost redirect_uri
+ redirectUri = `http://localhost:${appPort}/callback`;
       } else {
-        redirectUri = `http://localhost:${appPort}/callback`;
+        redirectUri = `${window.location.origin}/callback`;
       }
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
@@ -380,12 +379,12 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         if (!popupRef.current) {
           setStep("input");
         }
-      } else if (!isLocalhost || provider === "codex" || provider === "xai") {
-        // Non-localhost or proxy failed: manual input mode
+      } else if (!isLocalhost && (provider === "antigravity" || provider === "gemini-cli")) {
+        // Remote host with Google OAuth (Antigravity/Gemini): show manual copy-paste instructions
         setStep("input");
         window.open(data.authUrl, "_blank");
       } else {
-        // Localhost (non-Codex/xAI): Open popup and wait for message
+        // Localhost (or standard providers): Open popup and wait for message
         setStep("waiting");
         popupRef.current = window.open(data.authUrl, "oauth_popup", "width=600,height=700");
         if (!popupRef.current) {
@@ -713,7 +712,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 {step === "input" && (
                   <div className="space-y-3">
                     <p className="text-sm text-text-muted">
-                      Popup was blocked. After authorizing in the browser, paste the full callback URL here:
+                      The popup was blocked, so authorize in your browser and paste the full callback URL here:
                     </p>
                     <Input
                       value={callbackUrl}

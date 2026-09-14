@@ -5,7 +5,8 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getStudioModels } from "@/lib/localDb";
+import { getAllowedModelsOfKey, matchesAllowedModels } from "@/lib/db/repos/apiKeysRepo.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -247,15 +248,25 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+/** The caller's API key, from either header; empty when the request carries none. */
+function readCallerApiKey(request) {
+ const auth = String(request?.headers?.get("authorization") || "");
+ const bearer = auth.match(/^Bearer\s+(.+)$/i);
+ return (bearer?.[1] || request?.headers?.get("x-api-key") || "").trim() || null;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
 export async function buildModelsList(kindFilter, options = {}) {
-  // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
-  // cross-instance recursive loops.
-  const skipDynamicFetch = options.skipDynamicFetch === true;
+ // A restricted API key only ever sees the models it may actually call, so the
+ // listing can never promise a model the request gate would refuse.
+ const callerPatterns = await getAllowedModelsOfKey(readCallerApiKey(options.request));
+ // When this header is present, the /v1/models request came from another
+ // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
+ // cross-instance recursive loops.
+ const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
   try {
     connections = await getProviderConnections();
@@ -285,7 +296,17 @@ export async function buildModelsList(kindFilter, options = {}) {
     console.log("Could not fetch model aliases");
   }
 
-  let disabledByAlias = {};
+  
+  let studioModels = [];
+  try {
+    studioModels = await getStudioModels();
+  } catch (e) {
+    console.log("Could not fetch model studio models");
+  }
+  // Studio names are records of their own now; a leftover alias carrying one would
+  // list the same model twice under two different names.
+  const studioNames = new Set(studioModels.map((s) => String(s.callName).toLowerCase()));
+ let disabledByAlias = {};
   try {
     disabledByAlias = await getDisabledModels();
   } catch (e) {
@@ -313,6 +334,23 @@ export async function buildModelsList(kindFilter, options = {}) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     }
+    models.push(entry);
+  }
+  
+  // Custom model (studio) names are user-defined callable IDs (alias + per-model overrides).
+  for (const studio of studioModels) {
+    if (!kindFilter.includes(LLM_KIND)) continue;
+    const entry = {
+      id: studio.callName,
+      object: "model",
+      owned_by: "model-studio",
+      resolved_model: studio.targetModel,
+    };
+    const caps = getCapabilitiesForModel(studio.provider, studio.model);
+    if (caps) entry.capabilities = caps;
+    const contextWindow = Number(studio.contextWindow) || caps?.contextWindow;
+    if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
+    if (Number.isFinite(caps?.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
     models.push(entry);
   }
 
@@ -447,7 +485,9 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => modelId !== "");
 
-      const aliasModelIds = Object.values(modelAliases || {})
+      const aliasModelIds = Object.entries(modelAliases || {})
+ .filter(([aliasName]) => !studioNames.has(String(aliasName).toLowerCase()))
+ .map(([, fullModel]) => fullModel)
         .filter((fullModel) => {
           if (typeof fullModel !== "string" || !fullModel.includes("/")) return false;
           return (
@@ -548,7 +588,9 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
-  return dedupedModels;
+  // Same patterns the request gate applies: an unrestricted key still sees everything.
+ if (!callerPatterns) return dedupedModels;
+ return dedupedModels.filter((model) => matchesAllowedModels(callerPatterns, model.id));
 }
 
 /**
@@ -572,7 +614,7 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, request });
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

@@ -14,7 +14,7 @@ export default function Footer() {
               <h3 className="text-white text-lg font-bold">9Router</h3>
             </div>
             <p className="text-gray-500 text-sm max-w-xs mb-6">
-              The unified endpoint for AI generation. Connect, route, and manage your AI providers with ease.
+              Connect, route, and manage your AI providers from one endpoint.
             </p>
             <div className="flex gap-4">
               <a className="text-gray-400 hover:text-white transition-colors" href="https://github.com/decolua/9router" target="_blank" rel="noopener noreferrer">

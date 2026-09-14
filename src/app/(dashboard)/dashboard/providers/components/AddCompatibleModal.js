@@ -27,6 +27,17 @@ const VARIANT_CONFIG = {
     errorLabel: "Anthropic Compatible",
     hasApiType: false,
   },
+  moonshot: {
+    title: "Add MoonshotAI Compatible",
+    type: "openai-compatible",
+    defaultBaseUrl: "https://api.moonshot.ai/v1",
+    namePlaceholder: "MoonshotAI Compatible (Prod)",
+    prefixPlaceholder: "mk-prod",
+    baseUrlHint: "Use the base URL (ending in /v1) for your MoonshotAI (Kimi) OpenAI-compatible API. Docs: platform.kimi.ai",
+    modelIdPlaceholder: "e.g. kimi-k2.6, moonshot-v1-8k",
+    errorLabel: "MoonshotAI Compatible",
+    hasApiType: true,
+  },
 };
 
 const API_TYPE_OPTIONS = [
@@ -74,6 +85,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          brand: variant || undefined,
         }),
       });
       const data = await res.json();
@@ -141,14 +153,14 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder={config.namePlaceholder}
-          hint="Required. A friendly label for this node."
+          hint="A friendly label for this node"
         />
         <Input
           label="Prefix"
           value={formData.prefix}
           onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
           placeholder={config.prefixPlaceholder}
-          hint="Required. Used as the provider prefix for model IDs."
+          hint="The provider prefix used in model IDs"
         />
         {config.hasApiType && (
           <Select
@@ -212,7 +224,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
 }
 
 AddCompatibleModal.propTypes = {
-  variant: PropTypes.oneOf(["openai", "anthropic"]).isRequired,
+  variant: PropTypes.oneOf(["openai", "anthropic", "moonshot"]).isRequired,
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onCreated: PropTypes.func.isRequired,

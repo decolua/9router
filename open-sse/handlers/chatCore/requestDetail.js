@@ -67,7 +67,7 @@ export function extractUsageFromResponse(responseBody) {
 export function buildRequestDetail(base, overrides = {}) {
   return {
     provider: base.provider || "unknown",
-    model: base.model || "unknown",
+    model: base.requestedModel || base.model || "unknown",
     connectionId: base.connectionId || undefined,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
@@ -76,7 +76,8 @@ export function buildRequestDetail(base, overrides = {}) {
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,
     response: base.response || {},
-    pxpipe: base.pxpipe || undefined,
+    resolvedModel: base.requestedModel && base.requestedModel !== base.model ? base.model : undefined,
+ pxpipe: base.pxpipe || undefined,
     status: base.status || "success",
     ...overrides
   };
@@ -100,7 +101,7 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false, requestedModel }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -124,6 +125,7 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
   saveRequestUsage({
     provider: provider || "unknown",
     model: model || "unknown",
+ requestedModel,
     tokens: normalized,
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,

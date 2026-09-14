@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { killAppProcesses } from "@/lib/appUpdater";
+import { closeDb } from "@/lib/db/driver";
 
 // Shutdown app to release file locks for manual update
 export async function POST() {
+  try {
+    await closeDb();
+  } catch { /* best effort */ }
+
   try {
     await killAppProcesses();
   } catch { /* best effort */ }

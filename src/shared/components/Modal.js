@@ -30,7 +30,9 @@ export default function Modal({
     } else {
       document.body.style.overflow = "";
     }
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+        className="absolute inset-0 bg-black/55 backdrop-blur-[3px] fade-in"
         onClick={closeOnOverlay ? onClose : undefined}
       />
 
@@ -57,7 +59,7 @@ export default function Modal({
           "relative w-full bg-surface",
           "border border-border-subtle",
           "rounded-[14px] shadow-[var(--shadow-elev)]",
-          "fade-in",
+          "modal-in",
           sizes[size],
           className
         )}
@@ -84,7 +86,7 @@ export default function Modal({
                 </div>
               )}
               {title && (
-                <h2 className="text-lg font-semibold text-text-main">{title}</h2>
+                <h2 className="text-lg font-semibold text-text-main truncate min-w-0">{title}</h2>
               )}
             </div>
             {/* X button — mobile only */}

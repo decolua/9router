@@ -83,14 +83,14 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder={`${isAnthropic ? "Anthropic" : "OpenAI"} Compatible (Prod)`}
-          hint="Required. A friendly label for this node."
+          hint="A friendly label for this node"
         />
         <Input
           label="Prefix"
           value={formData.prefix}
           onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
           placeholder={isAnthropic ? "ac-prod" : "oc-prod"}
-          hint="Required. Used as the provider prefix for model IDs."
+          hint="The provider prefix used in model IDs"
         />
         {!isAnthropic && (
           <Select

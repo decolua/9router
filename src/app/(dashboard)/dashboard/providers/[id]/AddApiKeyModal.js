@@ -268,7 +268,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {isXaiApiKey && (
           <p className="text-xs text-text-muted">
-            Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
+            Use a direct xAI API key from console.x.ai instead of Grok Build OAuth.
           </p>
         )}
         {isCookie && authHint && (
@@ -315,7 +315,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {isCompatible && (
           <p className="text-xs text-text-muted">
-            Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
+            Enter the model ID exactly as your endpoint expects it and it becomes the connection default.
           </p>
         )}
         {isCloudflareAi && (
@@ -384,7 +384,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
         {(proxyPools || []).length === 0 && (
           <p className="text-xs text-text-muted">
-            No active proxy pools available. Create one in Proxy Pools page first.
+            Create an active proxy pool in the Proxy Pools page first.
           </p>
         )}
 

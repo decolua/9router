@@ -97,6 +97,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+   const [studioModels, setStudioModels] = useState([]);
   // Cursor and Cline expose the usable catalog per account, so the static catalog is
   // kept only as a fallback: it goes stale quickly and entitlements differ per account.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
@@ -179,6 +180,22 @@ export default function ModelSelectModal({
 
   useEffect(() => {
     if (isOpen) fetchDisabledModels();
+  }, [isOpen]);
+
+  const fetchStudioModels = async () => {
+    try {
+      const res = await fetch("/api/model-editor");
+      if (!res.ok) throw new Error(`Failed to fetch studio models: ${res.status}`);
+      const data = await res.json();
+      setStudioModels(data.models || []);
+    } catch (error) {
+      console.error("Error fetching model studio models:", error);
+      setStudioModels([]);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchStudioModels();
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
@@ -430,6 +447,18 @@ export default function ModelSelectModal({
     return combos.filter(c => c.name.toLowerCase().includes(query));
   }, [combos, searchQuery, kindFilter]);
 
+  // Studio models are LLM-only user-defined names, so they hide for typed kinds.
+  const filteredStudioModels = useMemo(() => {
+    if (kindFilter || capFilter) return [];
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return studioModels;
+    return studioModels.filter((m) =>
+      m.callName.toLowerCase().includes(query) ||
+      (m.displayName || "").toLowerCase().includes(query) ||
+      m.targetModel.toLowerCase().includes(query)
+    );
+  }, [studioModels, searchQuery, kindFilter, capFilter]);
+
   // Sort models alphabetically, with added models floated to top
   const sortModels = (models) => {
     const added = models.filter(m => addedModelValues.includes(m.value)).sort((a, b) => a.name.localeCompare(b.name));
@@ -498,7 +527,7 @@ export default function ModelSelectModal({
       {/* Info bar */}
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
-        <span>Click to add, click again to remove. Changes are saved automatically.</span>
+        <span>Click a model to add it, click again to remove it, and the change is saved automatically.</span>
       </div>
 
       {/* Search - compact */}
@@ -548,6 +577,44 @@ export default function ModelSelectModal({
                       <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                     )}
                     {combo.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Custom model section */}
+        {filteredStudioModels.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+              <span className="material-symbols-outlined size-[14px] text-[14px] leading-none text-primary">auto_awesome</span>
+              <span className="text-xs font-medium leading-none text-primary">Custom Models</span>
+              <span className="text-[10px] text-text-muted">({filteredStudioModels.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {filteredStudioModels.map((studio) => {
+                const isSelected = selectedModel === studio.callName;
+                return (
+                  <button
+                    key={studio.callName}
+                    onClick={() => handleSelect({ id: studio.callName, name: studio.displayName || studio.callName, value: studio.callName })}
+                    title={`Calls ${studio.targetLabel || studio.targetModel}`}
+                    className={`
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
+                      ${isSelected
+                        ? "bg-primary text-white border-primary"
+                        : addedModelValues.includes(studio.callName)
+                          ? "bg-primary border-primary text-white hover:bg-primary-hover"
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      }
+                    `}
+                  >
+                    {addedModelValues.includes(studio.callName) && (
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                    )}
+                    {studio.callName}
+                    <span className="text-[9px] opacity-60 font-normal">custom</span>
                   </button>
                 );
               })}
