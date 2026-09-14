@@ -118,25 +118,73 @@ function normalizeString(value) {
 }
 
 /**
- * Resolve real IP using Google DNS (bypass system DNS)
+ * Resolve real IP using system DNS, DoH, or Google DNS fallback
  */
 async function resolveRealIP(hostname) {
   const cached = DNS_CACHE.get(hostname);
   if (cached && Date.now() < cached.expiry) return cached.ip;
 
+  // 1. Fast check: see if system DNS is already a valid non-loopback IP
   try {
     const dns = await import("dns");
     const { promisify } = await import("util");
+    const lookup = promisify(dns.lookup);
+    const { address } = await lookup(hostname, { family: 4 });
+    if (address && !address.startsWith("127.") && address !== "0.0.0.0") {
+      DNS_CACHE.set(hostname, { ip: address, expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
+      return address;
+    }
+  } catch (_) {}
+
+  // 2. System DNS is spoofed or unreachable -> query DNS-over-HTTPS (DoH) via port 443 HTTPS
+  const dohEndpoints = [
+    `https://1.1.1.1/dns-query?name=${encodeURIComponent(hostname)}`,
+    `https://dns.google/resolve?name=${encodeURIComponent(hostname)}`
+  ];
+  for (const dohUrl of dohEndpoints) {
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 3000);
+      const res = await originalFetch(dohUrl, {
+        headers: { accept: "application/dns-json" },
+        signal: ctrl.signal
+      });
+      clearTimeout(tid);
+      if (res.ok) {
+        const data = await res.json();
+        const ip = data.Answer?.find(a => a.type === 1)?.data;
+        if (ip) {
+          DNS_CACHE.set(hostname, { ip, expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
+          return ip;
+        }
+      }
+    } catch (_) {}
+  }
+
+  // 3. Fallback: UDP resolver with strict 2-second timeout to avoid stalling callers
+  try {
+    const dns = await import("dns");
     const resolver = new dns.Resolver();
     resolver.setServers(GOOGLE_DNS_SERVERS);
-    const resolve4 = promisify(resolver.resolve4.bind(resolver));
-    const addresses = await resolve4(hostname);
-    DNS_CACHE.set(hostname, { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
-    return addresses[0];
+    const addresses = await new Promise((resolve, reject) => {
+      const tid = setTimeout(() => {
+        try { resolver.cancel(); } catch (_) {}
+        reject(new Error("queryA ETIMEOUT"));
+      }, 2000);
+      resolver.resolve4(hostname, (err, addrs) => {
+        clearTimeout(tid);
+        if (err) reject(err); else resolve(addrs);
+      });
+    });
+    if (addresses?.[0]) {
+      DNS_CACHE.set(hostname, { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
+      return addresses[0];
+    }
   } catch (error) {
     console.warn(`[ProxyFetch] DNS resolve failed for ${hostname}:`, error.message);
-    return null;
   }
+
+  return null;
 }
 
 /**
@@ -324,11 +372,19 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
       }
     }
-    // No proxy — manually resolve real IP to bypass DNS spoof
+    // No proxy — check if system DNS is spoofed to loopback, and bypass if needed
     try {
       const parsedUrl = new URL(targetUrl);
-      const realIP = await resolveRealIP(parsedUrl.hostname);
-      if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
+      const dns = await import("dns");
+      const { promisify } = await import("util");
+      const lookup = promisify(dns.lookup);
+      const sysLookup = await lookup(parsedUrl.hostname, { family: 4 }).catch(() => null);
+      const isLoopback = sysLookup?.address && (sysLookup.address.startsWith("127.") || sysLookup.address === "0.0.0.0");
+
+      if (isLoopback) {
+        const realIP = await resolveRealIP(parsedUrl.hostname);
+        if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
+      }
     } catch (error) {
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
