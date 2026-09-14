@@ -301,6 +301,15 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gpt-3.5*",       caps: { contextWindow: 16385, maxOutput: 4096 } },
   { pattern: "*gpt-oss*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
 
+  // ── Cline free tier (Upstage Solar Pro, LongCat) ─────────────────
+  // Declared BEFORE the o-series catch-alls: "solar-pro4" contains "o4", and
+  // resolution is first-match-wins, so these would otherwise inherit the
+  // o-series vision flag and a 100k output ceiling. Solar Pro 4 takes no
+  // image input — the upstream rejects it with "No endpoints found that
+  // support image input" — and both cap out far below 100k.
+  { pattern: "*solar-pro*",     caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
+  { pattern: "*longcat*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 32000 } },
+
   // ── OpenAI o-series (reasoning, vision) ──────────────────────────
   { pattern: "*o1-mini*",       caps: { reasoning: true, thinkingFormat: "openai", contextWindow: 128000 } },
   { pattern: "*o1*",            caps: { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 100000 } },

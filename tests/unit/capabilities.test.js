@@ -73,4 +73,37 @@ describe("getCapabilitiesForModel", () => {
       maxOutput: 128000,
     });
   });
+
+  // Regression: "solar-pro4" contains "o4", and PATTERN_CAPABILITIES resolves
+  // first-match-wins. Before the Cline patterns were declared ahead of the
+  // o-series catch-alls, Solar Pro 4 inherited the o-series vision flag and a
+  // 100k output ceiling, so the router advertised image input for a model whose
+  // upstream answers with "No endpoints found that support image input".
+  it("does not let the o-series catch-alls capture Cline Solar Pro 4", () => {
+    for (const model of ["solar-pro4", "upstage/solar-pro4", "cline-free/solar-pro4"]) {
+      const caps = getCapabilitiesForModel("cline", model);
+      expect(caps.vision).toBe(false);
+      expect(caps.maxOutput).toBe(32000);
+      expect(caps.contextWindow).toBe(200000);
+      expect(caps.reasoning).toBe(true);
+    }
+  });
+
+  it("reports Cline LongCat 2.0 with its own caps, not the o-series ones", () => {
+    for (const model of ["longcat-2.0", "private/longcat-2.0", "cline-free/longcat-2.0"]) {
+      const caps = getCapabilitiesForModel("cline", model);
+      expect(caps.vision).toBe(false);
+      expect(caps.maxOutput).toBe(32000);
+      expect(caps.reasoning).toBe(true);
+    }
+  });
+
+  it("still reports the real OpenAI o-series as vision-capable", () => {
+    for (const model of ["o1", "o3", "o3-mini", "o4-mini", "openai/o4-mini"]) {
+      const caps = getCapabilitiesForModel("openai", model);
+      expect(caps.vision).toBe(true);
+      expect(caps.maxOutput).toBe(100000);
+      expect(caps.contextWindow).toBe(200000);
+    }
+  });
 });
