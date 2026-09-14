@@ -467,6 +467,19 @@ async function wrapQoderSSE(response, model) {
       return;
     }
     if (!inner) return;
+    try {
+      const parsed = typeof inner === "string" ? JSON.parse(inner) : inner;
+      if (Array.isArray(parsed?.choices)) {
+        let changed = false;
+        for (const choice of parsed.choices) {
+          if (choice?.delta && "role" in choice.delta && choice.delta.role !== "assistant") {
+            delete choice.delta.role;
+            changed = true;
+          }
+        }
+        if (changed) inner = JSON.stringify(parsed);
+      }
+    } catch {}
     coalescer.handleInner(inner, controller);
     syncDone();
   };

@@ -335,6 +335,33 @@ function markLastCacheableBlock(msg) {
   return false;
 }
 
+// Count existing cache_control blocks across system, tools, and messages.
+// Anthropic enforces a strict maximum of 4 cache_control blocks per request (#3795).
+export function countCacheControlBlocks(body) {
+  if (!body || typeof body !== "object") return 0;
+  let count = 0;
+  if (Array.isArray(body.system)) {
+    for (const block of body.system) {
+      if (block && typeof block === "object" && block.cache_control) count++;
+    }
+  }
+  if (Array.isArray(body.tools)) {
+    for (const tool of body.tools) {
+      if (tool && typeof tool === "object" && tool.cache_control) count++;
+    }
+  }
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (Array.isArray(msg?.content)) {
+        for (const block of msg.content) {
+          if (block && typeof block === "object" && block.cache_control) count++;
+        }
+      }
+    }
+  }
+  return count;
+}
+
 // Re-anchor cache breakpoints on a Claude passthrough body (same policy as
 // prepareClaudeRequest): last tool + last system block at 1h, last assistant at 5m.
 // The client's own markers point at pre-normalization offsets, so they are dropped.
@@ -362,7 +389,7 @@ export function anchorClaudeCache(body) {
     const last = body.system.length - 1;
     body.system.forEach((block, i) => {
       if (typeof block !== "object" || block === null) return;
-      if (i === last) block.cache_control = { ...CACHE_CONTROL_1H };
+      if (i === last && countCacheControlBlocks(body) < 4) block.cache_control = { ...CACHE_CONTROL_1H };
       else delete block.cache_control;
     });
   }
@@ -370,7 +397,7 @@ export function anchorClaudeCache(body) {
   if (Array.isArray(body.tools)) {
     const last = lastCacheableToolIndex(body.tools);
     body.tools.forEach((tool, i) => {
-      if (i === last) tool.cache_control = { ...CACHE_CONTROL_1H };
+      if (i === last && countCacheControlBlocks(body) < 4) tool.cache_control = { ...CACHE_CONTROL_1H };
       else delete tool.cache_control;
     });
   }
@@ -394,14 +421,18 @@ export function anchorClaudeCache(body) {
       // Prefer the last assistant turn: it ends a completed exchange, so the
       // prefix up to it stays byte-stable across the following requests.
       if (anchored || msg.role !== ROLE.ASSISTANT) continue;
-      anchored = markLastCacheableBlock(msg);
+      if (countCacheControlBlocks(body) < 4) {
+        anchored = markLastCacheableBlock(msg);
+      }
     }
 
     // First turn of a conversation has no assistant yet — anchor the final
     // message instead, so the opening prompt is cached rather than paid twice.
     if (!anchored) {
       for (let i = body.messages.length - 1; i >= 0 && !anchored; i--) {
-        anchored = markLastCacheableBlock(body.messages[i]);
+        if (countCacheControlBlocks(body) < 4) {
+          anchored = markLastCacheableBlock(body.messages[i]);
+        }
       }
     }
   }
@@ -448,7 +479,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   if (body.system && Array.isArray(body.system)) {
     body.system = body.system.map((block, i) => {
       const { cache_control, ...rest } = block;
-      if (i === body.system.length - 1) {
+      if (i === body.system.length - 1 && countCacheControlBlocks(body) < 4) {
         return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
       }
       return rest;
@@ -502,7 +533,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           for (let j = msg.content.length - 1; j >= 0; j--) {
             const block = msg.content[j];
             if (block.type !== CLAUDE_BLOCK.THINKING && block.type !== CLAUDE_BLOCK.REDACTED_THINKING) {
-              block.cache_control = { type: "ephemeral" };
+              if (countCacheControlBlocks(body) < 4) {
+                block.cache_control = { type: "ephemeral" };
+              }
               break;
             }
           }
@@ -595,7 +628,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
-      if (i === lastCacheable) {
+      if (i === lastCacheable && countCacheControlBlocks(body) < 4) {
         return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
       }
       return rest;
