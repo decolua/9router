@@ -183,9 +183,9 @@ const PROVIDER_MODELS_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
     parseResponse: (data) => {
-      if (!data?.data) return [];
+      if (!data?.data) return [{ id: "auto", name: "Auto", isDefault: true }];
       // Filter out embeddings, non-chat models, and disabled models
-      return data.data
+      const models = data.data
         .filter(m => m.capabilities?.type === "chat")
         .filter(m => m.policy?.state !== "disabled") // Only return explicitly enabled models
         .map(m => ({
@@ -195,6 +195,10 @@ const PROVIDER_MODELS_CONFIG = {
           capabilities: m.capabilities,
           isDefault: m.model_picker_enabled === true
         }));
+      return [
+        { id: "auto", name: "Auto", isDefault: true },
+        ...models.filter(model => model.id !== "auto")
+      ];
     }
   },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
