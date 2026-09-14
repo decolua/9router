@@ -32,6 +32,7 @@ import {
   CLAUDE_REFRESH_INTERVAL_MS,
   DEPLETED_QUOTA_THRESHOLD,
   AUTO_REFRESH_STORAGE_KEY,
+  QUOTA_PREFERENCES_STORAGE_KEY,
   CONNECTIONS_PAGE_SIZE,
   ACCOUNT_PAGE_SIZE_OPTIONS,
   ACCOUNT_PAGE_SIZE_MAX,
@@ -134,6 +135,7 @@ export default function ProviderLimits() {
   const [autoPingMaps, setAutoPingMaps] = useState({ claude: {}, codex: {} });
   const [lastUpdated, setLastUpdated] = useState(null);
   const [hasHydratedAutoRefresh, setHasHydratedAutoRefresh] = useState(false);
+  const [hasHydratedPreferences, setHasHydratedPreferences] = useState(false);
   const [refreshingAll, setRefreshingAll] = useState(false);
   const [countdown, setCountdown] = useState(60);
   const [connectionsLoading, setConnectionsLoading] = useState(true);
@@ -536,6 +538,43 @@ export default function ProviderLimits() {
     if (typeof window === "undefined" || !hasHydratedAutoRefresh) return;
     window.localStorage.setItem(AUTO_REFRESH_STORAGE_KEY, String(autoRefresh));
   }, [autoRefresh, hasHydratedAutoRefresh]);
+
+  // Load quota tracker filter & pagination preferences
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(QUOTA_PREFERENCES_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.accountFilter && ["all", "active", "inactive"].includes(parsed.accountFilter)) {
+          setAccountFilter(parsed.accountFilter);
+        }
+        if (parsed?.pageSize) {
+          const sizeNum = Number(parsed.pageSize);
+          if (Number.isFinite(sizeNum) && sizeNum > 0) {
+            setPageSize(sizeNum);
+            setCustomPageSizeInput(String(sizeNum));
+          }
+        }
+      }
+    } catch {
+      // ignore storage parse errors
+    }
+    setHasHydratedPreferences(true);
+  }, []);
+
+  // Persist quota tracker filter & pagination preferences
+  useEffect(() => {
+    if (typeof window === "undefined" || !hasHydratedPreferences) return;
+    try {
+      window.localStorage.setItem(
+        QUOTA_PREFERENCES_STORAGE_KEY,
+        JSON.stringify({ accountFilter, pageSize })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [accountFilter, pageSize, hasHydratedPreferences]);
 
   // Load auto-ping per-connection maps
   useEffect(() => {
