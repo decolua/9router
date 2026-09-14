@@ -1,4 +1,5 @@
 const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+const PHASE_LATENCY_TOLERANCE_MS = 150000;
 
 function hasForbiddenKey(obj) {
   if (!obj || typeof obj !== "object") return false;
@@ -353,7 +354,7 @@ function resolveWindowDuration(provider, policyKey, quota) {
   return null;
 }
 
-function strictNextBoundary({ anchorMs, index, N, durationMs, earliestMs }) {
+function strictNextBoundary({ anchorMs, index, N, durationMs, earliestMs, toleranceMs = 0 }) {
   if (
     !Number.isFinite(anchorMs) ||
     !Number.isFinite(durationMs) ||
@@ -368,8 +369,8 @@ function strictNextBoundary({ anchorMs, index, N, durationMs, earliestMs }) {
     return earliestMs;
   }
   const offsetMs = (index / N) * durationMs;
-  const cycle = Math.max(0, Math.ceil((earliestMs - anchorMs - offsetMs) / durationMs));
-  return Math.round(anchorMs + offsetMs + cycle * durationMs);
+  const cycle = Math.max(0, Math.ceil((earliestMs - toleranceMs - anchorMs - offsetMs) / durationMs));
+  return Math.max(earliestMs, Math.round(anchorMs + offsetMs + cycle * durationMs));
 }
 
 function findQuotaForPolicy(quotas, policyKey) {
@@ -763,11 +764,13 @@ export function updateStaggerState({ connection, settings, connections, quotas, 
         N: memberIds.length,
         durationMs,
         earliestMs: resetMs,
+        toleranceMs: PHASE_LATENCY_TOLERANCE_MS,
       });
       if (
         previousPlan &&
         previousPlan.resetMs === resetMs &&
         previousPlan.durationMs === durationMs &&
+        previousPlan.notBeforeMs === notBeforeMs &&
         samePhaseAnchor(previousPlan.referenceAnchorMs, referenceAnchorMs, durationMs)
       ) {
         next.plannedSlots[policyKey] = previousPlan;
@@ -781,13 +784,14 @@ export function updateStaggerState({ connection, settings, connections, quotas, 
       next.windowStatus[policyKey] = "inactive";
       let targetMs = null;
       const expiredPlan = previousPlan && Number.isFinite(previousPlan.resetMs) && previousPlan.resetMs <= sampleObservedAtMs
+        && !Number.isFinite(previousPlan.guardUntilMs)
         ? previousPlan
         : null;
 
       if (isLeader) {
         const oldAnchor = previousObservation?.activeAnchorMs;
         const targetBoundary = Number.isFinite(oldAnchor) ? oldAnchor + durationMs : null;
-        if (Number.isFinite(targetBoundary) && sampleObservedAtMs <= targetBoundary + 150000) {
+        if (Number.isFinite(targetBoundary) && sampleObservedAtMs <= targetBoundary + PHASE_LATENCY_TOLERANCE_MS) {
           targetMs = targetBoundary;
         } else {
           referenceAnchorMs = sampleObservedAtMs;
@@ -796,9 +800,9 @@ export function updateStaggerState({ connection, settings, connections, quotas, 
         }
       } else {
         const previousPending = previous.pendingSlots?.[policyKey];
-        if (expiredPlan && sampleObservedAtMs <= expiredPlan.notBeforeMs + 150000) {
+        if (expiredPlan && sampleObservedAtMs <= expiredPlan.notBeforeMs + PHASE_LATENCY_TOLERANCE_MS) {
           targetMs = expiredPlan.notBeforeMs;
-        } else if (previousPending != null && sampleObservedAtMs <= previousPending + 150000) {
+        } else if (previousPending != null && sampleObservedAtMs <= previousPending + PHASE_LATENCY_TOLERANCE_MS) {
           targetMs = previousPending;
         } else if (Number.isFinite(referenceAnchorMs)) {
           targetMs = strictNextBoundary({
@@ -806,7 +810,7 @@ export function updateStaggerState({ connection, settings, connections, quotas, 
             index,
             N: memberIds.length,
             durationMs,
-            earliestMs: sampleObservedAtMs,
+            earliestMs: sampleObservedAtMs - PHASE_LATENCY_TOLERANCE_MS,
           });
         }
       }
@@ -823,7 +827,23 @@ export function updateStaggerState({ connection, settings, connections, quotas, 
     if (status === "observing" || status === "observation_only") {
       next.windowStatus[policyKey] = status;
       delete next.pendingSlots[policyKey];
-      if (previousPlan && futureReset && (!Number.isFinite(previousPlan.resetMs) || previousPlan.resetMs === resetMs)) {
+      const stableFutureRollover = Boolean(
+        policyKey === "weekly" &&
+        futureReset &&
+        Number.isFinite(previousPlan?.guardUntilMs) &&
+        Number.isFinite(previousObservation?.resetMs) &&
+        sampleObservedAtMs >= previousObservation.resetMs &&
+        resetMs > previousObservation.resetMs &&
+        isFreshObservation(previousObservation, sampleObservedAtMs) &&
+        Number.isFinite(previousObservation.used) && previousObservation.used > 0 &&
+        used === 0
+      );
+      const awaitingIdleConfirmation = !stableFutureRollover && previousPlan && used === 0 && futureReset
+        && isFreshObservation(previousObservation, sampleObservedAtMs)
+        && Number.isFinite(previousPlan.resetMs) && sampleObservedAtMs >= previousPlan.resetMs
+        && previousPlan.durationMs === durationMs
+        && Math.abs(resetMs - sampleObservedAtMs - durationMs) <= 300000;
+      if (!stableFutureRollover && previousPlan && futureReset && (previousPlan.resetMs === resetMs || awaitingIdleConfirmation)) {
         next.plannedSlots[policyKey] = previousPlan;
       } else {
         delete next.plannedSlots[policyKey];

@@ -115,6 +115,83 @@ describe("quota auto-ping", () => {
     vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
   });
 
+  it.each([false, true])("retains the September due slot with real core and account cooldown=%s", async (cooldown) => {
+    const poll = Date.parse("2026-09-14T19:30:36Z");
+    const phase = Date.parse("2026-09-14T19:31:37Z");
+    const connections = ["A", "B"].map((id) => ({
+      id, provider: "codex", authType: "oauth", isActive: true, accessToken: `test-${id}`,
+    }));
+    connections[1].lastPingAt = "2026-09-14T14:30:42.725Z";
+    deps.getSettings.mockResolvedValue({ quotaStaggerGroups: [{
+      id: "september", enabled: true, connectionIds: ["A", "B"],
+      session: { enabled: true, anchorAt: "2026-09-14T17:01:37Z" },
+      weekly: { enabled: true, anchorAt: "2026-09-13T00:00:00Z" },
+    }] });
+    deps.getProviderConnections.mockImplementation(async ({ provider } = {}) => connections.filter((c) => !provider || c.provider === provider));
+    deps.updateProviderConnection.mockImplementation(async (id, patch) => {
+      const connection = connections.find((c) => c.id === id);
+      Object.assign(connection, JSON.parse(JSON.stringify(patch)));
+      return connection;
+    });
+    const quota = (used, resetMs) => ({ used, total: 100, remaining: 100 - used, resetAt: new Date(resetMs).toISOString() });
+    const timeline = [
+      { at: "2026-09-14T19:30:36Z", used: 1, reset: "2026-09-14T19:30:44Z" },
+      { at: "2026-09-14T19:31:36Z", used: 0, reset: "2026-09-15T00:31:36Z" },
+      { at: "2026-09-14T19:32:36Z", used: 0, reset: "2026-09-15T00:32:36Z" },
+      { at: "2026-09-14T19:33:36Z", used: cooldown ? 0 : 1, reset: cooldown ? "2026-09-15T00:33:36Z" : "2026-09-15T00:32:36Z" },
+    ];
+    let sample;
+    getCodexUsage.mockImplementation(async (token) => {
+      expect(["test-A", "test-B"]).toContain(token);
+      const leader = token === "test-A";
+      return { observedAtMs: Date.parse(sample.at), quotas: {
+        session: leader
+          ? quota(100, Date.parse("2026-09-14T22:01:37Z"))
+          : quota(sample.used, Date.parse(sample.reset)),
+        weekly: quota(leader ? 54 : 42, Date.parse("2026-09-20T00:00:00Z")),
+      } };
+    });
+    const execute = vi.fn().mockImplementation(async () => {
+      expect(Date.now()).toBe(Date.parse("2026-09-14T19:32:36Z"));
+      expect(connections[1].quotaStaggerState).toMatchObject({
+        pendingSlots: { session: phase },
+        notBeforeMs: phase,
+        ready: true,
+        waiting: false,
+        windowStatus: { weekly: "active" },
+      });
+      return { response: { ok: true, text: codexResponseText } };
+    });
+    deps.getExecutor.mockReturnValue({ execute });
+    for (const entry of timeline) {
+      sample = entry;
+      const offset = Date.parse(sample.at) - poll;
+      vi.setSystemTime(Date.parse(sample.at));
+      if (cooldown && offset === 120000) state.failureCache["codex:B"] = poll + 60000;
+      await runQuotaAutoPingTick(deps, state);
+      const saved = connections[1].quotaStaggerState;
+      expect(saved.windowStatus.weekly).toBe("active");
+      if (offset <= 60000 || cooldown) {
+        expect(saved.plannedSlots.session?.notBeforeMs).toBe(phase);
+        expect(execute).not.toHaveBeenCalled();
+      } else {
+        expect(execute).toHaveBeenCalledTimes(1);
+        expect(saved.pendingSlots.session).toBeUndefined();
+      }
+    }
+    const pingUpdates = deps.updateProviderConnection.mock.calls.filter(([, patch]) => patch.lastPingAt);
+    expect(pingUpdates.map(([id]) => id)).toEqual(cooldown ? [] : ["B"]);
+    expect(connections[1].lastPingAt).toBe(cooldown ? "2026-09-14T14:30:42.725Z" : new Date(poll + 120000).toISOString());
+    expect(getCodexUsage.mock.calls.filter(([token]) => token === "test-B")).toHaveLength(cooldown ? 2 : 4);
+    if (cooldown) {
+      expect(state.failureCache["codex:B"]).toBe(poll + 60000);
+    } else {
+      expect(codexResponseText).toHaveBeenCalledTimes(1);
+      expect(connections[1].quotaStaggerState).toMatchObject({ waiting: false, ready: false, windowStatus: { session: "active" } });
+    }
+    expect(connections[0].lastPingAt).toBeUndefined();
+  });
+
   it("does not ping Codex when setting is absent", async () => {
     deps.getSettings.mockResolvedValue({});
 

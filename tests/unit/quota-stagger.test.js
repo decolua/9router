@@ -16,6 +16,130 @@ import {
   computeGroupSignature,
 } from "@/shared/services/quotaStagger.js";
 
+describe("September session phase regressions", () => {
+  const duration = 18000000;
+  const phase = Date.parse("2026-09-14T19:31:37Z");
+  const poll = Date.parse("2026-09-14T19:30:36Z");
+  const reset = Date.parse("2026-09-14T19:30:44Z");
+  const quota = (used, resetMs) => ({ used, total: 100, remaining: 100 - used, resetAt: new Date(resetMs).toISOString() });
+
+  function scenario() {
+    const connections = ["A", "B"].map((id) => ({ id, provider: "codex", authType: "oauth", isActive: true }));
+    connections[1].lastPingAt = "2026-09-14T14:30:42.725Z";
+    const settings = { quotaStaggerGroups: [{
+      id: "september", enabled: true, connectionIds: ["A", "B"],
+      session: { enabled: true, anchorAt: "2026-09-14T17:01:37Z" },
+      weekly: { enabled: true, anchorAt: "2026-09-13T00:00:00Z" },
+    }] };
+    const observe = (index, nowMs, used, resetMs, observedAtMs = nowMs) => {
+      const quotas = {
+        session: quota(used, resetMs),
+        weekly: quota(index === 0 ? 54 : 42, Date.parse("2026-09-20T00:00:00Z")),
+      };
+      connections[index].quotaStaggerState = updateStaggerState({ connection: connections[index], connections, settings, quotas, nowMs, observedAtMs });
+      return connections[index].quotaStaggerState;
+    };
+    const decision = (index, nowMs) => getStaggerDecision({ connection: connections[index], connections, settings, nowMs });
+    observe(0, poll, 100, Date.parse("2026-09-14T22:01:37Z"));
+    return { connections, observe, decision };
+  }
+
+  it.each([1, 90])("preserves the live reservation through first zero, reload and second idle with used=%s", (used) => {
+    const { connections, observe, decision } = scenario();
+    expect(observe(1, poll, used, reset).plannedSlots.session.notBeforeMs).toBe(phase);
+    const first = observe(1, poll + 60000, 0, poll + 60000 + duration);
+    expect(first.plannedSlots.session?.notBeforeMs).toBe(phase);
+    expect(first.ready).toBe(false);
+    connections[1].quotaStaggerState = JSON.parse(JSON.stringify(first));
+    const cached = observe(1, poll + 61000, 0, poll + 60000 + duration, poll + 60000);
+    expect(cached.plannedSlots.session?.notBeforeMs).toBe(phase);
+    expect(decision(1, poll + 61000).ready).toBe(false);
+    const second = observe(1, poll + 120000, 0, poll + 120000 + duration);
+    expect(second.pendingSlots.session).toBe(phase);
+    expect(second.pendingSlots.session).not.toBe(phase + duration);
+    expect(decision(1, poll + 120000)).toMatchObject({ ready: true, waiting: false, notBeforeMs: phase });
+    expect(second.windowStatus.weekly).toBe("active");
+    expect(decision(0, poll + 120000).ready).toBe(false);
+  });
+
+  it.each([1, 2000, 59000, 150000, 150001, 360000])("bounds active reset drift of %sms without early readiness", (drift) => {
+    const { observe, decision } = scenario();
+    const actualReset = phase + drift;
+    const active = observe(1, poll, 90, actualReset);
+    const target = drift <= 150000 ? actualReset : phase + duration;
+    expect(active.plannedSlots.session.notBeforeMs).toBe(target);
+    expect(active.plannedSlots.session.notBeforeMs).toBeGreaterThanOrEqual(actualReset);
+    expect(active.windowStatus.session).toBe("active");
+    expect(decision(1, actualReset - 1)).toMatchObject({ ready: false, waiting: false });
+    expect(decision(1, actualReset).ready).toBe(false);
+    if (drift > 150000) expect(decision(1, actualReset).waiting).toBe(true);
+  });
+
+  it("recognizes rounded-zero stable future samples as active until the actual reset", () => {
+    const { observe, decision } = scenario();
+    observe(1, poll - 60000, 0, phase + 2000);
+    const active = observe(1, poll, 0, phase + 2000);
+    expect(active.windowStatus.session).toBe("active");
+    expect(active.plannedSlots.session.notBeforeMs).toBe(phase + 2000);
+    expect(decision(1, phase + 1999)).toMatchObject({ ready: false, waiting: false });
+  });
+
+  it.each([0, 150000, 150001])("bounds idle fallback at phase + %sms across later polls", (delay) => {
+    const { observe } = scenario();
+    const now = phase + delay;
+    observe(1, now - 60000, 0, now - 60000 + duration);
+    const idle = observe(1, now, 0, now + duration);
+    const target = delay <= 150000 ? phase : phase + duration;
+    expect(idle.pendingSlots.session).toBe(target);
+    expect(idle.ready).toBe(delay <= 150000);
+    for (const later of [phase + 210001, phase + 270001, phase + 330001]) {
+      const state = observe(1, later, 0, later + duration);
+      expect(state.pendingSlots.session).toBe(phase + duration);
+      expect(state.ready).toBe(false);
+      expect(state.phaseAnchors.session).toBe(phase - duration / 2);
+    }
+  });
+
+  it("repairs an old full-cycle forecast and keeps bounded reset jitter anchored", () => {
+    const { connections, observe } = scenario();
+    const initial = observe(1, poll - 60000, 90, phase + 2000);
+    initial.plannedSlots.session.notBeforeMs = phase + duration;
+    connections[1].quotaStaggerState = JSON.parse(JSON.stringify(initial));
+    for (const [elapsed, drift] of [[0, 2000], [10000, 90000], [20000, 150000], [30000, 150001]]) {
+      const state = observe(1, poll + elapsed, 90, phase + drift);
+      expect(state.plannedSlots.session.notBeforeMs).toBe(drift <= 150000 ? phase + drift : phase + duration);
+      expect(state.plannedSlots.session.notBeforeMs).toBeGreaterThanOrEqual(phase + drift);
+      expect(state.phaseAnchors.session).toBe(phase - duration / 2);
+      expect(state.ready).toBe(false);
+    }
+  });
+
+  it("does not confirm idle from a nonsliding zero reset", () => {
+    const { observe } = scenario();
+    observe(1, poll, 1, reset);
+    const fixedReset = poll + 60000 + duration;
+    expect(observe(1, poll + 60000, 0, fixedReset).plannedSlots.session.notBeforeMs).toBe(phase);
+    const second = observe(1, poll + 120000, 0, fixedReset);
+    expect(second.windowStatus.session).toBe("active");
+    expect(second.pendingSlots.session).toBeUndefined();
+    expect(second.plannedSlots.session.resetMs).toBe(fixedReset);
+    expect(second.ready).toBe(false);
+  });
+
+  it("replaces a first-idle reservation when fresh activity starts a fixed window", () => {
+    const { observe } = scenario();
+    observe(1, poll, 1, reset);
+    observe(1, poll + 60000, 0, poll + 60000 + duration);
+    const freshReset = poll + 90000 + duration;
+    const active = observe(1, poll + 120000, 1, freshReset);
+    expect(active.windowStatus.session).toBe("active");
+    expect(active.pendingSlots.session).toBeUndefined();
+    expect(active.plannedSlots.session.resetMs).toBe(freshReset);
+    expect(active.plannedSlots.session.notBeforeMs).not.toBe(phase);
+    expect(active).toMatchObject({ ready: false, waiting: false });
+  });
+});
+
 describe("quota stagger core", () => {
   const baseConnections = [
     { id: "cx-1", provider: "codex", authType: "oauth", isActive: true },
@@ -467,6 +591,53 @@ describe("quota stagger core", () => {
     };
     const settings = { quotaStaggerGroups: [group] };
 
+    it("retains the unknown weekly guard through a same-reset transient zero", () => {
+      const connection = { id: "cx-2", provider: "codex" };
+      const resetMs = fixedNow + 90000;
+      const observe = (nowMs, used) => {
+        connection.quotaStaggerState = updateStaggerState({
+          connection, settings, connections: baseConnections, nowMs,
+          quotas: { weekly: { used, total: 100, remaining: 100 - used, resetAt: new Date(resetMs).toISOString() } },
+        });
+        return connection.quotaStaggerState;
+      };
+      const active = observe(fixedNow, 50);
+      expect(active.plannedSlots.weekly.guardUntilMs).toBe(resetMs + 180000);
+      const zero = observe(fixedNow + 60000, 0);
+      expect(zero.plannedSlots.weekly).toEqual(active.plannedSlots.weekly);
+      expect(getStaggerDecision({ connection, settings, connections: baseConnections, nowMs: resetMs + 1 })).toMatchObject({
+        ready: false, waiting: true, notBeforeMs: resetMs + 180000,
+      });
+      expect(observe(fixedNow + 120000, 50).ready).toBe(false);
+    });
+
+    it("preserves a verified shiftable weekly reservation through first zero and confirmed idle", () => {
+      const connection = { id: "cx-2", provider: "codex" };
+      const phase = fixedNow + duration7d / 2;
+      const observe = (nowMs, used, resetMs) => {
+        connection.quotaStaggerState = updateStaggerState({
+          connection, settings, connections: baseConnections, nowMs,
+          quotas: { weekly: { used, total: 100, remaining: 100 - used, resetAt: new Date(resetMs).toISOString() } },
+        });
+        return connection.quotaStaggerState;
+      };
+      observe(phase - 240000, 0, phase - 240000 + duration7d);
+      expect(observe(phase - 180000, 0, phase - 180000 + duration7d).observations.weekly.shiftable).toBe(true);
+      const active = observe(phase - 120000, 50, phase - 30000);
+      expect(active.plannedSlots.weekly.notBeforeMs).toBe(phase);
+      expect(active.plannedSlots.weekly.guardUntilMs).toBeUndefined();
+      const first = observe(phase, 0, phase + duration7d);
+      expect(first.plannedSlots.weekly).toEqual(active.plannedSlots.weekly);
+      expect(first.ready).toBe(false);
+      const second = observe(phase + 60000, 0, phase + 60000 + duration7d);
+      expect(second.pendingSlots.weekly).toBe(phase);
+      expect(second).toMatchObject({ ready: true, waiting: false });
+      const fresh = observe(phase + 120000, 1, phase + 120000 + duration7d);
+      expect(fresh.pendingSlots.weekly).toBeUndefined();
+      expect(fresh.plannedSlots.weekly.resetMs).toBe(phase + 120000 + duration7d);
+      expect(fresh.ready).toBe(false);
+    });
+
     it("rejects fixed rollover from used:50 to used:0 as idle slide", () => {
       const sActive = updateStaggerState({
         connection: { id: "cx-2", provider: "codex" },
@@ -492,6 +663,7 @@ describe("quota stagger core", () => {
       expect(sRollover.waiting).toBe(false);
       expect(sRollover.ready).toBe(false);
       expect(sRollover.pendingSlots.weekly).toBeUndefined();
+      expect(sRollover.plannedSlots.weekly).toBeUndefined();
     });
 
     it("requires two consecutive idle observations with elapsed-consistent slide", () => {
