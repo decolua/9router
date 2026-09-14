@@ -107,6 +107,11 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    if (existing.provider === "codex" && providerSpecificData?.codexFastMode !== undefined
+      && typeof providerSpecificData.codexFastMode !== "boolean") {
+      return NextResponse.json({ error: "Codex fast mode must be a boolean." }, { status: 400 });
+    }
+
     const proxyConfig = normalizeProxyConfig(body);
     if (existing.provider === "github" && providerSpecificData?.aiCreditLimit !== undefined
       && !isValidGitHubCreditLimit(providerSpecificData.aiCreditLimit)) {

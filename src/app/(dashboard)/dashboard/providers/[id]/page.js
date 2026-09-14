@@ -873,6 +873,20 @@ export default function ProviderDetailPage() {
     }
   };
 
+  const handleCodexFastMode = async (id, enabled) => {
+    const res = await fetch(`/api/providers/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ providerSpecificData: { codexFastMode: enabled } }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to save Codex fast mode");
+    setConnections(prev => prev.map(connection => connection.id === id ? {
+      ...connection,
+      providerSpecificData: { ...connection.providerSpecificData, codexFastMode: enabled },
+    } : connection));
+  };
+
   const handleSwapPriority = async (index1, index2) => {
     // Optimistic update state
     const newConnections = [...connections];
@@ -1019,6 +1033,10 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                fastMode={providerId === "codex" ? {
+                  on: conn.providerSpecificData?.codexFastMode === true,
+                  onToggle: (enabled) => handleCodexFastMode(conn.id, enabled),
+                } : null}
                 autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   on: autoPing.connections[conn.id] === true,
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),

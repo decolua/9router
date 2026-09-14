@@ -6,9 +6,10 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null, fastMode = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
+  const [updatingFastMode, setUpdatingFastMode] = useState(false);
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
@@ -26,6 +27,18 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const autoPingTooltip = autoPing?.provider === "codex"
     ? "Auto-starts the next 5h Codex window after reset by sending a tiny gpt-5.5 request. Consumes a small amount of quota."
     : "When your 5h quota runs out, auto-sends a request the moment it resets so a new window starts right away.";
+
+  const handleToggleFastMode = async () => {
+    if (!fastMode || updatingFastMode) return;
+    setUpdatingFastMode(true);
+    try {
+      await fastMode.onToggle(!fastMode.on);
+    } catch (error) {
+      alert(error.message || "Failed to save Codex fast mode");
+    } finally {
+      setUpdatingFastMode(false);
+    }
+  };
 
   let maskedProxyUrl = "";
   if (boundProxyPool?.proxyUrl || connection.providerSpecificData?.connectionProxyUrl) {
@@ -246,6 +259,22 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               )}
             </div>
           )}
+          {fastMode && (
+            <Tooltip text="Always overrides the client's service tier for this account. On sends service_tier: fast; off removes the client's service tier. Off by default.">
+              <button
+                type="button"
+                role="switch"
+                aria-label="Codex fast mode"
+                aria-checked={fastMode.on}
+                disabled={updatingFastMode}
+                onClick={handleToggleFastMode}
+                className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 ${fastMode.on ? "text-primary" : "text-text-muted hover:text-primary"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">{updatingFastMode ? "progress_activity" : fastMode.on ? "toggle_on" : "toggle_off"}</span>
+                <span className="text-[10px] leading-tight">Fast mode</span>
+              </button>
+            </Tooltip>
+          )}
           {autoPing && (
             <Tooltip text={autoPingTooltip}>
               <button
@@ -314,5 +343,9 @@ ConnectionRow.propTypes = {
     on: PropTypes.bool,
     onToggle: PropTypes.func,
     provider: PropTypes.string,
+  }),
+  fastMode: PropTypes.shape({
+    on: PropTypes.bool.isRequired,
+    onToggle: PropTypes.func.isRequired,
   }),
 };

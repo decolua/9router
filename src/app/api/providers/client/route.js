@@ -19,6 +19,7 @@ const SAFE_PSD_FIELDS = [
   "username", "firstName", "lastName", "authMethod", "authKind",
   "profileArn",
   "aiCreditLimit",
+  "codexFastMode",
 ];
 
 const DEFAULT_PAGE_SIZE = 20;
