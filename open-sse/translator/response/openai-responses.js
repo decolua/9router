@@ -18,7 +18,8 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
-  
+  // Chat Completions may send usage in a choices: [] chunk after finish_reason.
+  if (chunk.usage) state.responsesUsage = { ...state.responsesUsage, ...chunk.usage };
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -112,7 +113,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
+    // Complete on stream flush so Codex receives trailing token usage as well.
   }
 
   return events;
@@ -368,6 +369,9 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
+    const usage = state.responsesUsage || state.usage;
+    const inputTokens = usage?.input_tokens ?? usage?.prompt_tokens ?? 0;
+    const outputTokens = usage?.output_tokens ?? usage?.completion_tokens ?? 0;
     emit("response.completed", {
       type: "response.completed",
       response: {
@@ -376,7 +380,14 @@ function sendCompleted(state, emit) {
         created_at: state.created,
         status: "completed",
         background: false,
-        error: null
+        error: null,
+        ...(usage ? { usage: {
+          input_tokens: inputTokens,
+          output_tokens: outputTokens,
+          total_tokens: usage.total_tokens ?? inputTokens + outputTokens,
+          input_tokens_details: { cached_tokens: usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens ?? 0 },
+          output_tokens_details: { reasoning_tokens: usage.output_tokens_details?.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens ?? usage.reasoning_tokens ?? 0 },
+        } } : {}),
       }
     });
   }

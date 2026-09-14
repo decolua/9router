@@ -8,6 +8,7 @@ import { resolveKiroEffortPath } from "../config/kiroConstants.js";
 const L = {
   base: ["none", "low", "medium", "high"],                          // qwen, step, hunyuan, gemini-budget
   onOff: ["none", "thinking"],                                      // zai (binary), minimax (adaptive)
+  zaiEffort: ["none", "low", "high", "max"],                        // newer GLM models accept explicit effort
   openai: ["none", "minimal", "low", "medium", "high", "xhigh"],    // GPT-5.x / o-series (no "max")
   levelMax: ["none", "low", "medium", "high", "max"],               // claude-adaptive, kimi
   budgetX: ["none", "low", "medium", "high", "xhigh", "max"],       // claude-budget
@@ -62,7 +63,9 @@ export function getThinkingLevels(provider, model) {
   const hit = PATTERN_THINKING.find((entry) =>
     (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
   );
-  let levels = hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  const modelLevels = caps.thinkingFormat === "zai" && caps.thinkingEffortSupported
+    ? L.zaiEffort : FORMAT_LEVELS[caps.thinkingFormat];
+  let levels = hit?.levels || modelLevels || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }

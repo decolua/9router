@@ -9,6 +9,23 @@ vi.mock("@/lib/usageDb.js", () => ({
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
+const { filterUsageForFormat } = await import("../../open-sse/utils/usageTracking.js");
+
+describe("native provider JSON for a Responses client", () => {
+  it.each([FORMATS.GEMINI, FORMATS.ANTIGRAVITY, FORMATS.GEMINI_CLI, FORMATS.VERTEX])("completes both translation stages for %s", format => {
+    const native = { candidates: [{ content: { parts: [{ text: "Context summary" }] }, finishReason: "STOP" }], usageMetadata: { promptTokenCount: 100, candidatesTokenCount: 20, totalTokenCount: 120 } };
+    const out = translateNonStreamingResponse(format === FORMATS.ANTIGRAVITY ? { response: native } : native, format, FORMATS.OPENAI_RESPONSES);
+    expect(out).toMatchObject({ object: "response", status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "Context summary" }] }] });
+    expect(filterUsageForFormat(out.usage, FORMATS.OPENAI_RESPONSES)).toEqual({ input_tokens: 100, output_tokens: 20, total_tokens: 120 });
+  });
+  it("converts Claude JSON and preserves an incomplete stop status", () => {
+    const native = { id: "qa", content: [{ type: "text", text: "partial summary" }], stop_reason: "max_tokens", usage: { input_tokens: 100, output_tokens: 20 } };
+    const out = translateNonStreamingResponse(native, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES);
+    expect(out.object).toBe("response");
+    expect(out.status).not.toBe("completed");
+    expect(out.output[0].content[0].text).toBe("partial summary");
+  });
+});
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
 const CHAT_TOOL_BODY = {
