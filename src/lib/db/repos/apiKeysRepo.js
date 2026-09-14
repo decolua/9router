@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { nowIso, stampInsert, stampUpdate, stampDelete, NOT_DELETED } from "../../federation/stamp.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -15,13 +16,13 @@ function rowToKey(row) {
 
 export async function getApiKeys() {
   const db = await getAdapter();
-  const rows = db.all(`SELECT * FROM apiKeys ORDER BY createdAt ASC`);
+  const rows = db.all(`SELECT * FROM apiKeys WHERE ${NOT_DELETED} ORDER BY createdAt ASC`);
   return rows.map(rowToKey);
 }
 
 export async function getApiKeyById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
+  const row = db.get(`SELECT * FROM apiKeys WHERE id = ? AND ${NOT_DELETED}`, [id]);
   return rowToKey(row);
 }
 
@@ -38,9 +39,10 @@ export async function createApiKey(name, machineId) {
     isActive: true,
     createdAt: new Date().toISOString(),
   };
+  const s = stampInsert(db);
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt${s.cols}) VALUES(?, ?, ?, ?, ?, ?${s.placeholders})`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, ...s.params]
   );
   return apiKey;
 }
@@ -52,9 +54,10 @@ export async function updateApiKey(id, data) {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
     const merged = { ...rowToKey(row), ...data };
+    const u = stampUpdate(db);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?${u.set} WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, ...u.params, id]
     );
     result = merged;
   });
@@ -63,7 +66,8 @@ export async function updateApiKey(id, data) {
 
 export async function deleteApiKey(id) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
+  const d = stampDelete(db);
+  const res = db.run(`UPDATE apiKeys SET ${d.set} WHERE id = ?`, [...d.params, id]);
   return (res?.changes ?? 0) > 0;
 }
 

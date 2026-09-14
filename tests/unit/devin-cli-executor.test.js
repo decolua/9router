@@ -398,8 +398,17 @@ describe("DevinCliExecutor ACP session/new", () => {
   });
 
   it("does not set XDG_CONFIG_HOME when DEVIN_MCP_SERVERS is absent", async () => {
-    const { child } = await runExecute();
-    expect(child.opts.env.XDG_CONFIG_HOME).toBeUndefined();
+    // The executor inherits the parent env (`{...process.env}`) so CI runners
+    // with XDG_CONFIG_HOME pre-set would leak it into the child env. Make the
+    // assertion hermetic by clearing the ambient var first.
+    const hadXdg = process.env.XDG_CONFIG_HOME;
+    delete process.env.XDG_CONFIG_HOME;
+    try {
+      const { child } = await runExecute();
+      expect(child.opts.env.XDG_CONFIG_HOME).toBeUndefined();
+    } finally {
+      if (hadXdg) process.env.XDG_CONFIG_HOME = hadXdg;
+    }
   });
 
   it("exposes body.tools as an MCP server (sets XDG_CONFIG_HOME + writes script)", async () => {

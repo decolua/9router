@@ -1,6 +1,7 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { makeKv } from "../helpers/kvStore.js";
+import { nowIso, stampInsert, stampUpsertConflict, stampDelete } from "../../federation/stamp.js";
 
 const pricingKv = makeKv("pricing");
 const CACHE_TTL_MS = 5000;
@@ -67,9 +68,10 @@ export async function updatePricing(pricingData) {
       for (const [model, pricing] of Object.entries(models)) {
         merged[model] = pricing;
       }
+      const s = stampInsert(db);
       db.run(
-        `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
-        [provider, stringifyJson(merged)]
+        `INSERT INTO kv(scope, key, value${s.cols}) VALUES('pricing', ?, ?${s.placeholders}) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value${stampUpsertConflict()}`,
+        [provider, stringifyJson(merged), ...s.params]
       );
     }
   });
@@ -82,18 +84,21 @@ export async function resetPricing(provider, model) {
   const db = await getAdapter();
   db.transaction(() => {
     if (!model) {
-      db.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
+      const d = stampDelete(db);
+      db.run(`UPDATE kv SET ${d.set} WHERE scope = 'pricing' AND key = ?`, [...d.params, provider]);
       return;
     }
     const row = db.get(`SELECT value FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
     const current = row ? (parseJson(row.value, {}) || {}) : {};
     delete current[model];
     if (Object.keys(current).length === 0) {
-      db.run(`DELETE FROM kv WHERE scope = 'pricing' AND key = ?`, [provider]);
+      const d = stampDelete(db);
+      db.run(`UPDATE kv SET ${d.set} WHERE scope = 'pricing' AND key = ?`, [...d.params, provider]);
     } else {
+      const s = stampInsert(db);
       db.run(
-        `INSERT INTO kv(scope, key, value) VALUES('pricing', ?, ?) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value`,
-        [provider, stringifyJson(current)]
+        `INSERT INTO kv(scope, key, value${s.cols}) VALUES('pricing', ?, ?${s.placeholders}) ON CONFLICT(scope, key) DO UPDATE SET value = excluded.value${stampUpsertConflict()}`,
+        [provider, stringifyJson(current), ...s.params]
       );
     }
   });

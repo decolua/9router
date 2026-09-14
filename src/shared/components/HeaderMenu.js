@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
+import { useRouter } from "next/navigation";
 import { useTheme } from "@/shared/hooks/useTheme";
 import ChangelogModal from "./ChangelogModal";
 import { ConfirmModal } from "./Modal";
@@ -40,6 +41,7 @@ export default function HeaderMenu({ onLogout }) {
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const { toggleTheme, isDark } = useTheme();
   const menuRef = useRef(null);
+  const router = useRouter();
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -83,6 +85,11 @@ export default function HeaderMenu({ onLogout }) {
               icon="history"
               label="Change Log"
               onClick={() => { close(); setChangelogOpen(true); }}
+            />
+            <MenuItem
+              icon="lan"
+              label="Federation"
+              onClick={() => { close(); router.push("/dashboard/federation"); }}
             />
             <MenuItem
               icon={isDark ? "light_mode" : "dark_mode"}
