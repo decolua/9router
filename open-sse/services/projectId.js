@@ -158,10 +158,11 @@ export function removeConnection(connectionId) {
 async function fetchProjectId(accessToken, signal, provider) {
     const endpoints = CLOUD_CODE_API[provider] || CLOUD_CODE_API["gemini-cli"];
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
+    const metadata = provider === "antigravity" ? { ideType: "ANTIGRAVITY" } : LOAD_CODE_ASSIST_METADATA;
     const response = await fetch(endpoints.loadCodeAssist, {
         method: "POST",
         headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
-        body: JSON.stringify({ metadata: LOAD_CODE_ASSIST_METADATA }),
+        body: JSON.stringify({ metadata }),
         signal
     });
 
@@ -171,11 +172,18 @@ async function fetchProjectId(accessToken, signal, provider) {
     }
 
     const data = await response.json();
-    const projectId = extractProjectId(data);
-    if (projectId) return projectId;
+    if (Array.isArray(data.ineligibleTiers)) {
+        for (const tier of data.ineligibleTiers) {
+            if (tier.validationUrl) {
+                console.warn(`[ProjectId] Account requires verification: ${tier.validationUrl}`);
+            }
+        }
+    }
 
-    // Determine the tier to use for onboarding
-    let tierID = "legacy-tier";
+    const projectId = extractProjectId(data);
+    if (projectId && (provider !== "antigravity" || data.currentTier)) return projectId;
+
+    let tierID = provider === "antigravity" ? "free-tier" : "legacy-tier";
     if (Array.isArray(data.allowedTiers)) {
         for (const tier of data.allowedTiers) {
             if (tier && typeof tier === "object" && tier.isDefault === true) {
@@ -201,7 +209,8 @@ async function fetchProjectId(accessToken, signal, provider) {
 async function onboardUser(accessToken, tierID, externalSignal, endpoints, provider) {
     console.log(`[ProjectId] Onboarding user with tier: ${tierID}`);
 
-    const reqBody = { tierId: tierID, metadata: LOAD_CODE_ASSIST_METADATA };
+    const metadata = provider === "antigravity" ? { ideType: "ANTIGRAVITY" } : LOAD_CODE_ASSIST_METADATA;
+    const reqBody = { tierId: tierID, metadata };
     const headers = provider === "antigravity" ? ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS : LOAD_CODE_ASSIST_HEADERS;
     const MAX_ATTEMPTS = Number(process.env.ONBOARD_MAX_ATTEMPTS) || 2;
     const BASE_RETRY_DELAY_MS = Number(process.env.ONBOARD_RETRY_DELAY_MS) || 12_000;
@@ -239,7 +248,41 @@ async function onboardUser(accessToken, tierID, externalSignal, endpoints, provi
                     console.log(`[ProjectId] Successfully onboarded, project ID: ${projectId}`);
                     return projectId;
                 }
-                throw new Error("onboardUser done but no project_id in response");
+            } else if (data.name && provider === "antigravity") {
+                // Poll operation every 1000ms up to 30s
+                const opName = data.name;
+                const opPath = opName.startsWith("v1internal/")
+                    ? opName.slice("v1internal/".length)
+                    : (opName.startsWith("/") ? opName.slice(1) : opName);
+                const opUrl = `https://daily-cloudcode-pa.googleapis.com/v1internal/${opPath}`;
+                const pollStart = Date.now();
+                while (Date.now() - pollStart < 30_000) {
+                    if (externalSignal?.aborted) return null;
+                    await new Promise(r => setTimeout(r, 1000));
+                    try {
+                        const pollRes = await fetch(opUrl, { headers: { ...headers, "Authorization": `Bearer ${accessToken}` } });
+                        if (pollRes.ok) {
+                            const pollData = await pollRes.json();
+                            if (pollData.done === true) break;
+                        }
+                    } catch (_) {}
+                }
+            }
+
+            // Re-fetch loadCodeAssist to acquire project
+            const refetchRes = await fetch(endpoints.loadCodeAssist, {
+                method: "POST",
+                headers: { ...headers, "Authorization": `Bearer ${accessToken}` },
+                body: JSON.stringify({ metadata }),
+                signal: localCtrl.signal
+            });
+            if (refetchRes.ok) {
+                const refetchData = await refetchRes.json();
+                const pid = extractProjectId(refetchData);
+                if (pid) {
+                    console.log(`[ProjectId] Successfully acquired project ID after onboarding: ${pid}`);
+                    return pid;
+                }
             }
 
             // Server not done yet – wait and retry with jitter

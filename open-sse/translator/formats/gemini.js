@@ -2,7 +2,9 @@
 
 import { safeParseJSON } from "../concerns/json.js";
 import { OPENAI_BLOCK } from "../schema/index.js";
+import { normalizeSchemaForCCA } from "@/lib/schemas/antigravity.js";
 
+export { normalizeSchemaForCCA };
 // Unsupported JSON Schema constraints that should be removed for Antigravity
 export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Basic constraints (not supported by Gemini API)
@@ -344,92 +346,7 @@ function ensureArrayItems(obj) {
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
-
-  // Mutate directly (schema is only used once per request)
-  let cleaned = schema;
-
-  // Phase 1: Convert and prepare
-  convertConstToEnum(cleaned);
-  convertEnumValuesToStrings(cleaned);
-
-  // Phase 2: Flatten complex structures
-  mergeAllOf(cleaned);
-  convertPrefixItems(cleaned);
-  flattenAnyOfOneOf(cleaned);
-  flattenTypeArrays(cleaned);
-
-  // Phase 2.5: Infer missing type=object when properties exist (Gemini requirement)
-  ensureObjectType(cleaned);
-  ensureArrayItems(cleaned);
-
-  // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
-  removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
-
-  // Phase 4: Cleanup required fields recursively
-  function cleanupRequired(obj) {
-    if (!obj || typeof obj !== "object") return;
-
-    if (obj.required && Array.isArray(obj.required) && obj.properties) {
-      const validRequired = obj.required.filter(field =>
-        Object.prototype.hasOwnProperty.call(obj.properties, field)
-      );
-      if (validRequired.length === 0) {
-        delete obj.required;
-      } else {
-        obj.required = validRequired;
-      }
-    }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        cleanupRequired(value);
-      }
-    }
-  }
-
-  cleanupRequired(cleaned);
-
-  // Phase 5: Add placeholder for empty object schemas (Antigravity requirement)
-  function addPlaceholders(obj) {
-    if (!obj || typeof obj !== "object") return;
-
-    // Empty schema {} (no type, no properties) after $ref removal — treat as object with placeholder
-    if (Object.keys(obj).length === 0) {
-      obj.type = "object";
-      obj.properties = {
-        reason: {
-          type: "string",
-          description: "Brief explanation of why you are calling this tool"
-        }
-      };
-      obj.required = ["reason"];
-      return;
-    }
-
-    if (obj.type === "object") {
-      if (!obj.properties || Object.keys(obj.properties).length === 0) {
-        obj.properties = {
-          reason: {
-            type: "string",
-            description: "Brief explanation of why you are calling this tool"
-          }
-        };
-        obj.required = ["reason"];
-      }
-    }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        addPlaceholders(value);
-      }
-    }
-  }
-
-  addPlaceholders(cleaned);
-
-  return cleaned;
+  return normalizeSchemaForCCA(schema);
 }
 
 // Merge adjacent same-role messages, strip empty parts, ensure initial user turn

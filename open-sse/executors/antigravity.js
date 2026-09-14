@@ -5,7 +5,7 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX,
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
+import { cleanJSONSchemaForAntigravity, normalizeGeminiContents, normalizeSchemaForCCA } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
 
@@ -249,9 +249,7 @@ export class AntigravityExecutor extends BaseExecutor {
           allDeclarations.push({
             ...fn,
             name,
-            parameters: fn.parameters
-              ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
-              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
+            parameters: normalizeSchemaForCCA(fn.parameters || { type: "object", properties: {} })
           });
         }
       }
@@ -262,8 +260,7 @@ export class AntigravityExecutor extends BaseExecutor {
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
     
-    // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
-    // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
+    // Rewrite competing-client branding in system prompts
     if (requestWithoutTools.systemInstruction?.parts) {
       for (const part of requestWithoutTools.systemInstruction.parts) {
         if (typeof part.text !== "string") continue;
@@ -272,11 +269,38 @@ export class AntigravityExecutor extends BaseExecutor {
         }
       }
     }
+    if (requestWithoutTools.systemInstruction) {
+      requestWithoutTools.systemInstruction.role = "user";
+      if (!requestWithoutTools.systemInstruction.parts && requestWithoutTools.systemInstruction.text) {
+        requestWithoutTools.systemInstruction.parts = [{ text: requestWithoutTools.systemInstruction.text }];
+        delete requestWithoutTools.systemInstruction.text;
+      }
+    }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
-    if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
-      generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
+    delete generationConfig.thinkingLevel;
+    if (typeof generationConfig.temperature === "number" && (isNaN(generationConfig.temperature) || generationConfig.temperature < 0 || generationConfig.temperature > 2)) {
+      delete generationConfig.temperature;
     }
+    if (!generationConfig.maxOutputTokens || generationConfig.maxOutputTokens <= 0 || generationConfig.maxOutputTokens > 8192) {
+      generationConfig.maxOutputTokens = 8192;
+    }
+
+    const contentCount = Array.isArray(contents) ? contents.length : 1;
+    const stepIndex = Math.max(1, contentCount * 2 - 1);
+    const trajectoryId = uuidFromSeed(`antigravity:trajectory:${sessionId}:${model}:agent`);
+    const isClaudeModel = Boolean(
+      (model && model.toLowerCase().includes("claude")) ||
+      (body.model && body.model.toLowerCase().includes("claude")) ||
+      requestWithoutTools.labels?.used_claude === "true"
+    );
+
+    const labels = {
+      trajectory_id: trajectoryId,
+      last_step_index: String(stepIndex - 1),
+      used_claude: isClaudeModel ? "true" : "false",
+      ...(requestWithoutTools.labels || {})
+    };
 
     const transformedRequest = {
       ...requestWithoutTools,
@@ -284,6 +308,7 @@ export class AntigravityExecutor extends BaseExecutor {
       ...(contents && { contents }),
       ...(tools && { tools }),
       sessionId,
+      labels,
       safetySettings: undefined,
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
@@ -297,9 +322,10 @@ export class AntigravityExecutor extends BaseExecutor {
       ...body,
       project: projectId,
       model: body.model || model,
-      userAgent: "antigravity",
+      requestId: `agent/${crypto.randomUUID()}/${Date.now()}/${trajectoryId}/${stepIndex}`,
+      sessionId,
       requestType: "agent",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
+      userAgent: "antigravity",
       request: transformedRequest
     };
   }

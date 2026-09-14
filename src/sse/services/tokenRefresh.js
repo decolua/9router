@@ -121,12 +121,16 @@ function needsProjectId(provider) {
  * @param {string} connectionId
  * @param {string} accessToken
  */
-function _refreshProjectId(provider, connectionId, accessToken) {
+function _refreshProjectId(provider, connectionId, accessToken, existingProjectId = null) {
   if (!needsProjectId(provider) || !connectionId || !accessToken) return;
+
+  // Preserve existing projectId across refresh cycles without re-triggering onboarding
+  if (existingProjectId) {
+    return;
+  }
 
   // Invalidate the stale cached entry so getProjectIdForConnection does a real fetch
   invalidateProjectId(connectionId);
-
   // Lazy resolution: Do not eagerly trigger onboardUser during background token refresh.
   // Eagerly fetching projectId across multiple accounts simultaneously triggers Google Cloud anti-abuse / rate limits.
   // Runtime handlers (e.g. chat handler) will lazily call getProjectIdForConnection() on demand.
@@ -263,8 +267,8 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
           : creds.providerSpecificData,
       };
 
-      // Non-blocking: refresh projectId with the new access token
-      _refreshProjectId(provider, creds.connectionId, creds.accessToken);
+      // Non-blocking: refresh projectId with the new access token only if missing
+      _refreshProjectId(provider, creds.connectionId, creds.accessToken, creds.projectId);
     }
   }
 
