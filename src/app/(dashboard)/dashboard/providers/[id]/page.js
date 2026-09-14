@@ -15,7 +15,7 @@ import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 import { runModelBatchTest } from "@/shared/utils/modelBatchTester";
-import { fetchModelTestResults, saveModelTestResults } from "@/shared/utils/modelTestResultsClient";
+import { fetchModelTestResults, saveModelTestResults, clearModelTestResults } from "@/shared/utils/modelTestResultsClient";
 import { useNotificationStore } from "@/store/notificationStore";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
@@ -1235,6 +1235,87 @@ export default function ProviderDetailPage() {
   const canBatchTest = connections.length > 0 || isFreeNoAuth;
   const batchRunning = batchTesting || batchStopping;
 
+  // Import the provider's live /models catalog as custom models (non-compatible
+  // providers have no "Import from /models" affordance of their own).
+  const [importingModels, setImportingModels] = useState(false);
+  const [deletingFailed, setDeletingFailed] = useState(false);
+
+  const handleImportProviderModels = async () => {
+    if (importingModels || !modelsSectionData) return;
+    const activeConnection = connections.find((conn) => conn.isActive !== false);
+    if (!activeConnection) {
+      notify.warning("Add a connection first to import models");
+      return;
+    }
+
+    setImportingModels(true);
+    try {
+      const res = await fetch(`/api/providers/${activeConnection.id}/models`);
+      const data = await res.json();
+      if (!res.ok) {
+        notify.error(data.error || "Failed to import models");
+        return;
+      }
+      const incoming = data.models || [];
+      if (incoming.length === 0) {
+        notify.warning(data.warning || "No models returned from /models.");
+        return;
+      }
+      const knownIds = new Set(modelsSectionData.allModels.map((m) => m.id));
+      let importedCount = 0;
+      for (const model of incoming) {
+        const modelId = model.id || model.name || model.model;
+        if (!modelId || knownIds.has(modelId)) continue;
+        await handleAddCustomModel(modelId, "llm", providerStorageAlias);
+        knownIds.add(modelId);
+        importedCount += 1;
+      }
+      if (importedCount === 0) notify.warning("No new models were added.");
+      else notify.success(`Imported ${importedCount} model${importedCount === 1 ? "" : "s"} from /models`);
+    } catch (error) {
+      notify.error("Failed to import models");
+      console.log("Error importing models:", error);
+    } finally {
+      setImportingModels(false);
+    }
+  };
+
+  // Bulk-remove models whose latest batch test errored (among those shown):
+  // custom models are deleted; built-in/live models can only be disabled
+  // (reversible via "Active All"), so those are disabled instead.
+  const handleDeleteFailedModels = async () => {
+    if (shownFailedModels.length === 0 || deletingFailed) return;
+    const customCount = shownFailedModels.filter((m) => m.source === "custom").length;
+    const builtinCount = shownFailedModels.length - customCount;
+    const parts = [];
+    if (customCount > 0) parts.push(`delete ${customCount} custom model${customCount === 1 ? "" : "s"}`);
+    if (builtinCount > 0) parts.push(`disable ${builtinCount} built-in model${builtinCount === 1 ? "" : "s"}`);
+    if (!window.confirm(`This will ${parts.join(" and ")} whose latest test failed. Continue?`)) return;
+
+    setDeletingFailed(true);
+    try {
+      for (const model of shownFailedModels) {
+        if (model.source === "custom") {
+          await handleDeleteCustomModel(model.id, "llm", providerStorageAlias);
+        } else {
+          await handleDisableModel(model.id);
+        }
+        setBatchResults((prev) => {
+          const next = { ...prev };
+          delete next[model.id];
+          return next;
+        });
+        clearModelTestResults([`${providerStorageAlias}/${model.id}`]);
+      }
+      notify.success(`Removed ${shownFailedModels.length} failed model${shownFailedModels.length === 1 ? "" : "s"}`);
+    } catch (error) {
+      notify.error("Failed to remove failed models");
+      console.log("Error removing failed models:", error);
+    } finally {
+      setDeletingFailed(false);
+    }
+  };
+
   // Derived model lists for this provider (llm kind only). Shared by the
   // "Available Models" header (search + batch-test controls) and the rows below.
   const modelsSectionData = (() => {
@@ -1277,6 +1358,15 @@ export default function ProviderDetailPage() {
       shownCount: batchTestTargets.length,
     };
   })();
+
+  // Failed models among those shown — drives the "Delete N Failed" button.
+  // Custom models get deleted; built-in/live ones get disabled (reversible).
+  const shownFailedModels = modelsSectionData
+    ? [
+        ...modelsSectionData.filteredCustomRows.map((m) => ({ id: m.id, source: m.source })),
+        ...modelsSectionData.filteredDisplayModels.map((m) => ({ id: m.id, source: "builtin" })),
+      ].filter((m) => batchResults[m.id]?.state === "error")
+    : [];
 
   const renderModelsSection = () => {
     if (isCompatible) {
@@ -1945,6 +2035,28 @@ export default function ProviderDetailPage() {
                 <span className="text-xs text-text-muted tabular-nums">
                   {batchSummary.completed}/{batchSummary.total} · {batchSummary.passed} ok{batchSummary.failed > 0 ? ` · ${batchSummary.failed} fail` : ""}{batchSummary.avgLatencyMs != null ? ` · avg ${batchSummary.avgLatencyMs}ms` : ""}{batchSummary.stopped ? " · stopped" : ""}
                 </span>
+              )}
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="download"
+                onClick={handleImportProviderModels}
+                disabled={!canBatchTest || importingModels}
+                title={canBatchTest ? "Import the provider's live /models catalog as custom models" : "Add a connection to import models"}
+              >
+                {importingModels ? "Importing..." : "Import from /models"}
+              </Button>
+              {shownFailedModels.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="danger"
+                  icon="delete"
+                  onClick={handleDeleteFailedModels}
+                  disabled={batchRunning || deletingFailed}
+                  title={`Remove the ${shownFailedModels.length} model(s) whose latest test failed (custom deleted, built-in disabled)`}
+                >
+                  {deletingFailed ? "Removing..." : `Delete ${shownFailedModels.length} Failed`}
+                </Button>
               )}
               {batchRunning ? (
                 <Button size="sm" variant="ghost" icon="stop" onClick={handleStopTestModels} disabled={batchStopping}>

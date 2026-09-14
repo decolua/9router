@@ -320,6 +320,28 @@ const PROVIDER_MODELS_CONFIG = {
   },
 
   // Custom resolvers (non-OpenAI-shaped APIs / token-refresh flows)
+  kilocode: {
+    // Kilo's gateway catalog is public (same source as /api/providers/kilo/free-models).
+    // Filtered to isFree — the full catalog is 350+ mostly paid models which would
+    // flood the import; paid ones can still be added manually via "Add Model".
+    customResolver: async () => {
+      const response = await fetch("https://api.kilo.ai/api/gateway/models", {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!response.ok) {
+        return { error: `Failed to fetch models: ${response.status}`, status: response.status };
+      }
+      const json = await response.json();
+      const models = (json.data || [])
+        .filter((m) => m.isFree === true)
+        .map((m) => ({ id: m.id, name: m.name || m.id, isFree: true }));
+      if (models.length === 0) {
+        return { models: [], warning: "Kilo returned no free models." };
+      }
+      return { models };
+    },
+  },
   kiro: {
     customResolver: async (connection) => {
       const credentials = {
