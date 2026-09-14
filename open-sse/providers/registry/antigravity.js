@@ -19,7 +19,10 @@ export default {
   category: "oauth",
   serviceKinds: ["llm", "image", "webSearch"],
   transport: {
-    baseUrls: [ANTIGRAVITY_IDE_BASE_URL],
+    baseUrls: [
+      ANTIGRAVITY_IDE_BASE_URL,
+      "https://daily-cloudcode-pa.sandbox.googleapis.com",
+    ],
     format: "antigravity",
     headers: {
       "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
@@ -81,9 +84,9 @@ export default {
     ],
     apiEndpoint: "https://daily-cloudcode-pa.googleapis.com",
     apiVersion: "v1internal",
-    loadCodeAssistEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    onboardUserEndpoint: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
-    loadCodeAssistUserAgent: ANTIGRAVITY_IDE_USER_AGENT,
+    loadCodeAssistEndpoint: "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    onboardUserEndpoint: "https://daily-cloudcode-pa.googleapis.com/v1internal:onboardUser",
+    loadCodeAssistUserAgent: "antigravity",
     refreshLeadMs: 300000,
   },
   searchViaChat: {

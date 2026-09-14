@@ -84,23 +84,23 @@ export class AntigravityService {
     return {
       "Authorization": `Bearer ${accessToken}`,
       "Content-Type": "application/json",
-      "User-Agent": this.config.loadCodeAssistUserAgent,
+      "User-Agent": "antigravity",
     };
   }
 
   /**
    * Get metadata object for loadCodeAssist / onboardUser API calls.
-   * Uses numeric enum values matching Antigravity binary ClientMetadata.
    */
   getMetadata() {
-    return getOAuthClientMetadata();
+    return { ideType: "ANTIGRAVITY" };
   }
 
   /**
    * Fetch Project ID and Tier from loadCodeAssist API
    */
   async loadCodeAssist(accessToken) {
-    const response = await fetch(this.config.loadCodeAssistEndpoint, {
+    const endpoint = "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: this.getApiHeaders(accessToken),
       body: JSON.stringify({ metadata: this.getMetadata() }),
@@ -113,31 +113,33 @@ export class AntigravityService {
 
     const data = await response.json();
 
-    // Extract project ID
-    let projectId = data.cloudaicompanionProject;
-    if (typeof projectId === 'object' && projectId !== null && projectId.id) {
-      projectId = projectId.id;
-    }
-
-    // Extract tier ID (default to legacy-tier)
-    let tierId = "legacy-tier";
-    if (Array.isArray(data.allowedTiers)) {
-      for (const tier of data.allowedTiers) {
-        if (tier.isDefault && tier.id) {
-          tierId = tier.id.trim();
-          break;
+    // Check for verification requirement on ineligible tiers
+    if (Array.isArray(data.ineligibleTiers)) {
+      for (const tier of data.ineligibleTiers) {
+        if (tier.validationUrl) {
+          console.warn(`[Antigravity] Account verification required: ${tier.validationUrl}`);
         }
       }
     }
 
-    return { projectId, tierId, raw: data };
+    // Extract project ID
+    let projectId = "";
+    if (typeof data.cloudaicompanionProject === "string") {
+      projectId = data.cloudaicompanionProject.trim();
+    } else if (data.cloudaicompanionProject && typeof data.cloudaicompanionProject === "object" && data.cloudaicompanionProject.id) {
+      projectId = data.cloudaicompanionProject.id.trim();
+    }
+
+    const hasCurrentTier = Boolean(data.currentTier);
+    return { projectId, hasCurrentTier, raw: data };
   }
 
   /**
    * Onboard user to enable Gemini Code Assist for the project
    */
-  async onboardUser(accessToken, projectId, tierId) {
-    const response = await fetch(this.config.onboardUserEndpoint, {
+  async onboardUser(accessToken, tierId = "free-tier") {
+    const endpoint = "https://daily-cloudcode-pa.googleapis.com/v1internal:onboardUser";
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: this.getApiHeaders(accessToken),
       body: JSON.stringify({ tierId, metadata: this.getMetadata() }),
@@ -152,31 +154,58 @@ export class AntigravityService {
   }
 
   /**
-   * Complete onboarding flow with retry
+   * Poll operation until done
    */
-  async completeOnboarding(accessToken, projectId, tierId, maxRetries = 10) {
-    for (let i = 0; i < maxRetries; i++) {
-      const result = await this.onboardUser(accessToken, projectId, tierId);
+  async pollOperation(accessToken, operationName, timeoutMs = 30000) {
+    const startTime = Date.now();
+    const opPath = operationName.startsWith("v1internal/")
+      ? operationName.slice("v1internal/".length)
+      : (operationName.startsWith("/") ? operationName.slice(1) : operationName);
+    const endpoint = `https://daily-cloudcode-pa.googleapis.com/v1internal/${opPath}`;
 
-      if (result.done === true) {
-        // Extract final project ID from response
-        let finalProjectId = projectId;
-        if (result.response?.cloudaicompanionProject) {
-          const respProject = result.response.cloudaicompanionProject;
-          if (typeof respProject === 'string') {
-            finalProjectId = respProject.trim();
-          } else if (respProject.id) {
-            finalProjectId = respProject.id.trim();
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "GET",
+          headers: this.getApiHeaders(accessToken),
+        });
+        if (response.ok) {
+          const op = await response.json();
+          if (op.done === true) {
+            return op;
           }
         }
-        return { success: true, projectId: finalProjectId };
+      } catch (_) {
+        // ignore intermittent network errors during poll
       }
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    throw new Error(`Operation ${operationName} timed out after ${timeoutMs}ms`);
+  }
 
-      // Wait 5 seconds before retry
-      await new Promise(resolve => setTimeout(resolve, 5000));
+  /**
+   * Complete onboarding flow with retry and polling
+   */
+  async completeOnboarding(accessToken) {
+    const initial = await this.loadCodeAssist(accessToken);
+    if (initial.hasCurrentTier && initial.projectId) {
+      return { success: true, projectId: initial.projectId };
     }
 
-    throw new Error("Onboarding timeout - please try again");
+    const onboardResult = await this.onboardUser(accessToken, "free-tier");
+    if (onboardResult.done === true) {
+      const refreshed = await this.loadCodeAssist(accessToken);
+      const pid = refreshed.projectId || (typeof onboardResult.response?.cloudaicompanionProject === "string" ? onboardResult.response.cloudaicompanionProject.trim() : onboardResult.response?.cloudaicompanionProject?.id?.trim());
+      return { success: true, projectId: pid || initial.projectId };
+    }
+
+    if (onboardResult.name) {
+      await this.pollOperation(accessToken, onboardResult.name, 30000);
+      const refreshed = await this.loadCodeAssist(accessToken);
+      return { success: true, projectId: refreshed.projectId || initial.projectId };
+    }
+
+    return { success: true, projectId: initial.projectId };
   }
 
   /**
@@ -288,21 +317,15 @@ export class AntigravityService {
       // Get user info
       const userInfo = await this.getUserInfo(tokens.access_token);
 
-      spinner.text = "Loading Code Assist configuration...";
+      spinner.text = "Loading Code Assist configuration & provisioning project...";
 
-      // Load Code Assist to get project ID and tier
-      const { projectId, tierId } = await this.loadCodeAssist(tokens.access_token);
+      // Complete onboarding if needed and acquire provisioned project ID
+      const onboardResult = await this.completeOnboarding(tokens.access_token);
+      const finalProjectId = onboardResult.projectId;
 
-      if (!projectId) {
-        throw new Error("No Google Cloud Project found. Please ensure you have a GCP project with Gemini Code Assist enabled.");
+      if (!finalProjectId) {
+        throw new Error("No Google Cloud Project found or provisioned. Please ensure your Google account is eligible.");
       }
-
-      spinner.text = "Onboarding to Gemini Code Assist...";
-
-      // Complete onboarding to enable Gemini Code Assist
-      const onboardResult = await this.completeOnboarding(tokens.access_token, projectId, tierId);
-      const finalProjectId = onboardResult.projectId || projectId;
-
       spinner.text = "Saving tokens to server...";
 
       // Save tokens to server

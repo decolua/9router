@@ -264,14 +264,16 @@ export function openaiToGeminiCLIRequest(model, body, stream, credentials = null
 // Wrap Gemini CLI format in Cloud Code wrapper
 function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigravity = false) {
   const projectId = credentials?.projectId || generateProjectId();
+  const rawSessionId = toNumericSessionId(credentials?._clientSessionId) || (isAntigravity ? deriveSessionId(credentials?.email || credentials?.connectionId) : generateSessionId());
+  const sessionId = isAntigravity ? (toNumericSessionId(rawSessionId) || rawSessionId) : rawSessionId;
 
   const envelope = {
     project: projectId,
     model: model,
     userAgent: isAntigravity ? "antigravity" : "gemini-cli",
-    requestId: isAntigravity ? `agent-${generateUUID()}` : generateRequestId(),
+    requestId: generateRequestId(),
     request: {
-      sessionId: toNumericSessionId(credentials?._clientSessionId) || (isAntigravity ? deriveSessionId(credentials?.email || credentials?.connectionId) : generateSessionId()),
+      sessionId,
       contents: geminiCLI.contents,
       systemInstruction: geminiCLI.systemInstruction,
       generationConfig: geminiCLI.generationConfig,
@@ -282,6 +284,27 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
   // Antigravity specific fields
   if (isAntigravity) {
     envelope.requestType = "agent";
+    const contentCount = Array.isArray(geminiCLI.contents) ? geminiCLI.contents.length : 1;
+    const stepIndex = Math.max(1, contentCount * 2 - 1);
+    const trajectoryId = generateUUID();
+    const isClaude = isClaudeModel(model);
+    envelope.requestId = `agent/${generateUUID()}/${Date.now()}/${trajectoryId}/${stepIndex}`;
+    envelope.request.labels = {
+      trajectory_id: trajectoryId,
+      last_step_index: String(stepIndex - 1),
+      used_claude: isClaude ? "true" : "false"
+    };
+    if (!envelope.request.generationConfig) {
+      envelope.request.generationConfig = { maxOutputTokens: 8192 };
+    } else {
+      delete envelope.request.generationConfig.thinkingLevel;
+      if (!envelope.request.generationConfig.maxOutputTokens) {
+        envelope.request.generationConfig.maxOutputTokens = 8192;
+      }
+    }
+    if (envelope.request.systemInstruction) {
+      envelope.request.systemInstruction.role = GEMINI_ROLE.USER;
+    }
   } else {
     // Keep safetySettings for Gemini CLI
     envelope.request.safetySettings = geminiCLI.safetySettings;
@@ -299,19 +322,20 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
 // Wrap Claude format in Cloud Code envelope for Antigravity
 function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = null, signature = DEFAULT_THINKING_AG_SIGNATURE) {
   const projectId = credentials?.projectId || generateProjectId();
+  const rawSessionId = toNumericSessionId(credentials?._clientSessionId) || deriveSessionId(credentials?.email || credentials?.connectionId);
+  const sessionId = toNumericSessionId(rawSessionId) || rawSessionId;
 
   const envelope = {
     project: projectId,
     model: model,
     userAgent: "antigravity",
-    requestId: `agent-${generateUUID()}`,
     requestType: "agent",
     request: {
-      sessionId: toNumericSessionId(credentials?._clientSessionId) || deriveSessionId(credentials?.email || credentials?.connectionId),
+      sessionId,
       contents: [],
       generationConfig: {
         temperature: claudeRequest.temperature || 1,
-        maxOutputTokens: claudeRequest.max_tokens || 4096
+        maxOutputTokens: claudeRequest.max_tokens || 8192
       }
     }
   };
@@ -423,8 +447,18 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
   if (systemParts.length > 0) {
     envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
-
   envelope.request.contents = normalizeGeminiContents(envelope.request.contents);
+
+  const contentCount = Array.isArray(envelope.request.contents) ? envelope.request.contents.length : 1;
+  const stepIndex = Math.max(1, contentCount * 2 - 1);
+  const trajectoryId = generateUUID();
+  envelope.requestId = `agent/${generateUUID()}/${Date.now()}/${trajectoryId}/${stepIndex}`;
+  envelope.request.labels = {
+    trajectory_id: trajectoryId,
+    last_step_index: String(stepIndex - 1),
+    used_claude: "true"
+  };
+
   return envelope;
 }
 

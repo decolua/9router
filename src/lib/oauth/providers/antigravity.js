@@ -42,10 +42,10 @@ const antigravity = {
     const loadHeaders = {
       "Authorization": `Bearer ${tokens.access_token}`,
       "Content-Type": "application/json",
-      "User-Agent": ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent,
+      "User-Agent": "antigravity",
       "x-request-source": "local",
     };
-    const metadata = getOAuthClientMetadata();
+    const metadata = { ideType: "ANTIGRAVITY" };
 
     // Fetch user info
     const userInfoRes = await fetch(`${ANTIGRAVITY_CONFIG.userInfoUrl}?alt=json`, {
@@ -56,52 +56,85 @@ const antigravity = {
     });
     const userInfo = userInfoRes.ok ? await userInfoRes.json() : {};
 
-    // Load Code Assist to get project ID and tier
+    // Invoke Cloud Code Assist control plane
     let projectId = "";
-    let tierId = "legacy-tier";
     try {
-      const loadRes = await fetch(ANTIGRAVITY_CONFIG.loadCodeAssistEndpoint, {
+      const loadRes = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
         method: "POST",
         headers: loadHeaders,
         body: JSON.stringify({ metadata }),
       });
+
       if (loadRes.ok) {
         const data = await loadRes.json();
-        projectId = data.cloudaicompanionProject?.id || data.cloudaicompanionProject || "";
-        if (Array.isArray(data.allowedTiers)) {
-          for (const tier of data.allowedTiers) {
-            if (tier.isDefault && tier.id) {
-              tierId = tier.id.trim();
-              break;
+        if (Array.isArray(data.ineligibleTiers)) {
+          for (const tier of data.ineligibleTiers) {
+            if (tier.validationUrl) {
+              console.warn(`[Antigravity] Account requires verification. Validation URL: ${tier.validationUrl}`);
             }
+          }
+        }
+
+        if (typeof data.cloudaicompanionProject === "string") {
+          projectId = data.cloudaicompanionProject.trim();
+        } else if (data.cloudaicompanionProject && typeof data.cloudaicompanionProject === "object" && data.cloudaicompanionProject.id) {
+          projectId = data.cloudaicompanionProject.id.trim();
+        }
+
+        // If response does not contain currentTier, onboard user to free-tier
+        if (!data.currentTier) {
+          try {
+            const onboardRes = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:onboardUser", {
+              method: "POST",
+              headers: loadHeaders,
+              body: JSON.stringify({ tierId: "free-tier", metadata }),
+            });
+
+            if (onboardRes.ok) {
+              const onboardData = await onboardRes.json();
+              if (onboardData.done !== true && onboardData.name) {
+                const opName = onboardData.name;
+                const opPath = opName.startsWith("v1internal/")
+                  ? opName.slice("v1internal/".length)
+                  : (opName.startsWith("/") ? opName.slice(1) : opName);
+                const opUrl = `https://daily-cloudcode-pa.googleapis.com/v1internal/${opPath}`;
+                const startTime = Date.now();
+                while (Date.now() - startTime < 30000) {
+                  await new Promise(r => setTimeout(r, 1000));
+                  try {
+                    const pollRes = await fetch(opUrl, { headers: loadHeaders });
+                    if (pollRes.ok) {
+                      const pollData = await pollRes.json();
+                      if (pollData.done === true) break;
+                    }
+                  } catch (_) {
+                    // continue polling on transient network failure
+                  }
+                }
+              }
+
+              // Re-fetch loadCodeAssist to acquire provisioned cloudaicompanionProject
+              const refetchRes = await fetch("https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist", {
+                method: "POST",
+                headers: loadHeaders,
+                body: JSON.stringify({ metadata }),
+              });
+              if (refetchRes.ok) {
+                const refetchData = await refetchRes.json();
+                if (typeof refetchData.cloudaicompanionProject === "string") {
+                  projectId = refetchData.cloudaicompanionProject.trim();
+                } else if (refetchData.cloudaicompanionProject && typeof refetchData.cloudaicompanionProject === "object" && refetchData.cloudaicompanionProject.id) {
+                  projectId = refetchData.cloudaicompanionProject.id.trim();
+                }
+              }
+            }
+          } catch (onboardError) {
+            console.error("[Antigravity] Onboarding error:", onboardError);
           }
         }
       }
     } catch (e) {
-      console.log("Failed to load code assist:", e);
-    }
-
-    // Fire-and-forget onboarding — does not block DB save
-    if (projectId) {
-      const doOnboard = async () => {
-        for (let i = 0; i < 10; i++) {
-          try {
-            const onboardRes = await fetch(ANTIGRAVITY_CONFIG.onboardUserEndpoint, {
-              method: "POST",
-              headers: loadHeaders,
-              body: JSON.stringify({ tierId, metadata }),
-            });
-            if (onboardRes.ok) {
-              const result = await onboardRes.json();
-              if (result.done === true) break;
-            }
-          } catch (e) {
-            break;
-          }
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        }
-      };
-      doOnboard().catch(() => {});
+      console.error("[Antigravity] Failed to load code assist:", e);
     }
 
     return { userInfo, projectId };
