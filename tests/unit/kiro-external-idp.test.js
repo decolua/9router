@@ -105,9 +105,12 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     expect(headers.TokenType).toBe("EXTERNAL_IDP");
     expect(headers.tokentype).toBeUndefined();
 
-    expect(executor.buildUrl("claude-sonnet-4.5", true, 0, credentials)).toBe(
-      "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
-    );
+    // v0.5.75 orders the Amazon q.* surface first for every auth method;
+    // enterprise tokens get 401/403 there and fall through to codewhisperer,
+    // which is the only surface that accepts TokenType: EXTERNAL_IDP.
+    const ordered = executor.getOrderedBaseUrls(credentials);
+    expect(ordered[0]).toBe("https://q.us-east-1.amazonaws.com/generateAssistantResponse");
+    expect(ordered).toContain("https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse");
   });
 
   it("sends TokenType for external_idp Kiro usage probes", async () => {

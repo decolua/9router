@@ -10,5 +10,18 @@ export async function register() {
 
     const { startModelCatalogSync } = await import("@/lib/modelCatalog/sync.js");
     startModelCatalogSync();
+
+    // Load user contextWindow overrides into the capabilities resolver so
+    // /v1/models + request routing honor dashboard edits from boot.
+    try {
+      const [{ getSettings }, { setContextWindowOverrides }] = await Promise.all([
+        import("@/lib/db/repos/settingsRepo.js"),
+        import("open-sse/providers/capabilities.js"),
+      ]);
+      const settings = await getSettings();
+      setContextWindowOverrides(settings.contextWindowOverrides || {});
+    } catch (e) {
+      console.warn("[context-overrides] boot load failed:", e?.message);
+    }
   }
 }

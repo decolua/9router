@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -150,6 +150,32 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+  // Full-history statistics source (45-day retention). Written once per
+  // request from the same detail used for requestDetails; the Statistics page
+  // reads all aggregation from this table only.
+  requestStats: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      timestamp: "TEXT NOT NULL",
+      provider: "TEXT",
+      model: "TEXT",
+      connectionId: "TEXT",
+      status: "TEXT",
+      promptTokens: "INTEGER DEFAULT 0",
+      completionTokens: "INTEGER DEFAULT 0",
+      cachedTokens: "INTEGER DEFAULT 0",
+      cacheCreationTokens: "INTEGER DEFAULT 0",
+      reasoningTokens: "INTEGER DEFAULT 0",
+      latencyTotal: "INTEGER DEFAULT 0",
+      latencyTtft: "INTEGER DEFAULT 0",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_rs_ts ON requestStats(timestamp DESC)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_provider ON requestStats(provider)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_model ON requestStats(model)",
+      "CREATE INDEX IF NOT EXISTS idx_rs_conn ON requestStats(connectionId)",
     ],
   },
 };

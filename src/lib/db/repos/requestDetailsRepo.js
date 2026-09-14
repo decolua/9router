@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { saveRequestStats } from "./requestStatsRepo.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -141,6 +142,13 @@ async function flushToDatabase() {
 }
 
 export async function saveRequestDetail(detail) {
+  // Shared id feeds both the observability row (upsert across stream
+  // start/complete) and the stats row (one per request). Generate it here so
+  // the stats write — which runs unconditionally, independent of the
+  // observability toggle — sees a stable key.
+  if (!detail.id) detail.id = generateDetailId(detail.model);
+  saveRequestStats(detail).catch((e) => console.error("[requestStats] save failed:", e.message));
+
   const config = await getObservabilityConfig();
   if (!config.enabled) {return;}
 
