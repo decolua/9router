@@ -318,12 +318,12 @@ export class AntigravityExecutor extends BaseExecutor {
 
     this._lastSessionId = transformedRequest.sessionId; // cached for buildHeaders (base.execute order)
 
+    const { sessionId: _unusedSessionId, ...cleanBody } = body;
     return {
-      ...body,
+      ...cleanBody,
       project: projectId,
       model: body.model || model,
       requestId: `agent/${crypto.randomUUID()}/${Date.now()}/${trajectoryId}/${stepIndex}`,
-      sessionId,
       requestType: "agent",
       userAgent: "antigravity",
       request: transformedRequest

@@ -284,7 +284,6 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
   // Antigravity specific fields
   if (isAntigravity) {
     envelope.requestType = "agent";
-    envelope.sessionId = sessionId;
     const contentCount = Array.isArray(geminiCLI.contents) ? geminiCLI.contents.length : 1;
     const stepIndex = Math.max(1, contentCount * 2 - 1);
     const trajectoryId = generateUUID();
@@ -330,7 +329,6 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     project: projectId,
     model: model,
     userAgent: "antigravity",
-    sessionId,
     requestType: "agent",
     request: {
       sessionId,

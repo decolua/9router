@@ -235,8 +235,9 @@ describe("Antigravity CCA Protocol & Tool Schema Normalizer", () => {
       expect(transformed.model).toBe("gemini-3.8-flash-high");
       expect(transformed.userAgent).toBe("antigravity");
       expect(transformed.requestType).toBe("agent");
-      expect(transformed.sessionId).toBeDefined();
-      expect(transformed.sessionId).toMatch(/^-?\d+$/);
+      expect(transformed.sessionId).toBeUndefined();
+      expect(transformed.request.sessionId).toBeDefined();
+      expect(transformed.request.sessionId).toMatch(/^-?\d+$/);
 
       // requestId format: agent/<uuid>/<timestamp>/<trajectoryId>/<stepIndex>
       expect(transformed.requestId).toMatch(/^agent\/[0-9a-f-]+\/\d+\/[0-9a-f-]+\/\d+$/);
