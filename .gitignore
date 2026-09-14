@@ -88,6 +88,11 @@ open-sse.old/
 .graphifyignore
 graphify-out/*
 
+# Local scratch secrets / verify env (scripts OK; keys not)
+.scratch/*.env
+.scratch/**/*.secret*
+.scratch/_verify-body.json
+
 # Local-only working dirs (notes, vendored repos, scripts, skills)
 .claude/
 .docs/

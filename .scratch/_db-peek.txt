@@ -1,0 +1,30 @@
+
+== apiKeys cols=['id', 'key', 'name', 'machineId', 'isActive', 'createdAt']
+count=1
+id=214a958b-99bc-483b-9f16-f09d92c2bda4 | key=sk-6e6ac5a3f...len35 | name=Default Key | machineId=6e6ac5a3f37c40f1 | isActive=1 | createdAt=2026-08-13T14:04:35.163Z
+
+== combos cols=['id', 'name', 'kind', 'models', 'createdAt', 'updatedAt']
+count=12
+id=a061f94e-e063-4a9b-8eb0-48a31f5dd5c2 | name=claude-combo | kind= | models=["cc/claude-opus-5","cc/claude-sonnet-5"] | createdAt=2026-08-13T14:10:07.967Z | updatedAt=2026-08-19T21:05:01.236Z
+id=d4fe0257-9482-4a34-91b4-f378d54e0066 | name=kiro-combo | kind= | models=["kr/claude-sonnet-4.5","kr/claude-haiku-4.5","kr/deepseek-3.2","kr/qwen3-coder-next","kr/glm-5"] | createdAt=2026-08-14T11:51:35.580Z | updatedAt=2026-08-19T21:15:53.490Z
+id=a8ad9705-e3c7-44a8-b3aa-e77f68a2280d | name=kilo-gateway-combo | kind= | models=["kgw/kwaipilot/kat-coder-pro-v2.5:free","kgw/kilo-auto/balanced","kgw/kilo-auto/free","kgw/kilo-auto/frontier","kgw/nvidia/nemotron-3-super-120b-a12b:free","kgw/nvidia/nemotron-3-ultra-550b-a55b:free | createdAt=2026-08-14T11:55:35.108Z | updatedAt=2026-08-14T11:55:35.108Z
+id=8b3f0a58-b4f4-4cc6-8e73-7245c8a96401 | name=kilo-combo | kind= | models=["kgw/kilo-auto/free"] | createdAt=2026-08-14T11:57:39.518Z | updatedAt=2026-08-19T21:07:18.658Z
+id=738afc24-cc92-4aac-84a0-0ef0fcbfee6a | name=cline-combo | kind= | models=["cl/anthropic/claude-opus-4.6","cl/anthropic/claude-opus-4.7","cl/anthropic/claude-sonnet-4.6","cl/google/gemini-3.1-flash-lite-preview","cl/google/gemini-3.1-pro-preview","cl/openai/gpt-5.3-codex"," | createdAt=2026-08-14T11:59:52.229Z | updatedAt=2026-08-14T11:59:52.229Z
+id=9b3d5143-e271-4eff-bfae-e661d55e4080 | name=grokcli-combo | kind= | models=["gcli/grok-4.5","gcli/grok-4.5-high","gcli/grok-4.5-low","gcli/grok-4.5-medium","gcli/grok-build"] | createdAt=2026-08-14T12:06:36.564Z | updatedAt=2026-08-14T12:06:36.564Z
+id=a138cc33-cf74-432e-a281-a2f62e9e7f04 | name=Kimchi-combo | kind= | models=["kimchi/claude-opus-4-6","kimchi/claude-sonnet-4-6","kimchi/kimi-k2.5","kimchi/kimi-k2.6","kimchi/kimi-k2.7","kimchi/minimax-m2.7","kimchi/minimax-m3","kimchi/nemotron-3-ultra-fp4"] | createdAt=2026-08-14T13:05:13.139Z | updatedAt=2026-08-14T13:05:13.139Z
+id=447b681d-2c71-4f8c-8ce9-bec913186a7c | name=API.airforce-combo | kind= | models=["af/anthropic/claude-3.7-sonnet","af/google/gemini-2.5-flash","af/moonshot/kimi-k2.6"] | createdAt=2026-08-14T13:06:55.003Z | updatedAt=2026-08-14T13:06:55.003Z
+id=10cd2c85-efe0-438a-8e83-5498127db01b | name=9r-router | kind= | models=["claude-combo","tkr/qwen/qwen3.8-max-free","kiro-combo","opencode-combo","kilo-combo"] | createdAt=2026-08-14T13:14:06.289Z | updatedAt=2026-09-06T12:58:39.723Z
+id=1c2938c8-439b-4c61-b29a-639ed105d978 | name=mimo-combo | kind= | models=["mmf/mimo-auto"] | createdAt=2026-08-14T14:01:09.819Z | updatedAt=2026-08-14T14:01:09.819Z
+id=f90bdd5a-7c91-4985-bd24-291e0916dbe0 | name=opencode-combo | kind= | models=["oc/deepseek-v4-flash-free"] | createdAt=2026-08-14T14:01:37.215Z | updatedAt=2026-08-19T21:06:12.802Z
+id=33e157d7-6c99-46fa-a3aa-1ec8f9a55d8e | name=Groq-combo | kind= | models=["groq/meta-llama/llama-4-maverick-17b-128e-instruct","groq/llama-3.3-70b-versatile","groq/openai/gpt-oss-120b","groq/qwen/qwen3-32b"] | createdAt=2026-08-14T14:07:04.366Z | updatedAt=2026-08-14T14:07:04.366Z
+
+== providerNodes cols=['id', 'type', 'name', 'data', 'createdAt', 'updatedAt']
+count=3
+id=openai-compatible-chat-6d54d304-62f6-4a3e-9e1d-529584a7d366 | type=openai-compatible | name=tkr | data={"prefix": "tkr", "apiType": "chat", "baseUrl": "https://api.tokenrouter.com/v1"} | createdAt=2026-08-27T11:45:43.177Z | updatedAt=2026-08-27T11:45:43.177Z
+id=openai-compatible-chat-af41a3c6-5b80-4aba-bfde-f6c3c1895a45 | type=openai-compatible | name=kio | data={"prefix": "kio", "apiType": "chat", "baseUrl": "https://kiosapi.com/v1"} | createdAt=2026-08-27T11:57:08.798Z | updatedAt=2026-08-27T12:04:12.101Z
+id=openai-compatible-chat-a9358385-9570-4249-9a34-e4d9cf5dc686 | type=openai-compatible | name=tabitoken | data={"prefix": "tabitoken", "apiType": "chat", "baseUrl": "https://tabitoken.com/v1"} | createdAt=2026-09-03T12:51:34.259Z | updatedAt=2026-09-03T12:51:34.259Z
+
+== providerConnections matching apinex/openai-compatible
+id=ff748743-d392-4c4e-b7cd-9d2305911392 | provider=openai-compatible-chat-6d54d304-62f6-4a3e-9e1d-529584a7d366 | authType=apikey | name=tkr | email= | priority=1 | isActive=1 | data={"defaultModel": "tkr/qwen/qwen3.8-max-free", "apiKey": "sk-oM5a2...len51", "testStatus": "active", "providerSpecificData": {"prefix": "tkr", "apiType": "chat", "baseUrl": "https://api.tokenrouter.com/v1", "nodeName": "tkr", "connectionProxyEnabled": false, "connectionProxyUrl": "", "connectionNoPro | createdAt=2026-08-27T11:46:06.651Z | updatedAt=2026-09-06T12:59:49.923Z
+id=2df0a4e8-be7c-416b-80d4-56388ceeacf9 | provider=openai-compatible-chat-af41a3c6-5b80-4aba-bfde-f6c3c1895a45 | authType=apikey | name=kio | email= | priority=1 | isActive=1 | data={"defaultModel": "deepseek-v4-pro", "apiKey": "sk-UQ5g8...len51", "testStatus": "unavailable", "providerSpecificData": {"prefix": "kio", "apiType": "chat", "baseUrl": "https://kiosapi.com/v1", "nodeName": "kio", "connectionProxyEnabled": false, "connectionProxyUrl": "", "connectionNoProxy": ""}, "mo | createdAt=2026-08-27T11:59:04.872Z | updatedAt=2026-08-27T12:13:14.985Z
+id=6256416f-a88d-4725-8cc8-386e963ea07a | provider=openai-compatible-chat-a9358385-9570-4249-9a34-e4d9cf5dc686 | authType=apikey | name=tabitoken | email= | priority=1 | isActive=1 | data={"defaultModel": "claude-opus-5-thinking", "apiKey": "sk-DD8Ad...len51", "testStatus": "active", "providerSpecificData": {"prefix": "tabitoken", "apiType": "chat", "baseUrl": "https://tabitoken.com/v1", "nodeName": "tabitoken", "connectionProxyEnabled": false, "connectionProxyUrl": "", "connectionNo | createdAt=2026-09-03T12:52:40.897Z | updatedAt=2026-09-03T12:52:40.897Z
