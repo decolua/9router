@@ -120,6 +120,28 @@ describe("OpenCodeGoExecutor routing + sanitization", () => {
     expect(out.tools.find((t) => t.name === "bare").parameters).toEqual({ type: "object", properties: {} });
     expect(out.tools.find((t) => t.name === "full").parameters).toEqual({ type: "object", properties: { a: { type: "string" } } });
   });
+
+  it("strips prior-turn reasoning items carrying encrypted_content from input", () => {
+    const ex = new OpenCodeGoExecutor();
+    const body = {
+      model: MODEL,
+      input: [
+        { type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] },
+        {
+          type: "reasoning",
+          id: "rs_123",
+          encrypted_content: "ENC_BLOB_TURN_1",
+          summary: [{ type: "summary_text", text: "thinking text" }],
+        },
+        { type: "function_call", call_id: "c1", name: "read", arguments: "{}" },
+        { type: "function_call_output", call_id: "c1", output: "ok" },
+      ],
+    };
+    const out = ex.transformRequest(MODEL, body, true, {});
+    expect(out.input.some((i) => i.type === "reasoning")).toBe(false);
+    expect(JSON.stringify(out.input)).not.toContain("ENC_BLOB_TURN_1");
+    expect(out.input.map((i) => i.type)).toEqual(["message", "function_call", "function_call_output"]);
+  });
 });
 
 describe("chat/claude clients translate to Responses without breaking tools", () => {
