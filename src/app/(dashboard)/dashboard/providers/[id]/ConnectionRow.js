@@ -260,7 +260,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             </div>
           )}
           {fastMode && (
-            <Tooltip text="Always overrides the client's service tier for this account. On sends service_tier: fast; off removes the client's service tier. Off by default.">
+            <Tooltip text="Always overrides the client's service tier for this account. On sends service_tier: priority; off removes the client's service tier. Off by default.">
               <button
                 type="button"
                 role="switch"

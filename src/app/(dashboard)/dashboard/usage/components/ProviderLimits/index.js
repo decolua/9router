@@ -1206,7 +1206,7 @@ export default function ProviderLimits() {
                             <span className="material-symbols-outlined text-[17px]">schedule</span>
                           </button>
                         </Tooltip>
-                        <Tooltip text={`Fast mode is ${conn.providerSpecificData?.codexFastMode === true ? "on" : "off"}. Overrides this account's requests with service_tier: fast.`}>
+                        <Tooltip text={`Fast mode is ${conn.providerSpecificData?.codexFastMode === true ? "on" : "off"}. Overrides this account's requests with service_tier: priority.`}>
                           <button
                             type="button"
                             onClick={() => handleToggleCodexFastMode(conn, conn.providerSpecificData?.codexFastMode !== true)}
