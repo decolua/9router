@@ -187,6 +187,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
     // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
+    // Strip structured-output format for Claude-compatible passthrough targets.
+    // output_config.format is an Anthropic-only feature; Claude Code sends it on
+    // title-gen requests and non-anthropic gateways (e.g. Alibaba MaaS) reject it
+    // with 400, locking the account for every subsequent request. Mirrors the
+    // prepareClaudeRequest strip on the translated (non-passthrough) path.
+    if (clientTool === "claude" && provider !== "anthropic" && translatedBody.output_config?.format) {
+      delete translatedBody.output_config.format;
+      if (Object.keys(translatedBody.output_config).length === 0) delete translatedBody.output_config;
+    }
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {

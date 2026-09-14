@@ -419,6 +419,13 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // quirk: MiniMax's Claude-compatible endpoint rejects Anthropic's output_config (400 invalid params)
   if (PROVIDERS[provider]?.quirks?.dropOutputConfig) {
     delete body.output_config;
+  } else if (body.output_config?.format && provider !== "anthropic") {
+    // output_config.format (structured output) is an official-Anthropic-only feature.
+    // Claude-compatible gateways (e.g. Alibaba MaaS apps/anthropic) reject it with
+    // "response_format type is unavailable now" — which locks the connection for
+    // every session-title request Claude Code sends. Keep effort, drop format.
+    delete body.output_config.format;
+    if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
   // Clamp max_tokens to the model's real output ceiling. Models whose caps
