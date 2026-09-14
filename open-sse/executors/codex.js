@@ -487,8 +487,12 @@ export class CodexExecutor extends BaseExecutor {
     delete body.safety_identifier; // Droid CLI sends this but Codex doesn't support it
     delete body.previous_response_id; // store=false → backend can't resolve previous resp; avoid 404
 
-    if (body.service_tier === "fast") body.service_tier = "priority";
-    if (body.service_tier && body.service_tier !== "priority") delete body.service_tier;
+    const fastModeRequest = this.config.fastMode?.request;
+    if (credentials?.providerSpecificData?.fastMode === true && fastModeRequest?.field) {
+      body[fastModeRequest.field] = fastModeRequest.value;
+    } else {
+      delete body.service_tier;
+    }
 
     // Final allowlist filter — strip any unknown field that could trigger upstream "routing_unsupported"
     for (const k of Object.keys(body)) {

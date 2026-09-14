@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+import { PROVIDERS } from "../../open-sse/config/providers.js";
 
 function streamFromText(text) {
   const encoder = new TextEncoder();
@@ -19,10 +20,17 @@ describe("Codex fast tier and capacity handling", () => {
       input: "hi",
       reasoning_effort: "max",
       service_tier: "fast",
-    }, true, {});
+    }, true, { providerSpecificData: { fastMode: true } });
 
     expect(body.service_tier).toBe("priority");
     expect(body.reasoning.effort).toBe("xhigh");
+  });
+
+  it("exposes generic fast-mode request and pricing metadata", () => {
+    expect(PROVIDERS.codex.fastMode).toEqual({
+      request: { field: "service_tier", value: "priority" },
+      pricingMultiplier: 2,
+    });
   });
 
   it("uses ChatGPT workspace header fallback", () => {

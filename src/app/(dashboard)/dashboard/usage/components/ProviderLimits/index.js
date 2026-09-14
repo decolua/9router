@@ -40,7 +40,7 @@ import {
 } from "./utils";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
-import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { AI_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 // Maps the stored providerSpecificData.authMethod to a human label for Kiro.
@@ -139,6 +139,7 @@ export default function ProviderLimits() {
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [fastModeUpdatingId, setFastModeUpdatingId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
@@ -421,6 +422,33 @@ export default function ProviderLimits() {
     },
     [fetchConnections, page],
   );
+
+  const handleToggleFastMode = useCallback(async (connection, enabled) => {
+    if (fastModeUpdatingId) return;
+
+    setFastModeUpdatingId(connection.id);
+    try {
+      const response = await fetch(`/api/providers/${connection.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerSpecificData: { fastMode: enabled } }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || "Failed to save fast mode");
+
+      setConnections((previous) => previous.map((item) => item.id === connection.id ? {
+        ...item,
+        providerSpecificData: {
+          ...item.providerSpecificData,
+          fastMode: enabled,
+        },
+      } : item));
+    } catch (error) {
+      alert(error.message || "Failed to save fast mode");
+    } finally {
+      setFastModeUpdatingId(null);
+    }
+  }, [fastModeUpdatingId]);
 
   const handleUpdateConnection = useCallback(
     async (formData) => {
@@ -1053,7 +1081,8 @@ export default function ProviderLimits() {
           const isCodex = conn.provider === "codex";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          const isUpdatingFastMode = fastModeUpdatingId === conn.id;
+          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit || isUpdatingFastMode;
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
@@ -1177,6 +1206,26 @@ export default function ProviderLimits() {
                             <span className="material-symbols-outlined text-[17px]">schedule</span>
                           </button>
                         </Tooltip>
+                        {AI_PROVIDERS[conn.provider]?.fastMode && <Tooltip text={`Fast mode is ${conn.providerSpecificData?.fastMode === true ? "on" : "off"}. Uses the provider's faster processing mode at a higher token cost.`}>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFastMode(conn, conn.providerSpecificData?.fastMode !== true)}
+                            disabled={isLoading || rowBusy}
+                            role="switch"
+                            aria-label="Toggle fast mode"
+                            aria-checked={conn.providerSpecificData?.fastMode === true}
+                            className={`flex h-8 min-w-14 items-center justify-center gap-1 rounded-lg border px-2 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              conn.providerSpecificData?.fastMode === true
+                                ? "border-primary/30 bg-primary/10 text-primary"
+                                : "border-black/10 text-text-muted hover:bg-black/5 hover:text-primary dark:border-white/10 dark:hover:bg-white/5"
+                            }`}
+                          >
+                            <span className={`material-symbols-outlined text-[16px] ${isUpdatingFastMode ? "animate-spin" : ""}`}>
+                              {isUpdatingFastMode ? "progress_activity" : "speed"}
+                            </span>
+                            <span>Fast</span>
+                          </button>
+                        </Tooltip>}
                       </>
                     )}
                     {AUTO_PING_SETTINGS_KEYS[conn.provider] && conn.authType === "oauth" && (
