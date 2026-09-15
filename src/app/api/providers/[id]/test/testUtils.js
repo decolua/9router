@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
+import { FACTORY_CLIENT_VERSION, randomTraceparent } from "open-sse/executors/factory.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -125,6 +126,25 @@ const OAUTH_TEST_CONFIG = {
     softFailMessage: {
       402: "Connected, but Grok Build credits are exhausted (spending limit). Add credits or upgrade SuperGrok.",
     },
+  },
+  factory: {
+    url: "https://api.factory.ai/api/billing/limits",
+    method: "GET",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      "X-Factory-Client": "cli",
+      "X-Client-Version": FACTORY_CLIENT_VERSION,
+      "User-Agent": `factory-cli/${FACTORY_CLIENT_VERSION}`,
+    },
+    getHeaders: (connection) => {
+      const orgId = connection?.providerSpecificData?.orgId;
+      return {
+        traceparent: randomTraceparent(),
+        ...(orgId ? { "X-Factory-Org-Id": orgId } : {}),
+      };
+    },
+    refreshable: true,
   },
 };
 
@@ -394,9 +414,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
 
   try {
     const testUrl = config.buildUrl ? config.buildUrl(accessToken) : config.url;
-    const headers = config.noAuth
-      ? { ...config.extraHeaders }
-      : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders };
+    const headers = {
+      ...(config.noAuth
+        ? config.extraHeaders
+        : { [config.authHeader]: `${config.authPrefix}${accessToken}`, ...config.extraHeaders }),
+      ...(typeof config.getHeaders === "function" ? config.getHeaders(connection) : {}),
+    };
     const fetchOpts = { method: config.method, headers };
     if (config.body) fetchOpts.body = config.body;
     const res = await fetchWithConnectionProxy(testUrl, fetchOpts, effectiveProxy);
@@ -418,9 +441,12 @@ async function testOAuthConnection(connection, effectiveProxy = null) {
       const tokens = await refreshOAuthToken(connection);
       if (tokens) {
         const retryUrl = config.buildUrl ? config.buildUrl(tokens.accessToken) : testUrl;
-        const retryHeaders = config.noAuth
-          ? { ...config.extraHeaders }
-          : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders };
+        const retryHeaders = {
+          ...(config.noAuth
+            ? config.extraHeaders
+            : { [config.authHeader]: `${config.authPrefix}${tokens.accessToken}`, ...config.extraHeaders }),
+          ...(typeof config.getHeaders === "function" ? config.getHeaders(connection) : {}),
+        };
         const retryOpts = { method: config.method, headers: retryHeaders };
         if (config.body) retryOpts.body = config.body;
         const retryRes = await fetchWithConnectionProxy(retryUrl, retryOpts, effectiveProxy);
@@ -815,6 +841,25 @@ case "llm7": {
           },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
+      }
+      case "factory": {
+        const token = connection.accessToken || connection.apiKey;
+        if (!token) return { valid: false, error: "Missing access token" };
+        const base = connection.providerSpecificData?.apiEndpoint?.trim() || "https://api.factory.ai";
+        const normalizedBase = base.replace(/\/+$/, "");
+        const res = await fetchWithConnectionProxy(`${normalizedBase}/api/cli/whoami`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+            "X-Factory-Client": "cli",
+            "X-Client-Version": FACTORY_CLIENT_VERSION,
+            "User-Agent": `factory-cli/${FACTORY_CLIENT_VERSION}`,
+            traceparent: randomTraceparent(),
+          },
+        }, effectiveProxy);
+        if (res.ok) return { valid: true, error: null };
+        return { valid: false, error: res.status === 401 ? "Unauthorized or expired token" : `Factory API error: HTTP ${res.status}` };
       }
       default:
         return { valid: false, error: "Provider test not supported" };

@@ -86,6 +86,9 @@ function deriveConnectionName(data, fallbackName) {
       || data.providerSpecificData?.githubName
       || fallbackName;
   }
+  if (data.provider === "factory" && data.providerSpecificData?.orgId) {
+    return `${data.email || fallbackName} (${data.providerSpecificData.orgId})`;
+  }
   return fallbackName;
 }
 
@@ -144,6 +147,17 @@ export async function createProviderConnection(data) {
         if (data.provider === "codex") {
           const existingWs = c.providerSpecificData?.chatgptAccountId;
           return !!incomingWs && !!existingWs && incomingWs === existingWs;
+        }
+
+        // Factory uses orgId to isolate different organizations for the same email
+        if (data.provider === "factory") {
+          const incomingOrg = data.providerSpecificData?.orgId;
+          const existingOrg = c.providerSpecificData?.orgId;
+          if (incomingOrg && existingOrg) {
+            return incomingOrg === existingOrg;
+          }
+          if (incomingOrg || existingOrg) return false;
+          return true;
         }
 
         // Workspace providers use workspace ID when both sides have it

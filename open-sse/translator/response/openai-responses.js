@@ -489,6 +489,14 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       if (key) state.respToolChatIndex.set(key, idx);
     }
 
+    let toolName = item.name || "";
+    if (typeof toolName === "string" && toolName.trimStart().startsWith("{")) {
+      try {
+        const parsed = JSON.parse(toolName);
+        if (parsed?.name && typeof parsed.name === "string") toolName = parsed.name;
+      } catch {}
+    }
+
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
       {
@@ -496,7 +504,7 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
           index: idx,
           id: state.currentToolCallId,
           type: OPENAI_BLOCK.FUNCTION,
-          function: { name: item.name || "", arguments: "" }
+          function: { name: toolName, arguments: "" }
         }]
       }
     );

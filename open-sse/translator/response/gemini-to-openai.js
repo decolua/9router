@@ -15,7 +15,13 @@ function chunkMeta(state) {
 
 // Build a tool_call chunk from a gemini functionCall part (shared by sig/non-sig branches)
 function emitFunctionCall(functionCall, state, signature = null) {
-  const rawName = functionCall.name;
+  let rawName = functionCall.name;
+  if (typeof rawName === "string" && rawName.trimStart().startsWith("{")) {
+    try {
+      const parsed = JSON.parse(rawName);
+      if (parsed?.name && typeof parsed.name === "string") rawName = parsed.name;
+    } catch {}
+  }
   // Restore original tool name from mapping (AG cloaking)
   const fcName = state.toolNameMap?.get(rawName) || rawName;
   const fcArgs = functionCall.args || {};

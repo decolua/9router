@@ -661,6 +661,55 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "factory":
+        if (data.quotas) {
+          const FACTORY_LABELS = {
+            standard_5h: "Standard (5h)",
+            standard_weekly: "Standard (Weekly)",
+            standard_monthly: "Standard (Monthly)",
+            core_5h: "Core (5h)",
+            core_weekly: "Core (Weekly)",
+            core_monthly: "Core (Monthly)",
+          };
+          const FACTORY_ORDER = [
+            "standard_5h",
+            "standard_weekly",
+            "standard_monthly",
+            "core_5h",
+            "core_weekly",
+            "core_monthly",
+          ];
+          const IGNORED_KEYS = new Set(["session", "weekly"]);
+
+          FACTORY_ORDER.forEach((key) => {
+            const quota = data.quotas[key];
+            if (quota) {
+              normalizedQuotas.push({
+                name: FACTORY_LABELS[key] || key,
+                quotaType: key,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                remaining: quota.remaining,
+                resetAt: quota.resetAt || null,
+              });
+            }
+          });
+
+          const handledKeys = new Set(FACTORY_ORDER);
+          Object.entries(data.quotas).forEach(([key, quota]) => {
+            if (handledKeys.has(key) || IGNORED_KEYS.has(key) || !quota) return;
+            normalizedQuotas.push({
+              name: key,
+              quotaType: key,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
       default:
         // Generic fallback for unknown providers
         if (data.quotas) {
@@ -688,6 +737,10 @@ export function parseQuotaData(provider, data) {
       "weekly sonnet (7d)": 4,
     };
     normalizedQuotas.sort((a, b) => (CLAUDE_QUOTA_ORDER[a.name] ?? 99) - (CLAUDE_QUOTA_ORDER[b.name] ?? 99));
+    return normalizedQuotas;
+  }
+
+  if (provider?.toLowerCase() === "factory") {
     return normalizedQuotas;
   }
 
