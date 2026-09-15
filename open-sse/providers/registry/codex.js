@@ -1,5 +1,9 @@
 import { withCodexReviewModels } from "../models/helpers.js";
 
+// Codex CLI version seen by OpenAI's backend — single source for the Version /
+// User-Agent identity headers. Bump when the installed codex CLI is upgraded.
+const CODEX_CLI_VERSION = "0.154.0";
+
 export default {
   id: "codex",
   priority: 30,
@@ -34,9 +38,10 @@ export default {
     baseUrl: "https://chatgpt.com/backend-api/codex/responses",
     format: "openai-responses",
     forceStream: true,
+    cliVersion: CODEX_CLI_VERSION,
     headers: {
       originator: "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.136.0",
+      "User-Agent": `codex_cli_rs/${CODEX_CLI_VERSION}`,
     },
     usage: {
       url: "https://chatgpt.com/backend-api/wham/usage",
@@ -60,6 +65,11 @@ export default {
     { id: "gpt-5.4-mini-review", name: "GPT 5.4 Mini Review", upstreamModelId: "gpt-5.4-mini", quotaFamily: "review" },
     { id: "gpt-5.3-codex-spark", name: "GPT 5.3 Codex Spark" },
     { id: "gpt-5.3-codex-spark-review", name: "GPT 5.3 Codex Spark Review", upstreamModelId: "gpt-5.3-codex-spark", quotaFamily: "review" },
+    { id: "gpt-image-2.5", name: "GPT Image 2.5", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
+    { id: "gpt-image-2.5-flare", name: "GPT Image 2.5 Flare", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
+    { id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
+    { id: "gpt-image-2", name: "GPT Image 2", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
+    { id: "gpt-image-1.5", name: "GPT Image 1.5", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-5.6-sol-image", name: "GPT 5.6 Sol Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-5.6-terra-image", name: "GPT 5.6 Terra Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-5.6-luna-image", name: "GPT 5.6 Luna Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },

@@ -17,6 +17,8 @@ import { getDeepseekUsage } from "./usage/deepseek.js";
 import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getGroqUsage } from "./usage/groq.js";
 import { getZedUsage } from "./usage/zed.js";
+import { getXiaomiMimoUsage as getMimoDesktopUsage } from "./usage/xiaomi-mimo.js";
+import { getXiaomiMimoUsage as getMimoBalanceUsage } from "./usage/xiaomiMimo.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import {
@@ -27,10 +29,33 @@ import {
 } from "./usage/misc.js";
 import { getOpenRouterUsage } from "./usage/openrouter.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
-import { getXiaomiMimoUsage } from "./usage/xiaomiMimo.js";
 import { getClinePassUsage } from "./usage/clinepass.js";
 import { getAlibabaTokenPlanUsage } from "./usage/alibabaTokenPlan.js";
 import { normalizeXaiUsage } from "./usage/xaiNormalize.js";
+
+async function getXiaomiMimoCombinedUsage(c) {
+  const hasBalanceSource = Boolean(c.providerSpecificData?.quotaCookie || process.env.MIMO_QUOTA_COOKIE);
+  const hasDesktopSource = Boolean(c.providerSpecificData?.mimoPassToken);
+  const results = await Promise.all([
+    hasBalanceSource
+      ? getMimoBalanceUsage(c.providerSpecificData, c.proxyOptions).catch((error) => ({ message: `MiMo balance unavailable: ${error.message}` }))
+      : null,
+    hasDesktopSource
+      ? getMimoDesktopUsage(null, c.providerSpecificData, c.proxyOptions).catch((error) => ({ message: `MiMo Desktop unavailable: ${error.message}` }))
+      : null,
+  ]);
+  const available = results.filter(Boolean);
+  if (!available.length) return { message: "MiMo usage unavailable: no applicable account session or console cookie is configured.", quotas: {} };
+
+  const quotas = Object.assign({}, ...available.map((result) => result.quotas || {}));
+  const messages = available.map((result) => result.message).filter(Boolean);
+  const plans = available.map((result) => result.plan).filter(Boolean);
+  return {
+    ...(plans.length ? { plan: plans.join(" + ") } : {}),
+    quotas,
+    ...(messages.length ? { message: messages.join("; ") } : {}),
+  };
+}
 
 /**
  * Get usage data for a provider connection
@@ -68,7 +93,7 @@ const USAGE_HANDLERS = {
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   openrouter: (c) => getOpenRouterUsage(c.apiKey, c.proxyOptions),
   commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
-  "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.providerSpecificData, c.proxyOptions),
+  "xiaomi-mimo": (c) => getXiaomiMimoCombinedUsage(c),
   clinepass: (c) => getClinePassUsage(c.apiKey || c.accessToken, c.proxyOptions),
   // Official alitp-intl ships connection and transport but no usage API, so the
   // weekly window (no more 5h quota) is metered locally from usageHistory.

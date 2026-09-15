@@ -21,6 +21,56 @@ const PROVIDER_ORDER = [
 // Providers that need no auth — always show in model selector
 const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
 
+// Providers with per-account live catalogs via /api/providers/[id]/models.
+// Static registry stays as fallback when live fetch fails or is empty.
+// Cline/ClinePass are passthrough: their live listing is not shown as chips,
+// so fetching it here would only waste a /models round-trip.
+const LIVE_CATALOG_PROVIDERS = ["cursor"];
+
+// Fetch a provider's account-scoped catalog for every active connection and merge
+// the results. Entries collapse by model id on purpose: two connections of the
+// same provider produce the same picker value (`alias/id`), so keeping the first
+// avoids duplicate rows. There is no per-connection metadata to preserve beyond
+// {id,name}. Empty array means "nothing live" so callers keep the static fallback.
+function useLiveProviderModels(isOpen, connectionIds, label) {
+  const [models, setModels] = useState([]);
+  const idsKey = (connectionIds ?? []).join("|");
+
+  useEffect(() => {
+    const ids = idsKey ? idsKey.split("|") : [];
+    if (!isOpen || ids.length === 0) {
+      setModels([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+    Promise.all(ids.map(async (connectionId) => {
+      const response = await fetch(`/api/providers/${connectionId}/models`, { cache: "no-store" });
+      if (!response.ok) return [];
+      const data = await response.json();
+      return Array.isArray(data.models) ? data.models : [];
+    }))
+      .then((modelLists) => {
+        if (cancelled) return;
+        const seen = new Set();
+        setModels(modelLists.flat().filter((model) => {
+          if (!model?.id || seen.has(model.id)) return false;
+          seen.add(model.id);
+          return true;
+        }));
+      })
+      .catch((error) => {
+        // Do not hide the static fallback when the account catalog is unavailable.
+        console.warn(`Unable to load ${label} models for selector:`, error);
+        if (!cancelled) setModels([]);
+      });
+
+    return () => { cancelled = true; };
+  }, [isOpen, idsKey, label]);
+
+  return models;
+}
+
 export default function ModelSelectModal({
   isOpen,
   onClose,
@@ -50,48 +100,21 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
-  const [cursorModels, setCursorModels] = useState([]);
-
-  // Cursor exposes the usable catalog per account. Keep the static catalog only
-  // as a fallback, since it quickly becomes stale and different accounts can
-  // have different model entitlements.
-  const cursorConnectionIds = useMemo(
-    () => activeProviders
-      .filter((provider) => provider.provider === "cursor" && provider.id)
-      .map((provider) => provider.id),
-    [activeProviders],
-  );
-
-  useEffect(() => {
-    if (!isOpen || cursorConnectionIds.length === 0) {
-      setCursorModels([]);
-      return undefined;
+  // Cursor exposes the usable catalog per account, so the static catalog is
+  // kept only as a fallback: it goes stale quickly and entitlements differ per account.
+  // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
+  // from the memos below; per-provider arrays stay referentially stable unless
+  // activeProviders itself changes.
+  const liveConnectionIdsByProvider = useMemo(() => {
+    const map = Object.fromEntries(LIVE_CATALOG_PROVIDERS.map((id) => [id, []]));
+    for (const p of activeProviders) {
+      if (p?.id && Object.prototype.hasOwnProperty.call(map, p.provider)) map[p.provider].push(p.id);
     }
+    return map;
+  }, [activeProviders]);
+  const cursorConnectionIds = liveConnectionIdsByProvider.cursor;
 
-    let cancelled = false;
-    Promise.all(cursorConnectionIds.map(async (connectionId) => {
-      const response = await fetch(`/api/providers/${connectionId}/models`, { cache: "no-store" });
-      if (!response.ok) return [];
-      const data = await response.json();
-      return Array.isArray(data.models) ? data.models : [];
-    }))
-      .then((modelLists) => {
-        if (cancelled) return;
-        const seen = new Set();
-        setCursorModels(modelLists.flat().filter((model) => {
-          if (!model?.id || seen.has(model.id)) return false;
-          seen.add(model.id);
-          return true;
-        }));
-      })
-      .catch((error) => {
-        // Do not hide the static fallback when the account catalog is unavailable.
-        console.warn("Unable to load Cursor models for selector:", error);
-        if (!cancelled) setCursorModels([]);
-      });
-
-    return () => { cancelled = true; };
-  }, [isOpen, cursorConnectionIds]);
+  const cursorModels = useLiveProviderModels(isOpen, cursorConnectionIds, "Cursor");
 
   const fetchCombos = async () => {
     try {
@@ -328,8 +351,9 @@ export default function ModelSelectModal({
         // fully catalogued account, so offering stale registry ids (Token Plan
         // qwen3.8-max-preview vs live qwen3.8-max) lets the user save a member
         // that will never run. Cursor still overrides via live fetch.
+        const liveModels = providerId === "cursor" ? cursorModels : [];
         const hardcodedModels = resolvePickerModels({
-          liveModels: providerId === "cursor" ? cursorModels : [],
+          liveModels,
           storedModels: modelsFromStoredCatalog(activeProviders, providerId),
           staticModels: getModelsByProviderId(providerId),
         });

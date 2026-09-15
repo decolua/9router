@@ -2,6 +2,7 @@ import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
+import { getVideoAdapter } from "./videoProviders/index.js";
 
 // Upstream fetch deadline for video job submission/polling (the job itself is
 // async upstream — this only bounds the HTTP round-trip, not video rendering).
@@ -94,21 +95,49 @@ export async function handleVideoProxyCore({
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Unknown video action: ${action}`);
   }
 
-  const method = requestId ? "GET" : "POST";
-  const url = buildUpstreamUrl(config, action, requestId);
+  const adapter = getVideoAdapter(provider);
   const fetchSignal = combineSignals(signal, timeoutMs);
 
-  const doFetch = (token) =>
-    fetch(url, {
+  // Default (xAI shape) request plan; adapters override URL/method/headers/body.
+  const defaultPlan = () => {
+    const method = requestId ? "GET" : "POST";
+    return {
       method,
-      headers: buildHeaders({ token, contentType: method === "POST" ? contentType : null, idempotencyKey: method === "POST" ? idempotencyKey : null }),
+      url: buildUpstreamUrl(config, action, requestId),
+      headers: buildHeaders({
+        token: credentials?.accessToken || credentials?.apiKey,
+        contentType: method === "POST" ? contentType : null,
+        idempotencyKey: method === "POST" ? idempotencyKey : null,
+      }),
       body: method === "POST" ? rawBody : undefined,
-      signal: fetchSignal,
-    });
+    };
+  };
 
+  // Rebuilt per attempt so the auth retry below picks up the refreshed token.
+  const doFetch = async () => {
+    const plan = adapter
+      ? await adapter.buildRequest({
+          config, action, requestId, rawBody, contentType, idempotencyKey, credentials, log,
+          token: credentials?.accessToken || credentials?.apiKey,
+        })
+      : defaultPlan();
+    if (plan.error) return { planError: plan.error };
+    return {
+      response: await fetch(plan.url, {
+        method: plan.method,
+        headers: plan.headers,
+        body: plan.body,
+        signal: fetchSignal,
+      }),
+    };
+  };
+
+  const method = requestId ? "GET" : "POST";
   let upstream;
   try {
-    upstream = await doFetch(credentials?.accessToken || credentials?.apiKey);
+    const first = await doFetch();
+    if (first.planError) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${first.planError}`);
+    upstream = first.response;
   } catch (error) {
     if (error?.name === "AbortError" || error?.name === "TimeoutError") {
       return createErrorResult(HTTP_STATUS.REQUEST_TIMEOUT, `[${provider}] video ${method} aborted: ${error.message}`);
@@ -136,7 +165,9 @@ export async function handleVideoProxyCore({
         await upstream.body?.cancel?.();
       } catch { /* noop */ }
       try {
-        upstream = await doFetch(credentials.accessToken || credentials.apiKey);
+        const retry = await doFetch();
+        if (retry.planError) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${retry.planError}`);
+        upstream = retry.response;
       } catch (error) {
         return createErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] video retry after refresh failed: ${error.message}`, credentials));
       }
@@ -152,13 +183,25 @@ export async function handleVideoProxyCore({
     return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);
   }
 
-  // Success: pass the upstream JSON through untouched (request_id / status / video.url).
+  // Success: pass the upstream JSON through untouched (request_id / status / video.url),
+  // unless the adapter maps a provider-native shape onto it (Vertex operations).
+  let outBody = bodyText;
+  let outType = upstream.headers.get("content-type") || "application/json";
+  if (adapter?.transformResponse) {
+    try {
+      outBody = JSON.stringify(adapter.transformResponse(JSON.parse(bodyText)));
+      outType = "application/json";
+    } catch {
+      // Non-JSON or unexpected shape — fall back to the raw upstream body.
+    }
+  }
+
   return {
     success: true,
-    response: new Response(bodyText, {
+    response: new Response(outBody, {
       status: upstream.status,
       headers: {
-        "Content-Type": upstream.headers.get("content-type") || "application/json",
+        "Content-Type": outType,
         "Access-Control-Allow-Origin": "*",
       },
     }),

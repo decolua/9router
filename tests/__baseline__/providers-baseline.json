@@ -192,9 +192,10 @@
     "baseUrl": "https://chatgpt.com/backend-api/codex/responses",
     "format": "openai-responses",
     "forceStream": true,
+    "cliVersion": "0.154.0",
     "headers": {
       "originator": "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.136.0"
+      "User-Agent": "codex_cli_rs/0.154.0"
     },
     "usage": {
       "url": "https://chatgpt.com/backend-api/wham/usage",
