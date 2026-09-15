@@ -1234,6 +1234,7 @@ export default function APIPageClient({ machineId }) {
       {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
+        size="lg"
         title="Create API Key"
         onClose={() => {
           setShowAddModal(false);
@@ -1304,21 +1305,19 @@ export default function APIPageClient({ machineId }) {
             {newKeyModelMode === "custom" && (
               <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-surface-2/60 border border-border mt-1">
                 <div className="flex items-center gap-2">
-                  <Button
+                  <button
                     type="button"
-                    size="sm"
-                    variant="secondary"
-                    icon="checklist"
                     onClick={() => setShowModelSelectForCreate(true)}
-                    className="shrink-0 whitespace-nowrap text-xs h-8 px-3"
+                    className="h-9 px-3 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main transition-colors cursor-pointer shrink-0 shadow-2xs"
                   >
+                    <span className="material-symbols-outlined text-[16px] text-primary">checklist</span>
                     Select Models
-                  </Button>
+                  </button>
 
                   <div className="flex-1 relative flex items-center">
                     <input
                       type="text"
-                      placeholder="Pattern (e.g. oc/*, gpt-4o)"
+                      placeholder="Pattern (e.g. oc/*, gpt-4o, *claude*)"
                       value={newKeyCustomPattern}
                       onChange={(e) => setNewKeyCustomPattern(e.target.value)}
                       onKeyDown={(e) => {
@@ -1331,7 +1330,7 @@ export default function APIPageClient({ machineId }) {
                           setNewKeyCustomPattern("");
                         }
                       }}
-                      className="w-full pl-2.5 pr-14 py-1.5 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono h-8"
+                      className="w-full h-9 pl-3 pr-16 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono"
                     />
                     <button
                       type="button"
@@ -1345,7 +1344,7 @@ export default function APIPageClient({ machineId }) {
                         }
                       }}
                       disabled={!newKeyCustomPattern.trim()}
-                      className="absolute right-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+                      className="absolute right-1.5 h-6 px-2.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs"
                     >
                       Add
                     </button>
@@ -1426,6 +1425,7 @@ export default function APIPageClient({ machineId }) {
       {/* Edit Key Modal */}
       <Modal
         isOpen={!!editingKey}
+        size="lg"
         title={`Edit API Key: ${editingKey?.name || ""}`}
         onClose={() => !savingEdit && setEditingKey(null)}
       >
@@ -1506,21 +1506,19 @@ export default function APIPageClient({ machineId }) {
             {editKeyModelMode === "custom" && (
               <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-surface-2/60 border border-border mt-1">
                 <div className="flex items-center gap-2">
-                  <Button
+                  <button
                     type="button"
-                    size="sm"
-                    variant="secondary"
-                    icon="checklist"
                     onClick={() => setShowModelSelectForEdit(true)}
-                    className="shrink-0 whitespace-nowrap text-xs h-8 px-3"
+                    className="h-9 px-3 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main transition-colors cursor-pointer shrink-0 shadow-2xs"
                   >
+                    <span className="material-symbols-outlined text-[16px] text-primary">checklist</span>
                     Select Models
-                  </Button>
+                  </button>
 
                   <div className="flex-1 relative flex items-center">
                     <input
                       type="text"
-                      placeholder="Pattern (e.g. oc/*, gpt-4o)"
+                      placeholder="Pattern (e.g. oc/*, gpt-4o, *claude*)"
                       value={editKeyCustomPattern}
                       onChange={(e) => setEditKeyCustomPattern(e.target.value)}
                       onKeyDown={(e) => {
@@ -1533,7 +1531,7 @@ export default function APIPageClient({ machineId }) {
                           setEditKeyCustomPattern("");
                         }
                       }}
-                      className="w-full pl-2.5 pr-14 py-1.5 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono h-8"
+                      className="w-full h-9 pl-3 pr-16 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono"
                     />
                     <button
                       type="button"
@@ -1547,7 +1545,7 @@ export default function APIPageClient({ machineId }) {
                         }
                       }}
                       disabled={!editKeyCustomPattern.trim()}
-                      className="absolute right-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
+                      className="absolute right-1.5 h-6 px-2.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs"
                     >
                       Add
                     </button>
