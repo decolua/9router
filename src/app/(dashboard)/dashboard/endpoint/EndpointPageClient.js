@@ -1252,7 +1252,7 @@ export default function APIPageClient({ machineId }) {
           />
 
           <div>
-            <label className="text-xs text-text-muted mb-1 block">Token Limit (Quota)</label>
+            <label className="text-xs text-text-muted mb-1 block font-medium">Token Limit (Quota)</label>
             <Input
               type="number"
               value={newKeyTokenLimit}
@@ -1261,47 +1261,61 @@ export default function APIPageClient({ machineId }) {
               min="0"
             />
             <p className="text-[11px] text-text-muted mt-1">
-              Maximum total tokens this key can consume. Once reached, requests will be blocked.
+              Maximum total tokens this key can consume. Once reached, requests will return 429.
             </p>
           </div>
 
-          <div>
-            <label className="text-xs text-text-muted mb-1.5 block font-medium">Accessible Models</label>
-            <div className="flex items-center gap-4 mb-2">
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <input
-                  type="radio"
-                  name="newKeyModelMode"
-                  checked={newKeyModelMode === "all"}
-                  onChange={() => setNewKeyModelMode("all")}
-                  className="text-primary focus:ring-primary"
-                />
-                <span>All Models</span>
-              </label>
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <input
-                  type="radio"
-                  name="newKeyModelMode"
-                  checked={newKeyModelMode === "custom"}
-                  onChange={() => setNewKeyModelMode("custom")}
-                  className="text-primary focus:ring-primary"
-                />
-                <span>Specific Models Only</span>
-              </label>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs text-text-muted font-medium block">Model Access Permissions</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setNewKeyModelMode("all")}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  newKeyModelMode === "all"
+                    ? "border-primary bg-primary/8 text-primary shadow-xs"
+                    : "border-border bg-surface hover:bg-surface-2 text-text-muted hover:text-text-main"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">public</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold leading-tight">All Models</div>
+                  <div className="text-[10px] opacity-75 truncate">Full access, no restrictions</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setNewKeyModelMode("custom")}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  newKeyModelMode === "custom"
+                    ? "border-primary bg-primary/8 text-primary shadow-xs"
+                    : "border-border bg-surface hover:bg-surface-2 text-text-muted hover:text-text-main"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">checklist</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold leading-tight">Specific Models</div>
+                  <div className="text-[10px] opacity-75 truncate">Whitelist / rule restricted</div>
+                </div>
+              </button>
             </div>
 
             {newKeyModelMode === "custom" && (
-              <div className="flex flex-col gap-2 p-3 bg-surface-2 border border-border rounded-lg">
+              <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-surface-2/60 border border-border mt-1">
                 <div className="flex items-center gap-2">
                   <Button
-                    size="xs"
-                    icon="add"
+                    type="button"
+                    size="sm"
                     variant="secondary"
+                    icon="checklist"
                     onClick={() => setShowModelSelectForCreate(true)}
+                    className="shrink-0 whitespace-nowrap text-xs h-8 px-3"
                   >
                     Select Models
                   </Button>
-                  <div className="flex-1 flex gap-1">
+
+                  <div className="flex-1 relative flex items-center">
                     <input
                       type="text"
                       placeholder="Pattern (e.g. oc/*, gpt-4o)"
@@ -1309,6 +1323,7 @@ export default function APIPageClient({ machineId }) {
                       onChange={(e) => setNewKeyCustomPattern(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && newKeyCustomPattern.trim()) {
+                          e.preventDefault();
                           const p = newKeyCustomPattern.trim();
                           if (!newKeyAllowedModels.includes(p)) {
                             setNewKeyAllowedModels([...newKeyAllowedModels, p]);
@@ -1316,10 +1331,10 @@ export default function APIPageClient({ machineId }) {
                           setNewKeyCustomPattern("");
                         }
                       }}
-                      className="flex-1 px-2.5 py-1 text-xs border border-border rounded bg-background"
+                      className="w-full pl-2.5 pr-14 py-1.5 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono h-8"
                     />
-                    <Button
-                      size="xs"
+                    <button
+                      type="button"
                       onClick={() => {
                         if (newKeyCustomPattern.trim()) {
                           const p = newKeyCustomPattern.trim();
@@ -1329,35 +1344,60 @@ export default function APIPageClient({ machineId }) {
                           setNewKeyCustomPattern("");
                         }
                       }}
+                      disabled={!newKeyCustomPattern.trim()}
+                      className="absolute right-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
                     >
                       Add
-                    </Button>
+                    </button>
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between text-xs px-0.5">
+                  <span className="text-[11px] font-medium text-text-muted">
+                    Allowed items ({newKeyAllowedModels.length}):
+                  </span>
+                  {newKeyAllowedModels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setNewKeyAllowedModels([])}
+                      className="text-[11px] text-text-muted hover:text-red-500 transition-colors cursor-pointer"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
                 {newKeyAllowedModels.length === 0 ? (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    No models selected yet. Add models or patterns, or switch to &quot;All Models&quot;.
-                  </p>
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
+                    <span className="material-symbols-outlined text-[15px] mt-0.5 shrink-0">warning</span>
+                    <span className="text-[11px] leading-tight">
+                      No models selected yet. All requests with this key will be rejected until you add at least one model or pattern.
+                    </span>
+                  </div>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pt-1">
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-surface rounded-lg border border-border/70">
                     {newKeyAllowedModels.map((m) => (
                       <span
                         key={m}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md text-xs font-mono text-primary"
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md text-xs font-mono text-primary"
                       >
-                        {m}
+                        <span>{m}</span>
                         <button
                           type="button"
                           onClick={() => setNewKeyAllowedModels(newKeyAllowedModels.filter((x) => x !== m))}
-                          className="hover:text-red-500 ml-0.5"
+                          className="text-primary/60 hover:text-red-500 transition-colors cursor-pointer flex items-center justify-center w-3.5 h-3.5"
+                          title="Remove"
                         >
-                          ×
+                          <span className="material-symbols-outlined text-[13px]">close</span>
                         </button>
                       </span>
                     ))}
                   </div>
                 )}
+
+                <p className="text-[10px] text-text-muted">
+                  Tip: Supports exact model IDs (<code>gpt-4o</code>), wildcards (<code>oc/*</code>), or sub-patterns (<code>*claude*</code>).
+                </p>
               </div>
             )}
           </div>
@@ -1399,16 +1439,16 @@ export default function APIPageClient({ machineId }) {
 
           <div>
             <div className="flex items-center justify-between mb-1">
-              <label className="text-xs text-text-muted block">Token Limit (Quota)</label>
+              <label className="text-xs text-text-muted block font-medium">Token Limit (Quota)</label>
               <div className="flex items-center gap-2">
                 <span className="text-xs text-text-muted">
-                  Used: <strong className="text-text-main font-medium">{editKeyUsedTokens.toLocaleString()}</strong> tokens
+                  Used: <strong className="text-text-main font-semibold">{editKeyUsedTokens.toLocaleString()}</strong> tokens
                 </span>
                 {editKeyUsedTokens > 0 && (
                   <button
                     type="button"
                     onClick={handleResetKeyTokens}
-                    className="text-[11px] text-primary hover:underline"
+                    className="text-[11px] text-primary hover:underline font-medium cursor-pointer"
                   >
                     Reset Usage
                   </button>
@@ -1422,45 +1462,62 @@ export default function APIPageClient({ machineId }) {
               placeholder="0 or empty for unlimited"
               min="0"
             />
+            <p className="text-[11px] text-text-muted mt-1">
+              Maximum total tokens this key can consume. Once reached, requests will return 429.
+            </p>
           </div>
 
-          <div>
-            <label className="text-xs text-text-muted mb-1.5 block font-medium">Accessible Models</label>
-            <div className="flex items-center gap-4 mb-2">
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <input
-                  type="radio"
-                  name="editKeyModelMode"
-                  checked={editKeyModelMode === "all"}
-                  onChange={() => setEditKeyModelMode("all")}
-                  className="text-primary focus:ring-primary"
-                />
-                <span>All Models</span>
-              </label>
-              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
-                <input
-                  type="radio"
-                  name="editKeyModelMode"
-                  checked={editKeyModelMode === "custom"}
-                  onChange={() => setEditKeyModelMode("custom")}
-                  className="text-primary focus:ring-primary"
-                />
-                <span>Specific Models Only</span>
-              </label>
+          <div className="flex flex-col gap-2">
+            <label className="text-xs text-text-muted font-medium block">Model Access Permissions</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setEditKeyModelMode("all")}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  editKeyModelMode === "all"
+                    ? "border-primary bg-primary/8 text-primary shadow-xs"
+                    : "border-border bg-surface hover:bg-surface-2 text-text-muted hover:text-text-main"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">public</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold leading-tight">All Models</div>
+                  <div className="text-[10px] opacity-75 truncate">Full access, no restrictions</div>
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEditKeyModelMode("custom")}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                  editKeyModelMode === "custom"
+                    ? "border-primary bg-primary/8 text-primary shadow-xs"
+                    : "border-border bg-surface hover:bg-surface-2 text-text-muted hover:text-text-main"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[18px]">checklist</span>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold leading-tight">Specific Models</div>
+                  <div className="text-[10px] opacity-75 truncate">Whitelist / rule restricted</div>
+                </div>
+              </button>
             </div>
 
             {editKeyModelMode === "custom" && (
-              <div className="flex flex-col gap-2 p-3 bg-surface-2 border border-border rounded-lg">
+              <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-surface-2/60 border border-border mt-1">
                 <div className="flex items-center gap-2">
                   <Button
-                    size="xs"
-                    icon="add"
+                    type="button"
+                    size="sm"
                     variant="secondary"
+                    icon="checklist"
                     onClick={() => setShowModelSelectForEdit(true)}
+                    className="shrink-0 whitespace-nowrap text-xs h-8 px-3"
                   >
                     Select Models
                   </Button>
-                  <div className="flex-1 flex gap-1">
+
+                  <div className="flex-1 relative flex items-center">
                     <input
                       type="text"
                       placeholder="Pattern (e.g. oc/*, gpt-4o)"
@@ -1468,6 +1525,7 @@ export default function APIPageClient({ machineId }) {
                       onChange={(e) => setEditKeyCustomPattern(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && editKeyCustomPattern.trim()) {
+                          e.preventDefault();
                           const p = editKeyCustomPattern.trim();
                           if (!editKeyAllowedModels.includes(p)) {
                             setEditKeyAllowedModels([...editKeyAllowedModels, p]);
@@ -1475,10 +1533,10 @@ export default function APIPageClient({ machineId }) {
                           setEditKeyCustomPattern("");
                         }
                       }}
-                      className="flex-1 px-2.5 py-1 text-xs border border-border rounded bg-background"
+                      className="w-full pl-2.5 pr-14 py-1.5 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono h-8"
                     />
-                    <Button
-                      size="xs"
+                    <button
+                      type="button"
                       onClick={() => {
                         if (editKeyCustomPattern.trim()) {
                           const p = editKeyCustomPattern.trim();
@@ -1488,35 +1546,60 @@ export default function APIPageClient({ machineId }) {
                           setEditKeyCustomPattern("");
                         }
                       }}
+                      disabled={!editKeyCustomPattern.trim()}
+                      className="absolute right-1 px-2.5 py-1 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer"
                     >
                       Add
-                    </Button>
+                    </button>
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between text-xs px-0.5">
+                  <span className="text-[11px] font-medium text-text-muted">
+                    Allowed items ({editKeyAllowedModels.length}):
+                  </span>
+                  {editKeyAllowedModels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setEditKeyAllowedModels([])}
+                      className="text-[11px] text-text-muted hover:text-red-500 transition-colors cursor-pointer"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
+
                 {editKeyAllowedModels.length === 0 ? (
-                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                    No models restricted yet. All models will be blocked unless you add at least one model or choose &quot;All Models&quot;.
-                  </p>
+                  <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
+                    <span className="material-symbols-outlined text-[15px] mt-0.5 shrink-0">warning</span>
+                    <span className="text-[11px] leading-tight">
+                      No models restricted yet. All models will be blocked unless you add at least one model or choose &quot;All Models&quot;.
+                    </span>
+                  </div>
                 ) : (
-                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pt-1">
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1.5 bg-surface rounded-lg border border-border/70">
                     {editKeyAllowedModels.map((m) => (
                       <span
                         key={m}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md text-xs font-mono text-primary"
+                        className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md text-xs font-mono text-primary"
                       >
-                        {m}
+                        <span>{m}</span>
                         <button
                           type="button"
                           onClick={() => setEditKeyAllowedModels(editKeyAllowedModels.filter((x) => x !== m))}
-                          className="hover:text-red-500 ml-0.5"
+                          className="text-primary/60 hover:text-red-500 transition-colors cursor-pointer flex items-center justify-center w-3.5 h-3.5"
+                          title="Remove"
                         >
-                          ×
+                          <span className="material-symbols-outlined text-[13px]">close</span>
                         </button>
                       </span>
                     ))}
                   </div>
                 )}
+
+                <p className="text-[10px] text-text-muted">
+                  Tip: Supports exact model IDs (<code>gpt-4o</code>), wildcards (<code>oc/*</code>), or sub-patterns (<code>*claude*</code>).
+                </p>
               </div>
             )}
           </div>
