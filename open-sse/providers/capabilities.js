@@ -424,14 +424,27 @@ const MODALITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
 
 // Catalog lookups, installed by the server at startup. Left as no-ops in the
 // browser bundle, where there is no file to read.
+//
+// The server bundles this module into every route chunk that needs it, and each
+// copy carries its own module state, so an install landing in the copy the
+// startup hook imported stays invisible to the copy resolving requests. The slot
+// lives on globalThis instead; the local binding is the fast path.
 let catalogSource = null;
 
 /**
  * Install the synced catalog reader (server only).
- * @param {{ getModalities: Function, getLimits: Function } | null} source
+ * @param {{ getModalities: (provider: string, model: string) => object|null,
+ *           getLimits: (provider: string, model: string) => object|null } | null} source
  */
 export function setCatalogSource(source) {
   catalogSource = source;
+  if (typeof globalThis !== "undefined") globalThis.__9rCatalogSource = source;
+}
+
+function getCatalogSource() {
+  if (catalogSource) return catalogSource;
+  if (typeof globalThis === "undefined") return null;
+  return (catalogSource = globalThis.__9rCatalogSource || null);
 }
 
 // Apply the synced catalog + name heuristic on top of a table-resolved result.
@@ -440,15 +453,16 @@ export function setCatalogSource(source) {
 function refine(base, provider, model) {
   const result = { ...DEFAULT_CAPABILITIES, ...base };
 
-  if (catalogSource) {
-    const modalities = catalogSource.getModalities(model);
+  const source = getCatalogSource();
+  if (source) {
+    const modalities = source.getModalities(provider, model);
     if (modalities) {
       for (const key of MODALITY_KEYS) {
         if (modalities[key] === true) result[key] = true;
       }
     }
 
-    const limits = catalogSource.getLimits(provider, model);
+    const limits = source.getLimits(provider, model);
     if (limits) {
       if (limits.contextWindow > 0) result.contextWindow = limits.contextWindow;
       if (limits.maxOutput > 0) result.maxOutput = limits.maxOutput;
