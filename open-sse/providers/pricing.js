@@ -110,7 +110,8 @@ export const MODEL_PRICING = {
   "deepseek-r1":                  { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  },
   "deepseek-v3.2-chat":           { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  },
   "deepseek-v3.2-reasoner":       { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  },
-  "deepseek-v4-flash":            { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  },
+  "deepseek-v4-flash-latest":     { input: 0.04,  output: 0.10,  cached: 0.01,  reasoning: 0.10,   cache_creation: 0.04  },
+  "deepseek-v4-flash":            { input: 0.05,  output: 0.16,  cached: 0.013, reasoning: 0.16,   cache_creation: 0.05  },
   "deepseek-v4-pro":              { input: 0.435, output: 0.87,  cached: 0.003625, reasoning: 0.87,  cache_creation: 0.435 },
 
   // === GLM ===
@@ -118,6 +119,9 @@ export const MODEL_PRICING = {
   "glm-4.6v":                     { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "glm-4.7":                      { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  },
   "glm-5":                        { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  },
+  "glm-5.1":                      { input: 0.95,  output: 3.15,  cached: 0.179, reasoning: 3.15,   cache_creation: 0.95  },
+  "glm-5.3-flash":                { input: 0.15,  output: 0.50,  cached: 0.03,  reasoning: 0.50,   cache_creation: 0.15  },
+  "glm-5.3":                      { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
 
   // === MiniMax ===
   "MiniMax-M3":                   { input: 0.30,  output: 1.20,  cached: 0.06,  reasoning: 1.80,   cache_creation: 0.30  },
@@ -330,12 +334,16 @@ export const PATTERN_PRICING = [
   { pattern: "kimi-*",          pricing: { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  } },
 
   // --- DeepSeek ---
+  // Flash/pro aliases resolve to dated snapshots (e.g. deepseek-v4-flash-0731); match before deepseek-v*.
+  { pattern: "deepseek-v4-flash*", pricing: { input: 0.04,  output: 0.10,  cached: 0.01,  reasoning: 0.10,   cache_creation: 0.04  } },
+  { pattern: "deepseek-v4-pro*",   pricing: { input: 0.435, output: 0.87,  cached: 0.003625, reasoning: 0.87,  cache_creation: 0.435 } },
   { pattern: "deepseek-*reasoner*", pricing: { input: 0.14, output: 0.28, cached: 0.0028, reasoning: 0.28, cache_creation: 0.14 } },
   { pattern: "deepseek-r*",     pricing: { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  } },
   { pattern: "deepseek-v*",     pricing: { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  } },
   { pattern: "deepseek-*",      pricing: { input: 0.14,  output: 0.28,  cached: 0.0028, reasoning: 0.28,   cache_creation: 0.14  } },
 
   // --- GLM ---
+  { pattern: "glm-5.3-flash*",  pricing: { input: 0.15,  output: 0.50,  cached: 0.075, reasoning: 0.50,   cache_creation: 0.15  } },
   { pattern: "glm-5*",          pricing: { input: 1.00,  output: 4.00,  cached: 0.50,  reasoning: 6.00,   cache_creation: 1.00  } },
   { pattern: "glm-4*",          pricing: { input: 0.75,  output: 3.00,  cached: 0.375, reasoning: 4.50,   cache_creation: 0.75  } },
   { pattern: "glm-*",           pricing: { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  } },
@@ -381,7 +389,7 @@ export function getPricingForModel(provider, model) {
   if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
   if (MODEL_PRICING[model]) return MODEL_PRICING[model];
 
-  // 3. Pattern match
+  // 3. Pattern match (covers dated OpenRouter snapshots like deepseek-v4-flash-0731)
   for (const { pattern, pricing } of PATTERN_PRICING) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return pricing;

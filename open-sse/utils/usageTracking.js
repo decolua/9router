@@ -3,6 +3,7 @@
  */
 
 import { FORMATS } from "../translator/formats.js";
+import { getPricingForModel, calculateCostFromTokens } from "../providers/pricing.js";
 
 // Legacy per-chunk usage console line; off by default (superseded by "📊 done")
 const DEBUG_USAGE = process.env.LOG_USAGE_VERBOSE === "1";
@@ -85,14 +86,17 @@ export function filterUsageForFormat(usage, targetFormat) {
     [FORMATS.OPENAI_RESPONSES]: [
       'input_tokens', 'output_tokens',
       'input_tokens_details', 'output_tokens_details',
-      'estimated'
+      'estimated',
+      'cost'
     ],
     // OpenAI format (default for OPENAI, CODEX, KIRO, etc.)
     default: [
       'prompt_tokens', 'completion_tokens', 'total_tokens',
       'cached_tokens', 'reasoning_tokens',
       'prompt_tokens_details', 'completion_tokens_details',
-      'estimated'
+      'estimated',
+      // OpenRouter sends cost as a number; we normalize to { total } for OpenClaw.
+      'cost'
     ]
   };
 
@@ -140,8 +144,58 @@ export function normalizeUsage(usage) {
     normalized.completion_tokens_details = usage.completion_tokens_details;
   }
 
+  // Cost: OpenRouter uses a bare number; OpenClaw expects { total }. Normalize early.
+  const costObj = normalizeCostObject(usage?.cost);
+  if (costObj) normalized.cost = costObj;
+
   if (Object.keys(normalized).length === 0) return null;
   return normalized;
+}
+
+/**
+ * Normalize provider cost into OpenClaw-compatible `{ total }` shape.
+ * @param {number|object|undefined} cost
+ * @returns {{ total: number }|null}
+ */
+export function normalizeCostObject(cost) {
+  if (typeof cost === "number" && Number.isFinite(cost)) {
+    return { total: cost };
+  }
+  if (cost && typeof cost === "object") {
+    const total = Number(cost.total);
+    if (Number.isFinite(total)) return { ...cost, total };
+  }
+  return null;
+}
+
+/**
+ * Ensure usage.cost = { total } for clients (OpenClaw). Prefer upstream cost
+ * (e.g. OpenRouter's usage.cost); otherwise estimate from MODEL_PRICING.
+ *
+ * @param {object} usage
+ * @param {string} provider
+ * @param {string} model
+ * @returns {object}
+ */
+export function enrichUsageCost(usage, provider, model) {
+  if (!usage || typeof usage !== "object") return usage;
+
+  const out = { ...usage };
+  let total = normalizeCostObject(out.cost)?.total;
+
+  if (!(typeof total === "number" && Number.isFinite(total) && total > 0)) {
+    const pricing = getPricingForModel(provider, model);
+    if (pricing) {
+      const tokens = canonicalizeUsage(out) || out;
+      total = calculateCostFromTokens(tokens, pricing);
+    }
+  }
+
+  if (typeof total === "number" && Number.isFinite(total)) {
+    const prev = out.cost && typeof out.cost === "object" ? out.cost : {};
+    out.cost = { ...prev, total };
+  }
+  return out;
 }
 
 /**
@@ -283,7 +337,8 @@ export function extractUsage(chunk) {
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
-      completion_tokens_details: chunk.usage.completion_tokens_details
+      completion_tokens_details: chunk.usage.completion_tokens_details,
+      cost: chunk.usage.cost
     });
   }
 
