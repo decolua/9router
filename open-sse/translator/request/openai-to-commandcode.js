@@ -29,6 +29,23 @@ function flattenText(content) {
   return String(content);
 }
 
+const IMAGES_ENABLED = String(process.env.COMMANDCODE_IMAGES ?? "on").toLowerCase() !== "off";
+
+function toImageBlock(part) {
+  if (!IMAGES_ENABLED) return null;
+  let url = null;
+  if (part.type === OPENAI_BLOCK.IMAGE_URL) {
+    url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+  } else if (part.source?.type === "base64" && part.source.data) {
+    url = `data:${part.source.media_type || "image/png"};base64,${part.source.data}`;
+  } else if (typeof part.image === "string") {
+    url = part.image;
+  }
+  if (typeof url !== "string" || !url) return null;
+  const mediaType = url.startsWith("data:") ? url.slice(5, url.indexOf(";")) || "image/png" : undefined;
+  return { type: "image", image: url, ...(mediaType ? { mediaType } : {}) };
+}
+
 function toContentBlocks(content) {
   if (content == null) return [{ type: OPENAI_BLOCK.TEXT, text: "" }];
   if (typeof content === "string") return [{ type: OPENAI_BLOCK.TEXT, text: content }];
@@ -41,7 +58,13 @@ function toContentBlocks(content) {
         if (part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         } else if (part.type === OPENAI_BLOCK.IMAGE_URL || part.type === OPENAI_BLOCK.IMAGE) {
-          blocks.push({ type: OPENAI_BLOCK.TEXT, text: "[image omitted]" });
+          // Command Code's content blocks mirror the AI SDK message parts, whose
+          // image part is { type: "image", image, mediaType }. A vision model
+          // behind this upstream (Muse Spark, Kimi K2.6, DeepSeek V4.1) can read
+          // a screenshot only if it is sent, so forward it; set
+          // COMMANDCODE_IMAGES=off to restore the text placeholder.
+          const image = toImageBlock(part);
+          blocks.push(image ?? { type: OPENAI_BLOCK.TEXT, text: "[image omitted]" });
         } else if (typeof part.text === "string") {
           blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
         }
