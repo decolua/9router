@@ -1,5 +1,5 @@
 import {
-  extractApiKey, isValidApiKey,
+  extractApiKey, isValidApiKey, validateApiKeyWithRules,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -34,11 +34,14 @@ export async function handleTts(request) {
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  const apiKey = extractApiKey(request);
+  if (apiKey) {
+    const keyCheck = await validateApiKeyWithRules(apiKey, modelStr);
+    if (!keyCheck.valid) {
+      return errorResponse(keyCheck.status || HTTP_STATUS.UNAUTHORIZED, keyCheck.error);
+    }
+  } else if (settings.requireApiKey) {
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -65,21 +68,31 @@ export async function handleTts(request) {
   return handleSingleModelTts(body, modelStr, responseFormat, language, style);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language = "", style = "") {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
-  log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
+  log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
-  // noAuth providers — no credential needed
+  const ttsConfig = AI_PROVIDERS[provider]?.ttsConfig;
+
+  // No-auth providers (edge-tts, coqui, etc.) don't need credentials
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
+    const result = await handleTtsCore({
+      body: { ...body, model },
+      modelInfo: { provider, model },
+      credentials: null,
+      ttsConfig,
+      responseFormat,
+      language,
+      style,
+      log,
+    });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
 
-  // Credentialed providers — fallback loop (same pattern as embeddings)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
@@ -89,27 +102,37 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
-        const msg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        return unavailableResponse(status, `[${provider}/${model}] ${msg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        const errorMsg = lastError || credentials.lastError || "Unavailable";
+        return unavailableResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
-      if (excludeConnectionIds.size === 0) return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+      if (excludeConnectionIds.size === 0) {
+        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+      }
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
 
-    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
-
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
+    const result = await handleTtsCore({
+      body: { ...body, model },
+      modelInfo: { provider, model },
+      credentials,
+      ttsConfig,
+      responseFormat,
+      language,
+      style,
+      log,
+    });
 
     if (result.success) return result.response;
 
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
-    if (shouldFallback) {
+    const cooldown = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+    if (cooldown.shouldFallback) {
+      log.warn("FALLBACK", `Account unavailable (${result.status}) -> trying next account`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
       continue;
     }
-    return result.response || errorResponse(result.status, result.error);
+
+    return result.response;
   }
 }
