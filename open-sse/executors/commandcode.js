@@ -129,6 +129,7 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
   let buffer = "";
   const bufferedLines = [];
   let detectedError = null;
+  let readError = null;
 
   try {
     while (true) {
@@ -190,16 +191,22 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
           event?.type === "finish" ||
           event?.type === "finish-step"
         ) {
+          // Don't break: the tail of this chunk may still hold finish/finish-step
+          // events needed downstream for finish_reason. Mark and finish the chunk.
           stopLoop = true;
-          break;
         }
       }
 
       if (stopLoop) break;
     }
-  } catch {
+  } catch (err) {
+    // Do not return the original Response here: its body has already been disturbed, so
+    // reading it throws "Body is unusable: Body has already been read" and the buffered
+    // lines are lost. Record the failure and keep going so whatever was buffered still
+    // reaches the client.
+    readError = err;
     try { reader.releaseLock(); } catch { /* ignore */ }
-    return originalResponse;
+    try { buffer += decoder.decode(); } catch { /* ignore */ }
   }
 
   if (detectedError) {
@@ -224,7 +231,13 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
     );
   }
 
-  const combinedStream = createReplayedStream(bufferedLines, buffer, reader);
+  // A dead reader would rethrow on replay, so report EOF instead and let the buffered
+  // lines flow through the normal path.
+  const source = readError
+    ? { read: async () => ({ done: true, value: undefined }), cancel: async () => { } }
+    : reader;
+
+  const combinedStream = createReplayedStream(bufferedLines, buffer, source);
   return wrapNdjsonAsOpenAISse(combinedStream, model, originalResponse);
 }
 

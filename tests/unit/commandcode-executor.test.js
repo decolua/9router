@@ -132,6 +132,94 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     expect(text).toContain("Hello from Laguna");
     expect(text).toContain("data: [DONE]");
   });
+
+  it("keeps finish-step/finish that share a chunk with an earlier trigger", async () => {
+    // Upstream can deliver a whole trailing run of events in one network chunk.
+    // The peek loop must not drop the lines that follow the first trigger,
+    // otherwise downstream never sees finish_reason.
+    const events = [
+      { type: "start" },
+      { type: "start-step" },
+      { type: "text-start" },
+      { type: "text-delta", text: "A" },
+      { type: "text-delta", text: "B" },
+      { type: "text-end" },
+      { type: "finish-step", finishReason: "stop" },
+      { type: "finish" },
+    ];
+    const singleChunk = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(events.map((e) => JSON.stringify(e)).join("\n") + "\n"));
+        controller.close();
+      },
+    });
+
+    const fakeResponse = new Response(singleChunk, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+
+    const result = await inspectAndWrapCommandCodeResponse(fakeResponse, "poolside/laguna-s-2.1-free");
+    expect(result.ok).toBe(true);
+
+    const text = await result.text();
+    const chunks = text
+      .split("\n")
+      .filter((l) => l.startsWith("data: ") && !l.includes("[DONE]"))
+      .map((l) => JSON.parse(l.slice(6)));
+
+    const content = chunks.map((c) => c.choices?.[0]?.delta?.content).filter(Boolean).join("");
+    expect(content).toBe("AB");
+    expect(chunks.some((c) => c.choices?.[0]?.finish_reason === "stop")).toBe(true);
+  });
+});
+
+// An upstream connection that resets during the peek loop used to make this function
+// throw "Body is unusable: Body has already been read": the old fallback returned the
+// original Response, whose body the reader had already disturbed. It also threw away
+// every line buffered so far.
+describe("inspectAndWrapCommandCodeResponse: upstream reset during the peek", () => {
+  const encoder = new TextEncoder();
+
+  // Emits `chunks`, then fails the way a reset upstream connection does.
+  function resettingBody(chunks) {
+    let i = 0;
+    return new ReadableStream({
+      pull(controller) {
+        if (i < chunks.length) controller.enqueue(encoder.encode(chunks[i++]));
+        else controller.error(Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }));
+      },
+    });
+  }
+
+  // None of these lines are peek triggers, so the reset lands inside the peek loop.
+  const resetDuringPeek = (chunks) => inspectAndWrapCommandCodeResponse(
+    new Response(resettingBody(chunks), { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+    "poolside/laguna-s-2.1-free",
+  );
+
+  it("does not throw when the reset lands before any line", async () => {
+    const result = await resetDuringPeek([]);
+    expect(result.ok).toBe(true);
+    await expect(result.text()).resolves.toContain("data: [DONE]");
+  });
+
+  it("does not throw when the reset lands mid-line", async () => {
+    const result = await resetDuringPeek(['{"type":"text-delta","te']);
+    expect(result.ok).toBe(true);
+    await expect(result.text()).resolves.toContain("data: [DONE]");
+  });
+
+  it("still replays the lines buffered before the reset", async () => {
+    const result = await resetDuringPeek([
+      JSON.stringify({ type: "start" }) + "\n",
+      JSON.stringify({ type: "start-step" }) + "\n",
+    ]);
+    expect(result.ok).toBe(true);
+    const text = await result.text();
+    expect(text).toContain("data: ");
+    expect(text).toContain("data: [DONE]");
+  });
 });
 
 describe("CommandCode in Combo Fallback", () => {
