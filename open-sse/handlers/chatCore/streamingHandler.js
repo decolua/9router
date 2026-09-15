@@ -37,7 +37,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, sourceFormat);
 }
 
 /**
@@ -81,9 +81,13 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });
 
-  // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event
+  // Responses passthrough: synthesize response.failed + [DONE] if the stream aborts/stalls before a terminal event.
+  // OpenAI clients get the equivalent terminal from the transform stream, which knows
+  // whether a finish_reason already went out (and returns null if so).
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
-  const onAbortTerminal = isResponsesPassthrough ? buildAbortedResponsesTerminalBytes : null;
+  const onAbortTerminal = isResponsesPassthrough
+    ? buildAbortedResponsesTerminalBytes
+    : (transformStream.abortTerminalBytes || null);
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
   const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
 
@@ -118,7 +122,11 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const toolCalls = contentObj?.toolCalls || [];
+    // A tool-call-only turn carries no content. Label it accurately rather than as
+    // "[Empty streaming response]", which is indistinguishable from a truncated stream.
+    const safeContent = contentObj?.content
+      || (toolCalls.length ? `[Tool calls: ${toolCalls.map((call) => call.name || "unknown").join(", ")}]` : "[Empty streaming response]");
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
@@ -128,7 +136,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+      response: { content: safeContent, thinking: safeThinking, tool_calls: toolCalls, type: "streaming" },
       pxpipe,
       status: "success"
     }, { id: streamDetailId })).catch(err => {
