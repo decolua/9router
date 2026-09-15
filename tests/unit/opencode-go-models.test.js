@@ -37,6 +37,13 @@ describe("OpenCode Go model catalog", () => {
   });
 });
 
+describe("OpenCode Go thinking-suffix model lookup", () => {
+  it("preserves Responses routing for gpt-5.6-luna thinking variants", () => {
+    expect(getModelSupportedFormats("opencode-go", "gpt-5.6-luna(high)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "gpt-5.6-luna(high)")).toBe("openai-responses");
+  });
+});
+
 describe("OpenCode Go per-model supportedFormats", () => {
   it("declares [openai, claude] for MiniMax + Qwen models", () => {
     for (const m of CLAUDE_CAPABLE) {

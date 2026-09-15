@@ -46,7 +46,8 @@ function baseModelId(model) {
 }
 
 function isResponsesModel(model) {
-  return isMuseSparkModel(baseModelId(model));
+  const base = baseModelId(model);
+  return base === "gpt-5.6-luna" || isMuseSparkModel(base);
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and
