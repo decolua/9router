@@ -116,6 +116,16 @@ export const MODEL_CAPABILITIES = {
   // DeepSeek's first V4 model with image input; text limits match V4-Flash.
   "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
 
+  // DeepSeek V4.1-Flash is natively multimodal — models.dev lists
+  // opencode-go/deepseek-v4.1-flash with modalities.input ["text","image"] — and upstream
+  // the retired v4-flash / vision-exp ids route to it, so the live V4.1 ids carry the
+  // same image capability as the exp id above. "deepseek-flash" is the GA id on the
+  // DeepSeek API; it previously fell through to the generic *deepseek* pattern, whose
+  // 128K/64K limits are kept here. The repeated fields are deliberate: an exact entry
+  // short-circuits the pattern table, so a vision-only delta would drop them.
+  "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  "deepseek-flash":      { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 128000, maxOutput: 64000 },
+
   // Qwen plain coder/text (no vision) — registry "vision-model" / "coder-model" aliases
   "vision-model":      { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
   "coder-model":       { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 },
