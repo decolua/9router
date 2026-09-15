@@ -1,6 +1,7 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
+  FREE_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
@@ -300,6 +301,17 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  // Include no-auth free providers (e.g. opencode) so their models are exposed in /v1/models
+  for (const [id, provider] of Object.entries(FREE_PROVIDERS || {})) {
+    if (provider?.noAuth && !activeConnectionByProvider.has(id)) {
+      activeConnectionByProvider.set(id, {
+        id: "noauth",
+        provider: id,
+        isActive: true,
+      });
+    }
+  }
+
   const models = [];
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
@@ -326,7 +338,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
-        if (isDisabled(alias, model.id)) continue;
+        if (isDisabled(alias, model.id) || isDisabled(providerId, model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
@@ -375,60 +387,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
 
-      let rawModelIds = hasExplicitEnabledModels
-        ? Array.from(
-            new Set(
-              enabledModels.filter(
-                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
-              ),
-            ),
-          )
-        : providerModels.map((model) => model.id);
-
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
-      }
-
-      // Config-driven live catalog override (e.g. Kiro returns dynamic
-      // -thinking/-agentic variants per account). On failure, fall back to
-      // whatever rawModelIds already holds.
-      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels) {
-        try {
-          const live = await liveResolver(conn);
-          if (live?.models?.length) {
-            rawModelIds = live.models.map((m) => m.id);
-            liveModelKindById = new Map(
-              live.models
-                .filter((m) => m?.id)
-                .map((m) => [m.id, modelKind(m)])
-            );
-            liveCapabilitiesById = new Map(
-              live.models
-                .filter((m) => m?.id && m.capabilities)
-                .map((m) => [m.id, m.capabilities])
-            );
-          }
-        } catch (err) {
-          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
-        }
-      }
-
-      const modelIds = rawModelIds
-        .map((modelId) => {
-          if (modelId.startsWith(`${outputAlias}/`)) {
-            return modelId.slice(outputAlias.length + 1);
-          }
-          if (modelId.startsWith(`${staticAlias}/`)) {
-            return modelId.slice(staticAlias.length + 1);
-          }
-          if (modelId.startsWith(`${providerId}/`)) {
-            return modelId.slice(providerId.length + 1);
-          }
-          return modelId;
-        })
-        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
-
+      // Compute custom models and aliases first so we know if this provider has user-configured models
       const customModelKindById = new Map();
       const customModelIds = customModels
         .filter((m) => {
@@ -470,6 +429,63 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
+      const hasConfiguredModels = hasExplicitEnabledModels || customModelIds.length > 0 || aliasModelIds.length > 0;
+
+      let rawModelIds = hasExplicitEnabledModels
+        ? Array.from(
+            new Set(
+              enabledModels.filter(
+                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
+              ),
+            ),
+          )
+        : providerModels.map((model) => model.id);
+
+      // Only fetch dynamic models for compatible providers if the user hasn't explicitly configured custom models or aliases
+      if (isCompatibleProvider && rawModelIds.length === 0 && !hasConfiguredModels && !skipDynamicFetch) {
+        rawModelIds = await fetchCompatibleModelIds(conn);
+      }
+
+      // Config-driven live catalog override (e.g. Kiro returns dynamic
+      // -thinking/-agentic variants per account). On failure, fall back to
+      // whatever rawModelIds already holds.
+      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
+      if (liveResolver && !hasExplicitEnabledModels && !hasConfiguredModels) {
+        try {
+          const live = await liveResolver(conn);
+          if (live?.models?.length) {
+            rawModelIds = live.models.map((m) => m.id);
+            liveModelKindById = new Map(
+              live.models
+                .filter((m) => m?.id)
+                .map((m) => [m.id, modelKind(m)])
+            );
+            liveCapabilitiesById = new Map(
+              live.models
+                .filter((m) => m?.id && m.capabilities)
+                .map((m) => [m.id, m.capabilities])
+            );
+          }
+        } catch (err) {
+          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
+        }
+      }
+
+      const modelIds = rawModelIds
+        .map((modelId) => {
+          if (modelId.startsWith(`${outputAlias}/`)) {
+            return modelId.slice(outputAlias.length + 1);
+          }
+          if (modelId.startsWith(`${staticAlias}/`)) {
+            return modelId.slice(staticAlias.length + 1);
+          }
+          if (modelId.startsWith(`${providerId}/`)) {
+            return modelId.slice(providerId.length + 1);
+          }
+          return modelId;
+        })
+        .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
+
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
 
       for (const modelId of mergedModelIds) {
@@ -480,7 +496,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         // imageToText custom models stay in the LLM list (vision-capable chat models)
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;
-        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+        if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId) || isDisabled(providerId, modelId)) continue;
 
         const model = {
           id: `${outputAlias}/${modelId}`,
@@ -572,7 +588,19 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+
+    // If API key is provided, filter models by its allowedModels configuration
+    const { extractApiKey, isModelAllowedForKey } = await import("@/sse/services/auth.js");
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const { getApiKeyByKey } = await import("@/lib/db/repos/apiKeysRepo.js");
+      const keyRecord = await getApiKeyByKey(apiKey);
+      if (keyRecord && Array.isArray(keyRecord.allowedModels) && keyRecord.allowedModels.length > 0) {
+        data = data.filter((m) => isModelAllowedForKey(m.id, keyRecord.allowedModels));
+      }
+    }
+
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
