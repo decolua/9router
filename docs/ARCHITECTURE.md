@@ -315,6 +315,7 @@ erDiagram
 
     SETTINGS {
       boolean cloudEnabled
+      string fallbackStrategy
       number stickyRoundRobinLimit
       boolean requireLogin
       string password_hash
