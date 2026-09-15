@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -22,6 +22,24 @@ export default function APIPageClient({ machineId }) {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyTokenLimit, setNewKeyTokenLimit] = useState("");
+  const [newKeyModelMode, setNewKeyModelMode] = useState("all"); // "all" | "custom"
+  const [newKeyAllowedModels, setNewKeyAllowedModels] = useState([]);
+  const [newKeyCustomPattern, setNewKeyCustomPattern] = useState("");
+  const [showModelSelectForCreate, setShowModelSelectForCreate] = useState(false);
+
+  // Edit Key state
+  const [editingKey, setEditingKey] = useState(null);
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editKeyTokenLimit, setEditKeyTokenLimit] = useState("");
+  const [editKeyUsedTokens, setEditKeyUsedTokens] = useState(0);
+  const [editKeyModelMode, setEditKeyModelMode] = useState("all");
+  const [editKeyAllowedModels, setEditKeyAllowedModels] = useState([]);
+  const [editKeyCustomPattern, setEditKeyCustomPattern] = useState("");
+  const [showModelSelectForEdit, setShowModelSelectForEdit] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  const [activeProvidersList, setActiveProvidersList] = useState([]);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -262,7 +280,18 @@ export default function APIPageClient({ machineId }) {
         return data.keys || [];
       };
 
-      let existing = await fetchKeys();
+      const fetchProviders = async () => {
+        try {
+          const res = await fetch("/api/providers");
+          if (!res.ok) return [];
+          const data = await res.json();
+          return data.connections || [];
+        } catch { return []; }
+      };
+
+      let [existing, providers] = await Promise.all([fetchKeys(), fetchProviders()]);
+      setActiveProvidersList(providers);
+
       // Auto-provision a default key for first-time users so the endpoint works out of the box.
       if (existing.length === 0) {
         try {
@@ -622,14 +651,28 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const formatTokens = (n) => {
+    const num = Number(n) || 0;
+    if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
+    if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
+    return String(num);
+  };
+
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
     try {
+      const tokenLimit = newKeyTokenLimit ? Math.max(0, parseInt(newKeyTokenLimit, 10) || 0) : 0;
+      const allowedModels = newKeyModelMode === "custom" ? newKeyAllowedModels : null;
+
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName.trim(),
+          tokenLimit,
+          allowedModels,
+        }),
       });
       const data = await res.json();
 
@@ -637,11 +680,63 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyTokenLimit("");
+        setNewKeyModelMode("all");
+        setNewKeyAllowedModels([]);
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
     }
+  };
+
+  const handleOpenEditModal = (key) => {
+    setEditingKey(key);
+    setEditKeyName(key.name || "");
+    setEditKeyTokenLimit(key.tokenLimit ? String(key.tokenLimit) : "");
+    setEditKeyUsedTokens(key.usedTokens || 0);
+    setEditKeyModelMode(Array.isArray(key.allowedModels) && key.allowedModels.length > 0 ? "custom" : "all");
+    setEditKeyAllowedModels(Array.isArray(key.allowedModels) ? [...key.allowedModels] : []);
+    setEditKeyCustomPattern("");
+  };
+
+  const handleUpdateKey = async () => {
+    if (!editingKey) return;
+    setSavingEdit(true);
+    try {
+      const tokenLimit = editKeyTokenLimit ? Math.max(0, parseInt(editKeyTokenLimit, 10) || 0) : 0;
+      const allowedModels = editKeyModelMode === "custom" ? editKeyAllowedModels : null;
+
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editKeyName.trim() || editingKey.name,
+          tokenLimit,
+          usedTokens: editKeyUsedTokens,
+          allowedModels,
+        }),
+      });
+      if (res.ok) {
+        await fetchData();
+        setEditingKey(null);
+      }
+    } catch (error) {
+      console.log("Error updating key:", error);
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
+  const handleResetKeyTokens = () => {
+    setConfirmState({
+      title: "Reset Token Usage",
+      message: `Reset used tokens counter for "${editingKey?.name}" to 0?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        setEditKeyUsedTokens(0);
+      }
+    });
   };
 
   const handleDeleteKey = async (id) => {
@@ -1010,10 +1105,22 @@ export default function APIPageClient({ machineId }) {
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group flex flex-col sm:flex-row sm:items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 gap-2 ${key.isActive === false ? "opacity-60" : ""}`}
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-medium">{key.name}</p>
+                    {key.isActive === false && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium">
+                        Paused
+                      </span>
+                    )}
+                    {key.tokenLimit > 0 && (key.usedTokens || 0) >= key.tokenLimit && (
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-red-500/10 text-red-600 dark:text-red-400 font-medium">
+                        Quota Exceeded
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -1036,14 +1143,61 @@ export default function APIPageClient({ machineId }) {
                       </span>
                     </button>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                  {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
+
+                  {/* Token usage and allowed models badges */}
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5 text-xs text-text-muted">
+                    <div className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-text-muted">toll</span>
+                      <span>
+                        Tokens: <strong className="text-text-main font-medium">{formatTokens(key.usedTokens || 0)}</strong>
+                        {key.tokenLimit > 0 ? (
+                          <> / {formatTokens(key.tokenLimit)} ({Math.min(100, Math.round(((key.usedTokens || 0) / key.tokenLimit) * 100))}%)</>
+                        ) : (
+                          <span className="text-text-muted font-normal"> (Unlimited)</span>
+                        )}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-text-muted">view_in_ar</span>
+                      <span>
+                        Models:{" "}
+                        {Array.isArray(key.allowedModels) && key.allowedModels.length > 0 ? (
+                          <span className="text-primary font-medium" title={key.allowedModels.join(", ")}>
+                            {key.allowedModels.length} restricted
+                          </span>
+                        ) : (
+                          <span className="text-text-main">All</span>
+                        )}
+                      </span>
+                    </div>
+
+                    <span>Created {new Date(key.createdAt).toLocaleDateString()}</span>
+                  </div>
+
+                  {key.tokenLimit > 0 && (
+                    <div className="w-full max-w-xs mt-1.5 h-1.5 bg-black/5 dark:bg-white/5 rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${
+                          (key.usedTokens || 0) >= key.tokenLimit
+                            ? "bg-red-500"
+                            : ((key.usedTokens || 0) / key.tokenLimit) > 0.8
+                            ? "bg-amber-500"
+                            : "bg-primary"
+                        }`}
+                        style={{ width: `${Math.min(100, Math.round(((key.usedTokens || 0) / key.tokenLimit) * 100))}%` }}
+                      />
+                    </div>
                   )}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 self-end sm:self-center">
+                  <button
+                    onClick={() => handleOpenEditModal(key)}
+                    className="p-1.5 hover:bg-primary/10 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit Key & Permissions"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1065,7 +1219,8 @@ export default function APIPageClient({ machineId }) {
                   />
                   <button
                     onClick={() => handleDeleteKey(key.id)}
-                    className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    className="p-1.5 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Delete key"
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
                   </button>
@@ -1083,6 +1238,9 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyTokenLimit("");
+          setNewKeyModelMode("all");
+          setNewKeyAllowedModels([]);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1090,9 +1248,121 @@ export default function APIPageClient({ machineId }) {
             label="Key Name"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder="Production Key"
+            placeholder="e.g. Production Key, Alice, Dev Agent"
           />
-          <div className="flex gap-2">
+
+          <div>
+            <label className="text-xs text-text-muted mb-1 block">Token Limit (Quota)</label>
+            <Input
+              type="number"
+              value={newKeyTokenLimit}
+              onChange={(e) => setNewKeyTokenLimit(e.target.value)}
+              placeholder="Leave empty or 0 for unlimited tokens"
+              min="0"
+            />
+            <p className="text-[11px] text-text-muted mt-1">
+              Maximum total tokens this key can consume. Once reached, requests will be blocked.
+            </p>
+          </div>
+
+          <div>
+            <label className="text-xs text-text-muted mb-1.5 block font-medium">Accessible Models</label>
+            <div className="flex items-center gap-4 mb-2">
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name="newKeyModelMode"
+                  checked={newKeyModelMode === "all"}
+                  onChange={() => setNewKeyModelMode("all")}
+                  className="text-primary focus:ring-primary"
+                />
+                <span>All Models</span>
+              </label>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name="newKeyModelMode"
+                  checked={newKeyModelMode === "custom"}
+                  onChange={() => setNewKeyModelMode("custom")}
+                  className="text-primary focus:ring-primary"
+                />
+                <span>Specific Models Only</span>
+              </label>
+            </div>
+
+            {newKeyModelMode === "custom" && (
+              <div className="flex flex-col gap-2 p-3 bg-surface-2 border border-border rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="xs"
+                    icon="add"
+                    variant="secondary"
+                    onClick={() => setShowModelSelectForCreate(true)}
+                  >
+                    Select Models
+                  </Button>
+                  <div className="flex-1 flex gap-1">
+                    <input
+                      type="text"
+                      placeholder="Pattern (e.g. oc/*, gpt-4o)"
+                      value={newKeyCustomPattern}
+                      onChange={(e) => setNewKeyCustomPattern(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && newKeyCustomPattern.trim()) {
+                          const p = newKeyCustomPattern.trim();
+                          if (!newKeyAllowedModels.includes(p)) {
+                            setNewKeyAllowedModels([...newKeyAllowedModels, p]);
+                          }
+                          setNewKeyCustomPattern("");
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 text-xs border border-border rounded bg-background"
+                    />
+                    <Button
+                      size="xs"
+                      onClick={() => {
+                        if (newKeyCustomPattern.trim()) {
+                          const p = newKeyCustomPattern.trim();
+                          if (!newKeyAllowedModels.includes(p)) {
+                            setNewKeyAllowedModels([...newKeyAllowedModels, p]);
+                          }
+                          setNewKeyCustomPattern("");
+                        }
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+
+                {newKeyAllowedModels.length === 0 ? (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    No models selected yet. Add models or patterns, or switch to &quot;All Models&quot;.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pt-1">
+                    {newKeyAllowedModels.map((m) => (
+                      <span
+                        key={m}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md text-xs font-mono text-primary"
+                      >
+                        {m}
+                        <button
+                          type="button"
+                          onClick={() => setNewKeyAllowedModels(newKeyAllowedModels.filter((x) => x !== m))}
+                          className="hover:text-red-500 ml-0.5"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-border">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
             </Button>
@@ -1100,6 +1370,9 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyTokenLimit("");
+                setNewKeyModelMode("all");
+                setNewKeyAllowedModels([]);
               }}
               variant="ghost"
               fullWidth
@@ -1109,6 +1382,200 @@ export default function APIPageClient({ machineId }) {
           </div>
         </div>
       </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        title={`Edit API Key: ${editingKey?.name || ""}`}
+        onClose={() => !savingEdit && setEditingKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={editKeyName}
+            onChange={(e) => setEditKeyName(e.target.value)}
+            placeholder="Key Name"
+          />
+
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs text-text-muted block">Token Limit (Quota)</label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-text-muted">
+                  Used: <strong className="text-text-main font-medium">{editKeyUsedTokens.toLocaleString()}</strong> tokens
+                </span>
+                {editKeyUsedTokens > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleResetKeyTokens}
+                    className="text-[11px] text-primary hover:underline"
+                  >
+                    Reset Usage
+                  </button>
+                )}
+              </div>
+            </div>
+            <Input
+              type="number"
+              value={editKeyTokenLimit}
+              onChange={(e) => setEditKeyTokenLimit(e.target.value)}
+              placeholder="0 or empty for unlimited"
+              min="0"
+            />
+          </div>
+
+          <div>
+            <label className="text-xs text-text-muted mb-1.5 block font-medium">Accessible Models</label>
+            <div className="flex items-center gap-4 mb-2">
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name="editKeyModelMode"
+                  checked={editKeyModelMode === "all"}
+                  onChange={() => setEditKeyModelMode("all")}
+                  className="text-primary focus:ring-primary"
+                />
+                <span>All Models</span>
+              </label>
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                <input
+                  type="radio"
+                  name="editKeyModelMode"
+                  checked={editKeyModelMode === "custom"}
+                  onChange={() => setEditKeyModelMode("custom")}
+                  className="text-primary focus:ring-primary"
+                />
+                <span>Specific Models Only</span>
+              </label>
+            </div>
+
+            {editKeyModelMode === "custom" && (
+              <div className="flex flex-col gap-2 p-3 bg-surface-2 border border-border rounded-lg">
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="xs"
+                    icon="add"
+                    variant="secondary"
+                    onClick={() => setShowModelSelectForEdit(true)}
+                  >
+                    Select Models
+                  </Button>
+                  <div className="flex-1 flex gap-1">
+                    <input
+                      type="text"
+                      placeholder="Pattern (e.g. oc/*, gpt-4o)"
+                      value={editKeyCustomPattern}
+                      onChange={(e) => setEditKeyCustomPattern(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && editKeyCustomPattern.trim()) {
+                          const p = editKeyCustomPattern.trim();
+                          if (!editKeyAllowedModels.includes(p)) {
+                            setEditKeyAllowedModels([...editKeyAllowedModels, p]);
+                          }
+                          setEditKeyCustomPattern("");
+                        }
+                      }}
+                      className="flex-1 px-2.5 py-1 text-xs border border-border rounded bg-background"
+                    />
+                    <Button
+                      size="xs"
+                      onClick={() => {
+                        if (editKeyCustomPattern.trim()) {
+                          const p = editKeyCustomPattern.trim();
+                          if (!editKeyAllowedModels.includes(p)) {
+                            setEditKeyAllowedModels([...editKeyAllowedModels, p]);
+                          }
+                          setEditKeyCustomPattern("");
+                        }
+                      }}
+                    >
+                      Add
+                    </Button>
+                  </div>
+                </div>
+
+                {editKeyAllowedModels.length === 0 ? (
+                  <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                    No models restricted yet. All models will be blocked unless you add at least one model or choose &quot;All Models&quot;.
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pt-1">
+                    {editKeyAllowedModels.map((m) => (
+                      <span
+                        key={m}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 border border-primary/20 rounded-md text-xs font-mono text-primary"
+                      >
+                        {m}
+                        <button
+                          type="button"
+                          onClick={() => setEditKeyAllowedModels(editKeyAllowedModels.filter((x) => x !== m))}
+                          className="hover:text-red-500 ml-0.5"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-border">
+            <Button onClick={handleUpdateKey} fullWidth disabled={savingEdit || !editKeyName.trim()}>
+              {savingEdit ? "Saving..." : "Save Changes"}
+            </Button>
+            <Button
+              onClick={() => setEditingKey(null)}
+              variant="ghost"
+              fullWidth
+              disabled={savingEdit}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ModelSelectModal for Create Key */}
+      <ModelSelectModal
+        isOpen={showModelSelectForCreate}
+        onClose={() => setShowModelSelectForCreate(false)}
+        activeProviders={activeProvidersList}
+        title="Select Allowed Models for Key"
+        closeOnSelect={false}
+        addedModelValues={newKeyAllowedModels}
+        onSelect={(model) => {
+          const val = model?.value || model?.name || model;
+          if (val && !newKeyAllowedModels.includes(val)) {
+            setNewKeyAllowedModels([...newKeyAllowedModels, val]);
+          }
+        }}
+        onDeselect={(model) => {
+          const val = model?.value || model?.name || model;
+          setNewKeyAllowedModels(newKeyAllowedModels.filter((x) => x !== val));
+        }}
+      />
+
+      {/* ModelSelectModal for Edit Key */}
+      <ModelSelectModal
+        isOpen={showModelSelectForEdit}
+        onClose={() => setShowModelSelectForEdit(false)}
+        activeProviders={activeProvidersList}
+        title="Select Allowed Models for Key"
+        closeOnSelect={false}
+        addedModelValues={editKeyAllowedModels}
+        onSelect={(model) => {
+          const val = model?.value || model?.name || model;
+          if (val && !editKeyAllowedModels.includes(val)) {
+            setEditKeyAllowedModels([...editKeyAllowedModels, val]);
+          }
+        }}
+        onDeselect={(model) => {
+          const val = model?.value || model?.name || model;
+          setEditKeyAllowedModels(editKeyAllowedModels.filter((x) => x !== val));
+        }}
+      />
 
       {/* Created Key Modal */}
       <Modal
