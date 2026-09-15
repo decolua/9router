@@ -285,7 +285,7 @@ export default function APIPageClient({ machineId }) {
           const res = await fetch("/api/providers");
           if (!res.ok) return [];
           const data = await res.json();
-          return data.connections || [];
+          return (data.connections || []).filter((c) => c.isActive !== false);
         } catch { return []; }
       };
 

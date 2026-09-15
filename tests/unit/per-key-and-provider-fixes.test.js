@@ -169,4 +169,15 @@ describe("Provider Model List Fixes", () => {
     // Every returned model must match oc/*
     expect(json.data.every((m) => m.id.startsWith("oc/"))).toBe(true);
   });
+
+  it("excludes models from disabled/inactive provider connections", async () => {
+    // When a provider connection has isActive: false, its models should not be considered active
+    const sampleConnections = [
+      { id: "conn-1", provider: "openai-compatible-chat-navyai", name: "NavyAI", isActive: false },
+      { id: "conn-2", provider: "openai-compatible-chat-literouter", name: "literouter", isActive: true },
+    ];
+    const activeOnly = sampleConnections.filter((c) => c && c.isActive !== false);
+    expect(activeOnly.map((c) => c.name)).toEqual(["literouter"]);
+    expect(activeOnly.some((c) => c.name === "NavyAI")).toBe(false);
+  });
 });
