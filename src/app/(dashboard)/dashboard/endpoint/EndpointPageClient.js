@@ -1304,51 +1304,53 @@ export default function APIPageClient({ machineId }) {
 
             {newKeyModelMode === "custom" && (
               <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-surface-2/60 border border-border mt-1">
-                <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  icon="checklist"
+                  onClick={() => setShowModelSelectForCreate(true)}
+                  fullWidth
+                  className="justify-center h-9 font-medium text-xs rounded-lg shadow-2xs"
+                >
+                  Select Models from Catalog
+                </Button>
+
+                <div className="relative flex items-center">
+                  <span className="material-symbols-outlined absolute left-2.5 text-[16px] text-text-muted pointer-events-none">filter_alt</span>
+                  <input
+                    type="text"
+                    placeholder="Add custom pattern or ID (e.g. oc/*, gpt-4o, *claude*)"
+                    value={newKeyCustomPattern}
+                    onChange={(e) => setNewKeyCustomPattern(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newKeyCustomPattern.trim()) {
+                        e.preventDefault();
+                        const p = newKeyCustomPattern.trim();
+                        if (!newKeyAllowedModels.includes(p)) {
+                          setNewKeyAllowedModels([...newKeyAllowedModels, p]);
+                        }
+                        setNewKeyCustomPattern("");
+                      }
+                    }}
+                    className="w-full h-9 pl-8 pr-16 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono"
+                  />
                   <button
                     type="button"
-                    onClick={() => setShowModelSelectForCreate(true)}
-                    className="h-9 px-3 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main transition-colors cursor-pointer shrink-0 shadow-2xs"
+                    onClick={() => {
+                      if (newKeyCustomPattern.trim()) {
+                        const p = newKeyCustomPattern.trim();
+                        if (!newKeyAllowedModels.includes(p)) {
+                          setNewKeyAllowedModels([...newKeyAllowedModels, p]);
+                        }
+                        setNewKeyCustomPattern("");
+                      }
+                    }}
+                    disabled={!newKeyCustomPattern.trim()}
+                    className="absolute right-1.5 h-6 px-3 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs"
                   >
-                    <span className="material-symbols-outlined text-[16px] text-primary">checklist</span>
-                    Select Models
+                    Add
                   </button>
-
-                  <div className="flex-1 relative flex items-center">
-                    <input
-                      type="text"
-                      placeholder="Pattern (e.g. oc/*, gpt-4o, *claude*)"
-                      value={newKeyCustomPattern}
-                      onChange={(e) => setNewKeyCustomPattern(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && newKeyCustomPattern.trim()) {
-                          e.preventDefault();
-                          const p = newKeyCustomPattern.trim();
-                          if (!newKeyAllowedModels.includes(p)) {
-                            setNewKeyAllowedModels([...newKeyAllowedModels, p]);
-                          }
-                          setNewKeyCustomPattern("");
-                        }
-                      }}
-                      className="w-full h-9 pl-3 pr-16 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (newKeyCustomPattern.trim()) {
-                          const p = newKeyCustomPattern.trim();
-                          if (!newKeyAllowedModels.includes(p)) {
-                            setNewKeyAllowedModels([...newKeyAllowedModels, p]);
-                          }
-                          setNewKeyCustomPattern("");
-                        }
-                      }}
-                      disabled={!newKeyCustomPattern.trim()}
-                      className="absolute right-1.5 h-6 px-2.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs"
-                    >
-                      Add
-                    </button>
-                  </div>
                 </div>
 
                 <div className="flex items-center justify-between text-xs px-0.5">
@@ -1505,51 +1507,53 @@ export default function APIPageClient({ machineId }) {
 
             {editKeyModelMode === "custom" && (
               <div className="flex flex-col gap-2.5 p-3 rounded-xl bg-surface-2/60 border border-border mt-1">
-                <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  icon="checklist"
+                  onClick={() => setShowModelSelectForEdit(true)}
+                  fullWidth
+                  className="justify-center h-9 font-medium text-xs rounded-lg shadow-2xs"
+                >
+                  Select Models from Catalog
+                </Button>
+
+                <div className="relative flex items-center">
+                  <span className="material-symbols-outlined absolute left-2.5 text-[16px] text-text-muted pointer-events-none">filter_alt</span>
+                  <input
+                    type="text"
+                    placeholder="Add custom pattern or ID (e.g. oc/*, gpt-4o, *claude*)"
+                    value={editKeyCustomPattern}
+                    onChange={(e) => setEditKeyCustomPattern(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && editKeyCustomPattern.trim()) {
+                        e.preventDefault();
+                        const p = editKeyCustomPattern.trim();
+                        if (!editKeyAllowedModels.includes(p)) {
+                          setEditKeyAllowedModels([...editKeyAllowedModels, p]);
+                        }
+                        setEditKeyCustomPattern("");
+                      }
+                    }}
+                    className="w-full h-9 pl-8 pr-16 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono"
+                  />
                   <button
                     type="button"
-                    onClick={() => setShowModelSelectForEdit(true)}
-                    className="h-9 px-3 text-xs font-medium inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface hover:bg-surface-2 text-text-main transition-colors cursor-pointer shrink-0 shadow-2xs"
+                    onClick={() => {
+                      if (editKeyCustomPattern.trim()) {
+                        const p = editKeyCustomPattern.trim();
+                        if (!editKeyAllowedModels.includes(p)) {
+                          setEditKeyAllowedModels([...editKeyAllowedModels, p]);
+                        }
+                        setEditKeyCustomPattern("");
+                      }
+                    }}
+                    disabled={!editKeyCustomPattern.trim()}
+                    className="absolute right-1.5 h-6 px-3 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs"
                   >
-                    <span className="material-symbols-outlined text-[16px] text-primary">checklist</span>
-                    Select Models
+                    Add
                   </button>
-
-                  <div className="flex-1 relative flex items-center">
-                    <input
-                      type="text"
-                      placeholder="Pattern (e.g. oc/*, gpt-4o, *claude*)"
-                      value={editKeyCustomPattern}
-                      onChange={(e) => setEditKeyCustomPattern(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && editKeyCustomPattern.trim()) {
-                          e.preventDefault();
-                          const p = editKeyCustomPattern.trim();
-                          if (!editKeyAllowedModels.includes(p)) {
-                            setEditKeyAllowedModels([...editKeyAllowedModels, p]);
-                          }
-                          setEditKeyCustomPattern("");
-                        }
-                      }}
-                      className="w-full h-9 pl-3 pr-16 text-xs bg-surface border border-border rounded-lg placeholder:text-text-muted/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/40 font-mono"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (editKeyCustomPattern.trim()) {
-                          const p = editKeyCustomPattern.trim();
-                          if (!editKeyAllowedModels.includes(p)) {
-                            setEditKeyAllowedModels([...editKeyAllowedModels, p]);
-                          }
-                          setEditKeyCustomPattern("");
-                        }
-                      }}
-                      disabled={!editKeyCustomPattern.trim()}
-                      className="absolute right-1.5 h-6 px-2.5 text-[11px] font-medium rounded-md bg-primary text-white hover:bg-primary/90 disabled:opacity-30 disabled:pointer-events-none transition-all cursor-pointer shadow-2xs"
-                    >
-                      Add
-                    </button>
-                  </div>
                 </div>
 
                 <div className="flex items-center justify-between text-xs px-0.5">
