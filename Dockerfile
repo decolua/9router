@@ -2,21 +2,26 @@
 ARG NODE_IMAGE=node:22-alpine
 FROM ${NODE_IMAGE} AS base
 WORKDIR /app
-# CN mirror for apk (used by builder and runner stages)
-RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
+# Allow HTTP for apk repositories so corporate MITM/TLS inspection doesn't fail apk package downloads (Alpine packages are cryptographically signed with RSA keys)
+RUN sed -i 's|https://|http://|g' /etc/apk/repositories && apk --no-cache add ca-certificates
 
 FROM base AS builder
 
 RUN apk --no-cache upgrade && apk --no-cache add python3 make g++ linux-headers
 
+# If custom CA certificates are provided (e.g. corporate proxy), install them
+COPY ca-bundle.crt* /usr/local/share/ca-certificates/
+RUN if [ -f /usr/local/share/ca-certificates/ca-bundle.crt ]; then update-ca-certificates; fi
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 COPY package.json ./
-RUN npm install --registry=https://registry.npmmirror.com
+RUN npm config set strict-ssl false && npm install
 
 COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-FROM ${NODE_IMAGE} AS runner
+FROM base AS runner
 WORKDIR /app
 
 LABEL org.opencontainers.image.title="9router"
@@ -26,6 +31,11 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
+
+# If custom CA certificates are provided, install in runner as well
+COPY ca-bundle.crt* /usr/local/share/ca-certificates/
+RUN if [ -f /usr/local/share/ca-certificates/ca-bundle.crt ]; then update-ca-certificates; fi
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
 
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/static ./.next/static

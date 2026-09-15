@@ -26,6 +26,7 @@ product
 # misc
 .DS_Store
 *.pem
+ca-bundle.crt
 
 # debug
 npm-debug.log*
@@ -48,56 +49,46 @@ next-env.d.ts
 data/
 logs/*
 source/*
-.cursor/*
-docs/*
-!docs/ARCHITECTURE.md
+dist/*
 test/*
-open-sse/test/*
-RM.vn.md
-RM.md
-cursor/*
-PUBLIC.md
-Thanks.md
-PUBLIC.en.md
-PR/*
-package-lock.json
+tests-node_modules/*
+tests/node_modules/*
+scripts/.cache/
+skills/.cache/
 
+# local
+.superpowers/
 
-#Ignore vscode AI rules
-.github/instructions/codacy.instructions.md
-README1.md
-deploy*.sh
-ecosystem.config.*
+# temporary
+/open-sse.old
 
-scripts/agSniffer/*
-gitbooks/*
-gitbook/README.md
+# OS
+Thumbs.db
+.directory
+*~
 
-# Refactor backup reference (do not bundle/lint)
-open-sse.old/
-.graphifyignore
-graphify-out/*
+# JetBrains
+.idea/
+*.iml
+*.iws
 
-# Local-only working dirs (notes, vendored repos, scripts, skills)
-.claude/
-.docs/
-.repo/
-.script/
-.codegraph/
-.PR/
-.next-analyze/*
+# Eclipse
+.project
+.classpath
+.settings/
 
-# Kiro local workspace state
-.kiro/
-9router-*
+# NetBeans
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-cache/
 
-# Local sensitive / temp files
-.engine-token.txt
-.tmp-prov.json
-.tmp-providers.json
-.oauth-session.json
-.dev-server.log
-.dev-server-err.log
-.start-dev.ps1
-start-dev-silent.cjs
-debug.log
+# Visual Studio Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+EOF
