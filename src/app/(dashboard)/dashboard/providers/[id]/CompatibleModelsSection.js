@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button } from "@/shared/components";
+import { Button, Modal } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
@@ -77,6 +77,11 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [showSelectModal, setShowSelectModal] = useState(false);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [selectedImportIds, setSelectedImportIds] = useState(new Set());
+  const [modelSearch, setModelSearch] = useState("");
+  const [savingImport, setSavingImport] = useState(false);
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -122,7 +127,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
-  const handleImport = async () => {
+  const handleOpenImportModal = async () => {
     if (importing) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) return;
@@ -132,30 +137,92 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        alert(data.error || "Failed to fetch models from provider");
         return;
       }
-      const models = data.models || [];
+      const models = (data.models || []).map((model) => {
+        const id = model.id || model.name || model.model;
+        return {
+          id,
+          name: model.name || id,
+        };
+      }).filter((m) => typeof m.id === "string" && m.id.trim() !== "");
+
       if (models.length === 0) {
         alert("No models returned from /models.");
         return;
       }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        if (allModels.some((entry) => entry.id === modelId)) continue;
-        await onAddCustomModel(modelId);
-        importedCount += 1;
-      }
-      if (importedCount === 0) {
-        alert("No new models were added.");
-      }
+
+      setAvailableModels(models);
+      setSelectedImportIds(new Set());
+      setModelSearch("");
+      setShowSelectModal(true);
     } catch (error) {
-      console.log("Error importing models:", error);
+      console.log("Error fetching models:", error);
+      alert("Error fetching models: " + error.message);
     } finally {
       setImporting(false);
     }
+  };
+
+  const handleSaveSelectedModels = async () => {
+    if (savingImport || selectedImportIds.size === 0) return;
+    setSavingImport(true);
+    try {
+      let count = 0;
+      for (const modelId of selectedImportIds) {
+        if (allModels.some((entry) => entry.id === modelId)) continue;
+        await onAddCustomModel(modelId);
+        count += 1;
+      }
+      setShowSelectModal(false);
+      setSelectedImportIds(new Set());
+      if (count > 0) {
+        alert(`Successfully added ${count} model(s).`);
+      }
+    } catch (error) {
+      console.log("Error saving models:", error);
+      alert("Error saving models: " + error.message);
+    } finally {
+      setSavingImport(false);
+    }
+  };
+
+  const toggleImportModelSelection = (modelId) => {
+    setSelectedImportIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(modelId)) next.delete(modelId);
+      else next.add(modelId);
+      return next;
+    });
+  };
+
+  const filteredImportModels = availableModels.filter((m) => {
+    if (!modelSearch.trim()) return true;
+    const q = modelSearch.toLowerCase();
+    return m.id.toLowerCase().includes(q) || (m.name && m.name.toLowerCase().includes(q));
+  });
+
+  const handleSelectAllVisible = () => {
+    setSelectedImportIds((prev) => {
+      const next = new Set(prev);
+      for (const m of filteredImportModels) {
+        if (!allModels.some((entry) => entry.id === m.id)) {
+          next.add(m.id);
+        }
+      }
+      return next;
+    });
+  };
+
+  const handleDeselectAllVisible = () => {
+    setSelectedImportIds((prev) => {
+      const next = new Set(prev);
+      for (const m of filteredImportModels) {
+        next.delete(m.id);
+      }
+      return next;
+    });
   };
 
   const canImport = connections.some((conn) => conn.isActive !== false);
@@ -163,7 +230,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or select them from the /models endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -182,16 +249,112 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
-          {importing ? "Importing..." : "Import from /models"}
+        <Button size="sm" variant="secondary" icon="download" onClick={handleOpenImportModal} disabled={!canImport || importing}>
+          {importing ? "Fetching..." : "Select from /models"}
         </Button>
       </div>
 
       {!canImport && (
         <p className="text-xs text-text-muted">
-          Add a connection to enable importing models.
+          Add a connection to enable selecting models from /models.
         </p>
       )}
+
+      {/* Modal for selecting models from upstream catalog */}
+      <Modal
+        isOpen={showSelectModal}
+        onClose={() => !savingImport && setShowSelectModal(false)}
+        title={`Select Models from Provider (${availableModels.length} available)`}
+        size="lg"
+      >
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-text-muted">
+            Choose the specific models you want to enable in 9Router. Only selected models will be exposed in /v1/models.
+          </p>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Filter models by name or id..."
+              value={modelSearch}
+              onChange={(e) => setModelSearch(e.target.value)}
+              className="flex-1 px-3 py-1.5 text-xs bg-background border border-border rounded-md focus:outline-none focus:border-primary"
+            />
+            <Button size="xs" variant="secondary" onClick={handleSelectAllVisible}>
+              Select Visible
+            </Button>
+            <Button size="xs" variant="ghost" onClick={handleDeselectAllVisible}>
+              Deselect All
+            </Button>
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-text-muted px-1">
+            <span>Showing {filteredImportModels.length} of {availableModels.length}</span>
+            <span className="font-medium text-primary">{selectedImportIds.size} selected to add</span>
+          </div>
+
+          <div className="max-h-[350px] overflow-y-auto border border-border rounded-lg divide-y divide-border/40 p-1">
+            {filteredImportModels.length === 0 ? (
+              <div className="text-center py-6 text-xs text-text-muted">No models match your filter</div>
+            ) : (
+              filteredImportModels.map((model) => {
+                const alreadyAdded = allModels.some((entry) => entry.id === model.id);
+                const isChecked = selectedImportIds.has(model.id);
+
+                return (
+                  <label
+                    key={model.id}
+                    className={`flex items-center gap-2.5 px-3 py-2 rounded text-xs cursor-pointer transition-colors ${
+                      alreadyAdded
+                        ? "opacity-60 bg-surface/50 cursor-not-allowed"
+                        : isChecked
+                          ? "bg-primary/10 text-text-main"
+                          : "hover:bg-sidebar/50"
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={alreadyAdded || isChecked}
+                      disabled={alreadyAdded}
+                      onChange={() => toggleImportModelSelection(model.id)}
+                      className="rounded border-border text-primary focus:ring-primary h-3.5 w-3.5"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <span className="font-mono truncate block">{model.id}</span>
+                      {model.name && model.name !== model.id && (
+                        <span className="text-[10px] text-text-muted truncate block">{model.name}</span>
+                      )}
+                    </div>
+                    {alreadyAdded && (
+                      <span className="text-[10px] text-green-600 bg-green-500/10 px-1.5 py-0.5 rounded font-medium shrink-0">
+                        Already added
+                      </span>
+                    )}
+                  </label>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t border-border">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSelectModal(false)}
+              disabled={savingImport}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleSaveSelectedModels}
+              disabled={savingImport || selectedImportIds.size === 0}
+            >
+              {savingImport ? "Adding..." : `Add Selected (${selectedImportIds.size})`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       {allModels.length > 0 && (
         <div className="flex flex-col gap-3">
