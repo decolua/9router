@@ -5,7 +5,8 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
-import { buildUsage } from "../concerns/usage.js";
+import { buildUsage, toResponsesUsage } from "../concerns/usage.js";
+import { estimateUsage } from "../../utils/usageTracking.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
@@ -18,7 +19,23 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
-  
+
+  // finish_reason was already seen on a prior chunk (see below): most OpenAI-compatible
+  // upstreams emit the real `usage` on a separate trailing chunk with an empty/missing
+  // `choices` array. stream.js merges that usage into state.usage BEFORE calling this
+  // translator, so by the time we get here it's safe to flush the deferred
+  // response.completed event with the real usage attached.
+  if (state.awaitingCompletion && !chunk.choices?.length) {
+    const events = [];
+    const nextSeq = () => ++state.seq;
+    const emit = (eventType, data) => {
+      data.sequence_number = nextSeq();
+      events.push({ event: eventType, data });
+    };
+    sendCompleted(state, emit);
+    return events;
+  }
+
   if (!chunk.choices?.length) return [];
   
   const events = [];
@@ -109,13 +126,68 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
   // Handle finish_reason
   if (choice.finish_reason) {
+    // Mirror the upstream finish_reason onto state so the generic stream.js usage
+    // path (which keys off `state.finishReason`) sees the same signal as every
+    // other format instead of falling through to its null-usage branch.
+    state.finishReason = choice.finish_reason;
+
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
+
+    if (hasUsableUsage(state.usage)) {
+      // Some upstreams attach usage on the same chunk as finish_reason — send now.
+      sendCompleted(state, emit);
+    } else {
+      // Most OpenAI-compatible upstreams (stream_options.include_usage) emit the
+      // real usage on a SEPARATE trailing chunk with empty/missing `choices`,
+      // right after this one. Defer response.completed until that chunk arrives
+      // (handled at the top of this function) or until flush() as a safety net.
+      state.awaitingCompletion = true;
+    }
   }
 
   return events;
+}
+
+function hasUsableUsage(usage) {
+  return !!usage && typeof usage === "object" && ((usage.prompt_tokens || 0) > 0 || (usage.completion_tokens || 0) > 0);
+}
+
+// Some OpenAI-compatible upstreams never send a usage object at all (no
+// stream_options.include_usage support, or the connection was cut before the
+// trailing chunk). In that case Sub2API downstream sees a response.completed with
+// zero/absent tokens and cannot bill the request. Fall back to a local estimate
+// derived from the request body (input) and the streamed content length (output),
+// so the billed tokens are at least proportional to real usage. Returns the
+// OpenAI-shaped usage merged onto state, or null when nothing can be estimated.
+function ensureEstimatedUsage(state) {
+  if (hasUsableUsage(state.usage)) return state.usage;
+
+  const contentLength = state._totalContentLength || 0;
+  // Estimate output from the streamed text length when available; the reasoning
+  // buffer is tracked separately by this translator and should be counted too.
+  let estimatedLength = contentLength;
+  if (!estimatedLength) {
+    let buffered = 0;
+    for (const i in state.msgTextBuf) buffered += (state.msgTextBuf[i] || "").length;
+    if (state.reasoningBuf) buffered += state.reasoningBuf.length;
+    estimatedLength = buffered;
+  }
+  if (!estimatedLength) return null;
+
+  const estimated = estimateUsage(state._requestBody, estimatedLength, FORMATS.OPENAI_RESPONSES);
+  if (!estimated || typeof estimated !== "object") return null;
+  // Normalize the estimate to the OpenAI shape used by toResponsesUsage().
+  state.usage = buildUsage({
+    promptTokens: estimated.prompt_tokens || estimated.input_tokens || 0,
+    completionTokens: estimated.completion_tokens || estimated.output_tokens || 0,
+    totalTokens: estimated.total_tokens || 0,
+    cachedTokens: estimated.prompt_tokens_details?.cached_tokens || estimated.cached_tokens || 0,
+    reasoningTokens: estimated.completion_tokens_details?.reasoning_tokens || 0
+  });
+  state.usage.estimated = true;
+  return state.usage;
 }
 
 // Helper functions
@@ -368,17 +440,21 @@ function closeToolCall(state, emit, idx) {
 function sendCompleted(state, emit) {
   if (!state.completedSent) {
     state.completedSent = true;
-    emit("response.completed", {
-      type: "response.completed",
-      response: {
-        id: state.responseId,
-        object: "response",
-        created_at: state.created,
-        status: "completed",
-        background: false,
-        error: null
-      }
-    });
+    state.awaitingCompletion = false;
+    const response = {
+      id: state.responseId,
+      object: "response",
+      created_at: state.created,
+      status: "completed",
+      background: false,
+      error: null
+    };
+    // Self-contained fallback: when the upstream never delivered usage, estimate
+    // it here so the terminal event always carries billable token counts.
+    ensureEstimatedUsage(state);
+    const usage = toResponsesUsage(state.usage);
+    if (usage) response.usage = usage;
+    emit("response.completed", { type: "response.completed", response });
   }
 }
 

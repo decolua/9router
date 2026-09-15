@@ -63,6 +63,13 @@ export function createSSEStream(options = {}) {
     ? { ...initState(sourceFormat), provider, toolNameMap, customToolNames: new Set(customToolNames || []), model, sessionId: credentials?._clientSessionId || null }
     : null;
 
+  // Expose request body to response translators. Some translators (notably the
+  // OpenAI→Responses one) need it to produce a self-contained estimated usage when the
+  // upstream never sends any usage — the generic estimate path in this file cannot help
+  // them because Responses events have a `{event, data}` shape that `isFinishChunk`
+  // (below) does not recognise.
+  if (state) state._requestBody = body;
+
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
@@ -334,6 +341,10 @@ export function createSSEStream(options = {}) {
 
         currentOpenAIResponsesEvent = null;
 
+        // Keep the running output length on `state` so shape-agnostic translators can
+        // build an estimated usage as a last resort (see state._requestBody above).
+        if (state) state._totalContentLength = totalContentLength;
+
         // Translate: targetFormat -> openai -> sourceFormat
         const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
 
@@ -443,6 +454,10 @@ export function createSSEStream(options = {}) {
             }
           }
         }
+
+        // Keep the translator's estimate input in sync on the flush path too: a
+        // stream that ended without a usage chunk still has content length known.
+        if (state) state._totalContentLength = totalContentLength;
 
         const flushed = translateResponse(targetFormat, sourceFormat, null, state);
 

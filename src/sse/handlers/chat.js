@@ -6,6 +6,8 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  releaseAccountSlot,
+  refundAccountQuotaDiscount,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
@@ -24,6 +26,9 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { captureSessionIdentity } from "open-sse/utils/sessionManager.js";
+import { recordSessionProbe, isSessionProbeEnabled } from "open-sse/utils/sessionProbe.js";
+import { getConcurrencyRetryDelay, CONCURRENCY_RETRY_MAX, isConcurrencyLimited } from "open-sse/services/accountFallback.js";
 
 /**
  * Handle chat completion request
@@ -113,11 +118,11 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
-        },
-        log,
-        comboName: modelStr,
-        judgeModel: comboStrategies[modelStr]?.judgeModel,
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { isPanel: !!isPanel });
+          },
+          log,
+          comboName: modelStr,
+          judgeModel: comboStrategies[modelStr]?.judgeModel,
         tuning: comboStrategies[modelStr]?.fusionTuning,
       });
     }
@@ -163,7 +168,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, routing = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -190,7 +195,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { isPanel: !!isPanel });
           },
           log,
           comboName: modelStr,
@@ -229,12 +234,54 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
+  // Consecutive concurrency-429s on the SAME account before we give up and fail
+  // over to a different one.
+  let concurrencyAttempts = 0;
 
+  // Resolve a stable session identity ONCE, before the retry loop, so every retry
+  // re-uses the same binding key and cannot drift to another account mid-flight.
+  // captureSessionIdentity() is the existing 4-level resolver (client session →
+  // assistant text hash → workspace → per-connection fallback); no custom
+  // fingerprinting is introduced here. Scope is the client→provider format so the
+  // same conversation maps to a stable key per provider.
+  const rawHeaders = clientRawRequest?.headers || {};
+  const sessionIdentity = captureSessionIdentity(body, { rawHeaders }, null, provider);
+  // Fusion panel calls are an internal broadcast, not a user conversation: binding
+  // them to the client session would funnel all N panel models onto ONE account and
+  // consume N concurrency slots there at once (audit item #7). They opt out of
+  // session affinity so the fan-out spreads across accounts instead.
+  const sessionId = routing.isPanel ? null : (sessionIdentity?.stable ? sessionIdentity.sessionId : null);
+
+  // Tracks the most recently reserved slot so the finally block can release it even
+  // if an unexpected exception unwinds the loop (audit item: slot leak on throw).
+  let heldCredentials = null;
+
+  try {
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      sessionId,
+      // Retries within this request must not re-reserve for the same logical call;
+      // the slot is taken once and released in the finally block below.
+      reserveSlot: true,
+    });
+    heldCredentials = credentials;
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      if (credentials?.concurrencyLimited) {
+        // Every account is at its concurrency ceiling — transient contention, not
+        // quota exhaustion. Wait a short jittered delay and retry; do NOT return a
+        // hard 503 immediately unless we already tried several times.
+        if (concurrencyAttempts < CONCURRENCY_RETRY_MAX) {
+          const delay = getConcurrencyRetryDelay(concurrencyAttempts);
+          concurrencyAttempts += 1;
+          log.warn("CHAT", `[${provider}/${model}] concurrency-limited on all accounts — retry ${concurrencyAttempts}/${CONCURRENCY_RETRY_MAX} in ${delay}ms`);
+          await new Promise((r) => setTimeout(r, delay));
+          continue;
+        }
+        log.warn("CHAT", `[${provider}/${model}] concurrency ceiling persisted after ${CONCURRENCY_RETRY_MAX} retries`);
+        return unavailableResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, `[${provider}/${model}] concurrent request limit reached`, null, "concurrency");
+      }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -247,6 +294,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+    }
+
+    // Read-only diagnostics probe (no behaviour change).
+    if (isSessionProbeEnabled()) {
+      try {
+        recordSessionProbe({
+          identity: sessionIdentity,
+          level: sessionIdentity?.level || "unknown",
+          body,
+          headers: request?.headers,
+          connectionId: credentials.connectionId,
+          clientKey: apiKey || null,
+        });
+      } catch { /* never let the probe break a request */ }
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -307,7 +368,52 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      // Release the in-flight concurrency slot as soon as the upstream has
+      // produced a response (the slot guards provider-side parallelism, not our
+      // downstream streaming time).
+      releaseAccountSlot(credentials);
+      heldCredentials = null;
+      return result.response;
+    }
+
+    // Concurrency-429: the account is healthy, it is simply serving too many
+    // parallel requests. Retry the SAME account after a short jittered delay so it
+    // stays warm (and keeps its prompt cache) instead of being excluded for minutes.
+    //
+    // This is classified with the PURE `isConcurrencyLimited()` predicate rather than
+    // by calling markAccountUnavailable() early. markAccountUnavailable() has side
+    // effects (it writes modelLock_* and bumps backoffLevel), so hoisting it above the
+    // Antigravity quota refresh below would both double-write the lock and violate the
+    // invariant that the Antigravity quota path must NOT persist a modelLock_*.
+    if (isConcurrencyLimited(result.status, result.error)) {
+      // The provider rejected the call outright, so no quota was consumed: refund
+      // the optimistic discount applied at selection time. Without this, a burst of
+      // concurrency-429s would make a perfectly healthy account look progressively
+      // emptier and steer quota-weighted scoring away from it for 30s.
+      if (concurrencyAttempts < CONCURRENCY_RETRY_MAX) {
+        const delay = getConcurrencyRetryDelay(concurrencyAttempts);
+        concurrencyAttempts += 1;
+        log.warn("CHAT", `[${provider}/${model}] 429 concurrency-limited on ${credentials.connectionName} — retry same account ${concurrencyAttempts}/${CONCURRENCY_RETRY_MAX} in ${delay}ms`);
+        releaseAccountSlot(credentials);
+        refundAccountQuotaDiscount(credentials);
+        heldCredentials = null;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      // Exhausted same-account retries → fall through to fail over to another account.
+      log.warn("CHAT", `[${provider}/${model}] 429 concurrency-limited, retries exhausted → failing over`);
+      releaseAccountSlot(credentials);
+      refundAccountQuotaDiscount(credentials);
+      heldCredentials = null;
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = result.error || "concurrent request limit reached";
+      lastStatus = result.status || HTTP_STATUS.SERVICE_UNAVAILABLE;
+      // The retry budget is per-account: a fresh account deserves the full number of
+      // same-account retries instead of inheriting the previous account's exhaustion.
+      concurrencyAttempts = 0;
+      continue;
+    }
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
@@ -324,16 +430,29 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Do not persist a modelLock_* for this path.
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
-      : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
+      : (await markAccountUnavailable(
+          credentials.connectionId, result.status, result.error, provider, model, resetsAtMs
+        )).shouldFallback;
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
+      // Free this account's concurrency slot before excluding it, otherwise the
+      // counter would leak and permanently look saturated.
+      releaseAccountSlot(credentials);
+      heldCredentials = null;
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
       continue;
     }
 
+    // Non-fallback error: the account stays usable, release its slot.
+    releaseAccountSlot(credentials);
+    heldCredentials = null;
     return result.response;
+  }
+  } finally {
+    // Safety net: whatever path exits the retry loop, never leak a concurrency slot.
+    if (heldCredentials) releaseAccountSlot(heldCredentials);
   }
 }

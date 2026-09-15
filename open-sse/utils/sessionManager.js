@@ -207,17 +207,24 @@ function assistantTextSessionId(scope, body) {
  * @param {string} [opts.connectionId] - Connection identifier (fallback scope)
  * @param {string} [opts.workspaceId] - Provider workspace id (account-wide fallback)
  * @param {string} [opts.scope] - Provider scope to isolate cache keys across providers
- * @returns {{sessionId: string, ephemeral: boolean}} A session id plus whether it is one-shot
+ * @returns {{sessionId: string, ephemeral: boolean, stable: boolean, level: string}} A session id,
+ *          whether it is one-shot, whether it was derived from a genuinely stable signal
+ *          (client-provided id / assistant-text hash / workspaceId) as opposed to the
+ *          per-connection random fallback, and which resolution level produced it.
+ *          Callers doing session→account binding should only persist a binding when
+ *          `stable` is true — an unstable id changes on every call and would otherwise
+ *          "bind" unrelated requests together by accident. `level` is exposed for the
+ *          PR-0 read-only probe that measures how often each level actually fires.
  */
 export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body, scope);
-    if (client) return { sessionId: client, ephemeral: false };
+    if (client) return { sessionId: client, ephemeral: false, stable: true, level: "client" };
     const fromAssistant = scope === "kiro" ? null : assistantTextSessionId(`${scope}:${connectionId || ""}`, body);
-    if (fromAssistant) return { sessionId: fromAssistant, ephemeral: false };
+    if (fromAssistant) return { sessionId: fromAssistant, ephemeral: false, stable: true, level: "assistant_text" };
     const ws = normalizeSessionId(workspaceId);
-    if (ws) return { sessionId: ws, ephemeral: false };
-    if (scope === "kiro") return { sessionId: generateBinaryStyleId(), ephemeral: true };
-    return { sessionId: deriveSessionId(connectionId), ephemeral: false };
+    if (ws) return { sessionId: ws, ephemeral: false, stable: true, level: "workspace" };
+    if (scope === "kiro") return { sessionId: generateBinaryStyleId(), ephemeral: true, stable: false, level: "random" };
+    return { sessionId: deriveSessionId(connectionId), ephemeral: false, stable: !!connectionId, level: connectionId ? "connection_fallback" : "random" };
 }
 
 export function resolveSessionId(opts = {}) {
@@ -245,6 +252,19 @@ export function resolveContinuationId({ sessionId, connectionId, scope = "", eph
 // Capture session id from request body + credentials (envelope still intact here)
 export function captureSessionId(body, credentials, connectionId, scope = "") {
     return resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId, scope });
+}
+
+// Same as captureSessionId but returns the full identity object (sessionId + stable +
+// level). Used by the PR-0 read-only probe and by the session→account binding layer,
+// both of which need to know *how* the id was resolved, not just the value.
+export function captureSessionIdentity(body, credentials, connectionId, scope = "") {
+    return resolveSessionIdentity({
+        headers: credentials?.rawHeaders,
+        body,
+        connectionId,
+        workspaceId: credentials?.workspaceId,
+        scope,
+    });
 }
 
 // Convert any session id to Antigravity numeric format "-<int64>" (matches real AG / CLIProxyAPI).

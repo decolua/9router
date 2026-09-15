@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, classify429, CONCURRENCY_RETRY_BASE_MS, CONCURRENCY_RETRY_JITTER_MS, CONCURRENCY_RETRY_MAX } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -25,6 +25,16 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
+  // Concurrency-429 is a contention signal, NOT quota exhaustion. Short-circuit
+  // BEFORE the generic "rate limit"/"too many requests" text rules so it is not
+  // misclassified as a quota lock. The account stays usable; the caller should
+  // retry the same account after a short jittered delay. shouldFallback=false
+  // means "do not exclude / lock this account".
+  const kind429 = classify429(status, lowerError);
+  if (kind429 === "concurrency") {
+    return { shouldFallback: false, cooldownMs: 0, concurrencyLimited: true };
+  }
+
   for (const rule of ERROR_RULES) {
     // Text-based rule: match substring in error message
     if (rule.text && lowerError && lowerError.includes(rule.text)) {
@@ -48,6 +58,31 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   // Default: transient cooldown for any unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
+
+/**
+ * Whether a 429 should be treated as transient concurrency contention.
+ * @param {number|string} status
+ * @param {string} errorText
+ */
+export function isConcurrencyLimited(status, errorText) {
+  const text = errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    : "";
+  return classify429(status, text) === "concurrency";
+}
+
+/**
+ * Backoff delay (ms) before retrying the SAME account on a concurrency-429.
+ * Grows linearly with attempt and adds jitter so parallel clients desynchronise.
+ * @param {number} attempt - 0-based retry attempt
+ */
+export function getConcurrencyRetryDelay(attempt = 0) {
+  const base = CONCURRENCY_RETRY_BASE_MS * (Math.max(0, attempt) + 1);
+  const jitter = Math.floor(Math.random() * CONCURRENCY_RETRY_JITTER_MS);
+  return base + jitter;
+}
+
+export { CONCURRENCY_RETRY_MAX };
 
 /**
  * Check if account is currently unavailable (cooldown not expired)

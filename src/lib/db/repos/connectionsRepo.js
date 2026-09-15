@@ -89,6 +89,16 @@ function deriveConnectionName(data, fallbackName) {
   return fallbackName;
 }
 
+/**
+ * Effective priority for ordering. `0` is a legitimate priority, so it must not be
+ * coerced to the "unset" bucket the way `a.priority || 999` would. Only null /
+ * undefined / non-finite values fall back to the end of the list.
+ */
+function sortPriority(conn) {
+  const p = Number(conn?.priority);
+  return Number.isFinite(p) ? p : 999;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -98,7 +108,14 @@ export async function getProviderConnections(filter = {}) {
   const sql = `SELECT * FROM providerConnections${where.length ? ` WHERE ${where.join(" AND ")}` : ""}`;
   const rows = db.all(sql, params);
   const list = rows.map(rowToConn);
-  list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
+  // Order by priority, then by updatedAt descending so accounts sharing a priority
+  // (the common case: every row left at its default) still have a deterministic and
+  // stable order instead of falling back to whatever order SQLite happened to return.
+  list.sort((a, b) => {
+    const pDiff = sortPriority(a) - sortPriority(b);
+    if (pDiff !== 0) return pDiff;
+    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  });
   return list;
 }
 

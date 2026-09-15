@@ -96,6 +96,16 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
+    // Toggle the read-only session probe at runtime when its setting changes.
+    if (Object.prototype.hasOwnProperty.call(body, "sessionProbeEnabled")) {
+      import("open-sse/utils/sessionProbe.js")
+        .then(({ setSessionProbeEnabled, startSessionProbe }) => {
+          setSessionProbeEnabled(!!settings.sessionProbeEnabled);
+          if (settings.sessionProbeEnabled) startSessionProbe();
+        })
+        .catch((error) => console.warn("[SessionProbe] settings update failed:", error.message));
+    }
+
     if (
       Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
       Object.prototype.hasOwnProperty.call(body, "codexAutoPing")

@@ -13,6 +13,32 @@ export function buildUsage({ promptTokens, completionTokens, totalTokens, cached
   return usage;
 }
 
+// Convert OpenAI-style usage (prompt_tokens/completion_tokens/...) to the
+// OpenAI Responses API usage shape (input_tokens/output_tokens/...).
+// Used by the Responses translator's sendCompleted() to fill response.usage.
+export function toResponsesUsage(usage) {
+  if (!usage || typeof usage !== "object") return null;
+  const inputTokens = usage.prompt_tokens ?? 0;
+  const outputTokens = usage.completion_tokens ?? 0;
+  const totalTokens = usage.total_tokens ?? (inputTokens + outputTokens);
+
+  // An all-zero usage object is indistinguishable from "this request was free".
+  // Emitting it makes downstream billing record 0 tokens for a real completion,
+  // which is worse than omitting the field entirely — a missing `usage` lets the
+  // consumer fall back to its own estimation, a zeroed one silently does not.
+  if (inputTokens <= 0 && outputTokens <= 0 && totalTokens <= 0) return null;
+
+  const result = { input_tokens: inputTokens, output_tokens: outputTokens, total_tokens: totalTokens };
+
+  const cached = usage.prompt_tokens_details?.cached_tokens;
+  if (cached > 0) result.input_tokens_details = { cached_tokens: cached };
+
+  const reasoning = usage.completion_tokens_details?.reasoning_tokens;
+  if (reasoning > 0) result.output_tokens_details = { reasoning_tokens: reasoning };
+
+  return result;
+}
+
 const n = (v) => (typeof v === "number" ? v : 0);
 
 // Per-provider raw token field-map + math. Returns buildUsage() args (NOT the usage object).

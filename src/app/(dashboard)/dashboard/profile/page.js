@@ -292,6 +292,25 @@ export default function ProfilePage() {
     }
   };
 
+  const patchSettings = async (patch) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      });
+      if (res.ok) setSettings((prev) => ({ ...prev, ...patch }));
+    } catch (err) {
+      console.error("Failed to update settings:", err);
+    }
+  };
+
+  const updateNumberSetting = (key, raw, { min = 0, max = 999999 } = {}) => {
+    const num = Number.parseInt(raw, 10);
+    if (Number.isNaN(num) || num < min || num > max) return;
+    patchSettings({ [key]: num });
+  };
+
   const updateStickyLimit = async (limit) => {
     const numLimit = parseInt(limit);
     if (isNaN(numLimit) || numLimit < 1) return;
@@ -1522,6 +1541,227 @@ export default function ProfilePage() {
               {settings.comboStrategy === "round-robin"
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
+            </p>
+          </div>
+        </Card>
+
+        {/* Session Affinity, Concurrency & Quota-Weighted Scheduling */}
+        <Card>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500 shrink-0">
+              <span className="material-symbols-outlined text-[20px]">hub</span>
+            </div>
+            <h3 className="text-base sm:text-lg font-semibold">Session Affinity & Scheduling</h3>
+          </div>
+          <div className="flex flex-col gap-4">
+            {/* Scheduling mode selector */}
+            <div className="flex flex-col gap-2">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Scheduling Mode</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  How accounts are chosen when several are available
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { value: "fill-first", label: "Fill First", desc: "Use highest-priority account first" },
+                  { value: "round-robin", label: "Round Robin", desc: "Rotate across accounts" },
+                  { value: "quota-weighted", label: "Quota Weighted", desc: "Score by remaining quota × time-to-expiry" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    disabled={loading}
+                    onClick={() => patchSettings({ schedulingMode: opt.value, fallbackStrategy: opt.value === "quota-weighted" ? settings.fallbackStrategy : opt.value })}
+                    className={cn(
+                      "px-3 py-2 rounded-lg border text-left transition-colors",
+                      (settings.schedulingMode || settings.fallbackStrategy) === opt.value
+                        ? "border-emerald-500 bg-emerald-500/10"
+                        : "border-border hover:border-emerald-500/50"
+                    )}
+                  >
+                    <p className="text-sm font-medium">{opt.label}</p>
+                    <p className="text-xs text-text-muted">{opt.desc}</p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quota-weighted tuning */}
+            {(settings.schedulingMode === "quota-weighted") && (
+              <>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Prefer Earlier Expiry</p>
+                    <p className="text-xs sm:text-sm text-text-muted">
+                      Burn soon-to-expire balances before they are wasted
+                    </p>
+                  </div>
+                  <Toggle
+                    checked={settings.quotaPreferEarlierExpiry !== false}
+                    onChange={() => patchSettings({ quotaPreferEarlierExpiry: !(settings.quotaPreferEarlierExpiry !== false) })}
+                    disabled={loading}
+                  />
+                </div>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Remaining Weight</p>
+                    <p className="text-xs sm:text-sm text-text-muted">Relative weight of remaining quota</p>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value={settings.quotaWeightRemaining ?? 1.0}
+                    onChange={(e) => updateNumberSetting("quotaWeightRemaining", e.target.value, { min: 0, max: 10 })}
+                    disabled={loading}
+                    className="w-20 text-center shrink-0"
+                  />
+                </div>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Expiry Weight</p>
+                    <p className="text-xs sm:text-sm text-text-muted">Relative weight of time-to-expiry urgency</p>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value={settings.quotaWeightExpiry ?? 0.5}
+                    onChange={(e) => updateNumberSetting("quotaWeightExpiry", e.target.value, { min: 0, max: 10 })}
+                    disabled={loading}
+                    className="w-20 text-center shrink-0"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Session affinity */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Session Affinity</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Pin a conversation to one account to keep prompt cache warm
+                </p>
+              </div>
+              <Toggle
+                checked={settings.sessionBindingEnabled !== false}
+                onChange={() => patchSettings({ sessionBindingEnabled: !(settings.sessionBindingEnabled !== false) })}
+                disabled={loading}
+              />
+            </div>
+
+            {settings.sessionBindingEnabled !== false && (
+              <>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Max Sessions / Account</p>
+                    <p className="text-xs sm:text-sm text-text-muted">
+                      Distinct conversations per account before overflow (0 = unlimited)
+                    </p>
+                  </div>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={settings.maxSessionsPerAccount ?? 3}
+                    onChange={(e) => updateNumberSetting("maxSessionsPerAccount", e.target.value, { min: 0, max: 100 })}
+                    disabled={loading}
+                    className="w-20 text-center shrink-0"
+                  />
+                </div>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Overflow Policy</p>
+                    <p className="text-xs sm:text-sm text-text-muted">
+                      What happens when every account is at its session cap
+                    </p>
+                  </div>
+                  <div className="flex gap-2 shrink-0">
+                    {[{ v: "soft", l: "Soft" }, { v: "hard", l: "Hard" }].map((o) => (
+                      <button
+                        key={o.v}
+                        type="button"
+                        disabled={loading}
+                        onClick={() => patchSettings({ sessionOverflowPolicy: o.v })}
+                        className={cn(
+                          "px-3 py-1.5 rounded-lg border text-sm transition-colors",
+                          (settings.sessionOverflowPolicy || "soft") === o.v
+                            ? "border-emerald-500 bg-emerald-500/10"
+                            : "border-border hover:border-emerald-500/50"
+                        )}
+                      >
+                        {o.l}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm sm:text-base">Idle Release (minutes)</p>
+                    <p className="text-xs sm:text-sm text-text-muted">
+                      Release a session binding after this long without activity
+                    </p>
+                  </div>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="1440"
+                    value={Math.round((settings.sessionIdleTtlMs ?? 1800000) / 60000)}
+                    onChange={(e) => {
+                      const mins = Number.parseInt(e.target.value, 10);
+                      if (!Number.isNaN(mins) && mins >= 1) patchSettings({ sessionIdleTtlMs: mins * 60000 });
+                    }}
+                    disabled={loading}
+                    className="w-20 text-center shrink-0"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* Concurrency gate */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Max Concurrent / Account</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  In-flight requests allowed per account before 429s (0 = unlimited)
+                </p>
+              </div>
+              <Input
+                type="number"
+                min="0"
+                max="100"
+                value={settings.maxConcurrentPerAccount ?? 0}
+                onChange={(e) => updateNumberSetting("maxConcurrentPerAccount", e.target.value, { min: 0, max: 100 })}
+                disabled={loading}
+                className="w-20 text-center shrink-0"
+              />
+            </div>
+
+            {/* Diagnostics probe */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Session Probe (read-only)</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Log session identity hit rates. No routing changes.
+                </p>
+              </div>
+              <Toggle
+                checked={!!settings.sessionProbeEnabled}
+                onChange={() => patchSettings({ sessionProbeEnabled: !settings.sessionProbeEnabled })}
+                disabled={loading}
+              />
+            </div>
+
+            <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
+              {settings.sessionBindingEnabled !== false
+                ? `Sessions stay on one account (max ${settings.maxSessionsPerAccount ?? "∞"} per account, ${settings.sessionOverflowPolicy || "soft"} overflow).`
+                : "Session affinity is off — accounts are chosen purely by the scheduling mode above."}
+              {(settings.schedulingMode === "quota-weighted")
+                ? " Quota-weighted scoring prefers accounts with more remaining quota and, when enabled, sooner expiry."
+                : ""}
             </p>
           </div>
         </Card>

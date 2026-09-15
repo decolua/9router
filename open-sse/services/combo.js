@@ -332,11 +332,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       }
 
       // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+      const { shouldFallback, cooldownMs, concurrencyLimited } = checkFallbackError(result.status, errorText);
 
-      if (!shouldFallback) {
+      // `shouldFallback:false` from a concurrency-429 means "do not LOCK this
+      // account" — it is aimed at the account scheduler, not at us. At the combo
+      // layer the right reaction to upstream contention is still to try the next
+      // model, otherwise a transient 429 is surfaced straight to the client and
+      // the whole point of a combo is lost.
+      if (!shouldFallback && !concurrencyLimited) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
+      }
+      if (concurrencyLimited) {
+        log.info("COMBO", `Model ${modelStr} hit concurrency limit, trying next`);
       }
 
       // For transient errors (503/502/504), wait for cooldown before falling through
