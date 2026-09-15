@@ -38,7 +38,7 @@
 - ✅ **RTK Token Saver** - Auto-compress tool_result content, save 20-40% tokens per request
 - ✅ **Maximize subscriptions** - Track quota, use every bit before reset
 - ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
-- ✅ **Multi-account** - Round-robin between accounts per provider
+- ✅ **Multi-account** - Fill-first, round-robin or cache-affinity (one conversation → one account, keeps the provider prompt cache warm) per provider
 - ✅ **Universal** - Works with Claude Code, Codex, Cursor, Cline, any CLI tool
 
 ---
@@ -623,7 +623,7 @@ Seamless translation between formats:
 ### 👥 Multi-Account Support
 
 - Add multiple accounts per provider
-- Auto round-robin or priority-based routing
+- Priority-based, round-robin or cache-affinity routing between accounts
 - Fallback to next account when one hits quota
 
 ### 🔄 Auto Token Refresh
