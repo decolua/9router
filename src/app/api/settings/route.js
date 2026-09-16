@@ -92,6 +92,21 @@ export async function PATCH(request) {
       }
     }
 
+    if (Object.hasOwn(body, "providerStrategies")) {
+      const strategies = body.providerStrategies;
+      if (!strategies || typeof strategies !== "object" || Array.isArray(strategies)) {
+        return NextResponse.json({ error: "providerStrategies must be an object" }, { status: 400 });
+      }
+      for (const [id, strategy] of Object.entries(strategies)) {
+        if (["__proto__", "constructor", "prototype"].includes(id) || !strategy || typeof strategy !== "object" || Array.isArray(strategy)) {
+          return NextResponse.json({ error: `providerStrategies.${id} must be an object` }, { status: 400 });
+        }
+        if (Object.hasOwn(strategy, "quotaResetFirst") && typeof strategy.quotaResetFirst !== "boolean") {
+          return NextResponse.json({ error: `providerStrategies.${id}.quotaResetFirst must be a boolean` }, { status: 400 });
+        }
+      }
+    }
+
     const settings = await updateSettings(body);
 
     // Apply outbound proxy settings immediately (no restart required)
@@ -115,6 +130,7 @@ export async function PATCH(request) {
     if (
       Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
       Object.prototype.hasOwnProperty.call(body, "codexAutoPing") ||
+      Object.prototype.hasOwnProperty.call(body, "providerStrategies") ||
       Object.prototype.hasOwnProperty.call(body, "quotaStaggerGroups")
     ) {
       // Keep the scheduler absent when no account opted in; load its provider graph only on demand.

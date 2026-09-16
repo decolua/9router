@@ -1,6 +1,8 @@
 import "open-sse/index.js";
 
-import { getSettings, getProviderConnections, updateProviderConnection } from "@/lib/localDb";
+import { getSettings, getProviderConnections, updateProviderConnection, updateProviderQuotaRoutingSnapshot } from "@/lib/localDb";
+import { getUsageForProvider } from "open-sse/services/usage.js";
+import { createQuotaRoutingSnapshot, isQuotaResetFirstEnabled, QUOTA_ROUTING_REFRESH_MS } from "./quotaRouting.js";
 import { getClaudeUsage } from "open-sse/services/usage/claude.js";
 import { getCodexUsage } from "open-sse/services/usage/codex.js";
 import { getExecutor } from "open-sse/executors/index.js";
@@ -554,6 +556,7 @@ function createDefaultDeps() {
     getSettings,
     getProviderConnections,
     updateProviderConnection,
+    updateProviderQuotaRoutingSnapshot,
     resolveConnectionProxyConfig,
     refreshAndUpdateCredentials,
     proxyAwareFetch,
@@ -572,7 +575,10 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
   try {
     const settings = await deps.getSettings();
 
-    if (!hasQuotaAutoPingEnabled(settings)) return;
+    if (!hasQuotaAutoPingEnabled(settings)) {
+      state.quotaRefreshCache = {};
+      return;
+    }
 
     const allActiveConnections = (await deps.getProviderConnections({ isActive: true })) || [];
     const isStaggerFn = deps.isStaggerAutoPingEnabled || isStaggerAutoPingEnabled;
@@ -618,14 +624,58 @@ export async function runQuotaAutoPingTick(deps = createDefaultDeps(), state = g
       return grouped.targets.sort((a, b) => groupConnectionIds.indexOf(a.conn.id) - groupConnectionIds.indexOf(b.conn.id));
     });
     const tickDeps = createTickDeps(deps, allActiveConnections);
+    const refreshCache = (state.quotaRefreshCache ??= {});
+    const routingTargets = allActiveConnections.filter((conn) => conn.authType === "oauth" && conn.isActive !== false && isQuotaResetFirstEnabled(settings, conn.provider));
+    const routingKeys = new Set(routingTargets.map((conn) => cacheKey(conn.provider, conn.id)));
+    for (const key of Object.keys(refreshCache)) {
+      if (!routingKeys.has(key)) delete refreshCache[key];
+    }
+    const sampled = new Set();
+    const saveSnapshot = async (conn, usage, startedAtMs) => {
+      try {
+        if (!usage || usage.error || usage.message) return;
+        const sample = Object.hasOwn(usage, "observedAtMs") ? usage : { ...usage, observedAtMs: startedAtMs };
+        const snapshot = createQuotaRoutingSnapshot(conn.provider, sample);
+        if (!snapshot || !isQuotaResetFirstEnabled(await deps.getSettings(), conn.provider)) return;
+        await (deps.updateProviderQuotaRoutingSnapshot || updateProviderQuotaRoutingSnapshot)(conn.id, snapshot);
+      } catch {}
+    };
 
     for (const { conn, provider, providerConfig, handler } of orderedTargets) {
       try {
-        await pingConnection(conn, provider, providerConfig, handler, tickDeps, state, settings, allActiveConnections);
+        const routing = routingKeys.has(cacheKey(provider, conn.id));
+        const wrappedHandler = routing ? {
+          ...handler,
+          getUsage: async (...args) => {
+            sampled.add(conn.id);
+            refreshCache[cacheKey(provider, conn.id)] = Date.now();
+            const startedAtMs = Date.now();
+            const usage = await handler.getUsage(...args);
+            await saveSnapshot(conn, usage, startedAtMs);
+            return usage;
+          },
+        } : handler;
+        await pingConnection(conn, provider, providerConfig, wrappedHandler, tickDeps, state, settings, allActiveConnections);
       } catch (e) {
         state.failureCache[cacheKey(provider, conn.id)] = Date.now();
         console.warn(`[AutoPing] ${provider}:${conn.id}: ${e.message}`);
       }
+    }
+    for (const conn of routingTargets) {
+      const key = cacheKey(conn.provider, conn.id);
+      if (sampled.has(conn.id) || (refreshCache[key] !== undefined && Date.now() - refreshCache[key] < QUOTA_ROUTING_REFRESH_MS)) continue;
+      refreshCache[key] = Date.now();
+      try {
+        const proxyOptions = buildProxyOptions(await deps.resolveConnectionProxyConfig(conn.providerSpecificData));
+        const { connection } = await deps.refreshAndUpdateCredentials(conn, false, proxyOptions);
+        if (!isQuotaResetFirstEnabled(await deps.getSettings(), conn.provider)) continue;
+        const handler = providerHandlers[conn.provider];
+        const startedAtMs = Date.now();
+        const usage = handler
+          ? await handler.getUsage(connection.accessToken, proxyOptions)
+          : await (deps.getUsageForProvider || getUsageForProvider)(connection, proxyOptions);
+        await saveSnapshot(connection, usage, startedAtMs);
+      } catch {}
     }
   } catch (e) {
     console.warn("[AutoPing] tick error:", e.message);
@@ -643,6 +693,7 @@ export function startQuotaAutoPing() {
 }
 
 export function stopQuotaAutoPing() {
+  g.quotaRefreshCache = {};
   if (!g.interval) return;
   clearInterval(g.interval);
   g.interval = null;

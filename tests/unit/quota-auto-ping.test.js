@@ -6,6 +6,7 @@ vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(),
   getProviderConnections: vi.fn(),
   updateProviderConnection: vi.fn(),
+  updateProviderQuotaRoutingSnapshot: vi.fn(),
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
@@ -46,7 +47,8 @@ vi.mock("@/shared/constants/config", () => ({
   },
 }));
 
-vi.mock("open-sse/providers/shared.js", () => ({
+vi.mock("open-sse/providers/shared.js", async (importOriginal) => ({
+  ...await importOriginal(),
   CLAUDE_CLI_SPOOF_HEADERS: { "anthropic-version": "2023-06-01" },
 }));
 
@@ -57,6 +59,8 @@ vi.mock("open-sse/services/usage/shared.js", () => ({
 vi.mock("open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: vi.fn(),
 }));
+
+vi.mock("open-sse/services/usage.js", () => ({ getUsageForProvider: vi.fn() }));
 
 vi.mock("open-sse/services/usage/claude.js", () => ({
   getClaudeUsage: vi.fn(),
@@ -96,6 +100,7 @@ describe("quota auto-ping", () => {
       getSettings: vi.fn(),
       getProviderConnections: vi.fn(),
       updateProviderConnection: vi.fn(),
+  updateProviderQuotaRoutingSnapshot: vi.fn(),
       resolveConnectionProxyConfig: vi.fn().mockResolvedValue({}),
       refreshAndUpdateCredentials: vi.fn(async (connection) => ({ connection, refreshed: false })),
       proxyAwareFetch: vi.fn().mockResolvedValue({ ok: true }),
@@ -113,6 +118,91 @@ describe("quota auto-ping", () => {
     });
     state = { running: false, resetCache: {}, failureCache: {} };
     vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
+  });
+
+  it.each(["antigravity", "gemini-cli"])("dispatches %s refresh-only usage with refreshed credentials and cancels disabled persistence", async (provider) => {
+    const conn = { id: "a", provider, authType: "oauth", accessToken: "old" };
+    const settings = { providerStrategies: { [provider]: { quotaResetFirst: true } } };
+    deps.getSettings.mockResolvedValue(settings);
+    deps.getProviderConnections.mockResolvedValue([conn]);
+    deps.refreshAndUpdateCredentials.mockResolvedValue({ connection: { ...conn, accessToken: "new" } });
+    deps.getUsageForProvider = vi.fn(async () => {
+      deps.getSettings.mockResolvedValue({});
+      return { quotas: { model: { remaining: 1, resetAt: Date.now() + 3600000 } } };
+    });
+    await runQuotaAutoPingTick(deps, state);
+    expect(deps.getUsageForProvider).toHaveBeenCalledWith(expect.objectContaining({ accessToken: "new" }), expect.objectContaining({ strictProxy: false }));
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(deps.getExecutor).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])("stamps request start without altering usage semantics, legacy=%s", async (legacy) => {
+    const conn = { id: "a", provider: "codex", authType: "oauth", accessToken: "token" };
+    deps.getProviderConnections.mockResolvedValue([conn]);
+    deps.getSettings.mockResolvedValue({ providerStrategies: { codex: { quotaResetFirst: true } }, ...(legacy ? { codexAutoPing: { connections: { a: true } } } : {}) });
+    const start = Date.now();
+    const usage = { quotas: { session: { remaining: 1, resetAt: new Date(start + 3600000).toISOString() } } };
+    getCodexUsage.mockImplementation(async () => {
+      vi.setSystemTime(start + 1000);
+      return usage;
+    });
+    await runQuotaAutoPingTick(deps, state);
+    expect(deps.updateProviderQuotaRoutingSnapshot).toHaveBeenCalledWith("a", expect.objectContaining({ observedAtMs: start }));
+    expect(usage.observedAtMs).toBeUndefined();
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+    deps.updateProviderQuotaRoutingSnapshot.mockClear();
+    vi.setSystemTime(start + 300000);
+    getCodexUsage.mockImplementation(async () => {
+      vi.setSystemTime(start + 900001);
+      return usage;
+    });
+    await runQuotaAutoPingTick(deps, state);
+    expect(deps.updateProviderQuotaRoutingSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("piggybacks legacy usage without duplicate calls and never renews stale samples", async () => {
+    const conn = { id: "a", provider: "codex", authType: "oauth", accessToken: "token" };
+    deps.getProviderConnections.mockResolvedValue([conn]);
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { a: true } }, providerStrategies: { codex: { quotaResetFirst: true } } });
+    getCodexUsage.mockResolvedValue({ observedAtMs: Date.now() - 600001, quotas: { session: { remaining: 1, resetAt: new Date(Date.now() + 3600000).toISOString() } } });
+    await runQuotaAutoPingTick(deps, state);
+    expect(getCodexUsage).toHaveBeenCalledTimes(1);
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
+  it("refreshes preference-only quotas every five minutes independently of ping failures", async () => {
+    const conn = { id: "a", provider: "codex", authType: "oauth", accessToken: "old", providerSpecificData: { retained: true } };
+    deps.getProviderConnections.mockResolvedValue([conn]);
+    deps.getSettings.mockResolvedValue({ providerStrategies: { codex: { quotaResetFirst: true } } });
+    deps.refreshAndUpdateCredentials.mockResolvedValue({ connection: { ...conn, accessToken: "new" } });
+    state.failureCache["codex:a"] = Date.now();
+    const observedAtMs = Date.now();
+    getCodexUsage.mockResolvedValue({ observedAtMs, secret: "omit", quotas: { session: { remaining: 20, resetAt: new Date(observedAtMs + 3600000).toISOString() } } });
+    expect(hasQuotaAutoPingEnabled(await deps.getSettings())).toBe(true);
+    await runQuotaAutoPingTick(deps, state);
+    expect(getCodexUsage).toHaveBeenCalledWith("new", expect.objectContaining({ strictProxy: false }));
+    const [id, data] = deps.updateProviderQuotaRoutingSnapshot.mock.calls[0];
+    expect(id).toBe(conn.id);
+    expect(data.observedAtMs).toBe(observedAtMs);
+    expect(data.providerSpecificData).toBeUndefined();
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
+    expect(JSON.stringify(data)).not.toContain("secret");
+    await runQuotaAutoPingTick(deps, state);
+    expect(getCodexUsage).toHaveBeenCalledTimes(1);
+    vi.setSystemTime(observedAtMs + 300000);
+    getCodexUsage.mockRejectedValueOnce(new Error("failed"));
+    await runQuotaAutoPingTick(deps, state);
+    await runQuotaAutoPingTick(deps, state);
+    expect(getCodexUsage).toHaveBeenCalledTimes(2);
+    vi.setSystemTime(observedAtMs + 600000);
+    await runQuotaAutoPingTick(deps, state);
+    expect(getCodexUsage).toHaveBeenCalledTimes(3);
+    expect(deps.proxyAwareFetch).not.toHaveBeenCalled();
+    expect(deps.getExecutor).not.toHaveBeenCalled();
+    deps.getSettings.mockResolvedValue({});
+    await runQuotaAutoPingTick(deps, state);
+    expect(getCodexUsage).toHaveBeenCalledTimes(3);
   });
 
   it.each([false, true])("retains the September due slot with real core and account cooldown=%s", async (cooldown) => {

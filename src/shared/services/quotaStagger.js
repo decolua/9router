@@ -911,6 +911,8 @@ export function markStaggerPing(state, nowMs = Date.now(), suppressionMs = 30000
   };
 }
 
+import { hasQuotaResetFirstEnabled } from "./quotaRouting.js";
+
 const LEGACY_AUTOPING_KEYS = ["claudeAutoPing", "codexAutoPing"];
 
 export function hasQuotaAutoPingEnabled(settings) {
@@ -921,5 +923,5 @@ export function hasQuotaAutoPingEnabled(settings) {
   const staggerEnabled = Array.isArray(staggerGroups) && staggerGroups.some(
     (g) => g?.enabled === true && (g.session?.enabled === true || g.weekly?.enabled === true)
   );
-  return Boolean(legacyEnabled || staggerEnabled);
+  return Boolean(legacyEnabled || staggerEnabled || hasQuotaResetFirstEnabled(settings));
 }

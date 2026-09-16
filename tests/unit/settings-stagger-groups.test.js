@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, beforeAll } from "vitest";
 import React from "react";
 import ReactDOMServer from "react-dom/server";
-import { STAGGER_PROVIDERS } from "@/shared/services/quotaStagger.js";
+import * as quotaStagger from "@/shared/services/quotaStagger.js";
+const { STAGGER_PROVIDERS } = quotaStagger;
 import { mergeWithDefaults } from "@/lib/db/repos/settingsRepo.js";
 
 const mocks = vi.hoisted(() => ({
@@ -56,6 +57,27 @@ vi.mock("@/shared/services/quotaAutoPing", () => ({
 
 const { GET, PATCH } = await import("@/app/api/settings/route.js");
 
+describe("quota reset strategy settings", () => {
+  it.each([null, [], "bad", { codex: null }, { codex: { quotaResetFirst: "true" } }])("rejects malformed strategies %j", async (providerStrategies) => {
+    mocks.updateSettings.mockClear();
+    const response = await PATCH({ json: async () => ({ providerStrategies }) });
+    expect(response.status).toBe(400);
+    expect(response.body.error).toContain("providerStrategies");
+    expect(mocks.updateSettings).not.toHaveBeenCalled();
+  });
+
+  it.each([{ codex: { quotaResetFirst: true } }, {}])("replaces strategies to clear round-robin or all overrides: %j", async (providerStrategies) => {
+    mocks.getSettings.mockResolvedValue({ providerStrategies: { codex: { strategy: "round-robin", custom: 7 }, claude: { custom: 2 } } });
+    mocks.updateSettings.mockImplementation(async (body) => body);
+    mocks.configureQuotaAutoPing.mockClear();
+    const response = await PATCH({ json: async () => ({ providerStrategies }) });
+    expect(response.body.providerStrategies).toEqual(providerStrategies);
+    expect(mocks.updateSettings).toHaveBeenLastCalledWith({ providerStrategies });
+    await vi.waitFor(() => expect(mocks.configureQuotaAutoPing).toHaveBeenCalled());
+    expect(response.body.quotaStaggerGroups).toBeUndefined();
+  });
+});
+
 let staggerGroupsModule;
 let toggleComponent;
 
@@ -82,14 +104,16 @@ beforeAll(async () => {
   code = code.replace(/import Card from [^;]+;/, "const Card = ({ children }) => children;");
   code = code.replace(
     /import \* as quotaStagger from [^;]+;/,
-    'const quotaStagger = await import("../src/shared/services/quotaStagger.js");'
+    'const quotaStagger = globalThis.__testQuotaStagger;'
   );
 
   const tmpPath = path.resolve(__dirname, "../../node_modules/.tmp-stagger-groups-test.mjs");
   fs.writeFileSync(tmpPath, code);
   try {
+    globalThis.__testQuotaStagger = quotaStagger;
     staggerGroupsModule = await import(tmpPath);
   } finally {
+    delete globalThis.__testQuotaStagger;
     try {
       fs.unlinkSync(tmpPath);
     } catch {}

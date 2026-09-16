@@ -5,6 +5,7 @@ import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getStaggerGroup, getStaggerDecision } from "@/shared/services/quotaStagger.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
+import { isQuotaResetFirstEnabled, getConnectionQuotaReset, preferEarliestQuotaReset } from "@/shared/services/quotaRouting.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -112,7 +113,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
     const nowMs = Date.now();
-    const availableConnections = [];
+    const quotaResetFirst = isQuotaResetFirstEnabled(settings, providerId);
+    let availableConnections = [];
     const candidateEligibilityList = [];
 
     for (const c of connections) {
@@ -152,15 +154,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         }
       }
 
-      if (!isLocked && !isAgBlocked && !isStaggerWaiting) {
+      const quotaBlockedUntilMs = quotaResetFirst ? getConnectionQuotaReset(c, model, nowMs)?.blockedUntilMs : null;
+      if (!isLocked && !isAgBlocked && !isStaggerWaiting && !quotaBlockedUntilMs) {
         availableConnections.push(c);
       } else {
-        const accountEligibilityMs = Math.max(lockExpiryMs || 0, agResetMs || 0, staggerNotBeforeMs || 0);
+        const accountEligibilityMs = Math.max(lockExpiryMs || 0, agResetMs || 0, staggerNotBeforeMs || 0, quotaBlockedUntilMs || 0);
         if (accountEligibilityMs > nowMs) {
           candidateEligibilityList.push({
             conn: c,
             eligibleAtMs: accountEligibilityMs,
-            isStagger: Boolean(staggerNotBeforeMs && staggerNotBeforeMs >= (lockExpiryMs || 0) && staggerNotBeforeMs >= (agResetMs || 0)),
+            isQuota: Boolean(quotaBlockedUntilMs && quotaBlockedUntilMs === accountEligibilityMs),
+            isStagger: Boolean(staggerNotBeforeMs && staggerNotBeforeMs === accountEligibilityMs),
           });
         }
       }
@@ -184,8 +188,10 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         const earliest = new Date(earliestMs).toISOString();
         const lastError = earliestCandidate.isStagger
           ? `Quota stagger window protected until ${earliest}`
-          : (earliestCandidate.conn.lastError || `Quota stagger window protected until ${earliest}`);
-        const lastErrorCode = earliestCandidate.isStagger ? 429 : (earliestCandidate.conn.errorCode || 429);
+          : earliestCandidate.isQuota
+            ? `Quota exhausted until ${earliest}`
+            : (earliestCandidate.conn.lastError || `Quota stagger window protected until ${earliest}`);
+        const lastErrorCode = earliestCandidate.isStagger || earliestCandidate.isQuota ? 429 : (earliestCandidate.conn.errorCode || 429);
         log.warn("AUTH", `${provider} | all ${connections.length} accounts locked/delayed for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${String(lastError).slice(0, 50)}`);
         return {
           allRateLimited: true,
@@ -209,6 +215,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
+    }
+    if (!connection && quotaResetFirst) {
+      availableConnections = preferEarliestQuotaReset(availableConnections, model, nowMs);
     }
     if (connection) {
       // skip strategy
