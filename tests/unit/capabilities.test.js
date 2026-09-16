@@ -73,4 +73,26 @@ describe("getCapabilitiesForModel", () => {
       maxOutput: 128000,
     });
   });
+
+  it("CommandCode v4.1-flash is vision + effort capable", () => {
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4.1-flash")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      thinkingFormat: "commandcode",
+      thinkingEffortSupported: true,
+    });
+  });
+
+  it("CommandCode MiniMax-M3 is vision capable", () => {
+    expect(getCapabilitiesForModel("commandcode", "MiniMaxAI/MiniMax-M3").vision).toBe(true);
+  });
+
+  it("CommandCode text-only DeepSeek V4 Flash stays non-vision", () => {
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash").vision).toBe(false);
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4-flash")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "commandcode",
+      thinkingEffortSupported: true,
+    });
+  });
 });

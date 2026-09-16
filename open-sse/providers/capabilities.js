@@ -467,11 +467,65 @@ function refine(base, provider, model) {
   return result;
 }
 
+// Mirrors Command Code CLI `isKnownTextOnlyModel` (no image input). New models
+// default to vision; only this denylist stays text-only.
+const COMMANDCODE_TEXT_ONLY = new Set([
+  "deepseek/deepseek-v4-pro",
+  "deepseek/deepseek-v4-flash",
+  "deepseek/deepseek-v4-flash-fast",
+  "zai-org/glm-5.3",
+  "zai-org/glm-5.2",
+  "zai-org/glm-5.2-fast",
+  "zai-org/glm-5.1",
+  "zai-org/glm-5",
+  "minimaxai/minimax-m2.7",
+  "minimax/minimax-m2.7-free",
+  "minimaxai/minimax-m2.5",
+  "xiaomi/mimo-v2.5-pro",
+  "qwen/qwen3.6-max-preview",
+  "qwen/qwen3.7-max",
+  "meituan/longcat-2.0:free",
+  "stepfun/step-3.5-flash",
+  "tencent/hy4-preview",
+  "tencent/hy3",
+  "tencent/hy3-paid",
+  "nvidia/nemotron-3-ultra-550b-a55b",
+  "poolside/laguna-s-2.1-free",
+  "inclusionai/ling-3.0-flash-free",
+  "inclusionai/ling-3.0-flash-sante:free",
+]);
+
+function isCommandCodeTextOnly(model) {
+  const key = String(model || "").toLowerCase();
+  if (COMMANDCODE_TEXT_ONLY.has(key)) return true;
+  for (const id of COMMANDCODE_TEXT_ONLY) {
+    const base = id.includes("/") ? id.slice(id.lastIndexOf("/") + 1) : id;
+    if (key === base || key.endsWith("/" + base)) return true;
+  }
+  return false;
+}
 export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
+
+  // CommandCode wire is /alpha/generate for every model. Family patterns
+  // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
+  if (provider === "commandcode" || provider === "cmc") {
+    const providerCaps = PROVIDER_CAPABILITIES.commandcode;
+    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
+    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    return {
+      ...DEFAULT_CAPABILITIES,
+      reasoning: true,
+      thinkingFormat: "commandcode",
+      thinkingEffortSupported: true,
+      vision: !isCommandCodeTextOnly(model),
+      contextWindow: 1000000,
+      maxOutput: 384000,
+    };
+  }
 
   // 1. Provider-specific override
   if (provider) {
