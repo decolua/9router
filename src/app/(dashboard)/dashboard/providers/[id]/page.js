@@ -71,6 +71,8 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
+  // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
+  const [liveModelsError, setLiveModelsError] = useState(null);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -153,7 +155,7 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = providerId === "cursor" && liveModels.length > 0
+  const models = (providerId === "cursor" || providerId === "zed") && liveModels.length > 0
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
@@ -467,11 +469,13 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Cursor's model availability is account-specific and changes frequently.
-  // Load the active account's live catalog for the dashboard; the static
-  // registry remains the fallback while the request is pending or unavailable.
+  // Live per-connection catalogs (cursor, zed): the static registry carries
+  // no usable list, so resolve from the active connection. Fires only when
+  // the provider id or connection list changes — no polling, no loop.
+  // Cursor path is statement-identical to before; zed adds error surfacing.
   useEffect(() => {
-    if (providerId !== "cursor") {
+    const isLiveCatalog = providerId === "cursor" || providerId === "zed";
+    if (!isLiveCatalog) {
       setLiveModels([]);
       return;
     }
@@ -479,18 +483,32 @@ export default function ProviderDetailPage() {
     const connection = connections.find((item) => item.isActive !== false);
     if (!connection?.id) {
       setLiveModels([]);
+      if (providerId === "zed") setLiveModelsError(null);
       return;
     }
 
     let cancelled = false;
+    if (providerId === "zed") setLiveModelsError(null);
     fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" })
-      .then(async (res) => ({ ok: res.ok, data: await res.json() }))
+      .then(async (res) => ({ ok: res.ok, data: await res.json().catch(() => null) }))
       .then(({ ok, data }) => {
-        if (!cancelled && ok && Array.isArray(data.models) && data.models.length > 0) {
+        if (cancelled) return;
+        if (ok && Array.isArray(data?.models) && data.models.length > 0) {
           setLiveModels(data.models);
+          if (providerId === "zed" && data?.warning) setLiveModelsError(data.warning);
+          return;
+        }
+        if (providerId === "zed") {
+          setLiveModels([]);
+          setLiveModelsError(data?.warning || data?.error || "Zed returned no live models.");
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled && providerId === "zed") {
+          setLiveModels([]);
+          setLiveModelsError("Failed to reach the Zed model catalog.");
+        }
+      });
 
     return () => { cancelled = true; };
   }, [providerId, connections]);
@@ -1766,6 +1784,9 @@ export default function ProviderDetailPage() {
         </div>
         {!!modelsTestError && (
           <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+        )}
+        {providerId === "zed" && !!liveModelsError && (
+          <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
         )}
         {renderModelsSection()}
       </Card>
