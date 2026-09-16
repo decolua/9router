@@ -648,9 +648,15 @@ let zedProxyTimeout = null;
 let zedProxyPort = null;
 let zedSession = null;
 
-export function registerZedSession({ state, codeVerifier }) {
+export function registerZedSession({ state, codeVerifier, systemId }) {
   if (!state || !codeVerifier) return false;
-  zedSession = { state, codeVerifier, status: "pending", createdAt: Date.now() };
+  zedSession = {
+    state,
+    codeVerifier,
+    systemId: systemId || null,
+    status: "pending",
+    createdAt: Date.now(),
+  };
   return true;
 }
 export function getZedSessionStatus(state) {
@@ -700,7 +706,14 @@ export function startZedProxy(preferredPort = 0) {
       try {
         const { exchangeTokens } = await import("../providers.js");
         const { createProviderConnection } = await import("@/models");
-        const tokenData = await exchangeTokens("zed", rawCallback, null, session.codeVerifier, session.state);
+        const tokenData = await exchangeTokens(
+          "zed",
+          rawCallback,
+          null,
+          session.codeVerifier,
+          session.state,
+          session.systemId ? { systemId: session.systemId } : undefined,
+        );
         const connection = await createProviderConnection({
           provider: "zed",
           authType: "oauth",

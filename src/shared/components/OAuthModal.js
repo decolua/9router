@@ -81,6 +81,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           redirectUri: authData.redirectUri,
           codeVerifier: authData.codeVerifier,
           state,
+          // Zed: thread the login attempt's system_id so the stored
+          // connection keeps the id sent to zed.dev (see register-session).
+          ...(authData.systemId ? { systemId: authData.systemId } : {}),
           ...(oauthMeta ? { meta: oauthMeta } : {}),
         }),
       });
@@ -194,10 +197,11 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     const authData = await authRes.json();
     if (!authRes.ok) throw new Error(authData.error);
     // 3. Register the session so the proxy can match the incoming callback.
-    //    Zed also passes code_verifier (encodes the RSA private key for decrypt);
-    //    sent via POST body so the private key never lands in URL/query logs.
+    //    Zed also passes code_verifier (encodes the RSA private key for decrypt)
+    //    + systemId; sent via POST body so secrets never land in URL/query logs.
     const regBody = { state: authData.state };
     if (authData.codeVerifier) regBody.codeVerifier = authData.codeVerifier;
+    if (authData.systemId) regBody.systemId = authData.systemId;
     await fetch(`/api/oauth/${providerId}/register-session`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -595,12 +599,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       const input = callbackUrl.trim();
 
-      // Trae/Windsurf proxy flow fallback (popup blocked): paste the full callback URL
+      // Trae/Windsurf/Zed proxy flow fallback (popup blocked): paste the full callback URL
       if (PROXY_OAUTH_PROVIDERS.has(provider) && input) {
         const res = await fetch(`/api/oauth/${provider}/exchange`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ code: input, state: authData?.state }),
+          body: JSON.stringify({
+            code: input,
+            state: authData?.state,
+            // Zed manual fallback needs the same attempt material as the
+            // automatic path (redirectUri + RSA verifier + system_id).
+            ...(authData?.redirectUri ? { redirectUri: authData.redirectUri } : {}),
+            ...(authData?.codeVerifier ? { codeVerifier: authData.codeVerifier } : {}),
+            ...(authData?.systemId ? { systemId: authData.systemId } : {}),
+          }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
