@@ -56,6 +56,14 @@ describe("OpenCodeGoExecutor routing + sanitization", () => {
     })).toBe("https://opencode.ai/zen/go/v1/responses");
   });
 
+  it("routes every responses-only registry model (grok-4.6) to /responses", () => {
+    const ex = new OpenCodeGoExecutor();
+    expect(ex.buildUrl("grok-4.6")).toBe("https://opencode.ai/zen/go/v1/responses");
+    expect(ex.buildUrl("grok-4.6(high)", true, 0, {
+      runtimeTransport: { baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
+    })).toBe("https://opencode.ai/zen/go/v1/responses");
+  });
+
   it("is wired for opencode-go and routes muse-spark to /responses", () => {
     expect(getExecutor("opencode-go")).toBeInstanceOf(OpenCodeGoExecutor);
     const ex = new OpenCodeGoExecutor();
