@@ -34,6 +34,7 @@ import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
 import {
   canonicalizeKiroConversation,
   normalizeKiroToolSpecs,
+  kiroEmptyUserContent,
 } from "../concerns/kiroConversation.js";
 
 /**
@@ -53,7 +54,8 @@ function convertClaudeMessagesToKiro(messages, model) {
 
   const flushPending = () => {
     if (currentRole === ROLE.USER) {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      const content = pendingUserContent.join("\n\n").trim()
+        || kiroEmptyUserContent(pendingToolResults.length > 0);
       const userMsg = { userInputMessage: { content, modelId: model } };
 
       if (pendingImages.length > 0) {
