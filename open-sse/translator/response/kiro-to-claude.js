@@ -159,9 +159,11 @@ export function kiroToClaudeResponse(chunk, state) {
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);
         const toolBlockIndex = state.nextBlockIndex++;
+        const rawToolName = tc.function?.name || "";
+        const toolName = state?.toolNameMap?.get(rawToolName) ?? rawToolName;
         state.toolCalls.set(idx, {
           id: tc.id,
-          name: tc.function?.name || "",
+          name: toolName,
           blockIndex: toolBlockIndex,
         });
         results.push({
@@ -170,7 +172,7 @@ export function kiroToClaudeResponse(chunk, state) {
           content_block: {
             type: "tool_use",
             id: tc.id,
-            name: tc.function?.name || "",
+            name: toolName,
             input: {},
           },
         });
@@ -243,10 +245,12 @@ export function kiroToClaudeNonStreaming(data) {
       } catch {
         input = {};
       }
+      const rawToolName = tc.function?.name || "";
+      const toolName = (data?.toolNameMap || data?._toolNameMap)?.get?.(rawToolName) ?? rawToolName;
       content.push({
         type: "tool_use",
         id: tc.id || `toolu_${Date.now()}`,
-        name: tc.function?.name || "",
+        name: toolName,
         input,
       });
     }

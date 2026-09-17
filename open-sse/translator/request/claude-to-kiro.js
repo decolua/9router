@@ -231,6 +231,10 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
   const usesNativeGptEffort = usesKiroNativeGptEffort(thinkingBody, upstreamModel);
 
   const { specs: toolSpecs, nameMap } = normalizeKiroToolSpecs(tools);
+  const reverseToolNameMap = new Map();
+  for (const [raw, kiro] of nameMap.entries()) {
+    if (raw !== kiro) reverseToolNameMap.set(kiro, raw);
+  }
   const { history, currentMessage } = convertClaudeMessagesToKiro(messages, upstreamModel);
 
   // api_key / idc / external_idp must never use the shared default ARN (belongs
@@ -340,6 +344,10 @@ export function claudeToKiroRequest(model, body, stream, credentials) {
     value: upstreamModel,
     enumerable: false,
   });
+
+  if (reverseToolNameMap.size > 0) {
+    payload._toolNameMap = reverseToolNameMap;
+  }
 
   return payload;
 }
