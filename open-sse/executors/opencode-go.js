@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { isMuseSparkModel } from "../providers/models/helpers.js";
+import { modelTargetFormat } from "../providers/models/schema.js";
+import { getProviderModels } from "../config/providerModels.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -45,8 +46,11 @@ function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
 }
 
+// Responses-only per the provider registry (grok-4.6, gpt-5.6-luna, muse-spark, …).
+// Reading the registry keeps this in sync with config — never hardcode model ids here.
 function isResponsesModel(model) {
-  return isMuseSparkModel(baseModelId(model));
+  const entry = getProviderModels("opencode-go").find((m) => m.id === baseModelId(model));
+  return modelTargetFormat(entry) === "openai-responses";
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and

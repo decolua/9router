@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PROVIDER_MODELS, getModelSupportedFormats } from "../../open-sse/config/providerModels.js";
+import { PROVIDER_MODELS, getModelSupportedFormats, getModelTargetFormat } from "../../open-sse/config/providerModels.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
 import { resolveTransport } from "../../open-sse/services/provider.js";
 
@@ -34,6 +34,18 @@ describe("OpenCode Go model catalog", () => {
       "grok-4.6", "gpt-5.6-luna",
       "muse-spark-1.2-contributor", "muse-spark-1.3-contributor",
     ]);
+  });
+});
+
+describe("OpenCode Go thinking-suffix model lookup", () => {
+  it("preserves Responses routing for gpt-5.6-luna thinking variants", () => {
+    expect(getModelSupportedFormats("opencode-go", "gpt-5.6-luna(high)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "gpt-5.6-luna(high)")).toBe("openai-responses");
+  });
+
+  it("preserves Responses routing for grok-4.6 thinking variants", () => {
+    expect(getModelSupportedFormats("opencode-go", "grok-4.6(high)")).toEqual(["openai-responses"]);
+    expect(getModelTargetFormat("opencode-go", "grok-4.6(high)")).toBe("openai-responses");
   });
 });
 
