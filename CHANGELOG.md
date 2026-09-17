@@ -1,3 +1,18 @@
+# Unreleased (enhanced/0.5.69)
+
+## Fixes
+- **Chat**: a full concurrency gate is no longer reported as unavailable accounts. Skipping a saturated account to try another one still spreads load, but when no other account is left the request now waits for a slot (`ACCOUNT_CAPACITY_WAIT_MS`, default 60s) instead of answering `All accounts unavailable` in 2.0s without ever calling the provider. If the wait does expire, the error names the real cause.
+- **Combo**: the final error now pairs the status with the message it came from, and lists what was tried (`[tried a:403; b:503]`). Pinning the status to the first member while the message came from the last made a fully-tried combo look like it died on member 1.
+- **Usage**: every billable attempt carries a `usageEventId` generated once per attempt, so retries and account fallbacks are counted separately while a repeated write of the same event is idempotent. Removes the old heuristic that collapsed distinct events sharing a timestamp and token count. Adds migration `002-usage-event-id` (column + partial unique index).
+- **Shutdown**: a single coordinator owns SIGINT/SIGTERM, installed from `instrumentation.js` at server boot — a gateway-only process (only `/v1/*` is ever hit) never runs the dashboard layout and was therefore left with no handler at all once the SQLite adapters stopped exiting on signals. It drains in-flight usage writes and buffered request details, runs every registered cleanup, then checkpoints the WAL before exiting. Bounded, and a duplicate delivery of the same signal (systemd cgroup + launcher) no longer aborts the drain.
+- **CLI**: the launcher asks the server to stop and waits up to 8s before escalating to SIGKILL. It used to kill it outright, which discarded the drain above. It also stops sending the server's stdout to `/dev/null` — it now goes to `~/.9router/server.log` (capped, rotated), which is what makes routing incidents diagnosable after the fact.
+- **OAuth (Cursor)**: `better-sqlite3` is imported lazily inside its strategy, so the auto-import route stays importable when the optional native binding is missing and falls through to the CLI strategy.
+- **Search**: drop a redundant branch that returned the same value twice.
+
+## Tests
+- Repaired suites asserting contracts the code no longer has (Kiro top-level `systemPrompt`, Windsurf endpoint, `got-scraping` transport, DNS `lookup` with `all: true`, Antigravity 429 attempts, HTTP/2 Cursor catalog, module-relative paths in the security audit) and converted four `node:test` files to Vitest so they are collected at all.
+- Regression baseline regenerated: `verify-no-regression.mjs` derived the test path from a hardcoded `/app/` prefix and reported every failure as new in any other checkout.
+
 # v0.5.75 (2026-09-10)
 
 ## Features
