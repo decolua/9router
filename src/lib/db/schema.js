@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -109,6 +109,7 @@ export const TABLES = {
   usageHistory: {
     columns: {
       id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      usageEventId: "TEXT",
       timestamp: "TEXT NOT NULL",
       provider: "TEXT",
       model: "TEXT",
@@ -122,6 +123,11 @@ export const TABLES = {
       tokens: "TEXT",
       meta: "TEXT",
     },
+    // NOTE: idx_uh_event (partial unique on usageEventId) is deliberately NOT listed
+    // here — 001-initial executes every index declared in TABLES, and on a legacy DB
+    // (no schemaVersion stamp) usageHistory has no usageEventId column yet, so the
+    // index creation would throw before migration 002 could add it. Migration 002
+    // owns both the column add and the index.
     indexes: [
       "CREATE INDEX IF NOT EXISTS idx_uh_ts ON usageHistory(timestamp DESC)",
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",

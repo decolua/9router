@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -95,6 +96,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
+    const attemptUsageEventId = randomUUID();
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
@@ -138,6 +140,7 @@ export async function handleEmbeddings(request) {
       const usage = exactEmbeddingUsage(result.usage);
       if (usage) {
         saveRequestUsage({
+          usageEventId: attemptUsageEventId,
           provider,
           model,
           connectionId: credentials.connectionId,

@@ -25,6 +25,11 @@ if (!global._pendingTimers) global._pendingTimers = {};
 if (!global._recentRing) global._recentRing = { items: [], initialized: false };
 if (!global._connectionMapCache) global._connectionMapCache = { map: {}, ts: 0 };
 if (!global._statsEmitTimers) global._statsEmitTimers = { pending: null, update: null };
+// In-flight usage persists. Tracked from the moment saveRequestUsage is CALLED
+// (before its first await) so a shutdown drain can tell what is still unfinished:
+// the driver being synchronous does NOT make the whole operation synchronous —
+// getAdapter() and the cost lookup (dynamic pricingRepo import) both yield first.
+if (!global._pendingUsagePersists) global._pendingUsagePersists = { inflight: new Set(), failures: 0 };
 
 const pendingRequests = global._pendingRequests;
 const lastErrorProvider = global._lastErrorProvider;
@@ -32,17 +37,18 @@ const pendingTimers = global._pendingTimers;
 const recentRing = global._recentRing;
 const connCache = global._connectionMapCache;
 const statsEmitTimers = global._statsEmitTimers;
+const pendingUsage = global._pendingUsagePersists;
 
 export const statsEmitter = global._statsEmitter;
 
 function scheduleStatsEvent(event, delayMs = 150) {
   const key = event === "update" ? "update" : "pending";
-  if (statsEmitTimers[key]) return;
-  statsEmitTimers[key] = setTimeout(() => {
-    statsEmitTimers[key] = null;
-    statsEmitter.emit(event);
+  if (global._statsEmitTimers[key]) return;
+  global._statsEmitTimers[key] = setTimeout(() => {
+    global._statsEmitTimers[key] = null;
+    global._statsEmitter?.emit(event);
   }, delayMs);
-  statsEmitTimers[key]?.unref?.();
+  global._statsEmitTimers[key]?.unref?.();
 }
 
 function getLocalDateKey(timestamp) {
@@ -122,8 +128,9 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+    const rows = db.all(`SELECT usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
     recentRing.items = rows.reverse().map((r) => ({
+      usageEventId: r.usageEventId || undefined,
       timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
       apiKey: r.apiKey, endpoint: r.endpoint, cost: r.cost, status: r.status,
       tokens: parseJson(r.tokens, {}),
@@ -212,7 +219,6 @@ export async function getActiveRequests() {
   }
 
   await ensureRingInitialized();
-  const seen = new Set();
   const recentRequests = [...recentRing.items]
     .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
     .map((e) => {
@@ -224,21 +230,81 @@ export async function getActiveRequests() {
         status: e.status || "ok",
       };
     })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
+    .filter((e) => !(e.promptTokens === 0 && e.completionTokens === 0))
     .slice(0, 20);
 
   const errorProvider = (Date.now() - lastErrorProvider.ts < 10000) ? lastErrorProvider.provider : "";
   return { activeRequests, recentRequests, errorProvider };
 }
 
-export async function saveRequestUsage(entry) {
+/**
+ * Persist one billable usage event.
+ *
+ * Identity (F-01): callers that own an event identity pass `usageEventId`; a
+ * repeat of the same id is ignored (idempotent). Everything else is an
+ * independent event — no dedup by timestamp/provider/model/token coincidence.
+ *
+ * Shutdown (F-07): the returned promise is registered synchronously, in the same
+ * tick as admission — the persist's first await cannot resume before this runs,
+ * so `drainPendingUsage()` can always see work admitted just before a signal.
+ * Tracking lives here rather than in callers because handlers fire-and-forget
+ * (`saveRequestUsage(...).catch(() => {})`).
+ */
+export function saveRequestUsage(entry) {
+  const promise = persistUsageEvent(entry);
+  pendingUsage.inflight.add(promise);
+  // Remove on settle; a rejection is already handled/logged inside, so this
+  // cleanup must not create a second unhandled rejection.
+  promise.then(
+    () => pendingUsage.inflight.delete(promise),
+    () => pendingUsage.inflight.delete(promise),
+  );
+  return promise;
+}
+
+/**
+ * Wait for in-flight usage persistences, bounded by `timeoutMs`.
+ *
+ * Trade-off (explicit): shutdown waits for admitted writes instead of dropping
+ * them. New events admitted during the window are also drained, so the wait ends
+ * when the set goes quiet or the deadline fires — whichever comes first. Nothing
+ * here promises durability against SIGKILL, power loss or disk failure.
+ */
+export async function drainPendingUsage({ timeoutMs = 3000 } = {}) {
+  const deadline = Date.now() + Math.max(0, timeoutMs);
+  const started = pendingUsage.inflight.size;
+  let failed = pendingUsage.failures;
+
+  while (pendingUsage.inflight.size > 0 && Date.now() < deadline) {
+    const batch = [...pendingUsage.inflight];
+    const remaining = deadline - Date.now();
+    let timer;
+    const timeout = new Promise((resolve) => {
+      // NOT unref'd: during the drain this timer is what keeps the event loop
+      // alive long enough to finish the writes. Unref'ing it would let Node exit
+      // mid-drain and lose exactly the writes this function exists to protect.
+      timer = setTimeout(resolve, Math.max(0, remaining));
+    });
+    await Promise.race([Promise.allSettled(batch), timeout]);
+    clearTimeout(timer);
+  }
+
+  const summary = {
+    admitted: started,
+    pending: pendingUsage.inflight.size,
+    failed: pendingUsage.failures - failed,
+    failedTotal: pendingUsage.failures,
+    timedOut: pendingUsage.inflight.size > 0,
+  };
+  const level = summary.timedOut ? "warn" : "log";
+  console[level](
+    `[Usage] shutdown drain: admitted=${summary.admitted} pending=${summary.pending} failed=${summary.failed}` +
+    (summary.timedOut ? ` — timed out after ${timeoutMs}ms, ${summary.pending} write(s) still in flight` : ""),
+  );
+  return { ...summary, drained: started - summary.pending };
+}
+
+async function persistUsageEvent(entry) {
   try {
     const db = await getAdapter();
 
@@ -250,43 +316,128 @@ export async function saveRequestUsage(entry) {
     const completionTokens = tokens.completion_tokens || tokens.output_tokens || 0;
 
     let inserted = false;
+    const eventId = typeof entry.usageEventId === "string" && entry.usageEventId.trim() ? entry.usageEventId.trim() : null;
 
-    // All 3 writes (history insert, daily upsert, lifetime counter) in ONE transaction.
-    // better-sqlite3 is sync → no JS yield mid-transaction → no race in same process.
+    // All writes for one event (history insert, daily upsert, lifetime counter)
+    // in ONE transaction. Every adapter is sync → no JS yield mid-transaction →
+    // no race in the same process; the identity check above is part of it, so a
+    // duplicate id can never interleave between the SELECT and the INSERT.
     db.transaction(() => {
-      const existing = db.get(
-        `SELECT id, endpoint FROM usageHistory
-         WHERE timestamp = ?
-           AND COALESCE(provider, '') = COALESCE(?, '')
-           AND COALESCE(model, '') = COALESCE(?, '')
-           AND COALESCE(connectionId, '') = COALESCE(?, '')
-           AND COALESCE(apiKey, '') = COALESCE(?, '')
-           AND promptTokens = ?
-           AND completionTokens = ?
-         ORDER BY id DESC LIMIT 1`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null,
-          promptTokens, completionTokens,
-        ]
-      );
+      if (eventId) {
+        const existing = db.get(
+          `SELECT id, usageEventId, timestamp, provider, model, connectionId, apiKey, promptTokens, completionTokens, cost, status, endpoint, tokens FROM usageHistory WHERE usageEventId = ?`,
+          [eventId]
+        );
+        if (existing) {
+          const storedTokens = parseJson(existing.tokens, {}) || {};
+          const storedPrompt = storedTokens.prompt_tokens || storedTokens.input_tokens || existing.promptTokens || 0;
+          const storedCompletion = storedTokens.completion_tokens || storedTokens.output_tokens || existing.completionTokens || 0;
+          const storedCachedTokens = storedTokens.cached_tokens || storedTokens.cache_read_input_tokens || 0;
+          const storedCacheCreationTokens = storedTokens.cache_creation_input_tokens || storedTokens.prompt_tokens_details?.cache_creation_input_tokens || 0;
+          const storedReasoningTokens = storedTokens.reasoning_tokens || storedTokens.completion_tokens_details?.reasoning_tokens || 0;
 
-      if (existing) {
-        if (!existing.endpoint && entry.endpoint) {
-          db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
+          const newPrompt = tokens.prompt_tokens || tokens.input_tokens || 0;
+          const newCompletion = tokens.completion_tokens || tokens.output_tokens || 0;
+          const newCachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+          const newCacheCreationTokens = tokens.cache_creation_input_tokens || tokens.prompt_tokens_details?.cache_creation_input_tokens || 0;
+          const newReasoningTokens = tokens.reasoning_tokens || tokens.completion_tokens_details?.reasoning_tokens || 0;
+
+          const storedProvider = existing.provider || null;
+          const newProvider = entry.provider || null;
+          const storedModel = existing.model || null;
+          const newModel = entry.model || null;
+          const storedConnId = existing.connectionId || null;
+          const newConnId = entry.connectionId || null;
+          const storedApiKey = existing.apiKey || null;
+          const newApiKey = entry.apiKey || null;
+          const storedStatus = existing.status || "ok";
+          const newStatus = entry.status || "ok";
+
+          const isConflict =
+            storedProvider !== newProvider ||
+            storedModel !== newModel ||
+            storedConnId !== newConnId ||
+            storedApiKey !== newApiKey ||
+            storedPrompt !== newPrompt ||
+            storedCompletion !== newCompletion ||
+            storedCachedTokens !== newCachedTokens ||
+            storedCacheCreationTokens !== newCacheCreationTokens ||
+            storedReasoningTokens !== newReasoningTokens ||
+            storedStatus !== newStatus;
+
+          if (isConflict) {
+            console.warn(
+              `[DB][usageRepo] usageEventId ${eventId} payload conflict: existing (provider=${storedProvider}, model=${storedModel}, connId=${storedConnId}, apiKey=${storedApiKey}, prompt=${storedPrompt}, completion=${storedCompletion}, cached=${storedCachedTokens}, cacheCreation=${storedCacheCreationTokens}, reasoning=${storedReasoningTokens}, status=${storedStatus}) vs new (provider=${newProvider}, model=${newModel}, connId=${newConnId}, apiKey=${newApiKey}, prompt=${newPrompt}, completion=${newCompletion}, cached=${newCachedTokens}, cacheCreation=${newCacheCreationTokens}, reasoning=${newReasoningTokens}, status=${newStatus})`
+            );
+            return;
+          }
+
+          if (!existing.endpoint && entry.endpoint) {
+            db.run(`UPDATE usageHistory SET endpoint = ? WHERE id = ?`, [entry.endpoint, existing.id]);
+
+            const dateKey = getLocalDateKey(existing.timestamp || entry.timestamp);
+            const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
+            if (row) {
+              const day = parseJson(row.data, {});
+              if (day.byEndpoint) {
+                const oldEpKey = `Unknown|${existing.model}|${existing.provider || "unknown"}`;
+                const newEpKey = `${entry.endpoint}|${existing.model}|${existing.provider || "unknown"}`;
+                const storedCost = existing.cost || 0;
+                if (day.byEndpoint[oldEpKey]) {
+                  const old = day.byEndpoint[oldEpKey];
+                  old.requests = Math.max(0, (old.requests || 1) - 1);
+                  old.promptTokens = Math.max(0, (old.promptTokens || 0) - promptTokens);
+                  old.completionTokens = Math.max(0, (old.completionTokens || 0) - completionTokens);
+                  old.cachedTokens = Math.max(0, (old.cachedTokens || 0) - storedCachedTokens);
+                  old.cost = Math.max(0, (old.cost || 0) - storedCost);
+                  if (old.requests <= 0) delete day.byEndpoint[oldEpKey];
+                }
+                addToCounter(day.byEndpoint, newEpKey, {
+                  promptTokens,
+                  completionTokens,
+                  cachedTokens: storedCachedTokens,
+                  cost: storedCost,
+                  meta: { endpoint: entry.endpoint, rawModel: existing.model, provider: existing.provider },
+                });
+                db.run(`UPDATE usageDaily SET data = ? WHERE dateKey = ?`, [stringifyJson(day), dateKey]);
+              }
+            }
+
+            const ringItem = recentRing.items.find((i) => i.usageEventId === eventId);
+            if (ringItem) {
+              ringItem.endpoint = entry.endpoint;
+            }
+          }
+          return;
         }
-        return;
+        try {
+          db.run(
+            `INSERT INTO usageHistory(usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              eventId, entry.timestamp, entry.provider || null, entry.model || null,
+              entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+              promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+              stringifyJson(tokens), stringifyJson({}),
+            ]
+          );
+        } catch (err) {
+          if (err.message && (err.message.includes("UNIQUE constraint failed") || err.message.includes("idx_uh_event"))) {
+            console.warn(`[DB][usageRepo] usageEventId ${eventId} already persisted: ${err.message}`);
+            return;
+          }
+          throw err;
+        }
+      } else {
+        db.run(
+          `INSERT INTO usageHistory(usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            null, entry.timestamp, entry.provider || null, entry.model || null,
+            entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+            promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+            stringifyJson(tokens), stringifyJson({}),
+          ]
+        );
       }
-
-      db.run(
-        `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          entry.timestamp, entry.provider || null, entry.model || null,
-          entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
-          promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
-        ]
-      );
 
       const dateKey = getLocalDateKey(entry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
@@ -309,10 +460,13 @@ export async function saveRequestUsage(entry) {
       scheduleStatsEvent("update", 250);
     }
   } catch (e) {
+    // Never surfaces to the request path (a failed usage write must not break a
+    // response), but it must not vanish either: the counter reports it in the
+    // shutdown drain summary.
+    pendingUsage.failures++;
     console.error("Failed to save usage stats:", e);
   }
 }
-
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];
@@ -324,9 +478,10 @@ export async function getUsageHistory(filter = {}) {
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
+  const rows = db.all(`SELECT usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
 
   return rows.map((r) => ({
+    usageEventId: r.usageEventId || undefined,
     timestamp: r.timestamp, provider: r.provider, model: r.model,
     connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey), endpoint: r.endpoint,
     cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
@@ -370,9 +525,8 @@ export async function getUsageStats(period = "all") {
   const apiKeyMap = {};
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
-  // recentRequests from live history (last 100 entries enough for 20 deduped)
+  // recentRequests from live history (last 100 entries enough for 20)
   const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
-  const seen = new Set();
   const recentRequests = recentRows
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
@@ -384,14 +538,7 @@ export async function getUsageStats(period = "all") {
         status: r.status || "ok",
       };
     })
-    .filter((e) => {
-      if (e.promptTokens === 0 && e.completionTokens === 0) return false;
-      const minute = e.timestamp ? e.timestamp.slice(0, 16) : "";
-      const key = `${e.model}|${e.provider}|${e.promptTokens}|${e.completionTokens}|${minute}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    })
+    .filter((e) => !(e.promptTokens === 0 && e.completionTokens === 0))
     .slice(0, 20);
 
   const stats = {
