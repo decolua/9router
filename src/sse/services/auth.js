@@ -99,8 +99,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           return false;
         }
       }
-      const breakerName = buildAccountBreakerName({ provider: providerId, connectionId: c.id });
-      if (isBlocked(breakerName)) return false;
+      // Per-model breaker. Without a model there is nothing account-wide to
+      // consult, so the account stays eligible rather than being hidden by a
+      // breaker that another model tripped.
+      if (model) {
+        const breakerName = buildAccountBreakerName({ provider: providerId, connectionId: c.id, model });
+        if (isBlocked(breakerName)) return false;
+      }
       return true;
     });
 
@@ -124,11 +129,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
         });
       }
-      for (const c of connections) {
-        const breakerName = buildAccountBreakerName({ provider: providerId, connectionId: c.id });
-        if (!isBlocked(breakerName)) continue;
-        const ms = getRetryAfterMs(breakerName);
-        if (ms > 0) expiries.push(new Date(Date.now() + ms).toISOString());
+      if (model) {
+        for (const c of connections) {
+          const breakerName = buildAccountBreakerName({ provider: providerId, connectionId: c.id, model });
+          if (!isBlocked(breakerName)) continue;
+          const ms = getRetryAfterMs(breakerName);
+          if (ms > 0) expiries.push(new Date(Date.now() + ms).toISOString());
+        }
       }
       const earliest = expiries.sort()[0] || null;
       if (earliest) {

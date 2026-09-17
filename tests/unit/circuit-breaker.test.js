@@ -20,7 +20,8 @@ describe("CircuitBreaker", () => {
     resetAllCircuitBreakers();
   });
 
-  it("buildAccountBreakerName is provider:connectionId", () => {
+  it("buildAccountBreakerName is provider:connectionId:model, and drops the model when absent", () => {
+    expect(buildAccountBreakerName({ provider: "glm", connectionId: "acc-1", model: "glm-4" })).toBe("glm:acc-1:glm-4");
     expect(buildAccountBreakerName({ provider: "glm", connectionId: "acc-1" })).toBe("glm:acc-1");
   });
 

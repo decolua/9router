@@ -54,24 +54,42 @@ describe("getProviderCredentials skips OPEN breakers", () => {
     });
   });
 
-  it("returns B when A is OPEN", async () => {
-    const name = buildAccountBreakerName({ provider: "glm", connectionId: "acc-a" });
-    getCircuitBreaker(name, { failureThreshold: 1, isFailure: () => true });
+  const trip = (connectionId, model) => {
+    const name = buildAccountBreakerName({ provider: "glm", connectionId, model });
+    getCircuitBreaker(name, { failureThreshold: 1, resetTimeout: 30_000, isFailure: () => true });
     recordFailure(name, { statusCode: 500 });
-    const creds = await getProviderCredentials("glm");
+    return name;
+  };
+
+  it("returns B when A is OPEN for that model", async () => {
+    trip("acc-a", "m1");
+    const creds = await getProviderCredentials("glm", null, "m1");
     expect(creds.connectionId).toBe("acc-b");
   });
 
-  it("returns allRateLimited when every account is OPEN", async () => {
-    for (const id of ["acc-a", "acc-b"]) {
-      const name = buildAccountBreakerName({ provider: "glm", connectionId: id });
-      getCircuitBreaker(name, { failureThreshold: 1, resetTimeout: 30_000, isFailure: () => true });
-      recordFailure(name, { statusCode: 500 });
-    }
-    const creds = await getProviderCredentials("glm");
+  it("returns allRateLimited when every account is OPEN for that model", async () => {
+    trip("acc-a", "m1");
+    trip("acc-b", "m1");
+    const creds = await getProviderCredentials("glm", null, "m1");
     expect(creds.allRateLimited).toBe(true);
     expect(creds.retryAfter).toBeTruthy();
     expect(creds.retryAfterHuman).toBeTruthy();
     expect(creds.lastErrorCode).toBe(503);
+  });
+
+  it("does not hide an account from a model whose breaker never tripped", async () => {
+    // The regression this guards: an account-wide key let a failing model take
+    // every sibling model down with it, silently shrinking a combo's fallback.
+    trip("acc-a", "m1");
+    trip("acc-b", "m1");
+    const creds = await getProviderCredentials("glm", null, "m2");
+    expect(creds.allRateLimited).toBeUndefined();
+    expect(creds.connectionId).toBe("acc-a");
+  });
+
+  it("does not consult breakers when no model is in hand", async () => {
+    trip("acc-a", "m1");
+    const creds = await getProviderCredentials("glm");
+    expect(creds.connectionId).toBe("acc-a");
   });
 });

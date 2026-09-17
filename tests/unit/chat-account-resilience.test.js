@@ -160,7 +160,7 @@ describe("handleChat account resilience", () => {
   });
 
   it("records 5xx toward the breaker and does not count 429", async () => {
-    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID, model: MODEL });
     expect(shouldRecordBreakerFailure(500)).toBe(true);
     expect(shouldRecordBreakerFailure(429)).toBe(false);
 
@@ -294,7 +294,7 @@ describe("handleChat account resilience", () => {
   });
 
   it("does not consume a HALF_OPEN probe when acquire times out", async () => {
-    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID, model: MODEL });
     await expireOpenBreaker(name);
 
     const key = resolveAccountSemaphoreKey({
@@ -319,7 +319,7 @@ describe("handleChat account resilience", () => {
   it.each([401, 403, 429])(
     "records HALF_OPEN %s as success so the probe is not stuck",
     async (status) => {
-      const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+      const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID, model: MODEL });
       await expireOpenBreaker(name);
 
       mocks.handleChatCore.mockResolvedValue({
@@ -339,7 +339,7 @@ describe("handleChat account resilience", () => {
   );
 
   it("re-opens the breaker when a HALF_OPEN probe returns 5xx", async () => {
-    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID, model: MODEL });
     await expireOpenBreaker(name);
 
     mocks.handleChatCore.mockResolvedValue({
@@ -357,7 +357,7 @@ describe("handleChat account resilience", () => {
   });
 
   it("records 408 timeout toward the breaker", async () => {
-    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID, model: MODEL });
     getCircuitBreaker(name, breakerOpts());
     for (let i = 0; i < 4; i++) recordFailure(name, { statusCode: 500 });
 
@@ -373,7 +373,7 @@ describe("handleChat account resilience", () => {
   });
 
   it("does not count a client abort 499 toward the breaker", async () => {
-    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const name = buildAccountBreakerName({ provider: PROVIDER, connectionId: ACCOUNT_ID, model: MODEL });
     getCircuitBreaker(name, breakerOpts({ failureThreshold: 1 }));
 
     mocks.handleChatCore.mockResolvedValue({

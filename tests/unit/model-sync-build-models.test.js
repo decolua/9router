@@ -165,18 +165,16 @@ describe("B2: união multi-conta com dedup correto (free wins)", () => {
   });
 });
 
-describe("B2: todos indisponíveis — erro claro via combo path", () => {
-  it("combo with all members unavailable resolves to empty (caller returns 503 with clear message)", async () => {
-    // getComboModels filters unavailable members; empty means no route, caller 503s.
+describe("B2: todos indisponíveis — o combo salvo é roteado mesmo assim", () => {
+  it("combo with all members unavailable still routes (real provider error beats a synthetic 503)", async () => {
     vi.mocked(getProviderConnections).mockResolvedValue([
       { id: "bai-1", provider: "bai", isActive: true, modelCatalog: { models: [{ id: "dead-a", availability: "unavailable" }, { id: "dead-b", availability: "unavailable" }], lastSuccessAt: new Date().toISOString(), lastError: null } },
     ]);
     vi.mocked(getComboByName).mockResolvedValue({ name: "dead-combo", models: ["bai/dead-a", "bai/dead-b"] });
     const members = await getComboModels("dead-combo");
-    expect(members).toEqual([]);
-    // The chat handler (handleComboChat) turns an empty member list into a 503 with
-    // "All models in combo 'dead-combo' are currently unavailable" — this test
-    // proves the filtering yields the empty state that triggers that branch.
+    // An empty list would reach handleComboChat as a truthy [] and 503 without
+    // calling any provider — the catalog sync must not be able to do that.
+    expect(members).toEqual(["bai/dead-a", "bai/dead-b"]);
   });
 
   it("combo with one temporarily-absent member still routes (no false 503)", async () => {

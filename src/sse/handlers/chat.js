@@ -125,7 +125,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
-  if (comboModels) {
+  if (comboModels?.length) {
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -200,7 +200,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
-    if (comboModels) {
+    if (comboModels?.length) {
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
@@ -323,6 +323,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       breakerName = buildAccountBreakerName({
         provider,
         connectionId,
+        model,
       });
       if (!getCircuitBreaker(breakerName)) {
         getCircuitBreaker(breakerName, {

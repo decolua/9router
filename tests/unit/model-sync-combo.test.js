@@ -62,7 +62,7 @@ describe("combo member filtering against synced catalogs", () => {
     expect(await getComboModels("mix")).toEqual(["orcarouter/claude-sonnet-5"]);
   });
 
-  it("returns an empty list when every member is confirmed unavailable (clear 503 downstream)", async () => {
+  it("fails open when every member is confirmed unavailable (the catalog is a hint, not an authority)", async () => {
     getComboByName.mockResolvedValue({ name: "mix", models: ["bai/dead-a", "bai/dead-b"] });
     getProviderConnections.mockResolvedValue([
       catalogConn("bai", [
@@ -70,7 +70,9 @@ describe("combo member filtering against synced catalogs", () => {
         { id: "dead-b", availability: "unavailable", missingSyncs: 2 },
       ]),
     ]);
-    expect(await getComboModels("mix")).toEqual([]);
+    // Emptying the list would hand handleComboChat zero members and 503 without
+    // calling any provider. Route the stored combo and surface the real error.
+    expect(await getComboModels("mix")).toEqual(["bai/dead-a", "bai/dead-b"]);
   });
 
   it("never touches aliases or custom-node prefixes: unresolvable members pass through", async () => {
@@ -97,24 +99,27 @@ describe("combo member filtering against synced catalogs", () => {
     expect(await getComboModels("mix")).toEqual(["cl/z-ai/glm-5.2", "cl/anthropic/claude-sonnet-4.6"]);
   });
 
+  // Stripping still happens — it just may never empty the combo, so these cases
+  // carry a healthy sibling that proves the unavailable member was dropped.
   it("still strips a passthrough member the catalog listed as unavailable", async () => {
-    getComboByName.mockResolvedValue({ name: "mix", models: ["cl/anthropic/claude-sonnet-4.6"] });
+    getComboByName.mockResolvedValue({ name: "mix", models: ["cl/anthropic/claude-sonnet-4.6", "cl/openai/gpt-5.4"] });
     getProviderConnections.mockResolvedValue([
       catalogConn("cline", [
         { id: "anthropic/claude-sonnet-4.6", availability: "unavailable", missingSyncs: 2 },
+        { id: "openai/gpt-5.4", availability: "available" },
       ]),
     ]);
-    expect(await getComboModels("mix")).toEqual([]);
+    expect(await getComboModels("mix")).toEqual(["cl/openai/gpt-5.4"]);
   });
 
   it("still strips unknown ids on non-passthrough providers (Token Plan)", async () => {
-    getComboByName.mockResolvedValue({ name: "mix", models: ["alitp-intl/qwen3.8-max-preview"] });
+    getComboByName.mockResolvedValue({ name: "mix", models: ["alitp-intl/qwen3.8-max-preview", "alitp-intl/qwen3.8-max"] });
     getProviderConnections.mockResolvedValue([
       catalogConn("alitp-intl", [
         { id: "qwen3.8-max", availability: "available" },
         { id: "qwen3.8-flash", availability: "available" },
       ]),
     ]);
-    expect(await getComboModels("mix")).toEqual([]);
+    expect(await getComboModels("mix")).toEqual(["alitp-intl/qwen3.8-max"]);
   });
 });

@@ -2,6 +2,7 @@
 import { getModelAliases, getComboByName, getProviderNodes, getProviderConnections } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import * as log from "../utils/logger.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -154,8 +155,14 @@ async function filterUnavailableComboMembers(models) {
     const unverifiedSomewhere = accounts.length > catalogued.length;
     return unverifiedSomewhere ? member : null;
   }));
-  // No fallback to the original list: when every member is confirmed
-  // unavailable the caller (handleComboChat) returns a clear 503 instead of
-  // retrying dead models and failing opaquely.
-  return candidates.filter(Boolean);
+  // Fail-open. The catalog is a routing hint, never an authority over a combo
+  // the user configured: a stale sync, a paginated listing or a plan-scoped
+  // listing can mark every member "unavailable" and erase the whole fallback
+  // chain. When nothing survives, route the stored members and let the provider
+  // return the real error — that is strictly more informative than a synthetic
+  // 503, and it keeps `getComboModels`'s contract (non-empty array, or null).
+  const kept = candidates.filter(Boolean);
+  if (kept.length > 0) return kept;
+  log.warn("COMBO", `every member filtered out by catalog sync — routing the stored combo as-is (${models.join(", ")})`);
+  return [...models];
 }

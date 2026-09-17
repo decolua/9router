@@ -74,7 +74,7 @@ export async function handleSearch(request) {
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers.
   // Use the local catalog-aware path so unavailable members are skipped (same as chat).
   const comboModels = await getComboModels(providerInput);
-  if (comboModels) {
+  if (comboModels?.length) {
     const combo = await getComboByName(providerInput);
     const kindCheck = assertWebComboKind(combo, providerInput, "webSearch");
     if (!kindCheck.ok) {

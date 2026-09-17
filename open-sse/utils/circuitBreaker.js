@@ -49,9 +49,21 @@ export function isLocalStreamLifecycleError(error) {
   return /controller is already closed/i.test(message);
 }
 
-/** Build per-account breaker key: `${provider}:${connectionId}`. */
-export function buildAccountBreakerName({ provider, connectionId }) {
-  return `${String(provider)}:${String(connectionId)}`;
+/**
+ * Build the breaker key: `${provider}:${connectionId}:${model}`.
+ *
+ * The model is part of the key on purpose. Upstream locks per model
+ * (`modelLock_${model}`), and an account-wide key made one failing model take
+ * every other model on the same account down with it — inside a combo that
+ * silently removed the fallback the user configured.
+ *
+ * `model` is omitted only by callers that have no model in hand; those get an
+ * account-scoped key that no per-model breaker can collide with, so they never
+ * block a healthy model by accident.
+ */
+export function buildAccountBreakerName({ provider, connectionId, model }) {
+  const base = `${String(provider)}:${String(connectionId)}`;
+  return model ? `${base}:${String(model)}` : base;
 }
 
 class CircuitBreaker {

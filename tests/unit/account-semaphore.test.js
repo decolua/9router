@@ -46,8 +46,10 @@ describe("AccountSemaphore", () => {
     (await acquire(key, { maxConcurrency: null }))();
   });
 
-  it("default maxConcurrency is 3; 0/null on credentials bypass", () => {
-    expect(resolveAccountSemaphoreMaxConcurrency({})).toBe(3);
+  it("maxConcurrency is opt-in: bypassed unless the connection sets a positive cap", () => {
+    // Upstream has no cap. A default one throttled ordinary parallel traffic.
+    expect(resolveAccountSemaphoreMaxConcurrency({})).toBe(null);
+    expect(resolveAccountSemaphoreMaxConcurrency(null)).toBe(null);
     expect(resolveAccountSemaphoreMaxConcurrency({ providerSpecificData: { maxConcurrency: 0 } })).toBe(null);
     expect(resolveAccountSemaphoreMaxConcurrency({ providerSpecificData: { maxConcurrency: null } })).toBe(null);
     expect(resolveAccountSemaphoreMaxConcurrency({ providerSpecificData: { maxConcurrency: 8 } })).toBe(8);

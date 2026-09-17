@@ -269,16 +269,18 @@ export function resolveAccountSemaphoreKey({ provider, connectionId }) {
 
 /**
  * Resolve max concurrency from connection settings.
- * Returns a sensible default (3) when not configured, so the semaphore
- * actually limits concurrent requests per account (preventing 429 cascades).
- * Set `maxConcurrency: 0` or `null` in providerSpecificData to bypass.
+ *
+ * Opt-in: returns null (bypass) unless the connection sets a positive
+ * `maxConcurrency` in providerSpecificData. Upstream imposes no cap, and a
+ * default one throttled ordinary parallel traffic — an agentic client easily
+ * exceeds a handful of in-flight requests per account, and each request over
+ * the cap burned a probe timeout and fell through to the next account before
+ * the provider was ever called.
  */
 export function resolveAccountSemaphoreMaxConcurrency(credentials) {
-  if (!credentials) return 3;
-  const max = credentials.providerSpecificData?.maxConcurrency;
-  if (max === 0 || max === null) return null; // explicit bypass
+  const max = credentials?.providerSpecificData?.maxConcurrency;
   if (typeof max === "number" && max > 0) return max;
-  return 3; // default: 3 concurrent requests per account
+  return null; // no cap unless explicitly configured
 }
 
 export { SemaphoreCapacityError };
