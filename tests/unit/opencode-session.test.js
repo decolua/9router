@@ -11,9 +11,12 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 import { getExecutor } from "../../open-sse/executors/index.js";
 import {
   OPENCODE_SESSION_RE,
+  OPENCODE_REQUEST_RE,
   generateSessionId,
   generateRequestId,
   translateSessionId,
+  stableSessionId,
+  deriveRequestId,
 } from "../../open-sse/executors/opencode.js";
 
 function makeCredentials(overrides = {}) {
@@ -198,5 +201,79 @@ describe("OpenCode Free User-Agent Validation", () => {
 
     const headersFuture = executor.buildHeaders({ rawHeaders: { "user-agent": "opencode/1.19.0" } });
     expect(headersFuture["User-Agent"]).toBe("opencode/1.19.0");
+  });
+});
+
+describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
+  function anonymousCredentials(auth) {
+    return makeCredentials({ connectionId: undefined, rawHeaders: { authorization: `Bearer ${auth}` } });
+  }
+
+  it("reuses one stable upstream session instead of minting a new one per request", () => {
+    const executor = getExecutor("opencode");
+    const body = { messages: [{ role: "user", content: "hello" }] };
+    const first = executor.prepareRequestCredentials({
+      body,
+      credentials: anonymousCredentials("stable-key-1"),
+      providerSessionId: null,
+      clientTool: "claude",
+    });
+    const second = executor.prepareRequestCredentials({
+      body,
+      credentials: anonymousCredentials("stable-key-1"),
+      providerSessionId: null,
+      clientTool: "claude",
+    });
+
+    expect(first._opencodeSession).toMatch(OPENCODE_SESSION_RE);
+    expect(second._opencodeSession).toBe(first._opencodeSession);
+  });
+
+  it("isolates stable sessions by downstream identity", () => {
+    const executor = getExecutor("opencode");
+    const body = { messages: [{ role: "user", content: "hello" }] };
+    const forKey = (auth) => executor.prepareRequestCredentials({
+      body,
+      credentials: anonymousCredentials(auth),
+      providerSessionId: null,
+      clientTool: "claude",
+    })._opencodeSession;
+
+    expect(forKey("user-A")).not.toBe(forKey("user-B"));
+    expect(forKey("user-A")).toMatch(OPENCODE_SESSION_RE);
+  });
+
+  it("exposes the stable session helper directly", () => {
+    const first = stableSessionId({ connectionId: "direct-conn" });
+    expect(stableSessionId({ connectionId: "direct-conn" })).toBe(first);
+    expect(first).toMatch(OPENCODE_SESSION_RE);
+  });
+
+  it("derives deterministic, canonical request ids per message", () => {
+    const session = stableSessionId({ connectionId: "req-conn" });
+    const body = { messages: [{ role: "user", content: "ping" }] };
+    const first = deriveRequestId(session, body);
+    expect(first).toMatch(OPENCODE_REQUEST_RE);
+    expect(deriveRequestId(session, body)).toBe(first);
+    expect(
+      deriveRequestId(session, { messages: [{ role: "user", content: "a different question" }] }),
+    ).not.toBe(first);
+  });
+
+  it("preserves a valid downstream x-opencode-request header", () => {
+    const executor = getExecutor("opencode");
+    const validReq = "msg_0ae8d9cd3001swxaFbM248jcIF";
+    const { prepared } = prepare(executor, {
+      credentials: makeCredentials({ rawHeaders: { "x-opencode-request": validReq } }),
+    });
+    expect(prepared._opencodeRequest).toBe(validReq);
+  });
+
+  it("keeps the standalone buildHeaders session stable across calls", () => {
+    const executor = getExecutor("opencode");
+    const first = executor.buildHeaders({})["x-opencode-session"];
+    const second = executor.buildHeaders({})["x-opencode-session"];
+    expect(first).toMatch(OPENCODE_SESSION_RE);
+    expect(second).toBe(first);
   });
 });
