@@ -18,6 +18,9 @@ export default {
       "x-opencode-client": "desktop",
     },
     noAuth: true,
+    quirks: {
+      forceAutoToolChoiceModels: ["muse-spark-1.3-contributor-free"],
+    },
   },
   models: [
     // Endpoint formats differ per model, so declare non-chat models explicitly.
