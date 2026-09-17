@@ -40,6 +40,22 @@ import {
   STATE,
 } from "open-sse/utils/circuitBreaker.js";
 
+// Concurrency-gate budgets (the gate itself is open-sse/services/accountSemaphore.js).
+//
+// PROBE: how long to wait for a slot while OTHER accounts might be free. Short
+// on purpose — giving up fast is how load spreads across accounts.
+// WAIT: how long to wait when this is the only account left. A request the
+// gateway throttles is not a provider failure, and long upstream calls (tens of
+// seconds are normal) must not turn into a false "all accounts unavailable".
+// Read per request so it can be tuned without a restart.
+const CAPACITY_PROBE_MS = 2000;
+const CAPACITY_WAIT_DEFAULT_MS = 60_000;
+
+function resolveCapacityWaitMs() {
+  const raw = Number(process.env.ACCOUNT_CAPACITY_WAIT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : CAPACITY_WAIT_DEFAULT_MS;
+}
+
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
@@ -242,6 +258,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
+  // Accounts skipped ONLY because the gateway's own concurrency gate was full.
+  // They are healthy — see the capacity handling below.
+  const capacityDeferred = new Set();
+  const capacityExhausted = new Set();
+  let capacityWaitPhase = false;
   let lastError = null;
   let lastStatus = null;
 
@@ -250,6 +271,21 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
+      // Capacity is NOT unavailability. Skipping a full account to try another
+      // one spreads load; but when there is no other account left, giving up
+      // reports "all accounts unavailable" for an account that is perfectly
+      // healthy and never even got called. Re-admit those and wait for a slot.
+      if (!capacityWaitPhase && capacityDeferred.size > 0) {
+        capacityWaitPhase = true;
+        for (const id of capacityDeferred) excludeConnectionIds.delete(id);
+        log.info("CHAT", `[${provider}/${model}] no other account free — waiting up to ${resolveCapacityWaitMs()}ms for a slot`);
+        continue;
+      }
+      if (capacityExhausted.size > 0) {
+        const msg = `[${provider}/${model}] Account at capacity: concurrency gate full for ${resolveCapacityWaitMs()}ms (the provider was never called)`;
+        log.warn("CHAT", msg);
+        return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, msg);
+      }
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
@@ -297,7 +333,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     }
 
-    // Acquire semaphore first so a 2s capacity timeout doesn't burn a
+    // Acquire semaphore first so a short capacity timeout doesn't burn a
     // HALF_OPEN probe (canExecute consumes halfOpenRemaining).
     const semaphoreKey = resolveAccountSemaphoreKey({
       provider,
@@ -309,11 +345,21 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       try {
         semaphoreRelease = await acquire(semaphoreKey, {
           maxConcurrency: semaphoreMax,
-          timeoutMs: 2000,
+          // Probe briefly while other accounts may be free; wait properly once
+          // this is the last one standing.
+          timeoutMs: capacityWaitPhase ? resolveCapacityWaitMs() : CAPACITY_PROBE_MS,
         });
+        capacityDeferred.delete(connectionId);
       } catch (e) {
         if (isSemaphoreCapacityError(e)) {
-          log.warn("AUTH", `Account ${credentials.connectionName} at capacity, trying fallback`);
+          if (!capacityWaitPhase) {
+            log.warn("AUTH", `Account ${credentials.connectionName} at capacity, trying fallback`);
+            capacityDeferred.add(connectionId);
+            excludeConnectionIds.add(connectionId);
+            continue;
+          }
+          log.warn("AUTH", `Account ${credentials.connectionName} still at capacity after ${resolveCapacityWaitMs()}ms`);
+          capacityExhausted.add(connectionId);
           excludeConnectionIds.add(connectionId);
           continue;
         }

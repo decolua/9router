@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
@@ -137,9 +137,17 @@ async function expireOpenBreaker(name, { resetTimeout = 40 } = {}) {
 }
 
 describe("handleChat account resilience", () => {
+  const originalCapacityWait = process.env.ACCOUNT_CAPACITY_WAIT_MS;
+  afterEach(() => {
+    if (originalCapacityWait === undefined) delete process.env.ACCOUNT_CAPACITY_WAIT_MS;
+    else process.env.ACCOUNT_CAPACITY_WAIT_MS = originalCapacityWait;
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     resetAllCircuitBreakers();
+    // Keep the last-account wait short; tests that care about it set their own.
+    process.env.ACCOUNT_CAPACITY_WAIT_MS = "300";
     mocks.getSettings.mockResolvedValue({ requireApiKey: false });
     mocks.getModelInfo.mockResolvedValue({ provider: PROVIDER, model: MODEL });
     mocks.getComboModels.mockResolvedValue(null);
@@ -406,4 +414,101 @@ describe("handleChat account resilience", () => {
     const release = await acquire(key, { maxConcurrency: 1, timeoutMs: 50 });
     release();
   });
+
+  // ── Capacity is not unavailability ────────────────────────────────────────
+  // Regression: with ONE account and the concurrency gate full, the gateway
+  // answered "All accounts unavailable" in exactly 2.0s without ever calling
+  // the provider. Observed in production: the account was healthy, upstream
+  // answered 6/6 when called directly, and requests legitimately hold a slot
+  // for ~50s (median measured), so the gate was full nearly all the time.
+  it("waits for a slot instead of declaring the only account unavailable", async () => {
+    process.env.ACCOUNT_CAPACITY_WAIT_MS = "4000";
+    mocks.getProviderCredentials.mockImplementation(async (_provider, exclude) => {
+      if (exclude instanceof Set && exclude.has(ACCOUNT_ID)) return null; // no other account
+      return credentials();
+    });
+    mocks.handleChatCore.mockResolvedValue({
+      success: true,
+      response: new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+
+    const key = resolveAccountSemaphoreKey({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const held = await acquire(key, { maxConcurrency: 1 });
+    // Freed after the short probe window but well inside the wait budget —
+    // exactly the shape of a long upstream call finishing.
+    const freeAt = setTimeout(held, 2300);
+
+    try {
+      const started = Date.now();
+      const response = await handleChat(chatRequest());
+      const elapsed = Date.now() - started;
+
+      expect(response.status).toBe(200);
+      expect(mocks.handleChatCore).toHaveBeenCalledTimes(1);
+      expect(elapsed, "must have waited past the probe window").toBeGreaterThan(2000);
+    } finally {
+      clearTimeout(freeAt);
+      held();
+    }
+  }, 15_000);
+
+  it("reports a capacity failure as capacity, not as unavailable accounts", async () => {
+    mocks.getProviderCredentials.mockImplementation(async (_provider, exclude) => {
+      if (exclude instanceof Set && exclude.has(ACCOUNT_ID)) return null;
+      return credentials();
+    });
+
+    const key = resolveAccountSemaphoreKey({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const held = await acquire(key, { maxConcurrency: 1 });
+    try {
+      const response = await handleChat(chatRequest());
+      const body = await response.json();
+      const message = body?.error?.message || "";
+
+      expect(response.status).toBe(503);
+      expect(message, "must name the real cause").toMatch(/at capacity/i);
+      expect(message).not.toMatch(/All accounts unavailable/i);
+      expect(mocks.handleChatCore, "the provider must not be blamed for a local throttle").not.toHaveBeenCalled();
+    } finally {
+      held();
+    }
+  }, 15_000);
+
+  it("still spreads load: a full account falls to the next one instead of waiting", async () => {
+    const SECOND_ID = "acc-second";
+    process.env.ACCOUNT_CAPACITY_WAIT_MS = "30000"; // must NOT be reached
+    mocks.getProviderCredentials.mockImplementation(async (_provider, exclude) => {
+      const excluded = exclude instanceof Set ? exclude : new Set();
+      if (!excluded.has(ACCOUNT_ID)) return credentials();
+      if (!excluded.has(SECOND_ID)) {
+        return credentials({ connectionId: SECOND_ID, connectionName: "Second Acc" });
+      }
+      return null;
+    });
+    mocks.handleChatCore.mockResolvedValue({
+      success: true,
+      response: new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }),
+    });
+
+    const key = resolveAccountSemaphoreKey({ provider: PROVIDER, connectionId: ACCOUNT_ID });
+    const held = await acquire(key, { maxConcurrency: 1 });
+    try {
+      const started = Date.now();
+      const response = await handleChat(chatRequest());
+      const elapsed = Date.now() - started;
+
+      expect(response.status).toBe(200);
+      expect(mocks.handleChatCore).toHaveBeenCalledTimes(1);
+      expect(mocks.handleChatCore.mock.calls[0][0].connectionId).toBe(SECOND_ID);
+      expect(elapsed, "must not sit on the long wait while another account is free").toBeLessThan(10_000);
+    } finally {
+      held();
+    }
+  }, 20_000);
 });

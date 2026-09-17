@@ -301,6 +301,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let earliestRetryAfter = null;
   let lastStatus = null;
   let lastSoftSuccess = null;
+  // One entry per member that failed, so the final error says what was actually
+  // tried. Without it, a combo whose FIRST member returned 403 answered 403 with
+  // the LAST member's message — indistinguishable from "it never tried the rest".
+  const failures = [];
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -366,14 +370,19 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
-      // Fallback to next model
+      // Fallback to next model.
+      // Status and message must describe the SAME failure: pinning the status to
+      // the first member while the message came from the last one is what made a
+      // fully-tried combo look like it died on member 1.
       lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
+      lastStatus = result.status;
+      failures.push(`${modelStr}:${result.status}`);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
+      lastStatus = 500;
+      failures.push(`${modelStr}:threw`);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
@@ -390,7 +399,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   // or have no active credentials. 503 is more accurate and retryable by clients.
   const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
   const status = allDisabled ? 503 : (lastStatus || 503);
-  const msg = lastError || "All combo models unavailable";
+  // Append the trail when more than one member was tried: the caller can see
+  // the fallback really happened, and with which status per member.
+  const trail = failures.length > 1 ? ` [tried ${failures.join("; ")}]` : "";
+  const msg = (lastError || "All combo models unavailable") + trail;
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
