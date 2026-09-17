@@ -48,9 +48,9 @@ function convertFinishReason(reason) {
  */
 // Kiro only accepts sanitized tool names; the request translator leaves the
 // reverse map on the stream state so calls come back under the client's names.
-function restoreToolName(state, name) {
+function restoreToolName(stateOrData, name) {
   const raw = name || "";
-  const map = state?.toolNameMap;
+  const map = stateOrData?.toolNameMap || stateOrData?._toolNameMap;
   return map && typeof map.get === "function" && map.has(raw) ? map.get(raw) : raw;
 }
 
@@ -254,7 +254,7 @@ export function kiroToClaudeNonStreaming(data) {
       content.push({
         type: "tool_use",
         id: tc.id || `toolu_${Date.now()}`,
-        name: restoreToolName(state, tc.function?.name),
+        name: restoreToolName(data, tc.function?.name),
         input,
       });
     }

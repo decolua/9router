@@ -79,12 +79,14 @@ describe("tool-result images reach OpenAI-format upstreams", () => {
 
 describe("Kiro tool names round-trip", () => {
   it("returns the sanitized→original map on the translated body", () => {
-    const out = translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-sonnet-4.5", screenshotTurn(), true, null, "kiro");
+    const body = screenshotTurn();
+    body.tools = [{ name: "mcp.browser.computer", description: "browser", input_schema: { type: "object", properties: {} } }];
+    const out = translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-sonnet-4.5", body, true, null, "kiro");
     expect(out._toolNameMap).toBeInstanceOf(Map);
-    expect(out._toolNameMap.get("mcp_browser_computer")).toBe("mcp__browser__computer");
+    expect(out._toolNameMap.get("mcp_browser_computer")).toBe("mcp.browser.computer");
     const wire = JSON.parse(JSON.stringify(out.conversationState));
     expect(JSON.stringify(wire)).toContain("mcp_browser_computer");
-    expect(JSON.stringify(wire)).not.toContain("mcp__browser__computer");
+    expect(JSON.stringify(wire)).not.toContain("mcp.browser.computer");
   });
 
   it("omits the map when no name changed", () => {

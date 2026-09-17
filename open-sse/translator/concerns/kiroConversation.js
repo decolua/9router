@@ -48,7 +48,6 @@ function uniqueName(rawName, index, usedNames) {
   const cleaned = String(rawName || "")
     .trim()
     .replace(TOOL_NAME_PATTERN, "_")
-    .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
   const base = trimCodePoints(cleaned || `tool_${index + 1}`, KIRO_TOOL_NAME_MAX_LENGTH);
   let candidate = base;
