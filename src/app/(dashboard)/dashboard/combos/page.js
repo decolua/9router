@@ -311,7 +311,12 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
-                <span className="text-xs text-text-muted italic">No models</span>
+                <span
+                  className="inline-flex items-center rounded bg-amber-500/10 px-1.5 py-px text-[10px] text-amber-600 dark:text-amber-400"
+                  title="This combo has no models and cannot route until you add one"
+                >
+                  No models — cannot route
+                </span>
               ) : (
                 combo.models.slice(0, 3).map((model, index) => (
                   <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
