@@ -244,7 +244,7 @@ export default function ProviderDetailPage() {
       });
       if (res.ok) await fetchDisabledModels();
     } catch (error) {
-      console.log("Error disabling model:", error);
+      console.log("Error disabling model(s):", error);
     }
   };
 
@@ -1362,7 +1362,7 @@ export default function ProviderDetailPage() {
             isFree={false}
             caps={getCaps(`${providerId}/${model.id}`)}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
-            comboNames={comboNamesFor([model.fullModel, `${providerDisplayAlias}/${model.id}`, `${providerStorageAlias}/${model.id}`, `${providerId}/${model.id}`, ...(model.alias ? [model.alias] : [])])}
+            comboNames={comboNamesFor(candidatesForModelId(model.id))}
             selectable={selectingModels}
             selected={selectedCustomModelIds.has(model.id)}
             onToggleSelect={() => toggleCustomModelSelected(model.id)}
@@ -1392,7 +1392,7 @@ export default function ProviderDetailPage() {
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
-              comboNames={comboNamesFor([`${providerDisplayAlias}/${model.id}`, `${providerStorageAlias}/${model.id}`, `${providerId}/${model.id}`, ...(existingAlias ? [existingAlias] : [])])}
+              comboNames={comboNamesFor(candidatesForModelId(model.id))}
               disabledInUse={disabledSet.has(model.id)}
               selectable={selectingModels}
               selected={selectedCustomModelIds.has(model.id)}
