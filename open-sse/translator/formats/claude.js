@@ -415,6 +415,28 @@ export function anchorClaudeCache(body) {
 // - Add thinking block for Anthropic endpoint (provider === "claude")
 // - Fix tool_use/tool_result ordering
 // - Apply cloaking (billing header + fake user ID) for OAuth tokens
+export function hoistToolResultImages(body) {
+  if (!Array.isArray(body?.messages)) return body;
+  let touched = false;
+  const messages = body.messages.map((msg) => {
+    if (msg?.role !== ROLE.USER || !Array.isArray(msg.content)) return msg;
+    const hoisted = [];
+    const content = msg.content.map((block) => {
+      if (block?.type !== CLAUDE_BLOCK.TOOL_RESULT || !Array.isArray(block.content)) return block;
+      const images = block.content.filter((c) => c?.type === CLAUDE_BLOCK.IMAGE);
+      if (!images.length) return block;
+      const rest = block.content.filter((c) => c?.type !== CLAUDE_BLOCK.IMAGE);
+      hoisted.push({ type: CLAUDE_BLOCK.TEXT, text: `[Image from tool result ${block.tool_use_id}]` }, ...images);
+      return { ...block, content: rest.length ? rest : [{ type: CLAUDE_BLOCK.TEXT, text: "(image attached below)" }] };
+    });
+    if (!hoisted.length) return msg;
+    touched = true;
+    // tool_result blocks must lead a user message; the hoisted image follows them.
+    return { ...msg, content: [...content, ...hoisted] };
+  });
+  return touched ? { ...body, messages } : body;
+}
+
 export function prepareClaudeRequest(body, provider = null, apiKey = null, connectionId = null, rawHeaders = null, sessionId = null) {
   // quirk: MiniMax's Claude-compatible endpoint rejects Anthropic's output_config (400 invalid params)
   if (PROVIDERS[provider]?.quirks?.dropOutputConfig) {
@@ -606,6 +628,14 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
       delete body.tools;
       delete body.tool_choice;
     }
+  }
+
+  // Anthropic itself reads images inside tool_result; other Anthropic-compatible
+  // endpoints (OpenCode Go, Kimi, DeepSeek, GLM, MiniMax) accept image blocks
+  // only as user content and silently drop them inside a tool result. Move a
+  // tool's screenshot out of the result and into the same user turn.
+  if (provider !== "claude" && !provider?.startsWith("anthropic-compatible")) {
+    body = hoistToolResultImages(body);
   }
 
   // Apply cloaking for OAuth tokens (billing header + fake user ID)

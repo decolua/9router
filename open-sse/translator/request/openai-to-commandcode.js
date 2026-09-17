@@ -42,16 +42,19 @@ function toNativeImageBlock(part) {
       type: OPENAI_BLOCK.IMAGE,
       image: encodeDataUri(parsed.mimeType, parsed.base64),
       mimeType: parsed.mimeType,
+      mediaType: parsed.mimeType,
     };
   }
 
   if (part.type === OPENAI_BLOCK.IMAGE || part.type === CLAUDE_BLOCK.IMAGE) {
     if (typeof part.image === "string" && part.image.startsWith("data:")) {
       const parsed = parseDataUri(part.image);
+      const mime = part.mimeType || parsed?.mimeType || "image/png";
       return {
         type: OPENAI_BLOCK.IMAGE,
         image: part.image,
-        mimeType: part.mimeType || parsed?.mimeType || "image/png",
+        mimeType: mime,
+        mediaType: mime,
       };
     }
     const source = part.source;
@@ -61,6 +64,7 @@ function toNativeImageBlock(part) {
         type: OPENAI_BLOCK.IMAGE,
         image: encodeDataUri(mime, source.data),
         mimeType: mime,
+        mediaType: mime,
       };
     }
   }
