@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -11,7 +12,9 @@ const OPENCODE_UA = "opencode/1.18.31";
 const MAX_SESSION_LENGTH = 256;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
+const REQ_FIELD = "_opencodeRequest";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
 function hasValidOpencodeVersion(ua) {
@@ -103,6 +106,140 @@ function nativeSession(headers) {
   return null;
 }
 
+// Upstream free-tier quota is accounted per session. Minting a fresh
+// x-opencode-session on every request burns through it and surfaces as
+// 429 FreeUsageLimitError with growing reset-after delays, while the real
+// CLI reuses one long-lived canonical session per conversation. Mirror
+// that: one stable canonical session per downstream identity, evicted
+// after MEMORY_CONFIG.sessionTtlMs like the other session stores.
+const stableOpencodeSessions = new Map();
+const MAX_STABLE_SESSIONS = 1000;
+const stableSessionCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of stableOpencodeSessions) {
+    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+      stableOpencodeSessions.delete(key);
+    }
+  }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (stableSessionCleanup.unref) stableSessionCleanup.unref();
+
+function identityKey(credentials) {
+  const connectionId = credentials?.connectionId || credentials?.id;
+  if (connectionId) return `opencode:conn:${String(connectionId).slice(0, 128)}`;
+  const raw = credentials?.rawHeaders || {};
+  const auth = raw.authorization || raw.Authorization || raw["x-api-key"] || raw["X-Api-Key"] || "";
+  if (auth) {
+    const digest = crypto.createHash("sha256").update(String(auth)).digest("hex").slice(0, 32);
+    return `opencode:auth:${digest}`;
+  }
+  return "opencode:default";
+}
+
+export function stableSessionId(credentials) {
+  const key = identityKey(credentials);
+  const existing = stableOpencodeSessions.get(key);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    stableOpencodeSessions.delete(key);
+    stableOpencodeSessions.set(key, existing);
+    return existing.sessionId;
+  }
+  const sessionId = generateSessionId();
+  if (stableOpencodeSessions.size >= MAX_STABLE_SESSIONS) {
+    stableOpencodeSessions.delete(stableOpencodeSessions.keys().next().value);
+  }
+  stableOpencodeSessions.set(key, { sessionId, lastUsed: Date.now() });
+  return sessionId;
+}
+
+function lastUserText(body) {
+  try {
+    if (!body || typeof body !== "object") return "";
+    const arr = Array.isArray(body.messages)
+      ? body.messages
+      : Array.isArray(body.input)
+        ? body.input
+        : null;
+    if (!arr) return typeof body.input === "string" ? body.input.slice(-600) : "";
+    for (let i = arr.length - 1; i >= 0; i--) {
+      const msg = arr[i];
+      if (!msg) continue;
+      if (msg.role && msg.role !== "user") continue;
+      const content = msg.content;
+      if (typeof content === "string" && content.trim()) return content.trim().slice(-600);
+      if (Array.isArray(content)) {
+        const text = content
+          .map((part) => (typeof part === "string" ? part : part?.text || part?.input_text || ""))
+          .join(" ")
+          .trim();
+        if (text) return text.slice(-600);
+      }
+    }
+  } catch {
+    return "";
+  }
+  return "";
+}
+
+// The real CLI sends the current user message id (stable per turn, same on
+// retries) as x-opencode-request. Derive it deterministically from the
+// session plus the last user message so retries share the id.
+export function deriveRequestId(sessionId, body) {
+  const text = lastUserText(body);
+  if (!text) return generateRequestId();
+  const digest = crypto
+    .createHash("sha256")
+    .update(`opencode-req\0${sessionId || ""}\0${text}`)
+    .digest();
+  const timeHex = digest.subarray(0, 6).toString("hex");
+  let randomPart = "";
+  for (let i = 6; i < 20; i++) {
+    randomPart += BASE62_CHARS[digest[i] % 62];
+  }
+  const id = `msg_${timeHex}${randomPart}`;
+  return OPENCODE_REQUEST_RE.test(id) ? id : generateRequestId();
+}
+
+function normalizeRequestId(value) {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized || normalized.length > MAX_SESSION_LENGTH) return null;
+  return OPENCODE_REQUEST_RE.test(normalized) ? normalized : null;
+}
+
+function bodyHasSessionHints(body) {
+  try {
+    if (!body || typeof body !== "object") return false;
+    if (typeof body.session_id === "string" && body.session_id.trim()) return true;
+    if (typeof body.conversation_id === "string" && body.conversation_id.trim()) return true;
+    if (typeof body.prompt_cache_key === "string" && body.prompt_cache_key.trim()) return true;
+    if (body.metadata && typeof body.metadata.user_id === "string" && body.metadata.user_id.trim()) return true;
+    if (body.request && body.request.sessionId != null && String(body.request.sessionId) !== "") return true;
+    const arr = Array.isArray(body.messages)
+      ? body.messages
+      : Array.isArray(body.input)
+        ? body.input
+        : null;
+    if (arr) {
+      let assistantText = "";
+      for (const msg of arr) {
+        if (msg?.role === "assistant") {
+          const content = msg.content;
+          if (typeof content === "string") assistantText += content;
+          else if (Array.isArray(content)) {
+            for (const part of content) assistantText += part?.text || part?.output || "";
+          }
+          if (assistantText.length >= 50) return true;
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Strip the thinking suffix "model(level)" so registry lookups hit the base id.
 function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
@@ -130,14 +267,37 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
     }
   }
 
-  const resolved = incoming || normalizeSession(providerSessionId) || resolveSessionId({
-    headers,
-    body,
-    connectionId: credentials?.connectionId,
-    scope: "opencode",
-  });
+  const hinted = incoming || normalizeSession(providerSessionId);
+  if (hinted) return translateSessionId(hinted, clientTool);
 
-  return resolved ? translateSessionId(resolved, clientTool) : generateSessionId();
+  if (credentials?.connectionId || bodyHasSessionHints(body)) {
+    let viaManager = null;
+    try {
+      viaManager = resolveSessionId({
+        headers,
+        body,
+        connectionId: credentials?.connectionId,
+        scope: "opencode",
+      });
+    } catch {
+      viaManager = null;
+    }
+    if (viaManager) return translateSessionId(viaManager, clientTool);
+  }
+
+  return stableSessionId(credentials);
+}
+
+function resolveOpencodeRequestId(body, credentials, sessionId) {
+  const raw = credentials?.rawHeaders || {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (key.toLowerCase() === "x-opencode-request") {
+      const normalized = normalizeRequestId(value);
+      if (normalized) return normalized;
+      break;
+    }
+  }
+  return deriveRequestId(sessionId, body);
 }
 
 function normalizeOpencodeReasoning(model, body) {
@@ -170,11 +330,12 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   prepareRequestCredentials({ body, credentials, providerSessionId, clientTool } = {}) {
     const sourceCredentials = credentials || {};
-    const resolved = resolveOpencodeSession(body, sourceCredentials, providerSessionId, clientTool);
+    const session = resolveOpencodeSession(body, sourceCredentials, providerSessionId, clientTool);
 
     return {
       ...sourceCredentials,
-      [SESSION_FIELD]: resolved,
+      [SESSION_FIELD]: session,
+      [REQ_FIELD]: resolveOpencodeRequestId(body, sourceCredentials, session),
     };
   }
 
@@ -214,6 +375,8 @@ export class OpenCodeExecutor extends BaseExecutor {
     const isOpencodeDownstream = hasValidOpencodeVersion(downstreamUa);
 
     const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
+    const downstreamReq = normalizeRequestId(lower["x-opencode-request"]);
+    const requestId = credentials?.[REQ_FIELD] || downstreamReq || generateRequestId();
 
     const headers = {
       "Content-Type": "application/json",
@@ -221,7 +384,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || "desktop",
       "x-opencode-session": session,
-      "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
+      "x-opencode-request": requestId,
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
     };
