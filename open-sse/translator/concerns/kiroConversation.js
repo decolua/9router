@@ -5,6 +5,20 @@ import {
 } from "../../config/kiroConstants.js";
 
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/**
+ * Kiro rejects user turns with empty `content`, so a turn that only carries
+ * tool results needs placeholder text. It must not read like a user
+ * instruction: with "continue", models answer the word itself ("Nothing in
+ * progress to continue") and drop the task they were in the middle of.
+ */
+export const KIRO_TOOL_RESULTS_PLACEHOLDER = "Tool results provided.";
+export const KIRO_EMPTY_USER_PLACEHOLDER = "continue";
+
+/** Placeholder content for a user turn with no text of its own. */
+export function kiroEmptyUserContent(hasToolResults) {
+  return hasToolResults ? KIRO_TOOL_RESULTS_PLACEHOLDER : KIRO_EMPTY_USER_PLACEHOLDER;
+}
 const TOOL_NAME_PATTERN = /[^a-zA-Z0-9_-]/g;
 
 function clone(value) {
@@ -174,7 +188,8 @@ function normalizeTurns(history, currentMessage, modelId) {
 
   for (const turn of turns) {
     if (turn.userInputMessage) {
-      turn.userInputMessage.content = text(turn.userInputMessage.content).trim() || "continue";
+      turn.userInputMessage.content = text(turn.userInputMessage.content).trim()
+        || kiroEmptyUserContent(turn.userInputMessage.userInputMessageContext?.toolResults?.length > 0);
       turn.userInputMessage.modelId ||= modelId;
       if (turn.userInputMessage.userInputMessageContext?.tools) {
         delete turn.userInputMessage.userInputMessageContext.tools;

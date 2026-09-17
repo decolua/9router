@@ -23,6 +23,7 @@ import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import {
   canonicalizeKiroConversation,
   normalizeKiroToolSpecs,
+  kiroEmptyUserContent,
 } from "../concerns/kiroConversation.js";
 
 /**
@@ -51,7 +52,8 @@ function convertMessages(messages, model) {
 
   const flushPending = () => {
     if (currentRole === "user") {
-      const content = pendingUserContent.join("\n\n").trim() || "continue";
+      const content = pendingUserContent.join("\n\n").trim()
+        || kiroEmptyUserContent(pendingToolResults.length > 0);
       const userMsg = {
         userInputMessage: {
           content: content,
