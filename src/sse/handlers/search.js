@@ -143,7 +143,6 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       credentials: null,
       log
     });
-    if (result.success) return result.response;
     return result.response;
   }
 
