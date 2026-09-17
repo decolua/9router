@@ -89,7 +89,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, comboNamesFor }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, onBulkDeleteCustomModels, connections, isAnthropic, comboNamesFor, candidatesForModelId }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -195,10 +195,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const handleBulkDelete = async () => {
     if (selectedIds.size === 0) return;
     const rows = allModels.filter((model) => selectedIds.has(model.id));
-    for (const model of rows) {
-      if (model.source === "custom") await onDeleteCustomModel(model.id);
-      else if (model.alias) await onDeleteAlias(model.alias);
-    }
+    await onBulkDeleteCustomModels(rows);
     setSelectedIds(new Set());
     setSelecting(false);
   };
@@ -282,7 +279,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
               testStatus={modelTestResults[id]}
               isTesting={testingModelId === id}
-              comboNames={typeof comboNamesFor === "function" ? comboNamesFor([`${providerDisplayAlias}/${id}`, `${providerStorageAlias}/${id}`, ...(alias ? [alias] : [])]) : []}
+              comboNames={comboNamesFor(candidatesForModelId(id))}
               selectable={selecting}
               selected={selectedIds.has(id)}
               onToggleSelect={() => toggleSelected(id)}
@@ -304,10 +301,12 @@ CompatibleModelsSection.propTypes = {
   onDeleteAlias: PropTypes.func.isRequired,
   onAddCustomModel: PropTypes.func.isRequired,
   onDeleteCustomModel: PropTypes.func.isRequired,
+  onBulkDeleteCustomModels: PropTypes.func.isRequired,
   connections: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
-  comboNamesFor: PropTypes.func,
+  comboNamesFor: PropTypes.func.isRequired,
+  candidatesForModelId: PropTypes.func.isRequired,
 };

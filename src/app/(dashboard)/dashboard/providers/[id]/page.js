@@ -260,7 +260,10 @@ export default function ProviderDetailPage() {
       combos: affected,
       onRemoveAndProceed: async () => {
         setComboImpact(null);
-        await pruneCombos(candidates);
+        if (!(await pruneCombos(candidates))) {
+          alert("Failed to update combos. The model was not changed.");
+          return;
+        }
         await disableModelIds([modelId]);
       },
       onKeepAndProceed: async () => {
@@ -299,7 +302,10 @@ export default function ProviderDetailPage() {
       combos: affected,
       onRemoveAndProceed: async () => {
         setComboImpact(null);
-        await pruneCombos(candidates);
+        if (!(await pruneCombos(candidates))) {
+          alert("Failed to update combos. The models were not changed.");
+          return;
+        }
         await disableModelIds(ids);
       },
       onKeepAndProceed: async () => {
@@ -713,10 +719,45 @@ export default function ProviderDetailPage() {
       combos: affected,
       onRemoveAndProceed: async () => {
         setComboImpact(null);
-        await pruneCombos(candidates);
+        if (!(await pruneCombos(candidates))) {
+          alert("Failed to update combos. The model was not changed.");
+          return;
+        }
         await deleteCustomModelNow(modelId, type, providerAliasOverride);
       },
     });
+  };
+
+  const handleBulkDeleteCompatibleModels = async (rows) => {
+    if (!rows.length) return;
+    const ids = rows.map((model) => model.id);
+    const actions = rows.map((model) => ({
+      mode: "delete",
+      run: () => model.source === "custom"
+        ? deleteCustomModelNow(model.id, "llm", providerStorageAlias)
+        : handleDeleteAlias(model.alias),
+    }));
+    const runActions = async () => {
+      for (const action of actions) await action.run();
+    };
+    const { candidates, affected } = comboImpactFor(ids);
+    if (affected.length === 0) {
+      await runActions();
+    } else {
+      setComboImpact({
+        subject: `${ids.length} models`,
+        mode: "delete",
+        combos: affected,
+        onRemoveAndProceed: async () => {
+          setComboImpact(null);
+          if (!(await pruneCombos(candidates))) {
+            alert("Failed to update combos. The models were not changed.");
+            return;
+          }
+          await runActions();
+        },
+      });
+    }
   };
 
   const handleImportListedModels = async ({ freeOnly = false } = {}) => {
@@ -801,17 +842,54 @@ export default function ProviderDetailPage() {
       builtInModels: models,
       type: "llm",
     });
-    for (const id of selectedCustomModelIds) {
+    const ids = [...selectedCustomModelIds];
+    const actions = ids.map((id) => {
       const custom = customRows.find((model) => model.id === id);
       if (custom) {
         if (custom.source === "custom") {
-          await handleDeleteCustomModel(custom.id, "llm", providerStorageAlias);
+          return {
+            mode: "delete",
+            run: () => deleteCustomModelNow(custom.id, "llm", providerStorageAlias),
+          };
         } else if (custom.alias) {
-          await handleDeleteAlias(custom.alias);
+          return {
+            mode: "delete",
+            run: () => handleDeleteAlias(custom.alias),
+          };
         }
-      } else {
-        await handleDisableModel(id);
       }
+      return {
+        mode: "disable",
+        run: () => disableModelIds([id]),
+      };
+    });
+    const runActions = async () => {
+      for (const action of actions) await action.run();
+    };
+    const { candidates, affected } = comboImpactFor(ids);
+    if (affected.length === 0) {
+      await runActions();
+    } else {
+      const mode = actions.some((action) => action.mode === "delete") ? "delete" : "disable";
+      setComboImpact({
+        subject: `${ids.length} models`,
+        mode,
+        combos: affected,
+        onRemoveAndProceed: async () => {
+          setComboImpact(null);
+          if (!(await pruneCombos(candidates))) {
+            alert("Failed to update combos. The models were not changed.");
+            return;
+          }
+          await runActions();
+        },
+        ...(mode === "disable" ? {
+          onKeepAndProceed: async () => {
+            setComboImpact(null);
+            await runActions();
+          },
+        } : {}),
+      });
     }
     setSelectedCustomModelIds(new Set());
     setSelectingModels(false);
@@ -1308,9 +1386,11 @@ export default function ProviderDetailPage() {
           onDeleteAlias={handleDeleteAlias}
           onAddCustomModel={(modelId) => handleAddCustomModel(modelId, "llm", providerStorageAlias)}
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
+          onBulkDeleteCustomModels={handleBulkDeleteCompatibleModels}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
           comboNamesFor={comboNamesFor}
+          candidatesForModelId={candidatesForModelId}
         />
       );
     }
