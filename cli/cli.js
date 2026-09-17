@@ -192,6 +192,66 @@ function getAppDataDir() {
     : path.join(os.homedir(), ".9router");
 }
 
+// Server log sink.
+//
+// The server's stdout used to be sent to /dev/null ("ignore"), which is why a
+// routing incident could not be diagnosed after the fact: every decision the
+// gateway logs (account fallback, "at capacity", combo member attempts) existed
+// only in a stream nobody read. It is NOT forwarded to our own stdout because
+// the tray/TUI owns the terminal — it goes to a capped file instead.
+const SERVER_LOG_MAX_BYTES = 8 * 1024 * 1024;
+
+function openServerLogSink() {
+  let fd = null;
+  let written = 0;
+  const file = path.join(getAppDataDir(), "server.log");
+
+  const rotate = () => {
+    try {
+      if (fs.existsSync(file) && fs.statSync(file).size > SERVER_LOG_MAX_BYTES) {
+        fs.renameSync(file, `${file}.1`);
+      }
+    } catch { /* best effort */ }
+  };
+
+  const open = () => {
+    try {
+      fs.mkdirSync(getAppDataDir(), { recursive: true });
+      rotate();
+      written = fs.existsSync(file) ? fs.statSync(file).size : 0;
+      fd = fs.openSync(file, "a");
+    } catch {
+      fd = null;
+    }
+  };
+
+  open();
+
+  return {
+    // Synchronous on purpose. A buffered stream loses whatever is still queued
+    // when the launcher calls process.exit() after the server closes — and the
+    // shutdown lines, the ones worth having, are the last ones written. The
+    // launcher is a supervisor doing nothing else, so the blocking cost is fine.
+    write(chunk) {
+      if (fd === null) return;
+      try {
+        fs.writeSync(fd, chunk);
+        written += chunk.length;
+        if (written > SERVER_LOG_MAX_BYTES) {
+          try { fs.closeSync(fd); } catch { /* best effort */ }
+          fd = null;
+          open();
+        }
+      } catch {
+        // Disk full / fd gone: stop logging, never take the launcher down.
+        try { if (fd !== null) fs.closeSync(fd); } catch { /* best effort */ }
+        fd = null;
+      }
+    },
+    path: file,
+  };
+}
+
 // Kill PID from file (best-effort, removes file after)
 function killByPidFile(pidFile) {
   try {
@@ -614,7 +674,7 @@ function startServer(updatePromise) {
     crashLog = [];
     const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
       cwd: standaloneDir,
-      stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
+      stdio: showLog ? "inherit" : ["ignore", "pipe", "pipe"],
       detached: true,
       windowsHide: true,
       env: {
@@ -623,21 +683,46 @@ function startServer(updatePromise) {
         HOSTNAME: host
       }
     });
-    if (!showLog && child.stderr) {
-      child.stderr.on("data", (data) => {
-        const lines = data.toString().split("\n").filter(Boolean);
-        crashLog.push(...lines);
-        if (crashLog.length > CRASH_LOG_LINES) crashLog = crashLog.slice(-CRASH_LOG_LINES);
-      });
+    if (!showLog) {
+      const sink = openServerLogSink();
+      if (child.stdout) child.stdout.on("data", (data) => sink.write(data));
+      if (child.stderr) {
+        child.stderr.on("data", (data) => {
+          sink.write(data);
+          const lines = data.toString().split("\n").filter(Boolean);
+          crashLog.push(...lines);
+          if (crashLog.length > CRASH_LOG_LINES) crashLog = crashLog.slice(-CRASH_LOG_LINES);
+        });
+      }
     }
     return child;
   }
 
   let server = spawnServer();
 
-  // Cleanup function - force kill server process
+  // Server shutdown budget. The server drains in-flight usage writes and
+  // checkpoints the SQLite WAL before exiting (src/shared/services/
+  // shutdownCoordinator.js: 3s drain + 2s hard watchdog). SIGKILL cannot be
+  // caught, so killing the server outright here discards exactly the writes
+  // that drain exists to save.
+  const SHUTDOWN_GRACE_MS = 8000;
+
+  // The server is spawned detached, so it leads its own process group: a signal
+  // to -pid reaches it and its children exactly once. Signalling pid AND -pid
+  // would deliver twice and read as "user asked again, hurry up".
+  function signalServer(sig) {
+    if (!server || !server.pid) return false;
+    try {
+      process.kill(-server.pid, sig);
+      return true;
+    } catch (e) {
+      try { process.kill(server.pid, sig); return true; } catch (e2) { return false; }
+    }
+  }
+
+  // Cleanup function - stop the server, gracefully unless told otherwise
   let isCleaningUp = false;
-  function cleanup() {
+  function cleanup({ graceful = true } = {}) {
     if (isCleaningUp) return;
     isCleaningUp = true;
     try {
@@ -650,13 +735,40 @@ function startServer(updatePromise) {
       killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
-      // Kill server process directly
-      if (server.pid) {
-        process.kill(server.pid, "SIGKILL");
+
+      if (!graceful) {
+        signalServer("SIGKILL");
+        return;
       }
-      // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+
+      // Ask first. server.on("close") exits this process with the server's own
+      // code once it is done; the timer below is the escalation if it wedges.
+      if (signalServer("SIGTERM")) {
+        forceKillTimer = setTimeout(() => {
+          console.error(`\n⚠️  Server did not exit in ${SHUTDOWN_GRACE_MS / 1000}s — forcing.`);
+          signalServer("SIGKILL");
+        }, SHUTDOWN_GRACE_MS);
+      }
     } catch (e) { }
+  }
+
+  let forceKillTimer = null;
+
+  // Last resort: if the server is already gone (no "close" to wait for), still exit.
+  function exitAfterServerStops(code = 0) {
+    setTimeout(() => process.exit(code), SHUTDOWN_GRACE_MS + 2000);
+  }
+
+  // Stop the server and resolve once it is actually gone — for callers that
+  // must reclaim the port or the DB right after.
+  function stopServerGracefully() {
+    return new Promise((resolve) => {
+      if (!server || !server.pid || server.exitCode !== null) return resolve();
+      const done = () => { if (forceKillTimer) clearTimeout(forceKillTimer); resolve(); };
+      server.once("close", done);
+      cleanup();
+      setTimeout(done, SHUTDOWN_GRACE_MS + 500);
+    });
   }
 
   // Suppress all errors during shutdown (systray lib throws JSON parse errors)
@@ -672,19 +784,19 @@ function startServer(updatePromise) {
     isShuttingDown = true;
     console.log("\nExiting...");
     cleanup();
-    setTimeout(() => process.exit(0), 100);
+    exitAfterServerStops();
   });
   process.on("SIGTERM", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
     cleanup();
-    setTimeout(() => process.exit(0), 100);
+    exitAfterServerStops();
   });
   process.on("SIGHUP", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
     cleanup();
-    setTimeout(() => process.exit(0), 100);
+    exitAfterServerStops();
   });
 
   // Initialize tray icon (runs alongside TUI)
@@ -697,7 +809,7 @@ function startServer(updatePromise) {
           isShuttingDown = true;
           console.log("\n👋 Shutting down from tray...");
           cleanup();
-          setTimeout(() => process.exit(0), 100);
+          exitAfterServerStops();
         },
         onOpenDashboard: () => openBrowser(url)
       });
@@ -742,7 +854,7 @@ function startServer(updatePromise) {
           console.log(`\n⬆  Update v${pkg.version} → v${latestVersion}\n`);
           console.log(`Run this after exit:\n`);
           console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
-          cleanup();
+          await stopServerGracefully();
           await killAllAppProcesses(port);
           await killProcessOnPort(port);
           setTimeout(() => process.exit(0), 200);
@@ -797,19 +909,20 @@ function startServer(updatePromise) {
           console.log(`   Server: http://${displayHost}:${port}`);
           console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
 
-          // cleanup() kills server so bgProcess can claim the port fresh
-          cleanup();
+          // The background process must claim the port right now, so this one
+          // path still kills outright instead of waiting for a drain.
+          cleanup({ graceful: false });
           process.exit(0);
         } else if (choice === "exit") {
           isShuttingDown = true;
           console.log("\nExiting...");
           cleanup();
-          setTimeout(() => process.exit(0), 100);
+          exitAfterServerStops();
         }
       }
     } catch (err) {
       console.error("Error:", err.message);
-      cleanup();
+      cleanup({ graceful: false });
       process.exit(1);
     }
   });
@@ -818,10 +931,11 @@ function startServer(updatePromise) {
     server.on("error", (err) => {
       console.error("Failed to start server:", err.message);
       if (!isShuttingDown) tryRestart();
-      else { cleanup(); process.exit(1); }
+      else { cleanup({ graceful: false }); process.exit(1); }
     });
 
     server.on("close", (code) => {
+      if (forceKillTimer) { clearTimeout(forceKillTimer); forceKillTimer = null; }
       if (isShuttingDown || code === 0) {
         process.exit(code || 0);
         return;
