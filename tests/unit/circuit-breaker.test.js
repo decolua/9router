@@ -126,3 +126,83 @@ describe("CircuitBreaker", () => {
     expect(names).toContain("glm:b");
   });
 });
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+describe("CircuitBreaker failure recency", () => {
+  beforeEach(() => {
+    resetAllCircuitBreakers();
+  });
+
+  it("counts failures in a rolling window, so old ones stop counting", async () => {
+    // Without a window an account accumulated failures for the life of the
+    // process: a handful of unrelated blips hours apart eventually tripped it.
+    const cb = getCircuitBreaker("glm:win", { failureThreshold: 3, failureWindowMs: 60 });
+    recordFailure("glm:win", { statusCode: 500 });
+    recordFailure("glm:win", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+
+    await sleep(80); // both failures age out
+    recordFailure("glm:win", { statusCode: 500 });
+    expect(cb.getStatus().state).not.toBe(STATE.OPEN);
+    expect(cb.getStatus().failureCount).toBe(1);
+  });
+
+  it("reports failureCount from the window, not from a lifetime tally", async () => {
+    const cb = getCircuitBreaker("glm:count", { failureThreshold: 10, failureWindowMs: 60 });
+    recordFailure("glm:count", { statusCode: 500 });
+    recordFailure("glm:count", { statusCode: 500 });
+    expect(cb.getStatus().failureCount).toBe(2);
+    await sleep(80);
+    expect(cb.getStatus().failureCount).toBe(0);
+  });
+
+  it("does not re-open immediately after recovery from stale timestamps", async () => {
+    // Recovery cleared the counter but left the timestamps behind, so with a
+    // window enabled the first failure after recovery re-opened the breaker.
+    const cb = getCircuitBreaker("glm:stale", {
+      failureThreshold: 5,
+      failureWindowMs: 10_000,
+      resetTimeout: 40,
+    });
+    for (let i = 0; i < 5; i++) recordFailure("glm:stale", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.OPEN);
+
+    await sleep(50);
+    expect(canExecute("glm:stale")).toBe(true); // HALF_OPEN probe
+    recordSuccess("glm:stale");
+    expect(cb.getStatus().state).toBe(STATE.CLOSED);
+
+    recordFailure("glm:stale", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.CLOSED);
+    expect(cb.getStatus().failureCount).toBe(1);
+  });
+
+  it("requires successes earned since degrading, not a lifetime total", () => {
+    // successCount was never reset on entering DEGRADED, so a busy account
+    // closed on its very next success and DEGRADED meant nothing.
+    const cb = getCircuitBreaker("glm:deg", { failureThreshold: 4, failureWindowMs: 10_000 });
+    for (let i = 0; i < 50; i++) recordSuccess("glm:deg");
+    recordFailure("glm:deg", { statusCode: 500 });
+    recordFailure("glm:deg", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+
+    recordSuccess("glm:deg");
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+    for (let i = 0; i < 3; i++) recordSuccess("glm:deg");
+    expect(cb.getStatus().state).toBe(STATE.CLOSED);
+  });
+
+  it("recomputes the degradation threshold when failureThreshold is raised", () => {
+    const cb = getCircuitBreaker("glm:thr", { failureThreshold: 5 });
+    expect(cb.degradationThreshold).toBe(3);
+    getCircuitBreaker("glm:thr", { failureThreshold: 20 });
+    expect(cb.degradationThreshold).toBe(12);
+  });
+
+  it("keeps an explicit degradationThreshold when the threshold changes", () => {
+    const cb = getCircuitBreaker("glm:thr2", { failureThreshold: 5, degradationThreshold: 2 });
+    getCircuitBreaker("glm:thr2", { failureThreshold: 20 });
+    expect(cb.degradationThreshold).toBe(2);
+  });
+});

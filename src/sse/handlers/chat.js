@@ -329,6 +329,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         getCircuitBreaker(breakerName, {
           failureThreshold: 5,
           resetTimeout: 30_000,
+          // 5 provider failures within 2 minutes means the model is actually
+          // down on this account. Counting them cumulatively meant five blips
+          // spread over a day tripped an account that was working fine.
+          failureWindowMs: 120_000,
           isFailure: (err) => shouldRecordBreakerFailure(err?.statusCode),
         });
       }

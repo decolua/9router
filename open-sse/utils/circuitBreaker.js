@@ -36,6 +36,8 @@ const DEFAULT_HALF_OPEN_REQUESTS = 1;
 const DEFAULT_DEGRADATION_RATIO = 0.6;
 const DEFAULT_MAX_BACKOFF_MULTIPLIER = 16;
 const DEFAULT_BACKOFF_ESCALATION_COUNT = 3;
+/** Failures older than this stop counting toward the threshold. */
+const DEFAULT_FAILURE_WINDOW_MS = 120_000;
 
 /** Detect local stream-lifecycle errors that must NOT count as provider failures. */
 export function isLocalStreamLifecycleError(error) {
@@ -77,13 +79,19 @@ class CircuitBreaker {
     this.openedAt = null;
     this.resetTimeoutMs = options.resetTimeout || DEFAULT_RESET_TIMEOUT_MS;
     this.failureThreshold = options.failureThreshold || DEFAULT_FAILURE_THRESHOLD;
-    this.failureWindowMs = options.failureWindowMs || 0; // 0 = cumulative (legacy behavior)
+    // Failures are counted over a rolling window. Cumulative counting (0) let a
+    // handful of unrelated blips hours apart add up until the account tripped,
+    // because nothing ever decayed them. Pass 0 only to opt back into that.
+    this.failureWindowMs = options.failureWindowMs ?? DEFAULT_FAILURE_WINDOW_MS;
     this.failureTimestamps = []; // only used when failureWindowMs > 0
     this.halfOpenRequests = options.halfOpenRequests || DEFAULT_HALF_OPEN_REQUESTS;
     this.halfOpenRemaining = 0;
     this.maxBackoffMultiplier = options.maxBackoffMultiplier || DEFAULT_MAX_BACKOFF_MULTIPLIER;
     this.backoffEscalationCount = options.backoffEscalationCount || DEFAULT_BACKOFF_ESCALATION_COUNT;
     this.openProbeCycles = 0;
+    // Remember whether the caller pinned it, so raising failureThreshold later
+    // rescales a derived threshold but never overwrites an explicit one.
+    this._degradationThresholdExplicit = options.degradationThreshold != null;
     this.degradationThreshold = options.degradationThreshold || Math.floor(this.failureThreshold * DEFAULT_DEGRADATION_RATIO);
     this.cooldownByKind = options.cooldownByKind || {};
     this.classifyError = options.classifyError || null;
@@ -103,11 +111,18 @@ class CircuitBreaker {
       this.halfOpenRemaining = 0;
     } else if (newState === STATE.HALF_OPEN) {
       this.halfOpenRemaining = this.halfOpenRequests;
+    } else if (newState === STATE.DEGRADED) {
+      // Recovery must be earned since degrading. Keeping a lifetime tally let a
+      // busy account close on its very next success, making DEGRADED a no-op.
+      this.successCount = 0;
     } else if (newState === STATE.CLOSED) {
       this.failureCount = 0;
       this.successCount = 0;
       this.openProbeCycles = 0;
       this.openedAt = null;
+      // Drop the window too. Clearing only the counter left the timestamps
+      // behind, so the first failure after recovery re-opened the breaker.
+      this.failureTimestamps = [];
     }
   }
 
@@ -214,7 +229,10 @@ class CircuitBreaker {
     return {
       name: this.name,
       state: this.state,
-      failureCount: this.failureCount,
+      // The windowed count is what the threshold is compared against, so it is
+      // what the dashboard badge must show — a lifetime tally would overstate
+      // how close an account actually is to tripping.
+      failureCount: this._countFailuresInWindow(),
       successCount: this.successCount,
       lastFailureTime: this.lastFailureTime,
       retryAfterMs: this.getRetryAfterMs(),
@@ -234,7 +252,15 @@ export function getCircuitBreaker(name, options) {
     if (options) {
       if (options.failureThreshold != null) breaker.failureThreshold = options.failureThreshold;
       if (options.resetTimeout != null) breaker.resetTimeoutMs = options.resetTimeout;
-      if (options.degradationThreshold != null) breaker.degradationThreshold = options.degradationThreshold;
+      if (options.failureWindowMs != null) breaker.failureWindowMs = options.failureWindowMs;
+      if (options.degradationThreshold != null) {
+        breaker.degradationThreshold = options.degradationThreshold;
+        breaker._degradationThresholdExplicit = true;
+      } else if (options.failureThreshold != null && !breaker._degradationThresholdExplicit) {
+        // A derived threshold has to follow its base, or raising failureThreshold
+        // leaves the breaker degrading at the old, now far lower, count.
+        breaker.degradationThreshold = Math.floor(breaker.failureThreshold * DEFAULT_DEGRADATION_RATIO);
+      }
       if (options.halfOpenRequests != null) breaker.halfOpenRequests = options.halfOpenRequests;
       if (options.cooldownByKind) breaker.cooldownByKind = options.cooldownByKind;
       if (options.classifyError) breaker.classifyError = options.classifyError;
