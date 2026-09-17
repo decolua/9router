@@ -6,7 +6,10 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 
-const OPENCODE_UA = "opencode";
+const OPENCODE_UA = "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14";
+const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
+const SESSION_FIELD = Symbol("opencodeSession");
+const ANONYMOUS_SESSION_SEED = `anonymous:${crypto.randomUUID()}`;
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
   "muse-spark-1.2-contributor-free",
@@ -17,8 +20,47 @@ function generateRequestId() {
   return `msg_${crypto.randomUUID().replace(/-/g, "")}`;
 }
 
-function generateSessionId() {
-  return `ses_${crypto.randomUUID().replace(/-/g, "")}`;
+function isGateCompatibleUa(value) {
+  if (typeof value !== "string") return false;
+  const match = value.match(/(?:^|\s)opencode\/(\d+)\.(\d+)(?:\.\d+)?(?=\s|$)/i);
+  if (!match) return false;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  return major > 1 || (major === 1 && minor >= 17);
+}
+
+function headerValue(headers, name) {
+  if (!headers || typeof headers !== "object") return null;
+  const key = Object.keys(headers).find((candidate) => candidate.toLowerCase() === name);
+  const value = key ? headers[key] : null;
+  return typeof value === "string" ? value : null;
+}
+
+function isNativeSession(value) {
+  return typeof value === "string" && OPENCODE_SESSION_RE.test(value);
+}
+
+function toGateSession(value) {
+  if (isNativeSession(value)) return value;
+  const seed = typeof value === "string" && value.trim() ? value.trim() : ANONYMOUS_SESSION_SEED;
+  const digest = crypto.createHash("sha256").update(`opencode\0${seed}`).digest("hex");
+  return `ses_${digest.slice(0, 26)}`;
+}
+
+function resolveOpencodeSession(body, credentials) {
+  const headers = credentials?.rawHeaders || {};
+  const supplied = headerValue(headers, "x-opencode-session");
+  if (isNativeSession(supplied)) return supplied;
+  // Preserve a non-native downstream identity deterministically across turns.
+  if (supplied) return toGateSession(supplied);
+
+  const resolved = resolveSessionId({
+    headers,
+    body,
+    connectionId: credentials?.connectionId || ANONYMOUS_SESSION_SEED,
+    scope: "opencode",
+  });
+  return toGateSession(resolved);
 }
 
 // Strip the thinking suffix "model(level)" so registry lookups hit the base id.
@@ -31,16 +73,6 @@ function isResponsesModel(model) {
   return RESPONSES_MODELS.has(base) || isMuseSparkModel(base);
 }
 
-function resolveOpencodeSession(body, credentials) {
-  const headers = credentials?.rawHeaders || {};
-  return resolveSessionId({
-    headers,
-    body,
-    connectionId: credentials?.connectionId,
-    scope: "opencode",
-    generate: generateSessionId,
-  });
-}
 
 function normalizeOpencodeReasoning(model, body) {
   const current = body.reasoning;
@@ -68,11 +100,23 @@ function normalizeOpencodeReasoning(model, body) {
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
-    this._currentSessionId = null;
+  }
+
+  prepareRequestCredentials({ body, credentials } = {}) {
+    const sourceCredentials = credentials || {};
+    return {
+      ...sourceCredentials,
+      [SESSION_FIELD]: resolveOpencodeSession(body, sourceCredentials),
+    };
+  }
+
+  async execute(args) {
+    const credentials = this.prepareRequestCredentials(args);
+    return super.execute({ ...args, credentials });
   }
 
   transformRequest(model, body, stream, credentials) {
-    this._currentSessionId = resolveOpencodeSession(body, credentials);
+    const session = credentials?.[SESSION_FIELD] || resolveOpencodeSession(body, credentials);
     if (isResponsesModel(model)) {
       // Responses API names the output cap max_output_tokens and takes thinking
       // as reasoning:{effort,summary} — normalize the Chat fields at this boundary.
@@ -83,6 +127,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       delete body.max_tokens;
       delete body.max_completion_tokens;
       normalizeOpencodeReasoning(model, body);
+      if (body.prompt_cache_key == null || body.prompt_cache_key === "") body.prompt_cache_key = session;
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
@@ -100,14 +145,13 @@ export class OpenCodeExecutor extends BaseExecutor {
     for (const [k, v] of Object.entries(raw)) lower[k.toLowerCase()] = v;
 
     const downstreamUa = lower["user-agent"] || "";
-    const isOpencodeDownstream = downstreamUa.toLowerCase().includes("opencode");
 
     return {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
-      "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
+      "User-Agent": isGateCompatibleUa(downstreamUa) ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || "desktop",
-      "x-opencode-session": lower["x-opencode-session"] || this._currentSessionId || generateSessionId(),
+      "x-opencode-session": credentials?.[SESSION_FIELD] || toGateSession(lower["x-opencode-session"]),
       "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
