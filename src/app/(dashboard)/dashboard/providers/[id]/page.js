@@ -25,6 +25,13 @@ import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
 import BulkImportCodexModal from "./BulkImportCodexModal";
 import BulkImportGrokCliModal from "./BulkImportGrokCliModal";
+import {
+  modelCandidates,
+  buildComboIndex,
+  comboNamesForCandidates,
+  splitModelsByComboUsage,
+} from "@/shared/utils/comboModelLinks.js";
+import ComboImpactModal from "./ComboImpactModal";
 
 const ONE_BY_ONE_DELAY_MS = 1000;
 
@@ -78,6 +85,7 @@ export default function ProviderDetailPage() {
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [combos, setCombos] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
+  const [comboImpact, setComboImpact] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
   const [oneByOneRunning, setOneByOneRunning] = useState(false);
   const [oneByOneStopping, setOneByOneStopping] = useState(false);
@@ -227,17 +235,39 @@ export default function ProviderDetailPage() {
     }
   }, [providerStorageAlias]);
 
-  const handleDisableModel = async (modelId) => {
+  const disableModelIds = async (ids) => {
     try {
       const res = await fetch("/api/models/disabled", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerAlias: providerStorageAlias, ids: [modelId] }),
+        body: JSON.stringify({ providerAlias: providerStorageAlias, ids }),
       });
       if (res.ok) await fetchDisabledModels();
     } catch (error) {
       console.log("Error disabling model:", error);
     }
+  };
+
+  const handleDisableModel = async (modelId) => {
+    const { candidates, affected } = comboImpactFor([modelId]);
+    if (affected.length === 0) {
+      await disableModelIds([modelId]);
+      return;
+    }
+    setComboImpact({
+      subject: modelId,
+      mode: "disable",
+      combos: affected,
+      onRemoveAndProceed: async () => {
+        setComboImpact(null);
+        await pruneCombos(candidates);
+        await disableModelIds([modelId]);
+      },
+      onKeepAndProceed: async () => {
+        setComboImpact(null);
+        await disableModelIds([modelId]);
+      },
+    });
   };
 
   const handleEnableModel = async (modelId) => {
@@ -251,22 +281,31 @@ export default function ProviderDetailPage() {
 
   const handleDisableAll = async (ids) => {
     if (!ids.length) return;
-    setConfirmState({
-      title: "Disable All Models",
-      message: `Disable all ${ids.length} model(s)?`,
-      onConfirm: async () => {
-        setConfirmState(null);
-        try {
-          const res = await fetch("/api/models/disabled", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ providerAlias: providerStorageAlias, ids }),
-          });
-          if (res.ok) await fetchDisabledModels();
-        } catch (error) {
-          console.log("Error disabling all models:", error);
-        }
-      }
+    const { candidates, affected } = comboImpactFor(ids);
+    if (affected.length === 0) {
+      setConfirmState({
+        title: "Disable All Models",
+        message: `Disable all ${ids.length} model(s)?`,
+        onConfirm: async () => {
+          setConfirmState(null);
+          await disableModelIds(ids);
+        },
+      });
+      return;
+    }
+    setComboImpact({
+      subject: `${ids.length} models`,
+      mode: "disable",
+      combos: affected,
+      onRemoveAndProceed: async () => {
+        setComboImpact(null);
+        await pruneCombos(candidates);
+        await disableModelIds(ids);
+      },
+      onKeepAndProceed: async () => {
+        setComboImpact(null);
+        await disableModelIds(ids);
+      },
     });
   };
 
@@ -287,18 +326,57 @@ export default function ProviderDetailPage() {
       if (res.ok) setCombos(data.combos || []);
     } catch {}
   }, []);
-  const comboNamesByValue = (() => {
-    const m = new Map();
-    for (const c of combos) for (const v of (c.models || [])) {
-      if (!m.has(v)) m.set(v, []);
-      m.get(v).push(c.name);
+  const comboIndex = buildComboIndex(combos);
+  const comboNamesFor = (candidates) => comboNamesForCandidates(comboIndex, candidates);
+
+  // A combo can store a model under its user alias, so the alias has to be part
+  // of the candidate set. Resolving it inside candidatesForModelId rather than
+  // asking each call site to pass it is what keeps the dialog and the prune
+  // from disagreeing.
+  const aliasForModelId = (modelId) => {
+    const full = `${providerStorageAlias}/${modelId}`;
+    const legacy = `${providerId}/${modelId}`;
+    return Object.entries(modelAliases).find(([, m]) => m === full || m === legacy)?.[0] || null;
+  };
+
+  const candidatesForModelId = (modelId) =>
+    modelCandidates({
+      modelId,
+      providerId,
+      providerStorageAlias,
+      providerDisplayAlias,
+      alias: aliasForModelId(modelId),
+      fullModel: `${providerStorageAlias}/${modelId}`,
+    });
+
+  // Combos affected by acting on these model ids, with the count each would be
+  // left with. The count is what the dialog uses to warn about emptying one.
+  const comboImpactFor = (modelIds) => {
+    const candidates = modelIds.flatMap((id) => candidatesForModelId(id));
+    const candidateSet = new Set(candidates);
+    const affected = [];
+    for (const combo of combos) {
+      const remaining = (combo.models || []).filter((m) => !candidateSet.has(m));
+      if (remaining.length === (combo.models || []).length) continue;
+      affected.push({ name: combo.name, remainingCount: remaining.length });
     }
-    return m;
-  })();
-  const comboNamesFor = (candidates) => {
-    const seen = new Set(), out = [];
-    for (const v of candidates) for (const n of (comboNamesByValue.get(v) || [])) if (!seen.has(n)) { seen.add(n); out.push(n); }
-    return out;
+    return { candidates, affected };
+  };
+
+  const pruneCombos = async (candidates) => {
+    try {
+      const res = await fetch("/api/combos/remove-model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ candidates }),
+      });
+      if (!res.ok) return false;
+      await fetchCombos();
+      return true;
+    } catch (error) {
+      console.log("Error removing model from combos:", error);
+      return false;
+    }
   };
   // Define callbacks BEFORE the useEffect that uses them
   const fetchAliases = useCallback(async () => {
@@ -609,7 +687,7 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const handleDeleteCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias) => {
+  const deleteCustomModelNow = async (modelId, type, providerAliasOverride) => {
     try {
       const params = new URLSearchParams({ providerAlias: providerAliasOverride, id: modelId, type });
       const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
@@ -620,6 +698,25 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error deleting custom model:", error);
     }
+  };
+
+  const handleDeleteCustomModel = async (modelId, type = "llm", providerAliasOverride = providerStorageAlias) => {
+    const { candidates, affected } = comboImpactFor([modelId]);
+    if (affected.length === 0) {
+      await deleteCustomModelNow(modelId, type, providerAliasOverride);
+      return;
+    }
+    // No "keep" exit: the model is about to stop existing.
+    setComboImpact({
+      subject: modelId,
+      mode: "delete",
+      combos: affected,
+      onRemoveAndProceed: async () => {
+        setComboImpact(null);
+        await pruneCombos(candidates);
+        await deleteCustomModelNow(modelId, type, providerAliasOverride);
+      },
+    });
   };
 
   const handleImportListedModels = async ({ freeOnly = false } = {}) => {
@@ -1224,8 +1321,13 @@ export default function ProviderDetailPage() {
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
     ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
     const disabledSet = new Set(disabledModelIds);
-    const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
+    // A model a combo uses stays in the main list even while disabled — hiding
+    // it would leave the combo pointing at something absent from every list.
+    const { visible: displayModels, hidden: disabledDisplayModels } = splitModelsByComboUsage(
+      allModels,
+      disabledSet,
+      (m) => comboNamesFor(candidatesForModelId(m.id)),
+    );
     const customModelRows = getProviderCustomModelRows({
       customModels,
       modelAliases,
@@ -1291,6 +1393,7 @@ export default function ProviderDetailPage() {
               caps={getCaps(`${providerId}/${model.id}`)}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
               comboNames={comboNamesFor([`${providerDisplayAlias}/${model.id}`, `${providerStorageAlias}/${model.id}`, `${providerId}/${model.id}`, ...(existingAlias ? [existingAlias] : [])])}
+              disabledInUse={disabledSet.has(model.id)}
               selectable={selectingModels}
               selected={selectedCustomModelIds.has(model.id)}
               onToggleSelect={() => toggleCustomModelSelected(model.id)}
@@ -2025,6 +2128,16 @@ export default function ProviderDetailPage() {
         confirmText="I Understand, Continue"
         cancelText="Cancel"
         variant="danger"
+      />
+
+      <ComboImpactModal
+        isOpen={!!comboImpact}
+        subject={comboImpact?.subject}
+        combos={comboImpact?.combos || []}
+        mode={comboImpact?.mode || "disable"}
+        onRemoveAndProceed={comboImpact?.onRemoveAndProceed}
+        onKeepAndProceed={comboImpact?.onKeepAndProceed}
+        onCancel={() => setComboImpact(null)}
       />
 
       {/* Confirm Modal */}

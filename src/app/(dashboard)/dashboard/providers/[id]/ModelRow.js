@@ -1,7 +1,7 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
 
-export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, comboNames = [], selectable = false, selected = false, onToggleSelect }) {
+export default function ModelRow({ model, fullModel, alias, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting, onDisable, caps, thinkingSuffix, comboNames = [], disabledInUse = false, selectable = false, selected = false, onToggleSelect }) {
   const displayModel = thinkingSuffix ? `${fullModel}(${thinkingSuffix})` : fullModel;
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -41,6 +41,11 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               <span className="inline-flex max-w-full items-center gap-0.5 rounded bg-primary/10 px-1 py-px font-mono text-[9px] text-primary" title={`Used in: ${comboNames.join(", ")}`}>
                 <span className="material-symbols-outlined text-[10px]">layers</span>
                 <span className="truncate">{comboNames.slice(0, 2).join(", ")}{comboNames.length > 2 ? ` +${comboNames.length - 2}` : ""}</span>
+              </span>
+            )}
+            {disabledInUse && (
+              <span className="inline-flex items-center rounded bg-black/10 px-1 py-px font-mono text-[9px] text-text-muted dark:bg-white/10">
+                disabled
               </span>
             )}
             <CapacityBadges caps={caps} colorOverride="text-text-muted/70" size={12} />
@@ -115,6 +120,7 @@ ModelRow.propTypes = {
   caps: PropTypes.object,
   thinkingSuffix: PropTypes.string,
   comboNames: PropTypes.arrayOf(PropTypes.string),
+  disabledInUse: PropTypes.bool,
   selectable: PropTypes.bool,
   selected: PropTypes.bool,
   onToggleSelect: PropTypes.func,
