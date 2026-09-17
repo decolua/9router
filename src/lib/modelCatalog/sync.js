@@ -6,7 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { CATALOG_FILE, CATALOG_RAW_FILE, invalidateCatalog, installCatalogSource } from "open-sse/providers/catalogOverride.js";
+import { CATALOG_FILE, CATALOG_RAW_FILE, CATALOG_VERSION, invalidateCatalog, installCatalogSource } from "open-sse/providers/catalogOverride.js";
 
 const CATALOG_URL = "https://models.dev/api.json";
 const FETCH_TIMEOUT_MS = 60000;
@@ -16,16 +16,14 @@ const STARTUP_DELAY_MS = 60 * 1000;   // let the server boot and serve first req
 const RETRY_DELAY_MS = 30 * 60 * 1000;
 
 const MODALITY_BY_INPUT = { image: "vision", pdf: "pdf", audio: "audioInput", video: "videoInput" };
-// Gateways disagree about the same model, so a modality needs a majority of
-// them to declare it — one reseller mislabelling a text model must not win.
-const MIN_SHARE = 0.5;
 // Ignore limit differences below this: gateways round 200000 vs 202752.
 const LIMIT_TOLERANCE = 0.1;
 
-// 9router provider id -> models.dev provider id, for context/maxOutput only.
-// Providers absent here keep whatever the local pattern table resolves; names
-// that already match are resolved automatically.
-const PROVIDER_ALIASES = {
+// 9router provider id -> models.dev provider id: the same gateway under another
+// name. Both halves of the catalog are stored against the local id, so this runs
+// while building rather than on every lookup. Providers absent here keep whatever
+// the local pattern table resolves; names that already match need no entry.
+export const PROVIDER_ALIASES = {
   "glm": "zai",
   "glm-cn": "zhipuai",
   "claude": "anthropic",
@@ -40,7 +38,7 @@ const PROVIDER_ALIASES = {
   "cloudflare-ai": "cloudflare-workers-ai",
 };
 
-let state = { running: false, lastSync: null, lastError: null, lastResult: null, etag: null };
+let state = { running: false, lastSync: null, lastError: null, lastResult: null, etag: null, fileVersion: null };
 let timer = null;
 
 export function getSyncState() {
@@ -78,40 +76,57 @@ function slim(catalog) {
   return out;
 }
 
-function build(catalog, entries) {
-  // Index once: per provider for limits, and tallied across all of them for
-  // modalities.
-  const byProvider = {};
-  const tally = {};
-  for (const [providerId, provider] of Object.entries(catalog)) {
-    const models = {};
-    const counted = new Set();
-    for (const [modelId, model] of Object.entries(provider?.models || {})) {
-      const id = baseId(modelId);
-      models[id] = model;
-      // One vote per provider: several ids can normalize to the same model
-      // (claude-opus-4-thinking:1024, :8192, :32768 …) and must not stack.
-      if (counted.has(id)) continue;
-      counted.add(id);
-      const counts = tally[id] || (tally[id] = { total: 0 });
-      counts.total++;
-      for (const input of model?.modalities?.input || []) {
-        const key = MODALITY_BY_INPUT[input];
-        if (key) counts[key] = (counts[key] || 0) + 1;
-      }
-    }
-    byProvider[providerId] = models;
+export function build(catalog, entries) {
+  // Upstream provider id -> the local ids it belongs to, taken from the registry
+  // snapshot so a gateway listed upstream under another name is still filed
+  // under the name requests arrive with. One upstream name can back more than one
+  // local id (glm-cn and zhipu are both zhipuai) and each has to resolve; the
+  // snapshot only covers the built-in registry, so an upstream provider it does
+  // not mention keeps its own name.
+  const localIds = new Map();
+  for (const { provider } of entries) {
+    const upstreamId = PROVIDER_ALIASES[provider] || provider;
+    let locals = localIds.get(upstreamId);
+    if (!locals) localIds.set(upstreamId, (locals = []));
+    if (!locals.includes(provider)) locals.push(provider);
   }
 
-  // Modalities belong to the model — every gateway serving it has the same
-  // weights — so they are keyed by model id and shared across providers.
+  // Index once: the raw upstream record per provider+model for limits, and the
+  // modalities each gateway declares for it.
+  const byProvider = {};
+  // Modalities are recorded per gateway upstream and gateways disagree about the
+  // same weights — some do not proxy images at all — so the key is provider +
+  // model. Keying by model id alone let short ids collide across vendors: "auto",
+  // "free" and "efficient" are router modes in one catalog and model names in
+  // another, so a router mode inherited a stranger's vision.
   const models = {};
-  for (const [id, counts] of Object.entries(tally)) {
-    const declared = {};
-    for (const key of Object.values(MODALITY_BY_INPUT)) {
-      if ((counts[key] || 0) / counts.total >= MIN_SHARE) declared[key] = true;
+  for (const [providerId, provider] of Object.entries(catalog)) {
+    const locals = localIds.get(providerId) || [providerId];
+    const modelsById = {};
+    const seen = new Set();
+    for (const [modelId, model] of Object.entries(provider?.models || {})) {
+      const id = baseId(modelId);
+      modelsById[id] = model;
+      // One entry per provider+model: several upstream ids can normalize to the
+      // same model (claude-opus-4-thinking:1024, :8192, :32768 …) and must not
+      // stack their modalities.
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const declared = {};
+      for (const input of model?.modalities?.input || []) {
+        const key = MODALITY_BY_INPUT[input];
+        if (key) declared[key] = true;
+      }
+      if (Object.keys(declared).length) {
+        // Filed under every local id requests arrive with, and under the upstream
+        // id too: a custom provider node can carry the upstream name without
+        // appearing in the registry snapshot, and nothing else would resolve for
+        // it. The reader takes whichever key it is handed.
+        for (const local of locals) models[`${local}:${id}`] = declared;
+        if (!locals.includes(providerId)) models[`${providerId}:${id}`] = declared;
+      }
     }
-    if (Object.keys(declared).length) models[id] = declared;
+    byProvider[providerId] = modelsById;
   }
 
   // Limits belong to the gateway — each truncates differently — so only the
@@ -172,7 +187,9 @@ export async function syncModelCatalog() {
   state.running = true;
   try {
     const headers = { accept: "application/json" };
-    if (state.etag) headers["if-none-match"] = state.etag;
+    // A file written by an older schema has to be rebuilt even when upstream is
+    // unchanged, so only ask upstream for a 304 when the file is current.
+    if (state.etag && state.fileVersion === CATALOG_VERSION) headers["if-none-match"] = state.etag;
     const response = await fetch(CATALOG_URL, { headers, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
 
     let result;
@@ -187,12 +204,13 @@ export async function syncModelCatalog() {
       const etag = response.headers.get("etag") || null;
       const entries = await collectEntries();
       const { models, providers } = build(catalog, entries);
-      const serialized = JSON.stringify({ v: 1, etag, syncedAt: Date.now(), models, providers });
+      const serialized = JSON.stringify({ v: CATALOG_VERSION, etag, syncedAt: Date.now(), models, providers });
 
       writeAtomic(CATALOG_FILE, serialized);
       writeAtomic(CATALOG_RAW_FILE, JSON.stringify(slim(catalog)));
 
       state.etag = etag;
+      state.fileVersion = CATALOG_VERSION;
       invalidateCatalog();
       result = {
         status: "updated",
@@ -223,10 +241,13 @@ export async function syncModelCatalog() {
 // of re-downloading 4.3MB to be told nothing changed.
 function restoreEtag() {
   try {
-    state.etag = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8")).etag || null;
+    const parsed = JSON.parse(fs.readFileSync(CATALOG_FILE, "utf8"));
+    state.etag = parsed.etag || null;
+    state.fileVersion = parsed.v || 1;
     state.lastSync = fs.statSync(CATALOG_FILE).mtimeMs;
   } catch {
     state.etag = null;
+    state.fileVersion = null;
   }
 }
 

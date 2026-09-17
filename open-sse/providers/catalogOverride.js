@@ -13,6 +13,11 @@ export const CATALOG_FILE = path.join(DATA_DIR, "model-catalog.json");
 // Trimmed upstream catalog, read by the add-models skill (not by the router).
 export const CATALOG_RAW_FILE = path.join(DATA_DIR, "model-catalog-raw.json");
 
+// Schema of the file this module reads. The writer stamps it; a file carrying an
+// older value predates provider-scoped modality keys, and its flat keys are not
+// looked up here, so the sync rebuilds it instead of asking upstream for a 304.
+export const CATALOG_VERSION = 2;
+
 const EMPTY = { models: {}, providers: {} };
 let cache = EMPTY;
 let cachedMtime = -1;
@@ -45,14 +50,19 @@ function load() {
   return cache;
 }
 
-// Modality is a property of the model itself — any gateway serving it inherits
-// the same image/video/pdf support, so this is keyed by model id alone.
-export function getCatalogModalities(model) {
-  return load().models[baseId(model)] || null;
+// Modalities are recorded per gateway upstream, and gateways disagree about the
+// same weights — some do not proxy images at all — so the key is provider +
+// model, in the local provider id space, exactly like the limits below. Keying
+// by model id alone made short ids collide across vendors: "auto", "free" and
+// "efficient" are router modes in one catalog and model names in another, and a
+// request to the router mode inherited a stranger's vision.
+export function getCatalogModalities(provider, model) {
+  if (!provider) return null;
+  return load().models[`${provider}:${baseId(model)}`] || null;
 }
 
-// Context and output limits are a property of the gateway, not the model: each
-// one truncates differently, so these stay keyed by provider + model.
+// Context and output limits are a property of the gateway too: each one
+// truncates differently, so these stay keyed by provider + model.
 export function getCatalogLimits(provider, model) {
   const byProvider = provider && load().providers[provider];
   if (!byProvider) return null;
