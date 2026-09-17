@@ -104,3 +104,35 @@ describe("removeModelFromCombos", () => {
     expect((await db.getComboByName("fast")).models).toEqual(["or/gpt-5"]);
   });
 });
+
+describe("POST /api/combos/remove-model", () => {
+  let POST;
+
+  beforeAll(async () => {
+    ({ POST } = await import("@/app/api/combos/remove-model/route.js"));
+  });
+
+  const call = (body) => POST({ json: async () => body });
+
+  it("prunes and returns the summary", async () => {
+    await db.createCombo({ name: "fast", models: ["or/gpt-5", "bai/m1"] });
+    const res = await call({ candidates: ["or/gpt-5"] });
+    expect(res.status).toBe(200);
+    const payload = await res.json();
+    expect(payload.combos).toHaveLength(1);
+    expect(payload.combos[0]).toMatchObject({ name: "fast", remainingCount: 1 });
+    expect((await db.getComboByName("fast")).models).toEqual(["bai/m1"]);
+  });
+
+  it("rejects a body with no usable candidate", async () => {
+    for (const body of [{}, { candidates: [] }, { candidates: "or/gpt-5" }, { candidates: [null, ""] }]) {
+      const res = await call(body);
+      expect(res.status).toBe(400);
+    }
+  });
+
+  it("answers 500 on a malformed body instead of throwing", async () => {
+    const res = await POST({ json: async () => { throw new Error("bad json"); } });
+    expect(res.status).toBe(500);
+  });
+});
