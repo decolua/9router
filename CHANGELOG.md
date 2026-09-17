@@ -10,7 +10,7 @@
 - **Search**: drop a redundant branch that returned the same value twice.
 
 ## Chores
-- **Versioning**: the fork now carries an explicit `-enhanced` suffix. `cutover-guard` already compared numeric bases, so this still reads as an upgrade over 0.5.75 and refuses a plain upstream tree packed over it. The CLI's own comparison was `Number("76-enhanced")` — NaN, so every comparison answered "same version" by accident; it now strips the suffix explicitly and a fork build is never offered the upstream package, which would replace the fork wholesale.
+- **Versioning**: the fork now carries an explicit `-enhanced` suffix. `cutover-guard` already compared numeric bases, so this still reads as an upgrade over 0.5.75 and refuses a plain upstream tree packed over it. The CLI's own comparison was `Number("76-enhanced")` — NaN, so every comparison answered "same version" by accident, which would have silenced the update notice for good; it now strips the suffix explicitly, so a genuinely newer upstream release still shows up. The update screen adds one line for fork builds: the command it prints installs the official package and replaces the fork.
 
 ## Tests
 - Repaired suites asserting contracts the code no longer has (Kiro top-level `systemPrompt`, Windsurf endpoint, `got-scraping` transport, DNS `lookup` with `all: true`, Antigravity 429 attempts, HTTP/2 Cursor catalog, module-relative paths in the security audit) and converted four `node:test` files to Vitest so they are collected at all.

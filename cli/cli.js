@@ -190,10 +190,10 @@ function compareVersions(a, b) {
   return 0;
 }
 
-// A fork build must not be offered the upstream package: accepting that update
-// runs `npm install -g 9router@latest`, which replaces this fork — and every
-// enhancement in it — with the official release. Upstream is merged into the
-// fork deliberately, not through this prompt.
+// This build carries a fork suffix (e.g. "0.5.76-enhanced"). The update notice
+// still shows — knowing upstream released something is useful — but the command
+// it prints installs the OFFICIAL package, which replaces the fork, so the
+// screen says so instead of letting it look like a routine upgrade.
 function isForkBuild(version) {
   return String(version).includes("-");
 }
@@ -561,7 +561,7 @@ function checkForUpdate() {
       res.on("end", () => {
         try {
           const latest = JSON.parse(data);
-          if (latest.version && !isForkBuild(pkg.version) && compareVersions(latest.version, pkg.version) > 0) {
+          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
             done(latest.version);
           } else {
             done(null);
@@ -865,6 +865,10 @@ function startServer(updatePromise) {
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
           console.log(`\n⬆  Update v${pkg.version} → v${latestVersion}\n`);
+          if (isForkBuild(pkg.version)) {
+            console.log(`\x1b[33m⚠ This is the ${pkg.version} fork. The command below installs the OFFICIAL`);
+            console.log(`  package and replaces it — merge upstream into the fork instead.\x1b[0m\n`);
+          }
           console.log(`Run this after exit:\n`);
           console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
           await stopServerGracefully();
