@@ -22,6 +22,7 @@
 - **Providers**: clear stale connection health state (`modelLock_*`, `backoffLevel`, `rateLimitedUntil`, `errorCode`) when a connection is re-validated (#3810, #3830); remove the duplicate `qwen` provider that shadowed `alims-intl`
 - **Video / Vertex**: reject job ids and model ids that would escape the request URL path (SSRF)
 - **Usage**: parse the Fable weekly limit from `limits[]` instead of fabricating a row (#3847)
+- **OpenCode**: stop the free Zen tier gate rate-limiting traffic as unidentified — emit a conversation-stable `ses_`-shaped `x-opencode-session` and a known-good `opencode/1.18.31` User-Agent instead of bare `opencode`, preserving compatible downstream identities
 - **Auth**: set a 24h `maxAge` on the dashboard session cookie
 
 # v0.5.69 (2026-09-05)
