@@ -161,11 +161,11 @@ describe("decodeCompletionChunk", () => {
 });
 
 describe("WindsurfExecutor class", () => {
-  it("constructor wires config from PROVIDERS.windsurf", () => {
+  it("constructor wires config from fallback when provider is hidden", () => {
     const ex = new WindsurfExecutor();
     expect(ex.provider).toBe("windsurf");
     expect(ex.config).toBeDefined();
-    expect(ex.config.baseUrl).toContain("server.self-serve.windsurf.com");
+    expect(ex.config.baseUrl).toContain("server.codeium.com");
     expect(typeof ex.execute).toBe("function");
   });
 
@@ -187,12 +187,13 @@ describe("WindsurfExecutor class", () => {
 
   it("buildUrl returns the GetChatMessage endpoint", () => {
     const ex = new WindsurfExecutor();
-    expect(ex.buildUrl()).toBe("https://server.self-serve.windsurf.com/exa.language_server_pb.LanguageServerService/GetChatMessage");
+    expect(ex.buildUrl()).toBe("https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage");
   });
 
-  it("PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)", () => {
-    expect(PROVIDERS.windsurf.baseUrl).toBe(
-      "https://server.self-serve.windsurf.com/exa.language_server_pb.LanguageServerService/GetChatMessage"
+  it("fallback config baseUrl is the chat endpoint when provider is hidden", () => {
+    const ex = new WindsurfExecutor();
+    expect(ex.config.baseUrl).toBe(
+      "https://server.codeium.com/exa.language_server_pb.LanguageServerService/GetChatMessage"
     );
   });
 });

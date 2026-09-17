@@ -1,24 +1,53 @@
-tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns descriptive error if macOS db file exists but cannot be opened
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns login-prompt error when tokens are missing even after fallback
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns not-found when no macOS cursor db paths are accessible
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
-tests/unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
-tests/unit/rtk.test.js :: RTK flag default off, toggle works
-tests/unit/rtk.test.js :: compressMessages (disabled) returns null when disabled
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses Claude array-form tool_result text parts
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses Claude string-form tool_result
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses OpenAI tool message (string content)
-tests/unit/rtk.test.js :: compressMessages (enabled) handles mix of messages without crashing
-tests/unit/rtk.test.js :: compressMessages (enabled) never produces empty content (R14 guard)
-tests/unit/rtk.test.js :: compressMessages (enabled) skips below MIN_COMPRESS_SIZE (<500 bytes)
-tests/unit/rtk.test.js :: compressMessages (enabled) skips is_error tool_result
-tests/unit/rtk.test.js :: compressMessages (enabled) skips when body has no messages
-tests/unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
-tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
-tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
-tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
+# Accepted failures. A failure NOT listed here is a regression.
+#
+# Regenerated 2026-09-16 from the offline run (tests/translator/real/** and
+# **/*.live.test.js excluded). The 24 previous entries were all stale: 11 now
+# pass and 13 no longer exist under those names (oauth-cursor-auto-import,
+# translator-request-normalization, claude-header-forwarding, rtk) after the
+# obsolete-contract fixes.
+#
+# Everything below is tests/unit/cursor-agent-proto.test.js: orphan tests that
+# import codecs which do not exist (encodeAgentValue, encodeMcpToolDefinition,
+# encodeMcpTools, decodeMcpArgs, encodeMcpResult*, isAgentCapableRequest, a
+# 3-arg buildAgentRunFrame). Implementation is BLOCKED on independent protocol
+# fixtures — see /tmp/9router-cursor-protocol-report.md. They are left red on
+# purpose; do not skip them to make this list shorter.
+#
+# Not visible to this gate: tests/unit/embeddings.cloud.test.js fails to COLLECT
+# (it imports cloud/src/handlers/embeddings.js, a directory not in this repo), and
+# a collect failure produces no assertion results to compare.
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode decodes name, toolName, toolCallId, and typed args map
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode handles empty args map
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds error result (field 2)
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds toolNotFound result (field 5)
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult image content builds image item with raw bytes + mime type
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult image content builds mixed text + image content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success builds success with multiple text items
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success builds success with single text content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult success marks is_error=true
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition accepts flat tool shape (no .function wrapper)
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition encodes name, description, input_schema (Value), provider, tool_name
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpToolDefinition preserves nested JSON-schema types
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) encodeMcpTools produces empty bytes for no tools
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) encodeMcpTools wraps multiple tool defs as repeated field 1
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes array of mixed
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes bool false
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes bool true
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes deeply nested
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes empty object
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes flat object
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes float
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes integer
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes nested object
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes null
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) google.protobuf.Value round-trip encodes/decodes string
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes a text-only run request with system + model
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes conversation_history from prior turns including tool calls/results
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame encodes mcp_tools (field 4) when tools are provided
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) buildAgentRunFrame omits mcp_tools when no tools provided
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts array text content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts history with assistant tool_calls + tool results
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts plain text content
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest accepts request with tools declared
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects missing messages
+tests/unit/cursor-agent-proto.test.js :: Cursor AgentService executor helpers (cursor.js) isAgentCapableRequest rejects non-text (image) content

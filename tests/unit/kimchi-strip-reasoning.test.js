@@ -15,8 +15,7 @@
  * re-trigger upstream complaints about missing reasoning on the next
  * turn.
  */
-import { describe, it } from "node:test";
-import assert from "node:assert/strict";
+import { describe, it, expect } from "vitest";
 
 import KimchiExecutor, { stripReasoningContent } from "../../open-sse/executors/kimchi.js";
 import DefaultExecutor from "../../open-sse/executors/default.js";
@@ -35,8 +34,8 @@ describe("kimchi stripReasoningContent", () => {
       ],
     };
     stripReasoningContent(body);
-    assert.equal(body.messages[1].reasoning_content, undefined);
-    assert.equal(body.messages[1].content, "x = 7");
+    expect(body.messages[1].reasoning_content).toBeUndefined();
+    expect(body.messages[1].content).toBe("x = 7");
   });
 
   it("preserves the 1-char placeholder that injectReasoningContent sets", () => {
@@ -50,8 +49,8 @@ describe("kimchi stripReasoningContent", () => {
       ],
     };
     stripReasoningContent(body);
-    assert.equal(body.messages[1].reasoning_content, " ");
-    assert.equal(body.messages[1].content, "hello");
+    expect(body.messages[1].reasoning_content).toBe(" ");
+    expect(body.messages[1].content).toBe("hello");
   });
 
   it("preserves short custom reasoning under the threshold", () => {
@@ -64,7 +63,7 @@ describe("kimchi stripReasoningContent", () => {
       ],
     };
     stripReasoningContent(body);
-    assert.equal(body.messages[0].reasoning_content, "short");
+    expect(body.messages[0].reasoning_content).toBe("short");
   });
 
   it("leaves non-assistant messages untouched", () => {
@@ -75,14 +74,14 @@ describe("kimchi stripReasoningContent", () => {
       ],
     };
     stripReasoningContent(body);
-    assert.equal(body.messages[0].content, "hi");
-    assert.equal(body.messages[1].content, "be helpful");
+    expect(body.messages[0].content).toBe("hi");
+    expect(body.messages[1].content).toBe("be helpful");
   });
 
   it("returns early on missing/empty messages array", () => {
-    assert.doesNotThrow(() => stripReasoningContent({}));
-    assert.doesNotThrow(() => stripReasoningContent({ messages: null }));
-    assert.doesNotThrow(() => stripReasoningContent({ messages: [] }));
+    expect(() => stripReasoningContent({})).not.toThrow();
+    expect(() => stripReasoningContent({ messages: null })).not.toThrow();
+    expect(() => stripReasoningContent({ messages: [] })).not.toThrow();
   });
 
   it("ignores assistant messages that have no reasoning_content", () => {
@@ -93,7 +92,7 @@ describe("kimchi stripReasoningContent", () => {
       ],
     };
     stripReasoningContent(body);
-    assert.deepEqual(body.messages[1], { role: "assistant", content: "hello" });
+    expect(body.messages[1]).toEqual({ role: "assistant", content: "hello" });
   });
 
   it("handles multi-turn: strips old turns, keeps recent one", () => {
@@ -107,22 +106,19 @@ describe("kimchi stripReasoningContent", () => {
       ],
     };
     stripReasoningContent(body);
-    assert.equal(body.messages[1].reasoning_content, undefined);
-    assert.equal(body.messages[3].reasoning_content, " ");
+    expect(body.messages[1].reasoning_content).toBeUndefined();
+    expect(body.messages[3].reasoning_content).toBe(" ");
   });
 });
 
 describe("kimchi executor wiring", () => {
   it("KimchiExecutor extends DefaultExecutor via prototype chain", () => {
     const inst = new KimchiExecutor();
-    assert.ok(
-      inst instanceof DefaultExecutor,
-      "KimchiExecutor must extend DefaultExecutor so transformRequest runs through super",
-    );
+    expect(inst instanceof DefaultExecutor).toBe(true);
   });
 
   it("default export is KimchiExecutor class", () => {
-    assert.equal(typeof KimchiExecutor, "function");
-    assert.equal(KimchiExecutor.name, "KimchiExecutor");
+    expect(typeof KimchiExecutor).toBe("function");
+    expect(KimchiExecutor.name).toBe("KimchiExecutor");
   });
 });

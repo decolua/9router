@@ -281,7 +281,11 @@ continue",
     "history": [
       {
         "userInputMessage": {
-          "content": "You are helpful.
+          "content": "[Context: Current time is <TS>
+
+<instructions>
+You are helpful.
+</instructions>
 
 What's in this image?",
           "images": [

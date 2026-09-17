@@ -1,40 +1,35 @@
-import test from "node:test";
-import assert from "node:assert/strict";
+import { it, expect } from "vitest";
 import {
   getClineAccessToken,
   getClineAuthorizationHeader,
 } from "../../open-sse/shared/clineAuth.js";
 
-test("getClineAccessToken keeps an existing workos: prefix", () => {
+it("getClineAccessToken keeps an existing workos: prefix", () => {
   const token = "workos:eyJhbGciOiJSUzI1NiJ9.eyJwYXAiJ9";
-  assert.equal(getClineAccessToken(token), token);
-  assert.equal(getClineAccessToken(`  ${token}  `), token);
+  expect(getClineAccessToken(token)).toBe(token);
+  expect(getClineAccessToken(`  ${token}  `)).toBe(token);
 });
 
-test("getClineAccessToken prefixes a bare WorkOS JWT with workos:", () => {
+it("getClineAccessToken prefixes a bare WorkOS JWT with workos:", () => {
   const jwt = "eyJhbGciOiJSUzI1NiJ9.eyJwYXAiJ9";
-  assert.equal(getClineAccessToken(jwt), `workos:${jwt}`);
+  expect(getClineAccessToken(jwt)).toBe(`workos:${jwt}`);
 });
 
-test("getClineAccessToken does NOT prefix ClinePass API keys", () => {
+it("getClineAccessToken does NOT prefix ClinePass API keys", () => {
   // ClinePass API keys are opaque strings (e.g. clp_…). Sending them as
   // `workos:clp_…` makes api.cline.bot respond 401.
-  assert.equal(getClineAccessToken("clp_1234567890abcdef"), "clp_1234567890abcdef");
-  assert.equal(getClineAccessToken("sk-9r-abcdef"), "sk-9r-abcdef");
-  assert.equal(getClineAccessToken(""), "");
-  assert.equal(getClineAccessToken("   "), "");
-  assert.equal(getClineAccessToken(undefined), "");
-  assert.equal(getClineAccessToken(null), "");
+  expect(getClineAccessToken("clp_1234567890abcdef")).toBe("clp_1234567890abcdef");
+  expect(getClineAccessToken("sk-9r-abcdef")).toBe("sk-9r-abcdef");
+  expect(getClineAccessToken("")).toBe("");
+  expect(getClineAccessToken("   ")).toBe("");
+  expect(getClineAccessToken(undefined)).toBe("");
+  expect(getClineAccessToken(null)).toBe("");
 });
 
-test("getClineAuthorizationHeader builds a Bearer header without double prefixing", () => {
-  assert.equal(getClineAuthorizationHeader("clp_abc"), "Bearer clp_abc");
-  assert.equal(
-    getClineAuthorizationHeader("eyJpeg.eyJbG"),
-    "Bearer workos:eyJpeg.eyJbG"
-  );
-  assert.equal(
-    getClineAuthorizationHeader("workos:eyJpeg.eyJbG"),
-    "Bearer workos:eyJpeg.eyJbG"
+it("getClineAuthorizationHeader builds a Bearer header without double prefixing", () => {
+  expect(getClineAuthorizationHeader("clp_abc")).toBe("Bearer clp_abc");
+  expect(getClineAuthorizationHeader("eyJpeg.eyJbG")).toBe("Bearer workos:eyJpeg.eyJbG");
+  expect(getClineAuthorizationHeader("workos:eyJpeg.eyJbG")).toBe(
+    "Bearer workos:eyJpeg.eyJbG",
   );
 });

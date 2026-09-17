@@ -7,31 +7,68 @@ import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
+const originalEnableLogs = process.env.ENABLE_REQUEST_LOGS;
+
 let tempDir;
 let db;
 let adapter;
 
 async function saveDetail(detail) {
   await db.saveRequestDetail(detail);
-  await new Promise((r) => setTimeout(r, 120));
+  await db.flushRequestDetailsNow();
 }
+
 
 beforeAll(async () => {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-details-tab-"));
   process.env.DATA_DIR = tempDir;
+  process.env.ENABLE_REQUEST_LOGS = "true";
   vi.resetModules();
   db = await import("@/lib/db/index.js");
   await db.initDb();
-  await db.updateSettings({ enableObservability2: true, observabilityBatchSize: 1 });
+  await db.updateSettings({ enableObservability: true, observabilityBatchSize: 1 });
 
   const { getAdapter } = await import("@/lib/db/driver.js");
   adapter = await getAdapter();
 });
 
+async function openBackupDb(filePath) {
+  if (!process.versions.bun) {
+    const [maj, min] = process.versions.node.split(".").map(Number);
+    if (maj >= 22) {
+      try {
+        const { DatabaseSync } = await import("node:sqlite");
+        const db = new DatabaseSync(filePath);
+        return {
+          get: (sql) => db.prepare(sql).get(),
+          close: () => db.close(),
+        };
+      } catch {}
+    }
+  }
+  try {
+    const Database = (await import("better-sqlite3")).default;
+    const db = new Database(filePath);
+    return {
+      get: (sql) => db.prepare(sql).get(),
+      close: () => db.close(),
+    };
+  } catch {}
+  const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+  const adapter = await createSqlJsAdapter(filePath);
+  return {
+    get: (sql) => adapter.get(sql),
+    close: () => adapter.close(),
+  };
+}
+
+
 afterAll(() => {
   if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
+  if (originalEnableLogs === undefined) delete process.env.ENABLE_REQUEST_LOGS;
+  else process.env.ENABLE_REQUEST_LOGS = originalEnableLogs;
 });
 
 describe("request details — tab crash-risk cases", () => {
@@ -109,6 +146,60 @@ describe("request details — tab crash-risk cases", () => {
   });
 });
 
+describe("request details — F07 lifecycle & admission contract", () => {
+  it("tracks pending admission and drains cleanly on flush", async () => {
+    // Calling saveRequestDetail registers pending admission which is awaited on flush
+    const savePromise = db.saveRequestDetail({
+      id: "admit-track-1", provider: "openai", model: "gpt-4",
+      status: "ok", tokens: {}, request: {}, response: {},
+    });
+    const unFlushed = await db.flushRequestDetailsNow();
+    await savePromise;
+    expect(unFlushed).toBe(0);
+
+    const got = await db.getRequestDetailById("admit-track-1");
+    expect(got).toBeDefined();
+    expect(got.id).toBe("admit-track-1");
+  });
+
+  it("never buffers or stores data when observability is disabled", async () => {
+    const origEnv = process.env.ENABLE_REQUEST_LOGS;
+    process.env.ENABLE_REQUEST_LOGS = "false";
+    try {
+      await db.saveRequestDetail({
+        id: "disabled-obs-1", provider: "openai", model: "gpt-4",
+        status: "ok", tokens: {}, request: {}, response: {},
+      });
+      const unFlushed = await db.flushRequestDetailsNow();
+      expect(unFlushed).toBe(0);
+
+      const got = await db.getRequestDetailById("disabled-obs-1");
+      expect(got).toBeNull();
+    } finally {
+      if (origEnv === undefined) delete process.env.ENABLE_REQUEST_LOGS;
+      else process.env.ENABLE_REQUEST_LOGS = origEnv;
+    }
+  });
+
+  it("handles write failures by retaining items and reporting non-zero undrained count", async () => {
+    const origTransaction = adapter.transaction;
+    adapter.transaction = () => { throw new Error("Disk error simulation"); };
+
+    try {
+      await db.saveRequestDetail({
+        id: "fail-drain-1", provider: "openai", model: "gpt-4",
+        status: "ok", tokens: {}, request: {}, response: {},
+      });
+
+      const remaining = await db.flushRequestDetailsNow();
+      expect(remaining).toBeGreaterThan(0);
+    } finally {
+      adapter.transaction = origTransaction;
+      await db.flushRequestDetailsNow();
+    }
+  });
+});
+
 // Mirror of RequestDetailsTab token helpers (component is "use client",
 // helpers are not exported). Keep in sync with the component.
 function getCachedTokens(tokens) {
@@ -132,15 +223,14 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     const dest = backupDbLite(adapter, backupDir);
     expect(fs.existsSync(dest)).toBe(true);
 
-    // Open backup and assert requestDetails is empty, settings present
-    const Database = (await import("better-sqlite3")).default;
-    const bak = new Database(dest);
+    // Open backup using local driver fallback helper, assert requestDetails is empty, settings present
+    const bak = await openBackupDb(dest);
     try {
       // requestDetails is fully excluded — table must not exist in the backup
-      const rdTable = bak.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requestDetails'").get();
+      const rdTable = bak.get("SELECT name FROM sqlite_master WHERE type='table' AND name='requestDetails'");
       expect(rdTable).toBeUndefined();
       // Critical data preserved
-      const st = bak.prepare("SELECT COUNT(*) c FROM settings").get();
+      const st = bak.get("SELECT COUNT(*) c FROM settings");
       expect(st.c).toBeGreaterThanOrEqual(1);
     } finally {
       bak.close();

@@ -707,10 +707,10 @@ describe("Kiro terminal integrity recovery", () => {
   it("surfaces retry HTTP failures as SSE after heartbeat commits headers", async () => {
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response("unauthorized", {
+      .mockImplementation(() => Promise.resolve(new Response("unauthorized", {
         status: 401,
         statusText: "Unauthorized"
-      }));
+      })));
 
     const result = await execute();
     const body = await result.response.text();
@@ -723,10 +723,10 @@ describe("Kiro terminal integrity recovery", () => {
   it("bounds the retry HTTP error body", async () => {
     fetchMock
       .mockResolvedValueOnce(response([]))
-      .mockResolvedValueOnce(new Response(`error-start-${"x".repeat(10_000)}-error-tail`, {
+      .mockImplementation(() => Promise.resolve(new Response(`error-start-${"x".repeat(10_000)}-error-tail`, {
         status: 401,
         statusText: "Unauthorized"
-      }));
+      })));
 
     const body = await (await execute()).response.text();
 

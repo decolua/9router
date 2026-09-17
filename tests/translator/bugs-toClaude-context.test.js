@@ -17,7 +17,10 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
-  it("assistant reasoning_content becomes a thinking block", () => {
+  // Unsigned foreign reasoning_content is omitted when converting OpenAI→Claude
+  // because Anthropic API requires valid signatures for thinking blocks in message history.
+  // Visible answer content ("a") is preserved.
+  it("omits unsigned assistant reasoning_content while preserving visible content", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },
@@ -25,12 +28,13 @@ describe("OpenAI → Claude context mapping", () => {
         { role: "user", content: "next" },
       ],
     });
-    expect(JSON.stringify(out), "reasoning_content lost").toContain("my hidden reasoning");
     const assistant = out.messages.find((m) => m.role === "assistant");
-    expect(assistant.content[0]).toEqual(expect.objectContaining({
-      type: "thinking",
-      thinking: "my hidden reasoning",
-    }));
+    expect(assistant).toBeDefined();
+    expect(assistant.content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "text", text: "a" })])
+    );
+    const thinkingBlocks = assistant.content.filter((b) => b.type === "thinking");
+    expect(thinkingBlocks).toHaveLength(0);
   });
 
   // openai-to-claude.js:298 — tool_choice "none" mapped to {type:"auto"} (loses "do not call" intent)
