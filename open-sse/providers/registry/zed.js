@@ -4,7 +4,6 @@ export default {
   priority: 10,
   alias: "zd",
   uiAlias: "zd",
-  hidden: true,
   display: {
     name: "Zed",
     icon: "code",
