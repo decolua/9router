@@ -109,6 +109,42 @@ describe("Antigravity executor", () => {
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
 
+  // executors/antigravity.js image-model branch — contents were rebuilt text-only,
+  // dropping inlineData → /v1/images/generations with `image` degraded to text2img
+  it("image model request keeps inlineData parts (edit input)", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-3.1-flash-image", {
+      request: {
+        contents: [{ role: "user", parts: [
+          { inlineData: { mimeType: "image/png", data: "aW1n" } },
+          { text: "add a yellow border" },
+        ] }],
+      },
+    }, false, { projectId: "project-1", connectionId: "conn-1" });
+
+    const parts = out.request.contents[0].parts;
+    expect(parts).toEqual([
+      { inlineData: { mimeType: "image/png", data: "aW1n" } },
+      { text: "add a yellow border" },
+    ]);
+  });
+
+  it("image model request accepts inline_data snake_case parts", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-3.1-flash-image", {
+      request: {
+        contents: [{ role: "user", parts: [
+          { inline_data: { mime_type: "image/jpeg", data: "anBn" } },
+          { text: "make it brighter" },
+        ] }],
+      },
+    }, false, { projectId: "project-1", connectionId: "conn-1" });
+
+    const parts = out.request.contents[0].parts;
+    expect(parts).toEqual([
+      { inlineData: { mimeType: "image/jpeg", data: "anBn" } },
+      { text: "make it brighter" },
+    ]);
+  });
+
   it("does not inject the legacy Antigravity default system prompt for Gemini-backed models", () => {
     const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
       messages: [

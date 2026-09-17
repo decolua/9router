@@ -44,13 +44,12 @@ export default {
       }
     }
 
-    // Build parts: text prompt + optional input image for editing
-    const parts = [{ text: body.prompt }];
-    const imageInput = body.image || (Array.isArray(body.images) && body.images[0]);
-    if (imageInput) {
-      const inlineData = resolveImageInput(imageInput);
-      if (inlineData) parts.unshift(inlineData);
-    }
+    // Build parts: input image(s) first for editing, then the text prompt
+    const imageInputs = [body.image, ...(Array.isArray(body.images) ? body.images : [])].filter(Boolean);
+    const parts = [
+      ...imageInputs.map(resolveImageInput).filter(Boolean),
+      { text: body.prompt },
+    ];
 
     const chatBody = {
       contents: [{ role: "user", parts }],
