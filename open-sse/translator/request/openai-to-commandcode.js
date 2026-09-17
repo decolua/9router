@@ -88,6 +88,10 @@ function convertMessages(messages = []) {
 
     if (role === ROLE.ASSISTANT) {
       const blocks = [];
+      const rc = m.reasoning_content || m.thought || m.reasoning;
+      if (rc || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0)) {
+        blocks.push({ type: "reasoning", text: rc || " " });
+      }
       const text = flattenText(m.content);
       if (text) blocks.push({ type: OPENAI_BLOCK.TEXT, text });
       if (Array.isArray(m.tool_calls)) {
