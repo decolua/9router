@@ -49,19 +49,31 @@ const g = global.__appSingleton ??= {
   tailscaleAutoResumed: false,
 };
 
+// Bounded shutdown drain lives in its own module (importable without the heavy
+// tunnel/MITM graph): it waits for admitted usage writes and buffered request
+// details, then runs the cleanup below. Not a durability guarantee against
+// SIGKILL/power loss — see shutdownCoordinator.js.
+//
+// instrumentation.js already installs the coordinator at server boot, so this
+// call usually only CONTRIBUTES the teardown below (the install is additive and
+// idempotent). It stays here so initializeApp keeps working on its own, e.g.
+// under `next dev`, where instrumentation may not have run first.
+const SHUTDOWN_DRAIN_MS = 3000;
+
 export async function initializeApp() {
   try {
     // Register cleanup + exit-respawn callback immediately so signals and
     // unexpected cloudflared exits are handled even during the deferred window.
     if (!g.signalHandlersRegistered) {
-      const cleanup = () => {
-        try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
-        try { killAllBridges(); } catch { /* best effort */ }
-        killCloudflared();
-        process.exit();
-      };
-      process.on("SIGINT", cleanup);
-      process.on("SIGTERM", cleanup);
+      const { installShutdownCoordinator } = await import("@/shared/services/shutdownCoordinator.js");
+      installShutdownCoordinator({
+        drainTimeoutMs: SHUTDOWN_DRAIN_MS,
+        cleanup: () => {
+          try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
+          try { killAllBridges(); } catch { /* best effort */ }
+          killCloudflared();
+        },
+      });
       process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
       g.signalHandlersRegistered = true;
     }

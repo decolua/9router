@@ -12,7 +12,15 @@ const origCreate = http.createServer.bind(http);
 // so the request-detail header sanitizer redacts it too.
 const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
 process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
-
+process.env.NEXT_MANUAL_SIG_HANDLE = "1";
+const shutdownCoord = (global.__shutdownCoordinator ??= {
+  installed: false,
+  started: false,
+  shuttingDown: false,
+  inflightCount: 0,
+  servers: new Set(),
+  inflightWaiters: new Set(),
+});
 let backgroundRefreshStarted = false;
 
 function startBackgroundTokenRefreshFromCustomServer() {
@@ -52,6 +60,13 @@ http.createServer = (...args) => {
   const rest = args.filter((a) => typeof a !== "function");
   if (!handler) return origCreate(...args);
   const wrapped = (req, res) => {
+    const isShutting = shutdownCoord.shuttingDown || (typeof shutdownCoord.isShuttingDown === "function" && shutdownCoord.isShuttingDown());
+    if (isShutting) {
+      res.writeHead(503, Object.assign({ "Content-Type": "application/json" }, CORS_HEADERS));
+      res.end(JSON.stringify({ error: "Server is shutting down" }));
+      return;
+    }
+
     const socketIp = req.socket && req.socket.remoteAddress ? req.socket.remoteAddress : "";
     const xff = req.headers["x-forwarded-for"];
     const xRealIp = req.headers["x-real-ip"];
@@ -100,9 +115,45 @@ http.createServer = (...args) => {
       return origWriteHead(statusCode, ...restArgs);
     };
 
-    return handler(req, res);
+    // ── Shutdown admission ────────────────────────────────────────────
+    // Register with the coordinator BEFORE invoking the handler: if shutdown
+    // started between the check above and here, a request that was already
+    // running would get a 503 written on top of the handler's own response
+    // (ERR_HTTP_HEADERS_SENT). The promise is handed over first, resolved from
+    // the handler afterwards, so admission is decided while nothing has run.
+    let settleHandler;
+    const handlerPromise = new Promise((resolve) => { settleHandler = resolve; });
+
+    if (typeof shutdownCoord.trackRequest === "function") {
+      const admitted = shutdownCoord.trackRequest(req, res, handlerPromise);
+      if (!admitted) {
+        settleHandler();
+        res.writeHead(503, Object.assign({ "Content-Type": "application/json" }, CORS_HEADERS));
+        res.end(JSON.stringify({ error: "Server is shutting down" }));
+        return;
+      }
+    }
+
+    try {
+      // settleHandler always RESOLVES: the coordinator only needs to know the
+      // handler stopped working, and a rejection here would become an unhandled
+      // rejection (the http server ignores what the listener returns).
+      Promise.resolve(handler(req, res)).then(
+        () => settleHandler(),
+        (e) => { console.error("[Server] request handler error:", e?.message || e); settleHandler(); },
+      );
+    } catch (e) {
+      console.error("[Server] request handler threw:", e?.message || e);
+      settleHandler();
+    }
+
+    return handlerPromise;
   };
   const server = origCreate(...rest, wrapped);
+  shutdownCoord.servers.add(server);
+  if (typeof shutdownCoord.registerServer === "function") {
+    shutdownCoord.registerServer(server);
+  }
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });

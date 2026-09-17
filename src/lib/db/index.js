@@ -60,11 +60,13 @@ export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
+  drainPendingUsage,
 } from "./repos/usageRepo.js";
 
 // Request details
 export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
+  flushRequestDetailsNow,
 } from "./repos/requestDetailsRepo.js";
 
 // Export/import full DB
@@ -164,6 +166,9 @@ export async function importDb(payload) {
 
   return await exportDb();
 }
+
+// Driver helpers (closeAdapter checkpoints the WAL on an orderly shutdown)
+export { getAdapter, getAdapterSync, closeAdapter } from "./driver.js";
 
 // Eager init helper (optional)
 export async function initDb() {

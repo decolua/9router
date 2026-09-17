@@ -11,14 +11,21 @@ let cachedConfig = null;
 let cachedConfigTs = 0;
 
 async function getObservabilityConfig() {
-  if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
+  const envLogs = process.env.ENABLE_REQUEST_LOGS;
+  const envObs = process.env.OBSERVABILITY_ENABLED;
+  if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS && cachedConfig._envLogs === envLogs && cachedConfig._envObs === envObs) {
+    return cachedConfig;
+  }
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
+
     const envRequestLogs = process.env.ENABLE_REQUEST_LOGS;
     if (envRequestLogs !== undefined) {
       const enabled = envRequestLogs.toLowerCase() === "true";
       cachedConfig = {
+        _envLogs: envLogs,
+        _envObs: envObs,
         enabled,
         maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
         batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
@@ -35,6 +42,8 @@ async function getObservabilityConfig() {
       : envFallback;
 
     cachedConfig = {
+      _envLogs: envLogs,
+      _envObs: envObs,
       enabled,
       maxRecords: settings.observabilityMaxRecords || parseInt(process.env.OBSERVABILITY_MAX_RECORDS || String(DEFAULT_MAX_RECORDS), 10),
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
@@ -43,6 +52,8 @@ async function getObservabilityConfig() {
     };
   } catch {
     cachedConfig = {
+      _envLogs: envLogs,
+      _envObs: envObs,
       enabled: false,
       maxRecords: DEFAULT_MAX_RECORDS,
       batchSize: DEFAULT_BATCH_SIZE,
@@ -56,7 +67,8 @@ async function getObservabilityConfig() {
 
 let writeBuffer = [];
 let flushTimer = null;
-let isFlushing = false;
+let flushingPromise = null;
+const pendingAdmissions = new Set();
 
 function sanitizeHeaders(headers) {
   if (!headers || typeof headers !== "object") return {};
@@ -86,76 +98,110 @@ function truncateField(obj, maxSize) {
 }
 
 async function flushToDatabase() {
-  if (isFlushing) return;
-  if (writeBuffer.length === 0) return;
-  isFlushing = true;
-  try {
-    // Drain entire buffer (loop in case more pushed during await)
-    while (writeBuffer.length > 0) {
-      const items = writeBuffer.splice(0, writeBuffer.length);
-      const db = await getAdapter();
-      const config = await getObservabilityConfig();
-
-      db.transaction(() => {
-        for (const item of items) {
-          if (!item.id) item.id = generateDetailId(item.model);
-          if (!item.timestamp) item.timestamp = new Date().toISOString();
-          if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-          const record = {
-            id: item.id,
-            provider: item.provider || null,
-            model: item.model || null,
-            connectionId: item.connectionId || null,
-            timestamp: item.timestamp,
-            status: item.status || null,
-            latency: item.latency || {},
-            tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-            providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-            response: truncateField(item.response, config.maxJsonSize),
-            pxpipe: item.pxpipe || undefined,
-          };
-
-          db.run(
-            `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-            [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-          );
-        }
-
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
-        }
-      });
-    }
-  } catch (e) {
-    console.error("[requestDetailsRepo] Batch write failed:", e);
-  } finally {
-    isFlushing = false;
+  if (flushingPromise) {
+    await flushingPromise;
+    if (writeBuffer.length === 0) return;
   }
+
+  flushingPromise = (async () => {
+    try {
+      // Drain entire buffer (loop in case more pushed during await)
+      while (writeBuffer.length > 0) {
+        const items = writeBuffer.splice(0, writeBuffer.length);
+        let db;
+        let config;
+        try {
+          db = await getAdapter();
+          config = await getObservabilityConfig();
+
+          db.transaction(() => {
+            for (const item of items) {
+              if (!item.id) item.id = generateDetailId(item.model);
+              if (!item.timestamp) item.timestamp = new Date().toISOString();
+              if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+
+              const record = {
+                id: item.id,
+                provider: item.provider || null,
+                model: item.model || null,
+                connectionId: item.connectionId || null,
+                timestamp: item.timestamp,
+                status: item.status || null,
+                latency: item.latency || {},
+                tokens: item.tokens || {},
+                request: truncateField(item.request, config.maxJsonSize),
+                providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+                providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+                response: truncateField(item.response, config.maxJsonSize),
+                pxpipe: item.pxpipe || undefined,
+              };
+
+              db.run(
+                `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+                [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+              );
+            }
+
+            const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+            if (cnt && cnt.c > config.maxRecords) {
+              db.run(
+                `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+                [cnt.c - config.maxRecords]
+              );
+            }
+          });
+        } catch (err) {
+          writeBuffer.unshift(...items);
+          console.error("[requestDetailsRepo] Batch write failed:", err?.message || err);
+          throw err;
+        }
+      }
+    } finally {
+      flushingPromise = null;
+    }
+  })();
+
+  return flushingPromise;
 }
 
 export async function saveRequestDetail(detail) {
-  const config = await getObservabilityConfig();
-  if (!config.enabled) {return;}
+  if (!detail) return;
 
-  writeBuffer.push(detail);
+  let config = null;
+  const admissionPromise = (async () => {
+    try {
+      config = await getObservabilityConfig();
+      if (config && config.enabled) {
+        writeBuffer.push(detail);
+      }
+    } catch (e) {
+      console.error("[requestDetailsRepo] save admission err:", e);
+    }
+  })();
 
-  // Trigger immediate flush if batch threshold reached.
-  // flushToDatabase() drains entire buffer in a loop, so all pushes during await are persisted.
-  if (writeBuffer.length >= config.batchSize) {
-    if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-    flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
-  } else if (!flushTimer) {
-    flushTimer = setTimeout(() => {
-      flushTimer = null;
-      flushToDatabase().catch(() => {});
-    }, config.flushIntervalMs);
+  pendingAdmissions.add(admissionPromise);
+  try {
+    await admissionPromise;
+  } finally {
+    pendingAdmissions.delete(admissionPromise);
+  }
+
+  if (config && config.enabled) {
+    const batchSize = config.batchSize || DEFAULT_BATCH_SIZE;
+    const flushIntervalMs = config.flushIntervalMs || DEFAULT_FLUSH_INTERVAL_MS;
+
+    // Trigger immediate flush if batch threshold reached.
+    // flushToDatabase() drains the whole buffer in a loop, so entries pushed
+    // while it awaits are persisted by the same run.
+    if (writeBuffer.length >= batchSize) {
+      if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+      flushToDatabase().catch((e) => console.error("[requestDetailsRepo] flush err:", e));
+    } else if (!flushTimer) {
+      flushTimer = setTimeout(() => {
+        flushTimer = null;
+        flushToDatabase().catch(() => {});
+      }, flushIntervalMs);
+    }
   }
 }
 
@@ -204,21 +250,41 @@ export async function getRequestDetailById(id) {
   return row ? parseJson(row.data, null) : null;
 }
 
-const _shutdownHandler = async () => {
+const _shutdownHandler = () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
-  if (writeBuffer.length > 0) await flushToDatabase();
+  if (writeBuffer.length > 0) flushToDatabase().catch(() => {});
 };
 
-function ensureShutdownHandler() {
-  process.off("beforeExit", _shutdownHandler);
-  process.off("SIGINT", _shutdownHandler);
-  process.off("SIGTERM", _shutdownHandler);
-  process.off("exit", _shutdownHandler);
-
-  process.on("beforeExit", _shutdownHandler);
-  process.on("SIGINT", _shutdownHandler);
-  process.on("SIGTERM", _shutdownHandler);
-  process.on("exit", _shutdownHandler);
+/**
+ * Flush buffered request details now. Used by the shutdown coordinator so a
+ * signal drains the buffer instead of trusting the pending flush timer.
+ * Never throws; returns the number of records still buffered (0 when drained).
+ */
+export async function flushRequestDetailsNow() {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (pendingAdmissions.size > 0) {
+    await Promise.allSettled(Array.from(pendingAdmissions));
+  }
+  try {
+    await flushToDatabase();
+  } catch (e) {
+    console.error("[requestDetailsRepo] shutdown flush failed:", e?.message || e);
+  }
+  return writeBuffer.length;
 }
 
+// SIGINT/SIGTERM are deliberately NOT handled here: the shutdown coordinator
+// owns them and calls flushRequestDetailsNow(), which AWAITS the flush. A second
+// handler firing in parallel would only start an unawaited flush racing that
+// one. beforeExit/exit stay, so an orderly exit without a coordinator (scripts,
+// one-off tooling) still drains the buffer.
+function ensureShutdownHandler() {
+  if (global._requestDetailsShutdownHandler) {
+    process.off("beforeExit", global._requestDetailsShutdownHandler);
+    process.off("exit", global._requestDetailsShutdownHandler);
+  }
+  global._requestDetailsShutdownHandler = _shutdownHandler;
+  process.on("beforeExit", _shutdownHandler);
+  process.on("exit", _shutdownHandler);
+}
 ensureShutdownHandler();
