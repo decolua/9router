@@ -13,6 +13,18 @@ export const ERROR_TYPES = {
   504: { type: "server_error", code: "gateway_timeout" }
 };
 
+// Keyless `-free` models are only served to OpenCode's own client, so point the
+// user at a path that works instead of surfacing the raw Console rejection.
+export const OPENCODE_FREE_TIER_ERROR_MESSAGE =
+  "OpenCode's free tier only serves its own client. Use OpenCode Go (paid, API key) " +
+  "or an OpenCode Zen key instead.";
+
+export const PROVIDER_ERROR_MESSAGES = {
+  opencode: {
+    403: OPENCODE_FREE_TIER_ERROR_MESSAGE,
+  },
+};
+
 // Default error messages per status code (client-facing)
 export const DEFAULT_ERROR_MESSAGES = {
   400: "Bad request",

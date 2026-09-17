@@ -1,12 +1,23 @@
-import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES, PROVIDER_ERROR_MESSAGES } from "../config/errorConfig.js";
+
+/**
+ * Resolve the client-facing message, preferring a provider-scoped override.
+ * @param {number} statusCode
+ * @param {string} [provider]
+ * @returns {string|undefined}
+ */
+export function defaultErrorMessage(statusCode, provider) {
+  return PROVIDER_ERROR_MESSAGES[provider]?.[statusCode] || DEFAULT_ERROR_MESSAGES[statusCode];
+}
 
 /**
  * Build OpenAI-compatible error response body
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {string} [provider] - Provider id, for provider-scoped message overrides
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
+export function buildErrorBody(statusCode, message, provider) {
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
@@ -14,7 +25,7 @@ export function buildErrorBody(statusCode, message) {
 
   return {
     error: {
-      message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
+      message: message || defaultErrorMessage(statusCode, provider) || "An error occurred",
       type: errorInfo.type,
       code: errorInfo.code
     }
