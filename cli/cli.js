@@ -175,14 +175,27 @@ if (skipUpdate && !trayMode && !process.stdin.isTTY) {
 const RUNTIME = process.execPath;
 
 // Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
+// Compare by numeric base only. A fork build carries a prerelease suffix
+// ("0.5.76-enhanced"), and Number("76-enhanced") is NaN — every comparison with
+// it is false, so this silently answered "same version" for ANY upstream
+// release. That happened to be safe, but by accident; the rule is explicit now.
 function compareVersions(a, b) {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
+  const parts = (v) => String(v).split("-")[0].split(".").map((n) => Number.parseInt(n, 10) || 0);
+  const partsA = parts(a);
+  const partsB = parts(b);
   for (let i = 0; i < 3; i++) {
     if (partsA[i] > partsB[i]) return 1;
     if (partsA[i] < partsB[i]) return -1;
   }
   return 0;
+}
+
+// A fork build must not be offered the upstream package: accepting that update
+// runs `npm install -g 9router@latest`, which replaces this fork — and every
+// enhancement in it — with the official release. Upstream is merged into the
+// fork deliberately, not through this prompt.
+function isForkBuild(version) {
+  return String(version).includes("-");
 }
 
 // Get app data dir (matches app/src/lib/dataDir.js convention)
@@ -548,7 +561,7 @@ function checkForUpdate() {
       res.on("end", () => {
         try {
           const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
+          if (latest.version && !isForkBuild(pkg.version) && compareVersions(latest.version, pkg.version) > 0) {
             done(latest.version);
           } else {
             done(null);

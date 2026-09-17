@@ -1,4 +1,4 @@
-# Unreleased (enhanced/0.5.69)
+# v0.5.76-enhanced (2026-09-17)
 
 ## Fixes
 - **Chat**: a full concurrency gate is no longer reported as unavailable accounts. Skipping a saturated account to try another one still spreads load, but when no other account is left the request now waits for a slot (`ACCOUNT_CAPACITY_WAIT_MS`, default 60s) instead of answering `All accounts unavailable` in 2.0s without ever calling the provider. If the wait does expire, the error names the real cause.
@@ -8,6 +8,9 @@
 - **CLI**: the launcher asks the server to stop and waits up to 8s before escalating to SIGKILL. It used to kill it outright, which discarded the drain above. It also stops sending the server's stdout to `/dev/null` — it now goes to `~/.9router/server.log` (capped, rotated), which is what makes routing incidents diagnosable after the fact.
 - **OAuth (Cursor)**: `better-sqlite3` is imported lazily inside its strategy, so the auto-import route stays importable when the optional native binding is missing and falls through to the CLI strategy.
 - **Search**: drop a redundant branch that returned the same value twice.
+
+## Chores
+- **Versioning**: the fork now carries an explicit `-enhanced` suffix. `cutover-guard` already compared numeric bases, so this still reads as an upgrade over 0.5.75 and refuses a plain upstream tree packed over it. The CLI's own comparison was `Number("76-enhanced")` — NaN, so every comparison answered "same version" by accident; it now strips the suffix explicitly and a fork build is never offered the upstream package, which would replace the fork wholesale.
 
 ## Tests
 - Repaired suites asserting contracts the code no longer has (Kiro top-level `systemPrompt`, Windsurf endpoint, `got-scraping` transport, DNS `lookup` with `all: true`, Antigravity 429 attempts, HTTP/2 Cursor catalog, module-relative paths in the security audit) and converted four `node:test` files to Vitest so they are collected at all.
