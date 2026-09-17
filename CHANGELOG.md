@@ -1,4 +1,4 @@
-# v0.5.76-enhanced (2026-09-17)
+# v0.5.75-enhanced.1 (2026-09-17)
 
 ## Fixes
 - **Chat**: a full concurrency gate is no longer reported as unavailable accounts. Skipping a saturated account to try another one still spreads load, but when no other account is left the request now waits for a slot (`ACCOUNT_CAPACITY_WAIT_MS`, default 60s) instead of answering `All accounts unavailable` in 2.0s without ever calling the provider. If the wait does expire, the error names the real cause.
@@ -10,7 +10,7 @@
 - **Search**: drop a redundant branch that returned the same value twice.
 
 ## Chores
-- **Versioning**: the fork now carries an explicit `-enhanced` suffix. `cutover-guard` already compared numeric bases, so this still reads as an upgrade over 0.5.75 and refuses a plain upstream tree packed over it. The CLI's own comparison was `Number("76-enhanced")` — NaN, so every comparison answered "same version" by accident, which would have silenced the update notice for good; it now strips the suffix explicitly, so a genuinely newer upstream release still shows up. The update screen adds one line for fork builds: the command it prints installs the official package and replaces the fork.
+- **Versioning**: the fork is now named after the upstream release it is built from plus its own build counter — `0.5.75-enhanced.1`. Inventing a higher number would claim an upstream release that does not exist; anchoring it keeps "which upstream am I on" answerable, and the next fork build is `.2`. `cutover-guard` compares numeric bases, so installing this over the official 0.5.75 is a same-version cut and a lower base is still refused. The CLI's own comparison was `Number("75-enhanced")` — NaN, so every comparison answered "same version" by accident, which would have silenced the update notice for good; it now strips the suffix explicitly, so a genuinely newer upstream release (0.5.76 and up) still shows up. The update screen adds one line for fork builds: the command it prints installs the official package and replaces the fork.
 
 ## Tests
 - Repaired suites asserting contracts the code no longer has (Kiro top-level `systemPrompt`, Windsurf endpoint, `got-scraping` transport, DNS `lookup` with `all: true`, Antigravity 429 attempts, HTTP/2 Cursor catalog, module-relative paths in the security audit) and converted four `node:test` files to Vitest so they are collected at all.
