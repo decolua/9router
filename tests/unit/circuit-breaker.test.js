@@ -206,3 +206,69 @@ describe("CircuitBreaker failure recency", () => {
     expect(cb.degradationThreshold).toBe(2);
   });
 });
+
+describe("DEGRADED decays with its window", () => {
+  // DEGRADED is a function of the window, not a latch. It used to need N
+  // successes to clear, so an idle account that recovered on its own stayed
+  // flagged in the dashboard with nothing left to justify it.
+  beforeEach(() => {
+    resetAllCircuitBreakers();
+  });
+
+  it("returns to CLOSED once the failures age out, with no successes at all", async () => {
+    const cb = getCircuitBreaker("glm:decay", { failureThreshold: 5, failureWindowMs: 60 });
+    recordFailure("glm:decay", { statusCode: 500 });
+    recordFailure("glm:decay", { statusCode: 500 });
+    recordFailure("glm:decay", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+
+    await sleep(80);
+    expect(cb.getStatus().state).toBe(STATE.CLOSED);
+  });
+
+  it("also settles when observed through canExecute", async () => {
+    const cb = getCircuitBreaker("glm:decay2", { failureThreshold: 5, failureWindowMs: 60 });
+    for (let i = 0; i < 3; i++) recordFailure("glm:decay2", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+
+    await sleep(80);
+    expect(canExecute("glm:decay2")).toBe(true);
+    expect(cb.state).toBe(STATE.CLOSED);
+  });
+
+  it("keeps failures that are still inside the window when it settles", async () => {
+    const cb = getCircuitBreaker("glm:decay3", { failureThreshold: 5, failureWindowMs: 120 });
+    recordFailure("glm:decay3", { statusCode: 500 });
+    recordFailure("glm:decay3", { statusCode: 500 });
+    recordFailure("glm:decay3", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+
+    await sleep(90); // the first three age out...
+    recordFailure("glm:decay3", { statusCode: 500 }); // ...but this one is fresh
+    await sleep(50);
+    // Settling back to CLOSED must not discard a failure the window still holds.
+    expect(cb.getStatus().state).toBe(STATE.CLOSED);
+    expect(cb.getStatus().failureCount).toBe(1);
+  });
+
+  it("does not settle in cumulative mode, where nothing can decay", async () => {
+    const cb = getCircuitBreaker("glm:nodecay", { failureThreshold: 5, failureWindowMs: 0 });
+    for (let i = 0; i < 3; i++) recordFailure("glm:nodecay", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+    await sleep(60);
+    expect(cb.getStatus().state).toBe(STATE.DEGRADED);
+  });
+
+  it("leaves OPEN alone — only DEGRADED settles this way", async () => {
+    const cb = getCircuitBreaker("glm:open-stays", {
+      failureThreshold: 3,
+      failureWindowMs: 60,
+      resetTimeout: 10_000,
+    });
+    for (let i = 0; i < 3; i++) recordFailure("glm:open-stays", { statusCode: 500 });
+    expect(cb.getStatus().state).toBe(STATE.OPEN);
+    await sleep(80);
+    expect(cb.getStatus().state).toBe(STATE.OPEN);
+    expect(isBlocked("glm:open-stays")).toBe(true);
+  });
+});

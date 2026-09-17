@@ -100,7 +100,13 @@ class CircuitBreaker {
     this._transitionHistory = [];
   }
 
-  _transition(newState) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.preserveWindow] - closing because the window decayed
+   *   rather than because a probe succeeded: keep the failures it still holds,
+   *   so a burst that straddles the transition is not silently forgiven.
+   */
+  _transition(newState, { preserveWindow = false } = {}) {
     const old = this.state;
     this.state = newState;
     this.lastStateChange = Date.now();
@@ -116,18 +122,41 @@ class CircuitBreaker {
       // busy account close on its very next success, making DEGRADED a no-op.
       this.successCount = 0;
     } else if (newState === STATE.CLOSED) {
-      this.failureCount = 0;
       this.successCount = 0;
       this.openProbeCycles = 0;
       this.openedAt = null;
-      // Drop the window too. Clearing only the counter left the timestamps
-      // behind, so the first failure after recovery re-opened the breaker.
-      this.failureTimestamps = [];
+      if (preserveWindow) {
+        this.failureCount = this._countFailuresInWindow();
+      } else {
+        this.failureCount = 0;
+        // Drop the window too. Clearing only the counter left the timestamps
+        // behind, so the first failure after recovery re-opened the breaker.
+        this.failureTimestamps = [];
+      }
     }
+  }
+
+  /**
+   * DEGRADED is a function of the window, not a latch: it means "failures in
+   * the window >= degradationThreshold". Once they age out there is nothing
+   * left to justify the state, and waiting for N successes kept an idle
+   * account that had already recovered flagged in the dashboard indefinitely.
+   *
+   * Only DEGRADED settles this way. OPEN is governed by its reset timeout, and
+   * cumulative mode (window 0) has nothing that can decay.
+   */
+  _settleDegradedIfWindowCleared() {
+    if (this.state !== STATE.DEGRADED) return;
+    if (!this.failureWindowMs || this.failureWindowMs <= 0) return;
+    if (this._countFailuresInWindow() >= this.degradationThreshold) return;
+    this._transition(STATE.CLOSED, { preserveWindow: true });
   }
 
   canExecute() {
     const now = Date.now();
+    // Both CLOSED and DEGRADED admit the request, so this never changes the
+    // answer — it only keeps the reported state honest on the hot path.
+    this._settleDegradedIfWindowCleared();
     if (this.state === STATE.CLOSED) return true;
     if (this.state === STATE.DEGRADED) return true;
     if (this.state === STATE.OPEN) {
@@ -226,6 +255,9 @@ class CircuitBreaker {
   }
 
   getStatus() {
+    // Refresh before reporting: a time-based state has to be observed as of
+    // now, not as of the last request that happened to touch it.
+    this._settleDegradedIfWindowCleared();
     return {
       name: this.name,
       state: this.state,
