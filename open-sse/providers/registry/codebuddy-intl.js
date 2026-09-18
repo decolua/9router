@@ -58,7 +58,9 @@ export default {
     { id: "kimi-k2.5", name: "Kimi-K2.5" },
     { id: "hy3-preview", name: "Hy3 Preview" },
     { id: "deepseek-v4-pro", name: "DeepSeek-V4-Pro" },
-    { id: "deepseek-v4-flash", name: "DeepSeek-V4-Flash" },
+    // deepseek-v4-flash replaced server-side by deepseek-v4.1-flash (same
+    // catalog as CN; the old endpoint still answers 200 but the list is the contract).
+    { id: "deepseek-v4.1-flash", name: "DeepSeek-V4.1-Flash" },
     { id: "deepseek-v3-2-volc", name: "DeepSeek-V3.2" },
   ],
   oauth: {

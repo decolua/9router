@@ -80,6 +80,8 @@ describe("getUsageForProvider(deepseek)", () => {
       used: 0,
       total: 12.5,
       remainingPercentage: 100,
+      isCreditBalance: true,
+      currency: "USD",
     });
     expect(usage.quotas["Balance (USD)"].remaining).toBeUndefined();
     // Zero CNY still listed so user sees currency row
