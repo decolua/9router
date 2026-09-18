@@ -1,5 +1,7 @@
 name: Build and Push Docker Image
 
+# Releases publish on a `v*` tag. `workflow_dispatch` stays available so any
+# branch can be built on demand from the Actions tab.
 on:
   push:
     tags:
@@ -7,8 +9,9 @@ on:
   workflow_dispatch:
 
 env:
+  # Resolves to the repository that runs this workflow, so a fork publishes to
+  # its own namespace instead of the upstream one.
   GHCR_IMAGE: ghcr.io/${{ github.repository }}
-  DOCKERHUB_IMAGE: decolua/9router
 
 jobs:
   build-and-push:
@@ -20,6 +23,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # linux/arm64 is cross-built through binfmt; without this the arm64 leg
+      # fails on runners that don't already have the emulators registered.
+      - uses: docker/setup-qemu-action@v3
+
       - uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
@@ -29,22 +36,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: |
-            ${{ env.GHCR_IMAGE }}
-            ${{ env.DOCKERHUB_IMAGE }}
+          images: ${{ env.GHCR_IMAGE }}
           tags: |
+            # Release: v0.5.56 → 0.5.56, 0.5 and latest.
             type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # Manual run from a branch → branch name (slashes become dashes).
+            type=ref,event=branch
+            # Always present, so the tag list is never empty and every image is
+            # traceable back to a commit.
+            type=sha,format=short
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -58,3 +64,10 @@ jobs:
           platforms: linux/amd64,linux/arm64
           provenance: false
           sbom: false
+
+      - name: Summary
+        run: |
+          echo "### Published images" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
