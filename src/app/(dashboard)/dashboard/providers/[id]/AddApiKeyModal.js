@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { withConnectionBaseUrl } from "@/shared/utils/connectionBaseUrl";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -18,6 +19,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" ? "pt-..." : "");
 
+  // Providers that serve a user-chosen endpoint (self-hosted TTS/STT) declare
+  // this in the registry; the value is stored as providerSpecificData.baseUrl.
+  const connectionBaseUrl = AI_PROVIDERS?.[provider]?.connectionBaseUrl || null;
+
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
@@ -30,6 +35,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    baseUrl: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -69,6 +75,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (providerRegions && region) {
       return { region };
+    }
+    if (connectionBaseUrl) {
+      return withConnectionBaseUrl(undefined, formData.baseUrl);
     }
     return undefined;
   };
@@ -233,6 +242,15 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder={isOllamaLocal ? "Ollama Local" : "Production Key"}
         />
+        {connectionBaseUrl && (
+          <Input
+            label={connectionBaseUrl.label || "Base URL"}
+            value={formData.baseUrl}
+            onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
+            placeholder={connectionBaseUrl.placeholder || ""}
+            hint={connectionBaseUrl.hint}
+          />
+        )}
         {isOllamaLocal && (
           <div className="flex gap-2">
             <Input

@@ -8,6 +8,7 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { withConnectionBaseUrl } from "@/shared/utils/connectionBaseUrl";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -22,6 +23,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [baseUrl, setBaseUrl] = useState("");
   const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
@@ -48,6 +50,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      setBaseUrl(connection.providerSpecificData?.baseUrl || "");
       // Load region for providers that support it (e.g. xiaomi-tokenplan)
       const providerCfg = AI_PROVIDERS?.[connection.provider];
       if (providerCfg?.regions) {
@@ -66,6 +69,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+  const connectionBaseUrl = connection ? (AI_PROVIDERS?.[connection.provider]?.connectionBaseUrl || null) : null;
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -171,6 +175,14 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
+      // Endpoint override for providers that serve a user-chosen host. Merged
+      // into whatever is already stored, so proxy/region settings survive.
+      if (connectionBaseUrl) {
+        updates.providerSpecificData = withConnectionBaseUrl(
+          updates.providerSpecificData || connection.providerSpecificData,
+          baseUrl,
+        );
+      }
       
       await onSave(updates);
     } finally {
@@ -201,6 +213,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+        {connectionBaseUrl && (
+          <Input
+            label={connectionBaseUrl.label || "Base URL"}
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder={connectionBaseUrl.placeholder || ""}
+            hint={connectionBaseUrl.hint}
+          />
+        )}
 
         {!isOAuth && (
           <>
