@@ -1,3 +1,34 @@
+# Unreleased
+
+## Fixes
+- **Proxy-Pools**: the pool now actually applies to the traffic it was bound to.
+  `strictProxy` never reached the request path (`auth.js` dropped it when
+  building `providerSpecificData`, `chatCore` never read it), so a strict pool
+  silently fell back to a direct connection on any proxy error. OAuth token
+  refresh went out unproxied everywhere (`chatCore`, `embeddingsCore`,
+  `imageGenerationCore`, the proactive `checkAndRefreshToken`, the connection
+  Test button and the translator playground), leaking the host IP to the
+  provider on every refresh. Only `chatCore` implemented pooling at all —
+  embeddings, images, TTS, STT and video ignored it, and the executors that
+  call bare `fetch` (grok-web, perplexity-web, devin-cli) escaped it too;
+  those now inherit the connection's egress through an ambient proxy context.
+  A pool that is bound but unusable (deleted, or deactivated by a failed
+  connectivity test) used to be completely silent and now logs why it was
+  skipped.
+- **Models**: disabling a model is enforced when routing, not only when listing.
+  `disabledModels` was read solely by `/api/models` and `/v1/models`, so the
+  model just disappeared from the picker while existing combos kept sending
+  requests to it and direct `/v1` calls still worked. Disabled entries are now
+  dropped from a combo before rotation, and a direct request for one answers
+  403 across chat, embeddings, images, TTS, STT and video.
+
+## Chores
+- **CI**: `docker-publish` is fork-safe — publishes to `ghcr.io/<owner>/<repo>`
+  instead of a hardcoded upstream Docker Hub namespace, applies `latest` on
+  release tags (it never did before, the condition only matched the default
+  branch), registers QEMU for the arm64 leg, and always emits a `sha-` tag so
+  a manual run can never push with an empty tag list.
+
 # v0.5.55 (2026-08-14)
 
 ## Features

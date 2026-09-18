@@ -118,11 +118,11 @@ export class VertexExecutor extends BaseExecutor {
     return headers;
   }
 
-  async refreshCredentials(credentials, log) {
+  async refreshCredentials(credentials, log, proxyOptions = null) {
     const saJson = parseVertexSaJson(credentials?.apiKey);
     if (!saJson) return null;
 
-    const result = await refreshVertexToken(saJson, log);
+    const result = await refreshVertexToken(saJson, log, proxyOptions);
     if (!result) return null;
 
     return { accessToken: result.accessToken, expiresAt: result.expiresAt };

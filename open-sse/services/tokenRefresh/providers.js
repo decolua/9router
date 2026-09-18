@@ -5,7 +5,7 @@ import { dedupRefresh } from "./dedup.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
-export async function refreshXaiToken(refreshToken, log) {
+export async function refreshXaiToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("xai", refreshToken, async () => {
     try {
@@ -82,7 +82,7 @@ function buildRefreshBody(profile, config, refreshToken) {
   return { format: "form", body: new URLSearchParams(payload) };
 }
 
-export async function refreshAccessToken(provider, refreshToken, credentials, log) {
+export async function refreshAccessToken(provider, refreshToken, credentials, log, proxyOptions = null) {
   const config = PROVIDERS[provider];
   const profile = REFRESH_PROFILES[provider] || {};
   const url = resolveRefreshUrl(provider, config, profile);
@@ -107,7 +107,7 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
       Accept: "application/json",
       ...(profile.extraHeaders ? (profile.extraHeaders(credentials, config) || {}) : {}),
     };
-    const response = await fetch(url, { method: "POST", headers, body });
+    const response = await proxyAwareFetch(url, { method: "POST", headers, body }, proxyOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -143,20 +143,20 @@ export async function refreshAccessToken(provider, refreshToken, credentials, lo
 
 // CLIProxyAPI DeviceFlowClient.RefreshToken: form body (no client_secret) + X-Msh-* headers
 // Delegate to refreshAccessToken("kimi", ...) — profile carries the X-Msh headers.
-export async function refreshKimiToken(refreshToken, credentials, log) {
-  return refreshAccessToken("kimi", refreshToken, credentials, log);
+export async function refreshKimiToken(refreshToken, credentials, log, proxyOptions = null) {
+  return refreshAccessToken("kimi", refreshToken, credentials, log, proxyOptions);
 }
 
 // Claude OAuth: JSON body, client_id only. Delegate to refreshAccessToken("claude", ...).
-export async function refreshClaudeOAuthToken(refreshToken, log) {
-  return refreshAccessToken("claude", refreshToken, {}, log);
+export async function refreshClaudeOAuthToken(refreshToken, log, proxyOptions = null) {
+  return refreshAccessToken("claude", refreshToken, {}, log, proxyOptions);
 }
 
-export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log) {
+export async function refreshGoogleToken(refreshToken, clientId, clientSecret, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh(`google:${clientId}`, refreshToken, async () => {
   try {
-    const response = await fetch(OAUTH_ENDPOINTS.google.token, {
+    const response = await proxyAwareFetch(OAUTH_ENDPOINTS.google.token, {
       method: "POST",
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
@@ -168,7 +168,7 @@ export async function refreshGoogleToken(refreshToken, clientId, clientSecret, l
         client_id: clientId,
         client_secret: clientSecret,
       }),
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -207,11 +207,11 @@ export function classifyOAuthRefreshError(errorText = "", status = 0) {
   return { status, code, description, permanent };
 }
 
-export async function refreshCodexToken(refreshToken, log) {
+export async function refreshCodexToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("codex", refreshToken, async () => {
     try {
-      const response = await fetch(OAUTH_ENDPOINTS.openai.token, {
+      const response = await proxyAwareFetch(OAUTH_ENDPOINTS.openai.token, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -222,7 +222,7 @@ export async function refreshCodexToken(refreshToken, log) {
           grant_type: "refresh_token",
           refresh_token: refreshToken,
         }),
-      });
+      }, proxyOptions);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -409,20 +409,20 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 }
 
 // iFlow: Basic Auth + client_id+client_secret in body. Delegate to refreshAccessToken("iflow", ...).
-export async function refreshIflowToken(refreshToken, log) {
-  return refreshAccessToken("iflow", refreshToken, {}, log);
+export async function refreshIflowToken(refreshToken, log, proxyOptions = null) {
+  return refreshAccessToken("iflow", refreshToken, {}, log, proxyOptions);
 }
 
 // GitHub: optional client_secret. Delegate to refreshAccessToken("github", ...).
-export async function refreshGitHubToken(refreshToken, log) {
-  return refreshAccessToken("github", refreshToken, {}, log);
+export async function refreshGitHubToken(refreshToken, log, proxyOptions = null) {
+  return refreshAccessToken("github", refreshToken, {}, log, proxyOptions);
 }
 
-export async function refreshCopilotToken(githubAccessToken, log) {
+export async function refreshCopilotToken(githubAccessToken, log, proxyOptions = null) {
   if (!githubAccessToken) return null;
   return dedupRefresh("copilot", githubAccessToken, async () => {
   try {
-    const response = await fetch(PROVIDER_OAUTH["github"]?.copilotTokenUrl, {
+    const response = await proxyAwareFetch(PROVIDER_OAUTH["github"]?.copilotTokenUrl, {
       headers: {
         "Authorization": `token ${githubAccessToken}`,
         "User-Agent": GITHUB_COPILOT.USER_AGENT,
@@ -431,7 +431,7 @@ export async function refreshCopilotToken(githubAccessToken, log) {
         "Accept": "application/json",
         "x-github-api-version": GITHUB_COPILOT.API_VERSION
       }
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -465,11 +465,11 @@ export async function refreshCopilotToken(githubAccessToken, log) {
 // CodeBuddy (Tencent) refresh — POST /v2/plugin/auth/token/refresh with the
 // refresh token carried in the X-Refresh-Token header (not a form body),
 // matching the official CodeBuddy CLI. Response: { code: 0, data: <token> }.
-export async function refreshCodebuddyToken(refreshToken, log) {
+export async function refreshCodebuddyToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("codebuddy-cn", refreshToken, async () => {
     const oauth = PROVIDER_OAUTH["codebuddy-cn"] || {};
-    const response = await fetch(oauth.refreshUrl, {
+    const response = await proxyAwareFetch(oauth.refreshUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -482,7 +482,7 @@ export async function refreshCodebuddyToken(refreshToken, log) {
         "X-Product": "SaaS",
       },
       body: "{}",
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -516,11 +516,11 @@ export async function refreshCodebuddyToken(refreshToken, log) {
   }, log);
 }
 
-export async function refreshCodebuddyIntlToken(refreshToken, log) {
+export async function refreshCodebuddyIntlToken(refreshToken, log, proxyOptions = null) {
   if (!refreshToken) return null;
   return dedupRefresh("codebuddy-intl", refreshToken, async () => {
     const oauth = PROVIDER_OAUTH["codebuddy-intl"] || {};
-    const response = await fetch(oauth.refreshUrl, {
+    const response = await proxyAwareFetch(oauth.refreshUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -533,7 +533,7 @@ export async function refreshCodebuddyIntlToken(refreshToken, log) {
         "X-Product": "SaaS",
       },
       body: "{}",
-    });
+    }, proxyOptions);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -569,7 +569,7 @@ export async function refreshCodebuddyIntlToken(refreshToken, log) {
 
 // Trae refresh — POST ExchangeToken with JSON body {ClientID, RefreshToken, ClientSecret, UserID}.
 // Response: {Result: {AccessToken, RefreshToken, TokenType, ExpiresAt}}.
-export async function refreshTraeToken(refreshToken, credentials, log) {
+export async function refreshTraeToken(refreshToken, credentials, log, proxyOptions = null) {
   if (!refreshToken) return null;
   const oauth = PROVIDER_OAUTH.trae || {};
   const url = oauth.exchangeTokenUrl || oauth.tokenUrl;
@@ -580,7 +580,7 @@ export async function refreshTraeToken(refreshToken, credentials, log) {
 
   return dedupRefresh("trae", refreshToken, async () => {
     try {
-      const response = await fetch(url, {
+      const response = await proxyAwareFetch(url, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -593,7 +593,7 @@ export async function refreshTraeToken(refreshToken, credentials, log) {
           ClientSecret: oauth.clientSecret || "-",
           UserID: "",
         }),
-      });
+      }, proxyOptions);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -651,7 +651,7 @@ export function refreshZedToken() {
 // grant yields a fresh apiKey). Refresh handled out-of-band by the caller.
 // TODO(firebase): if short-lived Firebase JWT credentials must be refreshed,
 // re-run RegisterUser with the refreshed Firebase JWT (separate code path).
-export async function refreshWindsurfToken(credentials, log) {
+export async function refreshWindsurfToken(credentials, log, proxyOptions = null) {
   log?.info?.(
     "TOKEN_REFRESH",
     "windsurf: apiKey is long-lived (no refresh_token flow) — skipping"

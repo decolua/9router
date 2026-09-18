@@ -1,5 +1,6 @@
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { runWithProxyOptions } from "open-sse/utils/proxyFetch.js";
 import { testProxyUrl } from "@/lib/network/proxyTest";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
@@ -220,6 +221,21 @@ async function refreshOAuthToken(connection) {
   const refreshToken = connection.refreshToken;
   if (!refreshToken) return null;
 
+  // This function reaches the OAuth endpoints through bare `fetch` in a dozen
+  // branches. Resolving the connection's proxy pool once and running the whole
+  // body inside the ambient proxy context keeps the refresh on the same egress
+  // as the request it is refreshing for. strictProxy is forced off: a test-page
+  // refresh must degrade to direct rather than fail outright.
+  const proxyCfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+  const proxyOptions = {
+    connectionProxyEnabled: proxyCfg.connectionProxyEnabled === true,
+    connectionProxyUrl: proxyCfg.connectionProxyUrl || "",
+    connectionNoProxy: proxyCfg.connectionNoProxy || "",
+    vercelRelayUrl: proxyCfg.vercelRelayUrl || "",
+    strictProxy: false,
+  };
+
+  return runWithProxyOptions(proxyOptions, async () => {
   try {
     if (provider === "gemini-cli" || provider === "antigravity") {
       const config = provider === "gemini-cli" ? GEMINI_CONFIG : ANTIGRAVITY_CONFIG;
@@ -239,7 +255,7 @@ async function refreshOAuthToken(connection) {
     }
 
     if (provider === "codex" || provider === "grok-cli" || provider === "xai") {
-      return await refreshProviderCredentials(provider, connection, console);
+      return await refreshProviderCredentials(provider, connection, console, proxyOptions);
     }
 
     if (provider === "claude") {
@@ -311,6 +327,7 @@ async function refreshOAuthToken(connection) {
     console.log(`Error refreshing ${provider} token:`, err.message);
     return null;
   }
+  });
 }
 
 function isTokenExpired(connection) {

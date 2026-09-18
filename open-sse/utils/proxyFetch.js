@@ -1,9 +1,34 @@
 import { Readable } from "stream";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
+
+// ─── Ambient proxy context ─────────────────────────────────────────────────
+// Some upstream calls can't take `proxyOptions` as an argument: the TTS adapters
+// and the video passthrough go through layers that never carried it, and a few
+// executors (grok-web, perplexity-web, devin-cli) call bare `fetch`. Those paths
+// silently escaped the connection's proxy pool. Running them inside this context
+// lets the patched global fetch pick the same egress up implicitly. An explicit
+// `proxyOptions` argument always wins over the ambient one.
+const proxyContext = new AsyncLocalStorage();
+
+/**
+ * Run `fn` with `proxyOptions` as the ambient egress for any fetch it performs.
+ * Keep the wrapped region tight — it must not cover calls to local sidecars
+ * (headroom, ollama-local), which have no business going through a remote proxy.
+ */
+export function runWithProxyOptions(proxyOptions, fn) {
+  if (!proxyOptions) return fn();
+  return proxyContext.run(proxyOptions, fn);
+}
+
+/** The proxy options in effect for the current async scope, if any. */
+export function getAmbientProxyOptions() {
+  return proxyContext.getStore() || null;
+}
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
@@ -293,6 +318,9 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  // An explicit argument wins; otherwise inherit whatever the enclosing
+  // runWithProxyOptions() scope set (null when there is none).
+  proxyOptions = proxyOptions || proxyContext.getStore() || null;
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);

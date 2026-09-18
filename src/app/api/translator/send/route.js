@@ -1,5 +1,7 @@
 import { getProviderConnections, updateProviderConnection } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/index.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { runWithProxyOptions } from "open-sse/utils/proxyFetch.js";
 
 async function persistRefreshedCredentials(connection, newCredentials) {
   const updateData = {};
@@ -62,15 +64,32 @@ export async function POST(request) {
     const executor = getExecutor(provider);
     const stream = body.stream !== false;
 
-    let { response } = await executor.execute({ model, body, stream, credentials });
+    // Same egress as a real request: the translator playground must not leak the
+    // host IP to a provider the connection normally reaches through a proxy pool.
+    const proxyCfg = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    const proxyOptions = {
+      connectionProxyEnabled: proxyCfg.connectionProxyEnabled === true,
+      connectionProxyUrl: proxyCfg.connectionProxyUrl || "",
+      connectionNoProxy: proxyCfg.connectionNoProxy || "",
+      vercelRelayUrl: proxyCfg.vercelRelayUrl || "",
+      strictProxy: proxyCfg.strictProxy === true,
+    };
+
+    let { response } = await runWithProxyOptions(proxyOptions, () =>
+      executor.execute({ model, body, stream, credentials, proxyOptions })
+    );
 
     // Auto-refresh token on 401/403 and retry (same as chatCore.js)
     if (response.status === 401 || response.status === 403) {
-      const newCredentials = await executor.refreshCredentials(credentials, console);
+      const newCredentials = await runWithProxyOptions(proxyOptions, () =>
+        executor.refreshCredentials(credentials, console, proxyOptions)
+      );
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         Object.assign(credentials, newCredentials);
         await persistRefreshedCredentials(connection, newCredentials);
-        ({ response } = await executor.execute({ model, body, stream, credentials }));
+        ({ response } = await runWithProxyOptions(proxyOptions, () =>
+          executor.execute({ model, body, stream, credentials, proxyOptions })
+        ));
       }
     }
 

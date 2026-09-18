@@ -93,6 +93,20 @@ export async function resolveConnectionProxyConfig(
         proxyPool.isActive === true &&
         proxyUrl;
 
+      if (!isValidPool) {
+        // Falling through to legacy/direct here used to be completely silent,
+        // which is why "the proxy pool isn't working" was undiagnosable. Note
+        // that a failed connectivity test flips `isActive` off on its own.
+        const reason = !proxyPool
+          ? "not found (deleted?)"
+          : proxyPool.isActive !== true
+            ? `inactive (lastError: ${proxyPool.lastError || "none"})`
+            : "no proxyUrl set";
+        console.warn(
+          `[resolveConnectionProxyConfig] Proxy pool ${proxyPoolId} is unusable — ${reason}; this connection will NOT use a proxy`
+        );
+      }
+
       if (isValidPool) {
         /**
          * Vercel/Cloudflare relay proxies use base URL rewriting

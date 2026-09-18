@@ -21,6 +21,15 @@ import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets, VIDEO_ACTIONS } 
 import { refreshTokenByProvider } from "open-sse/services/tokenRefresh.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "open-sse/providers/index.js";
 
+// Mock proxyFetch: the handlers now egress through proxyAwareFetch so the
+// connection's proxy pool applies. Delegate to the global fetch stub so the
+// existing call assertions keep describing the same request.
+vi.mock("open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: (url, init) => globalThis.fetch(url, init),
+  runWithProxyOptions: (_proxyOptions, fn) => fn(),
+  default: (url, init) => globalThis.fetch(url, init),
+}));
+
 const originalFetch = global.fetch;
 
 const jsonResponse = (body, status = 200) =>

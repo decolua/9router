@@ -1,6 +1,7 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
 import { updateProviderConnection } from "../../lib/localDb.js";
+import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -31,35 +32,35 @@ export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
 // ─── Re-exports wrapped with local logger ─────────────────────────────────────
 
-export const refreshAccessToken = (provider, refreshToken, credentials) =>
-  _refreshAccessToken(provider, refreshToken, credentials, log);
+export const refreshAccessToken = (provider, refreshToken, credentials, proxyOptions = null) =>
+  _refreshAccessToken(provider, refreshToken, credentials, log, proxyOptions);
 
-export const refreshClaudeOAuthToken = (refreshToken) =>
-  _refreshClaudeOAuthToken(refreshToken, log);
+export const refreshClaudeOAuthToken = (refreshToken, proxyOptions = null) =>
+  _refreshClaudeOAuthToken(refreshToken, log, proxyOptions);
 
-export const refreshGoogleToken = (refreshToken, clientId, clientSecret) =>
-  _refreshGoogleToken(refreshToken, clientId, clientSecret, log);
+export const refreshGoogleToken = (refreshToken, clientId, clientSecret, proxyOptions = null) =>
+  _refreshGoogleToken(refreshToken, clientId, clientSecret, log, proxyOptions);
 
-export const refreshCodexToken = (refreshToken) =>
-  _refreshCodexToken(refreshToken, log);
+export const refreshCodexToken = (refreshToken, proxyOptions = null) =>
+  _refreshCodexToken(refreshToken, log, proxyOptions);
 
-export const refreshIflowToken = (refreshToken) =>
-  _refreshIflowToken(refreshToken, log);
+export const refreshIflowToken = (refreshToken, proxyOptions = null) =>
+  _refreshIflowToken(refreshToken, log, proxyOptions);
 
-export const refreshGitHubToken = (refreshToken) =>
-  _refreshGitHubToken(refreshToken, log);
+export const refreshGitHubToken = (refreshToken, proxyOptions = null) =>
+  _refreshGitHubToken(refreshToken, log, proxyOptions);
 
-export const refreshCopilotToken = (githubAccessToken) =>
-  _refreshCopilotToken(githubAccessToken, log);
+export const refreshCopilotToken = (githubAccessToken, proxyOptions = null) =>
+  _refreshCopilotToken(githubAccessToken, log, proxyOptions);
 
-export const refreshKiroToken = (refreshToken, providerSpecificData) =>
-  _refreshKiroToken(refreshToken, providerSpecificData, log);
+export const refreshKiroToken = (refreshToken, providerSpecificData, proxyOptions = null) =>
+  _refreshKiroToken(refreshToken, providerSpecificData, log, proxyOptions);
 
-export const getAccessToken = (provider, credentials) =>
-  _getAccessToken(provider, credentials, log);
+export const getAccessToken = (provider, credentials, proxyOptions = null) =>
+  _getAccessToken(provider, credentials, log, proxyOptions);
 
-export const refreshTokenByProvider = (provider, credentials) =>
-  _refreshTokenByProvider(provider, credentials, log);
+export const refreshTokenByProvider = (provider, credentials, proxyOptions = null) =>
+  _refreshTokenByProvider(provider, credentials, log, proxyOptions);
 
 export const formatProviderCredentials = (provider, credentials) =>
   _formatProviderCredentials(provider, credentials, log);
@@ -207,6 +208,29 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 // ─── Local-specific: proactive token refresh ─────────────────────────────────
 
 /**
+ * Resolve the connection's proxy pool into a `proxyOptions` payload so the
+ * OAuth refresh leaves through the same egress as the chat request. Works both
+ * for credentials already resolved by the auth service and for raw DB
+ * connections handed over by the background scheduler.
+ */
+async function resolveProxyOptionsFor(credentials) {
+  try {
+    const cfg = await resolveConnectionProxyConfig(credentials?.providerSpecificData || {});
+    return {
+      connectionProxyEnabled: cfg.connectionProxyEnabled === true,
+      connectionProxyUrl: cfg.connectionProxyUrl || "",
+      connectionNoProxy: cfg.connectionNoProxy || "",
+      vercelRelayUrl: cfg.vercelRelayUrl || "",
+      strictProxy: cfg.strictProxy === true,
+    };
+  } catch (error) {
+    // Fail open — a proxy lookup must never block a token refresh.
+    log.warn("TOKEN_REFRESH", `Could not resolve proxy for refresh: ${error.message}`);
+    return null;
+  }
+}
+
+/**
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
  *
@@ -223,6 +247,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
   }
 
   const force = options?.force === true;
+  const proxyOptions = await resolveProxyOptionsFor(creds);
 
   // ── 1. Regular access-token expiry ────────────────────────────────────────
   if (force || _shouldRefreshCredentials(provider, creds)) {
@@ -237,7 +262,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
-    const newCreds = await _refreshProviderCredentials(provider, creds, log);
+    const newCreds = await _refreshProviderCredentials(provider, creds, log, proxyOptions);
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,
@@ -278,7 +303,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
         expiresIn: copilotToken ? Math.round(remaining / 1000) : "missing",
       });
 
-      const copilotTokenResult = await refreshCopilotToken(creds.accessToken);
+      const copilotTokenResult = await refreshCopilotToken(creds.accessToken, proxyOptions);
       if (copilotTokenResult) {
         const updatedSpecific = {
           ...creds.providerSpecificData,

@@ -1,6 +1,8 @@
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { buildProxyOptions, logProxySelection } from "../utils/proxyOptions.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
 
 // Upstream fetch deadline for video job submission/polling (the job itself is
@@ -98,13 +100,16 @@ export async function handleVideoProxyCore({
   const url = buildUpstreamUrl(config, action, requestId);
   const fetchSignal = combineSignals(signal, timeoutMs);
 
+  const proxyOptions = buildProxyOptions(credentials);
+  logProxySelection(log, provider, requestId ? `job:${requestId}` : action, credentials, proxyOptions);
+
   const doFetch = (token) =>
-    fetch(url, {
+    proxyAwareFetch(url, {
       method,
       headers: buildHeaders({ token, contentType: method === "POST" ? contentType : null, idempotencyKey: method === "POST" ? idempotencyKey : null }),
       body: method === "POST" ? rawBody : undefined,
       signal: fetchSignal,
-    });
+    }, proxyOptions);
 
   let upstream;
   try {
@@ -124,7 +129,7 @@ export async function handleVideoProxyCore({
   ) {
     let refreshed = null;
     try {
-      refreshed = await refreshTokenByProvider(provider, credentials, log);
+      refreshed = await refreshTokenByProvider(provider, credentials, log, proxyOptions);
     } catch (error) {
       log?.warn?.("TOKEN", `${provider} | video refresh error: ${sanitizeSecrets(error.message, credentials)}`);
     }

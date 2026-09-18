@@ -7,6 +7,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
+import { isModelDisabled } from "../services/disabledModels.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -75,6 +76,10 @@ async function resolveVideoProvider(parsedBody) {
       return { provider: DEFAULT_VIDEO_PROVIDER, model: modelStr };
     }
     return { error: errorResponse(HTTP_STATUS.BAD_REQUEST, `Provider '${modelInfo.provider}' does not support video generation`) };
+  }
+  if (await isModelDisabled(modelInfo.provider, modelInfo.model)) {
+    log.warn("VIDEO", `Model "${modelStr}" is disabled`, { provider: modelInfo.provider, model: modelInfo.model });
+    return { error: errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is disabled`) };
   }
   return { provider: modelInfo.provider, model: modelInfo.model };
 }

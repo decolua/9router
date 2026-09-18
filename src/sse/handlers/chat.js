@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { isModelDisabled, filterDisabledModels } from "../services/disabledModels.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
@@ -87,8 +88,14 @@ export async function handleChat(request, clientRawRequest = null) {
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  const rawComboModels = await getComboModels(modelStr);
+  // Disabled models are dropped before rotation so they never cost a round trip
+  const comboModels = rawComboModels ? await filterDisabledModels(rawComboModels) : null;
   if (comboModels) {
+    if (comboModels.length === 0) {
+      log.warn("CHAT", `Combo "${modelStr}" has no enabled models`);
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, `All models in combo "${modelStr}" are disabled`);
+    }
     // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
     const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
@@ -162,8 +169,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const rawComboModels = await getComboModels(modelStr);
+    const comboModels = rawComboModels ? await filterDisabledModels(rawComboModels) : null;
     if (comboModels) {
+      if (comboModels.length === 0) {
+        log.warn("CHAT", `Combo "${modelStr}" has no enabled models`);
+        return errorResponse(HTTP_STATUS.BAD_REQUEST, `All models in combo "${modelStr}" are disabled`);
+      }
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
@@ -213,6 +225,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+
+  if (await isModelDisabled(provider, model)) {
+    log.warn("CHAT", `Model "${modelStr}" is disabled`, { provider, model });
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is disabled`);
+  }
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
