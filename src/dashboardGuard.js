@@ -216,6 +216,23 @@ export async function proxy(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // CORS preflight: browsers send OPTIONS without auth headers by design.
+  // Short-circuit before the auth check so cross-origin browser/WebView clients
+  // (e.g. extensions, Claude for Office) can reach /v1/* endpoints.
+  // GET/POST auth is fully preserved — only OPTIONS is exempted. (#1381)
+  if (request.method === "OPTIONS" && isPublicLlmApi(pathname)) {
+    const reqHeaders = request.headers.get("access-control-request-headers");
+    return NextResponse.json(null, {
+      status: 204,
+      headers: {
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+        "Access-Control-Allow-Headers": reqHeaders || "*",
+        "Access-Control-Max-Age": "86400",
+      },
+    });
+  }
+
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
