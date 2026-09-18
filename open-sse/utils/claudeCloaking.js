@@ -89,16 +89,45 @@ export function cloakClaudeTools(body) {
   };
 }
 
+function resolveOriginalToolName(name, toolNameMap) {
+  if (typeof name !== "string") return name;
+  if (toolNameMap && typeof toolNameMap.get === "function" && toolNameMap.has(name)) {
+    return toolNameMap.get(name);
+  }
+  if (name.endsWith(CLAUDE_TOOL_SUFFIX)) {
+    return name.slice(0, -CLAUDE_TOOL_SUFFIX.length);
+  }
+  return name;
+}
+
 // Decloak tool_use names in non-streaming Claude response body (INPUT side)
 export function decloakToolNames(body, toolNameMap) {
-  if (!toolNameMap?.size || !Array.isArray(body?.content)) return body;
-  const content = body.content.map(block => {
-    if (block?.type === "tool_use" && toolNameMap.has(block.name)) {
-      return { ...block, name: toolNameMap.get(block.name) };
+  if (!body || typeof body !== "object") return body;
+
+  // Claude format: body.content = [{ type: "tool_use", name: "..." }]
+  if (Array.isArray(body.content)) {
+    body.content = body.content.map(block => {
+      if (block?.type === "tool_use" && typeof block.name === "string") {
+        return { ...block, name: resolveOriginalToolName(block.name, toolNameMap) };
+      }
+      return block;
+    });
+  }
+
+  // OpenAI format: body.choices[].message.tool_calls
+  if (Array.isArray(body.choices)) {
+    for (const choice of body.choices) {
+      if (Array.isArray(choice?.message?.tool_calls)) {
+        for (const tc of choice.message.tool_calls) {
+          if (tc?.function?.name) {
+            tc.function.name = resolveOriginalToolName(tc.function.name, toolNameMap);
+          }
+        }
+      }
     }
-    return block;
-  });
-  return { ...body, content };
+  }
+
+  return body;
 }
 
 /**
@@ -119,12 +148,12 @@ export function decloakToolNames(body, toolNameMap) {
  * @returns {object|null} The chunk, with the tool_use name restored when cloaked
  */
 export function decloakStreamChunk(chunk, toolNameMap) {
-  if (!toolNameMap?.size || !chunk || typeof chunk !== "object") return chunk;
+  if (!chunk || typeof chunk !== "object") return chunk;
   if (chunk.type !== "content_block_start") return chunk;
   const block = chunk.content_block;
   if (block?.type !== "tool_use" || typeof block.name !== "string") return chunk;
-  const original = toolNameMap.get(block.name);
-  if (!original) return chunk;
+  const original = resolveOriginalToolName(block.name, toolNameMap);
+  if (original === block.name) return chunk;
   return { ...chunk, content_block: { ...block, name: original } };
 }
 

@@ -158,8 +158,9 @@ function toKimiReasoningEffort(cfg) {
   const level = toLevel(cfg);
   if (level === "auto") return "high";
   if (level === "minimal") return "low";
+  if (level === "medium") return "high"; // Kimi K3 only supports low, high, max (#3794)
   if (level === "xhigh") return "max";
-  if (["low", "medium", "high", "max"].includes(level)) return level;
+  if (["low", "high", "max"].includes(level)) return level;
   return null;
 }
 
@@ -251,8 +252,13 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       // Permanently adaptive models such as Fable 5.1 accept effort directly.
       if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
       else delete body.thinking;
-      const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" || level === "auto" ? "high" : level };
+      const rawLevel = toLevel(eff);
+      const level = rawLevel === "xhigh" || rawLevel === "auto" ? "high" : rawLevel;
+      if (["low", "medium", "high", "max"].includes(level)) {
+        body.output_config = { effort: level };
+      } else {
+        delete body.output_config;
+      }
       break;
     }
     case "claude-budget": {

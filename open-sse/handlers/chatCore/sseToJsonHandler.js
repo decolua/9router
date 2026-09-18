@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { decloakToolNames } from "../../utils/claudeCloaking.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -179,7 +180,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, toolNameMap, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -281,6 +282,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
+      if (toolNameMap) {
+        finalResp = decloakToolNames(finalResp, toolNameMap);
+      }
+
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
@@ -347,9 +352,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // lost on the non-streaming return path. Inlined (not imported from
     // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
     // already imports parseSSEToOpenAIResponse from this module.
-    const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
+    let finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
       : parsed;
+
+    if (toolNameMap) {
+      finalBody = decloakToolNames(finalBody, toolNameMap);
+    }
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {

@@ -117,7 +117,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  let stream = providerRequiresStreaming ? true : (clientRequestedStreaming || (body.stream !== false && clientRawRequest?.headers?.accept?.includes("text/event-stream") && !clientRawRequest?.headers?.accept?.includes("application/json")));
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
@@ -480,7 +480,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {
-    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, trackDone, appendLog });
+    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, toolNameMap, customToolNames, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }
 
