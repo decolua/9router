@@ -209,7 +209,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(logs).not.toContain(original);
   });
 
-  it("warns when Headroom reports savings but outbound body barely shrinks", async () => {
+  it("keeps original body (no commit) and logs skip reason when Headroom reports phantom savings", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const original = "x".repeat(1000);
     const nearlySame = "x".repeat(990);
@@ -245,9 +245,21 @@ describe("handleChatCore Headroom diagnostics", () => {
       },
     });
 
+    // Byte-shrink guard now rejects the candidate BEFORE committing — the
+    // executor must see the ORIGINAL payload, not the near-original compressed one.
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        messages: [{ role: "user", content: original }],
+      }),
+    }));
+    // The old post-hoc warning is replaced by the pre-commit skip diagnostic.
     expect(log.warn).toHaveBeenCalledWith(
       "HEADROOM",
-      expect.stringContaining("reported token delta, but outbound JSON shrank <5%; provider may bill near-original payload")
+      expect.stringContaining("skipped:")
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      "HEADROOM",
+      expect.stringContaining("phantom savings")
     );
   });
 
