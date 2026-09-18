@@ -367,19 +367,25 @@ export function estimateOutputTokens(contentLength) {
  * @param {number} inputTokens - Input/prompt tokens
  * @param {number} outputTokens - Output/completion tokens
  * @param {string} targetFormat - Target format from FORMATS
+ * @param {object} [options]
+ * @param {boolean} [options.buffer=true] - Add BUFFER_TOKENS. True by default so
+ *   existing callers keep the client-facing margin; pass false when the value is
+ *   going to be recorded rather than sent, so accounting sees the real estimate.
  */
-export function formatUsage(inputTokens, outputTokens, targetFormat) {
+export function formatUsage(inputTokens, outputTokens, targetFormat, options = {}) {
+  const withBuffer = options.buffer !== false ? addBufferToUsage : (u) => u;
+
   // Claude format uses input_tokens/output_tokens
   if (targetFormat === FORMATS.CLAUDE) {
-    return addBufferToUsage({ 
-      input_tokens: inputTokens, 
-      output_tokens: outputTokens, 
-      estimated: true 
+    return withBuffer({
+      input_tokens: inputTokens,
+      output_tokens: outputTokens,
+      estimated: true
     });
   }
 
   // Default: OpenAI format (works for openai, gemini, responses, etc.)
-  return addBufferToUsage({
+  return withBuffer({
     prompt_tokens: inputTokens,
     completion_tokens: outputTokens,
     total_tokens: inputTokens + outputTokens,
@@ -393,11 +399,12 @@ export function formatUsage(inputTokens, outputTokens, targetFormat) {
  * @param {number} contentLength - Content length for output token estimation
  * @param {string} targetFormat - Target format from FORMATS constant
  */
-export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI) {
+export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI, options = {}) {
   return formatUsage(
     estimateInputTokens(body),
     estimateOutputTokens(contentLength),
-    targetFormat
+    targetFormat,
+    options
   );
 }
 
