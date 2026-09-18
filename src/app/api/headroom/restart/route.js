@@ -2,8 +2,14 @@ import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import { restartHeadroomProxy } from "@/lib/headroom/process";
 import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl } from "@/lib/headroom/detect";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
 
 export const dynamic = "force-dynamic";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 function parsePortFromUrl(url) {
   try {
@@ -14,7 +20,10 @@ function parsePortFromUrl(url) {
   return null;
 }
 
-export async function POST() {
+export async function POST(request) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const settings = await getSettings();
     const url = settings.headroomUrl || DEFAULT_HEADROOM_URL;

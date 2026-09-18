@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
+import { hasValidCliToken, isAuthenticated } from "@/dashboardGuard";
 
 export const dynamic = "force-dynamic";
+
+async function requireAuth(request) {
+  if (await hasValidCliToken(request) || await isAuthenticated(request)) return true;
+  return false;
+}
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
@@ -57,6 +63,9 @@ function rewriteDashboardHtml(html) {
 }
 
 async function proxy(request, { params }) {
+  if (!(await requireAuth(request))) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
   try {
     const base = await getTargetBase();
     const { search } = new URL(request.url);
