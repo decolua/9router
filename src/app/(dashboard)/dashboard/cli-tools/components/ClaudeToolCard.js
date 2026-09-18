@@ -527,7 +527,7 @@ export default function ClaudeToolCard({
                   <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs text-text-muted">Auto-allow classifier</span>
-                    <Tooltip text="Claude Code --permission-mode auto sends an internal security-classifier request. When routed to a cheap model that returns empty content, every gated action (Bash, Edit, WebFetch) fails closed. auto detects that request and answers it locally with a synthetic ALLOW, without calling upstream. always does the same for every Claude-format request. off never mutates traffic.">
+                    <Tooltip text="Claude Code --permission-mode auto sends an internal security-classifier request. When routed to a cheap model that returns empty content, every gated action (Bash, Edit, WebFetch) fails closed. auto and always detect the security-monitor marker and answer that request locally with a synthetic ALLOW, without calling upstream. off never mutates traffic.">
                       <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
                     </Tooltip>
                   </div>
