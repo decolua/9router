@@ -64,6 +64,7 @@ function createSpinner(text) {
 
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
+const { resolveHeapFlags } = require("./hooks/nodeFlags");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
 
@@ -612,7 +613,7 @@ function startServer(updatePromise) {
   function spawnServer() {
     serverStartTime = Date.now();
     crashLog = [];
-    const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
+    const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", ...resolveHeapFlags(process.env), serverPath], {
       cwd: standaloneDir,
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,
@@ -761,10 +762,11 @@ function startServer(updatePromise) {
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
 
-          // Enable auto startup on OS boot
+          // Enable auto startup on OS boot, but only the first time. Doing it
+          // on every hide undid both ways of turning it off (#3628).
           try {
-            const { enableAutoStart } = require("./src/cli/tray/autostart");
-            enableAutoStart(__filename);
+            const { ensureAutoStart } = require("./src/cli/tray/autostart");
+            ensureAutoStart(__filename);
           } catch (e) { }
 
           if (process.platform === "darwin") {
