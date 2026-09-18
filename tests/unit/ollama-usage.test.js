@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: vi.fn(),
@@ -145,6 +145,60 @@ describe("getUsageForProvider(ollama)", () => {
       unlimited: false,
     });
     expect(usage.quotas["Monthly"].remaining).toBeUndefined();
+    expect(usage.quotas["Monthly"].resetAt).toBeNull();
+  });
+
+  describe("free plan monthly reset from signup date", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function monthlyResetAt(createdAt, now) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(now));
+      proxyAwareFetch
+        .mockResolvedValueOnce(jsonResponse(SAMPLE_FREE_USAGE))
+        .mockResolvedValueOnce(jsonResponse({ Plan: "free", CreatedAt: createdAt }));
+
+      const usage = await getUsageForProvider({
+        provider: "ollama",
+        apiKey: "k",
+        providerSpecificData: {},
+      });
+      return usage.quotas["Monthly"].resetAt;
+    }
+
+    it("uses the signup day of the next month", async () => {
+      expect(await monthlyResetAt("2025-09-06T22:15:39.871687Z", "2026-09-18T15:03:00Z"))
+        .toBe("2026-10-06T22:15:39.000Z");
+    });
+
+    it("stays in the current month when the signup day is still ahead", async () => {
+      expect(await monthlyResetAt("2026-09-18T09:50:49.514335Z", "2026-09-18T15:33:33Z"))
+        .toBe("2026-10-18T09:50:49.000Z");
+      expect(await monthlyResetAt("2025-09-25T10:00:00Z", "2026-09-18T15:33:33Z"))
+        .toBe("2026-09-25T10:00:00.000Z");
+    });
+
+    it("clamps the signup day to shorter months", async () => {
+      expect(await monthlyResetAt("2026-01-31T12:00:00Z", "2026-02-10T00:00:00Z"))
+        .toBe("2026-02-28T12:00:00.000Z");
+    });
+
+    it("skips the reset when the plan is not free", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-18T15:03:00Z"));
+      proxyAwareFetch
+        .mockResolvedValueOnce(jsonResponse(SAMPLE_FREE_USAGE))
+        .mockResolvedValueOnce(jsonResponse({ Plan: "pro", CreatedAt: "2025-09-06T22:15:39Z" }));
+
+      const usage = await getUsageForProvider({
+        provider: "ollama",
+        apiKey: "k",
+        providerSpecificData: {},
+      });
+      expect(usage.quotas["Monthly"].resetAt).toBeNull();
+    });
   });
 
   it("reports no limits when no known window is present", async () => {
