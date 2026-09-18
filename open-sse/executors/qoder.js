@@ -38,6 +38,7 @@ import {
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { createQoderSseCoalescer } from "../shared/qoder/sse.js";
 import { rewriteQoderMessageAttachments } from "../shared/qoder/attachments.js";
 import { resolveQoderContextTier, applyQoderContextTier } from "../shared/qoder/contextTier.js";
@@ -205,10 +206,26 @@ function truncate(s, n) {
 }
 
 /**
+ * Build Qoder's private parameters block from the normalized OpenAI body.
+ * Qoder accepts reasoning_effort inside parameters, not at the top level.
+ * Omit it when absent so the upstream model keeps its server-side default.
+ */
+function buildQoderParameters(body, maxTokens) {
+  const parameters = { max_tokens: maxTokens };
+  const effort = typeof body?.reasoning_effort === "string"
+    ? body.reasoning_effort.trim().toLowerCase()
+    : "";
+  if (effort && effort !== "auto") parameters.reasoning_effort = effort;
+  return parameters;
+}
+
+/**
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
 async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null }) {
-  const qoderKey = String(model || "").replace(/^qoder\//, "");
+  // chatCore preserves the suffix on the executor's model argument so thinking
+  // normalization can see it, while Qoder's catalog only knows the bare key.
+  const qoderKey = stripThinkingSuffix(String(model || "").replace(/^qoder\//, ""));
   
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
   // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
@@ -305,7 +322,7 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
       system: systemText,
       messages,
       tools: Array.isArray(tools) ? tools : [],
-      parameters: { max_tokens: maxTokens },
+      parameters: buildQoderParameters(body, maxTokens),
       chat_context: {
         chatPrompt: "",
         imageUrls: null,
@@ -700,5 +717,6 @@ export const __test__ = {
   normalizeMessages,
   wrapQoderSSE,
   buildQoderRequestBody,
+  buildQoderParameters,
   isBillingBlock,
 };
