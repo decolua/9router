@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -151,6 +151,32 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
     ],
+  },
+  dlpEvents: {
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      timestamp: "TEXT NOT NULL",
+      scope: "TEXT NOT NULL",
+      mode: "TEXT NOT NULL DEFAULT 'redact'",
+      matched: "INTEGER NOT NULL DEFAULT 0",
+      byType: "TEXT NOT NULL DEFAULT '{}'",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_dlpe_ts ON dlpEvents(timestamp)",
+      "CREATE INDEX IF NOT EXISTS idx_dlpe_scope ON dlpEvents(scope)",
+    ],
+  },
+  consent_log: {
+    // Immutable audit trail of DLP consent changes (accepted/revoked).
+    // Append-only by design — deliberately no delete/clear anywhere.
+    columns: {
+      id: "INTEGER PRIMARY KEY AUTOINCREMENT",
+      user: "TEXT NOT NULL",
+      hostname: "TEXT NOT NULL",
+      action: "TEXT NOT NULL",
+      createdAt: "TEXT NOT NULL",
+    },
+    indexes: ["CREATE INDEX IF NOT EXISTS idx_consent_ts ON consent_log(createdAt DESC)"],
   },
 };
 

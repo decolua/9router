@@ -101,3 +101,10 @@ graphify-out/*
 .start-dev.ps1
 start-dev-silent.cjs
 debug.log
+
+# Local dev/test dirs
+/tmp/
+.vitest/
+
+# Docs: allow the privacy E2E validation report (rest of docs/ stays ignored)
+!docs/REPORT-E2E-PRIVACY.md

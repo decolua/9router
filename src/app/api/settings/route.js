@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { cookies } from "next/headers";
+import os from "node:os";
+import { getSettings, updateSettings, logConsent } from "@/lib/localDb";
+import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
@@ -77,6 +80,27 @@ export async function PATCH(request) {
     }
 
     const settings = await updateSettings(body);
+
+    // Audit DLP consent changes (accepted/revoked) — written server-side,
+    // append-only, never pruned. Fail-open: logging must not break the save.
+    if (Object.prototype.hasOwnProperty.call(body, "dlpConsent")) {
+      try {
+        const cookieStore = await cookies();
+        const session = await getDashboardAuthSession(cookieStore.get("auth_token")?.value);
+        await logConsent({
+          user:
+            session?.samlEmail ||
+            session?.oidcEmail ||
+            session?.samlName ||
+            session?.oidcName ||
+            (session ? "authenticated" : "anonymous"),
+          hostname: os.hostname(),
+          action: body.dlpConsent ? "accepted" : "revoked",
+        });
+      } catch (err) {
+        console.warn("[settings] consent log failed:", err.message);
+      }
+    }
 
     // Apply outbound proxy settings immediately (no restart required)
     if (

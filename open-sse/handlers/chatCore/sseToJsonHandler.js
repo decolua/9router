@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { maskSensitiveData, maskText } from "../../dlp/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -179,7 +180,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log, dlp }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
@@ -212,7 +213,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const inTokensForLog = (usage.input_tokens || 0)
         + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
         + (usage.cache_creation_input_tokens || 0);
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const { msgItem, textContent: rawTextContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      // DLP: mask before persisting so the request-detail log holds single-masked
+      // text. textContent is a primitive string copy — the client-return mask below
+      // still walks the raw jsonResponse, so this pass never double-masks simply
+      // because the values are disjoint (\uE000-guarded tokens only span one maskText
+      // pass; pseudonyms themselves DO re-match their source patterns).
+      let textContent = rawTextContent;
+      if (dlp?.enabled && dlp.maskResponses !== false && typeof textContent === "string") {
+        textContent = maskText(textContent, dlp).text;
+      }
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
@@ -225,6 +235,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+        // DLP: mask sensitive values in the client-visible response before serializing
+        if (dlp?.enabled && dlp.maskResponses !== false) {
+          maskSensitiveData(jsonResponse, dlp);
+        }
         return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
       }
 
@@ -281,6 +295,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
+      // DLP: mask sensitive values in the client-visible response before serializing
+      if (dlp?.enabled && dlp.maskResponses !== false) {
+        maskSensitiveData(finalResp, dlp);
+      }
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
@@ -306,6 +324,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     appendLog({ tokens: usage, status: "200 OK" });
     saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
+
+    // DLP: mask before persisting so the request-detail log holds single-masked
+    // text. This mutates `parsed` in place and the client-visible mask below re-walks
+    // the same object: redact stays idempotent ([PII-REDACTED] matches no pattern),
+    // but pseudo pseudonyms DO re-match their source patterns — so a second,
+    // deterministic pseudonymization may apply and the client can see a second-level
+    // alias the log never held (leak-free, but not a no-op).
+    if (dlp?.enabled && dlp.maskResponses !== false) {
+      maskSensitiveData(parsed, dlp);
+    }
 
     const totalLatency = Date.now() - requestStartTime;
     saveRequestDetail(buildRequestDetail({
@@ -350,6 +378,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
       : parsed;
+
+    // DLP: mask sensitive values in the client-visible response before serializing
+    if (dlp?.enabled && dlp.maskResponses !== false) {
+      maskSensitiveData(finalBody, dlp);
+    }
 
     return { success: true, response: new Response(JSON.stringify(finalBody), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
   } catch (err) {

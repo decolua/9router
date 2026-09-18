@@ -11,6 +11,8 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../../dlp/index.js";
+import { recordDlpMasks } from "@/lib/db/repos/dlpStatsRepo.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -282,7 +284,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log, dlp }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -371,6 +373,30 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       if (choice?.message?.reasoning_content && choice.message.content) {
         delete choice.message.reasoning_content;
       }
+    }
+  }
+
+  // DLP: mask sensitive values in the final response body before it is logged
+  let dlpRespStats = null;
+  let clientRespStats = null;
+  if (dlp?.enabled && dlp.maskResponses !== false) {
+    clientRespStats = maskSensitiveData(translatedResponse, dlp);
+    dlpRespStats = mergeDlpStats(dlpRespStats, clientRespStats);
+
+    // When the translation produced a NEW object (Ollama / SSE-to-JSON / Claude /
+    // Gemini copy paths), the raw provider body above is a different object and is
+    // still unmasked — it would leak the provider's raw PII into the persisted
+    // request-details `providerResponse` field. When the translation was a no-op
+    // (translatedResponse === responseBody) the first mask already covered it.
+    if (responseBody && responseBody !== translatedResponse) {
+      dlpRespStats = mergeDlpStats(dlpRespStats, maskSensitiveData(responseBody, dlp));
+    }
+
+    const dlpLine = formatDlpLog(dlpRespStats, "response");
+    if (dlpLine) console.log(dlpLine);
+    // Stats: record what the client actually received (translatedResponse pass).
+    if (clientRespStats?.matched) {
+      recordDlpMasks({ scope: "response", mode: dlp?.mode || "redact", matched: clientRespStats.matched, byType: clientRespStats.byType }).catch(() => {});
     }
   }
 

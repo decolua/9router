@@ -5,6 +5,8 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { maskSensitiveData, formatDlpLog, mergeDlpStats } from "../dlp/index.js";
+import { recordDlpMasks } from "@/lib/db/repos/dlpStatsRepo.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -50,7 +52,8 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    credentials = null
+    credentials = null,
+    dlp = null
   } = options;
 
   let buffer = "";
@@ -78,6 +81,10 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
 
+  // DLP response stats accumulator: every per-chunk mask merges into this so the
+  // finalizeStream() tail can emit one [DLP] response line per request.
+  const dlpResponseStats = { matched: 0, byType: {} };
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
@@ -98,11 +105,32 @@ export function createSSEStream(options = {}) {
       appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
     }
 
+    // DLP: in translate mode the accumulator is built from the raw provider chunk
+    // (masking runs after translateResponse, on the SSE item), so the log payload
+    // here is still unmasked. Mask it once before it reaches onStreamComplete /
+    // request-detail persistence. Passthrough mode masks each chunk before
+    // accumulation, so its accumulated content is already masked and must stay
+    // untouched — re-masking would re-pseudonymize the masked values.
+    if (!isPassthrough && dlp?.enabled && dlp.maskResponses !== false) {
+      const logPayload = { content: accumulatedContent, thinking: accumulatedThinking };
+      mergeDlpStats(dlpResponseStats, maskSensitiveData(logPayload, dlp));
+      accumulatedContent = logPayload.content;
+      accumulatedThinking = logPayload.thinking;
+    }
+
     if (onStreamComplete) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
       }, finalUsage, ttftAt);
+    }
+
+    // One [DLP] response line per request — whatever got masked across chunks.
+    const dlpRespLine = formatDlpLog(dlpResponseStats, "response");
+    if (dlpRespLine) console.log(dlpRespLine);
+    // Stats: record what the client received across all chunks.
+    if (dlpResponseStats?.matched) {
+      recordDlpMasks({ scope: "response", mode: dlp?.mode || "redact", matched: dlpResponseStats.matched, byType: dlpResponseStats.byType }).catch(() => {});
     }
   };
 
@@ -140,6 +168,11 @@ export function createSSEStream(options = {}) {
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
+
+              // DLP: mask sensitive values in the chunk before it is forwarded/logged
+              if (dlp?.enabled && dlp.maskResponses !== false && parsed) {
+                mergeDlpStats(dlpResponseStats, maskSensitiveData(parsed, { ...dlp, maskResponses: undefined }));
+              }
 
               const idFixed = fixInvalidId(parsed);
 
@@ -322,6 +355,10 @@ export function createSSEStream(options = {}) {
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
+          // DLP: mask sensitive values in the parsed chunk before it is re-emitted/logged
+          if (dlp?.enabled && dlp.maskResponses !== false && parsed) {
+            mergeDlpStats(dlpResponseStats, maskSensitiveData(parsed, { ...dlp, maskResponses: undefined }));
+          }
           const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
@@ -340,6 +377,10 @@ export function createSSEStream(options = {}) {
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
           for (const item of translated._openaiIntermediate) {
+            // DLP: mask sensitive values in the chunk before it is logged (logging only, never forwarded)
+            if (dlp?.enabled && dlp.maskResponses !== false && item) {
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
+            }
             const openaiOutput = formatSSE(item, FORMATS.OPENAI);
             reqLogger?.appendOpenAIChunk?.(openaiOutput);
           }
@@ -363,6 +404,11 @@ export function createSSEStream(options = {}) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
               item.usage = filterUsageForFormat(buffered, sourceFormat);
+            }
+
+            // DLP: mask sensitive values in the chunk before it is forwarded/logged
+            if (dlp?.enabled && dlp.maskResponses !== false && item) {
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
             }
 
             const output = formatSSE(item, sourceFormat);
@@ -428,6 +474,10 @@ export function createSSEStream(options = {}) {
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
+                // DLP: mask sensitive values in the chunk before it is logged (logging only, never forwarded)
+                if (dlp?.enabled && dlp.maskResponses !== false && item) {
+                  mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
+                }
                 const openaiOutput = formatSSE(item, FORMATS.OPENAI);
                 reqLogger?.appendOpenAIChunk?.(openaiOutput);
               }
@@ -436,6 +486,10 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                // DLP: mask sensitive values in the chunk before it is forwarded/logged
+                if (dlp?.enabled && dlp.maskResponses !== false && item) {
+                  mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
+                }
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -448,6 +502,10 @@ export function createSSEStream(options = {}) {
 
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {
+            // DLP: mask sensitive values in the chunk before it is logged (logging only, never forwarded)
+            if (dlp?.enabled && dlp.maskResponses !== false && item) {
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
+            }
             const openaiOutput = formatSSE(item, FORMATS.OPENAI);
             reqLogger?.appendOpenAIChunk?.(openaiOutput);
           }
@@ -456,6 +514,10 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            // DLP: mask sensitive values in the chunk before it is forwarded/logged
+            if (dlp?.enabled && dlp.maskResponses !== false && item) {
+              mergeDlpStats(dlpResponseStats, maskSensitiveData(item, { ...dlp, maskResponses: undefined }));
+            }
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
@@ -488,7 +550,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, dlp = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -502,11 +564,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    credentials
+    credentials,
+    dlp
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, dlp = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -515,6 +578,7 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    dlp
   });
 }

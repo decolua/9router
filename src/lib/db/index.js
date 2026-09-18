@@ -67,6 +67,11 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Consent audit log
+export {
+  logConsent, getConsentLog,
+} from "./repos/consentLogRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
@@ -74,6 +79,7 @@ export async function exportDb() {
 
   const out = {
     settings: await exportSettings(),
+    consentLog: db.all(`SELECT * FROM consent_log`),
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
@@ -102,6 +108,7 @@ export async function importDb(payload) {
   db.transaction(() => {
     // Wipe all tables (keep _meta)
     db.run(`DELETE FROM settings`);
+    db.run(`DELETE FROM consent_log`);
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
     db.run(`DELETE FROM proxyPools`);
@@ -145,6 +152,12 @@ export async function importDb(payload) {
       db.run(
         `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
         [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+      );
+    }
+    for (const e of payload.consentLog || []) {
+      db.run(
+        `INSERT OR REPLACE INTO consent_log(id, user, hostname, action, createdAt) VALUES(?, ?, ?, ?, ?)`,
+        [e.id, e.user || "anonymous", e.hostname || "", e.action || "accepted", e.createdAt || new Date().toISOString()]
       );
     }
     for (const [a, m] of Object.entries(payload.modelAliases || {})) {

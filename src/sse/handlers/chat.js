@@ -276,6 +276,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      dlp: {
+        enabled: !!chatSettings.dlpEnabled,
+        mode: chatSettings.dlpMode === "redact" ? "redact" : "pseudo",
+        types: Array.isArray(chatSettings.dlpTypes) ? chatSettings.dlpTypes : undefined,
+        customPatterns: Array.isArray(chatSettings.dlpCustomPatterns) ? chatSettings.dlpCustomPatterns : [],
+        maskResponses: chatSettings.dlpMaskResponses !== false,
+      },
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
