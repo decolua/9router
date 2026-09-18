@@ -24,6 +24,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { hasNativeWebSearchTool, resolveWebSearchRouteOverride } from "open-sse/services/webSearchRouting.js";
 
 /**
  * Handle chat completion request
@@ -51,7 +52,7 @@ export async function handleChat(request, clientRawRequest = null) {
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.
-  const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
+  let { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
@@ -83,6 +84,18 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Native web_search redirect (layer 2): when the request carries a native web-search
+  // tool, an operator-configured webSearchRouteModel takes over the whole request so a
+  // search-capable model runs it natively instead of relying on the tool fallback.
+  if (hasNativeWebSearchTool(body)) {
+    const route = resolveWebSearchRouteOverride(modelStr, body, settings);
+    if (route.wasRouted) {
+      log.info("WEBSEARCH", `Routed web_search request from ${modelStr} to ${route.model}`);
+      modelStr = route.model;
+      body.model = route.model;
+    }
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
