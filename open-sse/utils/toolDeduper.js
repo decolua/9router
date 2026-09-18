@@ -46,4 +46,4 @@ function dedupeTools(tools) {
   return { tools: out, stripped: Array.from(toStrip) };
 }
 
-export { dedupeTools };
+export { dedupeTools, getToolName };
