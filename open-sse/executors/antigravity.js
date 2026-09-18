@@ -278,6 +278,30 @@ export class AntigravityExecutor extends BaseExecutor {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
 
+    // Ensure thinkingConfig is forwarded to Antigravity upstream
+    // and maxOutputTokens strictly exceeds thinkingBudget to prevent 400 INVALID_ARGUMENT
+    const thinkingBudget =
+      body?.thinking?.budget_tokens ||
+      body?.thinking_budget ||
+      requestWithoutTools?.generationConfig?.thinkingConfig?.thinkingBudget ||
+      (body?.reasoning_effort === "low" ? 1024 : body?.reasoning_effort === "medium" ? 2048 : 4096);
+
+    const isThinkingModel =
+      model?.includes("thinking") ||
+      Boolean(body?.thinking) ||
+      Boolean(body?.reasoning_effort) ||
+      Boolean(requestWithoutTools?.generationConfig?.thinkingConfig);
+
+    if (isThinkingModel && thinkingBudget) {
+      if (!generationConfig.maxOutputTokens || generationConfig.maxOutputTokens <= thinkingBudget) {
+        generationConfig.maxOutputTokens = Math.min(MAX_ANTIGRAVITY_OUTPUT_TOKENS, thinkingBudget + 8192);
+      }
+      generationConfig.thinkingConfig = {
+        thinkingBudget,
+        includeThoughts: true,
+      };
+    }
+
     const transformedRequest = {
       ...requestWithoutTools,
       generationConfig,
