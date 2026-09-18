@@ -142,6 +142,13 @@ function systemReminderText(content) {
 
 // Convert single Claude message - returns single message or array of messages
 function convertClaudeMessage(msg) {
+  // Some clients send content as a single block object; normalize to the
+  // one-element array every branch below (the system-reminder fold included)
+  // expects. Must run BEFORE the role branch: systemReminderText only reads
+  // arrays and strings, so a bare-object system turn was dropped outright.
+  if (msg.content && typeof msg.content === "object" && !Array.isArray(msg.content)) {
+    msg.content = [msg.content];
+  }
   // Mid-conversation system message -> user (per Anthropic placement rules)
   if (msg.role === ROLE.SYSTEM) {
     const text = systemReminderText(msg.content);
@@ -189,25 +196,41 @@ function convertClaudeMessage(msg) {
           });
           break;
 
-        case CLAUDE_BLOCK.TOOL_RESULT:
+        case CLAUDE_BLOCK.TOOL_RESULT: {
           let resultContent = "";
+          const resultImages = [];
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
-              .filter(c => c.type === CLAUDE_BLOCK.TEXT)
-              .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
+            for (const c of block.content) {
+              if (c?.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64") {
+                resultImages.push({
+                  type: OPENAI_BLOCK.IMAGE_URL,
+                  image_url: { url: encodeDataUri(c.source.media_type, c.source.data) }
+                });
+              }
+            }
+            const textOnly = block.content.filter(c => c?.type === CLAUDE_BLOCK.TEXT);
+            resultContent = textOnly.map(c => c.text).join("\n")
+              || (resultImages.length ? "" : JSON.stringify(block.content));
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
-          
+
           toolResults.push({
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
             content: resultContent
           });
+          // The OpenAI tool role is text-only, so a screenshot or any other image a
+          // tool returned would otherwise vanish. Hand it to the model in the user
+          // turn that follows the tool messages, tagged with the call it came from.
+          if (resultImages.length) {
+            parts.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${block.tool_use_id}]` });
+            parts.push(...resultImages);
+          }
           break;
+        }
       }
     }
 

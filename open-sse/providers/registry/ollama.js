@@ -30,6 +30,7 @@ export default {
     { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "qwen3.5", name: "Qwen3.5" },
     { id: "minimax-m3", name: "MiniMax M3" },
+    { id: "deepseek-v4.1-flash:cloud", name: "DeepSeek V4.1 Flash" },
   ],
   serviceKinds: ["llm", "webFetch"],
   fetchConfig: {

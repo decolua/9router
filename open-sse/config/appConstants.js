@@ -7,6 +7,9 @@ import { createRequire } from "module";
 export const GEMINI_CLI_VERSION = PROVIDERS["gemini-cli"]?.cliVersion;
 export const GEMINI_CLI_API_CLIENT = PROVIDERS["gemini-cli"]?.apiClient;
 
+// === Codex CLI === derive từ registry codex.transport
+export const CODEX_CLI_VERSION = PROVIDERS["codex"]?.cliVersion;
+
 // Map Node arch to Gemini CLI arch string (x64/x86/arm64/...)
 function geminiCLIArch() {
   const a = arch();
@@ -175,6 +178,11 @@ export const CLAUDE_SYSTEM_PROMPT = "You are Claude Code, Anthropic's official C
 // makes the backend flag the request and answer 429 Quota Exhausted.
 export const ANTIGRAVITY_PROMPT_REWRITES = [
   { from: "You are a Claude agent, built on Anthropic's Claude Agent SDK.", to: "" },
+  { from: /You are Hermes Agent,\s*(an intelligent AI assistant)(?: created by Nous Research)?\./gi, to: "You are Hermes Agent. You are $1." },
+  // Claude Code prepends this line to its system prompt. The Claude-format translator strips it,
+  // but OpenAI-format clients (e.g. proxies that convert Claude Code to /v1/chat/completions)
+  // pass it through, and any system text containing it gets a fake 429 RESOURCE_EXHAUSTED.
+  { from: /^x-anthropic-billing-header:[^\n]*(?:\r?\n)*/gim, to: "" },
   { from: /opencode/gi, to: (m) => (m === "OpenCode" ? "Antigravity" : m === "OPENCODE" ? "ANTIGRAVITY" : "antigravity") }
 ];
 

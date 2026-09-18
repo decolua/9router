@@ -40,7 +40,7 @@ import {
 } from "./utils";
 import Card from "@/shared/components/Card";
 import { ConfirmModal, EditConnectionModal } from "@/shared/components";
-import { USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_SUPPORTED_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
 // Maps the stored providerSpecificData.authMethod to a human label for Kiro.
@@ -98,6 +98,10 @@ function getCodexResetCreditCount(quota) {
   const value = quota?.raw?.resetCredits?.availableCount;
   const count = typeof value === "number" ? value : Number(value);
   return Number.isFinite(count) ? Math.max(0, count) : 0;
+}
+
+function providerLabel(providerId) {
+  return AI_PROVIDERS[providerId]?.name || providerId;
 }
 
 function formatCreditDate(value) {
@@ -767,7 +771,7 @@ export default function ProviderLimits() {
   };
 
   const selectedProviderLabel =
-    providerFilter === "all" ? "All providers" : providerFilter;
+    providerFilter === "all" ? "All providers" : providerLabel(providerFilter);
   const hasEligibleConnections = totals.eligibleConnections > 0;
   const hasVisibleConnections = sortedConnections.length > 0;
   const emptyState = getConnectionsEmptyMessage(
@@ -844,7 +848,7 @@ export default function ProviderLimits() {
                     fallbackText={providerFilter.slice(0, 2).toUpperCase()}
                   />
                 )}
-                <span className="truncate capitalize hidden lg:inline">
+                <span className="truncate hidden lg:inline">
                   {selectedProviderLabel}
                 </span>
               </span>
@@ -905,8 +909,8 @@ export default function ProviderLimits() {
                           className="size-6 rounded-md object-contain"
                           fallbackText={provider.slice(0, 2).toUpperCase()}
                         />
-                        <span className="font-medium capitalize">
-                          {provider}
+                        <span className="font-medium">
+                          {providerLabel(provider)}
                         </span>
                         {providerFilter === provider && (
                           <span className="material-symbols-outlined ml-auto text-[20px]">
@@ -1079,8 +1083,8 @@ export default function ProviderLimits() {
                       />
                     </div>
                     <div className="min-w-0">
-                      <h3 className="text-sm font-semibold text-text-primary capitalize truncate">
-                        {conn.provider}
+                      <h3 className="text-sm font-semibold text-text-primary truncate">
+                        {providerLabel(conn.provider)}
                       </h3>
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">

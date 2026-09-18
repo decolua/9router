@@ -1,7 +1,8 @@
 import crypto from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
-import { isMuseSparkModel } from "../providers/models/helpers.js";
+import { modelTargetFormat } from "../providers/models/schema.js";
+import { getProviderModels } from "../config/providerModels.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -45,8 +46,11 @@ function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
 }
 
+// Responses-only per the provider registry (grok-4.6, gpt-5.6-luna, muse-spark, …).
+// Reading the registry keeps this in sync with config — never hardcode model ids here.
 function isResponsesModel(model) {
-  return isMuseSparkModel(baseModelId(model));
+  const entry = getProviderModels("opencode-go").find((m) => m.id === baseModelId(model));
+  return modelTargetFormat(entry) === "openai-responses";
 }
 
 // Flatten Chat Completions tool declarations into the Responses flat shape and
@@ -90,6 +94,12 @@ function sanitizeResponsesItems(body) {
   if (!Array.isArray(body.input)) return;
   body.input = body.input.filter((item) => {
     if (!item || typeof item !== "object" || Array.isArray(item)) return true;
+    // Strip prior-turn reasoning items: Muse Spark contributor models route to
+    // an upstream Console backend where encrypted_content cannot be validated across
+    // rotated accounts or sessions, causing 400 "reasoning encrypted_content was not issued to this caller".
+    if (item.type === "reasoning") return false;
+    delete item.encrypted_content;
+    delete item.reasoning_encrypted_content;
     if (item.type === "function_call") {
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") return false;
       item.name = item.name.trim().slice(0, MAX_TOOL_NAME_LEN);

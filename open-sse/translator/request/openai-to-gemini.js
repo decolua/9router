@@ -15,7 +15,8 @@ import {
   generateRequestId,
   generateSessionId,
   generateProjectId,
-  cleanJSONSchemaForAntigravity
+  cleanJSONSchemaForAntigravity,
+  normalizeGeminiContents
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
@@ -33,17 +34,6 @@ function sanitizeGeminiFunctionName(name) {
   }
   // Truncate to 64 chars
   return sanitized.substring(0, 64);
-}
-
-function normalizeGeminiContents(contents) {
-  const out = [];
-  for (const c of contents || []) {
-    if (!c?.role || !Array.isArray(c.parts) || c.parts.length === 0) continue;
-    const last = out.at(-1);
-    if (last?.role === c.role) last.parts.push(...c.parts);
-    else out.push({ ...c, parts: [...c.parts] });
-  }
-  return out;
 }
 
 // Core: Convert OpenAI request to Gemini format (base for all variants)
@@ -139,7 +129,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
-            const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId) : null;
+            const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
             // First call gets cached signature or fallback; sibling calls remain unsigned if no cached sig
             const callSig = cachedSig || (!firstFunctionCallSeen ? signature : undefined);
             firstFunctionCallSeen = true;
@@ -163,12 +153,14 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
           }
 
           // Check if there are actual tool responses in the next messages
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid]);
+          const isIntermediate = i < body.messages.length - 1;
+          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid] !== undefined);
 
-          if (hasActualResponses) {
+          if (hasActualResponses || isIntermediate) {
             const toolParts = [];
             for (const fid of toolCallIds) {
-              if (!toolResponses[fid]) continue;
+              let resp = toolResponses[fid];
+              if (resp === undefined) resp = "";
 
               let name = tcID2Name[fid];
               if (!name) {
@@ -180,7 +172,6 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
                 }
               }
 
-              let resp = toolResponses[fid];
               let parsedResp = tryParseJSON(resp);
               if (parsedResp === null) {
                 parsedResp = { result: resp };
@@ -350,7 +341,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
           if (block.type === CLAUDE_BLOCK.TEXT) {
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
-            const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId) : null;
+            const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId, model) : null;
             const callSig = cachedSig || (!firstToolUseSeen ? signature : undefined);
             firstToolUseSeen = true;
 
