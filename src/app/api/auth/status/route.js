@@ -4,6 +4,7 @@ import { getSettings } from "@/lib/localDb";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { isMfaEnabled } from "@/lib/auth/mfa";
 
 export async function GET() {
   try {
@@ -30,6 +31,7 @@ export async function GET() {
     return NextResponse.json({
       requireLogin,
       authMode,
+      mfaEnabled: isMfaEnabled(settings),
       ssoType,
       oidcConfigured: isOidcConfigured(settings),
       oidcLoginLabel: (settings.oidcLoginLabel || "Sign in with OIDC").trim() || "Sign in with OIDC",
