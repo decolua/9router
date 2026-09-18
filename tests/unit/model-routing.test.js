@@ -58,6 +58,26 @@ describe("model routing", () => {
       });
   });
 
+  it("routes multi-protocol node prefixes", async () => {
+    const ctx = await setupDb();
+    cleanup = ctx.cleanup;
+
+    await ctx.createProviderNode({
+      id: "openai-compatible-multi-test",
+      type: "multi-compatible",
+      name: "Multi-compatible Node",
+      prefix: "multi",
+      apiType: "chat",
+      baseUrl: "https://multi.test/v1",
+    });
+
+    await expect(ctx.getModelInfo("multi/shared-model"))
+      .resolves.toEqual({
+        provider: "openai-compatible-multi-test",
+        model: "shared-model",
+      });
+  });
+
   it("still routes non-reserved compatible node prefixes", async () => {
     const ctx = await setupDb();
     cleanup = ctx.cleanup;
