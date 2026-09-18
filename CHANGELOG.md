@@ -1,4 +1,4 @@
-# v0.5.79 (2026-09-18)
+# v0.5.81 (2026-09-18)
 
 ## Features
 - **Xiaomi MiMo**: merge MiMo Desktop support into `xiaomi-mimo` with dual auth (API key + Desktop/OAuth session), Preview models support, and encrypted-callback OAuth flow
