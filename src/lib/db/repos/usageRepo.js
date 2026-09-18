@@ -288,6 +288,14 @@ export async function saveRequestUsage(entry) {
         ]
       );
 
+      // Increment usedTokens on apiKey if request used a key
+      if (entry.apiKey && typeof entry.apiKey === "string") {
+        const totalTokens = (promptTokens || 0) + (completionTokens || 0);
+        if (totalTokens > 0) {
+          db.run(`UPDATE apiKeys SET usedTokens = COALESCE(usedTokens, 0) + ? WHERE key = ?`, [totalTokens, entry.apiKey]);
+        }
+      }
+
       const dateKey = getLocalDateKey(entry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
