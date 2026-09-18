@@ -17,6 +17,16 @@ import * as log from "../utils/logger.js";
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
 const DEFAULT_VIDEO_PROVIDER = "xai";
 
+// Polls carry no model. Keep their cooldown separate from chat, generation,
+// and other media requests instead of creating an account-wide model lock.
+const VIDEO_POLL_SCOPE = "__video_poll__";
+const POLL_ACCOUNT_ERROR_STATUSES = new Set([
+  HTTP_STATUS.UNAUTHORIZED,
+  HTTP_STATUS.PAYMENT_REQUIRED,
+  HTTP_STATUS.FORBIDDEN,
+  HTTP_STATUS.RATE_LIMITED,
+]);
+
 /**
  * Poll requests carry no model, so the provider comes from the pinned
  * connection (`x-connection-id`, returned on create) or an explicit
@@ -203,8 +213,18 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
 
-  const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
-  if (!credentials || credentials.allRateLimited) {
+  const credentials = await getProviderCredentials(provider, null, VIDEO_POLL_SCOPE, {
+    preferredConnectionId,
+    strictConnectionId: preferredConnectionId,
+  });
+  if (credentials?.allRateLimited) {
+    return unavailableResponse(
+      Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE,
+      credentials.lastError || "Video polling temporarily unavailable",
+      credentials.retryAfter, credentials.retryAfterHuman
+    );
+  }
+  if (!credentials) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
   }
 
@@ -227,12 +247,15 @@ export async function handleVideoGet(request, requestId) {
   });
 
   if (result.success) {
-    await clearAccountError(credentials.connectionId, credentials, null);
+    await clearAccountError(credentials.connectionId, credentials, VIDEO_POLL_SCOPE);
     return withConnectionHeader(result.response, credentials.connectionId);
   }
 
-  await markAccountUnavailable(
-    credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, null
-  );
+  // Invalid/expired job ids (notably 404) say nothing about account health.
+  if (POLL_ACCOUNT_ERROR_STATUSES.has(result.status) || result.status >= HTTP_STATUS.SERVER_ERROR) {
+    await markAccountUnavailable(
+      credentials.connectionId, result.status, sanitizeSecrets(result.error, refreshedCredentials), provider, VIDEO_POLL_SCOPE
+    );
+  }
   return result.response;
 }

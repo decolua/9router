@@ -24,6 +24,7 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
+ * @param {object} options - Set strictConnectionId to restrict selection to an account-bound resource owner
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
@@ -69,7 +70,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    const activeConnections = await getProviderConnections({ provider: providerId, isActive: true });
+    // Account-bound resources must never fall back to a different owner, even
+    // when the preferred account is disabled, missing, or cooling down.
+    const connections = options?.strictConnectionId
+      ? activeConnections.filter(c => c.id === options.strictConnectionId)
+      : activeConnections;
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
