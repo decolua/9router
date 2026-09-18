@@ -24,10 +24,17 @@ export async function getIflowUsage(accessToken) {
   }
 }
 
+const OLLAMA_LIMIT_WINDOWS = {
+  session: "Session (5h)",
+  weekly: "Weekly (7d)",
+  monthly: "Monthly",
+};
+
 /**
  * Ollama Cloud Usage
- * GET https://ollama.com/api/usage — session (5h) + weekly (7d) `usage` is a 0..1
- *   ratio (1.0 = limit reached, e.g. weekly 100% used). No reset timestamp exposed.
+ * GET https://ollama.com/api/usage — `limits.<window>.usage` is a 0..1 ratio
+ *   (1.0 = limit reached). Paid plans report session (5h) + weekly (7d); the
+ *   free plan reports a single monthly window. No reset timestamp exposed.
  * POST https://ollama.com/api/me — plan label (fail-open).
  * Auth: Authorization: Bearer <apiKey>
  */
@@ -84,24 +91,22 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
       return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
     }
 
-    const sessionRaw = limits.session?.usage;
-    const weeklyRaw = limits.weekly?.usage;
-    const sessionNum = Number(sessionRaw);
-    const weeklyNum = Number(weeklyRaw);
-    const hasSession = sessionRaw !== undefined && sessionRaw !== null && !Number.isNaN(sessionNum);
-    const hasWeekly = weeklyRaw !== undefined && weeklyRaw !== null && !Number.isNaN(weeklyNum);
+    const quotas = {};
+    for (const [key, label] of Object.entries(OLLAMA_LIMIT_WINDOWS)) {
+      const raw = limits[key]?.usage;
+      if (raw === undefined || raw === null) continue;
+      const ratio = Number(raw);
+      if (Number.isNaN(ratio)) continue;
+      quotas[label] = ratioQuota(ratio);
+    }
 
-    if (!hasSession && !hasWeekly) {
+    if (Object.keys(quotas).length === 0) {
       return {
         plan,
         message: "Ollama Cloud connected. No usage limits reported.",
         quotas: {},
       };
     }
-
-    const quotas = {};
-    if (hasSession) quotas["Session (5h)"] = ratioQuota(sessionNum);
-    if (hasWeekly) quotas["Weekly (7d)"] = ratioQuota(weeklyNum);
 
     return { plan, quotas };
   } catch (error) {

@@ -44,6 +44,27 @@ const SAMPLE_USAGE = {
   },
 };
 
+const SAMPLE_FREE_USAGE = {
+  activity: {
+    cost: "0.00000",
+    period: {
+      type: "last_4_weeks",
+      starting_at: "2026-08-24T00:00:00Z",
+      ending_at: "2026-09-18T15:03:00Z",
+    },
+    models: [],
+  },
+  limits: {
+    monthly: {
+      usage: 0.021,
+      models: [
+        { name: "gpt-oss:120b", request_count: 6 },
+        { name: "gemma4:31b", request_count: 6 },
+      ],
+    },
+  },
+};
+
 const SAMPLE_ME = {
   Plan: "max",
 };
@@ -101,6 +122,44 @@ describe("getUsageForProvider(ollama)", () => {
     expect(meOpts.method).toBe("POST");
     expect(meOpts.headers.Authorization).toBe("Bearer k");
     expect(meOpts.headers["Content-Length"]).toBe("0");
+  });
+
+  it("maps the free plan's monthly window", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(SAMPLE_FREE_USAGE))
+      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("Free");
+    expect(Object.keys(usage.quotas)).toEqual(["Monthly"]);
+    expect(usage.quotas["Monthly"]).toMatchObject({
+      used: 2,
+      total: 100,
+      remainingPercentage: 98,
+      unlimited: false,
+    });
+    expect(usage.quotas["Monthly"].remaining).toBeUndefined();
+  });
+
+  it("reports no limits when no known window is present", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({ activity: {}, limits: {} }))
+      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toMatch(/no usage limits/i);
+    expect(usage.quotas).toEqual({});
   });
 
   it("surfaces invalid key message on 401", async () => {
