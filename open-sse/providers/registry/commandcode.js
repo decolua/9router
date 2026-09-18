@@ -40,4 +40,8 @@ export default {
     { id: "Qwen/Qwen3.6-Plus", name: "Qwen 3.6 Plus" },
     { id: "stepfun/Step-3.5-Flash", name: "Step 3.5 Flash" },
   ],
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };
