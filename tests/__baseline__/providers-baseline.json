@@ -1037,5 +1037,13 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "bedrock": {
+    "baseUrl": "https://bedrock-runtime.{region}.amazonaws.com",
+    "format": "claude",
+    "auth": {
+      "header": "aws-sigv4",
+      "scheme": "raw"
+    }
   }
 }
