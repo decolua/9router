@@ -23,6 +23,7 @@ import {
   getRefreshLeadMs as _getRefreshLeadMs
 } from "open-sse/services/tokenRefresh.js";
 import {
+  parseTimeMs,
   refreshProviderCredentials as _refreshProviderCredentials,
   shouldRefreshCredentials as _shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
@@ -96,11 +97,19 @@ function toExpiresAt(expiresIn) {
   return new Date(Date.now() + expiresIn * 1000).toISOString();
 }
 
+/**
+ * Normalize any accepted expiry shape to the ISO string the rest of the app
+ * stores. Goes through parseTimeMs so a numeric epoch — including the string
+ * form the bulk-import routes can persist — self-heals on the next refresh
+ * instead of being dropped as an Invalid Date.
+ *
+ * @param {unknown} expiresAt
+ * @returns {string|null}
+ */
 function normalizeExpiresAt(expiresAt) {
-  if (!expiresAt) return null;
-  const date = new Date(expiresAt);
-  if (!Number.isFinite(date.getTime())) return null;
-  return date.toISOString();
+  const ms = parseTimeMs(expiresAt);
+  if (ms === null) return null;
+  return new Date(ms).toISOString();
 }
 
 /**
