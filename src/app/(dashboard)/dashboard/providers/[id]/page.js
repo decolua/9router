@@ -411,6 +411,12 @@ export default function ProviderDetailPage() {
     saveProviderStrategy(strategy, sticky);
   };
 
+  const handleCacheAffinityToggle = (enabled) => {
+    const strategy = enabled ? "cache-affinity" : null;
+    setProviderStrategy(strategy);
+    saveProviderStrategy(strategy, providerStickyLimit);
+  };
+
   const handleStickyLimitChange = (value) => {
     setProviderStickyLimit(value);
     saveProviderStrategy("round-robin", value);
@@ -1562,6 +1568,11 @@ export default function ProviderDetailPage() {
                 <Toggle
                   checked={providerStrategy === "round-robin"}
                   onChange={handleRoundRobinToggle}
+                />
+                <span className="text-xs text-text-muted font-medium ml-2">Cache Affinity</span>
+                <Toggle
+                  checked={providerStrategy === "cache-affinity"}
+                  onChange={handleCacheAffinityToggle}
                 />
                 {providerStrategy === "round-robin" && (
                   <div className="flex items-center gap-1.5">
