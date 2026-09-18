@@ -6,6 +6,7 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { parseModel } from "@/sse/services/model.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -17,7 +18,7 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -247,6 +248,67 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+// Boolean capability flags are unioned across members (OR): a feature is
+// available to the combo if any member supports it.
+const COMBO_BOOLEAN_CAPS = [
+  "vision", "pdf", "audioInput", "videoInput", "imageOutput",
+  "audioOutput", "search", "tools", "reasoning",
+  "thinkingCanDisable", "thinkingEffortSupported",
+];
+
+/**
+ * Aggregate capabilities across a combo's member models so the /v1/models entry
+ * carries the same shape as a concrete model. Numeric limits are the MINIMUM
+ * across members (a request can route to any member, so the combo is bounded by
+ * the smallest window); boolean features are the UNION; format scalars take the
+ * first non-null. Nested combos are flattened (mirrors the chat path, which
+ * re-expands a bare combo name as a single model). `seen` guards against cycles.
+ * @param {string[]} memberStrings - combo.models entries (provider/model, alias, or nested combo name)
+ * @param {Map<string,object>} comboByName - name -> combo, for nested expansion
+ * @param {Set<string>} [seen] - names already visited (cycle guard)
+ * @returns {object|null} merged capabilities, or null if no resolvable members
+ */
+function mergeComboCapabilities(memberStrings, comboByName, seen = new Set()) {
+  if (!Array.isArray(memberStrings) || memberStrings.length === 0) return null;
+
+  const merged = { ...DEFAULT_CAPABILITIES };
+  let resolvedAny = false;
+  let seenFinite = false;
+
+  for (const member of memberStrings) {
+    if (typeof member !== "string") continue;
+
+    let caps;
+    if (member.includes("/")) {
+      const { provider, model } = parseModel(member);
+      caps = getCapabilitiesForModel(provider, model);
+    } else if (comboByName.has(member)) {
+      if (seen.has(member)) continue; // cycle guard
+      seen.add(member);
+      caps = mergeComboCapabilities(comboByName.get(member).models, comboByName, seen);
+    } else {
+      caps = getCapabilitiesForModel(null, member);
+    }
+    if (!caps) continue;
+
+    for (const key of COMBO_BOOLEAN_CAPS) {
+      if (caps[key]) merged[key] = true;
+    }
+    if (merged.thinkingFormat === null && caps.thinkingFormat != null) merged.thinkingFormat = caps.thinkingFormat;
+    if (merged.thinkingRange === null && caps.thinkingRange != null) merged.thinkingRange = caps.thinkingRange;
+    if (Number.isFinite(caps.contextWindow)) {
+      merged.contextWindow = seenFinite ? Math.min(merged.contextWindow, caps.contextWindow) : caps.contextWindow;
+    }
+    if (Number.isFinite(caps.maxOutput)) {
+      merged.maxOutput = seenFinite ? Math.min(merged.maxOutput, caps.maxOutput) : caps.maxOutput;
+    }
+    resolvedAny = true;
+    seenFinite = true;
+  }
+
+  return resolvedAny ? merged : null;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -270,6 +332,8 @@ export async function buildModelsList(kindFilter, options = {}) {
   } catch (e) {
     console.log("Could not fetch combos");
   }
+  // Name -> combo, used to flatten nested combos when merging capabilities.
+  const comboByName = new Map(combos.map((c) => [c.name, c]));
 
   let customModels = [];
   try {
@@ -312,6 +376,15 @@ export async function buildModelsList(kindFilter, options = {}) {
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
+    } else {
+      // Merge capabilities from member models so clients see a context window
+      // and feature set for the combo (bounded by its smallest-window member).
+      const caps = mergeComboCapabilities(combo.models, comboByName);
+      if (caps) {
+        entry.capabilities = caps;
+        entry.context_length = caps.contextWindow;
+        entry.max_completion_tokens = caps.maxOutput;
+      }
     }
     models.push(entry);
   }
