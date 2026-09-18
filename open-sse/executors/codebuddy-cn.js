@@ -1,5 +1,21 @@
 import { DefaultExecutor } from "./default.js";
 
+// Length is a blunt stand-in for "this is an agent prompt": a hand-written
+// project system prompt (conventions, architecture notes) runs past 2000 chars
+// easily and gets replaced too (#3339). The catch-all stays on by default —
+// it is what keeps an agent CLI the regex does not know about from tripping
+// the filter — but the limit is now tunable, and 0 turns it off so only the
+// identity markers decide.
+const DEFAULT_SYSTEM_PROMPT_MAX_LEN = 2000;
+
+function systemPromptMaxLen() {
+  const raw = process.env.CODEBUDDY_SYSTEM_PROMPT_MAX_LEN?.trim();
+  if (!raw) return DEFAULT_SYSTEM_PROMPT_MAX_LEN;
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) return DEFAULT_SYSTEM_PROMPT_MAX_LEN;
+  return parsed;
+}
+
 /**
  * CodeBuddyExecutor — talks to https://copilot.tencent.com/v2/chat/completions
  *
@@ -33,12 +49,22 @@ export class CodeBuddyExecutor extends DefaultExecutor {
         : Array.isArray(content)
           ? content.map((b) => (b && typeof b.text === "string" ? b.text : "")).join("\n")
           : "";
+    const maxLen = systemPromptMaxLen();
     if (Array.isArray(transformed.messages)) {
       transformed.messages = transformed.messages.map((message) => {
         if (!message || message.role !== "system") return message;
         const text = flatten(message.content);
         if (!text) return message;
-        if (text.length > 2000 || AGENT_PATTERN.test(text)) {
+        const matchedAgent = AGENT_PATTERN.test(text);
+        const tooLong = maxLen > 0 && text.length > maxLen;
+        if (matchedAgent || tooLong) {
+          // Dropping the caller's system prompt is destructive, so say which
+          // rule fired: a length false positive is otherwise invisible.
+          console.warn(
+            matchedAgent
+              ? "[codebuddy-cn] system prompt replaced: agent identity marker"
+              : `[codebuddy-cn] system prompt replaced: ${text.length} chars > CODEBUDDY_SYSTEM_PROMPT_MAX_LEN (${maxLen})`,
+          );
           return typeof message.content === "string"
             ? { ...message, content: NEUTRAL_PROMPT }
             : { ...message, content: [{ type: "text", text: NEUTRAL_PROMPT }] };
