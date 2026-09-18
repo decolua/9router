@@ -25,6 +25,7 @@ const FORMAT_LEVELS = {
   zai: L.onOff,
   qwen: L.base,
   kimi: L.levelMax,
+  opencode: L.levelMax,   // zen gateway enum: none|low|medium|high|max (no xhigh/minimal)
   deepseek: L.hiMax,
   commandcode: ["none", "low", "medium", "high", "xhigh", "max"],
   minimax: L.onOff,
