@@ -822,8 +822,27 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
-      default:
+      default: {
+        // Generic fallback for OpenAI-compatible providers the registry already
+        // describes. A provider declaring `transport.validateUrl` has a known
+        // key-check endpoint, so the connection is testable without a dedicated
+        // case here — the same lookup `providers/validate/route.js` performs.
+        // Without it every such provider is reported as "Provider test not
+        // supported" even when its credentials are fine.
+        const validateUrl = PROVIDERS[connection.provider]?.validateUrl;
+        if (validateUrl) {
+          const res = await fetchWithConnectionProxy(
+            validateUrl,
+            { headers: { Authorization: `Bearer ${connection.apiKey}` } },
+            effectiveProxy,
+          );
+          // 401/403 mean the upstream refused the key; anything else (200, or a
+          // 400 from an endpoint that dislikes a bare GET) means it was accepted.
+          const valid = res.status !== 401 && res.status !== 403;
+          return { valid, error: valid ? null : "Invalid API key" };
+        }
         return { valid: false, error: "Provider test not supported" };
+      }
     }
   } catch (err) {
     return { valid: false, error: err.message };
