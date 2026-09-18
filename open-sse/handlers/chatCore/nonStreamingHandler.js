@@ -144,6 +144,12 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
+  // Complete both stages for non-Chat providers too. Returning the intermediate
+  // Chat object loses Responses output/status (notably for Codex compaction).
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat !== FORMATS.OPENAI) {
+    const intermediate = translateNonStreamingResponse(responseBody, targetFormat, FORMATS.OPENAI, customToolNames);
+    return intermediate?.choices ? openAICompletionToResponses(intermediate, customToolNames) : intermediate;
+  }
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {

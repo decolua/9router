@@ -206,6 +206,11 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
           finalResults.push(...(Array.isArray(converted) ? converted : [converted]));
         }
       }
+      // The intermediate translator may flush a final Chat chunk instead of
+      // null. Responses still needs its own flush after trailing usage arrives.
+      if (chunk === null && targetFormat !== FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
+        finalResults.push(...(fromOpenAI(null, state) || []));
+      }
       results = finalResults;
     }
   }
