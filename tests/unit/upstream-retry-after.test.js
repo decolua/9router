@@ -25,9 +25,13 @@ describe("parseUpstreamError extracts the upstream cooldown", () => {
     expect(resetsAtMs).toBeGreaterThan(Date.now() + 30_000);
   });
 
-  it("falls back to a retry_after body field (GLM / Z.AI overload shape)", async () => {
+  it("falls back to a retry_after body field when a provider sends one", async () => {
+    // Shape used by providers that put the cooldown in the body instead of the
+    // header (e.g. Gemini retryDelay). NOT what Z.AI sends — see
+    // tests/unit/glm-error-classification.test.js for the real GLM payloads,
+    // which carry no cooldown at all.
     const { resetsAtMs } = await parseUpstreamError(
-      upstream(429, { error: { code: 1305, message: "temporarily overloaded", retry_after: 20 } })
+      upstream(429, { error: { message: "slow down", retry_after: 20 } })
     );
     expect(resetsAtMs - Date.now()).toBeGreaterThan(15_000);
   });

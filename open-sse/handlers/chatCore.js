@@ -9,6 +9,7 @@ import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
 import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { checkFallbackError } from "../services/accountFallback.js";
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -471,7 +472,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    // Most providers send no cooldown hint at all (verified: Z.AI/GLM 429s carry
+    // neither Retry-After nor a retry_after body field). Fall back to the
+    // cooldown the fallback rules already compute, so an OpenAI-compatible
+    // client gets a usable Retry-After instead of guessing with its own short
+    // generic backoff. Terminal states (billing/credit) advertise no retry.
+    let cooldownAtMs = resetsAtMs;
+    if (!Number.isFinite(cooldownAtMs)) {
+      const { cooldownMs, terminal } = checkFallbackError(statusCode, message, 0);
+      if (!terminal && Number.isFinite(cooldownMs) && cooldownMs > 0) {
+        cooldownAtMs = Date.now() + cooldownMs;
+      }
+    }
+    return createErrorResult(statusCode, errMsg, cooldownAtMs);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
