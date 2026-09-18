@@ -489,6 +489,43 @@ Translations are selected dynamically based on source payload shape and provider
 - account fallback before failing request
 - combo model fallback when current model/provider path is exhausted
 
+### Client-facing cooldown (`Retry-After`)
+
+Error responses carry a `Retry-After` header so an OpenAI-compatible client
+backs off for the right duration instead of guessing. The value is resolved in
+two steps (`open-sse/utils/error.js`, `open-sse/handlers/chatCore.js`):
+
+1. **Passthrough** — `parseUpstreamError()` reads the upstream cooldown from the
+   `Retry-After` header (both delta-seconds and HTTP-date forms) or from a
+   `retry_after` / `retryAfter` / `retryDelay` body field. Zero and already-expired
+   values are rejected so we never advertise an instant retry.
+2. **Synthesis** — most providers send *no* cooldown at all. When step 1 finds
+   nothing, `chatCore` falls back to the cooldown `checkFallbackError()` already
+   computes from `ERROR_RULES` + the account's exponential `backoffLevel`.
+
+Combo exhaustion has its own path (`unavailableResponse()`), which reports the
+earliest `rateLimitedUntil` across the combo's accounts.
+
+### Terminal vs transient errors
+
+`ERROR_RULES` (`open-sse/config/errorConfig.js`) marks billing/credit-exhausted
+states `terminal: true`. A terminal error is **never** given a `Retry-After` and
+never enters the exponential backoff ladder — retrying cannot fix it.
+
+This matters because several providers report billing problems as HTTP 429,
+making them indistinguishable from a rate limit by status alone. Verified live
+2026-09-18, Z.AI/GLM returns both of these as 429 with **no** `Retry-After`
+header and no body cooldown field:
+
+| Body | Meaning | Handling |
+|---|---|---|
+| `{"error":{"code":"1302","message":"Rate limit reached for requests"}}` | transient rate limit | backoff + synthesized `Retry-After` |
+| `{"error":{"code":"1113","message":"余额不足或无可用资源包,请充值。"}}` | account out of credit | terminal, no retry advertised |
+
+Terminal matching is text-based and runs *before* the rate-limit rules, so a
+body mentioning both classifies as terminal. Pinned by
+`tests/unit/glm-error-classification.test.js` against the real captured payloads.
+
 ## 2) Token Expiry
 
 - pre-check and refresh with retry for refreshable providers
