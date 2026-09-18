@@ -56,6 +56,38 @@ function convertSystemToDeveloperRole(body) {
   }
 }
 
+// Extract plain text from a system/developer message content (string or text parts)
+function instructionText(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content.map((c) => {
+    if (typeof c?.text === "string") return c.text;
+    if (typeof c?.content === "string") return c.content;
+    return "";
+  }).filter(Boolean).join("\n");
+}
+
+// Hoist the first system/developer message from body.input into the top-level
+// instructions slot and remove it from input — mirrors what the
+// chat-completions→responses translator already does for /chat/completions
+// clients. Without this, /v1/responses clients that carry their own harness
+// prompt as a developer input item (OpenAI Responses SDK agents) get TWO
+// competing system-level prompts: their own plus the injected Codex CLI
+// defaults, whose sandbox/approval semantics (proactive sandbox_permissions
+// usage) then override the client's tool protocol.
+function hoistClientInstructions(body) {
+  if (!Array.isArray(body.input)) return null;
+  const idx = body.input.findIndex((item) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) return false;
+    const isMsg = (item.role === "system" || item.role === "developer") && (!item.type || item.type === "message");
+    return isMsg && instructionText(item.content).trim() !== "";
+  });
+  if (idx === -1) return null;
+  const text = instructionText(body.input[idx].content);
+  body.input.splice(idx, 1);
+  return text;
+}
+
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
 function stripStoredItemReferences(body) {
   if (!Array.isArray(body.input)) return;
@@ -424,9 +456,12 @@ export class CodexExecutor extends BaseExecutor {
     // Ensure streaming is enabled (Codex API requires it)
     body.stream = true;
 
-    // If no instructions provided, inject default Codex instructions
+    // If no instructions provided, hoist the client's own leading system/developer
+    // prompt into instructions; only inject the Codex defaults when the client
+    // carried neither. Prevents dual system-level prompts (client harness + Codex
+    // CLI defaults) whose sandbox/approval semantics leak into client tool calls.
     if (!body.instructions || body.instructions.trim() === "") {
-      body.instructions = CODEX_DEFAULT_INSTRUCTIONS;
+      body.instructions = hoistClientInstructions(body) || CODEX_DEFAULT_INSTRUCTIONS;
     }
 
     // Ensure store is false (Codex requirement)
