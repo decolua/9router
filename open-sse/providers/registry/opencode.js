@@ -17,6 +17,7 @@ export default {
     headers: {
       "x-opencode-client": "desktop",
     },
+    forceStream: true,
     noAuth: true,
     quirks: {
       forceAutoToolChoiceModels: ["muse-spark-1.3-contributor-free"],

@@ -311,4 +311,9 @@ describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
     expect(chatFull.tools.length).toBe(2);
     expect(chatFull.tools[0].function.description).toBe("existing");
   });
+
+  it("declares forceStream on the opencode transport so chatCore serves SSE upstream", async () => {
+    const { PROVIDERS } = await import("../../open-sse/config/providers.js");
+    expect(PROVIDERS.opencode?.forceStream).toBe(true);
+  });
 });
