@@ -64,8 +64,8 @@ async function fetchCatalogRaw(token, signal) {
 // Keep only chat models the account is allowed to use. The static registry
 // surfaced disabled/embedding entries inconsistently; here we trust upstream.
 function expandCatalog(raw) {
-  const seen = new Set();
-  const models = [];
+  const seen = new Set(["auto"]);
+  const models = [{ id: "auto", name: "Auto" }];
   for (const m of raw) {
     if (!m || typeof m !== "object") continue;
     if (m.capabilities?.type !== "chat") continue;

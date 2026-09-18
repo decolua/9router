@@ -782,12 +782,15 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 → 每月重置（每月 1 日）
 
 模型：
+  gh/auto                  # Copilot Free 必需；由 GitHub 选择模型
   gh/gpt-5.4
   gh/claude-opus-4.7
   gh/claude-sonnet-4.6
   gh/gemini-3.1-pro-preview
   gh/grok-code-fast-1
 ```
+
+`gh/auto` 也支持 Copilot Free 账户。9Router 会获取 GitHub 的 Auto 会话、遵循其模型选择，并在上游请求中发送所需的会话令牌。
 
 ### Cursor IDE
 

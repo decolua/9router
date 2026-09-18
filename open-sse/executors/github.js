@@ -17,6 +17,7 @@ export class GithubExecutor extends BaseExecutor {
   constructor() {
     super("github", PROVIDERS.github);
     this.knownCodexModels = new Set();
+    this.autoSessions = new Map();
   }
 
   // Claude models get routed to Copilot's Anthropic-native /v1/messages shim (see
@@ -35,7 +36,10 @@ export class GithubExecutor extends BaseExecutor {
 
   buildHeaders(credentials, stream = true) {
     const token = credentials.copilotToken || credentials.accessToken;
-    return {
+    const apiVersion = credentials.copilotSessionToken
+      ? GITHUB_COPILOT.AUTO_API_VERSION
+      : GITHUB_COPILOT.API_VERSION;
+    const headers = {
       "Authorization": `Bearer ${token}`,
       "Content-Type": "application/json",
       "copilot-integration-id": "vscode-chat",
@@ -43,7 +47,7 @@ export class GithubExecutor extends BaseExecutor {
       "editor-plugin-version": `copilot-chat/${GITHUB_COPILOT.COPILOT_CHAT_VERSION}`,
       "user-agent": GITHUB_COPILOT.USER_AGENT,
       "openai-intent": "conversation-panel",
-      "x-github-api-version": GITHUB_COPILOT.API_VERSION,
+      "x-github-api-version": apiVersion,
       "x-request-id": crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
@@ -51,6 +55,114 @@ export class GithubExecutor extends BaseExecutor {
       "anthropic-version": ANTHROPIC_API_VERSION,
       "Accept": stream ? "text/event-stream" : "application/json"
     };
+    if (credentials.copilotSessionToken) {
+      headers["Copilot-Session-Token"] = credentials.copilotSessionToken;
+    }
+    return headers;
+  }
+
+  isAutoModel(model) {
+    return String(model || "").toLowerCase() === "auto";
+  }
+
+  getAutoSessionCacheKey(credentials, providerSessionId) {
+    const accountSeed = credentials.connectionId
+      || credentials.providerSpecificData?.githubLogin
+      || credentials.accessToken
+      || credentials.copilotToken
+      || "github";
+    const accountKey = crypto.createHash("sha256").update(String(accountSeed)).digest("hex");
+    return `${accountKey}:${providerSessionId || "unknown"}`;
+  }
+
+  extractAutoPrompt(body) {
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+    for (let index = messages.length - 1; index >= 0; index--) {
+      const message = messages[index];
+      if (message?.role !== "user") continue;
+      if (typeof message.content === "string") return message.content.trim();
+      if (!Array.isArray(message.content)) continue;
+      return message.content
+        .filter(part => part?.type === "text" || part?.type === "input_text")
+        .map(part => part.text || "")
+        .join("\n")
+        .trim();
+    }
+    return "";
+  }
+
+  hasAutoImageInput(body) {
+    const messages = Array.isArray(body?.messages) ? body.messages : [];
+    return messages.some(message => Array.isArray(message?.content) && message.content.some(part =>
+      part?.type === "image_url" || part?.type === "input_image"
+    ));
+  }
+
+  async fetchAutoDecision({ body, credentials, signal, proxyOptions }) {
+    const prompt = this.extractAutoPrompt(body);
+    if (!prompt) {
+      throw new Error("GitHub Copilot Auto requires a user prompt");
+    }
+    const headers = this.buildHeaders(credentials, false);
+    headers["x-github-api-version"] = GITHUB_COPILOT.AUTO_API_VERSION;
+    const transformedBody = { prompt };
+    if (this.hasAutoImageInput(body)) transformedBody.has_image = true;
+    const timeoutController = new AbortController();
+    const timeoutId = setTimeout(() => timeoutController.abort(), GITHUB_COPILOT.AUTO_TIMEOUT_MS);
+    const requestSignal = signal
+      ? AbortSignal.any([signal, timeoutController.signal])
+      : timeoutController.signal;
+    try {
+      const response = await proxyAwareFetch(this.config.autoUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(transformedBody),
+        signal: requestSignal
+      }, proxyOptions);
+      return { response, url: this.config.autoUrl, headers, transformedBody };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  async resolveAutoModel({ body, credentials, providerSessionId, signal, log, proxyOptions }) {
+    const cacheKey = this.getAutoSessionCacheKey(credentials, providerSessionId);
+    const previous = this.autoSessions.get(cacheKey);
+    const now = Date.now();
+    for (const [key, entry] of this.autoSessions) {
+      if (entry.expiresAtMs <= now) this.autoSessions.delete(key);
+    }
+    const hasImage = this.hasAutoImageInput(body);
+    if (
+      previous?.expiresAtMs - now > GITHUB_COPILOT.AUTO_SESSION_REFRESH_WINDOW_MS
+      && (!hasImage || previous.supportsVision)
+    ) {
+      return previous;
+    }
+
+    const decisionResult = await this.fetchAutoDecision({ body, credentials, signal, proxyOptions });
+    if (!decisionResult.response.ok) {
+      return { errorResult: decisionResult };
+    }
+
+    const decision = await decisionResult.response.json();
+    const selectedModel = decision?.selected_model?.id;
+    if (!selectedModel || !decision?.session_token) {
+      throw new Error("GitHub Copilot Auto returned no selected model or session token");
+    }
+
+    const expiresAtMs = Number.isFinite(Number(decision.expires_at))
+      ? Number(decision.expires_at) * 1000
+      : now + (24 * 60 * 60 * 1000);
+    const resolved = {
+      model: selectedModel,
+      sessionToken: decision.session_token,
+      expiresAtMs,
+      supportsVision: decision.selected_model?.capabilities?.supports?.vision === true
+    };
+    this.autoSessions.set(cacheKey, resolved);
+    log?.info?.("GITHUB", `Auto selected ${selectedModel}`);
+    return resolved;
   }
 
   // Sanitize messages for GitHub Copilot /chat/completions endpoint (gpt/gemini/grok models —
@@ -96,7 +208,7 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
-    const transformed = { ...body };
+    const transformed = { ...body, model };
     if (this.requiresMaxCompletionTokens(model) && transformed.max_tokens !== undefined) {
       transformed.max_completion_tokens = transformed.max_tokens;
       delete transformed.max_tokens;
@@ -121,7 +233,27 @@ export class GithubExecutor extends BaseExecutor {
   }
 
   async execute(options) {
-    const { model, log } = options;
+    let executionOptions = options;
+    let resolvedModel = null;
+    if (this.isAutoModel(options.model)) {
+      const resolved = await this.resolveAutoModel(options);
+      if (resolved.errorResult) return resolved.errorResult;
+      resolvedModel = resolved.model;
+      executionOptions = {
+        ...options,
+        model: resolved.model,
+        body: { ...options.body, model: resolved.model },
+        credentials: {
+          ...options.credentials,
+          copilotSessionToken: resolved.sessionToken
+        }
+      };
+    }
+
+    const { model, log } = executionOptions;
+    const withResolvedModel = (result) => resolvedModel
+      ? { ...result, resolvedModel, requestedModel: options.model }
+      : result;
 
     // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the only
     // Copilot endpoint that surfaces prompt-cache token counts for Claude. Detected by
@@ -129,21 +261,21 @@ export class GithubExecutor extends BaseExecutor {
     // claude-* variants the static registry hasn't caught up with yet (see registry/github.js).
     if (this.isClaudeModel(model)) {
       log?.debug("GITHUB", `Using /v1/messages route for ${model}`);
-      return this.executeWithMessagesEndpoint(options);
+      return withResolvedModel(await this.executeWithMessagesEndpoint(executionOptions));
     }
 
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).
     if (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model)) {
       log?.debug("GITHUB", `Using cached /responses route for ${model}`);
-      return this.executeWithResponsesEndpoint(options);
+      return withResolvedModel(await this.executeWithResponsesEndpoint(executionOptions));
     }
 
     // Sanitize messages before sending to /chat/completions (gpt/gemini/grok — the
     // endpoint rejects non-text/image_url content parts).
     const sanitizedOptions = {
-      ...options,
-      body: this.sanitizeMessagesForChatCompletions(options.body)
+      ...executionOptions,
+      body: this.sanitizeMessagesForChatCompletions(executionOptions.body)
     };
 
     const result = await super.execute({ ...sanitizedOptions, proxyOptions: options.proxyOptions || null });
@@ -157,11 +289,11 @@ export class GithubExecutor extends BaseExecutor {
       if (errorBody.includes("not accessible via the /chat/completions endpoint") || errorBody.includes("The requested model is not supported")) {
         log?.warn("GITHUB", `Model ${model} requires /responses. Switching...`);
         this.knownCodexModels.add(model);
-        return this.executeWithResponsesEndpoint(options);
+        return withResolvedModel(await this.executeWithResponsesEndpoint(executionOptions));
       }
     }
 
-    return result;
+    return withResolvedModel(result);
   }
 
   async executeWithResponsesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {

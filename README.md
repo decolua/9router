@@ -969,12 +969,15 @@ Dashboard → Providers → Connect GitHub
 → Monthly reset (1st of month)
 
 Models:
+  gh/auto                  # Required for Copilot Free; GitHub selects the model
   gh/gpt-5.4
   gh/claude-opus-4.7
   gh/claude-sonnet-4.6
   gh/gemini-3.1-pro-preview
   gh/grok-code-fast-1
 ```
+
+`gh/auto` also works with Copilot Free accounts. 9Router obtains GitHub's Auto session, follows its model selection, and sends the required session token with the upstream request.
 
 ### Cursor IDE
 
