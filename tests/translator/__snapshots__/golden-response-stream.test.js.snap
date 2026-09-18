@@ -21,37 +21,7 @@ exports[`GOLDEN response stream: Claude → OpenAI > text + thinking + tool_use 
     "choices": [
       {
         "delta": {
-          "content": "<think>",
-        },
-        "finish_reason": null,
-        "index": 0,
-      },
-    ],
-    "created": 0,
-    "id": "chatcmpl-msg_1",
-    "model": "claude-opus-4-6",
-    "object": "chat.completion.chunk",
-  },
-  {
-    "choices": [
-      {
-        "delta": {
           "reasoning_content": "let me think",
-        },
-        "finish_reason": null,
-        "index": 0,
-      },
-    ],
-    "created": 0,
-    "id": "chatcmpl-msg_1",
-    "model": "claude-opus-4-6",
-    "object": "chat.completion.chunk",
-  },
-  {
-    "choices": [
-      {
-        "delta": {
-          "content": "</think>",
         },
         "finish_reason": null,
         "index": 0,
