@@ -2,6 +2,7 @@ import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
+import { restoreToolNames } from "../utils/opencodeFingerprint.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
@@ -213,6 +214,18 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   // Attach OpenAI intermediate results for logging
   if (openaiResults && sourceFormat !== FORMATS.OPENAI && targetFormat !== FORMATS.OPENAI) {
     results._openaiIntermediate = openaiResults;
+  }
+
+  // Restore caller tool names. Executors may rename built-in tools before
+  // dispatch (the opencode free-tier gate wants lowercase bash/glob/grep/read
+  // while Claude Code CLI sends Bash/Glob/Grep/Read). Without this the client
+  // receives a tool call for a tool it never declared and rejects it.
+  if (state?.toolNameMap?.size && Array.isArray(results)) {
+    const restored = restoreToolNames(results, state.toolNameMap);
+    if (openaiResults && sourceFormat !== FORMATS.OPENAI && targetFormat !== FORMATS.OPENAI) {
+      restored._openaiIntermediate = openaiResults;
+    }
+    return restored;
   }
 
   return results;

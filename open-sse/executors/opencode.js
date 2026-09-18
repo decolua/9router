@@ -5,6 +5,7 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
+import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
 
 const OPENCODE_UA = "opencode";
 // Models served by /zen/v1/responses; every other model stays on /chat/completions.
@@ -73,7 +74,8 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     this._currentSessionId = resolveOpencodeSession(body, credentials);
-    if (isResponsesModel(model)) {
+    const responsesModel = isResponsesModel(model);
+    if (responsesModel) {
       // Responses API names the output cap max_output_tokens and takes thinking
       // as reasoning:{effort,summary} — normalize the Chat fields at this boundary.
       if (body.max_output_tokens === undefined) {
@@ -84,6 +86,11 @@ export class OpenCodeExecutor extends BaseExecutor {
       delete body.max_completion_tokens;
       normalizeOpencodeReasoning(model, body);
     }
+    // The free-tier gate fingerprints its official client through the case of the
+    // file-search quartet in the body, so caller spellings like "Bash" must be
+    // renamed (not supplemented) and restored again on the response. See
+    // utils/opencodeFingerprint.js for the measured 403/500/200 matrix.
+    applyFingerprintTools(body, responsesModel);
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
