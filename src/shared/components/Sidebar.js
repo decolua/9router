@@ -34,6 +34,14 @@ const debugItems = [
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
+// Monitoring sits right before Settings — it is the "is my router healthy?"
+// view: runtime status, activity, and per-provider health.
+const monitoringItem = {
+  href: "/dashboard/monitoring",
+  label: "Monitoring",
+  icon: "monitor_heart",
+};
+
 const systemItems = [
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
   { href: "/dashboard/skills", label: "Skills", icon: "extension" },
@@ -324,6 +332,28 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">9English</span>
             </a>
+
+            {/* Monitoring — sits directly above Settings */}
+            <Link
+              href={monitoringItem.href}
+              onClick={onClose}
+              className={cn(
+                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                isActive(monitoringItem.href)
+                  ? "bg-primary/10 text-primary"
+                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+              )}
+            >
+              <span
+                className={cn(
+                  "material-symbols-outlined text-[18px]",
+                  isActive(monitoringItem.href) ? "fill-1" : "group-hover:text-primary transition-colors"
+                )}
+              >
+                {monitoringItem.icon}
+              </span>
+              <span className="text-[13px] font-medium">{monitoringItem.label}</span>
+            </Link>
 
             {/* Settings */}
             <Link
