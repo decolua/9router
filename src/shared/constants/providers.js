@@ -35,6 +35,7 @@ function buildProviderEntry(r) {
     ...(r.authModes ? { authModes: r.authModes } : {}),
     ...(r.authType ? { authType: r.authType } : {}),
     ...(r.authHint ? { authHint: r.authHint } : {}),
+    ...(r.transport?.format ? { upstreamFormat: r.transport.format } : {}),
   };
 }
 
@@ -163,3 +164,20 @@ export const USAGE_SUPPORTED_PROVIDERS = REGISTRY
 export const USAGE_APIKEY_PROVIDERS = REGISTRY
   .filter(r => r.features?.usageApikey)
   .map(r => r.id);
+
+// Aliases of providers whose upstream speaks the Claude Messages format.
+// A client that also speaks that format (e.g. an Anthropic-format provider entry
+// in a CLI config) reaches them without translation, which keeps the request
+// prefix byte-stable and lets Anthropic prompt caching hit.
+export const CLAUDE_FORMAT_ALIASES = REGISTRY
+  .filter(r => r.transport?.format === "claude")
+  .map(r => r.uiAlias || r.alias)
+  .filter(Boolean);
+
+// "cc/claude-opus-5" -> true (claude-format upstream), "ocg/glm-5.3" -> false
+export function isClaudeFormatModel(modelId) {
+  if (typeof modelId !== "string") return false;
+  const slash = modelId.indexOf("/");
+  if (slash <= 0) return false;
+  return CLAUDE_FORMAT_ALIASES.includes(modelId.slice(0, slash));
+}

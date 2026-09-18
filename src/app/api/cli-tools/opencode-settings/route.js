@@ -6,8 +6,16 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { isClaudeFormatModel } from "@/shared/constants/providers";
 
 const execAsync = promisify(exec);
+
+// Second provider entry for models whose upstream speaks the Claude Messages
+// format. @ai-sdk/openai-compatible posts /v1/chat/completions, so those models
+// get translated OpenAI -> Claude on every turn; the reshaping moves the cached
+// prefix and Anthropic prompt caching stops hitting. Pointing an Anthropic-format
+// provider at /v1/messages keeps the prefix stable (~99% cache_read in practice).
+const ANTHROPIC_PROVIDER_KEY = "9router-anthropic";
 
 const getConfigDir = () => path.join(os.homedir(), ".config", "opencode");
 const getConfigPath = () => path.join(getConfigDir(), "opencode.json");
@@ -140,6 +148,31 @@ export async function POST(request) {
     // Save merged provider back
     config.provider["9router"] = existingProvider;
 
+    // Mirror claude-format models into an Anthropic-format provider entry so they
+    // reach /v1/messages untranslated and keep prompt caching alive.
+    const claudeFormatModels = modelsArray.filter(m => typeof m === "string" && isClaudeFormatModel(m));
+    if (claudeFormatModels.length > 0) {
+      const anthropicProvider = config.provider[ANTHROPIC_PROVIDER_KEY] || {
+        name: "9router anthropic",
+        npm: "@ai-sdk/anthropic",
+        options: {},
+        models: {},
+      };
+      anthropicProvider.options = {
+        ...anthropicProvider.options,
+        baseURL: normalizedBaseUrl,
+        apiKey: keyToUse,
+        // @ai-sdk/anthropic authenticates with x-api-key; 9router reads its own
+        // key from Authorization, so send both.
+        headers: { ...anthropicProvider.options?.headers, Authorization: `Bearer ${keyToUse}` },
+      };
+      anthropicProvider.models = anthropicProvider.models || {};
+      for (const m of claudeFormatModels) {
+        anthropicProvider.models[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
+      }
+      config.provider[ANTHROPIC_PROVIDER_KEY] = anthropicProvider;
+    }
+
     // Set the active model: prefer explicit activeModel, else first of modelsArray
     // If activeModel is explicitly empty string, clear the model
     if (activeModel === "") {
@@ -243,6 +276,19 @@ export async function DELETE(request) {
       // No specific model - remove entire 9router provider
       if (config.provider) delete config.provider["9router"];
       if (config.model?.startsWith("9router/")) delete config.model;
+    }
+
+    // Keep the Anthropic-format mirror in sync with the models above
+    if (config.provider?.[ANTHROPIC_PROVIDER_KEY]) {
+      if (modelToRemove) {
+        delete config.provider[ANTHROPIC_PROVIDER_KEY].models?.[modelToRemove];
+        if (Object.keys(config.provider[ANTHROPIC_PROVIDER_KEY].models || {}).length === 0) {
+          delete config.provider[ANTHROPIC_PROVIDER_KEY];
+        }
+      } else {
+        delete config.provider[ANTHROPIC_PROVIDER_KEY];
+      }
+      if (config.model?.startsWith(`${ANTHROPIC_PROVIDER_KEY}/`)) delete config.model;
     }
 
     // Remove subagent configuration
