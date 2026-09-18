@@ -129,7 +129,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
-            const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId) : null;
+            const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
             // First call gets cached signature or fallback; sibling calls remain unsigned if no cached sig
             const callSig = cachedSig || (!firstFunctionCallSeen ? signature : undefined);
             firstFunctionCallSeen = true;
@@ -341,7 +341,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
           if (block.type === CLAUDE_BLOCK.TEXT) {
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
-            const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId) : null;
+            const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId, model) : null;
             const callSig = cachedSig || (!firstToolUseSeen ? signature : undefined);
             firstToolUseSeen = true;
 
