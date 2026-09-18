@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { formatResetTime, getRemainingPercentage } from "./utils";
+import { formatResetTime, getRemainingPercentage, quotaStatusLevel } from "./utils";
 
 const PAGE_SIZE = 10;
 
@@ -39,34 +39,20 @@ function formatResetTimeDisplay(resetTime) {
   }
 }
 
+// Same levels as QuotaProgressBar, different text classes on purpose: this
+// table needs dark-mode variants. Only the presentation differs; where the
+// boundaries sit comes from ./utils.
+const COLOR_CLASSES = {
+  green: { text: "text-green-600 dark:text-green-400", bg: "bg-green-500", bgLight: "bg-green-500/10", emoji: "🟢" },
+  yellow: { text: "text-yellow-600 dark:text-yellow-400", bg: "bg-yellow-500", bgLight: "bg-yellow-500/10", emoji: "🟡" },
+  red: { text: "text-red-600 dark:text-red-400", bg: "bg-red-500", bgLight: "bg-red-500/10", emoji: "🔴" },
+};
+
 /**
  * Get color classes based on remaining percentage
  */
 function getColorClasses(remainingPercentage) {
-  if (remainingPercentage > 70) {
-    return {
-      text: "text-green-600 dark:text-green-400",
-      bg: "bg-green-500",
-      bgLight: "bg-green-500/10",
-      emoji: "🟢",
-    };
-  }
-
-  if (remainingPercentage >= 30) {
-    return {
-      text: "text-yellow-600 dark:text-yellow-400",
-      bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10",
-      emoji: "🟡",
-    };
-  }
-
-  return {
-    text: "text-red-600 dark:text-red-400",
-    bg: "bg-red-500",
-    bgLight: "bg-red-500/10",
-    emoji: "🔴",
-  };
+  return COLOR_CLASSES[quotaStatusLevel(remainingPercentage)];
 }
 
 function sortQuotas(quotas, sortMode) {
