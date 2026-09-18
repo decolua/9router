@@ -207,3 +207,91 @@ export async function handleVideoProxyCore({
     }),
   };
 }
+
+/**
+ * Proxy the finished video bytes: GET /v1/videos/{id}/content.
+ *
+ * Providers that return URLs (xAI, OpenRouter) guard them with the account
+ * credential, so a client holding only a 9router key cannot fetch its own
+ * result. This streams the bytes through using the stored upstream credential.
+ *
+ * Unlike handleVideoProxyCore this must NOT buffer: video payloads are large and
+ * binary, so the upstream body is piped straight to the client.
+ *
+ * Providers whose poll already embeds the bytes (Vertex returns base64) have no
+ * content endpoint and report unsupported.
+ *
+ * @returns {Promise<{ success: boolean, response: Response, status?: number, error?: string }>}
+ */
+export async function handleVideoContentCore({
+  provider,
+  requestId,
+  index = 0,
+  credentials,
+  signal,
+  timeoutMs = VIDEO_FETCH_TIMEOUT_MS,
+  log,
+}) {
+  const config = getVideoConfig(provider);
+  if (!config) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support video generation`);
+  }
+  if (!requestId) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
+  }
+
+  const adapter = getVideoAdapter(provider);
+  const token = credentials?.accessToken || credentials?.apiKey;
+
+  // Default (xAI shape) mirrors the poll URL with /content appended.
+  const plan = adapter?.buildContentRequest
+    ? adapter.buildContentRequest({ config, requestId, index, token, credentials, log })
+    : {
+        method: "GET",
+        url: `${config.baseUrl.replace(/\/$/, "")}/${encodeURIComponent(requestId)}/content`,
+        headers: buildHeaders({ token }),
+      };
+
+  if (plan.error) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] ${plan.error}`);
+  if (plan.unsupported) {
+    return createErrorResult(
+      HTTP_STATUS.BAD_REQUEST,
+      `[${provider}] ${plan.unsupported}`
+    );
+  }
+
+  let upstream;
+  try {
+    upstream = await fetch(plan.url, {
+      method: plan.method || "GET",
+      headers: plan.headers,
+      signal: combineSignals(signal, timeoutMs),
+    });
+  } catch (error) {
+    if (error?.name === "AbortError" || error?.name === "TimeoutError") {
+      return createErrorResult(HTTP_STATUS.REQUEST_TIMEOUT, `[${provider}] video content aborted: ${error.message}`);
+    }
+    return createErrorResult(
+      HTTP_STATUS.BAD_GATEWAY,
+      sanitizeSecrets(`[${provider}] video content fetch failed: ${error.message}`, credentials)
+    );
+  }
+
+  if (!upstream.ok) {
+    const bodyText = await upstream.text().catch(() => "");
+    const message = sanitizeSecrets(bodyText || `HTTP ${upstream.status}`, credentials);
+    return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);
+  }
+
+  // Stream the bytes straight through — never buffered into memory.
+  const headers = {
+    "Content-Type": upstream.headers.get("content-type") || "application/octet-stream",
+    "Access-Control-Allow-Origin": "*",
+  };
+  for (const header of ["content-length", "content-disposition", "etag", "last-modified", "accept-ranges"]) {
+    const value = upstream.headers.get(header);
+    if (value) headers[header] = value;
+  }
+
+  return { success: true, response: new Response(upstream.body, { status: upstream.status, headers }) };
+}

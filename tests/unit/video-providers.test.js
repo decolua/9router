@@ -16,9 +16,10 @@ vi.mock("open-sse/services/tokenRefresh.js", async (importOriginal) => {
   return { ...actual, refreshTokenByProvider: vi.fn(), refreshVertexToken: vi.fn() };
 });
 
-import { handleVideoProxyCore, getVideoConfig } from "open-sse/handlers/videoCore.js";
+import { handleVideoProxyCore, handleVideoContentCore, getVideoConfig } from "open-sse/handlers/videoCore.js";
 import { refreshVertexToken } from "open-sse/services/tokenRefresh.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "open-sse/providers/index.js";
+import { findProviderByJobId } from "open-sse/handlers/videoProviders/index.js";
 
 const originalFetch = global.fetch;
 const jsonResponse = (body, status = 200) =>
@@ -292,5 +293,108 @@ describe("vertex (veo) video adapter", () => {
     });
     expect(result.status).toBe(400);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("job-id provider resolution", () => {
+  const opName =
+    "projects/trial-mucocarmen/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-001/operations/57fc8bd0-d287-416e-aec2-63327a2f0622";
+  const jobId = Buffer.from(opName, "utf8").toString("base64url");
+
+  it("recovers vertex from a real Vertex job id with no pinned connection", () => {
+    expect(findProviderByJobId(jobId)).toBe("vertex");
+  });
+
+  it("does not claim an xAI-style opaque id", () => {
+    expect(findProviderByJobId("hKP1ny74fXNfe1hxvPF5")).toBe(null);
+  });
+
+  it("does not claim base64url of a non-operation path", () => {
+    expect(findProviderByJobId(Buffer.from("../../etc/passwd", "utf8").toString("base64url"))).toBe(null);
+  });
+
+  it("returns null for empty input", () => {
+    expect(findProviderByJobId("")).toBe(null);
+    expect(findProviderByJobId(null)).toBe(null);
+  });
+});
+
+describe("video content proxy", () => {
+  const creds = { apiKey: "or-key-123" };
+
+  it("fetches OpenRouter content with the account key and streams bytes back", async () => {
+    const mp4 = new Uint8Array([0, 0, 0, 32, 102, 116, 121, 112]);
+    global.fetch = vi.fn(async () => new Response(mp4, {
+      status: 200,
+      headers: { "content-type": "video/mp4", "content-length": String(mp4.length) },
+    }));
+
+    const result = await handleVideoContentCore({
+      provider: "openrouter", requestId: "8adCtzY20RVzYS3UMVIv", index: 0, credentials: creds,
+    });
+
+    expect(result.success).toBe(true);
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe("https://openrouter.ai/api/v1/videos/8adCtzY20RVzYS3UMVIv/content");
+    expect(init.method).toBe("GET");
+    expect(init.headers.Authorization).toBe("Bearer or-key-123");
+    expect(result.response.headers.get("content-type")).toBe("video/mp4");
+    expect(new Uint8Array(await result.response.arrayBuffer())).toEqual(mp4);
+  });
+
+  it("passes a non-zero index through as a query param", async () => {
+    global.fetch = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 }));
+    await handleVideoContentCore({ provider: "openrouter", requestId: "job1", index: 2, credentials: creds });
+    expect(global.fetch.mock.calls[0][0]).toBe("https://openrouter.ai/api/v1/videos/job1/content?index=2");
+  });
+
+  it("streams without buffering — body is piped, not read", async () => {
+    let cancelled = false;
+    const stream = new ReadableStream({
+      start(controller) { controller.enqueue(new Uint8Array([7, 7, 7])); controller.close(); },
+      cancel() { cancelled = true; },
+    });
+    global.fetch = vi.fn(async () => new Response(stream, { status: 200, headers: { "content-type": "video/mp4" } }));
+
+    const result = await handleVideoContentCore({ provider: "openrouter", requestId: "job1", credentials: creds });
+    expect(result.success).toBe(true);
+    expect(result.response.bodyUsed).toBe(false);
+    expect(cancelled).toBe(false);
+    expect(new Uint8Array(await result.response.arrayBuffer())).toEqual(new Uint8Array([7, 7, 7]));
+  });
+
+  it("reports Vertex as unsupported instead of building a bogus URL", async () => {
+    global.fetch = vi.fn();
+    const jobId = Buffer.from(
+      "projects/p/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-001/operations/op1",
+      "utf8"
+    ).toString("base64url");
+
+    const result = await handleVideoContentCore({ provider: "vertex", requestId: jobId, credentials: { apiKey: "{}" } });
+
+    expect(result.success).toBeFalsy();
+    expect(result.status).toBe(400);
+    expect(result.error).toMatch(/bytesBase64Encoded|storage_uri/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it("surfaces an upstream error body without leaking the key", async () => {
+    global.fetch = vi.fn(async () => new Response(
+      JSON.stringify({ error: { message: "Missing Authentication header", code: 401 } }),
+      { status: 401, headers: { "content-type": "application/json" } }
+    ));
+
+    const result = await handleVideoContentCore({ provider: "openrouter", requestId: "job1", credentials: creds });
+
+    expect(result.success).toBeFalsy();
+    expect(result.status).toBe(401);
+    expect(result.error).toContain("Missing Authentication header");
+    expect(result.error).not.toContain("or-key-123");
+  });
+
+  it("defaults to the xAI shape when a provider has no adapter", async () => {
+    global.fetch = vi.fn(async () => new Response(new Uint8Array([1]), { status: 200 }));
+    await handleVideoContentCore({ provider: "xai", requestId: "job1", credentials: { apiKey: "xai-key" } });
+    expect(global.fetch.mock.calls[0][0]).toMatch(/\/job1\/content$/);
   });
 });

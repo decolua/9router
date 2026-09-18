@@ -109,6 +109,20 @@ function fromVertexOperation(json) {
 }
 
 export default {
+  // A Vertex job id is a base64url-encoded Vertex operation path, which is
+  // self-identifying: only this adapter can have minted it. Lets a poll resolve
+  // its provider from the id alone, with no pinned connection.
+  ownsJobId: (id) => decodeJobId(id) !== null,
+
+  // Veo returns the video inline (base64) or as a storage_uri in the poll
+  // response, so there is no separate content endpoint to proxy.
+  buildContentRequest() {
+    return {
+      unsupported:
+        "Vertex returns video bytes inline in the poll response (bytesBase64Encoded) or at storage_uri — there is no content endpoint",
+    };
+  },
+
   async buildRequest({ config, action, requestId, rawBody, contentType, credentials, log }) {
     if (contentType && !contentType.includes("application/json")) {
       return { error: "Vertex video requires an application/json body" };
