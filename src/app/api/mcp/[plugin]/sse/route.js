@@ -11,6 +11,21 @@ export async function GET(request, { params }) {
 
   const encoder = new TextEncoder();
   let sid;
+  let released = false;
+
+  // Idempotent: request.signal abort and cancel() can both fire, and releasing twice
+  // would run the bridge's "last session leaves" branch a second time.
+  const release = () => {
+    if (released || !sid) return;
+    released = true;
+    unregisterSession(plugin, sid);
+  };
+
+  // request.signal fires reliably on client disconnect; ReadableStream.cancel() is
+  // not always invoked in Next.js (same reason as translator/console-logs/stream).
+  // unregisterSession is what reaps the spawned child, so a missed cancel() leaves
+  // sessions.size > 0 and the stdio process alive for the lifetime of the server.
+  request?.signal?.addEventListener("abort", release, { once: true });
 
   const stream = new ReadableStream({
     start(controller) {
@@ -20,7 +35,7 @@ export async function GET(request, { params }) {
       send(`event: endpoint\ndata: /api/mcp/${plugin}/message?sessionId=${sid}\n\n`);
     },
     cancel() {
-      if (sid) unregisterSession(plugin, sid);
+      release();
     },
   });
 
