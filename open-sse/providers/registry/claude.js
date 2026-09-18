@@ -67,6 +67,7 @@ export default {
     clientId: "9d1c250a-e61b-44d9-88ed-5944d1962f5e",
     authorizeUrl: "https://claude.ai/oauth/authorize",
     tokenUrl: "https://api.anthropic.com/v1/oauth/token",
+    profileUrl: "https://api.anthropic.com/api/oauth/profile",
     scopes: [
       "org:create_api_key",
       "user:profile",

@@ -14,6 +14,34 @@ const CLAUDE_CONFIG = {
   apiVersion: ANTHROPIC_API_VERSION,
 };
 
+// Plan shown when the connection carries no profile data (pre-profile logins,
+// API keys, a profile fetch that failed) — the historical literal.
+const DEFAULT_CLAUDE_PLAN = "Claude Code";
+
+/**
+ * Human plan name from the profile data stored at OAuth connect time.
+ * rate_limit_tier is the most specific signal ("default_claude_max_20x"),
+ * organization_type and the account's has_claude_* flags are the fallbacks.
+ */
+export function claudePlanName(providerSpecificData) {
+  const tier = String(providerSpecificData?.claudeRateLimitTier || "").toLowerCase();
+  const multiplier = tier.match(/_(\d+)x$/)?.[1];
+  if (tier.includes("claude_max")) return multiplier ? `Claude Max ${multiplier}x` : "Claude Max";
+  if (tier.includes("claude_pro")) return "Claude Pro";
+  if (tier.includes("claude_team")) return "Claude Team";
+  if (tier.includes("claude_enterprise")) return "Claude Enterprise";
+
+  const orgType = String(providerSpecificData?.claudeOrgType || "").toLowerCase();
+  if (orgType === "claude_max") return "Claude Max";
+  if (orgType === "claude_pro") return "Claude Pro";
+  if (orgType === "claude_team") return "Claude Team";
+  if (orgType === "claude_enterprise") return "Claude Enterprise";
+
+  if (providerSpecificData?.claudeHasMax) return "Claude Max";
+  if (providerSpecificData?.claudeHasPro) return "Claude Pro";
+  return DEFAULT_CLAUDE_PLAN;
+}
+
 // OAuth usage endpoint rate-limits (429); cool down per-token to stop hammering it.
 // Only the quota endpoint is affected — chat with the same token still works.
 const OAUTH_429_COOLDOWN_MS = 180000;
@@ -26,6 +54,7 @@ const usageCache = new Map(); // token -> { promise } | { result, expiresAt }
 
 export async function getClaudeUsage(accessToken, proxyOptions = null, options = {}) {
   const force = options?.force === true;
+  const plan = claudePlanName(options?.providerSpecificData);
 
   // Serve in-flight or fresh cached result (skip on manual force)
   if (!force && accessToken) {
@@ -37,7 +66,7 @@ export async function getClaudeUsage(accessToken, proxyOptions = null, options =
   const stale = (!force && accessToken && usageCache.get(accessToken)?.result) || null;
 
   const promise = (async () => {
-    const result = await fetchClaudeUsageRaw(accessToken, proxyOptions);
+    const result = await fetchClaudeUsageRaw(accessToken, proxyOptions, plan);
     // Only cache real quota data, not soft-failure {message: ...} payloads
     if (accessToken && result?.quotas) {
       usageCache.set(accessToken, {
@@ -55,7 +84,7 @@ export async function getClaudeUsage(accessToken, proxyOptions = null, options =
   return promise;
 }
 
-async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
+async function fetchClaudeUsageRaw(accessToken, proxyOptions = null, plan = DEFAULT_CLAUDE_PLAN) {
   try {
     // Skip OAuth usage call while this token is cooling down from a recent 429
     const cooldownUntil = oauthCooldown.get(accessToken);
@@ -127,7 +156,7 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
       }
 
       return {
-        plan: "Claude Code",
+        plan,
         extraUsage: data.extra_usage ?? null,
         quotas,
       };
