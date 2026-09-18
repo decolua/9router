@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings, getProviderConnections } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { validateStaggerGroups } from "@/shared/services/quotaStagger";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -76,6 +77,36 @@ export async function PATCH(request) {
       }
     }
 
+    if (Object.prototype.hasOwnProperty.call(body, "quotaStaggerGroups")) {
+      try {
+        const currentSettings = await getSettings();
+        const connections = await getProviderConnections();
+        const previousGroups = currentSettings?.quotaStaggerGroups || [];
+        body.quotaStaggerGroups = validateStaggerGroups(
+          body.quotaStaggerGroups,
+          connections,
+          previousGroups
+        );
+      } catch (validationError) {
+        return NextResponse.json({ error: validationError.message }, { status: 400 });
+      }
+    }
+
+    if (Object.hasOwn(body, "providerStrategies")) {
+      const strategies = body.providerStrategies;
+      if (!strategies || typeof strategies !== "object" || Array.isArray(strategies)) {
+        return NextResponse.json({ error: "providerStrategies must be an object" }, { status: 400 });
+      }
+      for (const [id, strategy] of Object.entries(strategies)) {
+        if (["__proto__", "constructor", "prototype"].includes(id) || !strategy || typeof strategy !== "object" || Array.isArray(strategy)) {
+          return NextResponse.json({ error: `providerStrategies.${id} must be an object` }, { status: 400 });
+        }
+        if (Object.hasOwn(strategy, "quotaResetFirst") && typeof strategy.quotaResetFirst !== "boolean") {
+          return NextResponse.json({ error: `providerStrategies.${id}.quotaResetFirst must be a boolean` }, { status: 400 });
+        }
+      }
+    }
+
     const settings = await updateSettings(body);
 
     // Apply outbound proxy settings immediately (no restart required)
@@ -98,7 +129,9 @@ export async function PATCH(request) {
 
     if (
       Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
-      Object.prototype.hasOwnProperty.call(body, "codexAutoPing")
+      Object.prototype.hasOwnProperty.call(body, "codexAutoPing") ||
+      Object.prototype.hasOwnProperty.call(body, "providerStrategies") ||
+      Object.prototype.hasOwnProperty.call(body, "quotaStaggerGroups")
     ) {
       // Keep the scheduler absent when no account opted in; load its provider graph only on demand.
       import("@/shared/services/quotaAutoPing")

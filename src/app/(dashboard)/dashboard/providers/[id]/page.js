@@ -66,6 +66,11 @@ export default function ProviderDetailPage() {
   const [bulkProxyPoolId, setBulkProxyPoolId] = useState("__none__");
   const [bulkUpdatingProxy, setBulkUpdatingProxy] = useState(false);
   const [providerStrategy, setProviderStrategy] = useState(null);
+  const [quotaResetFirst, setQuotaResetFirst] = useState(false);
+  const [strategySaving, setStrategySaving] = useState(false);
+  const [strategyError, setStrategyError] = useState("");
+  const strategySaveRef = useRef(false);
+  const supportsQuotaRouting = ["codex", "claude", "antigravity", "gemini-cli"].includes(providerId);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
@@ -321,9 +326,15 @@ export default function ProviderDetailPage() {
         setProxyPools(proxyPoolsData.proxyPools || []);
       }
       // Load per-provider strategy override
-      const override = (settingsData.providerStrategies || {})[providerId] || {};
-      setProviderStrategy(override.fallbackStrategy || null);
-      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      if (settingsRes.ok) {
+        const override = (settingsData.providerStrategies || {})[providerId] || {};
+        setProviderStrategy(override.fallbackStrategy || null);
+        setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+        setQuotaResetFirst(override.quotaResetFirst === true);
+        setStrategyError("");
+      } else {
+        setStrategyError("Unable to load routing settings. Try again.");
+      }
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
@@ -373,46 +384,48 @@ export default function ProviderDetailPage() {
     }
   };
 
-  const saveProviderStrategy = async (strategy, stickyLimit) => {
+  const saveProviderStrategy = async (strategy, stickyLimit, quotaPreference) => {
+    if (strategySaveRef.current) return;
+    strategySaveRef.current = true;
+    setStrategySaving(true);
+    setStrategyError("");
     try {
-      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
-      const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-      const current = settingsData.providerStrategies || {};
-
-      // Build override: null strategy means remove override, use global
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") {
-        override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
-      }
-
-      const updated = { ...current };
-      if (Object.keys(override).length === 0) {
-        delete updated[providerId];
+      const res = await fetch("/api/settings", { cache: "no-store" });
+      if (!res.ok) throw new Error("Unable to load routing settings. Try again.");
+      const data = await res.json();
+      const current = data.providerStrategies || {};
+      const override = { ...current[providerId] };
+      if (quotaPreference !== undefined) {
+        override.quotaResetFirst = quotaPreference;
       } else {
-        updated[providerId] = override;
+        delete override.fallbackStrategy;
+        delete override.stickyRoundRobinLimit;
+        if (strategy) override.fallbackStrategy = strategy;
+        if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
       }
-
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ providerStrategies: updated }),
-      });
+      const updated = { ...current };
+      if (Object.keys(override).length === 0) delete updated[providerId];
+      else updated[providerId] = override;
+      const saved = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
+      if (!saved.ok) throw new Error("Unable to save routing settings. Try again.");
+      setProviderStrategy(override.fallbackStrategy || null);
+      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setQuotaResetFirst(override.quotaResetFirst === true);
     } catch (error) {
-      console.log("Error saving provider strategy:", error);
+      setStrategyError(error.message || "Unable to save routing settings. Try again.");
+    } finally {
+      strategySaveRef.current = false;
+      setStrategySaving(false);
     }
   };
 
   const handleRoundRobinToggle = (enabled) => {
     const strategy = enabled ? "round-robin" : null;
     const sticky = enabled ? (providerStickyLimit || "1") : providerStickyLimit;
-    if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
-    setProviderStrategy(strategy);
     saveProviderStrategy(strategy, sticky);
   };
 
   const handleStickyLimitChange = (value) => {
-    setProviderStickyLimit(value);
     saveProviderStrategy("round-robin", value);
   };
 
@@ -1560,6 +1573,7 @@ export default function ProviderDetailPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs text-text-muted font-medium">Round Robin</span>
                 <Toggle
+                  disabled={strategySaving}
                   checked={providerStrategy === "round-robin"}
                   onChange={handleRoundRobinToggle}
                 />
@@ -1570,6 +1584,7 @@ export default function ProviderDetailPage() {
                       type="number"
                       min={1}
                       value={providerStickyLimit}
+                      disabled={strategySaving}
                       onChange={(e) => handleStickyLimitChange(e.target.value)}
                       placeholder="1"
                       className="w-14 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
@@ -1579,6 +1594,20 @@ export default function ProviderDetailPage() {
               </div>
             </div>
           </div>
+
+          {supportsQuotaRouting && (
+            <div className="mb-4">
+              <Toggle
+                label="Prefer earliest quota reset"
+                description="Use the available account whose applicable quota resets first. Refreshes quota in the background; cooldowns and stagger protection still apply."
+                checked={quotaResetFirst}
+                disabled={strategySaving}
+                onChange={(enabled) => saveProviderStrategy(undefined, undefined, enabled)}
+              />
+              <p className="mt-1 text-xs text-text-muted">Uses the earliest applicable session or weekly reset. Ties use the existing Round Robin or fill-first strategy.</p>
+            </div>
+          )}
+          {strategyError && <p role="alert" className="mb-4 text-sm text-red-500">{strategyError}</p>}
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
