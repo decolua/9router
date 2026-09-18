@@ -1,4 +1,4 @@
-import { buildModelsList } from "../route.js";
+import { getCachedModelsList } from "../route.js";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -45,14 +45,21 @@ export async function GET(_request, { params }) {
     const kindFilter = path.length === 1 ? KIND_SLUG_MAP[identifier] : null;
 
     if (kindFilter) {
-      const data = await buildModelsList(kindFilter);
+      const data = await getCachedModelsList(kindFilter);
       return json({ object: "list", data });
     }
 
     // Match the same LLM catalog exposed by GET /v1/models. A catch-all
     // parameter is required because provider-prefixed IDs contain a slash.
-    const models = await buildModelsList([LLM_KIND]);
-    const matchedModel = models.find((candidate) => candidate.id === identifier);
+    const models = await getCachedModelsList([LLM_KIND]);
+    let matchedModel = models.find((candidate) => candidate.id === identifier);
+
+    if (!matchedModel) {
+      // The cached list may predate a model added moments ago. Rebuild fresh
+      // before declaring the model missing.
+      const fresh = await getCachedModelsList([LLM_KIND], { forceFresh: true });
+      matchedModel = fresh.find((candidate) => candidate.id === identifier);
+    }
 
     if (!matchedModel) {
       return json(
