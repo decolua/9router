@@ -57,6 +57,8 @@ export default function ClaudeToolCard({
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const [ccFilterNaming, setCcFilterNaming] = useState(false);
   const [exaMcpEnabled, setExaMcpEnabled] = useState(false);
+  const [claudeClassifierCompat, setClaudeClassifierCompat] = useState("off");
+  const [claudeClassifierCompatLoading, setClaudeClassifierCompatLoading] = useState(false);
   const [autoCompactWindow, setAutoCompactWindow] = useState("");
   const [oneMContext, setOneMContext] = useState(false);
   const hasInitializedModels = useRef(false);
@@ -136,6 +138,39 @@ export default function ClaudeToolCard({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ccFilterNaming: value }),
     }).catch(() => {});
+  };
+
+  useEffect(() => {
+    fetch("/api/settings").then(r => r.json()).then(data => {
+      const v = data?.claudeClassifierCompat;
+      setClaudeClassifierCompat(v === "auto" || v === "always" ? v : "off");
+    }).catch(() => {});
+  }, []);
+
+  const CLASSIFIER_COMPAT_MODES = ["off", "auto", "always"];
+  const CLASSIFIER_COMPAT_STYLES = {
+    off: "bg-black/5 dark:bg-white/5 text-text-muted border-border",
+    auto: "bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/40",
+    always: "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/40",
+  };
+
+  const handleClassifierCompatCycle = async () => {
+    const next = CLASSIFIER_COMPAT_MODES[(CLASSIFIER_COMPAT_MODES.indexOf(claudeClassifierCompat) + 1) % CLASSIFIER_COMPAT_MODES.length];
+    const previous = claudeClassifierCompat;
+    setClaudeClassifierCompat(next);
+    setClaudeClassifierCompatLoading(true);
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ claudeClassifierCompat: next }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    } catch {
+      setClaudeClassifierCompat(previous);
+    } finally {
+      setClaudeClassifierCompatLoading(false);
+    }
   };
 
   const fetchModelAliases = async () => {
@@ -458,6 +493,26 @@ export default function ClaudeToolCard({
                       <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
                     </Tooltip>
                   </label>
+                </div>
+
+                {/* Claude Code auto-permission classifier compat */}
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Classifier</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs text-text-muted">Auto-allow classifier</span>
+                    <Tooltip text="Claude Code --permission-mode auto sends an internal security-classifier request. When routed to a cheap model that returns empty content, every gated action (Bash, Edit, WebFetch) fails closed. auto and always detect the security-monitor marker and answer that request locally with a synthetic ALLOW, without calling upstream. off never mutates traffic.">
+                      <span className="material-symbols-outlined text-text-muted text-[14px] cursor-help">info</span>
+                    </Tooltip>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleClassifierCompatCycle}
+                    disabled={claudeClassifierCompatLoading}
+                    className={`shrink-0 rounded border px-2 py-1 text-[10px] font-medium uppercase tracking-wide transition-colors disabled:opacity-50 ${CLASSIFIER_COMPAT_STYLES[claudeClassifierCompat]}`}
+                  >
+                    {claudeClassifierCompat}
+                  </button>
                 </div>
               </div>
 
