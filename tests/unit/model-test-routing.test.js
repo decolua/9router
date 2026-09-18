@@ -107,6 +107,34 @@ describe("model test route kind routing", () => {
     );
   });
 
+  it("sends the internal CLI token when no gateway API key exists", async () => {
+    mocks.getApiKeys.mockResolvedValue([]);
+    global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      choices: [{ message: { role: "assistant", content: "ok" } }],
+    }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+
+    const { POST } = await import("../../src/app/api/models/test/route.js");
+    const req = new Request("http://localhost/api/models/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "codex/gpt-5.3-codex", kind: "llm" }),
+    });
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(200);
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/chat/completions"),
+      expect.objectContaining({
+        headers: expect.objectContaining({ "x-9r-cli-token": "cli-token" }),
+      })
+    );
+    expect(global.fetch.mock.calls[0][1].headers.Authorization).toBeUndefined();
+  });
+
   it("fails embedding model tests when provider returns no embedding data", async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       data: [{ embedding: null }],
