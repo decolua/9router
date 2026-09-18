@@ -50,6 +50,45 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Best-effort extraction of a precise rate-limit reset time from common
+ * provider error shapes. GLM/Z.AI: "Your limit will reset at 2026-08-17 02:56:15"
+ * (UTC). Also handles "retry in N seconds", "resets in Ns" and Retry-After.
+ * Returns epoch ms or null.
+ */
+export function extractResetsAtMs(response, message) {
+  if (!message) return null;
+  const text = typeof message === "string" ? message : JSON.stringify(message);
+
+  // GLM/Z.AI: "reset at 2026-08-17 02:56:15" (provider sends UTC without suffix)
+  const resetAt = text.match(/reset at\s+(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}:\d{2})/i);
+  if (resetAt) {
+    const ms = Date.parse(`${resetAt[1]}T${resetAt[2]}Z`);
+    if (Number.isFinite(ms) && ms > Date.now()) return ms;
+  }
+
+  // "retry in 300 seconds" / "resets in 5 minutes" / "try again in 1 hour"
+  const inTime = text.match(/(?:retry|try again|resets?)\s+(?:after|in)\s+(\d+(?:\.\d+)?)\s*(seconds?|minutes?|hours?)/i);
+  if (inTime) {
+    const n = Number(inTime[1]);
+    const unit = inTime[2][0].toLowerCase();
+    const mult = unit === "s" ? 1000 : unit === "m" ? 60000 : 3600000;
+    const ms = Date.now() + n * mult;
+    if (Number.isFinite(ms)) return ms;
+  }
+
+  // Retry-After header (seconds or HTTP-date)
+  const ra = response?.headers?.get?.("retry-after");
+  if (ra) {
+    const secs = Number(ra);
+    if (Number.isFinite(secs) && secs > 0) return Date.now() + secs * 1000;
+    const dateMs = Date.parse(ra);
+    if (Number.isFinite(dateMs) && dateMs > Date.now()) return dateMs;
+  }
+
+  return null;
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
@@ -69,7 +108,9 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        // Executor parse wins; fill resetsAtMs from generic patterns when absent
+        const resetsAtMs = parsed.resetsAtMs ?? (response.status === 429 ? extractResetsAtMs(response, msg) : null);
+        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -84,6 +125,12 @@ export async function parseUpstreamError(response, executor = null) {
 
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+
+  // Generic reset-time extraction for rate limits (GLM "reset at ...", Retry-After, ...)
+  if (response.status === 429) {
+    const resetsAtMs = extractResetsAtMs(response, finalMessage);
+    if (resetsAtMs) return { statusCode: 429, message: finalMessage, resetsAtMs };
+  }
 
   return { statusCode: response.status, message: finalMessage };
 }
