@@ -62,10 +62,14 @@ export default function ConsoleLogClient() {
     return () => es.close();
   }, []);
 
-  // Auto-scroll to bottom on new logs
+  // Auto-scroll to bottom on new logs only if user is already near bottom (#3838)
   useEffect(() => {
     if (!logRef.current) return;
-    logRef.current.scrollTop = logRef.current.scrollHeight;
+    const el = logRef.current;
+    const isAtBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 60;
+    if (isAtBottom) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [logs]);
 
   return (

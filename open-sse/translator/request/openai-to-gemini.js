@@ -198,6 +198,13 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
+  // Gemini API strictly requires that conversations do not end with a model turn (#3816).
+  // When an agent (e.g. Codex Remote Compaction V2) triggers compaction on a conversation ending in a model turn,
+  // append a synthetic user continuation turn to prevent upstream 400 error.
+  if (result.contents.length > 0 && result.contents[result.contents.length - 1].role === GEMINI_ROLE.MODEL) {
+    result.contents.push({ role: GEMINI_ROLE.USER, parts: [{ text: "Continue." }] });
+  }
+
   // Convert tools
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     const functionDeclarations = [];
@@ -385,6 +392,11 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
         });
       }
     }
+  }
+
+  // Ensure Claude-to-Gemini conversation does not end with model turn (#3816)
+  if (envelope.request.contents.length > 0 && envelope.request.contents[envelope.request.contents.length - 1].role === GEMINI_ROLE.MODEL) {
+    envelope.request.contents.push({ role: GEMINI_ROLE.USER, parts: [{ text: "Continue." }] });
   }
 
   // Convert Claude tools to Gemini functionDeclarations
