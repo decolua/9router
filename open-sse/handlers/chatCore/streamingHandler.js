@@ -41,6 +41,20 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
   return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
 }
 
+// Content types an upstream may legitimately stream, beyond SSE and JSON, keyed by the format the
+// provider declares. Ollama-format providers dial the native /api/chat (see
+// providers/registry/ollama-local.js) which answers application/x-ndjson on success, and
+// translator/response/ollama-to-openai.js exists to convert exactly that stream, so the
+// error-page guard below must not treat it as a non-SSE body (issue #3985).
+const UPSTREAM_STREAM_CONTENT_TYPES = {
+  [FORMATS.OLLAMA]: ['application/x-ndjson'],
+};
+
+function isStreamableUpstreamContentType(contentType, targetFormat) {
+  if (contentType.includes('text/event-stream') || contentType.includes('application/json')) return true;
+  return (UPSTREAM_STREAM_CONTENT_TYPES[targetFormat] || []).some(type => contentType.includes(type));
+}
+
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
@@ -61,7 +75,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // and clamped so untrusted upstream text never reaches the client verbatim
   // (the UI may render error.message as HTML).
   const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
-  if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
+  if (upstreamContentType && !isStreamableUpstreamContentType(upstreamContentType, targetFormat)) {
     const bodyText = await providerResponse.text().catch(() => '');
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
     const sanitizedTitle = (titleMatch?.[1] || '').replace(/<[^>]*>/g, '').replace(/[\r\n]+/g, ' ').trim().slice(0, 160);
