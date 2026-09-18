@@ -104,8 +104,10 @@ function normalizeCodexTools(body) {
     const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+    const strict = typeof tool.strict === "boolean" ? tool.strict : fn?.strict;
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
+    if (typeof strict === "boolean") tool.strict = strict;
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = stripCodexUnsupportedPatterns(parameters, patternStats);
