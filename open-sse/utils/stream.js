@@ -55,6 +55,7 @@ export function createSSEStream(options = {}) {
 
   let buffer = "";
   let usage = null;
+  let heldFinishParsed = null; // passthrough only — see note above the finish branches below
 
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -135,9 +136,11 @@ export function createSSEStream(options = {}) {
         if (mode === STREAM_MODE.PASSTHROUGH) {
           let output;
           let injectedUsage = false;
+          let justHeldFinish = false;
+          const isDoneLine = trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]";
           let responsesTerminal = false;
 
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
+          if (trimmed.startsWith("data:") && !isDoneLine) {
             try {
               const parsed = JSON.parse(trimmed.slice(5).trim());
 
@@ -201,18 +204,44 @@ export function createSSEStream(options = {}) {
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
+              // A finish_reason chunk is HELD rather than trusted outright —
+              // some providers (observed: Cloudflare Workers AI, matches
+              // upstream #1645 "truncates responses prematurely") emit
+              // finish_reason mid-generation and keep sending real content
+              // afterward. Forwarding that first chunk straight through makes
+              // any spec-compliant OpenAI client stop reading right there,
+              // silently truncating everything that streams after it —
+              // reproduced live: a finish_reason chunk landing mid-number
+              // dropped the remaining digits (e.g. "100000" arriving as "1").
+              // So: hold the most recent finish chunk here instead of
+              // emitting it. It's released below — genuine (as-is) if the
+              // next thing seen is the [DONE] sentinel or end-of-stream,
+              // neutered (finish_reason cleared, usage stripped) the moment
+              // real content follows it instead, proving the hold was
+              // premature. A second finish chunk arriving while one is
+              // already held simply replaces it — we only ever forward one
+              // terminal event, fixing the duplicate-finish/duplicate-usage
+              // symptom that came with the same root cause.
+              //
+              // NB the hold interacts with nothing above: `responsesTerminal`
+              // tracks OpenAI *Responses* terminal events (response.completed),
+              // a different chunk shape that carries no choices[].finish_reason
+              // — so a held chunk is never also a Responses terminal, and the
+              // `continue` below cannot skip upstream's finalizeStream().
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
                 usage = estimated;
+                heldFinishParsed = parsed;
                 injectedUsage = true;
+                justHeldFinish = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
                 parsed.usage = filterUsageForFormat(buffered, FORMATS.OPENAI);
-                output = `data: ${JSON.stringify(parsed)}\n`;
+                heldFinishParsed = parsed;
                 injectedUsage = true;
+                justHeldFinish = true;
               } else if (idFixed || fieldsInjected) {
                 output = `data: ${JSON.stringify(parsed)}\n`;
                 injectedUsage = true;
@@ -223,6 +252,25 @@ export function createSSEStream(options = {}) {
               // messages) in the SSE stream that would break downstream JSON decoders.
               continue;
             }
+          }
+
+          // Blank lines are just SSE's own event-delimiter convention (every
+          // frame ends "\n\n") — not a signal either way, so they must not
+          // resolve a hold. Only real content or the [DONE] sentinel should.
+          if (heldFinishParsed && !justHeldFinish && trimmed !== "") {
+            const held = heldFinishParsed;
+            heldFinishParsed = null;
+            if (!isDoneLine) {
+              held.choices = held.choices?.map(c => ({ ...c, finish_reason: null }));
+              delete held.usage;
+            }
+            const heldOutput = `data: ${JSON.stringify(held)}\n`;
+            reqLogger?.appendConvertedChunk?.(heldOutput);
+            controller.enqueue(sharedEncoder.encode(heldOutput));
+          }
+
+          if (justHeldFinish) {
+            continue;
           }
 
           if (!injectedUsage) {
@@ -383,6 +431,16 @@ export function createSSEStream(options = {}) {
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
+          // Stream ended with nothing after the last-held finish chunk —
+          // that's the natural end of the response, so it was genuine.
+          // Release it as-is (see the hold/release note in transform()).
+          if (heldFinishParsed) {
+            const heldOutput = `data: ${JSON.stringify(heldFinishParsed)}\n`;
+            reqLogger?.appendConvertedChunk?.(heldOutput);
+            controller.enqueue(sharedEncoder.encode(heldOutput));
+            heldFinishParsed = null;
+          }
+
           if (buffer) {
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
