@@ -147,8 +147,8 @@ export const CLOUD_CODE_API = {
   // rejects these auth/onboarding calls. Only chat traffic uses the daily host
   // (see transport.apiEndpoint in registry/antigravity.js, set to bypass prod 429).
   antigravity: {
-    loadCodeAssist: "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
-    onboardUser: "https://cloudcode-pa.googleapis.com/v1internal:onboardUser",
+    loadCodeAssist: "https://daily-cloudcode-pa.googleapis.com/v1internal:loadCodeAssist",
+    onboardUser: "https://daily-cloudcode-pa.googleapis.com/v1internal:onboardUser",
   },
 };
 
@@ -163,7 +163,7 @@ export const LOAD_CODE_ASSIST_HEADERS = {
 // Google's backend fingerprints those and silently refuses to provision a cloudaicompanionProject.
 export const ANTIGRAVITY_LOAD_CODE_ASSIST_HEADERS = {
   "Content-Type": "application/json",
-  "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+  "User-Agent": "antigravity",
 };
 
 export const LOAD_CODE_ASSIST_METADATA = {
