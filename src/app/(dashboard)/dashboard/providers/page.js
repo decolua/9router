@@ -419,6 +419,16 @@ export default function ProvidersPage() {
             Custom Providers (OpenAI/Anthropic Compatible){" "}
           </h2>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
+            <Link href="/dashboard/custom-adapters">
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="extension"
+                className="w-full sm:w-auto"
+              >
+                Custom Adapters
+              </Button>
+            </Link>
             <Button
               size="sm"
               icon="add"
