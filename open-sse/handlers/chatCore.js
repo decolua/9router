@@ -26,7 +26,7 @@ import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
-import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
+import { stripUnsupportedModalities, hasMediaBlocks } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -281,7 +281,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
-  if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
+  // Skip when media blocks are present: style prompts measurably degrade
+  // multimodal grounding on susceptible models (deepseek-v4.1-flash probed
+  // live — hallucinated colors on solid images with the prompt, correct
+  // without). Text-only requests keep the saver behavior.
+  if (tokenSaverEnabled && ponytailEnabled && ponytailLevel && !hasMediaBlocks(translatedBody)) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
