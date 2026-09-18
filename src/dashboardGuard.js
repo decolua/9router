@@ -47,26 +47,14 @@ const ALWAYS_PROTECTED = [
   "/api/oauth/kiro/auto-import",
 ];
 
-// Require auth, but allow through if requireLogin is disabled
-const PROTECTED_API_PATHS = [
-  "/api/settings",
-  "/api/keys",
-  "/api/providers",
-  "/api/provider-nodes",
-  "/api/proxy-pools",
-  "/api/combos",
-  "/api/models",
-  "/api/usage",
-  "/api/oauth",
-  "/api/cloud",
-  "/api/media-providers",
-  "/api/pricing",
-  "/api/tags",
-  "/api/cli-tools",
-  "/api/mcp",
-  "/api/translator",
-  "/api/tunnel",
-];
+// NOTE: the list that used to sit here (PROTECTED_API_PATHS) was read by
+// nothing. Its comment described the real rule -- require auth, but allow
+// through when requireLogin is disabled -- which is the deny-by-default arm
+// for `/api/*` in proxy() below, applied to every /api/ path rather than to a
+// named few. A policy-shaped list enforced by nobody is worse than no list:
+// adding a path to it looks like protecting that path.
+// tests/unit/dashboard-guard-api-deny-by-default.test.js holds that rule now.
+
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
 const LOCAL_ONLY_PATHS = [
