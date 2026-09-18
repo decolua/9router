@@ -385,7 +385,15 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      // Check if user has manually added custom models for this compatible provider.
+      // If so, skip dynamic /models fetch — only expose user-curated models.
+      const hasProviderCustomModels = isCompatibleProvider && customModels.some((m) => {
+        if (!m?.id) return false;
+        const a = m.providerAlias;
+        return a === staticAlias || a === outputAlias || a === providerId;
+      });
+
+      if (isCompatibleProvider && rawModelIds.length === 0 && !hasProviderCustomModels && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
       }
 
