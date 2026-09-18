@@ -84,6 +84,48 @@ async function refreshOne(connection) {
 }
 
 /**
+ * Warm the Antigravity routing quota cache right after a successful token
+ * refresh — the same flow a user's own Antigravity CLI/IDE runs on startup
+ * (authenticate, then read quota). Piggy-backing on the background refresh
+ * keeps the pacing guarantees of the sequential loop (sensitive delay +
+ * jitter between accounts) with zero extra upstream calls beyond one quota
+ * read per refreshed connection.
+ *
+ * Opt-out via env: AG_BG_QUOTA_WARMUP=0|false|off
+ */
+export function isBgQuotaWarmupEnabled() {
+  const v = process.env.AG_BG_QUOTA_WARMUP;
+  if (v == null || v === "") return true; // default ON
+  const s = String(v).trim().toLowerCase();
+  return s === "1" || s === "true" || s === "yes" || s === "on";
+}
+
+async function warmAntigravityQuotaAfterRefresh(connection, refreshedCreds) {
+  if (connection.provider !== "antigravity") return;
+  if (!isBgQuotaWarmupEnabled()) return;
+  const accessToken = refreshedCreds?.accessToken || connection.accessToken;
+  if (!accessToken) return;
+
+  try {
+    const { refreshAntigravityQuota } = await import("./antigravityQuota.js");
+    const result = await refreshAntigravityQuota(connection.id, accessToken, connection.providerSpecificData);
+    log.info("BG_TOKEN_REFRESH", "Quota cache warmed", {
+      id: connection.id,
+      email: connection.email || connection.name || connection.id,
+      provider: connection.provider,
+      pools: result ? Object.keys(result).filter((k) => k.endsWith("_weekly") || k.endsWith("_5h")).length : 0,
+    });
+  } catch (err) {
+    // Fail-open: warm-up must never break the refresh loop.
+    log.warn("BG_TOKEN_REFRESH", "Quota warm-up failed (swallowed)", {
+      id: connection.id,
+      email: connection.email || connection.name || connection.id,
+      error: err?.message ?? String(err),
+    });
+  }
+}
+
+/**
  * One scheduler tick. Fail-open at top level and per connection.
  * @param {{ loadConnections?: Function, refreshConnection?: Function }} [deps]
  */
@@ -106,12 +148,16 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
     for (let i = 0; i < due.length; i++) {
       const conn = due[i];
       try {
-        await refresh(conn);
+        const refreshed = await refresh(conn);
         log.info("BG_TOKEN_REFRESH", "Connection refresh finished", {
           id: conn.id,
           email: conn.email || conn.name || conn.id,
           provider: conn.provider,
         });
+        // Antigravity only: warm the routing quota cache with the fresh
+        // token so pool blocks are in place before the first request (opt-out
+        // via AG_BG_QUOTA_WARMUP). Fail-open, same pacing as the refresh loop.
+        await warmAntigravityQuotaAfterRefresh(conn, refreshed);
       } catch (err) {
         log.warn("BG_TOKEN_REFRESH", "Connection refresh failed (swallowed)", {
           id: conn?.id,
