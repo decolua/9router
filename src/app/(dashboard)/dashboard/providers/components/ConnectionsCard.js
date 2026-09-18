@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -59,16 +60,17 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
   const noProxyText = boundProxyPool?.noProxy || connection.providerSpecificData?.connectionNoProxy || "";
   const proxyBadgeVariant = boundProxyPool?.isActive === true ? "success" : (boundProxyPoolId || hasLegacyProxy) ? "error" : "default";
 
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v).filter(Boolean).sort()[0] || null;
+  // Earliest lock that has not expired. Filtering on truthiness alone returned
+  // a lock that lapsed hours ago whenever a connection carried more than one:
+  // isCooldown (computed in the effect below, which does compare against now)
+  // stayed true from the still-active lock, while this value went to
+  // CooldownTimer, which renders nothing once the target is in the past. The
+  // badge said cooldown and the countdown vanished.
+  const modelLockUntil = getEarliestModelLockUntil(connection);
 
   useEffect(() => {
     const check = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v).filter(v => v && new Date(v).getTime() > Date.now()).sort()[0] || null;
-      setIsCooldown(!!until);
+      setIsCooldown(!!getEarliestModelLockUntil(connection));
     };
     check();
     const t = modelLockUntil ? setInterval(check, 1000) : null;

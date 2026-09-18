@@ -5,6 +5,7 @@ import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/c
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
+import { getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
@@ -87,21 +88,16 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   // Use useState + useEffect for impure Date.now() to avoid calling during render
   const [isCooldown, setIsCooldown] = useState(false);
 
-  // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
-  const modelLockUntil = Object.entries(connection)
-    .filter(([k]) => k.startsWith("modelLock_"))
-    .map(([, v]) => v)
-    .filter(v => !!v)
-    .sort()[0] || null;
+  // Earliest lock that has not expired. The comment this replaces said the
+  // effect handles the Date.now() comparison -- it does, but only for
+  // isCooldown. This value goes to CooldownTimer, which renders nothing once
+  // the target is in the past, so a connection with one lapsed lock and one
+  // live one showed the cooldown badge with no countdown beside it.
+  const modelLockUntil = getEarliestModelLockUntil(connection);
 
   useEffect(() => {
     const checkCooldown = () => {
-      const until = Object.entries(connection)
-        .filter(([k]) => k.startsWith("modelLock_"))
-        .map(([, v]) => v)
-        .filter(v => v && new Date(v).getTime() > Date.now())
-        .sort()[0] || null;
-      setIsCooldown(!!until);
+      setIsCooldown(!!getEarliestModelLockUntil(connection));
     };
 
     checkCooldown();
