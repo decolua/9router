@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { detectRequiredCapabilities, reorderByCapabilities } from "../../open-sse/services/combo.js";
 
 describe("detectRequiredCapabilities", () => {
+  // Validate capability detection against the provider registry
+  // Ensure function tools are recognized correctly
+
   it("text-only -> empty", () => {
     const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "hi" }] });
     expect(r.size).toBe(0);
@@ -35,11 +38,25 @@ describe("detectRequiredCapabilities", () => {
     expect(r.has("vision")).toBe(true);
   });
 
-  it("web_search tool -> search", () => {
+  it("does not require search while search auto-switching is disabled", () => {
     const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [
       { type: "web_search" },
     ] });
-    expect(r.has("search")).toBe(true);
+    expect(r.has("search")).toBe(false);
+  });
+
+  it("OpenAI function tool -> tools", () => {
+    const r = detectRequiredCapabilities({ messages: [{ role: "user", content: "q" }], tools: [
+      { type: "function", function: { name: "read_file", parameters: { type: "object" } } },
+    ] });
+    expect(r.has("tools")).toBe(true);
+  });
+
+  it("Gemini function declarations -> tools", () => {
+    const r = detectRequiredCapabilities({ tools: [
+      { functionDeclarations: [{ name: "read_file", parameters: { type: "object" } }] },
+    ] });
+    expect(r.has("tools")).toBe(true);
   });
 
   it("responses input_image -> vision", () => {
@@ -68,7 +85,13 @@ describe("reorderByCapabilities", () => {
   it("keeps order when no model matches", () => {
     const models = ["deepseek/deepseek-chat", "deepseek/deepseek-reasoner"];
     const out = reorderByCapabilities(models, new Set(["vision"]));
-    expect(out).toBe(models);
+    expect(out).toEqual(models);
+  });
+
+  it("floats a function-capable model ahead of a tool-incompatible fallback", () => {
+    const models = ["openai/gpt-image-1", "deepseek/deepseek-chat"];
+    const out = reorderByCapabilities(models, new Set(["tools"]));
+    expect(out).toEqual(["deepseek/deepseek-chat", "openai/gpt-image-1"]);
   });
 
   it("single model -> unchanged", () => {
