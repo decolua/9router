@@ -10,6 +10,7 @@ import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
+import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 function parseToolArguments(value) {
@@ -397,7 +398,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   return {
     success: true,
-    response: new Response(JSON.stringify(translatedResponse), {
+    response: new Response(JSON.stringify(restoreToolNames(translatedResponse, toolNameMap)), {
       headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
     })
   };
