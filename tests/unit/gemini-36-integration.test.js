@@ -130,7 +130,7 @@ describe("Gemini 3.6 catalogs and pricing", () => {
     const ids = gemini.models.map((model) => model.id);
     expect(ids).toContain("gemini-3.6-flash");
     expect(ids).toContain("gemini-3.5-flash-lite");
-    expect(MODEL_PRICING["gemini-3.6-flash"]).toMatchObject({ input: 1.5, output: 7.5 });
+    expect(MODEL_PRICING["gemini-3.6-flash"]).toMatchObject({ input: 0.75, output: 3.75 });
     expect(MODEL_PRICING["gemini-3.5-flash-lite"]).toMatchObject({ input: 0.3, output: 2.5 });
   });
 
