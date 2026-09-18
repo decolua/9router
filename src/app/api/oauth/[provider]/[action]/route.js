@@ -7,7 +7,8 @@ import {
   requestDeviceCode,
   pollForToken
 } from "@/lib/oauth/providers";
-import { createProviderConnection } from "@/models";
+import { createProviderConnection, getProviderConnections } from "@/models";
+// import { createProviderConnection } from "@/models";
 import { readDesktopPassToken } from "open-sse/shared/mimoAccount.js";
 import {
   startCodexProxy,
@@ -489,8 +490,8 @@ export async function POST(request, { params }) {
       });
     }
 
-    if (action === "poll") {
-      const { deviceCode, codeVerifier, extraData } = body;
+      if (action === "poll") {
+      const { deviceCode, codeVerifier, extraData, email: requestEmail } = body;
 
       if (!deviceCode) {
         return NextResponse.json({ error: "Missing device code" }, { status: 400 });
@@ -522,8 +523,16 @@ export async function POST(request, { params }) {
       }
 
       if (result.success) {
-        // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
+        // Compute account counter for naming
+        let accountIndex = 0;
+        if (requestEmail) {
+          const existing = await getProviderConnections(provider);
+          accountIndex = existing.length + 1;
+        }
+        
         const providerId = provider === "kimi-coding" ? "kimi" : provider;
+
+        // Save to database
         const connection = await createProviderConnection({
           provider: providerId,
           authType: "oauth",
@@ -531,6 +540,7 @@ export async function POST(request, { params }) {
           expiresAt: result.tokens.expiresIn 
             ? new Date(Date.now() + result.tokens.expiresIn * 1000).toISOString() 
             : null,
+          ...(requestEmail ? { email: `${accountIndex}_${requestEmail}`, name: `${accountIndex}_${requestEmail}` } : {}),
           testStatus: "active",
         });
 
