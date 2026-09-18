@@ -26,7 +26,7 @@ const jsonResponse = (body, status = 200) =>
 
 // Vertex operation names are resource paths; the adapter base64url-encodes them.
 const OPERATION_NAME =
-  "projects/proj-1/locations/us-central1/publishers/google/models/veo-3.1-generate-preview/operations/op-abc";
+  "projects/proj-1/locations/us-central1/publishers/google/models/veo-3.1-generate-001/operations/op-abc";
 const JOB_ID = Buffer.from(OPERATION_NAME, "utf8").toString("base64url");
 
 describe("registry wiring", () => {
@@ -39,7 +39,7 @@ describe("registry wiring", () => {
 
   it("registers video-kind models on both providers", () => {
     const or = PROVIDER_MODELS.openrouter.find((m) => m.id === "google/veo-3.1");
-    const vx = PROVIDER_MODELS.vertex.find((m) => m.id === "veo-3.1-generate-preview");
+    const vx = PROVIDER_MODELS.vertex.find((m) => m.id === "veo-3.1-generate-001");
     expect(or?.kind).toBe("video");
     expect(vx?.kind).toBe("video");
   });
@@ -124,7 +124,7 @@ describe("vertex (veo) video adapter", () => {
       provider: "vertex",
       action: "generations",
       rawBody: JSON.stringify({
-        model: "veo-3.1-generate-preview",
+        model: "veo-3.1-generate-001",
         prompt: "a neon city",
         duration: 8,
         aspect_ratio: "16:9",
@@ -138,7 +138,7 @@ describe("vertex (veo) video adapter", () => {
     expect(result.success).toBe(true);
     const [url, init] = global.fetch.mock.calls[0];
     expect(url).toBe(
-      "https://aiplatform.googleapis.com/v1/projects/proj-1/locations/us-central1/publishers/google/models/veo-3.1-generate-preview:predictLongRunning"
+      "https://aiplatform.googleapis.com/v1/projects/proj-1/locations/us-central1/publishers/google/models/veo-3.1-generate-001:predictLongRunning"
     );
     expect(init.headers.Authorization).toBe("Bearer vertex-tok");
     expect(JSON.parse(init.body)).toEqual({
@@ -162,7 +162,7 @@ describe("vertex (veo) video adapter", () => {
       provider: "vertex",
       action: "generations",
       rawBody: JSON.stringify({
-        model: "veo-3.1-generate-preview",
+        model: "veo-3.1-generate-001",
         prompt: "animate this",
         image: "data:image/png;base64,AAAB",
       }),
@@ -194,7 +194,7 @@ describe("vertex (veo) video adapter", () => {
 
     const [url, init] = global.fetch.mock.calls[0];
     expect(url).toBe(
-      "https://aiplatform.googleapis.com/v1/projects/proj-1/locations/us-central1/publishers/google/models/veo-3.1-generate-preview:fetchPredictOperation"
+      "https://aiplatform.googleapis.com/v1/projects/proj-1/locations/us-central1/publishers/google/models/veo-3.1-generate-001:fetchPredictOperation"
     );
     expect(init.method).toBe("POST"); // Vertex polls with POST, not GET
     expect(JSON.parse(init.body)).toEqual({ operationName: OPERATION_NAME });
@@ -229,7 +229,7 @@ describe("vertex (veo) video adapter", () => {
     const noProject = await handleVideoProxyCore({
       provider: "vertex",
       action: "generations",
-      rawBody: JSON.stringify({ model: "veo-3.1-generate-preview", prompt: "x" }),
+      rawBody: JSON.stringify({ model: "veo-3.1-generate-001", prompt: "x" }),
       contentType: "application/json",
       credentials: { apiKey: "AIzaRawKey" },
     });
@@ -239,7 +239,7 @@ describe("vertex (veo) video adapter", () => {
     const noToken = await handleVideoProxyCore({
       provider: "vertex",
       action: "generations",
-      rawBody: JSON.stringify({ model: "veo-3.1-generate-preview", prompt: "x" }),
+      rawBody: JSON.stringify({ model: "veo-3.1-generate-001", prompt: "x" }),
       contentType: "application/json",
       credentials: { apiKey: "AIzaRawKey", providerSpecificData: { projectId: "proj-1" } },
     });
