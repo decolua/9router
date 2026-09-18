@@ -116,7 +116,9 @@
     "devin": "devin",
     "devin-cli": "devin-cli",
     "morph": "morph",
-    "morphllm": "morph"
+    "morphllm": "morph",
+    "tm": "tokenmarket",
+    "tokenmarket": "tokenmarket"
   },
   "idToAlias": {
     "alicode": "alicode",
@@ -190,6 +192,7 @@
     "siliconflow": "siliconflow",
     "tencent": "hunyuan",
     "together": "together",
+    "tokenmarket": "tokenmarket",
     "tokenrouter": "tokenrouter",
     "venice": "venice",
     "vercel-ai-gateway": "vercel-ai-gateway",
@@ -289,6 +292,7 @@
     "siliconflow",
     "stability-ai",
     "together",
+    "tokenmarket",
     "tokenrouter",
     "venice",
     "vertex",
