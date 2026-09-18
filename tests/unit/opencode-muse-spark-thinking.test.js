@@ -3,7 +3,7 @@ import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.j
 import { PROVIDER_MODELS, getModelTargetFormat } from "../../open-sse/config/providerModels.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
-import { OpenCodeExecutor } from "../../open-sse/executors/opencode.js";
+import { OpenCodeExecutor, OPENCODE_DECOY_RESPONSES_TOOLS } from "../../open-sse/executors/opencode.js";
 import "../translator/registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 
@@ -214,7 +214,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
     // User message, function_call, function_call_output, and next user message survive
     const types = out.input.map((item) => item.type);
     expect(types).toEqual(["message", "function_call", "function_call_output", "message"]);
-    // Tools flattened and empty properties added
+    // Tools flattened and empty properties added, plus decoy tools for free-tier Responses models
     expect(out.tools).toEqual([
       {
         type: "function",
@@ -222,6 +222,7 @@ describe("OpenCode Free Muse Spark thinking", () => {
         description: "Run shell command",
         parameters: { type: "object", properties: {} },
       },
+      ...OPENCODE_DECOY_RESPONSES_TOOLS,
     ]);
   });
 });

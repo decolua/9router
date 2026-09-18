@@ -27,7 +27,7 @@ const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv
 // OpenCode free tier requires both 'bash' and 'read' in tools payload.
 // Injected as cloaked decoy tools so external CLI tools (e.g. Claude Code's Bash/Read)
 // take precedence while satisfying upstream verification.
-const OPENCODE_DECOY_CHAT_TOOLS = [
+export const OPENCODE_DECOY_CHAT_TOOLS = [
   {
     type: "function",
     function: {
@@ -46,7 +46,7 @@ const OPENCODE_DECOY_CHAT_TOOLS = [
   },
 ];
 
-const OPENCODE_DECOY_RESPONSES_TOOLS = [
+export const OPENCODE_DECOY_RESPONSES_TOOLS = [
   {
     type: "function",
     name: "bash",
@@ -64,21 +64,22 @@ const OPENCODE_DECOY_RESPONSES_TOOLS = [
 function cloakOpencodeTools(body, isResponses) {
   if (!body || typeof body !== "object") return;
   if (isResponses) {
-    if (!Array.isArray(body.tools)) body.tools = [];
-    const names = new Set(body.tools.map((t) => t.name || t.function?.name));
+    const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
+    if (!hasTools) body.tools = [];
+    const exactNames = new Set(body.tools.map((t) => t?.name || t?.function?.name || ""));
     for (const tool of OPENCODE_DECOY_RESPONSES_TOOLS) {
-      if (!names.has(tool.name)) body.tools.push({ ...tool });
+      if (!exactNames.has(tool.name)) body.tools.push({ ...tool });
     }
-    if (!body.tool_choice) body.tool_choice = "auto";
+    if (!hasTools && !body.tool_choice) body.tool_choice = "auto";
   } else {
     const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
     if (!hasTools) {
       body.tools = OPENCODE_DECOY_CHAT_TOOLS.map((t) => ({ ...t, function: { ...t.function } }));
       if (!body.tool_choice) body.tool_choice = "none";
     } else {
-      const names = new Set(body.tools.map((t) => t.function?.name || t.name));
+      const exactNames = new Set(body.tools.map((t) => t?.function?.name || t?.name || ""));
       for (const tool of OPENCODE_DECOY_CHAT_TOOLS) {
-        if (!names.has(tool.function.name)) {
+        if (!exactNames.has(tool.function.name)) {
           body.tools.push({ ...tool, function: { ...tool.function } });
         }
       }
@@ -499,9 +500,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       body.store = false;
       normalizeResponsesTools(body);
       sanitizeResponsesItems(body);
-      if (!Array.isArray(body.tools) || body.tools.length === 0) {
-        cloakOpencodeTools(body, true);
-      }
+      cloakOpencodeTools(body, true);
     } else if (body && typeof body === "object") {
       cloakOpencodeTools(body, false);
     }
