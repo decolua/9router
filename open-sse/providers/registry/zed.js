@@ -1,7 +1,7 @@
 // Zed provider — RSA keypair callback auth (NOT standard OAuth).
 export default {
   id: "zed",
-  priority: 10,
+  priority: 999,
   alias: "zd",
   uiAlias: "zd",
   display: {
