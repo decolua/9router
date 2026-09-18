@@ -105,6 +105,19 @@ export async function resolveConnectionProxyConfig(
         console.warn(
           `[resolveConnectionProxyConfig] Proxy pool ${proxyPoolId} is unusable — ${reason}; this connection will NOT use a proxy`
         );
+
+        // A strict pool means "never egress direct". If the pool is bound but
+        // unusable, falling through to legacy or direct would silently violate
+        // that contract — the exact failure mode strict mode exists to prevent.
+        // Fail hard so the caller surfaces the error instead.
+        if (proxyPool?.strictProxy === true) {
+          const err = new Error(
+            `[resolveConnectionProxyConfig] Proxy pool ${proxyPoolId} is unusable (${reason}) and strictProxy is enabled — refusing to fall back to direct/legacy egress`
+          );
+          // Marker the catch block re-throws on (see below).
+          err.strictProxyRefusal = true;
+          throw err;
+        }
       }
 
       if (isValidPool) {
@@ -180,6 +193,9 @@ export async function resolveConnectionProxyConfig(
       ...legacy,
     };
   } catch (error) {
+    // The strict-proxy refusal above must propagate: swallowing it here would
+    // turn "refuse to egress direct" back into a resolved no-proxy config.
+    if (error?.strictProxyRefusal === true) throw error;
     console.error(
       "[resolveConnectionProxyConfig] Failed to resolve proxy config:",
       error

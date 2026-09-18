@@ -114,7 +114,10 @@ jobs:
             # Release: v0.5.56 → 0.5.56, 0.5 and latest.
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            # latest on any release tag, and on a manual (workflow_dispatch) run
+            # from the default branch — so `docker compose pull latest` always
+            # tracks the newest built image even when no v* tag was pushed.
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)) }}
             # Manual run from a branch → branch name (slashes become dashes).
             type=ref,event=branch
             # Always present, so the tag list is never empty and every image is

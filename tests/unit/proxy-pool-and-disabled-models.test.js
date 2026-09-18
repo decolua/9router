@@ -92,7 +92,7 @@ describe("proxy pool → strictProxy propagation", () => {
     expect(resolved.vercelRelayUrl).toBe("https://relay.example.workers.dev");
   });
 
-  it("an inactive pool resolves to no proxy (and does not claim strict)", async () => {
+  it("an inactive STRICT pool throws instead of falling back to direct", async () => {
     proxyPools.set("pool-dead", {
       id: "pool-dead",
       isActive: false,
@@ -101,7 +101,23 @@ describe("proxy pool → strictProxy propagation", () => {
       type: "http",
     });
 
-    const resolved = await resolveConnectionProxyConfig({ proxyPoolId: "pool-dead" });
+    // Strict mode means "never egress direct". A bound-but-unusable pool
+    // used to warn and fall through to direct, silently violating that.
+    await expect(
+      resolveConnectionProxyConfig({ proxyPoolId: "pool-dead" })
+    ).rejects.toThrow(/unusable.*strictProxy/);
+  });
+
+  it("an inactive NON-strict pool still resolves to no proxy (and does not claim strict)", async () => {
+    proxyPools.set("pool-dead-loose", {
+      id: "pool-dead-loose",
+      isActive: false,
+      proxyUrl: "http://127.0.0.1:7890",
+      strictProxy: false,
+      type: "http",
+    });
+
+    const resolved = await resolveConnectionProxyConfig({ proxyPoolId: "pool-dead-loose" });
     expect(resolved.source).toBe("none");
     expect(resolved.connectionProxyEnabled).toBe(false);
     expect(buildProxyOptions({ providerSpecificData: resolved }).strictProxy).toBe(false);
