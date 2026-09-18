@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const { executeMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
@@ -251,47 +252,115 @@ describe("handleChatCore Headroom diagnostics", () => {
     );
   });
 
-  it("bypasses token savers when requested by the client", async () => {
+  it.each(["off", "OFF"])("pxpipe honors token-saver header %s on claude body above threshold", async (headerValue) => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
-    const pxpipeTransform = vi.fn();
-    const messages = [{ role: "user", content: "Write polished prose." }];
-
-    global.fetch = vi.fn(async (url) => {
-      throw new Error(`unexpected fetch: ${url}`);
-    });
+    const onPxpipeEvent = vi.fn();
+    const transformedBody = { model: "claude-3-5-sonnet", stream: false, max_tokens: 100, system: "base", messages: [{ role: "user", content: "PXPIPE_SENTINEL" }] };
+    const pxpipeTransform = vi.fn(async () => ({
+      applied: true,
+      reason: "applied",
+      body: new TextEncoder().encode(JSON.stringify(transformedBody)),
+      info: { compressedChars: 25000, imageCount: 1, imageBytes: 1000, imagePixels: 750000 },
+      cache: { ownsCacheControl: true },
+    }));
 
     await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages },
-      modelInfo: { provider: "openai", model: "gpt-4o" },
+      body: {
+        model: "claude-3-5-sonnet",
+        stream: false,
+        max_tokens: 100,
+        system: "base",
+        messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(30000) }] }],
+      },
+      sourceFormatOverride: FORMATS.CLAUDE,
+      modelInfo: { provider: "anthropic", model: "claude-3-5-sonnet" },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log,
       connectionId: "test-conn",
-      headroomEnabled: true,
-      headroomUrl: "http://localhost:8787",
-      headroomCompressUserMessages: true,
-      rtkEnabled: true,
-      cavemanEnabled: true,
-      cavemanLevel: "full",
-      ponytailEnabled: true,
-      ponytailLevel: "full",
+      headroomEnabled: false,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
       pxpipeEnabled: true,
+      pxpipeMinChars: 1000,
       pxpipeTransform,
+      onPxpipeEvent,
       clientRawRequest: {
-        endpoint: "/v1/chat/completions",
+        endpoint: "/v1/messages",
         body: {},
         headers: {
           accept: "application/json",
-          "x-9router-token-saver": "off",
+          "user-agent": "claude-code",
+          "x-9router-token-saver": headerValue,
         },
       },
     });
 
-    expect(global.fetch).not.toHaveBeenCalled();
     expect(pxpipeTransform).not.toHaveBeenCalled();
+    expect(onPxpipeEvent).toHaveBeenCalledWith(expect.objectContaining({
+      applied: false,
+      reason: "disabled",
+    }));
     expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
       body: expect.objectContaining({
-        messages: [{ role: "user", content: "Write polished prose." }],
+        system: "base",
+        messages: [expect.objectContaining({
+          content: [expect.objectContaining({ text: expect.stringContaining("xxxxx") })],
+        })],
       }),
     }));
+  });
+
+  it("pxpipe applies transform when no opt-out header is present", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const onPxpipeEvent = vi.fn();
+    const transformedBody = { model: "claude-3-5-sonnet", stream: false, max_tokens: 100, system: "base", messages: [{ role: "user", content: [{ type: "text", text: "PXPIPE_SENTINEL" }] }] };
+    const pxpipeTransform = vi.fn(async () => ({
+      applied: true,
+      reason: "applied",
+      body: new TextEncoder().encode(JSON.stringify(transformedBody)),
+      info: { compressedChars: 25000, imageCount: 1, imageBytes: 1000, imagePixels: 750000 },
+      cache: { ownsCacheControl: true },
+    }));
+
+    await handleChatCore({
+      body: {
+        model: "claude-3-5-sonnet",
+        stream: false,
+        max_tokens: 100,
+        system: "base",
+        messages: [{ role: "user", content: [{ type: "text", text: "x".repeat(30000) }] }],
+      },
+      sourceFormatOverride: FORMATS.CLAUDE,
+      modelInfo: { provider: "anthropic", model: "claude-3-5-sonnet" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log,
+      connectionId: "test-conn",
+      headroomEnabled: false,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      pxpipeEnabled: true,
+      pxpipeMinChars: 1000,
+      pxpipeTransform,
+      onPxpipeEvent,
+      clientRawRequest: {
+        endpoint: "/v1/messages",
+        body: {},
+        headers: {
+          accept: "application/json",
+          "user-agent": "claude-code",
+        },
+      },
+    });
+
+    expect(pxpipeTransform).toHaveBeenCalledTimes(1);
+    expect(onPxpipeEvent).toHaveBeenCalledWith(expect.objectContaining({
+      applied: true,
+      reason: "applied",
+    }));
+    const sentBody = executeMock.mock.calls[0][0].body;
+    expect(JSON.stringify(sentBody)).toContain("PXPIPE_SENTINEL");
+    expect(JSON.stringify(sentBody)).not.toContain("x".repeat(1000));
   });
 });
