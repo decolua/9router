@@ -14,6 +14,83 @@ const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeGoSession";
 const MAX_SESSION_LENGTH = 256;
 
+const USER_AGENT_FIELD = "_opencodeGoUserAgent";
+const DEFAULT_CODING_AGENT_UA = "9router-coding-agent/1.0";
+const MAX_UA_LENGTH = 256;
+
+const KNOWN_CODING_AGENTS = [
+  "opencode",
+  "claude-cli",
+  "claude-code",
+  "claude",
+  "cursor",
+  "cline",
+  "roo-cline",
+  "roo-code",
+  "aider",
+  "windsurf",
+  "continue",
+  "codex",
+  "gemini-cli",
+  "deepseek-tui",
+  "copilot",
+  "githubcopilot",
+  "trae",
+  "zed",
+  "void",
+  "bolt",
+  "swe-agent",
+  "devin",
+];
+
+const KNOWN_CODING_AGENTS_REGEX = new RegExp(
+  `(^|[^a-z0-9])(${KNOWN_CODING_AGENTS.map((a) => a.replace(/[-]/g, "\\$&")).join("|")})([^a-z0-9]|$)`,
+  "i"
+);
+
+const CODING_KEYWORD_REGEX = /(^|[^a-z0-9])(agent|coder|coding)([^a-z0-9]|$)/i;
+
+const GENERIC_UA_REGEX = /^(curl|wget|python-requests|requests|python-urllib|urllib|urllib3|aiohttp|httpx|axios|node-fetch|undici|got|superagent|okhttp|go-http-client|apache-httpclient|postmanruntime|insomnia|thunder[ -]?client|bun|rest-client|faraday|dart:io|java|req|wukong|fetch|openai|anthropic|langchain|llamaindex|litellm|google-genai|google-api|semantic-kernel|autogen|mozilla|chrome|safari|webkit|open-sse)($|[\s\/\(;_:,-])/i;
+
+function extractHeader(headers, headerName) {
+  if (!headers || typeof headers !== "object") return null;
+  const target = headerName.toLowerCase();
+  for (const [key, value] of Object.entries(headers)) {
+    if (key.toLowerCase() === target && typeof value === "string") {
+      return value.trim();
+    }
+  }
+  return null;
+}
+
+function isCodingAgentUserAgent(ua) {
+  if (!ua || typeof ua !== "string") return false;
+  if (GENERIC_UA_REGEX.test(ua)) return false;
+  return KNOWN_CODING_AGENTS_REGEX.test(ua) || CODING_KEYWORD_REGEX.test(ua);
+}
+
+function syntheticUserAgent(clientTool) {
+  if (clientTool && typeof clientTool === "string") {
+    const normalized = clientTool.trim().toLowerCase();
+    if (normalized === "claude") return "claude-cli/1.0";
+    if (normalized === "codex") return "codex-tui/1.0";
+    if (normalized === "gemini-cli") return "gemini-cli/1.0";
+    if (normalized === "github-copilot") return "github-copilot/1.0";
+    if (normalized === "deepseek-tui") return "deepseek-tui/1.0";
+    if (normalized === "antigravity") return "antigravity-agent/1.0";
+    return `${normalized}-agent/1.0`;
+  }
+  return DEFAULT_CODING_AGENT_UA;
+}
+
+function resolveOpencodeGoUserAgent(headers, clientTool) {
+  const downstreamUa = extractHeader(headers, "user-agent");
+  if (downstreamUa && isCodingAgentUserAgent(downstreamUa)) {
+    return downstreamUa.slice(0, MAX_UA_LENGTH);
+  }
+  return syntheticUserAgent(clientTool).slice(0, MAX_UA_LENGTH);
+}
+
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/go/v1/responses";
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -25,11 +102,8 @@ function normalizeSession(value) {
 }
 
 function nativeSession(headers) {
-  if (!headers || typeof headers !== "object") return null;
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === SESSION_HEADER) return normalizeSession(value);
-  }
-  return null;
+  const val = extractHeader(headers, SESSION_HEADER);
+  return normalizeSession(val);
 }
 
 function translatedSession(sessionId, clientTool) {
@@ -129,17 +203,20 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
 
   prepareRequestCredentials({ body, credentials, providerSessionId, clientTool } = {}) {
     const sourceCredentials = credentials || {};
-    const native = nativeSession(sourceCredentials.rawHeaders);
+    const rawHeaders = sourceCredentials.rawHeaders;
+    const native = nativeSession(rawHeaders);
     const resolved = normalizeSession(providerSessionId) || resolveSessionId({
-      headers: sourceCredentials.rawHeaders,
+      headers: rawHeaders,
       body,
       connectionId: sourceCredentials.connectionId,
       scope: "opencode-go",
     });
+    const userAgent = resolveOpencodeGoUserAgent(rawHeaders, clientTool);
 
     return {
       ...sourceCredentials,
       [SESSION_FIELD]: native || translatedSession(resolved, clientTool),
+      [USER_AGENT_FIELD]: userAgent,
     };
   }
 
@@ -150,14 +227,14 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
 
   buildHeaders(credentials, stream = true, url, model) {
     const headers = super.buildHeaders(credentials || {}, stream, url, model);
-    const prepared = credentials?.[SESSION_FIELD];
-    if (prepared) {
-      headers[SESSION_HEADER] = prepared;
-      return headers;
+    let prepared = credentials;
+    if (!prepared?.[SESSION_FIELD] || !prepared?.[USER_AGENT_FIELD]) {
+      prepared = this.prepareRequestCredentials({ credentials });
     }
 
-    const fallback = this.prepareRequestCredentials({ credentials });
-    headers[SESSION_HEADER] = fallback[SESSION_FIELD];
+    headers[SESSION_HEADER] = prepared[SESSION_FIELD];
+    delete headers["user-agent"];
+    headers["User-Agent"] = prepared[USER_AGENT_FIELD];
     return headers;
   }
 
