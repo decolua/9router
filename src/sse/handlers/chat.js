@@ -131,6 +131,7 @@ export async function handleChat(request, clientRawRequest = null) {
         (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         adapterAdded
       ),
+      probeSingleModel: (probeBody, m) => handleSingleModelChat(probeBody, m, null, null, null, { probeMode: true }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -151,6 +152,7 @@ export async function handleChat(request, clientRawRequest = null) {
         (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         adapterAdded
       ),
+      probeSingleModel: (probeBody, m) => handleSingleModelChat(probeBody, m, null, null, null, { probeMode: true }),
       log,
       comboName: modelStr,
       comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
@@ -161,9 +163,12 @@ export async function handleChat(request, clientRawRequest = null) {
 }
 
 /**
- * Handle single model chat request
+ * Handle one resolved model directly. Exported so internal health probes can
+ * validate a quarantined combo model without routing through the combo again.
+ * `probeMode` returns the first upstream failure without persisting account locks
+ * or rotating through the credential pool.
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+export async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, options = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -208,6 +213,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
           adapterAdded
         ),
+        probeSingleModel: (probeBody, m) => handleSingleModelChat(probeBody, m, null, null, null, { probeMode: true }),
         log,
         comboName: modelStr,
         comboStrategy,
@@ -308,6 +314,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    // A circuit-breaker health probe must not poison or rotate the credential pool
+    // when the failure is model/provider scoped. Return the first upstream failure.
+    if (options.probeMode) return result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;

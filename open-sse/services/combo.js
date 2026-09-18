@@ -6,6 +6,15 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import {
+  beginComboModelAttempt,
+  classifyComboFailure,
+  inspectSuccessfulComboResponse,
+  parseRetryAfterMs,
+  recordComboModelFailure,
+  recordComboModelSuccess,
+  runManualComboModelProbe,
+} from "./comboCircuitBreaker.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -271,13 +280,14 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Object} options.body - Request body
  * @param {string[]} options.models - Array of model strings to try
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
+ * @param {Function} [options.probeSingleModel] - Isolated health probe executor: (probeBody, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, probeSingleModel = null, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -299,15 +309,79 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
-    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
+    const circuit = beginComboModelAttempt(modelStr);
+    if (!circuit.allowed) {
+      log.info("CIRCUIT", `Skipping ${modelStr} (${circuit.reason})`, {
+        state: circuit.state?.state,
+        nextProbeAt: circuit.state?.nextProbeAt,
+      });
+      continue;
+    }
+
+    // Chat combos can provide an isolated single-model executor. Use it to run a
+    // minimal completion before releasing an OPEN model back to real user traffic.
+    if (circuit.halfOpen && typeof probeSingleModel === "function") {
+      log.info("CIRCUIT", `Probing ${modelStr} before release`);
+      const probe = await runManualComboModelProbe(
+        modelStr,
+        (probeBody) => probeSingleModel(probeBody, modelStr),
+        { reserved: true },
+      );
+      if (!probe.ok) {
+        lastError = `Recovery probe failed: ${probe.error}`;
+        if (!lastStatus) lastStatus = 503;
+        log.warn("CIRCUIT", `Recovery probe failed for ${modelStr}; keeping circuit open`, {
+          error: probe.error,
+          nextProbeAt: probe.circuit?.nextProbeAt,
+        });
+        continue;
+      }
+      log.info("CIRCUIT", `Recovery probe passed for ${modelStr}; circuit closed`);
+    }
+
+    log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}${circuit.halfOpen && !probeSingleModel ? " [recovery probe]" : ""}`);
+    const startedAt = Date.now();
 
     try {
       const result = await handleSingleModel(body, modelStr);
       
-      // Success (2xx) - return response
+      // A 2xx only counts as success after the payload is proven non-empty. For
+      // streams, hold the response until the first meaningful event so fallback is
+      // still possible when an upstream returns HTTP 200 with an empty/stalled body.
       if (result.ok) {
+        const inspected = await inspectSuccessfulComboResponse(result, { startedAt });
+        if (!inspected.ok) {
+          const breakerState = recordComboModelFailure(modelStr, {
+            reason: inspected.reason,
+            status: 502,
+            latencyMs: inspected.latencyMs,
+            immediate: true,
+          });
+          lastError = inspected.reason;
+          if (!lastStatus) lastStatus = 502;
+          log.warn("CIRCUIT", `Model ${modelStr} returned an unusable successful response`, {
+            reason: inspected.reason,
+            state: breakerState.state,
+          });
+          continue;
+        }
+
+        if (inspected.slow) {
+          const breakerState = recordComboModelFailure(modelStr, {
+            reason: "slow_response",
+            status: 200,
+            latencyMs: inspected.latencyMs,
+          });
+          log.warn("CIRCUIT", `Model ${modelStr} exceeded the latency threshold`, {
+            latencyMs: inspected.latencyMs,
+            state: breakerState.state,
+          });
+          return inspected.response;
+        }
+
+        recordComboModelSuccess(modelStr, { latencyMs: inspected.latencyMs });
         log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
+        return inspected.response;
       }
 
       // Extract error info from response
@@ -329,6 +403,25 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Normalize error text to string (Worker-safe)
       if (typeof errorText !== "string") {
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+      }
+
+      const classification = classifyComboFailure(result.status, errorText);
+      let circuitRetryAfterMs = parseRetryAfterMs(result);
+      if (!circuitRetryAfterMs && retryAfter) {
+        const retryAt = new Date(retryAfter).getTime();
+        if (Number.isFinite(retryAt) && retryAt > Date.now()) circuitRetryAfterMs = retryAt - Date.now();
+      }
+      const breakerState = recordComboModelFailure(modelStr, {
+        ...classification,
+        status: result.status,
+        latencyMs: Date.now() - startedAt,
+        retryAfterMs: circuitRetryAfterMs,
+      });
+      if (breakerState.state === "open") {
+        log.warn("CIRCUIT", `Opened circuit for ${modelStr}`, {
+          reason: breakerState.lastReason,
+          nextProbeAt: breakerState.nextProbeAt,
+        });
       }
 
       // Check if should fallback to next model
@@ -356,7 +449,12 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+      const breakerState = recordComboModelFailure(modelStr, {
+        reason: /timeout|timed out|stall/i.test(lastError) ? "timeout" : "request_exception",
+        status: 500,
+        latencyMs: Date.now() - startedAt,
+      });
+      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError, circuit: breakerState.state });
     }
   }
 
