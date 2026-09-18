@@ -24,6 +24,68 @@ export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 export const OPENCODE_REQUEST_RE = /^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+// OpenCode free tier requires both 'bash' and 'read' in tools payload.
+// Injected as cloaked decoy tools so external CLI tools (e.g. Claude Code's Bash/Read)
+// take precedence while satisfying upstream verification.
+const OPENCODE_DECOY_CHAT_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "bash",
+      description: "This tool is currently unavailable and must not be used.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "read",
+      description: "This tool is currently unavailable and must not be used.",
+      parameters: { type: "object", properties: {} },
+    },
+  },
+];
+
+const OPENCODE_DECOY_RESPONSES_TOOLS = [
+  {
+    type: "function",
+    name: "bash",
+    description: "This tool is currently unavailable and must not be used.",
+    parameters: { type: "object", properties: {} },
+  },
+  {
+    type: "function",
+    name: "read",
+    description: "This tool is currently unavailable and must not be used.",
+    parameters: { type: "object", properties: {} },
+  },
+];
+
+function cloakOpencodeTools(body, isResponses) {
+  if (!body || typeof body !== "object") return;
+  if (isResponses) {
+    if (!Array.isArray(body.tools)) body.tools = [];
+    const names = new Set(body.tools.map((t) => t.name || t.function?.name));
+    for (const tool of OPENCODE_DECOY_RESPONSES_TOOLS) {
+      if (!names.has(tool.name)) body.tools.push({ ...tool });
+    }
+    if (!body.tool_choice) body.tool_choice = "auto";
+  } else {
+    const hasTools = Array.isArray(body.tools) && body.tools.length > 0;
+    if (!hasTools) {
+      body.tools = OPENCODE_DECOY_CHAT_TOOLS.map((t) => ({ ...t, function: { ...t.function } }));
+      if (!body.tool_choice) body.tool_choice = "none";
+    } else {
+      const names = new Set(body.tools.map((t) => t.function?.name || t.name));
+      for (const tool of OPENCODE_DECOY_CHAT_TOOLS) {
+        if (!names.has(tool.function.name)) {
+          body.tools.push({ ...tool, function: { ...tool.function } });
+        }
+      }
+    }
+  }
+}
+
 function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/opencode\/(\d+)\.(\d+)(?:\.(\d+))?/i);
   if (!m) return false;
@@ -410,6 +472,9 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     if (body && typeof body === "object" && model && !body.model) body.model = model;
+    // Zen rejects non-streaming requests on free models with 403 FreeTierError;
+    // always stream upstream and let the handler layer aggregate for non-stream clients.
+    if (body && typeof body === "object") body.stream = true;
     if (isResponsesModel(model || body?.model) && body && typeof body === "object") {
       // ponytail: chỉ model đã xác nhận auto-only; mở allowlist khi có bằng chứng.
       if ("tool_choice" in body && body.tool_choice !== "auto"
@@ -434,6 +499,11 @@ export class OpenCodeExecutor extends BaseExecutor {
       body.store = false;
       normalizeResponsesTools(body);
       sanitizeResponsesItems(body);
+      if (!Array.isArray(body.tools) || body.tools.length === 0) {
+        cloakOpencodeTools(body, true);
+      }
+    } else if (body && typeof body === "object") {
+      cloakOpencodeTools(body, false);
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }

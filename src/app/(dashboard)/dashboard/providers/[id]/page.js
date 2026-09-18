@@ -1783,7 +1783,33 @@ export default function ProviderDetailPage() {
           })()}
         </div>
         {!!modelsTestError && (
-          <p className="text-xs text-red-500 mb-3 break-words">{modelsTestError}</p>
+          <div className="mb-3">
+            <p className="text-xs text-red-500 break-words">{modelsTestError}</p>
+            {/RegionError|hosted in China|regionNotAllowed/i.test(modelsTestError) && (() => {
+              const str = typeof modelsTestError === "string" ? modelsTestError : JSON.stringify(modelsTestError);
+              const linkMatch = str.match(/https:\/\/opencode\.ai\/workspace\/[^\s"')]+/);
+              const wrkMatch = str.match(/wrk_[0-9A-Za-z]+/);
+              const targetUrl = linkMatch
+                ? (linkMatch[0].endsWith("/go") ? linkMatch[0] : `${linkMatch[0]}/go`)
+                : wrkMatch
+                  ? `https://opencode.ai/workspace/${wrkMatch[0]}/go`
+                  : "https://opencode.ai";
+
+              return (
+                <div className="mt-1.5">
+                  <a
+                    href={targetUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded-md bg-amber-500/10 px-2 py-0.5 text-xs font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 transition-colors"
+                  >
+                    <span>Allow China-hosted models</span>
+                    <span className="material-symbols-outlined text-[13px]">open_in_new</span>
+                  </a>
+                </div>
+              );
+            })()}
+          </div>
         )}
         {providerId === "zed" && !!liveModelsError && (
           <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
