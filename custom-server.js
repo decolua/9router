@@ -3,6 +3,10 @@ const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
 const { pathToFileURL } = require("url");
+const { AsyncLocalStorage } = require("node:async_hooks");
+
+// Shared with the bundled gateway without serializing internal state into headers.
+const responseDelivery = globalThis[Symbol.for("9router.responseDelivery")] ||= new AsyncLocalStorage();
 
 const origCreate = http.createServer.bind(http);
 
@@ -70,7 +74,17 @@ http.createServer = (...args) => {
     req.headers["x-9r-real-ip"] = ip;
     req.headers["x-9r-peer-token"] = PEER_TOKEN;
     if (viaProxy) req.headers["x-9r-via-proxy"] = "1";
-    return handler(req, res);
+    const delivery = { callbacks: new Set(), selected: null, finished: false };
+    const finishDelivery = success => {
+      if (delivery.finished) return;
+      delivery.finished = true;
+      for (const callback of delivery.callbacks) callback(success);
+      delivery.callbacks.clear();
+    };
+    res.once("finish", () => finishDelivery(res.statusCode >= 200 && res.statusCode < 300));
+    res.once("error", () => finishDelivery(false));
+    res.once("close", () => finishDelivery(false));
+    return responseDelivery.run(delivery, () => handler(req, res));
   };
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
