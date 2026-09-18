@@ -248,6 +248,31 @@ function comboMatchesKinds(combo, kindFilter) {
 }
 
 /**
+ * Return limits that are safe for every target in a combo. A combo may fall
+ * through to any configured target, so advertising anything above the lowest
+ * resolved limit would let clients send a request that a fallback cannot
+ * accept. If even one target is unknown, omit the metadata instead of guessing.
+ */
+export function getComboTokenLimits(targets, concreteModels, resolveFallback = () => null) {
+  if (!Array.isArray(targets) || targets.length === 0) return {};
+
+  const resolved = [];
+  for (const target of targets) {
+    if (typeof target !== "string" || target.trim() === "") return {};
+    const limits = concreteModels.get(target) || resolveFallback(target);
+    if (!Number.isFinite(limits?.context_length) || !Number.isFinite(limits?.max_completion_tokens)) {
+      return {};
+    }
+    resolved.push(limits);
+  }
+
+  return {
+    context_length: Math.min(...resolved.map((limits) => limits.context_length)),
+    max_completion_tokens: Math.min(...resolved.map((limits) => limits.max_completion_tokens)),
+  };
+}
+
+/**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
@@ -294,6 +319,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
   const activeConnectionByProvider = new Map();
+  const providerIdByCatalogAlias = new Map();
   for (const conn of connections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
@@ -361,6 +387,9 @@ export async function buildModelsList(kindFilter, options = {}) {
         || getProviderAlias(providerId)
         || staticAlias
       ).trim();
+      providerIdByCatalogAlias.set(outputAlias, providerId);
+      providerIdByCatalogAlias.set(staticAlias, providerId);
+      providerIdByCatalogAlias.set(providerId, providerId);
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
       const enabledModels = conn?.providerSpecificData?.enabledModels;
       const hasExplicitEnabledModels =
@@ -538,6 +567,33 @@ export async function buildModelsList(kindFilter, options = {}) {
         });
       }
     }
+  }
+
+  // Combo entries are created before concrete models so they stay first in the
+  // response. Enrich them now, after every concrete target has had a chance to
+  // publish its authoritative limits.
+  const concreteModels = new Map(models.map((model) => [model.id, model]));
+  const resolveComboTargetFallback = (target) => {
+    const separator = target.indexOf("/");
+    if (separator <= 0 || separator === target.length - 1) return null;
+    const alias = target.slice(0, separator);
+    const providerId = providerIdByCatalogAlias.get(alias);
+    if (!providerId) return null;
+    const modelId = target.slice(separator + 1);
+    const caps = getCapabilitiesForModel(providerId, modelId);
+    if (!Number.isFinite(caps?.contextWindow) || !Number.isFinite(caps?.maxOutput)) return null;
+    return {
+      context_length: caps.contextWindow,
+      max_completion_tokens: caps.maxOutput,
+    };
+  };
+  for (const combo of combos) {
+    const entry = concreteModels.get(combo.name);
+    if (!entry || entry.owned_by !== "combo") continue;
+    Object.assign(
+      entry,
+      getComboTokenLimits(combo.models, concreteModels, resolveComboTargetFallback),
+    );
   }
 
   const dedupedModels = [];

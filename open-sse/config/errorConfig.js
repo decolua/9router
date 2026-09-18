@@ -6,6 +6,7 @@ export const ERROR_TYPES = {
   403: { type: "permission_error", code: "insufficient_quota" },
   404: { type: "invalid_request_error", code: "model_not_found" },
   406: { type: "invalid_request_error", code: "model_not_supported" },
+  413: { type: "invalid_request_error", code: "context_length_exceeded" },
   429: { type: "rate_limit_error", code: "rate_limit_exceeded" },
   500: { type: "server_error", code: "internal_server_error" },
   502: { type: "server_error", code: "bad_gateway" },
@@ -21,6 +22,7 @@ export const DEFAULT_ERROR_MESSAGES = {
   403: "You exceeded your current quota",
   404: "Model not found",
   406: "Model not supported",
+  413: "Context length exceeded",
   429: "Rate limit exceeded",
   500: "Internal server error",
   502: "Bad gateway - upstream provider error",
@@ -49,12 +51,13 @@ const COOLDOWN = {
 
 /**
  * Unified error classification rules.
- * Checked top-to-bottom: text rules first (by order), then status rules.
- * Each rule: { text?, status?, cooldownMs?, backoff? }
+ * Explicit terminal status rules take precedence; remaining rules are checked top-to-bottom.
+ * Each rule: { text?, status?, cooldownMs?, backoff?, fallback? }
  *   - text: substring match (case-insensitive) on error message
  *   - status: HTTP status code match
  *   - cooldownMs: fixed cooldown duration
  *   - backoff: true = use exponential backoff (rate limit)
+ *   - fallback: false = return the error without rotating accounts/models
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
@@ -72,6 +75,7 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  { status: 413, fallback: false },
   { status: 429, backoff: true },
 ];
 
