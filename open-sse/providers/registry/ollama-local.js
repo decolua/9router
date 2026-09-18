@@ -11,6 +11,11 @@ export default {
     website: "https://ollama.com",
   },
   category: "apikey",
+  // The connection's own endpoint, stored as providerSpecificData.baseUrl.
+  baseUrlField: {
+    label: "Ollama Host URL",
+    placeholder: "http://localhost:11434",
+  },
   transport: {
     baseUrl: "http://localhost:11434/api/chat",
     format: "ollama",
