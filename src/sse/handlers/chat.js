@@ -386,7 +386,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       semaphoreRelease = () => {};
       release();
     };
-    let streamOutcome = null;
+    // RM7 (T1.1): one settle per request. A single latch gates every
+    // outcome-recording path (stream completion, client disconnect, error
+    // result, and the new exception catch) so the attempt can record its
+    // breaker outcome exactly once — never a double decrement/settle when
+    // racing lifecycle callbacks fire after the loop already moved on.
+    let settled = false;
+    const settleOutcome = () => {
+      if (settled) return false;
+      settled = true;
+      return true;
+    };
 
     try {
       // Use shared chatCore
@@ -432,21 +442,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           clearAntigravityStrikes(connectionId, model);
         },
         onStreamComplete: () => {
-          if (!streamOutcome) {
-            streamOutcome = "success";
-            if (breakerName) recordSuccess(breakerName);
-          }
+          if (settleOutcome() && breakerName) recordSuccess(breakerName);
           releaseOnce();
         },
         onDisconnect: () => {
-          if (!streamOutcome) {
-            streamOutcome = "disconnect";
+          if (settleOutcome() && breakerName) {
             // RH1: an aborted stream never reaches onStreamComplete, so the
             // HALF_OPEN probe consumed by canExecute() above would stay
             // in-flight (no slot, no outcome) until the breaker's probe
             // safety timer. Settle it now as a conservative failure. No-op
             // unless a probe is outstanding — CLOSED disconnects never count.
-            if (breakerName) settleProbe(breakerName, "client disconnect");
+            settleProbe(breakerName, "client disconnect");
           }
           releaseOnce();
         },
@@ -461,13 +467,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           holdSemaphore = true;
           return result.response;
         }
-        if (breakerName) recordSuccess(breakerName);
+        if (breakerName && settleOutcome()) recordSuccess(breakerName);
         return result.response;
       }
 
       // Breaker accounting: HALF_OPEN must not stay at 0 with no outcome.
       // 5xx/timeout re-opens; 401/403/429 mean provider is up, so close.
-      if (breakerName) {
+      if (breakerName && settleOutcome()) {
         const cb = getCircuitBreaker(breakerName);
         const isHalfOpenProbe = cb?.getStatus?.().state === STATE.HALF_OPEN;
         if (isHalfOpenProbe) {
@@ -511,6 +517,38 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
 
       return result.response;
+    } catch (error) {
+      // RH4 (T1.1): handleChatCore has throw-capable call sites outside its
+      // own try (translateRequest, createRequestLogger, and
+      // pipeWithDisconnect's TypeError on a 204/205 body), and the quota /
+      // account-lock bookkeeping below can throw on DB errors too. Without
+      // this catch one bad account killed the whole fallback chain as a raw
+      // HTML 500 from the route handler and left the HALF_OPEN probe
+      // stranded with no outcome.
+      const status = error?.statusCode ?? error?.status ?? null;
+      const message = error?.message || String(error);
+      log.error("CHAT", `[${provider}/${model}] Account ${credentials.connectionName} threw${status ? ` (${status})` : ""}: ${message}`);
+      // Exactly one settle per request (shared latch with the callbacks).
+      // A provider-classified status opens the breaker like the error-result
+      // path; anything else is not the provider's fault (CLOSED-state rule)
+      // but still must resolve an outstanding HALF_OPEN probe — settleProbe
+      // is a no-op otherwise.
+      if (breakerName && settleOutcome()) {
+        if (shouldRecordBreakerFailure(status)) {
+          recordFailure(breakerName, { statusCode: status });
+        } else {
+          settleProbe(breakerName, `account loop exception: ${message}`);
+        }
+      }
+      // The pending counter is deliberately NOT touched here: whether the
+      // +1 (chatCore.js:343) already happened depends on where chatCore
+      // threw, and a blind compensating -1 would steal a live request's
+      // credit (RM7). A straggler is bounded by usageRepo's PENDING_TIMEOUT.
+      excludeConnectionIds.add(connectionId);
+      capacityDeferred.delete(connectionId);
+      lastError = message;
+      lastStatus = status;
+      continue;
     } finally {
       if (!holdSemaphore) releaseOnce();
     }
