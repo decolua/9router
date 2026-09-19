@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { comboKindError, comboModelsError, isComboNameConflict } from "@/lib/db/repos/combosRepo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function POST(request) {
     const body = await request.json();
     const { name, models, kind } = body;
 
-    if (!name) {
+    if (!name || typeof name !== "string") {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
     }
 
@@ -32,13 +33,42 @@ export async function POST(request) {
       return NextResponse.json({ error: "Name can only contain letters, numbers, -, _ and ." }, { status: 400 });
     }
 
+    // `models` is consumed everywhere as an array (.length/.map/.filter on it);
+    // a bare string/object/number silently poisons routing for this combo.
+    if (models !== undefined && models !== null) {
+      const modelsError = comboModelsError(models);
+      if (modelsError) {
+        return NextResponse.json({ error: modelsError }, { status: 400 });
+      }
+    }
+
+    // kind gates which /v1 surface serves the combo (v1/models, webRouting,
+    // media-providers pages) — only the values those readers check for.
+    if ("kind" in body) {
+      const kindError = comboKindError(kind);
+      if (kindError) {
+        return NextResponse.json({ error: kindError }, { status: 400 });
+      }
+    }
+
     // Check if name already exists
     const existing = await getComboByName(name);
     if (existing) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    let combo;
+    try {
+      combo = await createCombo({ name, models: models || [], kind: kind || null });
+    } catch (error) {
+      // The pre-check above is not transactional: a concurrent submit can pass
+      // it and win the INSERT, so the UNIQUE index (schema.js combos.name) is
+      // the real authority. Report that race as the same 400, not a 500.
+      if (isComboNameConflict(error)) {
+        return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+      }
+      throw error;
+    }
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {

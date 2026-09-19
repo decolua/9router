@@ -2,6 +2,47 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { pruneMembers } from "@/shared/utils/comboModelLinks.js";
+import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers.js";
+
+// Combo `kind` values the runtime actually reads: "llm" (also the implicit
+// default when kind is null) plus every media kind id the dashboard lists and
+// filters on (src/shared/constants/providers.js, v1/models, webRouting,
+// media-providers pages). Widening this set means wiring a kind through those
+// consumers first — do not invent values here.
+export const COMBO_KINDS = new Set(["llm", ...MEDIA_PROVIDER_KINDS.map((k) => k.id)]);
+
+// Returns an error message, or null when the kind is acceptable.
+// null/undefined mean "no kind" (default llm behaviour).
+export function comboKindError(kind) {
+  if (kind === null || kind === undefined) return null;
+  if (typeof kind === "string" && COMBO_KINDS.has(kind)) return null;
+  return `Invalid combo kind. Allowed: llm (default), ${[...MEDIA_PROVIDER_KINDS.map((k) => k.id)].join(", ")}`;
+}
+
+// Returns an error message, or null when `models` is a usable member list.
+// Consumers treat entries as strings ("provider/model" or a nested combo
+// name); objects are tolerated for per-member config, anything looser
+// (numbers, booleans, arrays, null) would silently break routing/pruning.
+export function comboModelsError(models) {
+  if (!Array.isArray(models)) {
+    return "models must be an array of model strings (or objects), not a bare " + typeof models;
+  }
+  for (const item of models) {
+    if (typeof item === "string" && item.trim() !== "") continue;
+    if (item && typeof item === "object" && !Array.isArray(item)) continue;
+    return "every model entry must be a non-empty string or an object";
+  }
+  return null;
+}
+
+// A combo name UNIQUE violation as surfaced by the SQLite drivers
+// ("UNIQUE constraint failed: combos.name") — the same detection pattern
+// usageRepo.js uses. Callers map this to a 400 instead of a 500 when their
+// get-by-name pre-check lost a race against a concurrent INSERT/UPDATE.
+export function isComboNameConflict(error) {
+  const msg = String(error?.message || "");
+  return msg.includes("UNIQUE constraint failed") && msg.includes("name");
+}
 
 function rowToCombo(row) {
   if (!row) return null;

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { removeModelFromCombos } from "@/lib/localDb";
+import { resetComboRotation } from "open-sse/services/combo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,11 @@ export async function POST(request) {
     }
 
     const combos = await removeModelFromCombos(candidates);
+    // PUT/DELETE /api/combos/[id] already invalidate rotation when a combo
+    // changes; pruning members must do the same, or strategy/sticky state
+    // keyed by combo name keeps pointing at a member list that no longer
+    // exists (cosmetic for round-robin's index % length, divergent otherwise).
+    for (const combo of combos) resetComboRotation(combo.name);
     return NextResponse.json({ combos });
   } catch (error) {
     console.log("Error removing model from combos:", error);
