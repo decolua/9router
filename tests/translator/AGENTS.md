@@ -25,7 +25,7 @@ Components:
 | File | Role |
 |---|---|
 | `matrix.js` | Reads `PROVIDER_MODELS` → builds matrix (alias, model, targetFormat, strip, upstreamId). DRY core. |
-| `registerAll.js` | Imports every translator to run `register()` side-effects. **Required** (see §5). |
+| `registerAll.js` | Legacy duplicate import list (see §5): registration now happens via `translator/index.js` static imports; keep both lists in sync until this file is retired. |
 | `coverage-all-models.test.js` | Tier 1: every model translates without throwing; strip applied correctly. |
 | `format-roundtrip.test.js` | Tier 2: tool id/system/parallel survive the bridge. |
 | `bugs-openai-bridge.test.js` | Exposes concrete bugs (with source file:line). |
@@ -52,11 +52,13 @@ Add a provider by adding a key to `open-sse/config/providerModels.js` `PROVIDER_
 
 Only add a dedicated test when a provider has a special format that does not round-trip cleanly (see §7).
 
-## 5. `registerAll.js` — why it is required
+## 5. Registration mechanism — `translator/index.js` static imports (and the legacy `registerAll.js`)
 
-`translator/index.js` uses `require(...)` (bundler-only) to lazy-load translators. Under vitest/ESM, `require` **silently no-ops** → empty registry → `translateRequest` skips the translation step → **false pass** (data is lost but the test goes green by mistake).
+`translator/index.js` now loads every translator via **static ESM imports** (self-registration runs as an import side-effect). Tests that import the engine (`@/…/translator/index.js`, or any module that does) get a populated registry directly — proven by the response-route tests added in 2026-09 (`f13-*`, `f16-*` run without `registerAll.js` doing anything extra).
 
-→ Every test calling `translateRequest`/`translateResponse` MUST `import "./registerAll.js"` at the top of the file.
+`tests/translator/registerAll.js` still exists and many files still import it, but its claim that `index.js` uses bundler-only `require()` is **stale**: it duplicates the import list, and a translator added only to `index.js` would silently be missing from its list. Until it is removed (backlog), when adding a translator add it to BOTH lists.
+
+→ A new test MAY `import "./registerAll.js"` (harmless) but must not rely on it as the only registration source.
 
 ## 6. Bug-exposure convention — `it.fails`
 
@@ -85,7 +87,6 @@ Grouped per CLI/provider test file. Each row is an `it.fails` case.
 **OpenAI → Claude (`bugs-toClaude-context.test.js`)**
 | Bug | Source |
 |---|---|
-| Always injects "You are Claude Code" system prompt | `request/openai-to-claude.js:124-134` |
 | `reasoning_content` not mapped to a thinking block | `request/openai-to-claude.js:268-273` |
 | `tool_choice:"none"` → `auto` | `request/openai-to-claude.js:298` |
 | `input_audio` dropped | `request/openai-to-claude.js` (no audio branch) |
