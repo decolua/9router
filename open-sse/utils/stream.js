@@ -5,6 +5,7 @@ import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBu
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { normalizeChunkedContent } from "../translator/concerns/reasoning.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -178,6 +179,15 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              // Mistral reasoning models stream `content` as a list of thinking/text
+              // chunks instead of a plain string. Normalize to string content +
+              // reasoning_content so standard OpenAI clients keep working.
+              if (parsed?.choices) {
+                for (const choice of parsed.choices) {
+                  if (normalizeChunkedContent(choice.delta)) fieldsInjected = true;
+                }
+              }
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
@@ -277,6 +287,14 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
+        }
+
+        // Mistral reasoning models stream `content` as a list of thinking/text
+        // chunks instead of a plain string. Normalize in place before the
+        // accumulation below and translateResponse() so every client format
+        // sees string content + reasoning_content.
+        if (Array.isArray(parsed?.choices)) {
+          for (const choice of parsed.choices) normalizeChunkedContent(choice.delta);
         }
 
         // Claude format - content

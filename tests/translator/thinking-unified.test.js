@@ -203,6 +203,25 @@ describe("applyThinking per provider format", () => {
     expect(out.reasoning_effort).toBe("high");
     expect(out.enable_thinking).toBeUndefined();
   });
+  it.each([
+    ["mistral", "zai-glm-5-2"],
+    ["mistral", "glm-5.3"],
+    ["mistral", "deepseek-v4-pro"],
+    ["mistral", "minimax-m3"],
+    ["baidu", "glm-5.2"],
+    ["alicode", "qwen3.5-plus"],
+  ])("OpenAI-compatible reseller %s hosting %s → reasoning_effort, never a vendor-native thinking field (regression: Mistral 422 extra_forbidden body.thinking)", (provider, model) => {
+    const out = apply("openai", model, { reasoning_effort: "high" }, provider);
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.thinking).toBeUndefined();
+    expect(out.enable_thinking).toBeUndefined();
+    expect(out.thinking_budget).toBeUndefined();
+  });
+  it("native Z.ai endpoint (glm-cn) keeps its native thinking shape on the openai wire", () => {
+    const out = apply("openai", "glm-5.3", { reasoning_effort: "high" }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe("high");
+  });
   it("suffix overrides body", () => {
     const out = apply("openai", "gpt-5(low)", { reasoning_effort: "high" }, "openai");
     expect(out.reasoning_effort).toBe("low");

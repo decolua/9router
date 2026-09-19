@@ -5,6 +5,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { normalizeChunkedContent } from "../../translator/concerns/reasoning.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -138,6 +139,9 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   for (const chunk of chunks) {
     const choice = chunk?.choices?.[0];
     const delta = choice?.delta || {};
+    // Mistral reasoning models stream `content` as a list of thinking/text
+    // chunks; normalize before accumulating below.
+    normalizeChunkedContent(delta);
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
     if (choice?.finish_reason) finishReason = choice.finish_reason;
