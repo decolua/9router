@@ -20,6 +20,13 @@ async function hasValidCliToken(request) {
 }
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
+// F38: matched EXACTLY (see isPublicApi) — every route that must be reachable
+// without credentials is listed by name; children inherit nothing. The SSO
+// login-flow endpoints below have no route at their parent path and run BEFORE
+// login, so each one is enumerated explicitly instead of relying on a prefix.
+// /api/auth/oidc/test and /api/auth/saml/test are deliberately NOT here: they
+// probe configured IdP endpoints and authenticate themselves at the route level;
+// the guard now also puts them behind the normal /api/ auth.
 const PUBLIC_API_PATHS = [
   "/api/health",
   "/api/init",
@@ -27,8 +34,11 @@ const PUBLIC_API_PATHS = [
   "/api/auth/login",
   "/api/auth/logout",
   "/api/auth/status",
-  "/api/auth/oidc",
-  "/api/auth/saml",
+  "/api/auth/oidc/start",
+  "/api/auth/oidc/callback",
+  "/api/auth/saml/start",
+  "/api/auth/saml/acs",
+  "/api/auth/saml/metadata",
   "/api/version",
   "/api/settings/require-login",
 ];
@@ -217,7 +227,12 @@ async function isAuthenticated(request) {
 
 function isPublicApi(pathname) {
   if (isPublicLlmApi(pathname)) return true;
-  return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+  // F38: exact match (plus the trivial trailing-slash form) only. Prefix-matching
+  // allow-list entries made every child of a public route credential-free by
+  // construction — e.g. /api/health/providers leaked until T3.5 self-gated it,
+  // and any future /api/health/admin would have shipped public. New routes are
+  // deny-by-default again: they need auth or an explicit entry here.
+  return PUBLIC_API_PATHS.some((p) => pathname === p || pathname === `${p}/`);
 }
 
 export const __test__ = {

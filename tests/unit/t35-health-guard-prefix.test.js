@@ -1,17 +1,15 @@
-// T3.5 finding, pinned as an executable statement.
+// T3.5 finding, pinned as an executable statement — UPDATED BY F38.
 //
-// The task brief assumed "a route under /api/* is deny-by-default, no extra
-// config". That is true for /api/* in general — but NOT for children of
-// /api/health: dashboardGuard's public allow-list is matched as
+// T3.5 discovered that dashboardGuard's public allow-list matched entries as
 // `pathname === p || pathname.startsWith(p + "/")`, so the "/api/health"
-// liveness entry also lets `/api/health/providers` through with no cookie and
-// no API key. This file proves the prefix behaviour (and that the exact
-// `/api/health` entry is otherwise unchanged), which is why
-// src/app/api/health/providers/route.js authenticates itself.
+// liveness entry also let `/api/health/providers` through with no cookie and
+// no API key — that is why the route self-gates in
+// src/app/api/health/providers/route.js.
 //
-// Fixing the prefix match itself belongs to F21' (owner of dashboardGuard.js);
-// it would mean changing PUBLIC_API_PATHS matching for every allow-list entry,
-// which is a wider blast radius than this read-only feature should carry.
+// F38 fixed the guard: allow-list entries are matched EXACTLY (trailing slash
+// aside), so /api/health/providers is now deny-by-default at the guard too.
+// The route keeps its self-auth as defense-in-depth. The original "leaks
+// without auth" assertion is retired — it encoded the vulnerable prefix.
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -65,15 +63,24 @@ beforeEach(() => {
   mocks.getConsistentMachineId.mockResolvedValue("nope");
 });
 
-describe("t35 — dashboardGuard prefix behaviour on /api/health children", () => {
+describe("t35 — dashboardGuard behaviour on /api/health children (F38: exact match)", () => {
   it("lets /api/health (liveness) through, as designed", async () => {
     expect(await proxy(request("/api/health"))).toBe(mocks.nextResponse);
   });
 
-  it("also lets /api/health/providers through WITHOUT auth — the health matrix must self-gate", async () => {
+  it("no longer lets /api/health/providers through WITHOUT auth (prefix leak fixed by F38)", async () => {
+    const res = await proxy(request("/api/health/providers"));
+    expect(res.status).toBe(401);
+  });
+
+  it("lets /api/health/providers through for a logged-in session (route still answers T3.5 callers)", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
     expect(await proxy(request("/api/health/providers"))).toBe(mocks.nextResponse);
-    // no auth was even attempted for this path
-    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("lets /api/health/providers through when requireLogin=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    expect(await proxy(request("/api/health/providers"))).toBe(mocks.nextResponse);
   });
 
   it("keeps an unrelated /api/* route behind the deny-by-default branch", async () => {
