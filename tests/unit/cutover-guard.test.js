@@ -1,4 +1,7 @@
 import { describe, it, expect } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { compareVersions, evaluateCutover, resolveInstalledRoot } from "../../scripts/cutover-guard.mjs";
 
 describe("cutover guard", () => {
@@ -43,26 +46,68 @@ describe("cutover guard", () => {
       ).toBe(true);
     });
 
-    it("stays open on a machine with nothing installed, and closed on a versionless tree", () => {
-      expect(evaluateCutover({ candidateVersion: "0.5.69", installedVersion: null }).ok).toBe(true);
+    it("closes when the install cannot be located, and on a versionless tree", () => {
+      // F20 (T1.6 H3): this used to assert `ok === true`. "Nothing installed"
+      // and "nothing found" are not the same statement, and treating them as
+      // one let the guard wave a downgrade through on any machine whose global
+      // prefix was not the personal fallback hardcoded in the old resolver.
+      const verdict = evaluateCutover({ candidateVersion: "0.5.69", installedVersion: null });
+      expect(verdict.ok).toBe(false);
+      expect(verdict.reason).toMatch(/cannot locate/i);
+      // A versionless tree was already closed and stays closed.
       expect(evaluateCutover({ candidateVersion: null, installedVersion: "0.5.75" }).ok).toBe(false);
+    });
+
+    it("opens for a declared-clean machine and for an explicit downgrade", () => {
+      // The two escape hatches, both of them deliberate operator input.
+      expect(
+        evaluateCutover({
+          candidateVersion: "0.5.69",
+          installedVersion: null,
+          confirmedAbsent: true,
+        }).ok,
+      ).toBe(true);
+      expect(
+        evaluateCutover({
+          candidateVersion: "0.5.69",
+          installedVersion: null,
+          allowDowngrade: true,
+        }).ok,
+      ).toBe(true);
     });
   });
 
   describe("resolveInstalledRoot", () => {
-    it("prefers the launcher env, then the package-root state file", () => {
+    it("prefers the launcher env over every other hint", () => {
+      const home = "/home/nobody";
       expect(
-        resolveInstalledRoot({
-          NINE_ROUTER_PACKAGE_ROOT: "/srv/9router",
-          HOME: "/home/nobody",
-        }),
+        resolveInstalledRoot(
+          { NINE_ROUTER_PACKAGE_ROOT: "/srv/9router", HOME: home },
+          { home, globalRoots: [], git: () => "" },
+        ),
       ).toBe("/srv/9router");
     });
 
-    it("falls back to the standard global prefix when nothing points elsewhere", () => {
-      expect(resolveInstalledRoot({ HOME: "/nonexistent-home" })).toBe(
-        "/nonexistent-home/.hermes/node/lib/node_modules/9router",
-      );
+    it("returns null instead of guessing a prefix that holds no install", () => {
+      // F20: the old fallback was `~/.hermes/node/lib/node_modules/9router` —
+      // a personal path, presented as "the standard global prefix".
+      expect(resolveInstalledRoot({ HOME: "/nonexistent-home" }, { home: "/nonexistent-home", globalRoots: [] })).toBeNull();
+    });
+
+    it("resolves the real `npm root -g` when the prefix is not the personal path", () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), "9router-guard-root-"));
+      try {
+        const npmRoot = path.join(home, ".local", "lib", "node_modules");
+        const installed = path.join(npmRoot, "9router");
+        fs.mkdirSync(installed, { recursive: true });
+        fs.writeFileSync(
+          path.join(installed, "package.json"),
+          JSON.stringify({ name: "9router", version: "0.5.75" }),
+        );
+        expect(resolveInstalledRoot({ HOME: home }, { home, globalRoots: [npmRoot] })).toBe(installed);
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
     });
   });
 });
