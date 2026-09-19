@@ -109,6 +109,67 @@ describe("Antigravity executor", () => {
     expect(query).toEqual({ type: "string", description: "Search query" });
   });
 
+  it("strips encrypted, cache_control, strict, $id, and example from tool schemas", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-2.5-pro", {
+      request: {
+        contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        tools: [{
+          functionDeclarations: [{
+            name: "test_tool",
+            description: "Test tool",
+            parameters: {
+              $id: "schema://test",
+              type: "object",
+              strict: true,
+              encrypted: true,
+              cache_control: { type: "ephemeral" },
+              properties: {
+                data: {
+                  type: "string",
+                  example: "sample",
+                  encrypted: true,
+                },
+              },
+            },
+          }],
+        }],
+      },
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const params = out.request.tools[0].functionDeclarations[0].parameters;
+    expect(params.$id).toBeUndefined();
+    expect(params.strict).toBeUndefined();
+    expect(params.encrypted).toBeUndefined();
+    expect(params.cache_control).toBeUndefined();
+    expect(params.properties.data).toEqual({ type: "string" });
+  });
+
+  it("normalizes shorthand string object properties to valid schema objects with placeholders", () => {
+    const out = new AntigravityExecutor().transformRequest("gemini-2.5-pro", {
+      request: {
+        contents: [{ role: "user", parts: [{ text: "hi" }] }],
+        tools: [{
+          functionDeclarations: [{
+            name: "execute_cmd",
+            description: "Run a command",
+            parameters: {
+              type: "object",
+              properties: {
+                cmd: { type: "string" },
+                extra: "object",
+              },
+            },
+          }],
+        }],
+      },
+    }, true, { projectId: "project-1", connectionId: "conn-1" });
+
+    const extra = out.request.tools[0].functionDeclarations[0].parameters.properties.extra;
+    expect(extra.type).toBe("object");
+    expect(extra.properties).toBeDefined();
+    expect(extra.properties.reason).toBeDefined();
+  });
+
   it("does not inject the legacy Antigravity default system prompt for Gemini-backed models", () => {
     const out = openaiToAntigravityRequest("gemini-3.5-flash-low", {
       messages: [
