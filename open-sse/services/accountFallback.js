@@ -1,4 +1,34 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, ERROR_TYPES } from "../config/errorConfig.js";
+
+/**
+ * Statuses that errorConfig.js already models as client-side request failures
+ * (`invalid_request_error`). No account change fixes these, so they must never
+ * trigger account fallback or lock anyone (RH2). 404 is excluded on purpose via
+ * its `model_not_found` code: "model missing on this account" is account/model
+ * state, not a broken request, and keeps the existing ERROR_RULES behaviour
+ * (fallback + per-model cooldown).
+ * 413/422 are request-shaped failures (payload too large / semantic validation)
+ * that errorConfig's tables do not model; they are the only literals here.
+ */
+const REQUEST_ERROR_STATUSES = new Set([
+  ...Object.entries(ERROR_TYPES)
+    .filter(([, t]) => t.type === "invalid_request_error" && t.code !== "model_not_found")
+    .map(([status]) => Number(status)),
+  413,
+  422
+]);
+
+/**
+ * Auth statuses (derived from ERROR_TYPES `authentication_error`). A 401 is
+ * decided by the token-refresh flow in chatCore/handlers (refresh + retry),
+ * never by locking the whole account here: an expired access token must not
+ * take the combo down (RH2 — `if (!shouldFallback)` in auth.js was dead code).
+ */
+const AUTH_ERROR_STATUSES = new Set(
+  Object.entries(ERROR_TYPES)
+    .filter(([, t]) => t.type === "authentication_error")
+    .map(([status]) => Number(status))
+);
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -15,12 +45,31 @@ export function getQuotaCooldown(backoffLevel = 0) {
 /**
  * Check if error should trigger account fallback (switch to next account)
  * Config-driven: matches ERROR_RULES top-to-bottom (text rules first, then status)
+ *
+ * Classification (RH2 fix), in priority order:
+ *  1. Request-caused statuses (REQUEST_ERROR_STATUSES: 400/406/413/422) →
+ *     shouldFallback:false, cooldownMs:0 — deterministic client errors: every
+ *     account returns the same error, so fallback would only self-DoS the combo.
+ *  2. Auth statuses (401) → same non-locking answer: credential refresh is
+ *     decided upstream (chatCore refresh flow), not by locking the account here.
+ *  3. Everything else keeps the historical ERROR_RULES behaviour: rate/quota/
+ *     upstream/transient → shouldFallback:true with a cooldown (429 backoff,
+ *     5xx and unmatched → transient; 404 stays per-model 2-min lock by design).
+ *
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
  * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0) {
+  // Request-caused error: propagate immediately, no account fallback, no lock.
+  // Checked before text rules because the HTTP status is the authoritative
+  // origin signal (text substrings are heuristics that can co-occur with 4xx).
+  const code = Number.isFinite(Number(status)) ? Number(status) : null;
+  if (code !== null && (REQUEST_ERROR_STATUSES.has(code) || AUTH_ERROR_STATUSES.has(code))) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   const lowerError = errorText
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
