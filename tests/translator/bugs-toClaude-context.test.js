@@ -10,11 +10,19 @@ const T = (body) =>
   translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, "m", body, true, null, "anthropic-compatible-x");
 
 describe("OpenAI → Claude context mapping", () => {
-  // openai-to-claude.js:124-134 — always injects CLAUDE_SYSTEM_PROMPT ("You are Claude Code")
-  // KNOWN BUG: pollutes requests for non-official Claude-compatible providers
-  it.fails("does not inject Claude Code system prompt for compatible providers", () => {
+  // FIXED by F15 (T1.2 M5): the "You are Claude Code" persona is now injected
+  // only for Anthropic OAuth credentials (sk-ant-oat) and never ahead of a
+  // client-supplied system — see request/openai-to-claude.js.
+  it("does not inject Claude Code system prompt for compatible providers", () => {
     const out = T({ messages: [{ role: "user", content: "hi" }] });
-    expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
+    expect(out.system).toBeUndefined();
+    expect(JSON.stringify(out)).not.toContain("Claude Code");
+  });
+
+  it("keeps the client's own system prompt first (no persona above it)", () => {
+    const out = T({ messages: [{ role: "system", content: "You are a pirate." }, { role: "user", content: "hi" }] });
+    expect(out.system[0].text).toBe("You are a pirate.");
+    expect(JSON.stringify(out.system)).not.toContain("You are Claude Code");
   });
 
   // Unsigned foreign reasoning_content is omitted when converting OpenAI→Claude

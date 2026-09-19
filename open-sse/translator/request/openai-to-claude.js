@@ -12,8 +12,21 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
 const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
+// Personal Claude accounts issue OAuth tokens (`sk-ant-oat…`); the anti-ban
+// fingerprinting for them is gated on this marker in claudeCloaking.js and
+// translator/index.js. Same signal decides the Claude Code persona below.
+const CLAUDE_OAUTH_TOKEN_MARKER = "sk-ant-oat";
+
+// translateRequest already hands every request translator its 4th argument
+// (index.js: `fromOpenAI(model, result, stream, credentials)`), so this reads
+// the credential shape without changing any call site.
+function isClaudeOAuth(credentials) {
+  const token = credentials?.accessToken || credentials?.apiKey || null;
+  return typeof token === "string" && token.includes(CLAUDE_OAUTH_TOKEN_MARKER);
+}
+
 // Convert OpenAI request to Claude format
-export function openaiToClaudeRequest(model, body, stream) {
+export function openaiToClaudeRequest(model, body, stream, credentials = null) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
   const toolNameMap = new Map();
   // Cap max_tokens at the model's real output ceiling (e.g. Opus 4.8 = 128000),
@@ -129,17 +142,17 @@ Respond ONLY with the JSON object, no other text.`);
     }
   }
 
-  // System with Claude Code prompt and cache_control
-  const claudeCodePrompt = { type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT };
-
+  // System prompt. The client's own text wins, always — it used to be preceded
+  // unconditionally by the "You are Claude Code" persona, which made every
+  // generic chat app routed to Anthropic answer as the CLI (T1.2 M5).
   if (systemParts.length > 0) {
     const systemText = systemParts.join("\n");
-    result.system = [
-      claudeCodePrompt,
-      { type: CLAUDE_BLOCK.TEXT, text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } }
-    ];
-  } else {
-    result.system = [claudeCodePrompt];
+    result.system = [{ type: CLAUDE_BLOCK.TEXT, text: systemText, cache_control: { type: "ephemeral", ttl: "1h" } }];
+  } else if (isClaudeOAuth(credentials)) {
+    // OAuth-only fingerprint: personal Claude accounts (sk-ant-oat) are the one
+    // upstream that expects traffic shaped like the official CLI; the same gate
+    // guards the billing-header/user-id cloaking downstream.
+    result.system = [{ type: CLAUDE_BLOCK.TEXT, text: CLAUDE_SYSTEM_PROMPT }];
   }
 
   // Tools - convert from OpenAI format to Claude format with prefix for OAuth

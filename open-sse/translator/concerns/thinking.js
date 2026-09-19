@@ -5,7 +5,15 @@
 // Discrete effort levels, ordered low→high.
 export const EFFORT_LEVELS = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
+// Anthropic rejects `thinking.budget_tokens` below this (HTTP 400). The floor is
+// applied on entry by thinkingUnified.js's claude-budget leg, because most Claude
+// models declare no `thinkingRange` to clamp against.
+export const CLAUDE_MIN_BUDGET_TOKENS = 1024;
+
 // Web-standard level → budget_tokens (Anthropic/Gemini docs).
+// NOTE: "minimal" is below Anthropic's minimum — a Claude target raises it to
+// CLAUDE_MIN_BUDGET_TOKENS, so "minimal" reaches the API as 1024. Gemini keeps
+// the web-standard 512.
 export const LEVEL_TO_BUDGET = {
   none: 0,
   minimal: 512,

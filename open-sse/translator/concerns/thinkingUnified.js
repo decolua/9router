@@ -5,7 +5,7 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
+import { CLAUDE_MIN_BUDGET_TOKENS, LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -252,7 +252,15 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels) {
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled" } : { type: "enabled", budget_tokens: budget || 8192 };
+      // Floor on ENTRY: Anthropic 400s any budget below CLAUDE_MIN_BUDGET_TOKENS
+      // and most models declare no thinkingRange to clamp with, so the web-standard
+      // effort table's "minimal" (thinking.js:11 → 512) used to go straight out —
+      // as did a client-sent budget_tokens < 1024. Mirrors the floor
+      // prepareClaudeRequest already applies on the budget<max_tokens axis
+      // (formats/claude.js:521). Consequence: "minimal" now means 1024.
+      body.thinking = budget === -1
+        ? { type: "enabled" }
+        : { type: "enabled", budget_tokens: Math.max(CLAUDE_MIN_BUDGET_TOKENS, budget || 8192) };
       break;
     }
     case "gemini-level": {

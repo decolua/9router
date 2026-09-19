@@ -74,21 +74,27 @@ describe("openaiToClaudeRequest", () => {
 
     it("should not modify system prompt when response_format is missing", () => {
       const body = {
-        messages: [{ role: "user", content: "Hello" }]
+        messages: [
+          { role: "system", content: "You are a helpful math tutor." },
+          { role: "user", content: "Hello" }
+        ]
       };
 
       const result = openaiToClaudeRequest("claude-sonnet-4.5", body, false);
 
-      // Should have system but without JSON instructions
+      // The client's system survives verbatim. (It used to be asserted against a
+      // persona-only system array; F15/M5 made the "You are Claude Code" block
+      // OAuth-only, so with no credentials there is nothing above the client.)
       expect(result.system).toBeDefined();
-      
+
       const systemText = result.system
         .filter(s => s.type === "text")
         .map(s => s.text)
         .join("\n");
-      
+
       // Should NOT contain JSON-specific instructions
       expect(systemText).not.toContain("You must respond with valid JSON");
+      expect(systemText).toBe("You are a helpful math tutor.");
     });
 
     it("should preserve existing system messages when adding response_format", () => {
