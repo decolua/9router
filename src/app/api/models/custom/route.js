@@ -32,6 +32,10 @@ export async function POST(request) {
     if (!providerAlias || !id) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
+    // Non-string values would stringify to "[object Object]" in the KV key and poison customModels
+    if (typeof providerAlias !== "string" || typeof id !== "string") {
+      return NextResponse.json({ error: "providerAlias and id must be strings" }, { status: 400 });
+    }
     const cleanCaps = sanitizeCaps(caps);
     const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, ...(cleanCaps ? { caps: cleanCaps } : {}) });
     return NextResponse.json({ success: true, added });

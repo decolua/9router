@@ -11,6 +11,14 @@ export async function GET() {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
 
+    // Canonical map is {alias: "provider/model"}; invert it to render the alias per model
+    const aliasByModel = {};
+    for (const [alias, target] of Object.entries(modelAliases)) {
+      if (typeof target === "string" && target.includes("/") && !(target in aliasByModel)) {
+        aliasByModel[target] = alias;
+      }
+    }
+
     const models = AI_MODELS
       .filter((m) => {
         const alias = getProviderAlias(m.provider) || m.provider;
@@ -26,7 +34,7 @@ export async function GET() {
           ...m,
           fullModel,
           routedModel,
-          alias: modelAliases[fullModel] || m.model,
+          alias: aliasByModel[routedModel] || aliasByModel[fullModel] || m.model,
           caps: {
             vision: c.vision,
             search: c.search,
@@ -52,7 +60,7 @@ export async function GET() {
         name: m.name || m.id,
         fullModel,
         routedModel: fullModel,
-        alias: modelAliases[fullModel] || m.id,
+        alias: aliasByModel[fullModel] || m.id,
         caps: {
           vision: c.vision,
           search: c.search,
@@ -83,17 +91,14 @@ export async function PUT(request) {
 
     const modelAliases = await getModelAliases();
 
-    // Check if alias already exists for different model
-    const existingModel = Object.entries(modelAliases).find(
-      ([key, val]) => val === alias && key !== model
-    );
-
-    if (existingModel) {
+    // Check if alias already points to a different model (map: {alias: "provider/model"})
+    const existingTarget = modelAliases[alias];
+    if (existingTarget && existingTarget !== model) {
       return NextResponse.json({ error: "Alias already in use" }, { status: 400 });
     }
 
-    // Update alias
-    await setModelAlias(model, alias);
+    // Update alias — canonical convention: key = alias, value = "provider/model"
+    await setModelAlias(alias, model);
 
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {

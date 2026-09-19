@@ -24,6 +24,14 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Model and alias required" }, { status: 400 });
     }
 
+    // Canonical map is {alias: "provider/model"}; refuse to silently hijack an
+    // alias that already points to a different model (same semantics as /api/models).
+    const modelAliases = await getModelAliases();
+    const existingTarget = modelAliases[alias];
+    if (existingTarget && existingTarget !== model) {
+      return NextResponse.json({ error: "Alias already in use" }, { status: 400 });
+    }
+
     await setModelAlias(alias, model);
 
     return NextResponse.json({ success: true, model, alias });
