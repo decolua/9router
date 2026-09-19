@@ -501,9 +501,6 @@ export async function buildModelsList(kindFilter, options = {}) {
         || staticAlias
       ).trim();
       const providerModels = PROVIDER_MODELS[staticAlias] || [];
-      const enabledModels = conn?.providerSpecificData?.enabledModels;
-      const hasExplicitEnabledModels =
-        Array.isArray(enabledModels) && enabledModels.length > 0;
       const isCompatibleProvider =
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
@@ -514,15 +511,76 @@ export async function buildModelsList(kindFilter, options = {}) {
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
 
-      let rawModelIds = hasExplicitEnabledModels
-        ? Array.from(
-            new Set(
-              enabledModels.filter(
-                (modelId) => typeof modelId === "string" && modelId.trim() !== "",
-              ),
-            ),
-          )
-        : providerModels.map((model) => model.id);
+      // Multi-account union for enabledModels (docs/MODEL_SYNC_CATALOG.md):
+      // the curated list is stored PER ACCOUNT, but discovery answers for the
+      // whole provider, so EVERY active connection contributes its curated ids
+      // — the provider advertises a curated model while any account that
+      // lists it has not confirmed it gone. Within one account the synced
+      // catalogue still decides status: `unavailable` removes the id from
+      // that account's contribution, `temporarily-absent` keeps it (one
+      // absence is not removal).
+      const providerConnections = connectionsByProvider.get(providerId) || [];
+      const stripProviderPrefix = (modelId) => {
+        if (modelId.startsWith(`${outputAlias}/`)) return modelId.slice(outputAlias.length + 1);
+        if (modelId.startsWith(`${staticAlias}/`)) return modelId.slice(staticAlias.length + 1);
+        if (modelId.startsWith(`${providerId}/`)) return modelId.slice(providerId.length + 1);
+        return modelId;
+      };
+      const accountViews = providerConnections.map((c) => {
+        const raw = c?.providerSpecificData?.enabledModels;
+        const enabled = Array.isArray(raw)
+          ? raw
+              .filter((id) => typeof id === "string" && id.trim() !== "")
+              .map((id) => id.trim())
+          : [];
+        const catalogModels = Array.isArray(c?.modelCatalog?.models) ? c.modelCatalog.models : [];
+        const available = new Set();
+        const unavailable = new Set();
+        for (const model of catalogModels) {
+          const id = typeof model?.id === "string" && model.id.trim() !== ""
+            ? stripProviderPrefix(model.id.trim())
+            : null;
+          if (!id) continue;
+          if (model.availability === "unavailable") {
+            if (!available.has(id)) unavailable.add(id);
+          } else {
+            available.add(id);
+            unavailable.delete(id);
+          }
+        }
+        return { enabled, available, unavailable, hasCatalog: catalogModels.length > 0 };
+      });
+      const hasExplicitEnabledModels = accountViews.some((v) => v.enabled.length > 0);
+
+      let rawModelIds;
+      if (hasExplicitEnabledModels) {
+        const added = new Set();
+        rawModelIds = [];
+        const pushCurated = (modelId) => {
+          const key = stripProviderPrefix(modelId);
+          if (!key || added.has(key)) return;
+          added.add(key);
+          rawModelIds.push(modelId);
+        };
+        for (const view of accountViews) {
+          if (view.enabled.length > 0) {
+            for (const modelId of view.enabled) {
+              if (view.unavailable.has(stripProviderPrefix(modelId))) continue;
+              pushCurated(modelId);
+            }
+          } else if (view.hasCatalog) {
+            // Sibling account without curation: its synced catalogue is its
+            // own list of available models, so it joins the union too.
+            for (const modelId of view.available) pushCurated(modelId);
+          }
+          // An account with neither curated ids nor a synced catalogue lists
+          // nothing of its own — it must not resurrect ids the others curated
+          // away, and it must not hide the others' (static seed is a
+          // per-provider fallback for the no-data case below, not evidence).
+        }
+      } else {
+        rawModelIds = providerModels.map((model) => model.id);
+      }
 
       // Account catalogues are authoritative when a provider publishes /models.
       // Unlike the static seed they can add new provider models without a
@@ -536,34 +594,42 @@ export async function buildModelsList(kindFilter, options = {}) {
       const tierById = new Map();
       const tierPricingById = new Map();
       const syncedKindById = new Map();
+      // Tier/kind/pricing enrichment from the synced catalogues runs for both
+      // modes: even when an account curated its ids, the catalogue entries
+      // are the authoritative source for tier and service kind (a synced
+      // non-LLM kind must not leak into the chat list).
+      for (const model of syncedModels) {
+        const modelId = model?.id;
+        if (typeof modelId !== "string" || modelId.trim() === "") continue;
+        const incomingTier = typeof model?.tier === "string" ? model.tier : null;
+        const storedTier = tierById.get(modelId);
+        // Merge policy: free wins over everything; paid/credits overwrite
+        // unknown; never downgrade free to paid/credits/unknown.
+        const shouldTakeTier = incomingTier && (
+          !storedTier
+          || incomingTier === "free"
+          || (storedTier === "unknown" && incomingTier !== "unknown")
+        );
+        if (shouldTakeTier) {
+          tierById.set(modelId, incomingTier);
+          if (model?.pricing) tierPricingById.set(modelId, model.pricing);
+          else tierPricingById.delete(modelId);
+          if (model?.kind) syncedKindById.set(modelId, model.kind);
+        }
+      }
       if (!hasExplicitEnabledModels && syncedModels.length > 0) {
         const added = new Set();
         rawModelIds = [];
         for (const model of syncedModels) {
           const modelId = model?.id;
           if (typeof modelId !== "string" || modelId.trim() === "") continue;
-          const incomingTier = typeof model?.tier === "string" ? model.tier : null;
-          const storedTier = tierById.get(modelId);
-          // Merge policy: free wins over everything; paid/credits overwrite
-          // unknown; never downgrade free to paid/credits/unknown.
-          const shouldTakeTier = incomingTier && (
-            !storedTier
-            || incomingTier === "free"
-            || (storedTier === "unknown" && incomingTier !== "unknown")
-          );
-          if (shouldTakeTier) {
-            tierById.set(modelId, incomingTier);
-            if (model?.pricing) tierPricingById.set(modelId, model.pricing);
-            else tierPricingById.delete(modelId);
-            if (model?.kind) syncedKindById.set(modelId, model.kind);
-          }
           if (model?.availability === "unavailable") continue;
           if (added.has(modelId)) continue;
           added.add(modelId);
           rawModelIds.push(modelId);
         }
       }
-      const hasSyncedModels = !hasExplicitEnabledModels && syncedModels.length > 0;
+      const hasSyncedModels = syncedModels.length > 0;
 
       if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
