@@ -3,6 +3,13 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { fallbackToolCallId } from "../concerns/toolCall.js";
+
+// Anthropic requires a non-empty tool_use.name inside content_block_start and
+// there is no way to update it after the block opens. Some upstreams never
+// send a name at all; emit a placeholder rather than name:"" (breaks clients)
+// or a stop_reason:"tool_use" with zero tool_use blocks (breaks tool loops).
+const TOOL_NAME_FALLBACK = "unknown_tool";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -65,6 +72,32 @@ function stopTextBlock(state, results) {
     index: state.textBlockIndex
   });
   state.textBlockStarted = false;
+}
+
+// Emit content_block_start for a pending tool call exactly once. Name is baked
+// into content_block_start by the Claude SSE format and can never be corrected
+// afterwards, so this runs only when the name is resolved — or at finish with
+// the fallback placeholder. Never emits name: "".
+function openToolBlock(state, results, entry) {
+  const toolBlockIndex = state.nextBlockIndex++;
+  entry.blockIndex = toolBlockIndex;
+  entry.started = true;
+
+  let toolName = entry.name || TOOL_NAME_FALLBACK;
+  if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
+    toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
+  }
+
+  results.push({
+    type: "content_block_start",
+    index: toolBlockIndex,
+    content_block: {
+      type: CLAUDE_BLOCK.TOOL_USE,
+      id: entry.id,
+      name: toolName,
+      input: {}
+    }
+  });
 }
 
 // Convert OpenAI stream chunk to Claude format
@@ -183,50 +216,56 @@ export function openaiToClaudeResponse(chunk, state) {
   if (delta?.tool_calls) {
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
+      let entry = state.toolCalls.get(idx);
 
-      // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
-      if (tc.id && !state.toolCalls.has(idx)) {
+      if (!entry) {
+        // First fragment for this index: allocate id immediately (upstreams like
+        // vLLM/compat gateways may omit it entirely — siblings use fallbackToolCallId).
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);
-
-        const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
-
-        // Strip prefix from tool name for response
-        let toolName = tc.function?.name || "";
-        if (toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)) {
-          toolName = toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length);
-        }
-
-        results.push({
-          type: "content_block_start",
-          index: toolBlockIndex,
-          content_block: {
-            type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
-            name: toolName,
-            input: {}
-          }
-        });
+        entry = {
+          id: tc.id || fallbackToolCallId(idx),
+          name: tc.function?.name || "",
+          blockIndex: null,
+          started: false
+        };
+        state.toolCalls.set(idx, entry);
       }
 
+      // Late-arriving name: some upstreams send id in one chunk and name in a
+      // later one. content_block_start can only carry the name once, so hold the
+      // block closed (args still buffer) until the name resolves. GLM/fireworks
+      // repeat id+null-name on every arg chunk — the `!entry.name` guard keeps
+      // the first real name.
+      if (!entry.name && tc.function?.name) entry.name = tc.function.name;
+      // A real id arriving after a fallback one (rare): adopt it while unstarted.
+      if (tc.id && !entry.started && tc.id !== entry.id) entry.id = tc.id;
+
+      if (entry.name && !entry.started) openToolBlock(state, results, entry);
+
       if (tc.function?.arguments) {
-        const toolInfo = state.toolCalls.get(idx);
-        if (toolInfo) {
-          // Buffer args instead of streaming — sanitize at finish to fix bad params
-          if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
-        }
+        // Buffer args instead of streaming — sanitize at finish to fix bad params
+        if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
+        state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
       }
     }
   }
 
   // Finish
   if (choice.finish_reason) {
+    // Duplicated finish_reason (seen from some gateways) must not emit a second
+    // message_delta/message_stop — terminate exactly once per message.
+    if (state.finishReasonSent) return results.length > 0 ? results : null;
+    state.finishReasonSent = true;
+
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
     for (const [idx, toolInfo] of state.toolCalls) {
+      // Name never resolved — open now with the fallback placeholder so the
+      // client still receives a valid tool_use block (before any input_json_delta).
+      if (!toolInfo.started) openToolBlock(state, results, toolInfo);
+
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
