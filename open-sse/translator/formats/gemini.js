@@ -17,19 +17,21 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   // Tuple-array keywords; converted to items first, leftovers stripped
   "prefixItems", "additionalItems",
   // Claude rejects these in VALIDATED mode
-  "default", "examples",
+  "default", "examples", "example",
   // JSON Schema meta keywords
-  "$schema", "$defs", "definitions", "const", "$ref", "$comment",
+  "$schema", "$defs", "definitions", "const", "$ref", "$comment", "$id",
   // Annotation keywords (rejected by Gemini/Antigravity - e.g. MCP tool schemas set these)
   "deprecated", "readOnly", "writeOnly",
   // Object validation keywords (not supported)
-  "additionalProperties", "propertyNames", "patternProperties", "enumDescriptions",
+  "additionalProperties", "propertyNames", "patternProperties", "enumDescriptions", "strict",
   // Complex schema keywords (handled by flattenAnyOfOneOf/mergeAllOf)
   "anyOf", "oneOf", "allOf", "not",
   // Dependency keywords (not supported)
   "dependencies", "dependentSchemas", "dependentRequired",
   // Other unsupported keywords
-  "title", "optional", "deprecated", "if", "then", "else", "contentMediaType", "contentEncoding",
+  "title", "optional", "if", "then", "else", "contentMediaType", "contentEncoding",
+  // Vendor-specific extensions from OpenAI / Anthropic / MCP / Cursor
+  "encrypted", "cache_control",
   // UI/Styling properties (from Cursor tools - NOT JSON Schema standard)
   "cornerRadius", "fillColor", "fontFamily", "fontSize", "fontWeight",
   "gap", "padding", "strokeColor", "strokeThickness", "textColor"
@@ -341,6 +343,32 @@ function ensureArrayItems(obj) {
   for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
 }
 
+// Normalize shorthand string property definitions (e.g. { properties: { foo: "object" } })
+function normalizePropertyDefinitions(obj) {
+  if (!obj || typeof obj !== "object") return;
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) normalizePropertyDefinitions(item);
+    return;
+  }
+
+  if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
+    for (const [key, prop] of Object.entries(obj.properties)) {
+      if (typeof prop === "string") {
+        obj.properties[key] = {
+          type: prop === "object" ? "object" : prop,
+        };
+      }
+    }
+  }
+
+  for (const value of Object.values(obj)) {
+    if (value && typeof value === "object") {
+      normalizePropertyDefinitions(value);
+    }
+  }
+}
+
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
@@ -351,6 +379,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
   // Phase 1: Convert and prepare
   convertConstToEnum(cleaned);
   convertEnumValuesToStrings(cleaned);
+
+  // Phase 1.5: Normalize property definitions before structural transforms
+  normalizePropertyDefinitions(cleaned);
 
   // Phase 2: Flatten complex structures
   mergeAllOf(cleaned);
@@ -408,7 +439,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
 
     if (obj.type === "object") {
-      if (!obj.properties || Object.keys(obj.properties).length === 0) {
+      if (!obj.properties || typeof obj.properties !== "object" || Array.isArray(obj.properties) || Object.keys(obj.properties).length === 0) {
         obj.properties = {
           reason: {
             type: "string",
