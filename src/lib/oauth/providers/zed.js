@@ -21,11 +21,15 @@ const zed = {
     return { ...config, ...auth };
   },
   buildAuthUrl: (config, redirectUri, state) => config.authUrl,
-  exchangeToken: async (config, code, redirectUri, codeVerifier, state) => {
+  exchangeToken: async (config, code, redirectUri, codeVerifier, state, meta) => {
     // code = raw callback URL/query; codeVerifier = encoded private key verifier.
     const { userId, encryptedAccessToken } = parseZedCallbackPayload(code);
     const accessToken = decryptZedAccessToken(encryptedAccessToken, codeVerifier);
-    return { accessToken, userId, systemId: config.systemId };
+    // Prefer the system_id registered for this login attempt (threaded via
+    // meta from register-session); fall back to the prepared config. Never
+    // mint a fresh one here — exchangeTokens re-runs prepareConfig, which
+    // would otherwise store a system_id unrelated to the zed.dev login.
+    return { accessToken, userId, systemId: meta?.systemId || config.systemId };
   },
   postExchange: async (tokens) => {
     const credentials = {

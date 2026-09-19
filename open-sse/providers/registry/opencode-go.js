@@ -13,7 +13,7 @@ export default {
     textIcon: "OC",
     website: "https://opencode.ai/auth",
     notice: {
-      text: "OpenCode Go subscription: $5/mo (then  0/mo). Access to Kimi, GLM, Qwen, MiMo, MiniMax models.",
+      text: "OpenCode Go subscription: $5/mo (then 10/mo). Access to Kimi, GLM, Qwen, MiMo, MiniMax models.",
       apiKeyUrl: "https://opencode.ai/auth",
     },
   },

@@ -609,6 +609,8 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+              isCreditBalance: quota.isCreditBalance ?? true,
+              currency: quota.currency || (name.includes("(") ? name.slice(name.indexOf("(") + 1, name.indexOf(")")) : "USD"),
             });
           });
         }

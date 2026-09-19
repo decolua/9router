@@ -648,9 +648,15 @@ let zedProxyTimeout = null;
 let zedProxyPort = null;
 let zedSession = null;
 
-export function registerZedSession({ state, codeVerifier }) {
+export function registerZedSession({ state, codeVerifier, systemId }) {
   if (!state || !codeVerifier) return false;
-  zedSession = { state, codeVerifier, status: "pending", createdAt: Date.now() };
+  zedSession = {
+    state,
+    codeVerifier,
+    systemId: systemId || null,
+    status: "pending",
+    createdAt: Date.now(),
+  };
   return true;
 }
 export function getZedSessionStatus(state) {
@@ -665,6 +671,10 @@ export function clearZedSession(state) {
 export function startZedProxy(preferredPort = 0) {
   return new Promise((resolve) => {
     if (zedProxyServer) {
+      // Reuse the live listener, but renew its idle timeout so a previous
+      // flow's deadline can never kill the flow that just adopted the port.
+      if (zedProxyTimeout) clearTimeout(zedProxyTimeout);
+      zedProxyTimeout = setTimeout(() => { console.log("[Zed proxy] timeout, stopping"); stopZedProxy(); }, ZED_HOSTED_CONFIG.oauthTimeoutMs);
       resolve({ success: true, port: zedProxyPort, callbackUrl: `http://127.0.0.1:${zedProxyPort}/` });
       return;
     }
@@ -694,13 +704,34 @@ export function startZedProxy(preferredPort = 0) {
         res.end(renderCodexResultPage(false, "Cross-origin callback rejected"));
         return;
       }
+      // A genuine Zed redirect always carries user_id + access_token. Anything
+      // else (probe, prefetch, stray navigation, favicon-style miss) is NOT
+      // the callback: answer without touching the session and WITHOUT
+      // stopping the server, so the real redirect can still land afterwards.
+      const qp = url.searchParams;
+      const hasZedParams =
+        qp.has("user_id") || qp.has("userId") ||
+        qp.has("access_token") || qp.has("accessToken") || qp.has("token");
+      if (!hasZedParams) {
+        console.log(`[Zed proxy] ignoring non-callback ${req.method} ${url.pathname} (session kept, server kept)`);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, "Waiting for Zed sign-in — this request carried no login data."));
+        return;
+      }
       // Pass raw callback path+query to exchangeTokens → parseZedCallbackPayload.
       // codeVerifier carries the encoded RSA private key for decryption.
       const rawCallback = url.search ? `${url.pathname}?${url.searchParams.toString()}` : url.pathname;
       try {
         const { exchangeTokens } = await import("../providers.js");
         const { createProviderConnection } = await import("@/models");
-        const tokenData = await exchangeTokens("zed", rawCallback, null, session.codeVerifier, session.state);
+        const tokenData = await exchangeTokens(
+          "zed",
+          rawCallback,
+          null,
+          session.codeVerifier,
+          session.state,
+          session.systemId ? { systemId: session.systemId } : undefined,
+        );
         const connection = await createProviderConnection({
           provider: "zed",
           authType: "oauth",
@@ -712,13 +743,16 @@ export function startZedProxy(preferredPort = 0) {
         session.email = connection.email;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(true, "You can close this window."));
+        stopZedProxy();
       } catch (err) {
         session.status = "error";
         session.error = err.message;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, err.message));
-      } finally {
-        stopZedProxy();
+        // Intentionally NOT stopping here: the failure may belong to a
+        // superseded attempt (e.g. an older popup landing after "Try Again"
+        // registered a new keypair). The live attempt's genuine callback must
+        // still land. The idle timeout + modal close bound the listener.
       }
     });
     const tryPort = Number(preferredPort) || 0;
