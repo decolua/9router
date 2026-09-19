@@ -60,7 +60,7 @@ export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
   appendRequestLog, getRecentLogs,
-  drainPendingUsage,
+  drainPendingUsage, applyUsageRetention, getUsageRetentionDays,
 } from "./repos/usageRepo.js";
 
 // Request details
@@ -85,12 +85,14 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    disabledModels: {},
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'disabledModels'`)) out.disabledModels[r.key] = parseJson(r.value, []);
 
   return out;
 }
@@ -102,14 +104,16 @@ export async function importDb(payload) {
   const db = await getAdapter();
 
   db.transaction(() => {
-    // Wipe all tables (keep _meta)
+    // Wipe all tables (keep _meta). kv scope list must mirror exportDb's
+    // scopes exactly — including disabledModels (T1.4 M-4), so an import is a
+    // true full replace and stale rows never survive an old-scope wipe.
     db.run(`DELETE FROM settings`);
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
     db.run(`DELETE FROM proxyPools`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
-    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing', 'disabledModels')`);
 
     // Settings
     if (payload.settings) {
@@ -161,6 +165,11 @@ export async function importDb(payload) {
     }
     for (const [provider, models] of Object.entries(payload.pricing || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
+    }
+    // Backups predating this field simply have no disabledModels → nothing
+    // restored (the wipe above still replaced scope semantics consistently).
+    for (const [providerAlias, ids] of Object.entries(payload.disabledModels || {})) {
+      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('disabledModels', ?, ?)`, [providerAlias, stringifyJson(Array.isArray(ids) ? ids : [])]);
     }
   });
 

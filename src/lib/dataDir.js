@@ -26,11 +26,14 @@ export function getDataDir() {
     fs.mkdirSync(configured, { recursive: true });
     return configured;
   } catch (e) {
-    if (e?.code === "EACCES" || e?.code === "EPERM") {
-      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
-      return defaultDir();
-    }
-    throw e;
+    // Never throw from here: this runs at module-import time, so a throw takes
+    // down every module that imports the db layer (crash-loop in Next dev /
+    // build / CLI). EACCES/EPERM already fell back; ENOTDIR/EEXIST (DATA_DIR
+    // pointing at a file or through a dead symlink), EROFS and anything else
+    // get the same treatment (T1.4 L-3) — with a loud warning, never silence.
+    const reason = e?.code || e?.message || String(e);
+    console.warn(`[DATA_DIR] '${configured}' unusable (${reason}) → fallback ~/.${APP_NAME}`);
+    return defaultDir();
   }
 }
 

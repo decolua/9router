@@ -1,4 +1,4 @@
-import { getAdapter } from "../driver.js";
+import { getAdapter, getAdapterSync } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 const DEFAULT_MAX_RECORDS = 200;
@@ -97,6 +97,81 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
+// Persist one batch in a single transaction. Fully synchronous (every DB
+// adapter runs sync), so both the async flush loop and the sync "exit" handler
+// share one code path — the exit path cannot afford an await.
+function persistBatchSync(db, items, config) {
+  db.transaction(() => {
+    for (const item of items) {
+      if (!item.id) item.id = generateDetailId(item.model);
+      if (!item.timestamp) item.timestamp = new Date().toISOString();
+      if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
+
+      const record = {
+        id: item.id,
+        provider: item.provider || null,
+        model: item.model || null,
+        connectionId: item.connectionId || null,
+        timestamp: item.timestamp,
+        status: item.status || null,
+        latency: item.latency || {},
+        tokens: item.tokens || {},
+        request: truncateField(item.request, config.maxJsonSize),
+        providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+        providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
+        response: truncateField(item.response, config.maxJsonSize),
+        pxpipe: item.pxpipe || undefined,
+      };
+
+      db.run(
+        `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
+        [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
+      );
+    }
+
+    const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+    if (cnt && cnt.c > config.maxRecords) {
+      db.run(
+        `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+        [cnt.c - config.maxRecords]
+      );
+    }
+  });
+}
+
+function flushConfigSync() {
+  // During "exit" there is no event loop to await getObservabilityConfig().
+  // If the buffer has items, admission already resolved a config, so the cache
+  // is present; defaults keep this total if it somehow isn't.
+  return cachedConfig || { maxJsonSize: DEFAULT_MAX_JSON_SIZE, maxRecords: DEFAULT_MAX_RECORDS };
+}
+
+// Sync flush for the "exit" event (T1.4 L-1): Node fires "exit" listeners with
+// the event loop already stopped — an async flush there can NEVER complete and
+// only gave false security. Everything here is synchronous: getAdapterSync +
+// cached config + persistBatchSync. If the adapter was never opened (or an
+// in-flight async flush already spliced its items away) there is nothing a
+// stopped loop can do; log and keep the exit path crash-free.
+function flushToDatabaseSync() {
+  try {
+    if (writeBuffer.length === 0) return;
+    const db = getAdapterSync();
+    const config = flushConfigSync();
+    while (writeBuffer.length > 0) {
+      const items = writeBuffer.splice(0, writeBuffer.length);
+      try {
+        persistBatchSync(db, items, config);
+      } catch (err) {
+        writeBuffer.unshift(...items);
+        console.error("[requestDetailsRepo] exit flush batch failed:", err?.message || err);
+        return;
+      }
+    }
+  } catch (e) {
+    console.error("[requestDetailsRepo] exit flush failed:", e?.message || e);
+  }
+}
+
 async function flushToDatabase() {
   if (flushingPromise) {
     await flushingPromise;
@@ -108,48 +183,10 @@ async function flushToDatabase() {
       // Drain entire buffer (loop in case more pushed during await)
       while (writeBuffer.length > 0) {
         const items = writeBuffer.splice(0, writeBuffer.length);
-        let db;
-        let config;
         try {
-          db = await getAdapter();
-          config = await getObservabilityConfig();
-
-          db.transaction(() => {
-            for (const item of items) {
-              if (!item.id) item.id = generateDetailId(item.model);
-              if (!item.timestamp) item.timestamp = new Date().toISOString();
-              if (item.request?.headers) item.request.headers = sanitizeHeaders(item.request.headers);
-
-              const record = {
-                id: item.id,
-                provider: item.provider || null,
-                model: item.model || null,
-                connectionId: item.connectionId || null,
-                timestamp: item.timestamp,
-                status: item.status || null,
-                latency: item.latency || {},
-                tokens: item.tokens || {},
-                request: truncateField(item.request, config.maxJsonSize),
-                providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
-                providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
-                response: truncateField(item.response, config.maxJsonSize),
-                pxpipe: item.pxpipe || undefined,
-              };
-
-              db.run(
-                `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET timestamp = excluded.timestamp, provider = excluded.provider, model = excluded.model, connectionId = excluded.connectionId, status = excluded.status, data = excluded.data`,
-                [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
-              );
-            }
-
-            const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-            if (cnt && cnt.c > config.maxRecords) {
-              db.run(
-                `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-                [cnt.c - config.maxRecords]
-              );
-            }
-          });
+          const db = await getAdapter();
+          const config = await getObservabilityConfig();
+          persistBatchSync(db, items, config);
         } catch (err) {
           writeBuffer.unshift(...items);
           console.error("[requestDetailsRepo] Batch write failed:", err?.message || err);
@@ -250,10 +287,36 @@ export async function getRequestDetailById(id) {
   return row ? parseJson(row.data, null) : null;
 }
 
-const _shutdownHandler = () => {
+// beforeExit: the event loop is still alive — the async flush works there and
+// also drains admissions still in flight.
+const _beforeExitHandler = () => {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (writeBuffer.length > 0) flushToDatabase().catch(() => {});
 };
+
+// exit: the event loop is gone — only a fully synchronous flush can complete
+// (T1.4 L-1). The old handler started flushToDatabase() here, an async promise
+// that could never resolve, i.e. false security for scripts/one-off tooling
+// that call process.exit().
+const _exitHandler = () => {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  if (writeBuffer.length > 0) flushToDatabaseSync();
+};
+
+// SIGINT/SIGTERM are deliberately NOT handled here: the shutdown coordinator
+// owns them and calls flushRequestDetailsNow(), which AWAITS the flush. A second
+// handler firing in parallel would only start an unawaited flush racing that
+// one. beforeExit/exit stay, so an orderly exit without a coordinator (scripts,
+// one-off tooling) still drains the buffer — the exit path synchronously.
+function ensureShutdownHandler() {
+  if (global._requestDetailsShutdownHandler) {
+    process.off("beforeExit", global._requestDetailsShutdownHandler.beforeExit);
+    process.off("exit", global._requestDetailsShutdownHandler.exit);
+  }
+  global._requestDetailsShutdownHandler = { beforeExit: _beforeExitHandler, exit: _exitHandler };
+  process.on("beforeExit", _beforeExitHandler);
+  process.on("exit", _exitHandler);
+}
 
 /**
  * Flush buffered request details now. Used by the shutdown coordinator so a
@@ -278,13 +341,4 @@ export async function flushRequestDetailsNow() {
 // handler firing in parallel would only start an unawaited flush racing that
 // one. beforeExit/exit stay, so an orderly exit without a coordinator (scripts,
 // one-off tooling) still drains the buffer.
-function ensureShutdownHandler() {
-  if (global._requestDetailsShutdownHandler) {
-    process.off("beforeExit", global._requestDetailsShutdownHandler);
-    process.off("exit", global._requestDetailsShutdownHandler);
-  }
-  global._requestDetailsShutdownHandler = _shutdownHandler;
-  process.on("beforeExit", _shutdownHandler);
-  process.on("exit", _shutdownHandler);
-}
 ensureShutdownHandler();

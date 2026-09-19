@@ -304,6 +304,50 @@ export async function drainPendingUsage({ timeoutMs = 3000 } = {}) {
   return { ...summary, drained: started - summary.pending };
 }
 
+// ── Usage retention (T1.4 M-3, DECISIONS D8: opt-in, DEFAULT OFF) ──────────
+// USAGE_RETENTION_DAYS=N deletes raw usageHistory rows older than N days.
+// Unset / 0 / negative / unparseable ⇒ NOTHING is ever deleted: history is
+// user data and pruning it by default is irreversible. usageDaily aggregates
+// are NEVER pruned — they stay the compact long-term view for stats/charts.
+// Safe cycle: runs right after a committed usage write (i.e. on the first
+// write after boot), throttled to once per interval per module instance.
+const RETENTION_ENV = "USAGE_RETENTION_DAYS";
+const RETENTION_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let lastRetentionRunAt = 0; // 0 → the first successful write of a boot always tries
+
+export function getUsageRetentionDays() {
+  const raw = process.env[RETENTION_ENV];
+  if (raw === undefined || raw === null || String(raw).trim() === "") return 0;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.floor(n);
+}
+
+export async function applyUsageRetention({ force = false } = {}) {
+  const days = getUsageRetentionDays();
+  if (!days) return { enabled: false, days: 0, deleted: 0 };
+  const now = Date.now();
+  if (!force && now - lastRetentionRunAt < RETENTION_CHECK_INTERVAL_MS) {
+    return { enabled: true, days, skipped: true, deleted: 0 };
+  }
+  lastRetentionRunAt = now; // claim the slot first: a failing pass must not retry every write
+  const db = await getAdapter();
+  const cutoff = new Date(now - days * 86400000).toISOString();
+  // timestamps are TEXT ISO (persistUsageEvent normalizes them). Rows stored in
+  // any other format (epoch numbers, junk) are NOT lexicographically
+  // comparable, so the GLOB guard keeps them forever rather than risk deleting
+  // recent data. usageDaily is deliberately untouched (aggregates survive).
+  const res = db.transaction(() => db.run(
+    `DELETE FROM usageHistory WHERE timestamp < ? AND timestamp GLOB '[0-9][0-9][0-9][0-9]-*'`,
+    [cutoff]
+  ));
+  const deleted = (res && res.changes) || 0;
+  if (deleted > 0) {
+    console.log(`[DB][usageRepo] retention(USAGE_RETENTION_DAYS=${days}): deleted ${deleted} usageHistory row(s) older than ${cutoff} (usageDaily aggregates kept)`);
+  }
+  return { enabled: true, days, deleted, cutoff };
+}
+
 async function persistUsageEvent(entry) {
   try {
     const db = await getAdapter();
@@ -458,6 +502,14 @@ async function persistUsageEvent(entry) {
     if (inserted) {
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
+      // Retention pass after the committed write (no-op unless
+      // USAGE_RETENTION_DAYS > 0, D8). A prune failure must never surface to
+      // the request path, and it is retried on the next write anyway.
+      try {
+        await applyUsageRetention();
+      } catch (e) {
+        console.error("[DB][usageRepo] retention pass failed:", e?.message || e);
+      }
     }
   } catch (e) {
     // Never surfaces to the request path (a failed usage write must not break a
