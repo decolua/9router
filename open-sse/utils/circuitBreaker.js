@@ -444,6 +444,36 @@ export function resetCircuitBreaker(name) {
   if (breaker) breaker.reset();
 }
 
+/**
+ * Reset every breaker whose key is `prefix` or continues it on a key-segment
+ * boundary (`prefix:...`).
+ *
+ * Breaker keys are `provider:connectionId:model` (see buildAccountBreakerName),
+ * so a caller that only knows the account — the dashboard's per-connection
+ * reset button — cannot name a single key. It names the account and this sweeps
+ * the per-model breakers underneath it.
+ *
+ * The boundary check is deliberate: a plain `startsWith` would let the account
+ * `p:c-1` also clear `p:c-10:*`, and a half-typed model would clear the models
+ * next to it. An empty prefix is ignored rather than treated as "match
+ * everything" — that is what resetAllCircuitBreakers() is for.
+ *
+ * @param {string} prefix account key (`provider:connectionId`) or a full key
+ * @returns {string[]} the names actually cleared, so callers can tell "nothing
+ *   matched" from a real reset instead of reporting success on a no-op
+ */
+export function resetCircuitBreakersByPrefix(prefix) {
+  if (typeof prefix !== "string" || !prefix) return [];
+  const boundary = `${prefix}:`;
+  const cleared = [];
+  for (const [name, breaker] of registry) {
+    if (name !== prefix && !name.startsWith(boundary)) continue;
+    breaker.reset();
+    cleared.push(name);
+  }
+  return cleared;
+}
+
 export { CircuitBreaker };
 
 export class CircuitBreakerOpenError extends Error {
