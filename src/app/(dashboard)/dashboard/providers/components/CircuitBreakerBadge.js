@@ -15,9 +15,16 @@ export default function CircuitBreakerBadge({ status, onReset }) {
 
   const config = stateConfig[status.state] || stateConfig.DEGRADED;
   const retryIn = status.retryAfterMs > 0 ? ` (${Math.ceil(status.retryAfterMs / 1000)}s)` : "";
+  // The badge aggregates every per-model breaker of the connection (worst
+  // state wins), so when more than the label is known, say which models tripped.
+  const modelHint = Array.isArray(status.models) && status.models.length > 0 ? ` — ${status.models.join(", ")}` : "";
+  const tooltip = `${config.label}${retryIn}${modelHint}`;
 
   return (
-    <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${config.color}`}>
+    <span
+      className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${config.color}`}
+      title={tooltip}
+    >
       <span className="material-symbols-outlined text-[12px]">{config.icon}</span>
       {config.label}{retryIn}
       {status.state === "OPEN" && onReset && (
@@ -37,6 +44,7 @@ CircuitBreakerBadge.propTypes = {
   status: PropTypes.shape({
     state: PropTypes.oneOf(["CLOSED", "DEGRADED", "OPEN", "HALF_OPEN"]),
     retryAfterMs: PropTypes.number,
+    models: PropTypes.arrayOf(PropTypes.string),
   }),
   onReset: PropTypes.func,
 };
