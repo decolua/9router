@@ -526,7 +526,8 @@ a third party under a provider named "Self-hosted".
 | 📝 **Request Logging**                                                            | Debug mode with full request/response logs                                               | Troubleshoot issues easily                        |
 | 💾 **Cloud Sync**                                                                 | Sync config across devices                                                               | Same setup everywhere                             |
 | 📊 **Usage Analytics**                                                            | Track tokens, cost, trends over time                                                     | Optimize spending                                 |
-| 🌐 **Deploy Anywhere**                                                            | Localhost, VPS, Docker, Cloudflare Workers                                               | Flexible deployment options                       |
+| 🌐 **Deploy Anywhere**                                                            | Localhost, VPS, Docker, Cloudflare Workers                                               | Prefer hosts with enough egress for Router traffic |
+
 
 Set `X-9Router-Token-Saver: off` to bypass all token savers for one chat request.
 
@@ -681,10 +682,12 @@ Seamless translation between formats:
 
 ### 🌐 Deploy Anywhere
 
-- 💻 **Localhost** - Default, works offline
-- ☁️ **VPS/Cloud** - Share across devices
+- 💻 **Localhost** - Default, works offline (no cloud egress caps)
+- ☁️ **VPS/Cloud** - Share across devices (use a plan with adequate outbound bandwidth)
 - 🐳 **Docker** - One-command deployment
 - 🚀 **Cloudflare Workers** - Global edge network
+
+> **Free PaaS caveat:** A hosted Router sits on the Client↔Provider path. Low free-tier outbound allowances (often only a few GB) burn fast under agent workloads. Prefer local, a VPS, or paid/adequate-egress hosting for always-on routing — see **Deployment** below.
 
 </details>
 
@@ -1204,6 +1207,15 @@ Model: cc/claude-opus-4-7
 
 <details>
 <summary><b>🚀 Deployment</b></summary>
+
+### Cloud free-tier egress (Render and similar)
+
+A hosted **Router** proxies every **Client** turn to **Providers** and back, so streams and tool results count as **host outbound bandwidth**. Free PaaS plans with low egress (on the order of a few GB) often hit the cap mid-month; the service then becomes unusable even though the Router software is fine.
+
+- **RTK** reduces tokens; it does **not** remove host egress accounting.
+- Fixing disk wipe (e.g. Supabase on Render free) does **not** fix bandwidth.
+- Prefer **localhost**, **Docker on a machine you control**, a **VPS**, **paid Render**, or another host with adequate egress for always-on routing.
+- See also the free-tier notes in `render.yaml` (ephemeral disk, bandwidth, WAF).
 
 ### VPS Deployment
 

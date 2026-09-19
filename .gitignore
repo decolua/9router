@@ -73,10 +73,25 @@ scripts/agSniffer/*
 gitbooks/*
 gitbook/README.md
 
+# Cursor IDE — allow rules, commands & git-push skill
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+!.cursor/commands/
+!.cursor/commands/**
+!.cursor/skills/
+!.cursor/skills/git-push/
+!.cursor/skills/git-push/**
+
 # Refactor backup reference (do not bundle/lint)
 open-sse.old/
 .graphifyignore
 graphify-out/*
+
+# Local scratch secrets / verify env (scripts OK; keys not)
+.scratch/*.env
+.scratch/**/*.secret*
+.scratch/_verify-body.json
 
 # Local-only working dirs (notes, vendored repos, scripts, skills)
 .claude/

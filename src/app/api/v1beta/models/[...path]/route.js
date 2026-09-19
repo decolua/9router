@@ -3,6 +3,7 @@ import {
   clearAccountError,
   getProviderCredentials,
   isValidApiKey,
+  shouldEnforceEndpointApiKey,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -179,7 +180,7 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 
 async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
+  if (!(await shouldEnforceEndpointApiKey(request, settings))) return null;
 
   const apiKey = extractGeminiClientApiKey(request);
   if (!apiKey) {

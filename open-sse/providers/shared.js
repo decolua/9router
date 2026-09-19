@@ -84,6 +84,41 @@ export const KIMI_CODING_BASE_URL = "https://api.kimi.com/coding/v1/messages";
 export const OPENAI_COMPAT_BASE = "https://api.openai.com/v1";
 export const ANTHROPIC_COMPAT_BASE = "https://api.anthropic.com/v1";
 
+// Cloudflare on some OpenAI-compatible gateways (tabitoken) returns HTML 403 for
+// Node/undici's default User-Agent. PostmanRuntime matches the working Postman client.
+export const OPENAI_COMPAT_USER_AGENT = "PostmanRuntime/7.43.0";
+
+export function openaiCompatFetchHeaders(apiKey, { json = false } = {}) {
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    "User-Agent": OPENAI_COMPAT_USER_AGENT,
+    Accept: "application/json",
+  };
+  if (json) headers["Content-Type"] = "application/json";
+  return headers;
+}
+
+export function isCloudflareChallengeResponse(res) {
+  if (res.status !== 403 && res.status !== 503) return false;
+  const ct = typeof res.headers?.get === "function" ? (res.headers.get("content-type") || "") : "";
+  return ct.includes("text/html");
+}
+
+/**
+ * Strip trailing slash and full-path suffixes users paste from Postman
+ * (e.g. …/v1/chat/completions → …/v1). Prevents double-append at runtime.
+ */
+export function sanitizeOpenAICompatibleBaseUrl(baseUrl = "") {
+  let url = String(baseUrl).trim().replace(/\/+$/, "");
+  for (const suffix of ["/chat/completions", "/responses"]) {
+    if (url.endsWith(suffix)) {
+      url = url.slice(0, -suffix.length).replace(/\/+$/, "");
+      break;
+    }
+  }
+  return url;
+}
+
 // Official Antigravity IDE Desktop 2.11.0 fingerprint captured from macOS arm64.
 // Keep this static even when 9router runs on Linux: the provider profile is
 // intentionally matching the IDE client, not the server host.

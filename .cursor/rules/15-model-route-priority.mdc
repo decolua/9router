@@ -1,0 +1,56 @@
+---
+description: "Model route priority — Claude subscription first; save Cursor IDE tokens"
+alwaysApply: true
+---
+
+## Model route priority（每会话 · 省 Cursor token）
+
+**Goal:** burn Cursor IDE tokens last. Prefer Claude subscription / user proxy for heavy work.
+
+### Priority order (must follow)
+
+| Pri | Route | When |
+|-----|-------|------|
+| **P1** | **Claude subscription** | Spec, design, code, review, debug — all heavy work. Cursor = thin callback (listen, apply, verify, short status). |
+| **P2** | **User proxy (OpenCodex)** | When user says use OpenCodex / proxy, or Claude subscription unavailable / rate-limited. |
+| **P3** | **Cursor `Task` fallbacks** | Only if P1+P2 unavailable or user forces Cursor-owned subagent. |
+
+### P3 Cursor Task model tiers
+
+Pick by task per `19-delegation-workflows.mdc` — set `model` explicitly on every call.
+
+| Task | Slug |
+|------|------|
+| Fast bulk | `composer-2.5-fast` |
+| Default impl | `gpt-5.6-terra-medium` |
+| Tricky | `gpt-5.6-sol-medium` |
+| Alt | `cursor-grok-4.5-high-fast` |
+
+### P3 availability fallback
+
+If chosen slug is blocked, try the next heavier tier, then Grok, then other allowed Cursor models.
+
+### Auto-boot
+
+Every session: this ladder is ON. Coexists with `08-claude-senior-listener.mdc` (size gate still wins: tiny Quick → Cursor solo, no Task).
+
+### Do / Don't
+
+| Do | Don't |
+|----|-------|
+| Heavy → Claude subscription (P1) first | Burn Cursor composer/main on multi-file features |
+| Fail P1 → try P2 OpenCodex before Cursor Task | Jump straight to Grok/OpenAI Task |
+| Task model = ladder above | Pick random / "fastest" model |
+| Cursor stays thin: apply + verify + status | Re-implement Claude's plan in Cursor |
+
+### Opt-out / force
+
+| User says | Effect |
+|-----------|--------|
+| `normal cursor` / `you do it` / `cursor lead` | Cursor may lead; still prefer Task ladder when spawning subagents |
+| `use opencodex` / `proxy` | Prefer P2 |
+| Explicit model name | Honor that slug for that Task only |
+
+### Hub sync
+
+Changing this file → also sync `laravel13.x` `.cursor/rules/` (see `13-notion-and-cursor-hub.mdc`).

@@ -2,28 +2,28 @@
 // tiny max_tokens probe. pingModelByKind must use a sane budget (1024) and treat a
 // reasoning-only (length-limited) response as a successful connection.
 //
-// The route module pulls in Next.js-only deps (@/lib/localDb, etc.) that don't
-// resolve under raw vitest, so we mock them and exercise the exported function.
+// pingModelByKind drives the chat probe through handleChat in-process (not fetch),
+// so we mock handleChat and assert on the Request it receives. The heavy Next.js
+// deps (@/lib/localDb, etc.) are mocked so the module resolves under raw vitest.
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // Mock the heavy Next.js-dependent imports BEFORE importing ping.js.
 vi.mock("@/lib/localDb", () => ({ getApiKeys: vi.fn(async () => [{ key: "test-key", isActive: true }]) }));
 vi.mock("@/shared/constants/config", () => ({ UPDATER_CONFIG: { appPort: 20127 } }));
 vi.mock("@/shared/utils/machineId", () => ({ getConsistentMachineId: vi.fn(async () => "cli-token") }));
 
+const handleChatMock = vi.hoisted(() => vi.fn());
+vi.mock("@/sse/handlers/chat.js", () => ({ handleChat: handleChatMock }));
+
 const { pingModelByKind } = await import("../../src/app/api/models/test/ping.js");
 
 describe("pingModelByKind reasoning models (#3010)", () => {
-  let fetchMock;
+  let capturedRequest;
 
   beforeEach(() => {
-    fetchMock = vi.fn();
-    vi.stubGlobal("fetch", fetchMock);
-  });
-
-  afterEach(() => {
-    vi.unstubAllGlobals();
+    capturedRequest = null;
+    handleChatMock.mockReset();
   });
 
   function jsonResponse(obj) {
@@ -35,27 +35,33 @@ describe("pingModelByKind reasoning models (#3010)", () => {
     };
   }
 
+  // Capture the Request pingModelByKind hands to handleChat, then reply with obj.
+  function replyWith(obj) {
+    handleChatMock.mockImplementation(async (request) => {
+      capturedRequest = request;
+      return jsonResponse(obj);
+    });
+  }
+
   it("uses a 1024-token budget for the chat completions probe", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ choices: [{ message: { content: "Hi there!" } }] }));
+    replyWith({ choices: [{ message: { content: "Hi there!" } }] });
 
     await pingModelByKind("cline-pass/kimi-k3", "llm", "http://127.0.0.1:20127");
 
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const body = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(handleChatMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse(await capturedRequest.text());
     expect(body.max_tokens).toBe(1024);
   });
 
   it("treats a reasoning-only (length-limited) response as ok:true", async () => {
-    fetchMock.mockResolvedValue(
-      jsonResponse({
-        choices: [
-          {
-            finish_reason: "length",
-            message: { content: "", reasoning: "The user said hi — a simple greeting..." },
-          },
-        ],
-      })
-    );
+    replyWith({
+      choices: [
+        {
+          finish_reason: "length",
+          message: { content: "", reasoning: "The user said hi — a simple greeting..." },
+        },
+      ],
+    });
 
     const result = await pingModelByKind("cline-pass/kimi-k3", "llm", "http://127.0.0.1:20127");
     expect(result.ok).toBe(true);
@@ -63,14 +69,14 @@ describe("pingModelByKind reasoning models (#3010)", () => {
   });
 
   it("still fails when there are no choices and no reasoning", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ choices: [] }));
+    replyWith({ choices: [] });
     const result = await pingModelByKind("some/model", "llm", "http://127.0.0.1:20127");
     expect(result.ok).toBe(false);
     expect(result.error).toMatch(/no completion choices/);
   });
 
   it("passes a normal answer with the larger budget", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ choices: [{ message: { content: "Hello!" } }] }));
+    replyWith({ choices: [{ message: { content: "Hello!" } }] });
     const result = await pingModelByKind("openai/gpt-4o", "llm", "http://127.0.0.1:20127");
     expect(result.ok).toBe(true);
   });

@@ -430,8 +430,12 @@ function killProcessOnPort(port) {
         }
       }
 
-      // Wait for port to be released
-      setTimeout(() => resolve(), 500);
+      // Wait for port to be released only if a process was found and killed
+      if (pid) {
+        setTimeout(() => resolve(), 500);
+      } else {
+        resolve();
+      }
     } catch (err) {
       // Silent fail - continue anyway
       resolve();
@@ -646,6 +650,11 @@ function startServer(updatePromise) {
         const { killTray } = require("./src/cli/tray/tray");
         killTray();
       } catch (e) { }
+      // Stop local HTTPS proxy
+      try {
+        const { stopLocalHttpsProxy } = require("./src/cli/localHttps");
+        stopLocalHttpsProxy();
+      } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
@@ -716,6 +725,12 @@ function startServer(updatePromise) {
     console.log(`Server: http://${displayHost}:${port}`);
 
     waitServerReady(port).then(() => {
+      // Start local HTTPS loopback proxy for IDEs requiring https://
+      try {
+        const { startLocalHttpsProxy } = require("./src/cli/localHttps");
+        startLocalHttpsProxy({ httpPort: port, httpsPort: port + 1 }).catch(() => {});
+      } catch (e) {}
+
       initTrayIcon();
       console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
       console.log("   Right-click tray icon to open dashboard or quit.\n");
@@ -726,6 +741,12 @@ function startServer(updatePromise) {
 
   // Wait for server to be ready, then show interface menu loop + tray
   waitServerReady(port).then(async () => {
+    // Start local HTTPS loopback proxy for IDEs requiring https://
+    try {
+      const { startLocalHttpsProxy } = require("./src/cli/localHttps");
+      startLocalHttpsProxy({ httpPort: port, httpsPort: port + 1 }).catch(() => {});
+    } catch (e) {}
+
     // Resolve parallel update check (already running); don't block server start on it.
     const latestVersion = await latestVersionPromise;
     // Start tray icon alongside TUI

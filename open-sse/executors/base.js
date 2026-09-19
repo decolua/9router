@@ -2,7 +2,7 @@ import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FET
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, sanitizeOpenAICompatibleBaseUrl, OPENAI_COMPAT_USER_AGENT } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
 /**
@@ -30,7 +30,7 @@ export class BaseExecutor {
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
-      const normalized = baseUrl.replace(/\/$/, "");
+      const normalized = sanitizeOpenAICompatibleBaseUrl(baseUrl) || OPENAI_COMPAT_BASE;
       const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;
     }
@@ -70,6 +70,10 @@ export class BaseExecutor {
 
     if (stream) {
       headers["Accept"] = "text/event-stream";
+    }
+
+    if (this.provider?.startsWith?.("openai-compatible-") && !headers["User-Agent"]) {
+      headers["User-Agent"] = OPENAI_COMPAT_USER_AGENT;
     }
 
     return headers;

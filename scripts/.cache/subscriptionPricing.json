@@ -1,0 +1,1047 @@
+{
+  "fetchedAt": "2026-09-08T13:57:10.336Z",
+  "source": "https://opentherank.com/ai-pricing/",
+  "caveat": "Site shows only top-4 cheapest + 1 most-expensive region per app — not a full country list. A region absent here may still exist on the site but isn't scraped.",
+  "apps": [
+    {
+      "app": "ChatGPT",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Philippines",
+          "usd": 15.94,
+          "period": "/mo",
+          "local": "≈ ₱999/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Pakistan",
+          "usd": 17.65,
+          "period": "/mo",
+          "local": "≈ Rs4,900/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Canada",
+          "usd": 18.09,
+          "period": "/mo",
+          "local": "≈ CA$24.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Japan",
+          "usd": 19.43,
+          "period": "/mo",
+          "local": "≈ ¥3,000/mo"
+        },
+        {
+          "rank": 18,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ 179/mo"
+        }
+      ]
+    },
+    {
+      "app": "Claude",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Pakistan",
+          "usd": 17.65,
+          "period": "/mo",
+          "local": "≈ ₨4,900/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Japan",
+          "usd": 19.43,
+          "period": "/mo",
+          "local": "≈ ¥3,000/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Egypt",
+          "usd": 19.64,
+          "period": "/mo",
+          "local": "≈ E£999.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Indonesia",
+          "usd": 19.77,
+          "period": "/mo",
+          "local": "≈ Rp349,000/mo"
+        },
+        {
+          "rank": 20,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ 179/mo"
+        }
+      ]
+    },
+    {
+      "app": "Gemini",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Indonesia",
+          "usd": 17.5,
+          "period": "/mo",
+          "local": "≈ Rp309,000/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 17.95,
+          "period": "/mo",
+          "local": "≈ ₺869.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Egypt",
+          "usd": 18.46,
+          "period": "/mo",
+          "local": "≈ E£939.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Japan",
+          "usd": 18.78,
+          "period": "/mo",
+          "local": "≈ ¥2,900/mo"
+        },
+        {
+          "rank": 18,
+          "region": "Denmark",
+          "usd": 26.28,
+          "period": "/mo",
+          "local": "≈ DKK169/mo"
+        }
+      ]
+    },
+    {
+      "app": "Grok",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Turkey",
+          "usd": 26.83,
+          "period": "/mo",
+          "local": "≈ ₺1,299.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Pakistan",
+          "usd": 28.45,
+          "period": "/mo",
+          "local": "≈ Rs7,900/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Philippines",
+          "usd": 28.55,
+          "period": "/mo",
+          "local": "≈ ₱1790/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Canada",
+          "usd": 28.96,
+          "period": "/mo",
+          "local": "≈ CA$40/mo"
+        },
+        {
+          "rank": 19,
+          "region": "France",
+          "usd": 40.68,
+          "period": "/mo",
+          "local": "≈ €35/mo"
+        }
+      ]
+    },
+    {
+      "app": "GLM",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "China",
+          "usd": 17.54,
+          "period": "/mo",
+          "local": "≈ ¥118/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 18,
+          "period": "/mo",
+          "local": "≈ US$18/mo"
+        },
+        {
+          "rank": 3,
+          "region": "United Kingdom",
+          "usd": 18,
+          "period": "/mo",
+          "local": "≈ US$18/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Germany",
+          "usd": 18,
+          "period": "/mo",
+          "local": "≈ US$18/mo"
+        },
+        {
+          "rank": 16,
+          "region": "United States",
+          "usd": 18,
+          "period": "/mo",
+          "local": "≈ US$18/mo"
+        }
+      ]
+    },
+    {
+      "app": "Leonardo AI",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Nigeria",
+          "usd": 5.98,
+          "period": "/mo",
+          "local": "≈ ₦7,900/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 8.25,
+          "period": "/mo",
+          "local": "≈ ₺399.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Japan",
+          "usd": 14.25,
+          "period": "/mo",
+          "local": "≈ ¥2,200/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Canada",
+          "usd": 14.47,
+          "period": "/mo",
+          "local": "≈ CA$19.99/mo"
+        },
+        {
+          "rank": 17,
+          "region": "France",
+          "usd": 20.91,
+          "period": "/mo",
+          "local": "≈ €17.99/mo"
+        }
+      ]
+    },
+    {
+      "app": "Character.AI",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Nigeria",
+          "usd": 3.71,
+          "period": "/mo",
+          "local": "≈ ₦4,900/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 5.16,
+          "period": "/mo",
+          "local": "≈ ₺249.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Canada",
+          "usd": 9.41,
+          "period": "/mo",
+          "local": "≈ CA$12.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Indonesia",
+          "usd": 9.57,
+          "period": "/mo",
+          "local": "≈ Rp169,000/mo"
+        },
+        {
+          "rank": 17,
+          "region": "Denmark",
+          "usd": 13.84,
+          "period": "/mo",
+          "local": "≈ DKK89/mo"
+        }
+      ]
+    },
+    {
+      "app": "Perplexity",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Canada",
+          "usd": 18.1,
+          "period": "/mo",
+          "local": "≈ CA$25/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Japan",
+          "usd": 19.43,
+          "period": "/mo",
+          "local": "≈ ¥3,000/mo"
+        },
+        {
+          "rank": 3,
+          "region": "United States",
+          "usd": 20,
+          "period": "/mo",
+          "local": "≈ $20/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Bolivia",
+          "usd": 20,
+          "period": "/mo",
+          "local": "≈ US$20/mo"
+        },
+        {
+          "rank": 15,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ DKK179/mo"
+        }
+      ]
+    },
+    {
+      "app": "Microsoft Copilot",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Nigeria",
+          "usd": 12.87,
+          "period": "/mo",
+          "local": "≈ ₦17,000/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 14.86,
+          "period": "/mo",
+          "local": "≈ ₺719.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Canada",
+          "usd": 19.55,
+          "period": "/mo",
+          "local": "≈ CA$27/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Indonesia",
+          "usd": 19.77,
+          "period": "/mo",
+          "local": "≈ Rp349,000/mo"
+        },
+        {
+          "rank": 16,
+          "region": "Denmark",
+          "usd": 26.28,
+          "period": "/mo",
+          "local": "≈ DKK169/mo"
+        }
+      ]
+    },
+    {
+      "app": "Manus",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Canada",
+          "usd": 35.48,
+          "period": "/mo",
+          "local": "≈ CA$49/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 37.15,
+          "period": "/mo",
+          "local": "≈ ₺1799.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Japan",
+          "usd": 38.86,
+          "period": "/mo",
+          "local": "≈ ¥6,000/mo"
+        },
+        {
+          "rank": 4,
+          "region": "United States",
+          "usd": 39,
+          "period": "/mo",
+          "local": "≈ $39/mo"
+        },
+        {
+          "rank": 15,
+          "region": "Denmark",
+          "usd": 54.27,
+          "period": "/mo",
+          "local": "≈ DKK349/mo"
+        }
+      ]
+    },
+    {
+      "app": "Kimi",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "China",
+          "usd": 14.71,
+          "period": "/mo",
+          "local": "≈ ¥99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 16.51,
+          "period": "/mo",
+          "local": "≈ ₺799.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Indonesia",
+          "usd": 16.94,
+          "period": "/mo",
+          "local": "≈ Rp299,000/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Canada",
+          "usd": 18.1,
+          "period": "/mo",
+          "local": "≈ CA$25/mo"
+        },
+        {
+          "rank": 18,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ DKK179/mo"
+        }
+      ]
+    },
+    {
+      "app": "Poe",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Canada",
+          "usd": 18.09,
+          "period": "/mo",
+          "local": "≈ CA$24.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Japan",
+          "usd": 19.43,
+          "period": "/mo",
+          "local": "≈ ¥3000/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Egypt",
+          "usd": 19.64,
+          "period": "/mo",
+          "local": "≈ E£999.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "United States",
+          "usd": 19.99,
+          "period": "/mo",
+          "local": "≈ $19.99/mo"
+        },
+        {
+          "rank": 16,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ 179/mo"
+        }
+      ]
+    },
+    {
+      "app": "Kling AI",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Turkey",
+          "usd": 9.29,
+          "period": "/mo",
+          "local": "≈ ₺449.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Indonesia",
+          "usd": 9.57,
+          "period": "/mo",
+          "local": "≈ Rp169,000/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Japan",
+          "usd": 9.71,
+          "period": "/mo",
+          "local": "≈ ¥1,500/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Brazil",
+          "usd": 9.73,
+          "period": "/mo",
+          "local": "≈ R$49.9/mo"
+        },
+        {
+          "rank": 17,
+          "region": "Denmark",
+          "usd": 13.84,
+          "period": "/mo",
+          "local": "≈ DKK89/mo"
+        }
+      ]
+    },
+    {
+      "app": "RunwayML",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Canada",
+          "usd": 14.47,
+          "period": "/mo",
+          "local": "≈ CA$19.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Bolivia",
+          "usd": 14.99,
+          "period": "/mo",
+          "local": "≈ US$14.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "United States",
+          "usd": 14.99,
+          "period": "/mo",
+          "local": "≈ $14.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Argentina",
+          "usd": 14.99,
+          "period": "/mo",
+          "local": "≈ US$14.99/mo"
+        },
+        {
+          "rank": 18,
+          "region": "France",
+          "usd": 20.91,
+          "period": "/mo",
+          "local": "≈ €17.99/mo"
+        }
+      ]
+    },
+    {
+      "app": "Captions",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Nigeria",
+          "usd": 3.56,
+          "period": "/mo",
+          "local": "≈ ₦4700/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 4.85,
+          "period": "/mo",
+          "local": "≈ ₺234.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Pakistan",
+          "usd": 8.64,
+          "period": "/mo",
+          "local": "≈ Rs2400/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Japan",
+          "usd": 9.39,
+          "period": "/mo",
+          "local": "≈ ¥1450/mo"
+        },
+        {
+          "rank": 19,
+          "region": "Denmark",
+          "usd": 14.77,
+          "period": "/mo",
+          "local": "≈ 95/mo"
+        }
+      ]
+    },
+    {
+      "app": "Pollo AI",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Turkey",
+          "usd": 5.16,
+          "period": "/week",
+          "local": "≈ ₺249.99/week"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 5.78,
+          "period": "/week",
+          "local": "≈ CA$7.99/week"
+        },
+        {
+          "rank": 3,
+          "region": "Egypt",
+          "usd": 5.89,
+          "period": "/week",
+          "local": "≈ E£299.99/week"
+        },
+        {
+          "rank": 4,
+          "region": "United States",
+          "usd": 5.99,
+          "period": "/week",
+          "local": "≈ $5.99/week"
+        },
+        {
+          "rank": 15,
+          "region": "Germany",
+          "usd": 8.12,
+          "period": "/week",
+          "local": "≈ €6.99/week"
+        }
+      ]
+    },
+    {
+      "app": "HeyGen",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Turkey",
+          "usd": 20.64,
+          "period": "/mo",
+          "local": "≈ ₺999.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 28.24,
+          "period": "/mo",
+          "local": "≈ CA$39/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Pakistan",
+          "usd": 28.45,
+          "period": "/mo",
+          "local": "≈ Rs7900/mo"
+        },
+        {
+          "rank": 4,
+          "region": "United States",
+          "usd": 29,
+          "period": "/mo",
+          "local": "≈ $29/mo"
+        },
+        {
+          "rank": 19,
+          "region": "France",
+          "usd": 40.68,
+          "period": "/mo",
+          "local": "≈ €35/mo"
+        }
+      ]
+    },
+    {
+      "app": "invideo AI",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Turkey",
+          "usd": 16.51,
+          "period": "/mo",
+          "local": "≈ ₺799.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "South Korea",
+          "usd": 24.53,
+          "period": "/mo",
+          "local": "≈ ₩33000/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Pakistan",
+          "usd": 24.85,
+          "period": "/mo",
+          "local": "≈ Rs6900/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Argentina",
+          "usd": 24.99,
+          "period": "/mo",
+          "local": "≈ US$24.99/mo"
+        },
+        {
+          "rank": 19,
+          "region": "France",
+          "usd": 34.86,
+          "period": "/mo",
+          "local": "≈ €29.99/mo"
+        }
+      ]
+    },
+    {
+      "app": "Suno",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Indonesia",
+          "usd": 9.57,
+          "period": "/mo",
+          "local": "≈ Rp169,000/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Japan",
+          "usd": 9.71,
+          "period": "/mo",
+          "local": "≈ ¥1,500/mo"
+        },
+        {
+          "rank": 3,
+          "region": "United States",
+          "usd": 10,
+          "period": "/mo",
+          "local": "≈ $10/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Bolivia",
+          "usd": 10,
+          "period": "/mo",
+          "local": "≈ US$10/mo"
+        },
+        {
+          "rank": 17,
+          "region": "Denmark",
+          "usd": 13.84,
+          "period": "/mo",
+          "local": "≈ DKK89/mo"
+        }
+      ]
+    },
+    {
+      "app": "Cursor",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Pakistan",
+          "usd": 24.85,
+          "period": "/mo",
+          "local": "≈ Rs 6,900.00/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 25.33,
+          "period": "/mo",
+          "local": "≈ $34.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Egypt",
+          "usd": 25.53,
+          "period": "/mo",
+          "local": "≈ EGP 1,299.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Japan",
+          "usd": 25.9,
+          "period": "/mo",
+          "local": "≈ ¥4,000/mo"
+        },
+        {
+          "rank": 19,
+          "region": "Denmark",
+          "usd": 35.61,
+          "period": "/mo",
+          "local": "≈ 229,00 kr/mo"
+        }
+      ]
+    },
+    {
+      "app": "GitHub Copilot",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Nigeria",
+          "usd": 5.98,
+          "period": "/mo",
+          "local": "≈ ₦ 7,900.00/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 6.19,
+          "period": "/mo",
+          "local": "≈ ₺299,99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Egypt",
+          "usd": 6.87,
+          "period": "/mo",
+          "local": "≈ EGP 349.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Japan",
+          "usd": 9.71,
+          "period": "/mo",
+          "local": "≈ ¥1,500/mo"
+        },
+        {
+          "rank": 19,
+          "region": "Denmark",
+          "usd": 13.84,
+          "period": "/mo",
+          "local": "≈ 89,00 kr/mo"
+        }
+      ]
+    },
+    {
+      "app": "Replit",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Pakistan",
+          "usd": 17.65,
+          "period": "/mo",
+          "local": "≈ Rs 4,900.00/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 18.1,
+          "period": "/mo",
+          "local": "≈ $25.00/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Japan",
+          "usd": 19.43,
+          "period": "/mo",
+          "local": "≈ ¥3,000/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Egypt",
+          "usd": 19.64,
+          "period": "/mo",
+          "local": "≈ EGP 999.99/mo"
+        },
+        {
+          "rank": 19,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ 179,00 kr/mo"
+        }
+      ]
+    },
+    {
+      "app": "Lovable",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Pakistan",
+          "usd": 35.66,
+          "period": "/mo",
+          "local": "≈ Rs9900/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 36.19,
+          "period": "/mo",
+          "local": "≈ CA$49.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Japan",
+          "usd": 38.86,
+          "period": "/mo",
+          "local": "≈ ¥6000/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Egypt",
+          "usd": 39.28,
+          "period": "/mo",
+          "local": "≈ E£1999.99/mo"
+        },
+        {
+          "rank": 19,
+          "region": "Denmark",
+          "usd": 54.27,
+          "period": "/mo",
+          "local": "≈ DKK349/mo"
+        }
+      ]
+    },
+    {
+      "app": "Base44",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Pakistan",
+          "usd": 17.65,
+          "period": "/mo",
+          "local": "≈ Rs 4,900.00/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Canada",
+          "usd": 18.09,
+          "period": "/mo",
+          "local": "≈ $24.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Japan",
+          "usd": 19.43,
+          "period": "/mo",
+          "local": "≈ ¥3,000/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Egypt",
+          "usd": 19.64,
+          "period": "/mo",
+          "local": "≈ EGP 999.99/mo"
+        },
+        {
+          "rank": 19,
+          "region": "Denmark",
+          "usd": 27.83,
+          "period": "/mo",
+          "local": "≈ 179,00 kr/mo"
+        }
+      ]
+    },
+    {
+      "app": "X",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Turkey",
+          "usd": 4.13,
+          "period": "/mo",
+          "local": "≈ ₺199.99/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Egypt",
+          "usd": 4.91,
+          "period": "/mo",
+          "local": "≈ EGP 250/mo"
+        },
+        {
+          "rank": 3,
+          "region": "India",
+          "usd": 4.97,
+          "period": "/mo",
+          "local": "≈ ₹470/mo"
+        },
+        {
+          "rank": 4,
+          "region": "Argentina",
+          "usd": 5,
+          "period": "/mo",
+          "local": "≈ US$5/mo"
+        },
+        {
+          "rank": 18,
+          "region": "United Kingdom",
+          "usd": 14.89,
+          "period": "/mo",
+          "local": "≈ £11/mo"
+        }
+      ]
+    },
+    {
+      "app": "Le Chat",
+      "rows": [
+        {
+          "rank": 1,
+          "region": "Pakistan",
+          "usd": 14.05,
+          "period": "/mo",
+          "local": "≈ Rs3,900/mo"
+        },
+        {
+          "rank": 2,
+          "region": "Turkey",
+          "usd": 14.45,
+          "period": "/mo",
+          "local": "≈ ₺699.99/mo"
+        },
+        {
+          "rank": 3,
+          "region": "Canada",
+          "usd": 14.47,
+          "period": "/mo",
+          "local": "≈ $19.99/mo"
+        },
+        {
+          "rank": 4,
+          "region": "United States",
+          "usd": 14.99,
+          "period": "/mo",
+          "local": "≈ $14.99/mo"
+        },
+        {
+          "rank": 16,
+          "region": "France",
+          "usd": 20.91,
+          "period": "/mo",
+          "local": "≈ €17.99/mo"
+        }
+      ]
+    }
+  ]
+}

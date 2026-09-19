@@ -58,6 +58,13 @@ async function trySqlJs() {
 
 async function initAdapter() {
   ensureDirs();
+  try {
+    const { isSupabaseSyncConfigured, pullSqliteFromSupabase } = await import("./supabaseSync.js");
+    if (isSupabaseSyncConfigured()) await pullSqliteFromSupabase();
+  } catch (e) {
+    console.warn(`[DB] supabase pull skipped: ${e.message}`);
+  }
+
   // Order per runtime:
   //   Bun:  bun:sqlite → sql.js
   //   Node: better-sqlite3 → node:sqlite (≥22.5) → sql.js
@@ -74,6 +81,24 @@ async function initAdapter() {
 
   const { runMigrationOnce } = await import("./migrate.js");
   await runMigrationOnce(adapter);
+
+  if (!state.shutdownInstalled) {
+    state.shutdownInstalled = true;
+    let stopSync = async () => {};
+    try {
+      const { isSupabaseSyncConfigured, startSupabaseSync } = await import("./supabaseSync.js");
+      if (isSupabaseSyncConfigured()) stopSync = startSupabaseSync(adapter);
+    } catch (e) {
+      console.warn(`[DB] supabase sync skipped: ${e.message}`);
+    }
+    const onStop = async () => {
+      try { await stopSync(); } catch (e) { console.warn(`[DB] supabase flush: ${e.message}`); }
+      try { adapter.close(); } catch {}
+    };
+    process.once("SIGINT", () => { onStop().finally(() => process.exit(0)); });
+    process.once("SIGTERM", () => { onStop().finally(() => process.exit(0)); });
+  }
+
   return adapter;
 }
 

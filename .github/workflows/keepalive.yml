@@ -1,0 +1,20 @@
+name: Keep Render awake
+
+# Render free tier sleeps after 15 min idle and takes 30-60s to wake.
+# A tiny GET every 10 min keeps it warm. ~2 KB per ping, ~9 MB per month.
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Ping health
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" -m 60 https://ninerouter-9w4m.onrender.com/api/health)
+          echo "health: $code"
+          test "$code" = "200"

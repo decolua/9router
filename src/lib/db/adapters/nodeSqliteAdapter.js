@@ -45,8 +45,6 @@ export async function createNodeSqliteAdapter(filePath) {
   }
   const onShutdown = () => gracefulClose();
   process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
 
   return {
     driver: "node:sqlite",

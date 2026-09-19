@@ -1,0 +1,58 @@
+# Render Blueprint — 9router (MVP, single service).
+#
+# The 403 "Blocked" you hit is Render's EDGE WAF (Cloudflare), fired before this
+# container on OWASP path-traversal rules (e.g. "../../etc" in a chat body).
+# It is NOT configurable here — the Blueprint spec has no WAF field. Real fix:
+# front the service with a domain/CDN you control (WAF off), or don't point
+# Cursor at a WAF'd onrender.com host. See chat.
+#
+# Free tier caveats:
+#  - Storage is EPHEMERAL (no disk on free). DATA_DIR wipes on restart/sleep, so
+#    providers + API keys reset every ~15min idle. For real use set SUPABASE_URL
+#    + SUPABASE_SERVICE_ROLE_KEY (free sync) or move to a paid disk.
+#  - Bandwidth / outbound usage is a SEPARATE limit from disk. A hosted Router
+#    sits on the Client↔Provider path, so agent traffic (streams, tool results)
+#    burns free egress quickly (often on the order of a few GB). When capped,
+#    the service becomes unusable even though the Router itself is fine.
+#    Supabase persistence does NOT fix bandwidth — prefer local, a VPS, paid
+#    Render, or another host with adequate egress for always-on routing.
+#  - Rename `name` / base URLs below to match your actual live service.
+
+services:
+  - type: web
+    name: ninerouter            # match live service; rename if yours differs
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/health # was /dashboard (redirect → never 200)
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "10000"
+      - key: HOSTNAME
+        value: "0.0.0.0"
+      - key: DATA_DIR
+        value: /app/data
+      - key: JWT_SECRET
+        generateValue: true
+      - key: API_KEY_SECRET
+        generateValue: true
+      - key: MACHINE_ID_SALT
+        generateValue: true
+      - key: INITIAL_PASSWORD
+        sync: false
+      - key: AUTH_COOKIE_SECURE
+        value: "true"
+      - key: REQUIRE_API_KEY
+        value: "false"
+      # This service's own https URL. Update if the host changes.
+      - key: BASE_URL
+        value: https://ninerouter-9w4m.onrender.com
+      - key: NEXT_PUBLIC_BASE_URL
+        value: https://ninerouter-9w4m.onrender.com
+      # Free persistence (recommended — else config wipes on sleep):
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false

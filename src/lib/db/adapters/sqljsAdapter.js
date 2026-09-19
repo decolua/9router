@@ -108,8 +108,6 @@ export async function createSqlJsAdapter(filePath) {
   // Flush on shutdown
   const flush = () => { if (dirty) try { persist(); } catch {} };
   process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  return { driver: "sql.js", run, get, all, exec, transaction, checkpoint: persist, close, raw: db };
 }

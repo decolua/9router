@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
+import { sanitizeOpenAICompatibleBaseUrl, openaiCompatFetchHeaders, isCloudflareChallengeResponse } from "open-sse/providers/shared.js";
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -142,7 +143,7 @@ export async function POST(request) {
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: "user", content: "ping" }],
-            max_tokens: 1
+            max_tokens: 10
           })
         });
         if (chatRes.ok) {
@@ -159,39 +160,56 @@ export async function POST(request) {
     }
 
     // OpenAI Compatible Validation (Default)
-    const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+    const normalizedBase = sanitizeOpenAICompatibleBaseUrl(baseUrl);
+    const modelsUrl = `${normalizedBase}/models`;
     const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: openaiCompatFetchHeaders(apiKey),
     });
 
     if (res.ok) return NextResponse.json({ valid: true });
 
-    // Auth errors - no point trying chat fallback
-    if (res.status === 401 || res.status === 403) {
+    const cloudflareBlock = isCloudflareChallengeResponse(res);
+
+    // Auth errors - no point trying chat fallback (HTML 403 is Cloudflare, not a bad key)
+    if (!cloudflareBlock && (res.status === 401 || res.status === 403)) {
       return NextResponse.json({ valid: false, error: "API key unauthorized" });
     }
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
+        headers: openaiCompatFetchHeaders(apiKey, { json: true }),
         body: JSON.stringify({
           model: modelId,
           messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1
+          max_tokens: 10
         })
       });
       if (chatRes.ok) {
         return NextResponse.json({ valid: true, method: "chat" });
       }
+      // Cloudflare HTML 403 on chat is a WAF block, not a bad key
+      if (isCloudflareChallengeResponse(chatRes)) {
+        return NextResponse.json({
+          valid: false,
+          error: "Cloudflare blocked the request (not an API key issue). This provider's gateway may block server-to-server calls from this host.",
+          method: "chat"
+        });
+      }
+      const errBody = await chatRes.text().catch(() => "");
       return NextResponse.json({
         valid: false,
         error: getChatErrorMessage(chatRes.status),
-        method: "chat"
+        method: "chat",
+        details: errBody.slice(0, 200)
+      });
+    }
+
+    if (cloudflareBlock) {
+      return NextResponse.json({
+        valid: false,
+        error: "Cloudflare blocked /models. Enter a Model ID (e.g. claude-opus-5-thinking) to Check via chat/completions.",
       });
     }
 

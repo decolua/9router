@@ -1,4 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -361,4 +362,23 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+const CLI_TOKEN_HEADER = "x-9r-cli-token";
+const CLI_TOKEN_SALT = "9r-cli-auth";
+
+/**
+ * Dashboard model pings loop back with this header. Public /v1 clients do not.
+ * When requireApiKey is on, still allow that internal probe through.
+ */
+export async function hasInternalCliToken(request) {
+  const token = request.headers.get(CLI_TOKEN_HEADER);
+  if (!token) return false;
+  return token === await getConsistentMachineId(CLI_TOKEN_SALT);
+}
+
+export async function shouldEnforceEndpointApiKey(request, settings) {
+  if (!settings?.requireApiKey) return false;
+  if (await hasInternalCliToken(request)) return false;
+  return true;
 }

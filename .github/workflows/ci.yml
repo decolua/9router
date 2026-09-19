@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Next.js production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # No cache: package-lock.json is gitignored in this repo.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Build (next build + standalone assets)
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
+      - name: Verify standalone output
+        run: |
+          test -f .next/standalone/server.js
+          test -f .next/standalone/custom-server.js
+          test -d .next/static
+
+  tests:
+    name: Test suite (no-regression gate)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install root deps
+        run: npm install --no-audit --no-fund
+
+      - name: Install test deps
+        working-directory: tests
+        run: npm install --no-audit --no-fund
+
+      # Suite is intentionally not all-green (~98 known fails on Linux).
+      # Gate = no NEW failures vs tests/__baseline__/known-fails.txt.
+      # --retry 2 absorbs flaky live-network tests (mimo, image fetch, ...).
+      - name: Run vitest (JSON report)
+        working-directory: tests
+        run: npx vitest run --reporter=json --outputFile=results.json --reporter=default --retry 2
+        continue-on-error: true
+        env:
+          CI: true
+
+      - name: No-regression gate
+        run: node tests/__baseline__/verify-no-regression.mjs tests/results.json
+
+      - name: Baseline snapshots (providers / aliases / oauth urls)
+        run: |
+          node tests/__baseline__/verify-providers.mjs
+          node tests/__baseline__/verify-alias.mjs
+          node tests/__baseline__/verify-oauth-urls.mjs
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-results
+          path: tests/results.json
+
+  docker:
+    name: Docker image build (Render path)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

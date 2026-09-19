@@ -291,6 +291,7 @@ export default function CombosPage() {
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "hybrid", label: "Hybrid — race first 2, then fall back" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 

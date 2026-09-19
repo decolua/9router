@@ -1,0 +1,32 @@
+{
+  "$comment": "Pre-registered OpenAI-compatible providers for scripts/benchmarkFreeModels.js. Toggle `enabled` to include/exclude from batch runs. apiKeyEnv names the env var to read the key from — never hardcode keys here.",
+  "providers": [
+    {
+      "id": "unorouter",
+      "enabled": true,
+      "baseUrl": "https://api.unorouter.com/v1",
+      "apiKeyEnv": "UNOROUTER_API_KEY",
+      "postmanWorkspace": "9router-kktoken",
+      "postmanWorkspaceId": "b33a21eb-d4fc-4ddb-8074-1efef2a08c79",
+      "postmanCollectionId": "2608740-53ba6113-82b5-4267-bad1-dbd7a129d969",
+      "notes": "89 :free models as of 2026-09-08. Recommended default: glm-5.3:free."
+    },
+    {
+      "id": "kktoken",
+      "enabled": false,
+      "baseUrl": "https://kktoken.cc/v1",
+      "apiKeyEnv": "KKTOKEN_API_KEY",
+      "postmanWorkspace": "9router-kktoken",
+      "postmanWorkspaceId": "b33a21eb-d4fc-4ddb-8074-1efef2a08c79",
+      "postmanCollectionId": "2608740-2e03349f-bed9-4ce3-854a-0b1477c4295a",
+      "notes": "No :free models seen yet (paid-tier gateway, e.g. claude-opus-4-8). Disabled by default — enable if it adds a free tier."
+    },
+    {
+      "id": "cavoti",
+      "enabled": true,
+      "baseUrl": "https://cavoti.com/v1",
+      "apiKeyEnv": "CAVOTI_API_KEY",
+      "notes": "Marketplace gateway, per-key model allowlist (no :free tag on model ids — the :free filter in benchmarkFreeModels.mjs will match 0 models here, that's expected, not a bug). Tested 2026-09-08: gpt-5.6-sol -> 200 OK, 3.3s, correct. Registry entry: open-sse/providers/registry/cavoti.js."
+    }
+  ]
+}

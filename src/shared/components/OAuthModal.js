@@ -9,6 +9,42 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
 const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed"]);
 
+// Claude/Gemini/etc. register loopback redirect URIs only. On a hosted dashboard
+// (Render), window.location.port is empty and HTTPS would otherwise pick 443 —
+// the browser then hits https://localhost/callback and ERR_CONNECTION_REFUSED.
+const LOOPBACK_CALLBACK_PORT = "20128";
+
+function isLoopbackHost(hostname) {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+/** Parse pasted OAuth callback text: full URL, scheme-less host, or raw query. */
+function parseOAuthCallbackInput(input) {
+  const raw = String(input || "").trim();
+  if (!raw) throw new Error("Paste the callback URL from the address bar");
+
+  let href = raw;
+  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(href)) {
+    if (/^(localhost|127\.0\.0\.1)(:\d+)?(\/|\?|$)/i.test(href)) {
+      href = `http://${href}`;
+    } else if (href.startsWith("?") || /(?:^|[?&])(code|token|state)=/.test(href)) {
+      const q = href.startsWith("?") ? href : `?${href}`;
+      href = `http://localhost/${q}`;
+    } else {
+      href = `http://${href}`;
+    }
+  }
+
+  const url = new URL(href);
+  return {
+    code: url.searchParams.get("code"),
+    token: url.searchParams.get("token"),
+    state: url.searchParams.get("state"),
+    errorParam: url.searchParams.get("error"),
+    errorDescription: url.searchParams.get("error_description"),
+  };
+}
+
 // Providers offering a paste-token fallback (import-token flow).
 // UX warns if the IDE (which issues the token) is not installed.
 const PASTE_TOKEN_PROVIDERS = {
@@ -73,10 +109,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   // Detect if running on localhost (client-side only)
   useEffect(() => {
     if (typeof window !== "undefined") {
-      setIsLocalhost(
-        window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+      const local = isLoopbackHost(window.location.hostname);
+      setIsLocalhost(local);
+      setPlaceholderUrl(
+        local
+          ? `${window.location.origin}/callback?code=...`
+          : `http://localhost:${LOOPBACK_CALLBACK_PORT}/callback?code=...`
       );
-      setPlaceholderUrl(`${window.location.origin}/callback?code=...`);
     }
   }, []);
 
@@ -347,8 +386,13 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
-      // Authorization code flow - build redirect URI (some providers require fixed ports)
-      const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
+      // Authorization code flow - build redirect URI (some providers require fixed ports).
+      // Hosted HTTPS dashboards have an empty location.port; do not fall back to 443.
+      const appPort =
+        window.location.port ||
+        (isLoopbackHost(window.location.hostname)
+          ? (window.location.protocol === "https:" ? "443" : "80")
+          : LOOPBACK_CALLBACK_PORT);
       let redirectUri;
       if (provider === "codex") {
         redirectUri = "http://localhost:1455/auth/callback";
@@ -445,9 +489,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           setStep("input");
         }
       } else if (!isLocalhost || provider === "codex" || provider === "xai") {
-        // Non-localhost or proxy failed: manual input mode
+        // Hosted dashboard: do not window.open. Script-opened tabs are closed by
+        // the local /callback page (window.close) before the user can copy ?code=.
         setStep("input");
-        window.open(data.authUrl, "_blank");
       } else {
         // Localhost (non-Codex/xAI): Open popup and wait for message
         setStep("waiting");
@@ -703,14 +747,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         return;
       }
 
-      const url = new URL(input);
-      const code = url.searchParams.get("code");
-      const token = url.searchParams.get("token");
-      const state = url.searchParams.get("state");
-      const errorParam = url.searchParams.get("error");
+      const { code, token, state, errorParam, errorDescription } = parseOAuthCallbackInput(input);
 
       if (errorParam) {
-        throw new Error(url.searchParams.get("error_description") || errorParam);
+        throw new Error(errorDescription || errorParam);
       }
 
       if (!code && !token) {
@@ -829,22 +869,23 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         {/* Waiting + Manual Input combined (non-device-code, non-proxy) */}
         {(step === "waiting" || step === "input") && !isDeviceCode && !PROXY_OAUTH_PROVIDERS.has(provider) && (
           <>
-            {/* Option A: Auto via popup */}
-            <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-              <span className="material-symbols-outlined text-base text-primary animate-spin">
-                progress_activity
-              </span>
-              <span className="text-sm">
-                {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
-              </span>
-            </div>
-
-            {/* Divider */}
-            <div className="flex items-center gap-3 my-1">
-              <div className="flex-1 h-px bg-border" />
-              <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
-              <div className="flex-1 h-px bg-border" />
-            </div>
+            {isLocalhost && (
+              <>
+                <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
+                  <span className="material-symbols-outlined text-base text-primary animate-spin">
+                    progress_activity
+                  </span>
+                  <span className="text-sm">
+                    {isXaiProvider ? "Waiting for Grok Build OAuth…" : "Waiting for popup authorization…"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-3 my-1">
+                  <div className="flex-1 h-px bg-border" />
+                  <span className="text-xs text-text-muted uppercase tracking-wider">Or paste callback URL manually</span>
+                  <div className="flex-1 h-px bg-border" />
+                </div>
+              </>
+            )}
 
             {/* Option B: Manual paste */}
             <div className="space-y-4">
@@ -857,6 +898,14 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                   <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")} disabled={!authData?.authUrl}>
                     Copy
                   </Button>
+                  <a
+                    href={authData?.authUrl || "#"}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={`inline-flex items-center justify-center rounded-lg border border-border px-3 text-sm ${authData?.authUrl ? "hover:bg-sidebar" : "pointer-events-none opacity-50"}`}
+                  >
+                    Open
+                  </a>
                 </div>
               </div>
 
@@ -869,7 +918,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                     ? "If xAI shows a code instead of redirecting, paste that code here."
                     : isKimchiProvider
                       ? "After authorization, copy the full callback URL or token from your browser."
-                    : "After authorization, copy the full URL from your browser."}
+                    : isLocalhost
+                      ? "After authorization, copy the full URL from your browser."
+                      : "Use Open (or paste the URL into a new tab you create with Ctrl+T). After login the address bar becomes http://localhost:20128/callback?code=… — copy that whole URL here. A tab the site opened for you will auto-close; a tab you opened yourself will not."}
                 </p>
                 <Input
                   value={callbackUrl}

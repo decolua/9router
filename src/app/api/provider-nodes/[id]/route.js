@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { sanitizeOpenAICompatibleBaseUrl } from "open-sse/providers/shared.js";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
@@ -31,7 +32,12 @@ export async function PUT(request, { params }) {
     }
 
     let sanitizedBaseUrl = baseUrl.trim();
-    
+
+    // Sanitize Base URL for OpenAI Compatible (strip full Postman path if pasted)
+    if (node.type === "openai-compatible") {
+      sanitizedBaseUrl = sanitizeOpenAICompatibleBaseUrl(sanitizedBaseUrl);
+    }
+
     // Sanitize Base URL for Anthropic Compatible
     if (node.type === "anthropic-compatible") {
       sanitizedBaseUrl = sanitizedBaseUrl.replace(/\/$/, "");

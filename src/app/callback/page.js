@@ -26,50 +26,44 @@ function CallbackContent() {
       fullUrl: window.location.href,
     };
 
-    let relayed = false;
+    // Only auto-close when this page can actually hand the code to the same
+    // dashboard that opened us. Hosted Render opens Claude, then this URL is
+    // localhost — postMessage cannot reach Render, and window.close() would
+    // steal the address bar before the user can paste it.
+    let sameOriginOpener = false;
+    if (window.opener) {
+      try {
+        sameOriginOpener = window.opener.location.origin === window.location.origin;
+      } catch {
+        sameOriginOpener = false;
+      }
+    }
 
-    // Trusted origins that may receive this callback. The OAuth code/state
-    // must only be relayed to the dashboard window we expect to be the opener
-    // (same origin) or the Codex helper that listens on a fixed loopback port.
-    // Any other origin is treated as hostile (drive-by attacker that opened
-    // the popup against the well-known redirect_uri to phish the code).
     const expectedOrigins = [
-      window.location.origin, // Same origin (for most providers)
-      "http://localhost:1455", // Codex specific port
+      window.location.origin,
+      "http://localhost:1455",
     ];
 
-    // Method 1: postMessage to opener (popup mode)
-    // Send once per expected origin. The browser delivers the message only
-    // when the opener's origin matches the targetOrigin we pass — using "*"
-    // here would leak the code/state to any opener (e.g. an attacker page
-    // that opened this URL in a popup), so iterate over the allowlist.
-    if (window.opener) {
+    if (sameOriginOpener) {
       for (const origin of expectedOrigins) {
         try {
           window.opener.postMessage({ type: "oauth_callback", data: callbackData }, origin);
-          relayed = true;
         } catch (e) {
           console.log("postMessage failed:", e);
         }
       }
-    }
-
-    // Method 2: BroadcastChannel (same origin tabs)
-    try {
-      const channel = new BroadcastChannel("oauth_callback");
-      channel.postMessage(callbackData);
-      channel.close();
-      relayed = true;
-    } catch (e) {
-      console.log("BroadcastChannel failed:", e);
-    }
-
-    // Method 3: localStorage event (fallback)
-    try {
-      localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
-      relayed = true;
-    } catch (e) {
-      console.log("localStorage failed:", e);
+      try {
+        const channel = new BroadcastChannel("oauth_callback");
+        channel.postMessage(callbackData);
+        channel.close();
+      } catch (e) {
+        console.log("BroadcastChannel failed:", e);
+      }
+      try {
+        localStorage.setItem("oauth_callback", JSON.stringify({ ...callbackData, timestamp: Date.now() }));
+      } catch (e) {
+        console.log("localStorage failed:", e);
+      }
     }
 
     if (!(code || token || error)) {
@@ -77,11 +71,16 @@ function CallbackContent() {
       return;
     }
 
-    setStatus("success");
-    setTimeout(() => {
-      window.close();
-      setTimeout(() => setStatus("done"), 500);
-    }, 1500);
+    if (sameOriginOpener) {
+      setStatus("success");
+      setTimeout(() => {
+        window.close();
+        setTimeout(() => setStatus("done"), 500);
+      }, 1500);
+      return;
+    }
+
+    setStatus("manual");
   }, [searchParams]);
 
   return (

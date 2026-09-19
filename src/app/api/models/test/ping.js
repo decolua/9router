@@ -3,6 +3,7 @@ import { resolveProviderId } from "@/shared/constants/providers.js";
 import { unwrapClineEnvelope } from "open-sse/shared/clineEnvelope.js";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
+import { handleChat } from "@/sse/handlers/chat.js";
 
 const CLI_TOKEN_SALT = "9r-cli-auth";
 
@@ -132,7 +133,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     return { ok: true, latencyMs, error: null, status: res.status };
   }
 
-  const res = await fetch(`${baseUrl}/api/v1/chat/completions`, {
+  const res = await handleChat(new Request("http://127.0.0.1/api/v1/chat/completions", {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -146,7 +147,7 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
       messages: [{ role: "user", content: "hi" }],
     }),
     signal: AbortSignal.timeout(15000),
-  });
+  }));
   const latencyMs = Date.now() - start;
 
   const rawText = await res.text().catch(() => "");

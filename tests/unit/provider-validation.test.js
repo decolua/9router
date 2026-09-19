@@ -66,10 +66,42 @@ describe("Provider Validation API", () => {
         body: JSON.stringify({
           model: "gpt-4",
           messages: [{ role: "user", content: "ping" }],
-          max_tokens: 1,
+          max_tokens: 10,
         }),
       });
       expect(chatRes.ok).toBe(true);
+    });
+
+    it("should use max_tokens: 10 in chat fallback (tabitoken compat)", async () => {
+      const chatCall = vi.fn().mockResolvedValue({ ok: true });
+      global.fetch = chatCall;
+
+      const baseUrl = "https://tabitoken.com/v1";
+      await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: { "Authorization": "Bearer test-key", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-opus-5-thinking",
+          messages: [{ role: "user", content: "ping" }],
+          max_tokens: 10,
+        }),
+      });
+
+      expect(chatCall).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({
+        body: expect.stringContaining('"max_tokens":10'),
+      }));
+    });
+
+    it("should strip /chat/completions pasted from Postman (tabitoken)", async () => {
+      const { sanitizeOpenAICompatibleBaseUrl } = await import("open-sse/providers/shared.js");
+      expect(sanitizeOpenAICompatibleBaseUrl("https://tabitoken.com/v1/chat/completions"))
+        .toBe("https://tabitoken.com/v1");
+      expect(sanitizeOpenAICompatibleBaseUrl("https://tabitoken.com/v1/chat/completions/"))
+        .toBe("https://tabitoken.com/v1");
+      expect(sanitizeOpenAICompatibleBaseUrl("https://tabitoken.com/v1"))
+        .toBe("https://tabitoken.com/v1");
+      expect(sanitizeOpenAICompatibleBaseUrl("https://api.example.com/v1/responses"))
+        .toBe("https://api.example.com/v1");
     });
 
     it("should return error when /models fails and no modelId", async () => {

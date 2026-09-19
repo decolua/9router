@@ -266,6 +266,260 @@ export function getComboModelsFromData(modelStr, combosData) {
 }
 
 /**
+ * Attempt a single combo model and normalize the outcome for both the sequential
+ * and hybrid paths. Never throws — a thrown error becomes { ok:false, error }.
+ * @returns {Promise<Object>} outcome:
+ *   { ok:true, result, modelStr }
+ *   { ok:false, result, modelStr, errorText, retryAfter, status, shouldFallback, cooldownMs }
+ *   { ok:false, error, modelStr, errorText, status:500, shouldFallback:true }
+ */
+async function attemptComboModel(body, modelStr, handleSingleModel) {
+  try {
+    const result = await handleSingleModel(body, modelStr);
+
+    if (result.ok) return { ok: true, result, modelStr };
+
+    // Extract error info from response
+    let errorText = result.statusText || "";
+    let retryAfter = null;
+    try {
+      const errorBody = await result.clone().json();
+      errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
+      retryAfter = errorBody?.retryAfter || null;
+    } catch {
+      // Ignore JSON parse errors
+    }
+
+    // Normalize error text to string (Worker-safe)
+    if (typeof errorText !== "string") {
+      try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
+    }
+
+    const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
+    return { ok: false, result, modelStr, errorText, retryAfter, status: result.status, shouldFallback, cooldownMs };
+  } catch (error) {
+    return { ok: false, error, modelStr, errorText: error.message || String(error), status: 500, shouldFallback: true };
+  }
+}
+
+// Best-effort cancel of a losing raced response so its (possibly streaming) body
+// doesn't leak once a sibling has already won the race.
+function cancelOutcome(outcome) {
+  const res = outcome && outcome.result;
+  if (res && res.body && !res.bodyUsed) {
+    try { res.body.cancel(); } catch { /* ignore */ }
+  }
+}
+
+// Race a set of already-started attempts, resolving with the first successful
+// outcome (returning that response, canceling the losers). If none succeed,
+// returns { failures: [...] } preserving input order. This is the HEADERS race —
+// for streaming hybrid requests use raceToFirstToken below.
+async function raceComboAttempts(attempts) {
+  const pending = new Map(attempts.map((a, i) => [i, a.promise]));
+  const failures = new Array(attempts.length);
+  while (pending.size > 0) {
+    const { i, outcome } = await Promise.race(
+      [...pending.entries()].map(async ([idx, p]) => ({ i: idx, outcome: await p }))
+    );
+    pending.delete(i);
+    if (outcome.ok) {
+      for (const [, p] of pending) Promise.resolve(p).then(cancelOutcome).catch(() => {});
+      return { winner: outcome };
+    }
+    failures[i] = outcome;
+  }
+  return { failures: failures.filter(Boolean) };
+}
+
+// Hybrid TTFT race tuning: how long the streaming race waits, from the moment
+// it starts, for any raced model to produce a first token (bounds both the
+// headers wait and the token wait). Overridable via handleComboChat options;
+// <= 0 disables the deadline.
+const HYBRID_FIRST_TOKEN_TIMEOUT_MS = 20000;
+
+/**
+ * Advance one already-started hybrid attempt to its first token.
+ *
+ * For a streaming response that means actually reading the first chunk of the
+ * body: the race must not resolve on HTTP headers alone, because a provider
+ * can answer 200 fast and then trickle tokens (the client's perceived latency
+ * is TTFT + token rate, and headers say nothing about either). Bodies that
+ * can't be peeked (non-readable / already locked) resolve as `readyNoBody` —
+ * headers are all there is to wait for.
+ *
+ * Success shapes (on top of the attemptComboModel outcome):
+ *   { ok: true, reader, firstChunk, ttftMs }  — streaming, token available
+ *   { ok: true, readyNoBody: true }          — nothing to peek
+ * Failure shape mirrors attemptComboModel (ok:false, shouldFallback, ...) with
+ * `reader` attached when one was acquired, so the race can release the stream.
+ * Never throws; the attempt promise itself never rejects.
+ *
+ * `onReader` fires the moment the body reader is acquired — BEFORE the first
+ * read — so the race can cancel a stalled attempt even while its first read
+ * is still pending (cancel makes pending reads resolve {done:true} per the
+ * streams spec).
+ */
+async function attemptToFirstToken(attempt, t0, onReader) {
+  const outcome = await attempt.promise; // attemptComboModel never rejects
+  if (!outcome.ok) return outcome;
+
+  const res = outcome.result;
+  if (!res || !res.body || typeof res.body.getReader !== "function") {
+    return { ...outcome, readyNoBody: true };
+  }
+
+  let reader;
+  try {
+    reader = res.body.getReader();
+  } catch {
+    // Body locked or otherwise unreadable — nothing to peek.
+    return { ...outcome, readyNoBody: true };
+  }
+  if (onReader) onReader(reader);
+
+  try {
+    const firstChunk = await reader.read();
+    if (!firstChunk || firstChunk.done || !firstChunk.value || !firstChunk.value.length) {
+      // Provider closed the stream (or sent an empty chunk) without a token.
+      return {
+        ok: false, result: res, modelStr: outcome.modelStr, reader,
+        errorText: "stream ended before first token", status: res.status, shouldFallback: true,
+      };
+    }
+    return { ...outcome, reader, firstChunk, ttftMs: Date.now() - t0 };
+  } catch (error) {
+    return {
+      ok: false, result: res, modelStr: outcome.modelStr, reader,
+      errorText: error?.message || String(error), status: res.status, shouldFallback: true,
+    };
+  }
+}
+
+// Best-effort cancel of a raced attempt that may or may not hold a reader:
+// reader.cancel() covers streams mid-peek; cancelOutcome covers responses that
+// only resolved (headers) after the race had already ended.
+function cancelTokenOutcome(outcome) {
+  if (!outcome) return;
+  if (outcome.reader) {
+    try { outcome.reader.cancel(); } catch { /* ignore */ }
+    return;
+  }
+  if (!outcome.readyNoBody) cancelOutcome(outcome);
+}
+
+/**
+ * Streaming-aware race: resolve with the first attempt that produces an actual
+ * first token, not merely HTTP headers. Bounded by a global firstTokenTimeoutMs
+ * deadline across both the headers wait and the token wait; on expiry the
+ * raced attempts are canceled and { failures, timedOut } is returned so the
+ * caller can fall back through the rest of the combo sequentially.
+ *
+ * Winner handling differs from raceComboAttempts: the winner's body has been
+ * peeked (one chunk consumed via reader), so the caller must rebuild its
+ * stream via resumeFirstTokenStream before handing the response to the client.
+ */
+async function raceToFirstToken(attempts, { firstTokenTimeoutMs = HYBRID_FIRST_TOKEN_TIMEOUT_MS, log } = {}) {
+  const t0 = Date.now();
+  const deadlineAt = firstTokenTimeoutMs > 0 ? t0 + firstTokenTimeoutMs : Infinity;
+
+  const readers = new Map(); // attempt index -> acquired body reader (cancel hook)
+  let raceOver = false;
+  let winnerIndex = -1;
+  const tokenized = attempts.map((attempt, i) =>
+    attemptToFirstToken(attempt, t0, (reader) => {
+      if (raceOver) {
+        // Race already ended — this response arrived too late to compete.
+        try { reader.cancel(); } catch { /* ignore */ }
+        return;
+      }
+      readers.set(i, reader);
+    })
+  );
+  const pending = new Map(tokenized.map((p, i) => [i, p]));
+  const failures = new Array(attempts.length);
+  let winner = null;
+  let timedOut = false;
+  let deadlineTimer = null;
+
+  while (pending.size > 0) {
+    const racers = [...pending.entries()].map(async ([idx, p]) => ({ i: idx, outcome: await p }));
+    if (Number.isFinite(deadlineAt)) {
+      const remaining = deadlineAt - Date.now();
+      if (remaining <= 0) { timedOut = true; break; }
+      racers.push(new Promise((resolve) => { deadlineTimer = setTimeout(() => resolve({ __deadline: true }), remaining); }));
+    }
+    const raced = await Promise.race(racers);
+    if (deadlineTimer) { clearTimeout(deadlineTimer); deadlineTimer = null; }
+    if (raced.__deadline) { timedOut = true; break; }
+    pending.delete(raced.i);
+    if (raced.outcome.ok) { winner = raced.outcome; winnerIndex = raced.i; break; }
+    failures[raced.i] = raced.outcome;
+  }
+  raceOver = true;
+
+  // Cancel the losers: readers we hold resolve their pending first-reads, and
+  // the continuation releases responses that only arrive after the race ended.
+  for (const [i, reader] of readers) {
+    if (i !== winnerIndex) {
+      try { reader.cancel(); } catch { /* ignore */ }
+    }
+  }
+  for (const p of pending.values()) {
+    Promise.resolve(p).then(cancelTokenOutcome).catch(() => {});
+  }
+
+  if (winner) {
+    log?.info?.("COMBO", `Hybrid TTFT winner ${winner.modelStr} (first token in ${winner.ttftMs ?? Date.now() - t0}ms)`);
+    return { winner };
+  }
+  if (timedOut) log?.warn?.("COMBO", `Hybrid race: no first token within ${firstTokenTimeoutMs}ms — falling back`);
+  return { failures: failures.filter(Boolean), timedOut };
+}
+
+/**
+ * Rebuild a body stream from a reader the TTFT race peeked one chunk from:
+ * replay the peeked chunk, then keep pumping the live reader. Byte-identical
+ * to the original stream from the client's perspective.
+ */
+function resumeFirstTokenStream(reader, firstChunk) {
+  return new ReadableStream({
+    start(controller) {
+      if (firstChunk && firstChunk.value) {
+        try { controller.enqueue(firstChunk.value); } catch { /* client gone */ }
+      }
+      if (!firstChunk || firstChunk.done) {
+        try { controller.close(); } catch { /* ignore */ }
+        return;
+      }
+      const pump = () => {
+        reader.read().then(
+          ({ done, value }) => {
+            if (done) { try { controller.close(); } catch { /* ignore */ } return; }
+            try { controller.enqueue(value); } catch { /* client gone */ }
+            pump();
+          },
+          (error) => { try { controller.error(error); } catch { /* ignore */ } }
+        );
+      };
+      pump();
+    },
+    cancel(reason) {
+      try { reader.cancel(reason); } catch { /* ignore */ }
+    },
+  });
+}
+
+// Wrap the raced winner in a fresh Response carrying the rebuilt stream.
+function rebuildStreamedResponse(res, stream) {
+  return new Response(stream, {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  });
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
@@ -273,11 +527,12 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
- * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
+ * @param {string} [options.comboStrategy] - Strategy: "fallback" | "round-robin" | "hybrid"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
+ * @param {number} [options.firstTokenTimeoutMs] - Hybrid streaming race deadline (default 20s; <=0 disables)
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, firstTokenTimeoutMs = HYBRID_FIRST_TOKEN_TIMEOUT_MS }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -297,67 +552,108 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let earliestRetryAfter = null;
   let lastStatus = null;
 
-  for (let i = 0; i < rotatedModels.length; i++) {
+  // Record a failed outcome into the shared fallback-aggregation state.
+  const recordFailure = (outcome) => {
+    if (outcome.retryAfter && (!earliestRetryAfter || new Date(outcome.retryAfter) < new Date(earliestRetryAfter))) {
+      earliestRetryAfter = outcome.retryAfter;
+    }
+    lastError = outcome.errorText || String(outcome.status);
+    if (!lastStatus) lastStatus = outcome.status;
+  };
+
+  // Hybrid: fire the first two models in parallel and return whichever succeeds
+  // first; only if BOTH fail do we fall back through the rest sequentially. This
+  // cuts tail latency (a slow/flaky lead model no longer blocks the whole chain)
+  // while still preferring the top of the list under normal conditions.
+  let startIndex = 0;
+  if (comboStrategy === "hybrid" && rotatedModels.length >= 2) {
+    const pair = rotatedModels.slice(0, 2);
+    log.info("COMBO", `Hybrid race of first 2 models: ${pair.join(", ")}`);
+    const attempts = pair.map((modelStr) => ({
+      modelStr,
+      promise: attemptComboModel(body, modelStr, handleSingleModel),
+    }));
+
+    // Streaming requests race to the FIRST TOKEN (a provider that answers 200
+    // fast but trickles tokens must not win); non-streaming requests keep the
+    // headers race — there is no token stream to peek, and a full-body JSON
+    // read inside the race would delay fallback on slow full responses.
+    if (body?.stream) {
+      const raced = await raceToFirstToken(attempts, { firstTokenTimeoutMs, log });
+      if (raced.winner) {
+        return rebuildStreamedResponse(
+          raced.winner.result,
+          resumeFirstTokenStream(raced.winner.reader, raced.winner.firstChunk)
+        );
+      }
+      // Raced pair failed/timed out — record and continue sequentially below.
+      for (const outcome of raced.failures) {
+        if (!outcome.shouldFallback) {
+          log.warn("COMBO", `Hybrid model ${outcome.modelStr} failed (no fallback)`, { status: outcome.status });
+          return outcome.result;
+        }
+        recordFailure(outcome);
+        log.warn("COMBO", `Hybrid model ${outcome.modelStr} failed`, { status: outcome.status, error: outcome.errorText });
+      }
+      startIndex = 2;
+    } else {
+      const raced = await raceComboAttempts(attempts);
+      if (raced.winner) {
+        log.info("COMBO", `Hybrid winner: ${raced.winner.modelStr}`);
+        return raced.winner.result;
+      }
+
+      // Both raced models failed. Honor a hard (non-fallback) error from the
+      // earlier model the same way the sequential path would — return it directly.
+      for (const outcome of raced.failures) {
+        if (!outcome.shouldFallback) {
+          log.warn("COMBO", `Hybrid model ${outcome.modelStr} failed (no fallback)`, { status: outcome.status });
+          return outcome.result;
+        }
+        recordFailure(outcome);
+        log.warn("COMBO", `Hybrid model ${outcome.modelStr} failed`, { status: outcome.status });
+      }
+      startIndex = 2;
+    }
+  }
+
+  for (let i = startIndex; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
-    try {
-      const result = await handleSingleModel(body, modelStr);
-      
-      // Success (2xx) - return response
-      if (result.ok) {
-        log.info("COMBO", `Model ${modelStr} succeeded`);
-        return result;
-      }
+    const outcome = await attemptComboModel(body, modelStr, handleSingleModel);
 
-      // Extract error info from response
-      let errorText = result.statusText || "";
-      let retryAfter = null;
-      try {
-        const errorBody = await result.clone().json();
-        errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
-        retryAfter = errorBody?.retryAfter || null;
-      } catch {
-        // Ignore JSON parse errors
-      }
-
-      // Track earliest retryAfter across all combo models
-      if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
-        earliestRetryAfter = retryAfter;
-      }
-
-      // Normalize error text to string (Worker-safe)
-      if (typeof errorText !== "string") {
-        try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
-      }
-
-      // Check if should fallback to next model
-      const { shouldFallback, cooldownMs } = checkFallbackError(result.status, errorText);
-
-      if (!shouldFallback) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
-      }
-
-      // Fallback to next model
-      lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
-      log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
-    } catch (error) {
-      // Catch unexpected exceptions to ensure fallback continues
-      lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
-      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+    // Success (2xx) - return response
+    if (outcome.ok) {
+      log.info("COMBO", `Model ${modelStr} succeeded`);
+      return outcome.result;
     }
+
+    // Thrown exception — continue to next model
+    if (outcome.error) {
+      recordFailure(outcome);
+      log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: outcome.errorText });
+      continue;
+    }
+
+    // Non-fallback error (e.g. bad request) — return it directly
+    if (!outcome.shouldFallback) {
+      log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: outcome.status });
+      return outcome.result;
+    }
+
+    // For transient errors (503/502/504), wait for cooldown before falling through
+    // so a briefly-overloaded provider gets a chance to recover rather than being
+    // skipped immediately (fixes: combo falls through on transient 503)
+    if (outcome.cooldownMs && outcome.cooldownMs > 0 && outcome.cooldownMs <= 5000 &&
+        (outcome.status === 503 || outcome.status === 502 || outcome.status === 504)) {
+      log.info("COMBO", `Model ${modelStr} transient ${outcome.status}, waiting ${outcome.cooldownMs}ms before next`);
+      await new Promise(r => setTimeout(r, outcome.cooldownMs));
+    }
+
+    // Fallback to next model
+    recordFailure(outcome);
+    log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: outcome.status });
   }
 
   // All models failed

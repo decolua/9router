@@ -1037,5 +1037,30 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "agentrouter": {
+    "baseUrl": "https://agentrouter.org/v1/chat/completions",
+    "format": "openai",
+    "headers": {
+      "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)"
+    }
+  },
+  "unorouter": {
+    "baseUrl": "https://api.unorouter.com/v1/chat/completions",
+    "validateUrl": "https://api.unorouter.com/v1/models",
+    "modelsFetcher": {
+      "url": "https://api.unorouter.com/v1/models",
+      "type": "openai"
+    },
+    "format": "openai"
+  },
+  "cavoti": {
+    "baseUrl": "https://cavoti.com/v1/chat/completions",
+    "validateUrl": "https://cavoti.com/v1/models",
+    "modelsFetcher": {
+      "url": "https://cavoti.com/v1/models",
+      "type": "openai"
+    },
+    "format": "openai"
   }
 }

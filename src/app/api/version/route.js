@@ -1,4 +1,5 @@
 import https from "https";
+import { isContainerDeploy } from "@/lib/deployMode";
 import pkg from "../../../../package.json" with { type: "json" };
 
 const NPM_PACKAGE_NAME = "9router";
@@ -55,7 +56,10 @@ async function getLatestVersionCached() {
 export async function GET() {
   const latestVersion = await getLatestVersionCached();
   const currentVersion = pkg.version;
-  const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
+  const containerDeploy = isContainerDeploy();
+  const hasUpdate = !containerDeploy && latestVersion
+    ? compareVersions(latestVersion, currentVersion) > 0
+    : false;
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate });
+  return Response.json({ currentVersion, latestVersion, hasUpdate, containerDeploy });
 }

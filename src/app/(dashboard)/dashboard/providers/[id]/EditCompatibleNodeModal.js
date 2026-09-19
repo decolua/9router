@@ -16,6 +16,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [validationError, setValidationError] = useState(null);
 
   useEffect(() => {
     if (node) {
@@ -66,8 +67,10 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
+      setValidationError(data.valid ? null : (data.error || "Check failed"));
     } catch {
       setValidationResult("failed");
+      setValidationError("Network error");
     } finally {
       setValidating(false);
     }
@@ -105,7 +108,9 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           value={formData.baseUrl}
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
-          hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
+          hint={isAnthropic
+            ? "Use the base URL (ending in /v1) for your Anthropic-compatible API."
+            : "Base URL ending in /v1 only (e.g. https://tabitoken.com/v1). Do not paste /chat/completions — 9router appends that."}
         />
         <div className="flex gap-2">
           <Input
@@ -126,12 +131,17 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           value={checkModelId}
           onChange={(e) => setCheckModelId(e.target.value)}
           placeholder="e.g. my-model-id"
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+          hint="If provider lacks /models (or Cloudflare blocks it), enter a model ID to Check via chat/completions — e.g. claude-opus-5-thinking."
         />
         {validationResult && (
-          <Badge variant={validationResult === "success" ? "success" : "error"}>
-            {validationResult === "success" ? "Valid" : "Invalid"}
-          </Badge>
+          <div className="flex flex-col gap-1">
+            <Badge variant={validationResult === "success" ? "success" : "error"}>
+              {validationResult === "success" ? "Valid" : "Invalid"}
+            </Badge>
+            {validationResult === "failed" && validationError && (
+              <span className="text-sm text-red-500">{validationError}</span>
+            )}
+          </div>
         )}
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || saving}>

@@ -1,0 +1,16 @@
+# Headroom compression sidecar for Render (see render.yaml, service `headroom`).
+# 9Router calls POST /v1/compress on this service; it never proxies LLM traffic.
+FROM python:3.11-slim
+
+# build-essential is needed at install time only: headroom-ai pulls hnswlib,
+# a C++ extension built from source. Purged after to keep the image slim.
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential \
+    && pip install --no-cache-dir "headroom-ai[proxy]" \
+    && apt-get purge -y build-essential && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PORT=10000
+EXPOSE 10000
+
+# --stateless: free instances have no persistent disk, so keep state in memory.
+CMD ["sh", "-c", "headroom proxy --host 0.0.0.0 --port ${PORT} --stateless"]

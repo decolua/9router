@@ -11,7 +11,7 @@ const VARIANT_CONFIG = {
     defaultBaseUrl: "https://api.openai.com/v1",
     namePlaceholder: "OpenAI Compatible (Prod)",
     prefixPlaceholder: "oc-prod",
-    baseUrlHint: "Use the base URL (ending in /v1) for your OpenAI-compatible API.",
+    baseUrlHint: "Base URL ending in /v1 only (e.g. https://tabitoken.com/v1). Do not paste /chat/completions — 9router appends that.",
     modelIdPlaceholder: "e.g. gpt-4, claude-3-opus",
     errorLabel: "OpenAI Compatible",
     hasApiType: true,

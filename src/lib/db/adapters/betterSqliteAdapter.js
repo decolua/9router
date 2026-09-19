@@ -35,8 +35,6 @@ export function createBetterSqliteAdapter(filePath) {
   // Ensure WAL is flushed and -wal/-shm files removed on shutdown
   const onShutdown = () => gracefulClose();
   process.once("beforeExit", onShutdown);
-  process.once("SIGINT", () => { onShutdown(); process.exit(0); });
-  process.once("SIGTERM", () => { onShutdown(); process.exit(0); });
 
   return {
     driver: "better-sqlite3",

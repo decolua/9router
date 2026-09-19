@@ -76,6 +76,11 @@ function Write-Event($obj) {
   [Console]::Out.Flush()
 }
 
+# Re-sync Token Saver labels whenever the user opens the menu
+$script:menu.Add_Opening({
+  Write-Event @{ type = "menu-open" }
+})
+
 function Add-MenuItem($index, $title, $enabled) {
   $item = New-Object System.Windows.Forms.ToolStripMenuItem
   $item.Text = $title
@@ -99,26 +104,65 @@ function Set-Tooltip($text) {
   $script:notifyIcon.Text = $text
 }
 
-# Background reader thread polls stdin via timer on UI thread
+function Process-CommandLine($line) {
+  if ([string]::IsNullOrWhiteSpace($line)) { return }
+  $cmd = $line | ConvertFrom-Json
+  switch ($cmd.action) {
+    "add-item"    { Add-MenuItem $cmd.index $cmd.title $cmd.enabled }
+    "update-item" { Update-MenuItem $cmd.index $cmd.title $cmd.enabled }
+    "set-tooltip" { Set-Tooltip $cmd.text }
+    "dump-items"  {
+      $texts = @()
+      foreach ($it in $script:items) { $texts += $it.Text }
+      Write-Event @{ type = "dump"; items = $texts }
+    }
+    "ready"       { Write-Event @{ type = "ready" } }
+    "kill"        {
+      $script:notifyIcon.Visible = $false
+      $script:notifyIcon.Dispose()
+      [System.Windows.Forms.Application]::Exit()
+    }
+  }
+}
+
+Add-Type @"
+using System;
+using System.IO;
+using System.Text;
+using System.Collections.Concurrent;
+using System.Threading;
+
+public static class NineRouterStdinPump {
+  public static void Start(ConcurrentQueue<string> queue) {
+    var t = new Thread(() => {
+      try {
+        using (var input = Console.OpenStandardInput())
+        using (var reader = new StreamReader(input, new UTF8Encoding(false), false, 1024, true)) {
+          string line;
+          while ((line = reader.ReadLine()) != null) {
+            queue.Enqueue(line);
+          }
+        }
+      } catch { }
+    });
+    t.IsBackground = true;
+    t.Start();
+  }
+}
+"@
+
+# [Console]::In.Peek() is unreliable with redirected stdin on Windows — commands
+# (update-item, kill, etc.) silently never arrive. Pump stdin on a .NET thread.
+$script:inputQueue = New-Object 'System.Collections.Concurrent.ConcurrentQueue[string]'
+[NineRouterStdinPump]::Start($script:inputQueue)
+
 $script:timer = New-Object System.Windows.Forms.Timer
-$script:timer.Interval = 100
+$script:timer.Interval = 50
 $script:timer.Add_Tick({
   try {
-    while ([Console]::In.Peek() -ne -1) {
-      $line = [Console]::In.ReadLine()
-      if ([string]::IsNullOrWhiteSpace($line)) { continue }
-      $cmd = $line | ConvertFrom-Json
-      switch ($cmd.action) {
-        "add-item"    { Add-MenuItem $cmd.index $cmd.title $cmd.enabled }
-        "update-item" { Update-MenuItem $cmd.index $cmd.title $cmd.enabled }
-        "set-tooltip" { Set-Tooltip $cmd.text }
-        "ready"       { Write-Event @{ type = "ready" } }
-        "kill"        {
-          $script:notifyIcon.Visible = $false
-          $script:notifyIcon.Dispose()
-          [System.Windows.Forms.Application]::Exit()
-        }
-      }
+    $line = $null
+    while ($script:inputQueue.TryDequeue([ref]$line)) {
+      Process-CommandLine $line
     }
   } catch {
     Write-Event @{ type = "error"; message = $_.Exception.Message }

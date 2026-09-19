@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { sanitizeOpenAICompatibleBaseUrl } from "open-sse/providers/shared.js";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export async function POST(request) {
         type: "openai-compatible",
         prefix: prefix.trim(),
         apiType,
-        baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
+        baseUrl: sanitizeOpenAICompatibleBaseUrl(baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl),
         name: name.trim(),
       });
       return NextResponse.json({ node }, { status: 201 });
