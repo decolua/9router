@@ -151,35 +151,78 @@ function killProcess(pid, force = false, sudoPassword = null) {
   }
 }
 
-function deriveKey() {
+// ── Sudo password encryption (T1.3 F-3 / task F30) ──────────────────────────
+// The AES-256-GCM key is derived ONLY from the machine id. The old code fell
+// back to sha256(ENCRYPT_SALT) when node-machine-id failed — but the salt is
+// public (open-source repo), so any captured ciphertext (settings DB, or the
+// value previously served by GET /api/settings) was decryptable by anyone who
+// merely had the repo. That fallback is REMOVED: without a machine id we refuse
+// to persist the password instead of encrypting it under a predictable key.
+//
+// Stored blob formats (origin marker):
+//   "v1:<ivHex>:<tagHex>:<cipherHex>"  — post-F30, always machine-key derived.
+//   "<ivHex>:<tagHex>:<cipherHex>"     — pre-F30, unmarked, origin unknown.
+// Read policy for unmarked (legacy) blobs — documented behavior:
+//   * Decryption is attempted with the real machine key ONLY. Legitimate
+//     pre-F30 values (machine id was working at save time) keep decoding.
+//   * If an unmarked blob fails GCM auth-tag verification while a machine key
+//     IS available, it cannot be a machine-key value: it was written by the
+//     removed predictable-key fallback (or is corrupt). We return null (never
+//     decrypt with the public key) AND purge the field from settings, so
+//     GET /api/settings stops serving the exposure and the user re-enters it.
+//   * If no machine key can be derived at read time, nothing decrypts and
+//     nothing is purged (origin cannot be established).
+const KEY_VERSION_V1 = "v1";
+const MITM_SUDO_KEY_UNAVAILABLE = "MITM_SUDO_KEY_UNAVAILABLE";
+
+function deriveMachineKey() {
   try {
     const { machineIdSync } = require("node-machine-id");
     const raw = machineIdSync();
+    if (!raw || typeof raw !== "string") return null;
     return crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
   } catch {
-    return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
+    return null;
   }
 }
 
 function encryptPassword(plaintext) {
-  const key = deriveKey();
+  const key = deriveMachineKey();
+  if (!key) {
+    const e = new Error(
+      "sudo password not persisted: machine id unavailable (node-machine-id failed) — refusing to encrypt with the public fallback key. Password stays in memory for this session only."
+    );
+    e.code = MITM_SUDO_KEY_UNAVAILABLE;
+    throw e;
+  }
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv(ENCRYPT_ALGO, key, iv);
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return `${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
+  return `${KEY_VERSION_V1}:${iv.toString("hex")}:${tag.toString("hex")}:${encrypted.toString("hex")}`;
 }
 
-function decryptPassword(stored) {
+// Returns { plain, legacyKnownKey }. legacyKnownKey === true means an UNMARKED
+// (pre-F30) blob that failed machine-key auth while a machine key was available
+// — i.e. written with the removed public-salt key (see format notes above).
+function decryptPasswordDetailed(stored) {
+  const classifyFailure = () => {
+    const unmarked = typeof stored === "string" && !stored.startsWith(KEY_VERSION_V1 + ":");
+    return { plain: null, legacyKnownKey: unmarked && !!deriveMachineKey() };
+  };
   try {
-    const [ivHex, tagHex, dataHex] = stored.split(":");
-    if (!ivHex || !tagHex || !dataHex) return null;
-    const key = deriveKey();
+    if (typeof stored !== "string") return { plain: null, legacyKnownKey: false };
+    const payload = stored.startsWith(KEY_VERSION_V1 + ":") ? stored.slice(KEY_VERSION_V1.length + 1) : stored;
+    const [ivHex, tagHex, dataHex] = payload.split(":");
+    if (!ivHex || !tagHex || !dataHex) return classifyFailure();
+    const key = deriveMachineKey();
+    if (!key) return { plain: null, legacyKnownKey: false };
     const decipher = crypto.createDecipheriv(ENCRYPT_ALGO, key, Buffer.from(ivHex, "hex"));
     decipher.setAuthTag(Buffer.from(tagHex, "hex"));
-    return decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
+    const plain = decipher.update(Buffer.from(dataHex, "hex")) + decipher.final("utf8");
+    return { plain, legacyKnownKey: false };
   } catch {
-    return null;
+    return classifyFailure();
   }
 }
 
@@ -191,14 +234,32 @@ function initDbHooks(getSettingsFn, updateSettingsFn) {
   _updateSettings = updateSettingsFn;
 }
 
+// Throws MITM_SUDO_KEY_UNAVAILABLE (before writing anything) when the password
+// cannot be encrypted with the machine key — F30: never persist a blob whose
+// key is derivable from the public repo.
 async function saveMitmSettings(enabled, password) {
   if (!_updateSettings) return;
+  const updates = { mitmEnabled: enabled };
+  if (password) updates.mitmSudoEncrypted = encryptPassword(password);
   try {
-    const updates = { mitmEnabled: enabled };
-    if (password) updates.mitmSudoEncrypted = encryptPassword(password);
     await _updateSettings(updates);
   } catch (e) {
     err(`Failed to save settings: ${e.message}`);
+  }
+}
+
+// startServer/stopServer entry point around saveMitmSettings: a refused sudo
+// password must not fail an otherwise-successful server (re)start — log the
+// clear reason, keep the password in-memory only, and still persist the flag.
+async function saveMitmSettingsSafe(enabled, password) {
+  try {
+    await saveMitmSettings(enabled, password);
+  } catch (e) {
+    if (!e || e.code !== MITM_SUDO_KEY_UNAVAILABLE) throw e;
+    err(`⚠️ ${e.message}`);
+    try {
+      if (_updateSettings) await _updateSettings({ mitmEnabled: enabled });
+    } catch { /* best effort */ }
   }
 }
 
@@ -213,13 +274,23 @@ async function clearEncryptedPassword() {
 
 async function loadEncryptedPassword() {
   if (!_getSettings) return null;
+  let stored = null;
   try {
     const settings = await _getSettings();
-    if (!settings.mitmSudoEncrypted) return null;
-    return decryptPassword(settings.mitmSudoEncrypted);
+    stored = settings && settings.mitmSudoEncrypted;
+    if (!stored) return null;
   } catch {
     return null;
   }
+  const { plain, legacyKnownKey } = decryptPasswordDetailed(stored);
+  if (legacyKnownKey) {
+    // Pre-F30 blob written under the removed predictable key: it is decryptable
+    // by anyone with the repo. Never use it, and purge it so GET /api/settings
+    // stops serving the exposure (user re-enters the sudo password).
+    err("Dropped legacy mitmSudoEncrypted written with the removed public-salt key — re-enter the sudo password.");
+    await clearEncryptedPassword();
+  }
+  return plain;
 }
 
 async function saveDnsToolState(tool, enabled) {
@@ -476,7 +547,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
         if (savedPid && isProcessAlive(savedPid)) {
           serverPid = savedPid;
           log(`♻️ Reusing existing process (PID: ${savedPid})`);
-          await saveMitmSettings(true, sudoPassword);
+          await saveMitmSettingsSafe(true, sudoPassword);
           if (sudoPassword) setCachedPassword(sudoPassword);
           return { running: true, pid: savedPid };
         } else {
@@ -726,7 +797,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     log(`🌐 DNS ${tool}: ${active ? "✅ active" : "❌ inactive"}`);
   }
 
-  await saveMitmSettings(true, sudoPassword);
+  await saveMitmSettingsSafe(true, sudoPassword);
   if (sudoPassword) setCachedPassword(sudoPassword);
 
   // Server is healthy — remove lock file (PID file persists as the marker)
@@ -875,6 +946,7 @@ module.exports = {
   setCachedPassword,
   loadEncryptedPassword,
   clearEncryptedPassword,
+  saveMitmSettings,
   isSudoPasswordRequired,
   initDbHooks,
   restoreToolDNS,
