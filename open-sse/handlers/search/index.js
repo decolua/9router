@@ -7,7 +7,7 @@
  *   provider.searchViaChat   → wrap chat-completions (chatSearch.js)
  */
 
-import { buildSearchRequest } from "./callers.js";
+import { buildSearchRequest, assertCredentialDestination } from "./callers.js";
 import { normalizeSearchResponse } from "./normalizers.js";
 import { handleChatSearch } from "./chatSearch.js";
 import { fetchPublic } from "../../../src/shared/utils/ssrfGuard.js";
@@ -88,6 +88,11 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   let url, init;
   try {
     ({ url, init } = buildSearchRequest({ id: provider.id, ...providerConfig }, params));
+    // Credential binding at the network boundary (F28): the saved key/token of
+    // this connection may only ever be sent to the destination the owner
+    // configured. `resolveBaseUrl` already refuses a client-chosen host, and
+    // this is the belt-and-braces so no builder path can skip that check.
+    assertCredentialDestination({ id: provider.id, ...providerConfig }, params, url);
   } catch (err) {
     return { success: false, status: 400, error: err?.message || `Invalid request for ${provider.id}` };
   }

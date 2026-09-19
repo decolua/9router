@@ -130,6 +130,10 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     offset: body.offset,
     domain_filter: body.domain_filter,
     content_options: body.content_options,
+    // Client-controlled. `baseUrl` inside it is validated in the core
+    // (open-sse/handlers/search/callers.js `resolveBaseUrl` + the credential
+    // binding in handlers/search/index.js): it may never redirect a saved
+    // provider credential to a host the owner did not configure (F28).
     provider_options: body.provider_options
   };
 

