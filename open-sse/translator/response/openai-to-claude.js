@@ -255,7 +255,17 @@ export function openaiToClaudeResponse(chunk, state) {
   if (choice.finish_reason) {
     // Duplicated finish_reason (seen from some gateways) must not emit a second
     // message_delta/message_stop — terminate exactly once per message.
-    if (state.finishReasonSent) return results.length > 0 ? results : null;
+    //
+    // The guard MUST key off state owned by THIS route. `finishReasonSent` is
+    // not ours to read: initState() hands one flat object to every leg of a
+    // double-hop pivot, and response/openai-responses.js already sets it while
+    // producing the very chunk that terminates the stream. Consulting it here
+    // made responses→openai→claude swallow its own finish — pending tool args
+    // stranded in toolArgBuffers, tool_use blocks left open, no message_stop.
+    // It is still SET below: the shared initState contract means "this message
+    // is terminal", which sibling legs and downstream usage injection rely on.
+    if (state.openaiToClaudeFinishSent) return results.length > 0 ? results : null;
+    state.openaiToClaudeFinishSent = true;
     state.finishReasonSent = true;
 
     stopThinkingBlock(state, results);
