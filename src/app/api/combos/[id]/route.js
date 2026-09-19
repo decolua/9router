@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { getComboById, getCombos, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
-import { comboKindError, comboModelsError, isComboNameConflict } from "@/lib/db/repos/combosRepo.js";
+import { comboKindError, comboModelsError, comboCycleError, isComboNameConflict } from "@/lib/db/repos/combosRepo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -64,6 +64,21 @@ export async function PUT(request, { params }) {
 
     // Capture previous name to invalidate rotation state on rename
     const prev = await getComboById(id);
+
+    // CB2b — cycle gate on the FINAL row: mirror the repo merge
+    // ({...prev, ...body}) so a rename that dangles the old name breaks the
+    // cycle, and a models swap is judged on the graph as it would be stored.
+    // Cycles NOT through this combo never block its save (no forced
+    // migration of legacy rows) — see comboCycleError.
+    if (prev) {
+      const merged = { ...prev, ...body };
+      const others = (await getCombos()).filter((c) => c.id !== id);
+      const cycleError = comboCycleError(merged.name, merged.models, others);
+      if (cycleError) {
+        return NextResponse.json({ error: cycleError }, { status: 400 });
+      }
+    }
+
     let combo;
     try {
       combo = await updateCombo(id, body);

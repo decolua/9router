@@ -35,6 +35,93 @@ export function comboModelsError(models) {
   return null;
 }
 
+/**
+ * CB2b — semantic validation (complements comboModelsError, which checks only
+ * shape): would storing this combo leave IT on a combo→combo cycle?
+ *
+ * A combo member references another combo when its first "/"-separated token
+ * equals a known combo name. Bare "c1" is the real runtime recursion (that is
+ * exactly what getComboModels/getComboModelsFromData expand — they refuse
+ * slashed names), so those edges are mandatory; "c1/anything" is ambiguous
+ * member data a user typed meaning "the combo c1" and is treated as a
+ * potential edge. Anything else ("openai/gpt-4o", or a bare name no combo
+ * owns) is just a member string and never an edge.
+ *
+ * Policy, mirroring the CB2 runtime guard (which stays as defence in depth):
+ *  - Self-reference (x → x) is ALWAYS rejected, even against an empty DB.
+ *  - Detection is an unbounded whole-graph search (BFS with parent chain) over
+ *    the graph as it WOULD be after this save, so 3+-node cycles (a → b → c → a)
+ *    fail on the save that closes them, not only 2-cycles. Work is capped by
+ *    the graph itself (V nodes / E edges via the visited set) — never by a
+ *    hand-picked "look N levels" heuristic.
+ *  - Only cycles THROUGH the saved combo block the save. A cycle elsewhere in
+ *    the final graph (legacy rows written before this check existed) must not
+ *    force migrating other combos on every unrelated PUT; the runtime guard
+ *    keeps those requests a deterministic 400.
+ *
+ * `combos` are the OTHER persisted combos; the saved row's final values
+ * (`name`, `models`) override anything present under the same name. Returns an
+ * error message naming the cycle path, or null when the save is acyclic.
+ */
+export function comboCycleError(name, models, combos) {
+  if (typeof name !== "string" || name.trim() === "") return null;
+
+  const memberRows = new Map();
+  for (const combo of combos || []) {
+    if (combo && typeof combo.name === "string" && combo.name) memberRows.set(combo.name, combo.models);
+  }
+  memberRows.set(name, models); // the row being saved, in its FINAL form
+  const names = new Set(memberRows.keys());
+
+  const refsCache = new Map();
+  const refsOf = (node) => {
+    if (refsCache.has(node)) return refsCache.get(node);
+    const out = [];
+    for (const item of (node === name ? models : memberRows.get(node)) || []) {
+      let str = null;
+      if (typeof item === "string") str = item.trim();
+      else if (item && typeof item === "object" && !Array.isArray(item)) {
+        for (const key of ["model", "name", "id"]) {
+          if (typeof item[key] === "string" && item[key].trim()) { str = item[key].trim(); break; }
+        }
+      }
+      if (!str) continue;
+      const token = str.split("/")[0].trim();
+      if (token && names.has(token) && !out.includes(token)) out.push(token);
+    }
+    refsCache.set(node, out);
+    return out;
+  };
+
+  // BFS from the saved combo: a cycle through it means the saved name is
+  // reachable again from itself. `visited` caps node expansions at V and refs
+  // are scanned once per node (E) — O(V+E) by construction; the size test is
+  // pure belt-and-braces, never hit on well-formed data.
+  const parent = new Map();
+  const queue = [name];
+  const visited = new Set([name]);
+  let closingFrom = null;
+  while (queue.length > 0 && closingFrom === null) {
+    const node = queue.shift();
+    for (const next of refsOf(node)) {
+      if (next === name) { closingFrom = node; break; }
+      if (visited.has(next)) continue;
+      if (visited.size > names.size) break;
+      visited.add(next);
+      parent.set(next, node);
+      queue.push(next);
+    }
+  }
+  if (closingFrom === null) return null;
+
+  if (closingFrom === name) {
+    return `Combo "${name}" cannot contain itself (self-reference)`;
+  }
+  const chain = [];
+  for (let x = closingFrom; x && x !== name; x = parent.get(x)) chain.unshift(x);
+  return `Combo cycle detected: ${[name, ...chain, name].join(" -> ")} — remove the reference that closes it`;
+}
+
 // A combo name UNIQUE violation as surfaced by the SQLite drivers
 // ("UNIQUE constraint failed: combos.name") — the same detection pattern
 // usageRepo.js uses. Callers map this to a 400 instead of a 500 when their

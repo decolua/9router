@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
-import { comboKindError, comboModelsError, isComboNameConflict } from "@/lib/db/repos/combosRepo.js";
+import { comboKindError, comboModelsError, comboCycleError, isComboNameConflict } from "@/lib/db/repos/combosRepo.js";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +55,14 @@ export async function POST(request) {
     const existing = await getComboByName(name);
     if (existing) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+    }
+
+    // CB2b — semantic gate on top of F3's shape gate: invalid data (a combo
+    // on a cycle) must never exist. The runtime chain-guard from CB2 stays as
+    // defence in depth for legacy rows.
+    const cycleError = comboCycleError(name, models || [], await getCombos());
+    if (cycleError) {
+      return NextResponse.json({ error: cycleError }, { status: 400 });
     }
 
     let combo;
