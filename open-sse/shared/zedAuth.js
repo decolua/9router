@@ -112,7 +112,14 @@ export function parseZedCallbackPayload(input) {
       url = new URL(raw);
     } catch {
       try {
-        url = new URL(`http://127.0.0.1/?${raw.replace(/^\?/, "")}`);
+        // Accept pathname+query (what the local proxy forwards, e.g.
+        // "/?user_id=..&access_token=.." or "/callback?.."), a bare query,
+        // or a lone query string. Only the query part is parsed — a leading
+        // path must never become part of the first parameter name.
+        const query = raw.includes("?")
+          ? raw.slice(raw.indexOf("?") + 1)
+          : raw.replace(/^\?/, "");
+        url = new URL(`http://127.0.0.1/?${query}`);
       } catch {
         throw new Error("Invalid Zed callback URL");
       }
@@ -134,6 +141,10 @@ export function parseZedCallbackPayload(input) {
 export function decryptZedAccessToken(encryptedAccessToken, privateKeyVerifier) {
   const privateKey = decodeZedPrivateKeyVerifier(privateKeyVerifier);
   const encrypted = Buffer.from(String(encryptedAccessToken), "base64url");
+  const fail = (oaepError) => {
+    const message = oaepError instanceof Error ? oaepError.message : String(oaepError);
+    throw new Error(`Failed to decrypt Zed access token: ${message}`);
+  };
   try {
     return crypto
       .privateDecrypt(
@@ -143,15 +154,21 @@ export function decryptZedAccessToken(encryptedAccessToken, privateKeyVerifier) 
       .toString("utf8");
   } catch (oaepError) {
     try {
-      return crypto
+      const text = crypto
         .privateDecrypt(
           { key: privateKey, padding: crypto.constants.RSA_PKCS1_PADDING },
           encrypted,
         )
         .toString("utf8");
-    } catch {
-      const message = oaepError instanceof Error ? oaepError.message : String(oaepError);
-      throw new Error(`Failed to decrypt Zed access token: ${message}`);
+      // PKCS#1 v1.5 unpadding is not integrity-checked: a wrong-key decrypt
+      // can "succeed" with garbage bytes instead of throwing. Replacement
+      // characters prove the output is not the real UTF-8 token — fail loudly
+      // rather than storing garbage as a credential.
+      if (text.includes("�")) fail(oaepError);
+      return text;
+    } catch (err) {
+      if (err.message.startsWith("Failed to decrypt Zed access token")) throw err;
+      fail(oaepError);
     }
   }
 }
@@ -172,8 +189,8 @@ function getSystemId(credentials) {
   );
 }
 
-async function fetchJson(url, options) {
-  const res = await proxyAwareFetch(url, options);
+async function fetchJson(url, options, proxyOptions = null) {
+  const res = await proxyAwareFetch(url, options, proxyOptions);
   const text = await res.text();
   let data = null;
   if (text) {
@@ -203,11 +220,15 @@ export async function fetchZedAuthenticatedUser(credentials, options = {}) {
   const systemId = getSystemId(credentials);
   if (systemId) headers[ZED_HEADERS.systemId] = systemId;
 
-  return fetchJson(zedUrl(config, "cloudBaseUrl", "/client/users/me", ZED_CLOUD_BASE_URL), {
-    method: "GET",
-    headers,
-    signal: options.signal ?? undefined,
-  });
+  return fetchJson(
+    zedUrl(config, "cloudBaseUrl", "/client/users/me", ZED_CLOUD_BASE_URL),
+    {
+      method: "GET",
+      headers,
+      signal: options.signal ?? undefined,
+    },
+    options.proxyOptions ?? null,
+  );
 }
 
 function normalizeOrganizationId(value) {
@@ -276,6 +297,7 @@ export async function fetchZedLlmToken(credentials, options = {}) {
       body: JSON.stringify({ organization_id: organizationId }),
       signal: options.signal ?? undefined,
     },
+    options.proxyOptions ?? null,
   );
   const token =
     typeof data?.token === "string" ? data.token : data?.token?.[0] || data?.token?.value;

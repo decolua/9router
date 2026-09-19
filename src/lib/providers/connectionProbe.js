@@ -206,6 +206,12 @@ const ADAPTERS = {
     return { valid, error: valid ? null : "Invalid API key" };
   },
 };
+ADAPTERS["opencode"] = async (_apiKey, { fetchImpl }) => {
+  const res = await fetchImpl("https://opencode.ai/zen/v1/models", {
+    headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
+  });
+  return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
+};
 ADAPTERS["opencode-go"] = async (apiKey, { fetchImpl }) => {
   const res = await fetchImpl("https://opencode.ai/zen/go/v1/chat/completions", {
     method: "POST",

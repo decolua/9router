@@ -343,6 +343,30 @@ export async function resolveQoderModels(credentials, options = {}) {
   }
 }
 
+/**
+ * Every model key the chat endpoint accepts for this credential: the IDE-visible
+ * models first, then catalog entries flagged `enable:false` (hidden in the IDE
+ * picker, e.g. by an account policy, but still served by agent_chat_generation —
+ * see fetchQoderCatalogRaw). /v1/models uses this so the advertised list matches
+ * what the router will actually route instead of collapsing to one or two keys.
+ */
+export function routableQoderModels(catalog) {
+  if (!catalog) return [];
+  const out = [];
+  const seen = new Set();
+  for (const m of catalog.models || []) {
+    if (!m?.id || seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push({ id: m.id, name: m.name || m.id, hidden: false });
+  }
+  for (const [key, cfg] of catalog.rawConfigs || []) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: key, name: cfg?.display_name || key, hidden: true });
+  }
+  return out;
+}
+
 export function invalidateQoderCatalog(credentials) {
   if (!credentials) return;
   catalogCache.delete(cacheKey(credentials));

@@ -16,6 +16,7 @@ export default function TokenSaverClient() {
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
   const [headroomToken, setHeadroomToken] = useState("");
   const [headroomTokenSet, setHeadroomTokenSet] = useState(false);
+  const [headroomTimeoutMs, setHeadroomTimeoutMs] = useState(3000);
   const [headroomStatus, setHeadroomStatus] = useState({
     installed: false,
     running: false,
@@ -418,6 +419,13 @@ export default function TokenSaverClient() {
     patchSetting({ pxpipeMinChars: next });
   };
 
+  const handleHeadroomTimeoutBlur = () => {
+    const raw = Math.round(Number(headroomTimeoutMs));
+    const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
+    setHeadroomTimeoutMs(next);
+    patchSetting({ headroomTimeoutMs: next });
+  };
+
   useEffect(() => {
     const applyToggleFields = (data) => {
       setRtkEnabledState(data.rtkEnabled !== false);
@@ -435,6 +443,7 @@ export default function TokenSaverClient() {
         if (togglesOnly) return;
         setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
         setHeadroomTokenSet(!!data.headroomTokenSet);
+        if (typeof data.headroomTimeoutMs === "number") setHeadroomTimeoutMs(data.headroomTimeoutMs);
         setCodeAware(data.headroomCodeAware === true);
         setKompress(data.headroomKompress !== false);
         setCavemanLevel(data.cavemanLevel || "full");
@@ -873,6 +882,19 @@ export default function TokenSaverClient() {
               </p>
             </div>
           )}
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Timeout (ms)</p>
+            <Input
+              value={String(headroomTimeoutMs)}
+              onChange={(e) => setHeadroomTimeoutMs(e.target.value)}
+              onBlur={handleHeadroomTimeoutBlur}
+              placeholder="3000"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Request timeout in milliseconds. Defaults to 3000 ms.
+            </p>
+          </div>
           {headroomManaged ? (
             <Button
               onClick={handleHeadroomStop}

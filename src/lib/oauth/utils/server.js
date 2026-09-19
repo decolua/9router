@@ -648,9 +648,15 @@ let zedProxyTimeout = null;
 let zedProxyPort = null;
 let zedSession = null;
 
-export function registerZedSession({ state, codeVerifier }) {
+export function registerZedSession({ state, codeVerifier, systemId }) {
   if (!state || !codeVerifier) return false;
-  zedSession = { state, codeVerifier, status: "pending", createdAt: Date.now() };
+  zedSession = {
+    state,
+    codeVerifier,
+    systemId: systemId || null,
+    status: "pending",
+    createdAt: Date.now(),
+  };
   return true;
 }
 export function getZedSessionStatus(state) {
@@ -665,6 +671,10 @@ export function clearZedSession(state) {
 export function startZedProxy(preferredPort = 0) {
   return new Promise((resolve) => {
     if (zedProxyServer) {
+      // Reuse the live listener, but renew its idle timeout so a previous
+      // flow's deadline can never kill the flow that just adopted the port.
+      if (zedProxyTimeout) clearTimeout(zedProxyTimeout);
+      zedProxyTimeout = setTimeout(() => { console.log("[Zed proxy] timeout, stopping"); stopZedProxy(); }, ZED_HOSTED_CONFIG.oauthTimeoutMs);
       resolve({ success: true, port: zedProxyPort, callbackUrl: `http://127.0.0.1:${zedProxyPort}/` });
       return;
     }
@@ -694,13 +704,34 @@ export function startZedProxy(preferredPort = 0) {
         res.end(renderCodexResultPage(false, "Cross-origin callback rejected"));
         return;
       }
+      // A genuine Zed redirect always carries user_id + access_token. Anything
+      // else (probe, prefetch, stray navigation, favicon-style miss) is NOT
+      // the callback: answer without touching the session and WITHOUT
+      // stopping the server, so the real redirect can still land afterwards.
+      const qp = url.searchParams;
+      const hasZedParams =
+        qp.has("user_id") || qp.has("userId") ||
+        qp.has("access_token") || qp.has("accessToken") || qp.has("token");
+      if (!hasZedParams) {
+        console.log(`[Zed proxy] ignoring non-callback ${req.method} ${url.pathname} (session kept, server kept)`);
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderCodexResultPage(false, "Waiting for Zed sign-in — this request carried no login data."));
+        return;
+      }
       // Pass raw callback path+query to exchangeTokens → parseZedCallbackPayload.
       // codeVerifier carries the encoded RSA private key for decryption.
       const rawCallback = url.search ? `${url.pathname}?${url.searchParams.toString()}` : url.pathname;
       try {
         const { exchangeTokens } = await import("../providers.js");
         const { createProviderConnection } = await import("@/models");
-        const tokenData = await exchangeTokens("zed", rawCallback, null, session.codeVerifier, session.state);
+        const tokenData = await exchangeTokens(
+          "zed",
+          rawCallback,
+          null,
+          session.codeVerifier,
+          session.state,
+          session.systemId ? { systemId: session.systemId } : undefined,
+        );
         const connection = await createProviderConnection({
           provider: "zed",
           authType: "oauth",
@@ -712,13 +743,16 @@ export function startZedProxy(preferredPort = 0) {
         session.email = connection.email;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(true, "You can close this window."));
+        stopZedProxy();
       } catch (err) {
         session.status = "error";
         session.error = err.message;
         res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
         res.end(renderCodexResultPage(false, err.message));
-      } finally {
-        stopZedProxy();
+        // Intentionally NOT stopping here: the failure may belong to a
+        // superseded attempt (e.g. an older popup landing after "Try Again"
+        // registered a new keypair). The live attempt's genuine callback must
+        // still land. The idle timeout + modal close bound the listener.
       }
     });
     const tryPort = Number(preferredPort) || 0;
@@ -753,5 +787,187 @@ export function stopZedProxy() {
   if (zedProxyTimeout) { clearTimeout(zedProxyTimeout); zedProxyTimeout = null; }
   if (zedProxyServer) { zedProxyServer.close(); zedProxyServer = null; }
   zedProxyPort = null;
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Xiaomi MiMo Desktop OAuth callback proxy
+// Receives the ECDH-encrypted `u` param, decrypts it, stores the session.
+// ───────────────────────────────────────────────────────────────────────────
+
+let xiaomiMimoProxyServer = null;
+let xiaomiMimoProxyPort = null;
+let xiaomiMimoProxyTimeout = null;
+
+const xiaomiMimoSessions = new Map();
+
+export function registerXiaomiMimoSession({ state, privateKeyDer }) {
+  if (!state || !privateKeyDer) return false;
+  xiaomiMimoSessions.set(state, {
+    privateKeyDer,
+    status: "pending",
+    createdAt: Date.now(),
+  });
+  return true;
+}
+
+export function getXiaomiMimoSessionStatus(state) {
+  const s = xiaomiMimoSessions.get(state);
+  if (!s) return null;
+  // Don't leak the private key to the client
+  return { status: s.status, result: s.result || null, error: s.error || null };
+}
+
+export function clearXiaomiMimoSession(state) {
+  xiaomiMimoSessions.delete(state);
+}
+
+function renderXiaomiMimoResultPage(success, message) {
+  const color = success ? "#22c55e" : "#ef4444";
+  const icon = success ? "&#10003;" : "&#10007;";
+  const title = success ? "Authentication Successful" : "Authentication Failed";
+  return `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>${title}</title>
+<style>
+  body { font-family: system-ui; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f5f5f5; }
+  .container { text-align: center; padding: 2rem; background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+  .icon { color: ${color}; font-size: 3rem; }
+  h1 { margin: 1rem 0; font-size: 1.25rem; }
+  p { color: #666; font-size: 0.875rem; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">${icon}</div>
+    <h1>${title}</h1>
+    <p>${message || (success ? "You can close this tab and return to 9Router." : "Please try again.")}</p>
+    ${success ? "<script>setTimeout(() => window.close(), 3000);</script>" : ""}
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Start the Xiaomi Desktop OAuth callback proxy.
+ * @returns {Promise<{success: boolean, port?: number, callbackUrl?: string, reason?: string}>}
+ */
+export function startXiaomiMimoProxy() {
+  return new Promise((resolve) => {
+    if (xiaomiMimoProxyServer) {
+      resolve({
+        success: true,
+        port: xiaomiMimoProxyPort,
+        callbackUrl: `http://127.0.0.1:${xiaomiMimoProxyPort}/`,
+      });
+      return;
+    }
+
+    const server = http.createServer(async (req, res) => {
+      // Origin guard
+      if (!isLoopbackOrigin(req.headers.origin)) {
+        res.writeHead(403);
+        res.end("Forbidden");
+        return;
+      }
+
+      const url = new URL(req.url, "http://127.0.0.1");
+      const u = url.searchParams.get("u");
+
+      if (!u) {
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderXiaomiMimoResultPage(false, "Missing encrypted payload (u parameter)."));
+        return;
+      }
+
+      // Try each pending session's private key — the callback URL carries no
+      // state param, so we attempt decryption with every pending key.
+      const pendingSessions = [...xiaomiMimoSessions.entries()]
+        .filter(([, s]) => s.status === "pending");
+
+      if (pendingSessions.length === 0) {
+        res.writeHead(500, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderXiaomiMimoResultPage(false, "No active OAuth session. Please restart the login flow."));
+        return;
+      }
+
+      try {
+        const { decryptCallback } = await import("../providers/xiaomi-mimo.js");
+        let result = null;
+        let matchedState = null;
+
+        for (const [state, session] of pendingSessions) {
+          try {
+            result = decryptCallback(session.privateKeyDer, u);
+            matchedState = state;
+            break;
+          } catch {
+            // Wrong key for this session — try next
+          }
+        }
+
+        if (!result || !matchedState) {
+          throw new Error("Could not decrypt with any pending session key");
+        }
+
+        if (!result.sk) {
+          throw new Error("Decrypted payload missing sk (API key)");
+        }
+
+        // Store result only in the matched session
+        const session = xiaomiMimoSessions.get(matchedState);
+        if (session) {
+          session.status = "done";
+          session.result = {
+            uid: result.uid,
+            accessToken: result.sk,
+            baseUrl: result.url || "https://api.xiaomimimo.com/v1",
+          };
+        }
+
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderXiaomiMimoResultPage(true, "Xiaomi account linked. You can close this tab."));
+        console.log("[xiaomi-mimo oauth] callback decrypted, uid:", result.uid);
+      } catch (err) {
+        console.error("[xiaomi-mimo oauth] decrypt failed:", err.message);
+        for (const [, session] of pendingSessions) {
+          session.status = "error";
+          session.error = err.message;
+        }
+        res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(renderXiaomiMimoResultPage(false, `Decryption failed: ${err.message}`));
+      }
+    });
+
+    server.on("error", (err) => {
+      console.log("[xiaomi-mimo oauth] listen error:", err.message);
+      resolve({ success: false, reason: err.message });
+    });
+
+    server.listen(0, "127.0.0.1", () => {
+      xiaomiMimoProxyServer = server;
+      xiaomiMimoProxyPort = server.address().port;
+      xiaomiMimoProxyTimeout = setTimeout(() => {
+        console.log("[xiaomi-mimo oauth] timeout, stopping");
+        stopXiaomiMimoProxy();
+      }, 300000);
+      console.log(`[xiaomi-mimo oauth] listening on port ${xiaomiMimoProxyPort}`);
+      resolve({
+        success: true,
+        port: xiaomiMimoProxyPort,
+        callbackUrl: `http://127.0.0.1:${xiaomiMimoProxyPort}/`,
+      });
+    });
+  });
+}
+
+export function stopXiaomiMimoProxy() {
+  console.log(`[xiaomi-mimo oauth] stopping (port ${xiaomiMimoProxyPort || "-"})`);
+  if (xiaomiMimoProxyTimeout) { clearTimeout(xiaomiMimoProxyTimeout); xiaomiMimoProxyTimeout = null; }
+  if (xiaomiMimoProxyServer) { xiaomiMimoProxyServer.close(); xiaomiMimoProxyServer = null; }
+  xiaomiMimoProxyPort = null;
+  // No callback can arrive once the listener is down, so drop every pending
+  // session — each holds an X25519 private key and they would otherwise
+  // accumulate for the process lifetime (one per /authorize call).
+  xiaomiMimoSessions.clear();
 }
 
