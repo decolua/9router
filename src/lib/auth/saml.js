@@ -1,6 +1,50 @@
 import { SAML } from "@node-saml/node-saml";
 import { getSettings } from "../db/repos/settingsRepo.js";
 
+// Lifetime of a pending AuthnRequest id. Aligned with the saml_state cookie TTL set in
+// /api/auth/saml/start (10 min) so the library-side cache can never outlive the cookie.
+const REQUEST_ID_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Module-level AuthnRequest id store shared by every SAML instance in this process.
+ * node-saml validates Response/@InResponseTo against this cache; it must survive across
+ * requests (start vs. acs are separate route invocations), so it cannot live on the
+ * per-request SAML instance. Mirrors the shape of @node-saml's InMemoryCacheProvider
+ * (saveAsync/getAsync/removeAsync) — that class is not exported by the package.
+ * The saml_state cookie remains the authoritative cross-process binding; this cache adds
+ * one-shot consumption of request ids (replay control) enforced inside node-saml.
+ */
+const pendingRequestIds = (() => {
+  const entries = new Map();
+  const prune = () => {
+    const now = Date.now();
+    for (const [key, entry] of entries) {
+      if (now >= entry.expiresAt) entries.delete(key);
+    }
+  };
+  return {
+    async saveAsync(key, value) {
+      prune();
+      if (!entries.has(key)) entries.set(key, { value, expiresAt: Date.now() + REQUEST_ID_TTL_MS });
+      return key;
+    },
+    async getAsync(key) {
+      prune();
+      const entry = entries.get(key);
+      if (!entry) return null;
+      if (Date.now() >= entry.expiresAt) {
+        entries.delete(key);
+        return null;
+      }
+      return entry.value;
+    },
+    async removeAsync(key) {
+      const had = entries.delete(key);
+      return had ? key : null;
+    },
+  };
+})();
+
 /**
  * Formats a raw Base64 string or unformatted X.509 certificate into standard PEM format.
  * @param {string} certStr
@@ -54,8 +98,15 @@ function trimTrailingSlashes(str) {
 }
 
 /**
- * Resolves the public Base URL / Origin for SAML requests.
- * Respects settings.baseUrl, process.env.BASE_URL, x-forwarded-proto, and x-forwarded-host.
+ * Resolves the public Base URL / Origin for SAML requests (SP-initiated AuthnRequest,
+ * ACS callbackUrl and the Destination/Recipient audit). Trust order:
+ *   1. settings.baseUrl (admin-configured)  2. BASE_URL env  3. NEXT_PUBLIC_BASE_URL env
+ *   4. the Host header the server itself received (+ x-forwarded-proto for scheme only).
+ * x-forwarded-host is deliberately NEVER consulted (T1.3-F-2/F-8, F29): any caller can
+ * forge it and it would flow straight into the ACS URL the assertion Destination is
+ * audited against. custom-server.js strips x-forwarded-host unconditionally (F21'); this
+ * module not reading it covers dev / unwrapped `next start` as well. Same policy as
+ * getPublicOrigin() in src/lib/auth/oidc.js.
  * @param {Request} request
  * @param {object} settings
  * @returns {string}
@@ -73,8 +124,7 @@ export function getSamlBaseUrl(request, settings) {
 
   if (request) {
     const forwardedProto = request?.headers?.get?.("x-forwarded-proto") || "";
-    const forwardedHost = request?.headers?.get?.("x-forwarded-host") || "";
-    const host = forwardedHost || request?.headers?.get?.("host") || "";
+    const host = request?.headers?.get?.("host") || "";
     if (host) {
       const protocol = (forwardedProto || new URL(request.url).protocol || "http:").replace(/:$/, "");
       return `${protocol}://${host}`.replace(/\/+$/, "");
@@ -98,8 +148,13 @@ export function createSamlInstance(settings, origin) {
     callbackUrl: callbackUrl,
     acceptedClockSkewMs: 60000,
     wantAssertionsSigned: true,
-    validateInResponseTo: "never",
-    requestIdExpirationMs: 28800000, // 8 hours
+    // F29 / T1.3-F-2: "never" let any IdP-signed assertion be replayed to the ACS.
+    // "always" makes node-saml itself reject Responses whose InResponseTo is missing or
+    // not present in the shared pending-request cache (validateSamlResponse seeds it
+    // from the saml_state cookie, which /api/auth/saml/start also stores into).
+    validateInResponseTo: "always",
+    cacheProvider: pendingRequestIds,
+    requestIdExpirationMs: REQUEST_ID_TTL_MS,
   });
 }
 
@@ -124,9 +179,18 @@ export async function buildSamlAuthorizeUrl(request, settings) {
 
 /**
  * Validates SAML POST response from IdP ACS callback and returns user profile.
+ * Hardening (T1.3-F-2 / F29):
+ *  - expectedRequestId (the saml_state cookie set by /api/auth/saml/start) is REQUIRED.
+ *    Without it the Response cannot be bound to an AuthnRequest we issued, so login
+ *    fails closed — this is what previously allowed plain replay of a captured
+ *    IdP-signed assertion (and drops IdP-initiated SSO support by design).
+ *  - Response/@InResponseTo must equal that state (and node-saml re-validates it
+ *    against the shared request-id cache, which consumes the id on use).
+ *  - Response/@Destination and SubjectConfirmationData/@Recipient, when present, must
+ *    equal the config-derived ACS URL — @node-saml/node-saml 5.1.0 checks neither.
  * @param {Request} request
  * @param {object} body - Parsed form body or object containing SAMLResponse
- * @param {string} expectedRequestId - Request ID stored in saml_state cookie
+ * @param {string} expectedRequestId - Request ID stored in saml_state cookie (required)
  * @param {object} settings
  * @returns {Promise<object>}
  */
@@ -145,16 +209,43 @@ export async function validateSamlResponse(request, body, expectedRequestId, set
     throw new Error("Missing SAMLResponse parameter in assertion POST body");
   }
 
-  // Parse response XML to inspect InResponseTo for replay protection
-  if (expectedRequestId) {
-    const xml = Buffer.from(rawSamlResponse, "base64").toString("utf8");
-    const match = xml.match(/InResponseTo=["']([^"']+)["']/i);
-    const inResponseTo = match ? match[1] : null;
-
-    if (!inResponseTo || inResponseTo !== expectedRequestId) {
-      throw new Error(`InResponseTo mismatch: expected ${expectedRequestId}, received ${inResponseTo || "none"}`);
-    }
+  // F29: the saml_state cookie is the state store. No cookie / no stored request id →
+  // fail closed. Previously a missing cookie silently relaxed every replay check.
+  if (!expectedRequestId) {
+    throw new Error(
+      "Missing SAML login state (saml_state): refusing an assertion not bound to a SP-initiated AuthnRequest (replay protection)"
+    );
   }
+
+  const xml = Buffer.from(rawSamlResponse, "base64").toString("utf8");
+
+  // 1) The Response must reference the AuthnRequest id we stored in saml_state.
+  const match = xml.match(/InResponseTo=["']([^"']+)["']/i);
+  const inResponseTo = match ? match[1] : null;
+
+  if (!inResponseTo || inResponseTo !== expectedRequestId) {
+    throw new Error(`InResponseTo mismatch: expected ${expectedRequestId}, received ${inResponseTo || "none"}`);
+  }
+
+  // 2) Destination audit: node-saml 5.1.0 never checks Response/@Destination nor
+  // SubjectConfirmationData/@Recipient, so an assertion issued for a different SP
+  // ("assertion forwarding") sailed through. Both must match OUR config-derived ACS URL
+  // when present (absent Destination is tolerated for legacy IdPs; the InResponseTo
+  // binding above and the Recipient/audience checks carry the load there).
+  const acsUrl = samlInstance.options.callbackUrl;
+  const destinationMatch = xml.match(/Destination=["']([^"']+)["']/i);
+  if (destinationMatch && destinationMatch[1] !== acsUrl) {
+    throw new Error(`SAML Destination mismatch: expected ${acsUrl}, received ${destinationMatch[1]}`);
+  }
+  const recipientMatch = xml.match(/Recipient=["']([^"']+)["']/i);
+  if (recipientMatch && recipientMatch[1] !== acsUrl) {
+    throw new Error(`SAML SubjectConfirmationData Recipient mismatch: expected ${acsUrl}, received ${recipientMatch[1]}`);
+  }
+
+  // Seed the shared request-id cache so node-saml's validateInResponseTo:"always"
+  // passes for the legitimate state even across process restarts (the cookie is the
+  // authoritative store; start already seeded this id in-process in the common case).
+  await pendingRequestIds.saveAsync(expectedRequestId, new Date().toISOString());
 
   const result = await samlInstance.validatePostResponseAsync({ SAMLResponse: rawSamlResponse });
   const profile = result?.profile || result;
