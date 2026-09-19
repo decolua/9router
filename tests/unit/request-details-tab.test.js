@@ -220,7 +220,7 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     await saveDetail({ id: "bk-1", provider: "openai", model: "m", status: "ok", tokens: {}, request: {}, response: {} });
 
     const backupDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-bklite-"));
-    const dest = backupDbLite(adapter, backupDir);
+    const dest = await backupDbLite(adapter, backupDir);
     expect(fs.existsSync(dest)).toBe(true);
 
     // Open backup using local driver fallback helper, assert requestDetails is empty, settings present
