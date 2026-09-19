@@ -1,3 +1,58 @@
+# v0.5.75-enhanced.2 (unreleased — audit & hardening release)
+
+## Security
+- The credential-DB export/import (Settings → Database) accepted ANY value of `x-9r-cli-token` as proof of CLI origin; the token value is now verified against the machine-derived secret, mirroring the dashboard guard.
+- `/v1/search` allowed a client body to point `provider_options.baseUrl` at an attacker host while the server attached the OWNER's saved provider key — credential theft for any gateway caller. Overrides may now only shadow the origin the credential belongs to (scheme+host+port), keyless BYO endpoints (SearXNG) unaffected; `169.254.x`/IPv6/redirect-to-loopback blocked with real-DNS guards.
+- `/api/version/update` and `/shutdown` (LAN peer could `npm i -g` over the install or kill the app) and the `cli-tools/*-settings` env writers are now loopback-origin-only; pxpipe install/start/stop/restart likewise, with the package pinned (`pxpipe-proxy@0.13.2`) and installed `--ignore-scripts`.
+- The guard's public allow-list matched by PREFIX — any child of a public path was credential-free (the new health matrix was already leaking through it); exact matching now, with explicit pre-login OIDC/SAML children.
+- SAML: replay closed (missing state now FAILS instead of skipping validation; IdP-initiated rejected by design) and Destination/Recipient audited against config, never `x-forwarded-host`.
+- MITM sudo password is no longer encrypted with `sha256(hardcoded repo salt)` when the machine key is unavailable — the operation refuses; previously-stored key-known blobs are purged on detection.
+- Published tarballs carried the build machine's `jwt-secret`, `machine-id` and SQLite: pack excludes the HOME redirect, an audit gate ABORTS packing on any secret-looking path, and the historical `9router-0.5.69.tgz` blob was untracked (`*.tgz` ignored).
+- Client IP is derived from the socket unless `TRUSTED_PROXY_HOPS=N` explicitly trusts N appending loopback proxies (first-hop `X-Forwarded-For` trust let any client rotate login lockouts and poison other users' IPs); `x-forwarded-host` is unconditionally stripped (it had been leaking into OIDC redirect URIs).
+
+## Fixed — routing & resilience
+- A client aborting (or silently dropping) a HALF_OPEN probe no longer strands the circuit breaker there forever; a watchdog (2× reset timeout) fails it closed and `settleProbe` reports disconnects immediately. The dashboard reset button cleared nothing (wrong key shape `provider:conn` vs real `provider:conn:model`) and lied `{ok:true}` — now prefix-sweeps with segment bounds, honest 404s, and the badge shows the worst model state so the button is actually reachable.
+- `checkFallbackError` returned `shouldFallback:true` for 100% of errors, so a 400 from the caller's own request locked EVERY account of EVERY combo member for 30–120s (a masked 503 self-DoS). Request errors propagate untouched now; 401 defers to refresh without locking an account; per-model/upstream/backoff semantics preserved.
+- Reactive 401 refresh bypassed the credential lock and `refreshWithRetry` hammered the SAME already-rotated refresh token 3× on invalid_grant — a token-family revocation risk (3 POSTs proven, now 1); transient retries kept.
+- The OpenAI-format translate path never emitted `data: [DONE]` — SDK clients hung waiting for a terminal; exactly one sentinel per stream now.
+- Account loop had no `catch` (exceptions escaped the fallback chain); pending-request counters now settle exactly once (flush × disconnect race and a translate-fail decrement-without-increment fixed); `applyJsonSchemaFallback` stopped mutating the shared body (retries doubled the prompt); 401 refresh stops clearing every model lock of the account, just the model's.
+- `/v1/api/chat` (Ollama) turned every upstream error into an empty 200 NDJSON — status and canonical `{"error":…}` now propagate, NDJSON and non-stream replies parse.
+- `/v1/audio/voices` self-fetch always 401'd under default login; `/v1/models/info` advertised a nonexistent `/v1/fetch`.
+- `POST /api/providers/[id]/test-models` self-fetch was credentialess → "Test models" was permanently broken for custom nodes; real failures no longer swallowed as "No models configured".
+
+## Fixed — catalog & models
+- Aliases written via `PUT /api/models` were stored `{provider/model: alias}` — the inverse of the routing convention — so they never resolved (and could clobber real aliases); both read and write fixed, duplicates refused by both alias routes.
+- `/v1/models` advertised per the FIRST connection's curation only; enabled-model evidence is now a per-account union (a model survives while ANY account lists it), and per-account curation counts as live evidence against feed-retired.
+- `CONNECTION_MODEL_SYNC=off` now truly disables ALL automatic syncs (creation-time and migration included, not just the scheduler); manual sync gained per-connection single-flight + a 30s result-cached cooldown (double-clicks join instead of burning upstream quota or racing the 2-sync counters).
+- Legacy (db.json) imports that aborted now RETRY on the next boot (they were skipped forever, silently emptying the app); frozen installs self-heal. sql.js backups actually produce a file (ATTACH was a no-op that threw there); a transient init failure no longer freezes the driver promise until restart.
+- sql.js persistence is atomic (tmp+rename) with a boot write-check — no more silent in-memory-only runs; export/import round-trips `disabledModels`; usage retention available via `USAGE_RETENTION_DAYS` (default OFF); exit-handler flush is synchronous.
+- Combos validate `models`/`kind`/`name` (empty-name renames corrupted records; non-array models exploded at route time); a duplicate-name race 400s instead of UNIQUE-500ing. Node deletion is transactional and warns (never silently prunes) combos left referencing it.
+
+## Fixed — translator (multi-provider format bridge)
+- Gemini-format clients got raw OpenAI SSE in streaming (JSON path converted; streaming didn't): a canonical `openai→gemini` response route now exists (functionCall + thought parts + real finish map).
+- openai→claude streaming: tool `name` arriving after `id` produced `name:""` (deferred block open), upstreams omitting `id` (vLLM-compat) lost tool calls entirely (shared fallback id now), duplicate `finish_reason` emitted two `message_stop` (per-route guard; a state-key collision with the responses leg — the init-state "ghost fields" class — found and fixed with an ownership test).
+- Partial parallel tool results left orphan `tool_use` blocks Anthropic rejects (400): the claude leg now synthesizes `[No response received]` results symmetric to the openai leg.
+- The `"You are Claude Code"` persona is no longer injected into EVERY openai→claude request (paid a 1h cache breakpoint per call; OAuth-fingerprint cases keep it, client systems are never shadowed); `reasoning_effort:"minimal"` no longer requests a 512 budget below the repo's own 1024 floor.
+- RTK compression is truly fail-open (mid-loop failures leave the body byte-identical, as documented); claude→openai pivot stops losing `is_error` (explicit `[tool_error]` marker) and base64 tool images (canonical data-URI parts), and warns once per request about types it cannot carry.
+- `/v1beta` stops re-implementing Gemini translation outside the translator: request AND response sides delegate to the canonical converters — tools, function calls/responses, inlineData and usage survive; JSON path no longer discards tool_calls it extracted.
+
+## Features (OmniRoute portability, usability preserved)
+- Background credential-health sweep: the dashboard status dots stay fresh with zero clicks and zero configuration (per-connection backoff, `healthCheckInterval` override, `CREDENTIAL_HEALTH=off`).
+- Proactive OAuth refresh sweep with a per-connection refresh circuit: tokens renew before expiry, invalid_grant never rotates-and-retries nor wipes refresh tokens, 3 failures mark `expired` without clearing model locks; shares the reactive path's lock.
+- Reactive catalog sync: an upstream `404 model_not_found` kicks that connection's `/models` sync once (10min cooldown), healing pinned catalogs at the moment of error.
+- models.dev lifecycle: `deprecated`/`beta` annotated (chip), `retired` hidden from `/v1/models` and combo fallback ONLY without live/curation evidence — no more manual EOL curation commits.
+- Read-only provider health matrix (`/api/health/providers` + chip/popover): success rate, latency, breaker/cooldown and catalog status per provider×model; missing data is `unknown`, never `down`.
+- Fork update notice revived: version compare handles `0.5.75-enhanced.N` suffixes (the NaN-blind comparison had silenced it — the same bug class fixed CLI-side months ago; cli and server copies now share one test matrix).
+
+## Chores
+- Usage recorded for the previously invisible modalities (images, video-create, tts, stt, search, web-fetch; Gemini embeddings propagates usage instead of zeros) — fire-and-forget, cannot affect responses.
+- tts/stt fallback loops reached parity with chat (token refresh, lock clearing on success).
+- CLI packaging never packs build-machine state; `cutover-guard` validates `cli/package.json` (the artifact actually published) and FAILS CLOSED when it cannot find an install (`NINE_ROUTER_NOT_INSTALLED=1` to declare a clean machine).
+- Launcher restart drains instead of SIGKILL (LISTEN-only port ownership); process matching is fact-based (no more substring kills); tray kill awaited; dead db.json recovery and silent autostart-on-hide removed.
+
+## Tests
+- ~60 new test files pinning every fix above (all written RED-first against the audit findings); canonical regression gate `verify-no-regression.mjs` green on the final tree; provider/alias/oauth snapshot baselines byte-stable; `tests/translator` known-bugs table (AGENTS.md §8) updated, three `it.fails` flipped to green.
+
 # v0.5.75-enhanced.1 (2026-09-17)
 
 ## Fixes
