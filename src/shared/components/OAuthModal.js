@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { parseResponseBody, getResponseErrorMessage } from "@/shared/utils/api";
 
 // Providers using the dynamic-port local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
@@ -101,8 +102,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await parseResponseBody(res);
+      if (!res.ok) throw new Error(getResponseErrorMessage(res, data, "OAuth exchange failed"));
 
       setStep("success");
       onSuccessRef.current?.();
@@ -120,8 +121,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, state: authData.state }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await parseResponseBody(res);
+      if (!res.ok) throw new Error(getResponseErrorMessage(res, data, "xAI manual code exchange failed"));
 
       setStep("success");
       onSuccessRef.current?.();
@@ -165,7 +166,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           body: JSON.stringify({ deviceCode, codeVerifier, extraData }),
         });
 
-        const data = await res.json();
+        const data = await parseResponseBody(res);
+        if (!res.ok) throw new Error(getResponseErrorMessage(res, data, "OAuth polling failed"));
 
         if (data.success) {
           pollingAbortRef.current = true; // Stop polling immediately
@@ -304,8 +306,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           deviceCodeUrl.searchParams.set("auth_method", "idc");
         }
         const res = await fetch(deviceCodeUrl.toString());
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error);
+        const data = await parseResponseBody(res);
+        if (!res.ok) throw new Error(getResponseErrorMessage(res, data, "OAuth device-code request failed"));
 
         setDeviceData(data);
 
@@ -365,8 +367,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         Object.entries(oauthMeta).forEach(([k, v]) => { if (v) authorizeUrl.searchParams.set(k, v); });
       }
       const res = await fetch(authorizeUrl.toString());
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      const data = await parseResponseBody(res);
+      if (!res.ok) throw new Error(getResponseErrorMessage(res, data, "OAuth authorization failed"));
 
       // Codex: start proxy with server-side session (auto-exchange) + fallback to channels
       let codexProxyActive = false;
@@ -379,7 +381,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
           const proxyRes = await fetch(proxyUrl.toString());
-          const proxyData = await proxyRes.json();
+          const proxyData = await parseResponseBody(proxyRes);
+          if (!proxyRes.ok) throw new Error(getResponseErrorMessage(proxyRes, proxyData, "Codex OAuth proxy failed"));
           codexProxyActive = proxyData.success;
           codexServerSide = !!proxyData.serverSide;
         } catch {
@@ -398,7 +401,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           proxyUrl.searchParams.set("code_verifier", data.codeVerifier);
           proxyUrl.searchParams.set("redirect_uri", redirectUri);
           const proxyRes = await fetch(proxyUrl.toString());
-          const proxyData = await proxyRes.json();
+          const proxyData = await parseResponseBody(proxyRes);
+          if (!proxyRes.ok) throw new Error(getResponseErrorMessage(proxyRes, proxyData, "Grok Build OAuth proxy failed"));
           xaiProxyActive = proxyData.success;
           xaiServerSide = !!proxyData.serverSide;
           if (!xaiProxyActive && proxyData.reason === "port_busy") {
@@ -531,8 +535,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
       if (cancelled || callbackProcessedRef.current) return;
       attempts += 1;
       try {
-          const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
-        const data = await res.json();
+        const res = await fetch(`/api/oauth/${pollProvider}/poll-status?state=${encodeURIComponent(authData.state)}`);
+        const data = await parseResponseBody(res);
+        if (!res.ok) throw new Error(getResponseErrorMessage(res, data, "OAuth status polling failed"));
         if (cancelled || callbackProcessedRef.current) return;
         if (data.status === "done") {
           callbackProcessedRef.current = true;
