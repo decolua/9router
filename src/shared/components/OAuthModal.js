@@ -272,7 +272,37 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     try {
       setError(null);
 
-      // Trae/Windsurf: proxy OAuth (browser mode) — handled by dedicated flow.
+      // Zed HOSTED mode: the dashboard is served from a remote origin (VPS),
+      // so the browser is not on the gateway host's loopback. Zed's
+      // native-app protocol redirects to http://127.0.0.1:<port> in the
+      // *user's* browser, which can never reach the server listener — so never
+      // start the loopback proxy here (no flowRef ownership is taken). Instead
+      // fetch the sign-in URL (keypair minted server-side per attempt) and
+      // fall through to the manual paste-callback step below; /exchange
+      // decrypts server-side. Localhost keeps the proxy flow untouched below.
+      if (
+        provider === "zed" &&
+        authMode === "browser" &&
+        typeof window !== "undefined" &&
+        window.location.hostname !== "localhost" &&
+        window.location.hostname !== "127.0.0.1"
+      ) {
+        const authRes = await fetch(`/api/oauth/zed/authorize`);
+        const hostedAuthData = await authRes.json();
+        if (!authRes.ok) {
+          throw new Error(hostedAuthData.error || "Failed to start Zed sign-in");
+        }
+        if (!hostedAuthData.authUrl) {
+          throw new Error("No authorization URL returned from OAuth provider");
+        }
+        if (!isOpenRef.current) return;
+        setAuthData(hostedAuthData);
+        setStep("input");
+        window.open(hostedAuthData.authUrl, "_blank", "noopener,noreferrer");
+        return;
+      }
+
+      // Trae/Windsurf/Zed: proxy OAuth (browser mode) — handled by dedicated flow.
       // Paste-token mode is handled by handleManualSubmit (no /authorize call).
       if (PROXY_OAUTH_PROVIDERS.has(provider) && authMode === "browser") {
         await startProxyFlow(provider);
@@ -741,6 +771,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   if (!provider || !providerInfo) return null;
   const isXaiProvider = provider === "xai";
   const isKimchiProvider = provider === "kimchi";
+  // Zed HOSTED mode: dashboard on a remote origin (VPS). The loopback proxy
+  // is never started (see startOAuthFlow); the user signs in at zed.dev in a
+  // separate tab and pastes the callback URL back here for server-side
+  // exchange. Read live from window (not the isLocalhost state) so the very
+  // first render after open already matches the flow startOAuthFlow chose.
+  const isHostedZed =
+    provider === "zed" &&
+    authMode === "browser" &&
+    typeof window !== "undefined" &&
+    window.location.hostname !== "localhost" &&
+    window.location.hostname !== "127.0.0.1";
+  // Only Trae/Windsurf offer the paste-token fallback; Zed has no entry in
+  // PASTE_TOKEN_PROVIDERS (rendering its panel would crash on undefined).
+  const hasPasteTokenFallback = Boolean(PASTE_TOKEN_PROVIDERS[provider]);
   const deviceLoginUrl = deviceData?.verification_uri_complete || deviceData?.verification_uri || "";
   const modalTitle = isXaiProvider ? "Connect Grok Build OAuth" : `Connect ${providerInfo.name}`;
   const manualPlaceholder = isXaiProvider
@@ -752,9 +796,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback */}
+        {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback; Zed hosted: browser sign-in + paste callback URL */}
         {PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
           <>
+            {hasPasteTokenFallback && (
             <div className="flex gap-2">
               <button
                 type="button"
@@ -771,16 +816,58 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                 🔑 Paste token
               </button>
             </div>
+            )}
 
             {authMode === "browser" && (
               <>
-                {step === "waiting" && (
+                {step === "waiting" && !isHostedZed && (
                   <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
                     <span className="material-symbols-outlined text-base text-primary animate-spin">progress_activity</span>
                     <span className="text-sm">Waiting for browser authorization…</span>
                   </div>
                 )}
-                {step === "input" && (
+                {step === "input" && isHostedZed && (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-medium mb-2">
+                        Step 1: Sign in at Zed in your browser
+                      </p>
+                      <p className="text-xs text-text-muted mb-2">
+                        A Zed sign-in tab was opened. Complete the sign-in there — Zed will land on a
+                        127.0.0.1 address that only your own computer can see, which is expected.
+                      </p>
+                      <div className="flex gap-2">
+                        <Input value={authData?.authUrl || ""} readOnly className="flex-1 font-mono text-xs" />
+                        <Button variant="secondary" icon={copied === "auth_url" ? "check" : "content_copy"} onClick={() => copy(authData?.authUrl, "auth_url")} disabled={!authData?.authUrl}>
+                          Copy
+                        </Button>
+                        <Button variant="secondary" icon="open_in_new" onClick={() => authData?.authUrl && window.open(authData.authUrl, "_blank", "noopener,noreferrer")} disabled={!authData?.authUrl}>
+                          Open
+                        </Button>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium mb-2">
+                        Step 2: Paste the callback URL from your browser here
+                      </p>
+                      <p className="text-xs text-text-muted mb-2">
+                        Copy the full 127.0.0.1 URL from your browser&apos;s address bar
+                        (it contains your user_id and an encrypted token, which is decrypted on the server).
+                      </p>
+                      <Input
+                        value={callbackUrl}
+                        onChange={(e) => setCallbackUrl(e.target.value)}
+                        placeholder="http://127.0.0.1:58443/?user_id=...&access_token=..."
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                    <div className="flex gap-2">
+                      <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>Connect</Button>
+                      <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
+                    </div>
+                  </div>
+                )}
+                {step === "input" && !isHostedZed && (
                   <div className="space-y-3">
                     <p className="text-sm text-text-muted">
                       Popup was blocked. After authorizing in the browser, paste the full callback URL here:
@@ -800,7 +887,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </>
             )}
 
-            {authMode === "paste-token" && (
+            {authMode === "paste-token" && hasPasteTokenFallback && (
               <div className="space-y-3">
                 {ideStatus && !ideStatus.installed && (
                   <div className={`px-3 py-2 rounded-lg text-sm ${PASTE_TOKEN_PROVIDERS[provider].ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}>
