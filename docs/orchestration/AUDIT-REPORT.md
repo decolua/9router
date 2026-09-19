@@ -143,7 +143,7 @@ Onda M2 definida: **F1** A1+M2+B4 (security/authz cluster) · **F2** M1+B7 (alia
 | F14 | T1.2 A4 tool_use órfão paralelo parcial | 7c54cfee | sintético p/ claude target; 435 pass translator gate |
 | F15 | T1.2 M5 persona incondicional + M7 budget 512 | 9085da9a | git-archaeology p/ OAuth-gate; snap só perdeu persona; 426/0-fail |
 | F16 | T1.2 A1 streaming gemini cru | 30995bb5 | RED A1 e2e→GREEN 7/7; 387 pass sem drift |
-| F13-r | regressão cc4c716a (colisão de chave initState entre pernas do pivot — T1.2 B7 materializado) | (este commit) | causa raiz debugada (args presos+sem message_stop em Codex/xAI→claude); 7/7+11/11+406/0 |
+| F13-r | regressão cc4c716a (colisão de chave initState entre pernas do pivot — T1.2 B7 materializado) | a1dd438a | causa raiz debugada (args presos+sem message_stop em Codex/xAI→claude); 7/7+11/11+406/0; A/B sem drift |
 | F9 | T1.8 V1 Ollama 200-fantasma (HIGH) | d2c7c2a0 | RED 18f (200-vazio reproduzido)→GREEN 19/19; regressão ollama 26/26 |
 | F11 | T1.8 V3 enabledModels primeira-conexão | ad2549e9 | union por conta c/ regra unavailable própria; 7/7 + 160/160 |
 | F24c | T1.1 RM11 reset no-op {ok:true} | 6e135eae | sweep por prefixo c/ limite de segmento; 404 honesto; 16/16+73/73; achou F24d (badge) |
@@ -153,6 +153,9 @@ Onda M2 definida: **F1** A1+M2+B4 (security/authz cluster) · **F2** M1+B7 (alia
 | F3 | T1.5 M3 (combos sem validação/rename órfão/UNIQUE 500) + B6 | 304ecdbe | kinds c/ fonte verificada; UNIQUE→400 na rota; RED 13f→GREEN 22/22; regressão 121/121 |
 | F12 | T1.8 V4 (usage 0 em 6 modalidades+embeddings gemini) + V5 (tts/stt sem refresh) | b5f1e098 | recorder compartilhado fail-open; polls não cobrados; 33+4 green, 217 regressão |
 | F4 | T1.5 M4 (kill-switch parcial) + M5 (sem single-flight) | 96f226aa | chokepoint automatic+cooldown 30s deduped; 18/18+169 adj | docs@d269dcb3 |
+| F1 | T1.5 A1 (cli-token aceito por presença) + M2 + B4 | 31ab1b34 | isCliRequest valida valor vs machineId; require-login sem túneis (AUD-2 recovery) |
+| F2 | T1.2 M1 (aliases escritos invertidos) + B7 | 74602321 | convenção canônica {alias:"provider/model"}; duplicatas 400 |
+| F5 | T1.5 M6 (probes user-host sem timeout) + B1 (leak listeners) + B3/B8 | 0e337a94 | AbortSignal 8s×6 fetches; off() no catch do keepalive; 404/400 honestos |
 | F27 | T1.1 RM5/RM7/RM8/RM9 | f2b4b472 | settle-once WeakMap; [DONE] real no translate; 24/24+150+35=35 known |
 | F18 | T1.2 M10 (/v1beta fora do translator) | 558feda4 | delegação canônica (−39 linhas); functionCalls no JSON; 10/10+78 |
 | F19 | T1.2 M11 (colisão PROVIDER_MODELS silenciosa) | 15a44a75 | warn só-listas-diferem; mapa 90-entrada provado idêntico; 7/7+baselines ✓ |
@@ -165,8 +168,8 @@ Onda M2 definida: **F1** A1+M2+B4 (security/authz cluster) · **F2** M1+B7 (alia
 | F37 | F32 REAL-FIX pxpipe remoto→RCE-equiv | 3879f7bf | LOCAL_ONLY + pin 0.13.2 + --ignore-scripts; 16/16+74 |
 | F23 | T1.6 M1/M2/M3rt/M5/M6/M7 launcher | 6308faac | drain 8s; posse por fato; NODE_PATH validado; tray await; remoções honestas; 52/52+110 |
 | F38 | T3.5 achado allow-list prefixo | bdc4d2a3 | exato p/ públicas; oidc/saml children explícitos; 84+60 |
-| F39 | mount ProviderHealthBadge | 870f9929 | +2 linhas; trigger ModelAvailability WIP-upstream → backlog || F32 | T1.3 F-14/F-15 (não-afundados) → vereditos | findings/F32.md | pxpipe REAL-FIX→F37; version/update JÁ-FECHADO/F21′; residuais baixos documentados |
-| F13-r | regressão cc4c716a (colisão de chave initState entre pernas do pivot — B7) | a1dd438a | causa debugada; 7/7+11/11+406/0; A/B sem drift |
+| F39 | mount ProviderHealthBadge | 870f9929 | +2 linhas; trigger ModelAvailability WIP-upstream → backlog |
+| F32 | T1.3 F-14/F-15 (não-afundados) → vereditos | findings/F32.md | pxpipe REAL-FIX→F37; version/update JÁ-FECHADO/F21′; residuais baixos documentados |
 | F8 | T1.4 M-1..M-4, L-1, L-3 (sqljs atômico+boot-check, retenção opt-in D8, disabledModels round-trip, exit-flush síncrono, dataDir sem throw) | 01345ad6 | f8 24/24 + regressão 87/87 + eslint 0 |
 | F7 | T1.4 H-1..H-3, L-2, L-4 (import retryável com importStatus+self-heal, backup real em sql.js, initPromise/geração no driver, warnings de schema drift) | 3861ad9f | red 11/12→green 12/12 + db-* 15/15 + e2e BOOT1/2/3 |
 
@@ -195,6 +198,8 @@ Onda M2 definida: **F1** A1+M2+B4 (security/authz cluster) · **F2** M1+B7 (alia
 | L1/L3/L4 do CLI (.desktop sem quote, MAX_PORT_ATTEMPTS morto, --skip-update sobrecarregado) | severidade LOW fora do critério A2; backlog registrado |
 | B7 P2–P5 (campos initState multi-dona restantes) | nenhum lido hoje em perna dupla; convenção de chave por-roteiro imposta em review (REV-B lista priorizada) |
 | cartão de combo sem NENHUM tráfego atribuído não mostra a nota de sub-combo (CB5 nit-2 gap) | precisa de 1 prop extra em page.js p/ cards "—"; aviso já visível em todo card com dados — polimento, não desonestidade |
+| backstop do watchdog HALF_OPEN atravessa o classificador `isFailure` custom do chat.js (AUD-1 nit sobre f5b36bc7) | caminho real conhecido é coberto pelo settleProbe (5ca40b9a); risco só para caminhos futuros sem disconnect — hardening do breaker fica no backlog |
+| wiring funcional (import da rota F16) veio num commit rotulado docs (6c41043a) | janela histórica em que a rota era código morto — hoje wired, exercido por testes; higiene de commit registrada pela META-auditoria |
 | ciclo POST/POST concorrente pode admitir combo cíclico (REV-D) | runtime absorve: comboPath devolve 400 determinístico antes de gravar linha ou estourar heap (mesma race shape aceita p/ nome-único) |
 | `isFailureUsageStatus` JS `\b` vs SQL `LIKE 'error%'` (REV-D nit) | só emitimos `error:<código>`/timeout/threw — divergência hoje inatingível; alinhamento quando surgir o primeiro status fora da gramática |
 
