@@ -1,9 +1,27 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/lib/localDb";
+import { getProviderConnectionById, getApiKeys } from "@/lib/localDb";
 import { getProviderModels, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { UPDATER_CONFIG } from "@/shared/constants/config";
+import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { pingModelByKind } from "@/app/api/models/test/ping";
+
+const CLI_TOKEN_SALT = "9r-cli-auth";
+
+// Same internal-credentials pattern as src/app/api/models/test/ping.js:
+// self-fetches hit /api/* which is deny-by-default once requireLogin=true.
+async function getInternalHeaders() {
+  let apiKey = null;
+  try {
+    const keys = await getApiKeys();
+    apiKey = keys.find((k) => k.isActive !== false)?.key || null;
+  } catch {}
+
+  const headers = { "Content-Type": "application/json" };
+  if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
+  headers["x-9r-cli-token"] = await getConsistentMachineId(CLI_TOKEN_SALT);
+  return headers;
+}
 
 /**
  * POST /api/providers/[id]/test-models
@@ -26,15 +44,27 @@ export async function POST(request, { params }) {
 
     const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
 
-    // Compatible providers: fetch live model list
+    // Compatible providers: fetch live model list. The self-fetch hits /api/*
+    // which is deny-by-default under requireLogin=true, so it must carry the
+    // same internal credentials as the ping route.
     if (isCompatible && models.length === 0) {
+      let modelsRes;
       try {
-        const modelsRes = await fetch(`${baseUrl}/api/providers/${id}/models`);
-        if (modelsRes.ok) {
-          const data = await modelsRes.json();
-          models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));
-        }
-      } catch { /* fallback to empty */ }
+        modelsRes = await fetch(`${baseUrl}/api/providers/${id}/models`, { headers: await getInternalHeaders() });
+      } catch (error) {
+        return NextResponse.json({ error: `Model list fetch failed: ${error?.message || "network error"}` }, { status: 502 });
+      }
+      if (!modelsRes.ok) {
+        const detail = (await modelsRes.text().catch(() => "")).slice(0, 200);
+        return NextResponse.json(
+          { error: `Model list fetch failed: HTTP ${modelsRes.status}${detail ? ` — ${detail}` : ""}` },
+          { status: 502 }
+        );
+      }
+      try {
+        const data = await modelsRes.json();
+        models = (data.models || []).map((m) => ({ id: m.id || m.name, name: m.name || m.id }));
+      } catch { /* body without usable JSON → empty list */ }
     }
 
     if (models.length === 0) {

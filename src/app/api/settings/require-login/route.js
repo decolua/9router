@@ -6,9 +6,10 @@ export async function GET() {
     const settings = await getSettings();
     const requireLogin = settings.requireLogin !== false;
     const tunnelDashboardAccess = settings.tunnelDashboardAccess !== false;
-    const tunnelUrl = settings.tunnelUrl || "";
-    const tailscaleUrl = settings.tailscaleUrl || "";
-    return NextResponse.json({ requireLogin, tunnelDashboardAccess, tunnelUrl, tailscaleUrl });
+    // Public allow-listed route (dashboardGuard PUBLIC_API_PATHS): never expose
+    // tunnelUrl/tailscaleUrl hostnames here — the dashboard reads them from the
+    // authenticated /api/settings and /api/tunnel/status routes.
+    return NextResponse.json({ requireLogin, tunnelDashboardAccess });
   } catch (error) {
     return NextResponse.json({ requireLogin: true }, { status: 200 });
   }
