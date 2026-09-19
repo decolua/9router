@@ -31,6 +31,10 @@ vi.mock("../../open-sse/executors/index.js", () => ({
 
 vi.mock("../../open-sse/translator/index.js", () => ({
   translateRequest: translateRequestMock,
+  // translator modules self-register at import time (house pattern); the real
+  // graph now loads response/openai-to-gemini.js via chatCore/sseToJsonHandler,
+  // which imports { register } from this module. Stub it as a no-op.
+  register: vi.fn(),
 }));
 
 vi.mock("../../open-sse/handlers/chatCore/nonStreamingHandler.js", () => ({
