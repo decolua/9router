@@ -17,7 +17,9 @@ const useSettingsStore = create((set, get) => ({
     if (!force && settings && Date.now() - lastFetched < CLIENT_STORE_TTL_MS) return settings;
     set({ loading: true, error: null });
     try {
-      const res = await fetch("/api/settings");
+      const res = await fetch("/api/settings", {
+        headers: { "Cache-Control": "no-store" },
+      });
       const data = await res.json();
       if (res.ok) {
         set({ settings: data, loading: false, lastFetched: Date.now() });

@@ -419,30 +419,53 @@ export default function TokenSaverClient() {
   };
 
   useEffect(() => {
-    const loadSettings = async () => {
+    const applyToggleFields = (data) => {
+      setRtkEnabledState(data.rtkEnabled !== false);
+      setHeadroomEnabled(!!data.headroomEnabled);
+      setCavemanEnabled(!!data.cavemanEnabled);
+      setPonytailEnabled(!!data.ponytailEnabled);
+    };
+
+    const loadSettings = async ({ togglesOnly = false } = {}) => {
       try {
-        const res = await fetch("/api/settings");
-        if (res.ok) {
-          const data = await res.json();
-          setRtkEnabledState(data.rtkEnabled !== false);
-          setHeadroomEnabled(!!data.headroomEnabled);
-          setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
-          setHeadroomTokenSet(!!data.headroomTokenSet);
-          setCodeAware(data.headroomCodeAware === true);
-          setKompress(data.headroomKompress !== false);
-          setCavemanEnabled(!!data.cavemanEnabled);
-          setCavemanLevel(data.cavemanLevel || "full");
-          setPonytailEnabled(!!data.ponytailEnabled);
-          setPonytailLevel(data.ponytailLevel || "full");
-          setPxpipeEnabled(!!data.pxpipeEnabled);
-          if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
-          refreshHeadroomStatus();
-          // PRD: run the PXPIPE health check automatically when the page opens
-          refreshPxpipeStatus().then(runPxpipeHealth);
-        }
+        const res = await fetch("/api/settings", { headers: { "Cache-Control": "no-store" } });
+        if (!res.ok) return;
+        const data = await res.json();
+        applyToggleFields(data);
+        if (togglesOnly) return;
+        setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
+        setHeadroomTokenSet(!!data.headroomTokenSet);
+        setCodeAware(data.headroomCodeAware === true);
+        setKompress(data.headroomKompress !== false);
+        setCavemanLevel(data.cavemanLevel || "full");
+        setPonytailLevel(data.ponytailLevel || "full");
+        setPxpipeEnabled(!!data.pxpipeEnabled);
+        if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
+        refreshHeadroomStatus();
+        // PRD: run the PXPIPE health check automatically when the page opens
+        refreshPxpipeStatus().then(runPxpipeHealth);
       } catch {}
     };
+
     loadSettings();
+
+    // Same pattern as EndpointPageClient: refresh when the tab is shown again
+    // (tray / other clients may have changed settings). Poll only while visible —
+    // no background spam on hidden tabs or other dashboard pages.
+    const onVisible = () => {
+      if (!document.hidden) loadSettings({ togglesOnly: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    const syncId = setInterval(() => {
+      if (!document.hidden) loadSettings({ togglesOnly: true });
+    }, 1500);
+
+    return () => {
+      clearInterval(syncId);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
 
   const headroomRunning = !!headroomStatus.running;

@@ -87,15 +87,21 @@ export async function enableTunnel(localPort = 20128) {
     await updateSettings({ tunnelEnabled: true, tunnelUrl });
     console.log(`[Tunnel] registered shortId=${shortId} publicUrl=${publicUrl}`);
 
-    // Verify publicUrl first (worker route is reliable; direct *.trycloudflare.com DNS may lag)
-    await waitForHealth(publicUrl, token);
-    console.log("[Tunnel] public URL healthy");
-    // Direct tunnel probe is best-effort: DNS for *.trycloudflare.com can be slow/blocked
-    if (!(await probeUrlAlive(tunnelUrl))) {
-      console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
-    } else {
-      console.log("[Tunnel] direct URL healthy");
-    }
+    // Verify publicUrl asynchronously in background so local requests and callers are unblocked immediately (<1s)
+    waitForHealth(publicUrl, token)
+      .then(async () => {
+        console.log("[Tunnel] public URL healthy");
+        if (!(await probeUrlAlive(tunnelUrl))) {
+          console.warn("[Tunnel] direct URL not reachable yet, continuing via publicUrl");
+        } else {
+          console.log("[Tunnel] direct URL healthy");
+        }
+      })
+      .catch((err) => {
+        if (!/cancelled/.test(err?.message)) {
+          console.warn(`[Tunnel] public health check notice: ${err?.message}`);
+        }
+      });
 
     console.log("[Tunnel] enable success");
     return { success: true, tunnelUrl, shortId, publicUrl };
