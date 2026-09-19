@@ -23,5 +23,9 @@ export async function register() {
 
     const { startConnectionCatalogSync } = await import("@/lib/modelSync/scheduler.js");
     startConnectionCatalogSync();
+
+    // Keep dashboard connection status fresh without clicks (CREDENTIAL_HEALTH=off to disable).
+    const { startCredentialHealth } = await import("@/lib/credentialHealth/scheduler.js");
+    startCredentialHealth();
   }
 }
