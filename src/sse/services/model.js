@@ -2,6 +2,7 @@
 import { getModelAliases, getComboByName, getProviderNodes, getProviderConnections } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { getCatalogLifecycle } from "open-sse/providers/catalogOverride.js";
 import * as log from "../utils/logger.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
@@ -130,6 +131,17 @@ function providerIsPassthrough(providerId) {
   return REGISTRY.some((entry) => entry.id === providerId && entry.passthroughModels === true);
 }
 
+// models.dev lifecycle signal (T-D), fail-open like everything the catalog
+// hints at here: a missing/partial catalog file or a test harness that mocks
+// the reader only more narrowly means "the feed has no opinion".
+function feedLifecycleIsRetired(providerId, modelId) {
+  try {
+    return getCatalogLifecycle(providerId, modelId) === "retired";
+  } catch {
+    return false;
+  }
+}
+
 async function filterUnavailableComboMembers(models) {
   const connections = await getProviderConnections({ isActive: true });
   const candidates = await Promise.all(models.map(async (member) => {
@@ -138,20 +150,31 @@ async function filterUnavailableComboMembers(models) {
     const accounts = connections.filter((connection) => connection.provider === info.provider);
     if (!accounts.length) return member;
     const catalogued = accounts.filter(connectionHasSyncedCatalog);
-    if (!catalogued.length) return member;
-    const availableSomewhere = catalogued.some((connection) =>
+    // A synced catalogue that still lists the member (available or
+    // temporarily-absent) beats every feed signal: the models.dev lifecycle
+    // never removes what an account still lists — same authority shape as the
+    // "missing from 2 syncs" rule (docs/MODEL_SYNC_CATALOG.md).
+    const listedLive = catalogued.some((connection) =>
       catalogListsModel(connection.modelCatalog.models, info.provider, info.model)
     );
-    if (availableSomewhere) return member;
+    if (listedLive) return member;
+    const knownSomewhere = catalogued.some((connection) =>
+      catalogKnowsModel(connection.modelCatalog.models, info.model)
+    );
     // Passthrough providers accept ids the listing never heard of (Cline
-    // remaps, user-typed aggregators). Only drop a member that the catalog
+    // remaps, user-typed aggregators). Only act on members the catalog
     // actually listed and then marked unavailable.
-    if (providerIsPassthrough(info.provider)) {
-      const knownSomewhere = catalogued.some((connection) =>
-        catalogKnowsModel(connection.modelCatalog.models, info.model)
-      );
-      if (!knownSomewhere) return member;
+    if (providerIsPassthrough(info.provider) && !knownSomewhere) return member;
+    // models.dev lifecycle (T-D): reaching here means no account lists this
+    // member, so nothing contradicts the feed. A retired/EOL model is skipped
+    // at this SAME decision point that drops a twice-unavailable one —
+    // deprecated/alpha members are never dropped, only annotated elsewhere.
+    if (feedLifecycleIsRetired(info.provider, info.model)) {
+      log.warn("COMBO", `skipping "${member}": models.dev marks it retired and no account lists it`);
+      return null;
     }
+    // Nothing synced yet for this provider: the feed had no opinion, route blind.
+    if (!catalogued.length) return member;
     const unverifiedSomewhere = accounts.length > catalogued.length;
     return unverifiedSomewhere ? member : null;
   }));

@@ -18,7 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { DEFAULT_CAPABILITIES, capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
-import { getCatalogCost } from "open-sse/providers/catalogOverride.js";
+import { getCatalogCost, getCatalogLifecycle } from "open-sse/providers/catalogOverride.js";
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
@@ -171,6 +171,18 @@ function inferKindFromUnknownModelId(modelId) {
   if (/tts|speech|audio|voice/.test(lower)) return "tts";
   if (/image|imagen|dall-?e|flux|sdxl|sd-|stable-diffusion/.test(lower)) return "image";
   return LLM_KIND;
+}
+
+// models.dev lifecycle read, fail-open on purpose: test harnesses partially
+// mock catalogOverride (a missing export throws on access), and a catalog file
+// written before the lifecycle section existed simply has no data — in either
+// case the feed abstains: everything stays listed, un-annotated.
+function catalogLifecycleFor(providerId, modelId) {
+  try {
+    return getCatalogLifecycle(providerId, modelId);
+  } catch {
+    return null;
+  }
 }
 
 async function fetchCompatibleModelIds(connection) {
@@ -466,11 +478,18 @@ export async function buildModelsList(kindFilter, options = {}) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
-        models.push({
+        // No connections at all -> no live account evidence to contradict the
+        // models.dev feed, so a retired/EOL id in the hand-written table stops
+        // being advertised without anyone committing the removal (T-D).
+        const lifecycle = catalogLifecycleFor(providerId, model.id);
+        if (lifecycle === "retired") continue;
+        const entry = {
           id: `${alias}/${model.id}`,
           object: "model",
           owned_by: alias,
-        });
+        };
+        if (lifecycle) entry.lifecycle = lifecycle;
+        models.push(entry);
       }
     }
 
@@ -550,6 +569,23 @@ export async function buildModelsList(kindFilter, options = {}) {
         }
         return { enabled, available, unavailable, hasCatalog: catalogModels.length > 0 };
       });
+      // Live account evidence for the models.dev lifecycle (T-D): every id at
+      // least one account's synced catalogue still lists (anything but
+      // `unavailable` counts, including temporarily-absent). The feed may hide
+      // a model, but never one an account still claims — symmetric with the
+      // "missing from 2 syncs" rule. Gateway-prefixed catalogue ids also match
+      // on their last segment.
+      const accountListedIds = new Set();
+      const addLiveEvidence = (rawIds) => {
+        for (const raw of rawIds || []) {
+          if (typeof raw !== "string" || raw.trim() === "") continue;
+          const id = stripProviderPrefix(raw.trim());
+          if (!id) continue;
+          accountListedIds.add(id);
+          if (id.includes("/")) accountListedIds.add(id.split("/").pop());
+        }
+      };
+      for (const view of accountViews) addLiveEvidence(view.available);
       const hasExplicitEnabledModels = accountViews.some((v) => v.enabled.length > 0);
 
       let rawModelIds;
@@ -633,6 +669,9 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
+        // A live /models answer from the account is the strongest evidence
+        // there is that it still lists these ids — the feed may not hide them.
+        addLiveEvidence(rawModelIds);
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
@@ -644,6 +683,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           const live = await liveResolver(conn);
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
+            addLiveEvidence(rawModelIds);
             liveModelKindById = new Map(
               live.models
                 .filter((m) => m?.id)
@@ -717,6 +757,9 @@ export async function buildModelsList(kindFilter, options = {}) {
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+      // Custom and alias ids are the user's own curation — the feed never
+      // gets to revoke them, only models the tables/syncs advertise.
+      const userDeclaredIds = new Set([...customModelIds, ...aliasModelIds]);
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live/synced metadata, then static, then ID heuristics.
@@ -729,6 +772,16 @@ export async function buildModelsList(kindFilter, options = {}) {
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+        // models.dev lifecycle (T-D): retired/EOL is not advertised — but only
+        // while no live account evidence contradicts the feed, and never for a
+        // user-declared id. deprecated/alpha/beta keep working and gain the
+        // `lifecycle` metadata instead of silent removal.
+        const lifecycle = catalogLifecycleFor(providerId, modelId);
+        if (lifecycle === "retired" && !userDeclaredIds.has(modelId)
+          && !accountListedIds.has(modelId)
+          && !accountListedIds.has(modelId.includes("/") ? modelId.split("/").pop() : modelId)) {
+          continue;
+        }
         const model = {
           id: `${outputAlias}/${modelId}`,
           object: "model",
@@ -781,6 +834,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
         }
+        if (lifecycle) model.lifecycle = lifecycle;
         models.push(model);
       }
 

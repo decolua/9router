@@ -6,7 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { CATALOG_FILE, CATALOG_RAW_FILE, invalidateCatalog, installCatalogSource } from "open-sse/providers/catalogOverride.js";
+import { CATALOG_FILE, CATALOG_RAW_FILE, invalidateCatalog, installCatalogSource, normalizeLifecycleStatus } from "open-sse/providers/catalogOverride.js";
 
 const CATALOG_URL = "https://models.dev/api.json";
 const FETCH_TIMEOUT_MS = 60000;
@@ -78,8 +78,10 @@ function writeAtomic(file, contents) {
 }
 
 // Trimmed copy of the upstream catalog, kept for the add-models skill: same
-// models, ~470KB instead of 4.3MB.
-function slim(catalog) {
+// models, ~470KB instead of 4.3MB. `st` is the models.dev lifecycle status
+// (rare — ~3% of models carry one); dropping it here would lose the only
+// EOL/deprecation signal the file keeps.
+export function slim(catalog) {
   const out = {};
   for (const [providerId, provider] of Object.entries(catalog)) {
     const models = {};
@@ -89,6 +91,7 @@ function slim(catalog) {
         c: model?.limit?.context,
         o: model?.limit?.output,
         r: model?.reasoning || undefined,
+        st: model?.status,
       };
     }
     out[providerId] = models;
@@ -138,6 +141,51 @@ export function buildCosts(catalog) {
   return costs;
 }
 
+
+// Lifecycle severity for the merge below: when several upstream ids collapse
+// onto the same 9router provider + model, the most advanced lifecycle wins.
+const LIFECYCLE_RANK = { retired: 4, deprecated: 3, alpha: 2, beta: 2 };
+function lifecycleRank(status) {
+  return LIFECYCLE_RANK[normalizeLifecycleStatus(status)] || 1;
+}
+
+// { 9routerProvider: { baseModelId: rawStatus } } — only models the feed
+// carries a `status` for. Keyed exactly the way the reader looks up: the
+// upstream id itself, plus every 9router id that resolves to it through
+// PROVIDER_ALIASES or COST_PROVIDERS. `openrouter` doubles as the universal
+// fallback (see getCatalogLifecycle), mirroring buildCosts.
+export function buildLifecycle(catalog) {
+  const localsByUpstream = {};
+  const link = (upstream, local) => {
+    (localsByUpstream[upstream] || (localsByUpstream[upstream] = [])).push(local);
+  };
+  for (const [local, upstream] of Object.entries(PROVIDER_ALIASES)) link(upstream, local);
+  for (const [local, upstreams] of Object.entries(COST_PROVIDERS)) {
+    for (const upstream of upstreams) link(upstream, local);
+  }
+
+  const lifecycle = {};
+  const put = (providerId, modelId, status) => {
+    const id = baseId(modelId);
+    if (!id) return;
+    const byModel = lifecycle[providerId] || (lifecycle[providerId] = {});
+    const prev = byModel[id];
+    if (prev !== undefined && lifecycleRank(prev) >= lifecycleRank(status)) return;
+    byModel[id] = status;
+  };
+
+  for (const [upstreamId, provider] of Object.entries(catalog)) {
+    const targets = [upstreamId, ...(localsByUpstream[upstreamId] || [])];
+    for (const [modelId, model] of Object.entries(provider?.models || {})) {
+      const status = typeof model?.status === "string" && model.status.trim() !== ""
+        ? model.status.trim()
+        : null;
+      if (!status) continue;
+      for (const providerId of targets) put(providerId, modelId, status);
+    }
+  }
+  return lifecycle;
+}
 
 function build(catalog, entries) {
   // Index once: per provider for limits, and tallied across all of them for
@@ -197,7 +245,7 @@ function build(catalog, entries) {
     if (Object.keys(delta).length) (providers[provider] || (providers[provider] = {}))[model] = delta;
   }
 
-  return { models, providers, costs: buildCosts(catalog) };
+  return { models, providers, costs: buildCosts(catalog), lifecycle: buildLifecycle(catalog) };
 }
 
 // Snapshot every registered model with the capabilities the hand-written tables
@@ -247,8 +295,8 @@ export async function syncModelCatalog() {
       const catalog = await response.json();
       const etag = response.headers.get("etag") || null;
       const entries = await collectEntries();
-      const { models, providers, costs } = build(catalog, entries);
-      const serialized = JSON.stringify({ v: 1, etag, syncedAt: Date.now(), models, providers, costs });
+      const { models, providers, costs, lifecycle } = build(catalog, entries);
+      const serialized = JSON.stringify({ v: 1, etag, syncedAt: Date.now(), models, providers, costs, lifecycle });
 
       writeAtomic(CATALOG_FILE, serialized);
       writeAtomic(CATALOG_RAW_FILE, JSON.stringify(slim(catalog)));
