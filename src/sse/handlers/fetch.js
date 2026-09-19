@@ -12,11 +12,25 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { recordModalityUsage, estimateTextTokens } from "../utils/mediaUsage.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { getComboModels } from "../services/model.js";
 import { getComboByName } from "@/lib/localDb";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 import { assertWebComboKind, resolveWebProviderId, runWebCombo } from "../services/webRouting.js";
+
+/**
+ * Web-fetch token policy (audit T1.8 F4): a fetch is not a generation, so the
+ * request side is the URL the client asked for and the output side is the text
+ * the provider actually handed back.
+ */
+function webFetchTokens(targetUrl, data) {
+  const text = typeof data?.content?.text === "string" ? data.content.text : "";
+  return {
+    prompt_tokens: estimateTextTokens(targetUrl),
+    completion_tokens: estimateTextTokens(text),
+  };
+}
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -123,6 +137,7 @@ export async function handleFetch(request) {
 
 async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
   const targetUrl = body.url;
+  const endpoint = new URL(request.url).pathname;
   const format = body.format;
   const maxCharacters = body.max_characters;
   const resolved = resolveWebProviderId(providerInput, "webFetch");
@@ -153,6 +168,10 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       log
     });
     if (result.success) {
+      recordModalityUsage({
+        provider: providerId, model: providerId, endpoint, apiKey,
+        tokens: webFetchTokens(targetUrl, result.data),
+      });
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
@@ -212,6 +231,10 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, fetchLockKey);
+      recordModalityUsage({
+        provider: providerId, model: providerId, endpoint, apiKey, connectionId: credentials.connectionId,
+        tokens: webFetchTokens(targetUrl, result.data),
+      });
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });

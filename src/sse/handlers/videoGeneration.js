@@ -11,6 +11,7 @@ import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { recordModalityUsage, estimateTextTokens } from "../utils/mediaUsage.js";
 import * as log from "../utils/logger.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
@@ -110,6 +111,9 @@ export async function handleVideoCreate(request, action) {
   const authError = await requireValidApiKey(request);
   if (authError) return authError;
 
+  const apiKey = extractApiKey(request);
+  const endpoint = new URL(request.url).pathname;
+
   const bodyInfo = await readForwardableBody(request);
   if (bodyInfo.error) return bodyInfo.error;
 
@@ -170,6 +174,14 @@ export async function handleVideoCreate(request, action) {
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, model);
       log.info("VIDEO", `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`);
+      // A video job is billed once, at creation: GET polls re-read the same job
+      // upstream, so recording them would multiply one paid generation across
+      // every poll. multipart creates carry no parsable prompt and are skipped.
+      recordModalityUsage({
+        provider, model, endpoint, apiKey, connectionId: credentials.connectionId,
+        tokens: { prompt_tokens: estimateTextTokens(bodyInfo.parsed?.prompt), completion_tokens: 0 },
+        response: result.response,
+      });
       return withConnectionHeader(result.response, credentials.connectionId);
     }
 

@@ -12,6 +12,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { recordModalityUsage, estimateTextTokens } from "../utils/mediaUsage.js";
 import { handleComboChat } from "open-sse/services/combo.js";
 import { getComboModels } from "../services/model.js";
 import { getComboByName } from "@/lib/localDb";
@@ -103,6 +104,7 @@ export async function handleSearch(request) {
 
 async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
   const query = body.query;
+  const endpoint = new URL(request.url).pathname;
   const resolved = resolveWebProviderId(providerInput, "webSearch");
   if (!resolved.ok) {
     log.warn("SEARCH", resolved.error, { provider: providerInput });
@@ -147,6 +149,12 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       credentials: null,
       log
     });
+    if (result.success) {
+      recordModalityUsage({
+        provider: providerId, model: providerId, endpoint, apiKey,
+        tokens: { prompt_tokens: estimateTextTokens(query), completion_tokens: 0 },
+      });
+    }
     return result.response;
   }
 
@@ -221,7 +229,15 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      // Search is billed per query by most providers; there are no chat-style
+      // tokens upstream, so the query itself is what the gateway can account for.
+      recordModalityUsage({
+        provider: providerId, model: providerId, endpoint, apiKey, connectionId: credentials.connectionId,
+        tokens: { prompt_tokens: estimateTextTokens(query), completion_tokens: 0 },
+      });
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, credentialProviderId, searchLockKey);
 

@@ -1,6 +1,6 @@
 import {
   extractApiKey, isValidApiKey,
-  getProviderCredentials, markAccountUnavailable,
+  getProviderCredentials, markAccountUnavailable, clearAccountError,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -9,6 +9,8 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { recordModalityUsage, estimateTextTokens } from "../utils/mediaUsage.js";
 import * as log from "../utils/logger.js";
 
 // Derived from providers.js: any TTS provider not noAuth requires stored credentials
@@ -34,8 +36,8 @@ export async function handleTts(request) {
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
   const settings = await getSettings();
+  const apiKey = extractApiKey(request);
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -54,7 +56,7 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style, { endpoint: url.pathname, apiKey }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -62,10 +64,10 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, { endpoint: url.pathname, apiKey });
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, { endpoint, apiKey } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -75,7 +77,13 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
     const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
-    if (result.success) return result.response;
+    if (result.success) {
+      recordModalityUsage({
+        provider, model, endpoint, apiKey,
+        tokens: { prompt_tokens: estimateTextTokens(body.input), completion_tokens: 0 },
+      });
+      return result.response;
+    }
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
 
@@ -99,9 +107,30 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
+    // Chat/embeddings parity (T1.8 F5): refresh an expiring token before use and
+    // clear the account's error state on success. A refresh that itself throws
+    // must not break the request — fall back to the stored credentials.
+    let refreshedCredentials = credentials;
+    try {
+      refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    } catch (err) {
+      log.warn("TOKEN", `${provider} | token refresh failed: ${err?.message || err}`);
+    }
 
-    if (result.success) return result.response;
+    const result = await handleTtsCore({ provider, model, input: body.input, credentials: refreshedCredentials, responseFormat, language, style });
+
+    if (result.success) {
+      try {
+        await clearAccountError(credentials.connectionId, credentials, model);
+      } catch (err) {
+        log.warn("AUTH", `clearAccountError failed for ${credentials.connectionId}: ${err?.message || err}`);
+      }
+      recordModalityUsage({
+        provider, model, endpoint, apiKey, connectionId: credentials.connectionId,
+        tokens: { prompt_tokens: estimateTextTokens(body.input), completion_tokens: 0 },
+      });
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
     if (shouldFallback) {

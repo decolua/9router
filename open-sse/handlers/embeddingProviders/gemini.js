@@ -48,7 +48,19 @@ export default {
       object: "list",
       data: items,
       model,
-      usage: { prompt_tokens: 0, total_tokens: 0 },
+      // Gemini bills embeddings through usageMetadata: `promptTokenCount` for
+      // embedContent, `totalTokenCount` for batchEmbedContents (which reports no
+      // per-request prompt count). Propagate it instead of hard zeros — the zeros
+      // left gemini embeddings permanently unaccounted AND lied to the client
+      // (src/sse/handlers/embeddings.js only records exact usage).
+      usage: geminiEmbeddingUsage(responseBody.usageMetadata),
     };
   },
 };
+
+function geminiEmbeddingUsage(usageMetadata) {
+  const meta = usageMetadata && typeof usageMetadata === "object" ? usageMetadata : {};
+  const total = Number(meta.totalTokenCount) || 0;
+  const prompt = Number(meta.promptTokenCount) || total;
+  return { prompt_tokens: prompt, total_tokens: total || prompt };
+}
