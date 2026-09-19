@@ -162,9 +162,11 @@ export async function POST(request) {
       testStatus: "unknown",
     });
 
+    // Automatic first sync of the new native connection: obeys
+    // CONNECTION_MODEL_SYNC=off (T1.5 M4), same as POST /api/providers.
     try {
       const { syncConnectionCatalog } = await import("@/lib/modelSync/connectionCatalog.js");
-      syncConnectionCatalog(created.id).catch(() => {});
+      syncConnectionCatalog(created.id, { automatic: true }).catch(() => {});
     } catch {}
 
     return NextResponse.json({

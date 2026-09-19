@@ -192,10 +192,11 @@ export async function POST(request) {
     // /v1/models and the dashboard without waiting up to 24h for the daily
     // scheduler. Fire-and-forget and fail-open — a sync failure must never
     // fail connection creation, and no key material is logged (see
-    // connectionCatalog.js).
+    // connectionCatalog.js). Marked automatic: CONNECTION_MODEL_SYNC=off
+    // suppresses it (T1.5 M4), the dashboard "Models" button does not.
     try {
       const { syncConnectionCatalog } = await import("@/lib/modelSync/connectionCatalog.js");
-      syncConnectionCatalog(newConnection.id).catch(() => {});
+      syncConnectionCatalog(newConnection.id, { automatic: true }).catch(() => {});
     } catch {}
 
     return NextResponse.json({ connection: result }, { status: 201 });

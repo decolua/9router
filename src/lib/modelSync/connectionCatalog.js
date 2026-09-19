@@ -199,7 +199,96 @@ export async function listConnectionModels(connection) {
   };
 }
 
-export async function syncConnectionCatalog(connectionOrId) {
+// ── Sync gating: one chokepoint for the kill switch and for concurrency ─────
+//
+// docs/MODEL_SYNC_CATALOG.md promises "Disable with CONNECTION_MODEL_SYNC=off".
+// The flag governs every sync the app starts on its own initiative — the daily
+// scheduler, the first sync fired when a connection is created, the sync after
+// a custom→native migration. A sync the user explicitly asked for (dashboard
+// "Models" button) is manual and always runs: the flag means "don't spend my
+// traffic and account credentials on your own initiative", not "break the
+// feature". Enforcing it here instead of at each call site means a future
+// automatic trigger is covered the moment it passes { automatic: true }.
+export const AUTOMATIC_SYNC_DISABLED_REASON = "automatic model sync disabled (CONNECTION_MODEL_SYNC=off)";
+
+export function isAutomaticModelSyncEnabled() {
+  return String(process.env.CONNECTION_MODEL_SYNC || "").trim().toLowerCase() !== "off";
+}
+
+// A manual click costs a credentialed GET (3 attempts × 15s of timeout), and
+// two overlapping syncs of one connection race on read-compute-write of
+// modelCatalog: the last writer wins and can rewind the "missing from N
+// consecutive syncs" counters the other sync just advanced. So: concurrent
+// calls join the run already in flight (same promise, one fetch), and a repeat
+// click within this short cooldown is answered from the run that already
+// finished instead of refetching upstream.
+export const MANUAL_SYNC_COOLDOWN_MS = 30_000;
+
+const inFlightSyncs = new Map(); // connectionId -> Promise<result>
+const lastManualSync = new Map(); // connectionId -> { at, result }
+
+function syncKey(connectionOrId) {
+  return typeof connectionOrId === "string" ? connectionOrId : (connectionOrId?.id || null);
+}
+
+function rememberManualSync(key, result) {
+  // Connections are few; clear-the-ledger keeps this bounded without an
+  // eviction policy nobody needs.
+  if (lastManualSync.size > 500) lastManualSync.clear();
+  lastManualSync.set(key, { at: Date.now(), result });
+}
+
+/**
+ * @param {object|string} connectionOrId connection row, or its id
+ * @param {{ automatic?: boolean, cooldownMs?: number }} [options]
+ *   `automatic: true` marks a sync the app triggered itself (scheduler,
+ *   creation, migration) — such calls are skipped while
+ *   CONNECTION_MODEL_SYNC=off. `cooldownMs > 0` marks a user-facing caller that
+ *   wants repeat calls folded into the run that just finished (deduped: true).
+ * @returns {Promise<object>} sync result; `{ skipped, disabled, reason }` when
+ *   suppressed, `{ ...result, deduped: true }` when folded into a recent one.
+ */
+export function syncConnectionCatalog(connectionOrId, { automatic = false, cooldownMs = 0 } = {}) {
+  const key = syncKey(connectionOrId);
+
+  if (automatic && !isAutomaticModelSyncEnabled()) {
+    return Promise.resolve({
+      connectionId: key,
+      updated: false,
+      skipped: true,
+      disabled: true,
+      reason: AUTOMATIC_SYNC_DISABLED_REASON,
+    });
+  }
+
+  if (!automatic && key && cooldownMs > 0) {
+    const last = lastManualSync.get(key);
+    if (last && Date.now() - last.at < cooldownMs) {
+      return Promise.resolve({ ...last.result, deduped: true });
+    }
+  }
+
+  if (!key) return runConnectionCatalogSync(connectionOrId);
+
+  const running = inFlightSyncs.get(key);
+  if (running) return running;
+
+  const promise = (async () => {
+    try {
+      const result = await runConnectionCatalogSync(connectionOrId);
+      if (!automatic && cooldownMs > 0 && result && typeof result === "object") {
+        rememberManualSync(key, result);
+      }
+      return result;
+    } finally {
+      inFlightSyncs.delete(key);
+    }
+  })();
+  inFlightSyncs.set(key, promise);
+  return promise;
+}
+
+async function runConnectionCatalogSync(connectionOrId) {
   const connection = typeof connectionOrId === "string"
     ? await getProviderConnectionById(connectionOrId)
     : connectionOrId;
@@ -288,7 +377,7 @@ export async function syncDueConnectionCatalogs({ force = false } = {}) {
     // OAuth providers whose token refreshes on use sync lazily; only sync
     // connections whose endpoint is a plain GET with a stored credential.
     if (force || isConnectionCatalogStale(connection)) {
-      results.push(await syncConnectionCatalog(connection));
+      results.push(await syncConnectionCatalog(connection, { automatic: true }));
     }
   }
   return results;

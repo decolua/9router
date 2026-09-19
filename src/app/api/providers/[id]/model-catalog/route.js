@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
-import { catalogStatus, getConnectionCatalog, syncConnectionCatalog } from "@/lib/modelSync/connectionCatalog.js";
+import {
+  MANUAL_SYNC_COOLDOWN_MS,
+  catalogStatus,
+  getConnectionCatalog,
+  syncConnectionCatalog,
+} from "@/lib/modelSync/connectionCatalog.js";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +49,12 @@ export async function POST(_request, { params }) {
   const { id } = await params;
   const connection = await getProviderConnectionById(id);
   if (!connection) return NextResponse.json({ error: "Connection not found" }, { status: 404 });
-  const result = await syncConnectionCatalog(connection);
+  // Manual by definition (the dashboard "Models" button): the
+  // CONNECTION_MODEL_SYNC=off kill switch never suppresses this (T1.5 M4).
+  // Single-flight + short cooldown are handled inside syncConnectionCatalog,
+  // so an overlapping scheduler sync can't race this write and rewind the
+  // missing-model counters (T1.5 M5).
+  const result = await syncConnectionCatalog(connection, { cooldownMs: MANUAL_SYNC_COOLDOWN_MS });
   const fresh = result.updated ? getConnectionCatalog(await getProviderConnectionById(id)) : null;
   return NextResponse.json(
     { ...result, ...(fresh ? { status: catalogStatus({ modelCatalog: fresh }), counts: summarize(fresh), catalog: fresh } : {}) },

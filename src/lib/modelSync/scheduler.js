@@ -1,10 +1,12 @@
-import { syncDueConnectionCatalogs, RETRY_DELAY_MS, DAY_MS } from "./connectionCatalog.js";
+import { isAutomaticModelSyncEnabled, syncDueConnectionCatalogs, RETRY_DELAY_MS, DAY_MS } from "./connectionCatalog.js";
 
 const STARTUP_DELAY_MS = 90_000;
 let timer = null;
 
 export function startConnectionCatalogSync() {
-  if (timer || String(process.env.CONNECTION_MODEL_SYNC || "").toLowerCase() === "off") return;
+  // Cheap early-out only: CONNECTION_MODEL_SYNC=off is enforced for every
+  // automatic caller inside syncConnectionCatalog (chokepoint, T1.5 M4).
+  if (timer || !isAutomaticModelSyncEnabled()) return;
   const schedule = (delay) => {
     timer = setTimeout(async () => {
       try {
