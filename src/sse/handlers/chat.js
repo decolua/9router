@@ -156,15 +156,28 @@ export async function handleChat(request, clientRawRequest = null) {
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
     log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    // D13/CB2: scratch the combo loop fills per attempt and this file stamps
+    // with the account it dispatches to. Passing it is what opts this loop into
+    // combo-attributed usage (failure line per attempted member + meta.combo on
+    // the winner) — only REAL combos do, never the capability adapter below.
+    const attemptUsage = {
+      comboName: modelStr,
+      // Chain of combo names already expanded in this request (see the cyclic
+      // guard in handleSingleModelChat).
+      comboPath: [modelStr],
+      apiKey: apiKey || undefined,
+      endpoint: clientRawRequest?.endpoint || undefined,
+    };
     return handleComboChat({
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, attemptUsage),
         adapterAdded
       ),
       log,
       comboName: modelStr,
+      attemptUsage,
       comboStrategy,
       comboStickyLimit
     });
@@ -195,13 +208,30 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+/**
+ * @param {Object} [attemptUsage] - Combo-attempt scratch handed over by the
+ *   combo branch above (D13/CB2). Stamped here with the account this attempt is
+ *   dispatched to, and `reachedUpstream` flipped only once the breaker/capacity
+ *   gates are behind us — that is what separates "this member failed" from
+ *   "this member was never called", and only the former earns a usage line.
+ */
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, attemptUsage = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
     const comboModels = await getComboModels(modelStr);
-    if (comboModels?.length) {
+    // CYCLIC-COMBO GUARD (found while testing D13/CB2, not introduced by it):
+    // a member list may name a combo again, and nothing on save forbids a combo
+    // that contains itself (or A→B→A). Without this check handleSingleModelChat
+    // re-enters handleComboChat for the same name forever and the process dies
+    // with a heap OOM — a request-triggerable crash from dashboard data.
+    // A repeat in the chain is treated as "not a combo", which falls through to
+    // the existing 400 below instead of looping.
+    const comboPath = attemptUsage?.comboPath || [];
+    if (comboModels?.length && comboPath.includes(modelStr)) {
+      log.warn("CHAT", `Cyclic combo reference ignored: "${modelStr}" already expanded in this request`, { comboPath });
+    } else if (comboModels?.length) {
       const chatSettings = await getSettings();
       // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
@@ -233,15 +263,22 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
       const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
       log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+      const attemptUsage = {
+        comboName: modelStr,
+        comboPath: [...comboPath, modelStr],
+        apiKey: apiKey || undefined,
+        endpoint: clientRawRequest?.endpoint || undefined,
+      };
       return handleComboChat({
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, attemptUsage),
           adapterAdded
         ),
         log,
         comboName: modelStr,
+        attemptUsage,
         comboStrategy,
         comboStickyLimit
       });
@@ -401,6 +438,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     try {
       // Use shared chatCore
       const chatSettings = await getSettings();
+      // Past the breaker/capacity gates: this attempt really is a call.
+      if (attemptUsage) {
+        attemptUsage.reachedUpstream = true;
+        attemptUsage.connectionId = connectionId;
+      }
       const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
       const result = await handleChatCore({
         body: { ...body, model: `${provider}/${model}` },
@@ -430,6 +472,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         providerThinking,
         // Detect source format by endpoint + body
         sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+        // D13/CB2: combo identity for the winning member's usage row.
+        comboName: attemptUsage?.comboName || null,
         onCredentialsRefreshed: async (newCreds) => {
           await updateProviderCredentials(connectionId, {
             ...newCreds,

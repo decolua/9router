@@ -3,6 +3,25 @@ import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
 
+/**
+ * A row written by the combo attempt collector (D13/CB2) carries
+ * `status: "error:<httpStatus>"` (or `error:threw` / `error:timeout`) and
+ * ZERO tokens. It is history, not billable usage.
+ *
+ * The rule is "starts with error", NOT "status === 'ok'": media and embedding
+ * events already persist `status: "success"` (src/sse/utils/mediaUsage.js,
+ * src/sse/handlers/embeddings.js) and legacy rows may hold NULL. Filtering to
+ * "ok" only would silently drop all of those from the aggregates — the exact
+ * regression this gate exists to prevent.
+ */
+export function isFailureUsageStatus(status) {
+  return typeof status === "string" && /^error\b/i.test(status.trim());
+}
+
+// SQL twin of isFailureUsageStatus, NULL-safe. SQLite LIKE is case-insensitive
+// for ASCII, so 'error%' also catches 'ERROR:503'.
+const NOT_FAILURE_SQL = `(status IS NULL OR status NOT LIKE 'error%')`;
+
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
@@ -67,6 +86,13 @@ function addToCounter(target, key, values) {
 }
 
 function aggregateEntryToDay(day, entry) {
+  // ── ANTI-REGRESSION GATE (D13/CB2) ───────────────────────────────────────
+  // usageHistory now also stores one row per FAILED combo attempt. Those rows
+  // are history, not usage: counting them would silently move every requests/
+  // tokens/cost number the Usage page and the /api/usage/stats consumers show.
+  // Skipping here keeps usageDaily byte-identical to the pre-feature behaviour.
+  if (isFailureUsageStatus(entry?.status)) return false;
+
   const promptTokens = entry.tokens?.prompt_tokens || entry.tokens?.input_tokens || 0;
   const completionTokens = entry.tokens?.completion_tokens || entry.tokens?.output_tokens || 0;
   const cachedTokens = entry.tokens?.cached_tokens || entry.tokens?.cache_read_input_tokens || 0;
@@ -101,6 +127,7 @@ function aggregateEntryToDay(day, entry) {
   const endpoint = entry.endpoint || "Unknown";
   const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
   addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: entry.model, provider: entry.provider } });
+  return true;
 }
 
 function pushToRing(entry) {
@@ -128,7 +155,10 @@ async function ensureRingInitialized() {
   recentRing.initialized = true;
   try {
     const db = await getAdapter();
-    const rows = db.all(`SELECT usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ORDER BY id DESC LIMIT ?`, [RING_CAP]);
+    // Failure rows are excluded (D13/CB2) for the same reason pushToRing skips
+    // them: the ring is the recent-SUCCESS window, and error rows would crowd
+    // real entries out of its 50-slot cap.
+    const rows = db.all(`SELECT usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory WHERE ${NOT_FAILURE_SQL} ORDER BY id DESC LIMIT ?`, [RING_CAP]);
     recentRing.items = rows.reverse().map((r) => ({
       usageEventId: r.usageEventId || undefined,
       timestamp: r.timestamp, provider: r.provider, model: r.model, connectionId: r.connectionId,
@@ -461,7 +491,9 @@ async function persistUsageEvent(entry) {
               eventId, entry.timestamp, entry.provider || null, entry.model || null,
               entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
               promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-              stringifyJson(tokens), stringifyJson({}),
+              // `meta` was hardcoded to {} until D13/CB2: the column existed but
+              // could never carry the combo identity the stats need.
+              stringifyJson(tokens), stringifyJson(entry.meta || {}),
             ]
           );
         } catch (err) {
@@ -478,28 +510,32 @@ async function persistUsageEvent(entry) {
             null, entry.timestamp, entry.provider || null, entry.model || null,
             entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
             promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-            stringifyJson(tokens), stringifyJson({}),
+            stringifyJson(tokens), stringifyJson(entry.meta || {}),
           ]
         );
       }
 
-      const dateKey = getLocalDateKey(entry.timestamp);
-      const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
-      const day = row ? parseJson(row.data, {}) : {
-        requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
-        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
-      };
-      aggregateEntryToDay(day, entry);
-      db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
+      // A failure event is persisted and nothing else: no usageDaily upsert, no
+      // lifetime bump, no ring entry (see the gate note in aggregateEntryToDay).
+      if (!isFailureUsageStatus(entry.status)) {
+        const dateKey = getLocalDateKey(entry.timestamp);
+        const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
+        const day = row ? parseJson(row.data, {}) : {
+          requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
+          byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+        };
+        aggregateEntryToDay(day, entry);
+        db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
 
-      // Atomic counter increment in same transaction
-      const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
-      const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
-      db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+        // Atomic counter increment in same transaction
+        const cur = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
+        const next = (cur ? parseInt(cur.value, 10) : 0) + 1;
+        db.run(`INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, [String(next)]);
+      }
       inserted = true;
     });
 
-    if (inserted) {
+    if (inserted && !isFailureUsageStatus(entry.status)) {
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
       // Retention pass after the committed write (no-op unless
@@ -528,15 +564,22 @@ export async function getUsageHistory(filter = {}) {
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  // Combo attempt failures (D13/CB2) are OPT-IN here. Every existing consumer of
+  // this listing treats one row as one call (e.g. /api/health/providers counts
+  // `requests++` per row), so returning them by default would change those
+  // numbers silently. Callers that want the failure lines — the combo stats
+  // route — must ask for them with `includeFailures: true`.
+  if (!filter.includeFailures) conds.push(NOT_FAILURE_SQL);
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const rows = db.all(`SELECT usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
+  const rows = db.all(`SELECT usageEventId, timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens, meta FROM usageHistory ${where} ORDER BY id ASC`, params);
 
   return rows.map((r) => ({
     usageEventId: r.usageEventId || undefined,
     timestamp: r.timestamp, provider: r.provider, model: r.model,
     connectionId: r.connectionId, apiKeyMasked: maskApiKey(r.apiKey), endpoint: r.endpoint,
     cost: r.cost, status: r.status, tokens: parseJson(r.tokens, {}),
+    meta: parseJson(r.meta, {}),
   }));
 }
 
@@ -578,7 +621,9 @@ export async function getUsageStats(period = "all") {
   for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
 
   // recentRequests from live history (last 100 entries enough for 20)
-  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
+  // Zero-token failure rows are already dropped by the tokens>0 filter below,
+  // but the status clause keeps the LIMIT window dense with what it lists.
+  const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory WHERE ${NOT_FAILURE_SQL} ORDER BY id DESC LIMIT 100`);
   const recentRequests = recentRows
     .map((r) => {
       const t = parseJson(r.tokens, {}) || {};
@@ -630,7 +675,7 @@ export async function getUsageStats(period = "all") {
     stats.last10Minutes.push(bucketMap[ts]);
   }
   const recent10 = db.all(
-    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ?`,
+    `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND timestamp <= ? AND ${NOT_FAILURE_SQL}`,
     [tenMinutesAgo.toISOString(), now.toISOString()]
   );
   for (const r of recent10) {
@@ -741,7 +786,7 @@ export async function getUsageStats(period = "all") {
     // Overlay precise lastUsed timestamps from history
     const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
     const histRows = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ? AND ${NOT_FAILURE_SQL}`,
       [new Date(overlayCutoff).toISOString()]
     );
     for (const e of histRows) {
@@ -775,7 +820,7 @@ export async function getUsageStats(period = "all") {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ? AND ${NOT_FAILURE_SQL}`,
       [cutoff]
     );
 
@@ -874,7 +919,7 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND ${NOT_FAILURE_SQL}`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {
@@ -897,7 +942,7 @@ export async function getChartData(period = "7d") {
     const buckets = Array.from({ length: bucketCount }, (_, i) => ({ label: labelFn(startTime + i * bucketMs), tokens: 0, cost: 0 }));
 
     const rows = db.all(
-      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, promptTokens, completionTokens, cost FROM usageHistory WHERE timestamp >= ? AND ${NOT_FAILURE_SQL}`,
       [new Date(startTime).toISOString()]
     );
     for (const r of rows) {

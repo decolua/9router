@@ -6,6 +6,43 @@ import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { extractTextContent } from "../translator/formats/gemini.js";
+import { parseModel } from "./model.js";
+import { saveComboAttemptFailure } from "../handlers/chatCore/requestDetail.js";
+
+/**
+ * Persist the trace of ONE failed member attempt (D13/CB2).
+ *
+ * This is the only place that holds combo + member + failure status at the same
+ * time: the account-level fallback lives below `handleSingleModel`, and the
+ * client only ever sees the final response. So the loop's own failure sites —
+ * the terminal error answer, the fallback error answer and the exception — are
+ * exactly the set that gets a line. A member whose accounts were all skipped
+ * BEFORE the provider was reached (`attemptUsage.reachedUpstream` never flipped
+ * by chat.js) is not a failed attempt and writes nothing.
+ *
+ * Never awaited and wrapped twice over (here and in the writer): a reporting
+ * gap must not change the response nor stop the fallback chain (F12 pattern).
+ */
+function recordAttemptFailure(attemptUsage, status, error) {
+  try {
+    if (!attemptUsage?.comboName || !attemptUsage.reachedUpstream) return;
+    const { comboName, member, attempt, connectionId, apiKey, endpoint } = attemptUsage;
+    const { provider, model } = parseModel(member);
+    saveComboAttemptFailure({
+      comboName,
+      member,
+      provider: provider || "unknown",
+      model: model || member,
+      attempt,
+      status,
+      error,
+      connectionId,
+      apiKey,
+      endpoint,
+    });
+  } catch { /* never break the chain for a log line */ }
+}
+
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
@@ -273,6 +310,16 @@ export function getComboModelsFromData(modelStr, combosData) {
  * @param {Function} options.handleSingleModel - Function to handle single model: (body, modelStr) => Promise<Response>
  * @param {Object} options.log - Logger object
  * @param {string} [options.comboName] - Name of the combo (for round-robin tracking)
+ * @param {Object} [options.attemptUsage] - Caller-owned scratch carrying the
+ *   identity of the CURRENT member attempt, so failed attempts can be persisted
+ *   with their combo (D13/CB2). The loop resets and fills
+ *   `comboName`/`member`/`attempt`/`reachedUpstream` before each dispatch; the
+ *   caller (chat.js) flips `reachedUpstream` past the breaker/capacity gates and
+ *   fills `connectionId`, plus the per-request `apiKey`/`endpoint`. It is passed
+ *   as an object rather than as a 3rd argument to `handleSingleModel` so that
+ *   injected callback's arity stays exactly as every existing caller wrote it.
+ *   Absent ⇒ this loop records no combo-attributed usage (capability adapter,
+ *   other modalities: behaviour identical to before this feature).
  * @param {string} [options.comboStrategy] - Strategy: "fallback" or "round-robin"
  * @param {number|string} [options.comboStickyLimit=1] - Requests per combo model before switching
  * @param {boolean} [options.autoSwitch=true] - Capability auto-switch (chat)
@@ -281,7 +328,7 @@ export function getComboModelsFromData(modelStr, combosData) {
  *   Default undefined preserves historical behavior (return on first 2xx).
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({ body, models, handleSingleModel, log, comboName, comboStrategy, comboStickyLimit = 1, autoSwitch = true, shouldContinueOnSuccess }) {
+export async function handleComboChat({ body, models, handleSingleModel, log, comboName, attemptUsage, comboStrategy, comboStickyLimit = 1, autoSwitch = true, shouldContinueOnSuccess }) {
   // Apply rotation strategy if enabled
   let rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
 
@@ -308,6 +355,15 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    if (attemptUsage) {
+      // Reset before dispatch: a stale `reachedUpstream` would blame an
+      // untried member for the previous one's failure.
+      attemptUsage.comboName = comboName || null;
+      attemptUsage.member = modelStr;
+      attemptUsage.attempt = i + 1;
+      attemptUsage.reachedUpstream = false;
+      attemptUsage.connectionId = undefined;
+    }
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -358,6 +414,7 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
 
       if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
+        recordAttemptFailure(attemptUsage, result.status);
         return result;
       }
 
@@ -377,12 +434,14 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
       lastError = errorText || String(result.status);
       lastStatus = result.status;
       failures.push(`${modelStr}:${result.status}`);
+      recordAttemptFailure(attemptUsage, result.status);
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
       lastError = error.message || String(error);
       lastStatus = 500;
       failures.push(`${modelStr}:threw`);
+      recordAttemptFailure(attemptUsage, null, error);
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
