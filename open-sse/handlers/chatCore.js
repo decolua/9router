@@ -14,6 +14,7 @@ import { createErrorResult, parseUpstreamError, formatProviderError } from "../u
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { triggerReactiveModelSync } from "@/lib/modelSync/reactive.js";
 import * as streamModule from "../utils/stream.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
@@ -564,6 +565,16 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!providerResponse.ok) {
     settlePending(true);
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
+    // T3.2/RB: upstream 404 == model_not_found (config/errorConfig.js maps the
+    // status; this block only ever sees the provider's own response, never a
+    // local-route 404). The account may have gained/lost this model since the
+    // last catalog sync, so kick off a fire-and-forget automatic resync for
+    // THIS connection (cooldown/dedupe/kill-switch live in the trigger). Not
+    // awaited: the original error below propagates exactly as before — the
+    // failing request is never retried or delayed by this hook.
+    if (statusCode === HTTP_STATUS.NOT_FOUND) {
+      triggerReactiveModelSync({ connectionId, provider, model }, { log });
+    }
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
