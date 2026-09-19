@@ -21,6 +21,7 @@ import {
   coverageBadgeLabel,
   sortMembersByFailure,
   memberRowView,
+  subComboNoticeLines,
 } from "./comboStats.js";
 
 export default function ComboStatsBadge({ entry = null, coverage = null, range = "24h" }) {
@@ -30,6 +31,9 @@ export default function ComboStatsBadge({ entry = null, coverage = null, range =
   const tone = chipTone(entry ? entry.successRate : null);
   const label = chipLabel(entry);
   const members = sortMembersByFailure(entry ? entry.members : []).map((m) => memberRowView(m));
+  // CB5/NIT-2: sub-combo names flagged by the aggregate — rendered as text
+  // lines, never as numbers (see subComboNoticeLines for the entry-less gap).
+  const subComboNotices = subComboNoticeLines(entry);
 
   return (
     <div className="min-w-0">
@@ -38,7 +42,7 @@ export default function ComboStatsBadge({ entry = null, coverage = null, range =
           type="button"
           onClick={() => setExpanded((v) => !v)}
           aria-expanded={expanded}
-          title={`Combo success rate · last ${range}${partial ? " · parcial (unattributed pre-feature history present)" : ""}`}
+          title={`Combo success rate · last ${range}${partial ? " · parcial (winners predate the first attributed request)" : ""}`}
           className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-medium transition-colors ${tone}`}
         >
           <span className="material-symbols-outlined text-[13px]">percent</span>
@@ -50,7 +54,7 @@ export default function ComboStatsBadge({ entry = null, coverage = null, range =
         {partial && (
           <span
             className="inline-flex items-center rounded bg-amber-500/10 px-1.5 py-px text-[10px] text-amber-600 dark:text-amber-400"
-            title="Some winning requests in this window predate combo attribution — the rate covers attributed traffic only and may be understated."
+            title="Some winning requests in this window predate the FIRST combo-attributed request recorded on this install — the rate covers attributed traffic only and may be understated. Recent direct (non-combo) traffic does NOT trigger this."
           >
             parcial
           </span>
@@ -59,6 +63,13 @@ export default function ComboStatsBadge({ entry = null, coverage = null, range =
 
       {expanded && (
         <div className="mt-2 rounded-lg border border-border bg-bg-subtle/40 px-3 py-2">
+          {subComboNotices.length > 0 && (
+            <div className="mb-1.5 flex flex-col gap-0.5">
+              {subComboNotices.map((line) => (
+                <p key={line} className="text-[10px] leading-snug text-text-muted">{line}</p>
+              ))}
+            </div>
+          )}
           <div className="mb-1 flex items-center justify-between">
             <span className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">
               By member · last {range}

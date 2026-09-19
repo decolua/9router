@@ -27,6 +27,7 @@ import {
   breakerDotColor,
   memberRowView,
   buildComboSuccessMap,
+  subComboNoticeLines,
   loadComboStats,
 } from "../../src/app/(dashboard)/dashboard/combos/components/comboStats.js";
 
@@ -160,6 +161,20 @@ describe("coverageBadgeLabel — communicate partial history honestly", () => {
   it("stays silent when full or unknown", () => {
     expect(coverageBadgeLabel({ coverage: "full" })).toBeNull();
     expect(coverageBadgeLabel(null)).toBeNull();
+  });
+});
+
+describe("subComboNoticeLines — nested member is visible as TEXT, never a new number", () => {
+  it("renders one pt-BR line per sub-combo the server flagged on the entry", () => {
+    expect(subComboNoticeLines({ nestedSubCombos: ["alpha"] })).toEqual([
+      "inclui sub-combo: alpha — contagem aparece no cartão de alpha",
+    ]);
+    expect(subComboNoticeLines({ nestedSubCombos: ["a", "b"] })).toHaveLength(2);
+  });
+  it("silent for an unflagged entry, a null entry or junk shapes", () => {
+    expect(subComboNoticeLines(null)).toEqual([]);
+    expect(subComboNoticeLines({})).toEqual([]);
+    expect(subComboNoticeLines({ nestedSubCombos: "not-an-array" })).toEqual([]);
   });
 });
 

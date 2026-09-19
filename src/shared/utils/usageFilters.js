@@ -36,32 +36,25 @@ export function usageItemMatchesCombo(item, combo) {
 /**
  * Build usage rows attributed to combos that actually saw traffic.
  *
- * Priority (CB3): a row carrying a recorded `meta.combo` (D13/CB2 writers) is
- * attributed to THAT combo only — the name heuristic below must never
- * second-guess stored evidence, because it assigns one row to every combo
- * listing the same member (multi-combo members were misattributed by design).
+ * CB5/NIT-4 (honesty revert): CB3 added a `meta.combo` priority branch here
+ * and it was removed again because it never runs — the ONLY production caller
+ * (UsageStats "combo" view) feeds `stats.byModel`, entries pre-aggregated per
+ * provider/model by usageRepo.getUsageStats, which never select or carry a
+ * `meta` column. The branch was exercised only by synthetic tests and made
+ * commit 6038b564 read as if the table had become attribution-aware; it
+ * never was. Live per-row combo attribution is served by
+ * GET /api/usage/combo-stats (D13), which reads meta.combo in SQL.
  *
- * Fallback: rows without attribution (legacy, pre-CB2) keep the old behavior —
- * a model row appears under every combo that lists it as a member.
- * Combos with zero matching usage are omitted.
+ * Contract (the D13-sanctioned legacy behavior, unchanged): a model row
+ * appears under EVERY combo listing it as a member — shared members double-
+ * count across combo rows here BY DESIGN — and combos with zero matching
+ * usage are omitted.
  */
-function attributedComboOf(data) {
-  const combo = data?.meta?.combo;
-  return typeof combo === "string" && combo.trim() ? combo.trim() : null;
-}
-
 export function buildComboUsageMap(byModel, combos = []) {
   const out = {};
   for (const combo of combos) {
     if (!combo?.name || !Array.isArray(combo.models) || combo.models.length === 0) continue;
     for (const [key, data] of Object.entries(byModel || {})) {
-      const attributed = attributedComboOf(data);
-      if (attributed !== null) {
-        // Real attribution exists for this row: it belongs to exactly one
-        // combo (and nowhere else — not even a combo that lists the member).
-        if (attributed === combo.name) out[`${combo.name}|${key}`] = { ...data, comboName: combo.name, attributed: true };
-        continue;
-      }
       if (!usageItemMatchesCombo(data, combo)) continue;
       out[`${combo.name}|${key}`] = {
         ...data,

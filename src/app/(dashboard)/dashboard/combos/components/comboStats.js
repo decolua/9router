@@ -65,15 +65,34 @@ export function chipTone(rate) {
 }
 
 /**
- * Coverage honesty: the endpoint flags the whole payload "partial" when the
- * window still contains winning rows without combo attribution (legacy /
- * pre-CB2), which means every success rate is computed over attributed rows
- * only and may be understated. We surface "parcial" per combo card in that
- * case — never a silently-dropped caveat.
+ * Coverage honesty (CB5/NIT-1): the endpoint flags the payload "partial" only
+ * when the window still contains winning rows that PREDATE the attribution
+ * epoch (the first record in the DB carrying a meta.combo) — genuine
+ * pre-attribution history, not today's legitimate direct traffic. The rate
+ * then covers attributed traffic only and may be understated. We surface
+ * "parcial" per combo card in that case — never a silently-dropped caveat.
  */
 export function coverageBadgeLabel(payload) {
   if (payload && payload.coverage === "partial") return "parcial";
   return null;
+}
+
+/**
+ * CB5/NIT-2: a combo may list ANOTHER COMBO as a member; traffic routed
+ * through it is attributed to the inner combo (CB2 nesting rule), so the
+ * outer card's counts are a strict floor, not the whole truth. The aggregate
+ * flags the sub-combo NAMES on the entry (sources.nestedCombos); we render
+ * them as one plain pt-BR line inside the expansion — text only, zero new
+ * numbers, and no invented figure for the shadowed traffic.
+ * (Cards whose outer combo has NO attributed entry at all cannot show this
+ * yet: the badge only receives `entry`/`coverage` — surfacing the notice on
+ * an entry-less card needs one prop pass in combos/page.js, out of CB5 scope.)
+ */
+export function subComboNoticeLines(entry) {
+  const subs = Array.isArray(entry?.nestedSubCombos) ? entry.nestedSubCombos : [];
+  return subs
+    .filter((name) => typeof name === "string" && name.trim())
+    .map((name) => `inclui sub-combo: ${name} — contagem aparece no cartão de ${name}`);
 }
 
 /** Match a combo card to its entry in a fetched payload (by declared name). */

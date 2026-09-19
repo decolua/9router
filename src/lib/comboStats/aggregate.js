@@ -14,6 +14,16 @@
  * Contracts this module keeps:
  *  • Attribution is ONLY `meta.combo` (CB2). A row without it is never guessed
  *    into a combo — that is what the old name heuristic got wrong (RC1 Q1).
+ *  • "Legacy" (the ONLY thing that may downgrade coverage to "partial") is an
+ *    unattributed winner that PREDATES the attribution epoch — the first
+ *    record in the whole DB whose meta carries a combo (REV-D NIT-1). An
+ *    unattributed winner after that instant is legitimate direct traffic and
+ *    says nothing about coverage.
+ *  • A combo that lists ANOTHER COMBO as a member only ever sees the traffic
+ *    its own direct members produce (nested wins are attributed to the inner
+ *    combo) — REV-D NIT-2. The payload flags those combos by NAME
+ *    (sources.nestedCombos + entry.nestedSubCombos) so the card can explain
+ *    the shadowing; no number is ever fabricated for the outer combo.
  *  • Failure status rule = the SQL twin of `isFailureUsageStatus`
  *    (usageRepo.js, D13/CB2): `status LIKE 'error%'`. Success = everything
  *    else (NULL-safe: legacy "ok"/"success"/NULL all count as non-failure).
@@ -29,6 +39,7 @@ import { getAdapter } from "@/lib/db/driver.js";
 import { isFailureUsageStatus } from "@/lib/db/repos/usageRepo.js";
 import { getAllCircuitBreakerStatuses } from "open-sse/utils/circuitBreaker.js";
 import { getProviderConnections } from "@/lib/db/repos/connectionsRepo.js";
+import { getCombos } from "@/lib/db/repos/combosRepo.js";
 
 /** Accepted `?range=` values → window length. `24h` is the route default. */
 export const RANGE_MS = {
@@ -104,30 +115,91 @@ function fetchGroups(db, window) {
 }
 
 /**
- * Error lines of the window, newest first. Failures are the minority stream
- * (RC1: "+1 INSERT apenas por tentativa falha"), so pulling them raw gives an
- * exact `failuresRecorded` count AND the per-member last-error identity
- * without relying on SQLite's bare-column-with-MAX() behavior.
+ * Latest error per combo|member (REV-D NIT-3). The CB3 draft pulled EVERY
+ * failure row of the window newest-first just so assemble could keep the
+ * first sighting per member — precisely the stream that explodes in an
+ * outage across a 30d window. The ranking now runs inside SQLite:
+ * ROW_NUMBER picks the newest id per (combo, member) and only those rows
+ * cross the boundary. The LIMIT bounds the OUTPUT group count (distinct
+ * combo|member pairs with failures — combo configs × members, typically a
+ * few dozen); when the bound is reached the fetcher flags `truncated` so
+ * the payload says so instead of lying by omission.
  */
+const FAILURE_GROUPS_LIMIT = 5000;
+
 function fetchFailureLines(db, window) {
-  return db.all(
-    `SELECT ${META_FIELD("combo")} AS combo, ${META_FIELD("member")} AS member,
-            status, timestamp
-     FROM usageHistory
-     WHERE timestamp >= ? AND timestamp <= ? AND ${FAILURE_SQL}
-     ORDER BY id DESC`,
-    [window.from, window.to],
+  const rows = db.all(
+    `SELECT combo, member, status, timestamp
+     FROM (
+       SELECT id, combo, member, status, timestamp,
+              ROW_NUMBER() OVER (PARTITION BY combo, member ORDER BY id DESC) AS rn
+       FROM (
+         SELECT id, status, timestamp,
+                ${META_FIELD("combo")} AS combo,
+                ${META_FIELD("member")} AS member
+         FROM usageHistory
+         WHERE timestamp >= ? AND timestamp <= ? AND ${FAILURE_SQL}
+       )
+       WHERE combo IS NOT NULL
+     )
+     WHERE rn = 1
+     ORDER BY timestamp DESC
+     LIMIT ?`,
+    [window.from, window.to, FAILURE_GROUPS_LIMIT],
   );
+  return { lines: rows, truncated: rows.length >= FAILURE_GROUPS_LIMIT };
 }
 
-/** Winning lines in the window that carry NO combo attribution (legacy/pre-D13). */
-function countUnattributedWins(db, window) {
+/**
+ * Attribution epoch (REV-D NIT-1): the timestamp of the FIRST record in the
+ * whole DB whose meta carries a combo — when attribution actually started on
+ * THIS install, not a hardcoded deploy date. null (nothing attributed yet)
+ * means there is no "pre-attribution" era to report. Rides idx_uh_ts
+ * ascending and stops at the first match; USAGE_RETENTION_DAYS bounds the
+ * walk on old installs.
+ */
+function fetchAttributionEpoch(db) {
+  const row = db.get(
+    `SELECT timestamp FROM usageHistory
+     WHERE json_valid(meta) AND ${META_FIELD("combo")} IS NOT NULL
+     ORDER BY timestamp ASC LIMIT 1`,
+  );
+  return row?.timestamp ?? null;
+}
+
+/**
+ * REV-D NIT-2, pure half: outer combos whose member list references another
+ * combo by NAME. Traffic through that member is attributed to the INNER combo
+ * (CB2 nesting rule), so the outer card undercounts — the names are the
+ * signal the card needs to explain it. Detection is config-only (no numbers).
+ */
+export function findNestedCombos(combos = []) {
+  const names = new Set(combos.map((c) => (typeof c?.name === "string" && c.name ? c.name : null)).filter(Boolean));
+  const out = [];
+  for (const c of combos) {
+    if (!c?.name || !Array.isArray(c.models)) continue;
+    const subCombos = c.models.filter((m) => typeof m === "string" && names.has(m) && m !== c.name);
+    if (subCombos.length > 0) out.push({ combo: c.name, subCombos });
+  }
+  return out;
+}
+
+/**
+ * Winning lines in the window that carry NO combo attribution AND predate the
+ * attribution epoch (REV-D NIT-1): the only honest "history we cannot count"
+ * signal. Post-epoch unattributed winners are legit direct traffic and never
+ * flip coverage; with no epoch in the DB there is no pre-attribution era at
+ * all, so the fallback is 0 — never a guess.
+ */
+function countUnattributedWins(db, window, epoch) {
+  if (!epoch) return 0;
   const row = db.get(
     `SELECT COUNT(*) AS n FROM usageHistory
      WHERE timestamp >= ? AND timestamp <= ?
+       AND timestamp < ?
        AND ${NOT_FAILURE_SQL}
        AND (meta IS NULL OR json_valid(meta) = 0 OR ${META_FIELD("combo")} IS NULL)`,
-    [window.from, window.to],
+    [window.from, window.to, epoch],
   );
   return row?.n ?? 0;
 }
@@ -178,14 +250,28 @@ function memberConnections(connIdsCsv, connectionsById) {
  * Pure shaping step (exported so the null-rate contract is testable without a
  * DB). Groups come from fetchGroups(), latest errors from fetchFailureLines().
  */
-export function assembleComboStats({ window, groups = [], failureLines = [], legacyWinners = 0, breakers = [], connections = [] }) {
+export function assembleComboStats({
+  window,
+  groups = [],
+  failureLines = [],
+  failureLinesTruncated = false,
+  legacyWinners = 0,
+  attributionEpoch = null,
+  nestedCombos = [],
+  breakers = [],
+  connections = [],
+}) {
   const connectionsById = new Map();
   for (const c of connections) if (c?.id) connectionsById.set(c.id, c);
+  const nestedByName = new Map(nestedCombos.map((n) => [n.combo, n.subCombos]));
 
-  // Newest-first list → FIRST sighting per combo|member is the latest error.
-  // SQL already narrowed to `status LIKE 'error%'`; the JS twin
-  // (isFailureUsageStatus, the CB2 contract) is the authority here, so a line
-  // that would count as a success on the JS side can never report as an error.
+  // fetchFailureLines already yields the NEWEST line per combo|member (SQL
+  // ROW_NUMBER, NIT-3). The JS twin (isFailureUsageStatus, the CB2 contract)
+  // stays the reporting authority: a line the JS side would call success
+  // never surfaces as an error. Known conservative edge: if a member's
+  // newest SQL-error row is one JS rejects (the theoretical "errorish"
+  // split — no writer emits it today), the member shows no last error
+  // rather than falling back to an older line. Under-report, never lie.
   const latestError = new Map();
   for (const line of failureLines) {
     if (!line?.combo || !isFailureUsageStatus(line.status)) continue;
@@ -223,10 +309,16 @@ export function assembleComboStats({ window, groups = [], failureLines = [], leg
 
   const combos = [...byCombo.entries()]
     .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
-    .map(([combo, { totals, members }]) => ({
-      ...comboAggregate({ combo, window: window.range, ...totals }),
-      members: members.sort((a, b) => (String(a.member) < String(b.member) ? -1 : 1)),
-    }));
+    .map(([combo, { totals, members }]) => {
+      const subCombos = nestedByName.get(combo);
+      return {
+        ...comboAggregate({ combo, window: window.range, ...totals }),
+        members: members.sort((a, b) => (String(a.member) < String(b.member) ? -1 : 1)),
+        // NIT-2: names only (zero new numbers) — the card explains that
+        // traffic routed through a member-combo is counted on THAT card.
+        ...(subCombos?.length ? { nestedSubCombos: subCombos } : {}),
+      };
+    });
 
   return {
     window,
@@ -235,6 +327,9 @@ export function assembleComboStats({ window, groups = [], failureLines = [], leg
       failuresRecorded: failureLines.length > 0,
       legacyWinnersWithoutCombo: legacyWinners,
       attributedRows: combos.reduce((s, c) => s + c.attempts, 0),
+      truncated: Boolean(failureLinesTruncated),
+      attributionEpoch: attributionEpoch ?? null,
+      nestedCombos,
     },
     combos,
   };
@@ -249,13 +344,21 @@ export async function getComboStats(range) {
   if (!window) return null;
   const db = await getAdapter();
   const groups = fetchGroups(db, window);
-  const failureLines = fetchFailureLines(db, window);
-  const legacyWinners = countUnattributedWins(db, window);
+  const { lines: failureLines, truncated } = fetchFailureLines(db, window);
+  // NIT-1: "legacy" is defined against THIS install's attribution epoch, never
+  // a fixed date — a row only predates attribution if attribution had begun.
+  const attributionEpoch = fetchAttributionEpoch(db);
+  const legacyWinners = countUnattributedWins(db, window, attributionEpoch);
 
   let breakers = [];
   try { breakers = getAllCircuitBreakerStatuses() || []; } catch { breakers = []; }
   let connections = [];
   try { connections = await getProviderConnections(); } catch { connections = []; }
+  let nestedCombos = [];
+  try { nestedCombos = findNestedCombos(await getCombos()); } catch { nestedCombos = []; }
 
-  return assembleComboStats({ window, groups, failureLines, legacyWinners, breakers, connections });
+  return assembleComboStats({
+    window, groups, failureLines, failureLinesTruncated: truncated,
+    legacyWinners, attributionEpoch, nestedCombos, breakers, connections,
+  });
 }
