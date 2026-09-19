@@ -101,6 +101,36 @@ export class DefaultExecutor extends BaseExecutor {
     return { ...body, messages, response_format: { type: "json_object" } };
   }
 
+  /**
+   * Override parseError to extract precise resetsAtMs from MiniMax 429 errors.
+   * MiniMax returns: { error: { message: "...", retryAfter: "2025-05-02T12:00:00Z", ... } }
+   * Without this, the base class returns no resetsAtMs → exponential backoff instead of precise wait.
+   */
+  parseError(response, bodyText) {
+    if (response.status === 429 && bodyText) {
+      try {
+        const json = JSON.parse(bodyText);
+        const err = json?.error || json;
+        const retryAfter = err?.retryAfter;
+        if (retryAfter) {
+          const ms = new Date(retryAfter).getTime();
+          const now = Date.now();
+          if (ms > now) {
+            return { status: 429, message: err.message || bodyText, resetsAtMs: ms };
+          }
+        }
+        const retryMs = err?.retry_after_ms || err?.retryAfterMs;
+        if (typeof retryMs === "number" && retryMs > 0) {
+          const resetsAtMs = now + retryMs;
+          if (resetsAtMs > now) {
+            return { status: 429, message: err.message || bodyText, resetsAtMs };
+          }
+        }
+      } catch { /* fall through to default */ }
+    }
+    return super.parseError(response, bodyText);
+  }
+
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
     // Runtime transport (multi-endpoint providers): use the sourceFormat-matched endpoint
     const rt = credentials?.runtimeTransport;
