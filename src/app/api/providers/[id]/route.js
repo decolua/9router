@@ -157,6 +157,16 @@ export async function PUT(request, { params }) {
 
     const updated = await updateProviderConnection(id, updateData);
 
+    // T1.5 §B2: the row can be deleted between the `existing` snapshot above
+    // and this write — updateProviderConnection then returns null and
+    // `{...updated}` used to spread it into `{}` → 200 {connection:{}}.
+    // The lost-update on providerSpecificData inside the same read-merge-write
+    // window stays a documented, accepted trade-off (T3.3 reduced its surface);
+    // full optimistic locking is deliberately NOT introduced here.
+    if (!updated) {
+      return NextResponse.json({ error: "Connection not found" }, { status: 404 });
+    }
+
     // Hide sensitive fields
     const result = { ...updated };
     delete result.apiKey;

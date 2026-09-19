@@ -264,11 +264,22 @@ export async function deleteProviderConnection(id) {
   return ok;
 }
 
-export async function deleteProviderConnectionsByProvider(providerId) {
-  const db = await getAdapter();
+// Sync core: callers that already hold the adapter can fold this DELETE into a
+// bigger transaction (nodesRepo.deleteProviderNodeWithConnections). The repo
+// functions themselves are `async` (await getAdapter), so they can never run
+// inside a synchronous db.transaction() callback — better-sqlite3 rejects
+// promise-returning transactions and node:sqlite would RELEASE the savepoint
+// at the first await. This is the minimal wrapper that makes the B5 fix
+// (T1.5) possible without moving SQL into route-land.
+export function deleteProviderConnectionsByProviderInTx(db, providerId) {
   const before = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
   db.run(`DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
   return before?.n || 0;
+}
+
+export async function deleteProviderConnectionsByProvider(providerId) {
+  const db = await getAdapter();
+  return deleteProviderConnectionsByProviderInTx(db, providerId);
 }
 
 export async function reorderProviderConnections(providerId) {
