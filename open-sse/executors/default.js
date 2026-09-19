@@ -248,12 +248,34 @@ export class DefaultExecutor extends BaseExecutor {
 
     try {
       const result = await refresher();
-      if (result) log?.info?.("TOKEN", `${this.provider} refreshed`);
+      if (result && !result.error) log?.info?.("TOKEN", `${this.provider} refreshed`);
       return result;
     } catch (error) {
       log?.error?.("TOKEN", `${this.provider} refresh error: ${error.message}`);
       return null;
     }
+  }
+
+  // A 400 invalid_grant from the token endpoint means the refresh_token is dead
+  // (rotated/consumed/revoked). Returning plain `null` made it indistinguishable
+  // from a transient failure, so refreshWithRetry replayed the same RT 3× in
+  // ~3s — replay evidence that can revoke the whole token family on
+  // rotating-RT providers (docs/orchestration/findings/T1.1.md §H3). Surface it
+  // as the sentinel `isUnrecoverableRefreshError()` already recognises; every
+  // other failure keeps the historical `null` shape (transient → retried).
+  // Reading the body here also stops the error Response from being stranded
+  // unconsumed (T1.1 §M3 for this call site).
+  async classifyRefreshFailure(response) {
+    let bodyText = "";
+    try {
+      bodyText = (await response.text?.()) || "";
+    } catch {
+      /* body may be unavailable — fall through to null (transient) */
+    }
+    if (response.status === 400 && /invalid_grant|refresh_token_reused|bad_refresh_token/i.test(bodyText)) {
+      return { error: "invalid_grant", unrecoverable: true, status: 400 };
+    }
+    return null;
   }
 
   async refreshWithJSON(url, body, proxyOptions = null) {
@@ -262,7 +284,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify(body)
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return await this.classifyRefreshFailure(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || body.refresh_token, expiresIn: tokens.expires_in };
   }
@@ -273,7 +295,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json" },
       body: new URLSearchParams(params)
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return await this.classifyRefreshFailure(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || params.refresh_token, expiresIn: tokens.expires_in };
   }
@@ -285,7 +307,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json", "Authorization": `Basic ${basicAuth}` },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: PROVIDERS.iflow.clientId, client_secret: PROVIDERS.iflow.clientSecret })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return await this.classifyRefreshFailure(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }
@@ -296,7 +318,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/json", "Accept": "application/json", "User-Agent": "kiro-cli/1.0.0" },
       body: JSON.stringify({ refreshToken })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return await this.classifyRefreshFailure(response);
     const tokens = await response.json();
     return { accessToken: tokens.accessToken, refreshToken: tokens.refreshToken || refreshToken, expiresIn: tokens.expiresIn };
   }
@@ -307,7 +329,7 @@ export class DefaultExecutor extends BaseExecutor {
       headers: { "Content-Type": "application/json", "Accept": "application/json" },
       body: JSON.stringify({ refreshToken, grantType: "refresh_token", clientType: "extension" })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return await this.classifyRefreshFailure(response);
     const payload = await response.json();
     const data = payload?.data || payload;
     const expiresAtIso = data?.expiresAt;
@@ -334,7 +356,7 @@ export class DefaultExecutor extends BaseExecutor {
       },
       body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: cfg.clientId })
     }, proxyOptions);
-    if (!response.ok) return null;
+    if (!response.ok) return await this.classifyRefreshFailure(response);
     const tokens = await response.json();
     return { accessToken: tokens.access_token, refreshToken: tokens.refresh_token || refreshToken, expiresIn: tokens.expires_in };
   }

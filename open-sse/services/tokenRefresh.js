@@ -254,6 +254,14 @@ export async function getAllAccessTokens(userInfo, log) {
   return results;
 }
 
+// True when a refresh attempt THREW (instead of returning a sentinel) with a
+// message that proves the refresh_token is dead — same taxonomy as
+// isUnrecoverableRefreshError(). Replaying those is what F26/RH3 forbids.
+function isUnrecoverableRefreshErrorMessage(message) {
+  return typeof message === "string" &&
+    /invalid_grant|refresh_token_reused|unrecoverable_refresh_error/i.test(message);
+}
+
 export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     if (attempt > 0) {
@@ -264,8 +272,20 @@ export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
 
     try {
       const result = await refreshFn();
-      if (result) return result;
+      if (result) {
+        // F26/RH3: classified unrecoverable failures (400 invalid_grant, reused
+        // token) are returned immediately — never re-POST the same dead RT.
+        // Transient null results keep the old retry ladder.
+        if (isUnrecoverableRefreshError(result)) {
+          log?.warn?.("TOKEN_REFRESH", "Unrecoverable refresh error — skipping remaining retries");
+        }
+        return result;
+      }
     } catch (error) {
+      if (isUnrecoverableRefreshErrorMessage(error?.message)) {
+        log?.warn?.("TOKEN_REFRESH", "Unrecoverable refresh error thrown — skipping remaining retries");
+        return null;
+      }
       log?.warn?.("TOKEN_REFRESH", `Attempt ${attempt + 1}/${maxRetries} failed: ${error.message}`);
     }
   }

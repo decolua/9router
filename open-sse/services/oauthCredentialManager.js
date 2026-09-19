@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import {
   getRefreshLeadMs,
   isUnrecoverableRefreshError,
@@ -9,6 +10,12 @@ import { PROVIDER_OAUTH } from "../providers/index.js";
 export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs;
 
 const refreshLocks = new Map();
+// F26/RH3: reactive 401 refreshes now take this lock from chatCore, and some
+// executors (grok-cli et al.) call refreshProviderCredentials with the SAME
+// key from *inside* the holder's refreshFn. Joining the outer pending promise
+// there would await the very chain that awaits it → deadlock. Track which keys
+// the current async chain already holds so a nested acquire runs inline.
+const heldLockKeys = new AsyncLocalStorage();
 
 function parseTimeMs(value) {
   if (value === undefined || value === null || value === "") return null;
@@ -133,11 +140,18 @@ function getRefreshLockKey(provider, credentials) {
 
 export async function withCredentialRefreshLock(provider, credentials, refreshFn) {
   const key = getRefreshLockKey(provider, credentials);
+  const held = heldLockKeys.getStore();
+  if (held?.has(key)) return refreshFn();
+
   const existing = refreshLocks.get(key);
   if (existing) return existing;
 
   const pending = Promise.resolve()
-    .then(refreshFn)
+    .then(() => {
+      const nextHeld = new Set(held || []);
+      nextHeld.add(key);
+      return heldLockKeys.run(nextHeld, refreshFn);
+    })
     .finally(() => {
       refreshLocks.delete(key);
     });

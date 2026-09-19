@@ -19,7 +19,16 @@ export async function dedupRefresh(provider, oldToken, fn, log) {
   const promise = (async () => {
     try {
       const result = await fn();
-      refreshDedupCache.set(key, { result, expiresAt: Date.now() + REFRESH_RESULT_TTL_MS });
+      // F26/F-13: cache only real results (success, or a classified failure such
+      // as invalid_grant — deterministic for that dead token). A `null` means
+      // "failed for an unknown cause"; pinning it for the TTL window turns one
+      // blip of the token endpoint into a 10s block on every refresh of that
+      // credential (outage amplifier). In-flight dedup above is untouched.
+      if (result) {
+        refreshDedupCache.set(key, { result, expiresAt: Date.now() + REFRESH_RESULT_TTL_MS });
+      } else {
+        refreshDedupCache.delete(key);
+      }
       return result;
     } catch (err) {
       refreshDedupCache.delete(key);

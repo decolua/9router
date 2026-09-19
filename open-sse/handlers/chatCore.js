@@ -6,6 +6,7 @@ import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
+import { withCredentialRefreshLock } from "../services/oauthCredentialManager.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
@@ -443,18 +444,27 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Handle 401/403 - try token refresh (skip for noAuth providers)
   if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
     try {
+      // F26/RH3: route the reactive refresh through the same single-flight
+      // lock the proactive path uses (key = provider:connectionId), so N
+      // concurrent 401s for one credential share ONE refresh instead of each
+      // running its own refreshWithRetry (up to N×3 POSTs replaying a rotating
+      // RT — T1.1 §H3). The lock is re-entrant, so executors that self-lock
+      // internally (e.g. grok-cli → refreshProviderCredentials) are safe.
+      //
       // Mutate credentials after each successful refresh: rotating refresh_token
       // providers (xAI/grok-cli) issue a new RT on every refresh; without this,
       // refreshWithRetry's 2nd/3rd attempt reuses the already-consumed RT →
       // invalid_grant → auth_failed retryable=false.
-      const newCredentials = await refreshWithRetry(async () => {
-        const result = await executor.refreshCredentials(credentials, log);
-        if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
-          if (result.accessToken) credentials.accessToken = result.accessToken;
-          credentials.refreshToken = result.refreshToken;
-        }
-        return result;
-      }, 3, log);
+      const newCredentials = await withCredentialRefreshLock(provider, credentials, () =>
+        refreshWithRetry(async () => {
+          const result = await executor.refreshCredentials(credentials, log);
+          if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
+            if (result.accessToken) credentials.accessToken = result.accessToken;
+            credentials.refreshToken = result.refreshToken;
+          }
+          return result;
+        }, 3, log)
+      );
       if (newCredentials?.accessToken || newCredentials?.copilotToken) {
         if (log?.line) log.line(reqTag, "🔑", `TOKEN REFRESHED · ${provider}/${model}`);
         Object.assign(credentials, newCredentials);
