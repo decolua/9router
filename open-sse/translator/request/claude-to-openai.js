@@ -2,8 +2,14 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
-import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
+
+// is_error has no slot on an OpenAI role:"tool" message (the direct claude→kiro route
+// keeps it structurally as status:"error"); fold it into the text with an explicit marker
+// so the model still sees the failure. Round-trip safe: openai→claude copies content
+// verbatim (marker survives) and tool pairing keys on tool_call_id, which is untouched.
+const TOOL_ERROR_MARKER = "[tool_error] ";
 
 function stripAnthropicBillingHeader(text) {
   if (typeof text !== "string") return "";
@@ -43,10 +49,11 @@ export function claudeToOpenAIRequest(model, body, stream) {
   }
 
   // Convert messages
+  const droppedTypes = new Set();
   if (body.messages && Array.isArray(body.messages)) {
     for (let i = 0; i < body.messages.length; i++) {
       const msg = body.messages[i];
-      const converted = convertClaudeMessage(msg);
+      const converted = convertClaudeMessage(msg, droppedTypes);
       if (converted) {
         // Handle array of messages (multiple tool results)
         if (Array.isArray(converted)) {
@@ -56,6 +63,12 @@ export function claudeToOpenAIRequest(model, body, stream) {
         }
       }
     }
+  }
+
+  // The OpenAI pivot cannot represent these Claude blocks (T1.2 M9). The loss is
+  // conservative but never silent: one aggregated warn per request, never a throw.
+  if (droppedTypes.size > 0) {
+    console.warn(`[claude→openai] dropped un-translatable Claude block types: ${[...droppedTypes].join(", ")}`);
   }
 
   // Fix missing tool responses - OpenAI requires every tool_call to have a response.
@@ -140,8 +153,9 @@ function systemReminderText(content) {
   return `<instructions>\n${text}\n</instructions>`;
 }
 
-// Convert single Claude message - returns single message or array of messages
-function convertClaudeMessage(msg) {
+// Convert single Claude message - returns single message or array of messages.
+// droppedTypes: shared Set collecting block types the OpenAI pivot cannot represent.
+function convertClaudeMessage(msg, droppedTypes) {
   // Some clients send content as a single block object; normalize to the
   // one-element array every branch below (the system-reminder fold included)
   // expects. Must run BEFORE the role branch: systemReminderText only reads
@@ -196,24 +210,58 @@ function convertClaudeMessage(msg) {
           });
           break;
 
-        case CLAUDE_BLOCK.TOOL_RESULT:
+        case CLAUDE_BLOCK.TOOL_RESULT: {
           let resultContent = "";
           if (typeof block.content === "string") {
             resultContent = block.content;
           } else if (Array.isArray(block.content)) {
-            resultContent = block.content
+            const text = block.content
               .filter(c => c.type === CLAUDE_BLOCK.TEXT)
               .map(c => c.text)
-              .join("\n") || JSON.stringify(block.content);
+              .join("\n");
+            // base64 images become canonical image_url data-URI parts (T1.2 M9):
+            // the old JSON.stringify(block.content) fallback leaked raw base64 into
+            // the prompt as text and the text-only join dropped images silently.
+            const imageParts = block.content
+              .filter(c => c.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64")
+              .map(c => ({
+                type: OPENAI_BLOCK.IMAGE_URL,
+                image_url: { url: encodeDataUri(c.source.media_type || DEFAULT_IMAGE_MIME, c.source.data) }
+              }));
+            if (imageParts.length > 0) {
+              resultContent = [
+                ...(text ? [{ type: OPENAI_BLOCK.TEXT, text }] : []),
+                ...imageParts,
+              ];
+            } else {
+              resultContent = text || JSON.stringify(block.content);
+            }
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
           }
-          
+
+          if (block.is_error === true) {
+            if (Array.isArray(resultContent)) {
+              const firstText = resultContent.find(p => p.type === OPENAI_BLOCK.TEXT);
+              if (firstText) firstText.text = TOOL_ERROR_MARKER + firstText.text;
+              else resultContent.unshift({ type: OPENAI_BLOCK.TEXT, text: TOOL_ERROR_MARKER.trimEnd() });
+            } else {
+              resultContent = TOOL_ERROR_MARKER + resultContent;
+            }
+          }
+
           toolResults.push({
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
             content: resultContent
           });
+          break;
+        }
+
+        default:
+          // document / thinking / redacted_thinking / server_tool_use /
+          // web_search_tool_result …: no OpenAI-pivot equivalent (T1.2 M9).
+          if (block?.type) droppedTypes?.add(block.type);
           break;
       }
     }

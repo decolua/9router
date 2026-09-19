@@ -4,7 +4,8 @@ import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
-// Compress tool_result content in-place. Returns stats or null if disabled/failed.
+// Compress tool_result content, copy-on-success: the body keeps its original
+// bytes on any failure (fail-open contract). Returns stats or null if disabled/failed.
 export function compressMessages(body, enabled) {
   if (!enabled) return null;
   if (!body) return null;
@@ -15,13 +16,20 @@ export function compressMessages(body, enabled) {
   }
 
   // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
-  const items = Array.isArray(body.messages) ? body.messages
-    : Array.isArray(body.input) ? body.input
+  const itemsKey = Array.isArray(body.messages) ? "messages"
+    : Array.isArray(body.input) ? "input"
     : null;
-  if (!items) return null;
+  if (!itemsKey) return null;
 
   const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
   try {
+    // Fail-open atomicity (T1.2 M8): mutate a copy, publish it on success only.
+    // The old in-place loop returned null on a mid-loop throw while earlier
+    // blocks stayed compressed — the body was NOT "left untouched" as the
+    // documented contract requires. structuredClone reads every property up
+    // front, so even a throwing getter corrupts nothing. Tool bodies are small
+    // vs the prompt, so the clone cost is accepted.
+    const items = structuredClone(body[itemsKey]);
     for (let i = 0; i < items.length; i++) {
       const msg = items[i];
       if (!msg) continue;
@@ -80,6 +88,7 @@ export function compressMessages(body, enabled) {
         }
       }
     }
+    body[itemsKey] = items; // publish only now — every fallible step already passed
   } catch (e) {
     console.warn("[RTK] compressMessages error:", e.message);
     return null;
@@ -91,7 +100,8 @@ export function compressMessages(body, enabled) {
 function compressKiroFormat(body, enabled) {
   const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
   try {
-    const state = body.conversationState;
+    // Same copy-on-success atomicity as compressMessages (T1.2 M8).
+    const state = structuredClone(body.conversationState);
     const allMessages = [...(Array.isArray(state?.history) ? state.history : [])];
     if (state?.currentMessage) allMessages.push(state.currentMessage);
 
@@ -110,6 +120,7 @@ function compressKiroFormat(body, enabled) {
         }
       }
     }
+    body.conversationState = state; // publish only now (T1.2 M8)
   } catch (e) {
     console.warn("[RTK] compressKiroFormat error:", e.message);
     return null;
