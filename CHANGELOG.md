@@ -1,3 +1,8 @@
+# v0.5.82 (unreleased)
+
+## Features
+- **Qoder CN**: add the `qoder-cn` provider for qoder.com.cn — same device/OAuth flow and COSY-signed chat protocol as intl Qoder, served from the CN gateway (`gateway.qoder.com.cn` / `openapi.qoder.com.cn`). Region resolution is derived from the provider id (`qoder-cn` → CN) across executor, model catalog, quota usage, validation, and the dashboard.
+
 # v0.5.81 (2026-09-18)
 
 ## Features

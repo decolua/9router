@@ -651,6 +651,11 @@ describe("qoderInferenceBase", () => {
     expect(qoderInferenceBase({ accessToken: "jt-abc" })).toContain("api2.qoder.sh");
     expect(qoderInferenceBase({ accessToken: "dt-abc" })).toContain("api3.qoder.sh");
   });
+
+  it("serves every token kind from the CN gateway for the qoder-cn region", () => {
+    expect(qoderInferenceBase({ accessToken: "jt-abc" }, "cn")).toContain("gateway.qoder.com.cn");
+    expect(qoderInferenceBase({ accessToken: "dt-abc" }, "cn")).toContain("gateway.qoder.com.cn");
+  });
 });
 
 describe("rewriteQoderMessageAttachments", () => {
