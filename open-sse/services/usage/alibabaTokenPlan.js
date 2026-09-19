@@ -234,7 +234,12 @@ export async function getAlibabaTokenPlanUsage(ctx = {}, now = Date.now()) {
     }
     if (db && typeof db.all === "function" && connId) {
       rows = db.all(
-        "SELECT promptTokens, completionTokens, tokens, timestamp, model FROM usageHistory WHERE connectionId = ? AND timestamp >= ?",
+        // Combo attempt-failure rows (D13) live in usageHistory too: zero
+        // tokens, but their timestamp could ANCHOR the 7d window start. Same
+        // NULL-safe twin of usageRepo's isFailureUsageStatus gate (open-sse
+        // must not import src/lib — duplicated clause by boundary, as in
+        // src/lib/comboStats/aggregate.js).
+        "SELECT promptTokens, completionTokens, tokens, timestamp, model FROM usageHistory WHERE connectionId = ? AND timestamp >= ? AND (status IS NULL OR status NOT LIKE 'error%')",
         [connId, cutoff7dIso]
       );
     }

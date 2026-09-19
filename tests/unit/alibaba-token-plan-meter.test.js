@@ -177,6 +177,9 @@ describe("Alibaba Token Plan Local Usage Meter", () => {
         expect.stringContaining("WHERE connectionId = ? AND timestamp >= ?"),
         ["conn-abc-123", expect.any(String)]
       );
+      // D13/REV-D: combo attempt-failure rows (status 'error:*') must never
+      // anchor the sliding 7d window; removing the clause must fail here.
+      expect(mockAll.mock.calls[0][0]).toContain("status NOT LIKE 'error%'");
       expect(result.plan).toBe("Alibaba Token Plan Standard (créditos estimados)");
       expect(result.quotas["Créditos 7d (estimado)"].used).toBe(1000);
     });
