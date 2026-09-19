@@ -194,6 +194,9 @@ Onda M2 definida: **F1** A1+M2+B4 (security/authz cluster) · **F2** M1+B7 (alia
 | drain ask-then-kill do launcher é POSIX-only (win32 mantém kill direto) | sem API de shutdown-grace no Windows sem dependência nova; residual declarado (REV-C nit) |
 | L1/L3/L4 do CLI (.desktop sem quote, MAX_PORT_ATTEMPTS morto, --skip-update sobrecarregado) | severidade LOW fora do critério A2; backlog registrado |
 | B7 P2–P5 (campos initState multi-dona restantes) | nenhum lido hoje em perna dupla; convenção de chave por-roteiro imposta em review (REV-B lista priorizada) |
+| cartão de combo sem NENHUM tráfego atribuído não mostra a nota de sub-combo (CB5 nit-2 gap) | precisa de 1 prop extra em page.js p/ cards "—"; aviso já visível em todo card com dados — polimento, não desonestidade |
+| ciclo POST/POST concorrente pode admitir combo cíclico (REV-D) | runtime absorve: comboPath devolve 400 determinístico antes de gravar linha ou estourar heap (mesma race shape aceita p/ nome-único) |
+| `isFailureUsageStatus` JS `\b` vs SQL `LIKE 'error%'` (REV-D nit) | só emitimos `error:<código>`/timeout/threw — divergência hoje inatingível; alinhamento quando surgir o primeiro status fora da gramática |
 
 ## Métricas da auditoria (preenchido no gate final)
 - Achados por frente: T0.3=3(0 reais) · T1.1=20(4H) · T1.2=20(4H) · T1.3=16(5A) · T1.4=11(3H) · T1.5=15(1A) · T1.6=18(1C+3A) · T1.7=15 candidatos→5 portáveis · T1.8=12(1H)
