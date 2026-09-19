@@ -104,3 +104,6 @@ graphify-out/*
 .start-dev.ps1
 start-dev-silent.cjs
 debug.log
+
+# pack artifacts must never be tracked: build-cli historically embedded HOME state (jwt-secret, db)
+*.tgz
