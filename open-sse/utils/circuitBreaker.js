@@ -38,6 +38,8 @@ const DEFAULT_MAX_BACKOFF_MULTIPLIER = 16;
 const DEFAULT_BACKOFF_ESCALATION_COUNT = 3;
 /** Failures older than this stop counting toward the threshold. */
 const DEFAULT_FAILURE_WINDOW_MS = 120_000;
+/** Fallback budget for a HALF_OPEN probe that never reports a result. */
+const DEFAULT_HALF_OPEN_PROBE_SAFETY_MS = 30_000;
 
 /** Detect local stream-lifecycle errors that must NOT count as provider failures. */
 export function isLocalStreamLifecycleError(error) {
@@ -86,6 +88,12 @@ class CircuitBreaker {
     this.failureTimestamps = []; // only used when failureWindowMs > 0
     this.halfOpenRequests = options.halfOpenRequests || DEFAULT_HALF_OPEN_REQUESTS;
     this.halfOpenRemaining = 0;
+    // A probe that never resolves would strand the breaker in HALF_OPEN with no
+    // slots left. Fail closed after 2× the configured reset timeout, else ~30s.
+    this.halfOpenProbeSafetyMs =
+      options.halfOpenProbeSafetyMs ??
+      (options.resetTimeout != null ? 2 * this.resetTimeoutMs : DEFAULT_HALF_OPEN_PROBE_SAFETY_MS);
+    this._halfOpenProbeSafetyTimer = null;
     this.maxBackoffMultiplier = options.maxBackoffMultiplier || DEFAULT_MAX_BACKOFF_MULTIPLIER;
     this.backoffEscalationCount = options.backoffEscalationCount || DEFAULT_BACKOFF_ESCALATION_COUNT;
     this.openProbeCycles = 0;
@@ -117,6 +125,7 @@ class CircuitBreaker {
       this.halfOpenRemaining = 0;
     } else if (newState === STATE.HALF_OPEN) {
       this.halfOpenRemaining = this.halfOpenRequests;
+      this._armHalfOpenProbeSafety();
     } else if (newState === STATE.DEGRADED) {
       // Recovery must be earned since degrading. Keeping a lifetime tally let a
       // busy account close on its very next success, making DEGRADED a no-op.
@@ -152,6 +161,34 @@ class CircuitBreaker {
     this._transition(STATE.CLOSED, { preserveWindow: true });
   }
 
+  /**
+   * Arm the HALF_OPEN probe safety timer. canExecute() authorizes the probe,
+   * but its outcome only arrives later via _onSuccess/_onFailure. If the caller
+   * never reports (dropped request, swallowed promise), the breaker would sit
+   * in HALF_OPEN forever with no slots left — neither pass nor block. Treat
+   * the silence as a failure and drop back to OPEN (fail closed).
+   */
+  _armHalfOpenProbeSafety() {
+    this._clearHalfOpenProbeSafety();
+    if (!this.halfOpenProbeSafetyMs || this.halfOpenProbeSafetyMs <= 0) return;
+    this._halfOpenProbeSafetyTimer = setTimeout(() => {
+      this._halfOpenProbeSafetyTimer = null;
+      if (this.state !== STATE.HALF_OPEN) return; // probe already resolved
+      this._onFailure(new Error(`circuit breaker "${this.name}" HALF_OPEN probe safety timeout`));
+      console.warn(`[circuitBreaker] HALF_OPEN probe timed out → OPEN (${this.name})`);
+    }, this.halfOpenProbeSafetyMs);
+    // Never keep the process alive just for this watchdog.
+    if (typeof this._halfOpenProbeSafetyTimer.unref === "function") {
+      this._halfOpenProbeSafetyTimer.unref();
+    }
+  }
+
+  _clearHalfOpenProbeSafety() {
+    if (!this._halfOpenProbeSafetyTimer) return;
+    clearTimeout(this._halfOpenProbeSafetyTimer);
+    this._halfOpenProbeSafetyTimer = null;
+  }
+
   canExecute() {
     const now = Date.now();
     // Both CLOSED and DEGRADED admit the request, so this never changes the
@@ -182,6 +219,7 @@ class CircuitBreaker {
   }
 
   _onSuccess() {
+    this._clearHalfOpenProbeSafety();
     this.successCount++;
     if (this.state === STATE.HALF_OPEN) {
       this._transition(STATE.CLOSED);
@@ -208,6 +246,8 @@ class CircuitBreaker {
   }
 
   _onFailure(error) {
+    // The probe resolved either way — the safety timer must not fire afterwards.
+    this._clearHalfOpenProbeSafety();
     if (this.isFailure && !this.isFailure(error)) return;
     this.failureCount++;
     this.lastFailureTime = Date.now();
@@ -251,6 +291,7 @@ class CircuitBreaker {
   }
 
   reset() {
+    this._clearHalfOpenProbeSafety();
     this._transition(STATE.CLOSED);
   }
 
