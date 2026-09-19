@@ -24,6 +24,7 @@ import { getErrorCode, getRelativeTime } from "@/shared/utils";
 import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
+import ProviderHealthBadge from "./components/ProviderHealthBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
 import { useCircuitBreakers } from "@/shared/hooks/useCircuitBreakers";
@@ -476,6 +477,7 @@ export default function ProvidersPage() {
           </h2>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
             <ModelAvailabilityBadge />
+            <ProviderHealthBadge range="24h" />
             <button
               onClick={() => handleBatchTest("oauth")}
               disabled={!!testingMode}
