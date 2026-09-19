@@ -31,7 +31,8 @@ export async function GET() {
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error getting settings:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Generic client message; the real failure detail stays in the server log.
+    return NextResponse.json({ error: "Failed to load settings" }, { status: 500 });
   }
 }
 
@@ -41,6 +42,15 @@ export async function PATCH(request) {
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
+
+    // An explicit newPassword must be a non-empty string: `if (body.newPassword)`
+    // below is falsy for "", which used to answer 200 while changing nothing.
+    // (No strength policy imposed here — out of scope.)
+    if (Object.prototype.hasOwnProperty.call(body, "newPassword")) {
+      if (typeof body.newPassword !== "string" || body.newPassword.length === 0) {
+        return NextResponse.json({ error: "New password must be a non-empty string" }, { status: 400 });
+      }
+    }
 
     // If updating password, hash it
     if (body.newPassword) {
@@ -113,6 +123,7 @@ export async function PATCH(request) {
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    // Generic client message; the real failure detail stays in the server log.
+    return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
   }
 }

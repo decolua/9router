@@ -32,6 +32,11 @@ export async function PUT(request, { params }) {
     if (isActive !== undefined) updateData.isActive = isActive;
 
     const updated = await updateApiKey(id, updateData);
+    // Row can vanish between the check and the write (race with DELETE) —
+    // updateApiKey returns null; that's a 404, not a 200 { key: null }.
+    if (!updated) {
+      return NextResponse.json({ error: "Key not found" }, { status: 404 });
+    }
 
     return NextResponse.json({ key: updated });
   } catch (error) {

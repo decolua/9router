@@ -55,7 +55,11 @@ export async function GET() {
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
+          // Dead socket without cancel(): unregister the global listeners too,
+          // or every orphaned client leaks 2 listeners + cachedStats forever.
           state.closed = true;
+          statsEmitter.off("update", state.send);
+          statsEmitter.off("pending", state.sendPending);
           clearInterval(state.keepalive);
         }
       }, 25000);

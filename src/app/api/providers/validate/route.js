@@ -106,6 +106,7 @@ export async function POST(request) {
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
           headers: { "Authorization": `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(8000),
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -123,6 +124,7 @@ export async function POST(request) {
         const baseUrl = node.baseUrl?.replace(/\/$/, "");
         const modelsRes = await fetch(`${baseUrl}/models`, {
           headers: { "Authorization": `Bearer ${apiKey}` },
+          signal: AbortSignal.timeout(8000),
         });
         if (modelsRes.ok) {
           return NextResponse.json({ valid: true });
@@ -136,6 +138,7 @@ export async function POST(request) {
           method: "POST",
           headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({ model: "test", input: "ping" }),
+          signal: AbortSignal.timeout(8000),
         });
         // 401/403 = bad key; anything else (including 400 "model not found") means key works
         isValid = embedRes.status !== 401 && embedRes.status !== 403;
@@ -172,6 +175,7 @@ export async function POST(request) {
             max_tokens: 1,
             messages: [{ role: "user", content: "test" }],
           }),
+          signal: AbortSignal.timeout(8000),
         });
 
         // 400/529 still confirms key accepted; only 401/403 = bad key
@@ -197,6 +201,7 @@ export async function POST(request) {
             messages: [{ role: "user", content: "test" }],
             max_tokens: 1,
           }),
+          signal: AbortSignal.timeout(8000),
         });
         isValid = cfRes.status !== 401 && cfRes.status !== 403 && cfRes.status !== 404;
         return NextResponse.json({
@@ -226,6 +231,7 @@ export async function POST(request) {
             messages: [{ role: "user", content: "test" }],
             max_tokens: 1,
           }),
+          signal: AbortSignal.timeout(8000),
         });
         isValid = azureRes.status !== 401 && azureRes.status !== 403;
         return NextResponse.json({
