@@ -5,18 +5,37 @@ import { DATA_DIR } from "@/lib/dataDir.js";
 
 export const PXPIPE_DIR = path.join(DATA_DIR, "pxpipe");
 export const PXPIPE_PACKAGE = "pxpipe-proxy";
+// F37 (F-32-A): pin the third-party package instead of the mutable @latest tag — a
+// compromised future publish must not auto-install on start/repair. Upgrade manually:
+// bump this constant after reviewing the new release on the public npm registry.
+export const PXPIPE_VERSION = "0.13.2";
 const INSTALL_LOG = path.join(PXPIPE_DIR, "install.log");
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
 
 const IS_WIN = process.platform === "win32";
 const NPM_CMD = IS_WIN ? "npm.cmd" : "npm";
 
-// Same PATH extension trick as headroom/detect.js: packaged/launchd environments
-// often miss the Node bin dirs.
-const EXTRA_BINS = IS_WIN
-  ? [`${process.env.ProgramFiles || ""}\\nodejs`, `${process.env.APPDATA || ""}\\npm`]
-  : ["/usr/local/bin", "/opt/homebrew/bin", `${process.env.HOME || ""}/.local/bin`, "/usr/bin", "/bin"];
-const EXTENDED_PATH = [...EXTRA_BINS, process.env.PATH || ""].filter(Boolean).join(path.delimiter);
+// npm lookup/install environment (F37, closes the F-32-C pre-pend vector). The
+// inherited PATH is searched FIRST so the npm resolved normally wins; what we append
+// are system-managed fallback dirs only, kept so packaged/launchd environments whose
+// PATH misses Node's bin dirs still find npm (fallback se npm ausente). User-writable
+// locations (~/.local/bin, %APPDATA%\npm) are deliberately NOT added: a same-user
+// file write there used to hijack which npm binary the server executes.
+const NPM_FALLBACK_BINS = IS_WIN
+  ? [`${process.env.ProgramFiles || ""}\\nodejs`]
+  : ["/usr/local/bin", "/opt/homebrew/bin", "/usr/bin", "/bin"];
+
+// Pure helpers, exported for tests (F37).
+export function npmSearchPath(inherited = process.env.PATH || "") {
+  return [inherited, ...NPM_FALLBACK_BINS].filter(Boolean).join(path.delimiter);
+}
+
+export function buildInstallArgs() {
+  // --ignore-scripts (F-32-A): third-party install hooks are arbitrary code executed
+  // at npm-install time; library mode only needs the package files on disk (the JS
+  // itself runs later, imported by the local-only loader).
+  return ["install", `${PXPIPE_PACKAGE}@${PXPIPE_VERSION}`, "--no-audit", "--no-fund", "--omit=dev", "--ignore-scripts"];
+}
 
 let installInFlight = null;
 
@@ -37,7 +56,7 @@ export function findNpm() {
     const out = execSync(`${IS_WIN ? "where" : "which"} npm`, {
       stdio: ["ignore", "pipe", "ignore"],
       windowsHide: true,
-      env: { ...process.env, PATH: EXTENDED_PATH },
+      env: { ...process.env, PATH: npmSearchPath() },
     }).toString().trim();
     return out ? out.split(/\r?\n/)[0].trim() : null;
   } catch {
@@ -86,14 +105,14 @@ async function runInstall() {
   }
 
   const outFd = fs.openSync(INSTALL_LOG, "a");
-  fs.writeSync(outFd, `\n[${new Date().toISOString()}] npm install ${PXPIPE_PACKAGE}@latest\n`);
+  fs.writeSync(outFd, `\n[${new Date().toISOString()}] npm install ${PXPIPE_PACKAGE}@${PXPIPE_VERSION}\n`);
 
   await new Promise((resolve, reject) => {
-    const child = spawn(npm, ["install", `${PXPIPE_PACKAGE}@latest`, "--no-audit", "--no-fund", "--omit=dev"], {
+    const child = spawn(npm, buildInstallArgs(), {
       cwd: PXPIPE_DIR,
       stdio: ["ignore", outFd, outFd],
       windowsHide: true,
-      env: { ...process.env, PATH: EXTENDED_PATH },
+      env: { ...process.env, PATH: npmSearchPath() },
     });
     const timer = setTimeout(() => {
       child.kill("SIGKILL");

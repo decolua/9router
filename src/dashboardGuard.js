@@ -90,6 +90,10 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  // F37 (F-32-A): install spawns `npm install` of a third-party package and start
+  // auto-installs + import()s it into this process — remote peers must never trigger them.
+  "/api/pxpipe/install",
+  "/api/pxpipe/start",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
@@ -100,12 +104,18 @@ const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
 // those routes is local-only; GET stays reachable through the normal policy so a
 // dashboard opened from the LAN can still render the current configuration.
 const CLI_TOOLS_SETTINGS_WRITE_RE = /^\/api\/cli-tools\/[a-z0-9-]+-settings(\/|$)/;
+// F37 (F-32-A): the rest of the pxpipe mutation family — stop unloads the in-process
+// module, restart and health POST call loadPxpipe(), which import()s third-party JS
+// into the gateway. Write methods are local-only (install/start are additionally in
+// LOCAL_ONLY_PATHS above); GETs (status, logs, stats, health mirror) stay reachable
+// through the normal policy so a LAN/tunnel dashboard can still render the card.
+const PXPIPE_WRITE_RE = /^\/api\/pxpipe\/(install|start|stop|restart|health)(\/|$)/;
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 function isLocalOnlyPath(pathname, method) {
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) return true;
   const m = String(method || "").toUpperCase();
-  return WRITE_METHODS.has(m) && CLI_TOOLS_SETTINGS_WRITE_RE.test(pathname);
+  return WRITE_METHODS.has(m) && (CLI_TOOLS_SETTINGS_WRITE_RE.test(pathname) || PXPIPE_WRITE_RE.test(pathname));
 }
 
 // Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
