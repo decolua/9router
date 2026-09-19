@@ -28,6 +28,9 @@ export const MEMORY_CONFIG = {
   sessionTtlMs: 2 * 60 * 60 * 1000,
   sessionCleanupIntervalMs: 30 * 60 * 1000,
   dnsCacheTtlMs: 5 * 60 * 1000,
+  // Negative DNS cache: without it a resolver that never answers costs the full
+  // timeout on every single request to the same host.
+  dnsFailCacheTtlMs: 60 * 1000,
   proxyDispatchersMaxSize: 20,
 };
 
@@ -43,6 +46,31 @@ function envUrl(name, def) {
   const raw = process.env[name]?.trim();
   return raw || def;
 }
+
+function envBool(name, def) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return def;
+  if (["0", "false", "off", "no"].includes(raw)) return false;
+  if (["1", "true", "on", "yes"].includes(raw)) return true;
+  return def;
+}
+
+function envList(name, def) {
+  const raw = process.env[name]?.trim();
+  if (!raw) return def;
+  const items = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return items.length ? items : def;
+}
+
+// MITM DNS bypass (see open-sse/utils/proxyFetch.js). When the local MITM feature points
+// intercepted hosts at 127.0.0.1 in the hosts file, this process must still reach the real
+// upstream — so it resolves those hosts through an external resolver instead of the system one.
+// Deployments that never enable MITM (Docker, where the container's hosts file is untouched)
+// should turn it off: if the external resolver is unreachable, every request to those hosts
+// waits out the full DNS timeout before falling back to the system resolver.
+export const MITM_DNS_BYPASS_ENABLED = envBool("MITM_DNS_BYPASS", true);
+export const MITM_DNS_SERVERS = envList("MITM_DNS_SERVERS", ["8.8.8.8", "8.8.4.4"]);
+export const MITM_DNS_TIMEOUT_MS = envMs("MITM_DNS_TIMEOUT_MS", 2000);
 
 // SearXNG endpoint used by the unauthenticated web-search provider.
 // Configure this for a separate Docker service or remote SearXNG instance.

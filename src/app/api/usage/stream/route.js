@@ -2,9 +2,17 @@ import { getUsageStats, statsEmitter, getActiveRequests } from "@/lib/usageDb";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request) {
   const encoder = new TextEncoder();
   const state = { closed: false, keepalive: null, send: null, sendPending: null, cachedStats: null };
+
+  const cleanup = () => {
+    if (state.closed) return;
+    state.closed = true;
+    if (state.send) statsEmitter.off("update", state.send);
+    if (state.sendPending) statsEmitter.off("pending", state.sendPending);
+    if (state.keepalive) clearInterval(state.keepalive);
+  };
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -23,10 +31,7 @@ export async function GET() {
           state.cachedStats = stats;
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
+          cleanup();
         }
       };
 
@@ -38,10 +43,7 @@ export async function GET() {
           const stats = { ...state.cachedStats, activeRequests, recentRequests, errorProvider };
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(stats)}\n\n`));
         } catch {
-          state.closed = true;
-          statsEmitter.off("update", state.send);
-          statsEmitter.off("pending", state.sendPending);
-          clearInterval(state.keepalive);
+          cleanup();
         }
       };
 
@@ -55,17 +57,23 @@ export async function GET() {
         try {
           controller.enqueue(encoder.encode(": ping\n\n"));
         } catch {
-          state.closed = true;
-          clearInterval(state.keepalive);
+          cleanup();
         }
       }, 25000);
+
+      // Critical: in Next.js, cancel() is not always called on client disconnect.
+      // request.signal fires reliably when the underlying socket closes.
+      if (request?.signal) {
+        if (request.signal.aborted) {
+          cleanup();
+        } else {
+          request.signal.addEventListener("abort", cleanup, { once: true });
+        }
+      }
     },
 
     cancel() {
-      state.closed = true;
-      statsEmitter.off("update", state.send);
-      statsEmitter.off("pending", state.sendPending);
-      clearInterval(state.keepalive);
+      cleanup();
     },
   });
 

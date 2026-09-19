@@ -312,7 +312,7 @@ function buildLayout(providers, activeSet, lastSet, errorSet) {
       active,
     };
 
-    // Distribute evenly starting from top (−π/2), clockwise
+    // Distribute evenly starting from top (-π/2), clockwise
     const angle = -Math.PI / 2 + (2 * Math.PI * i) / count;
     const cx = rx * Math.cos(angle);
     const cy = ry * Math.sin(angle);
@@ -484,4 +484,12 @@ ProviderTopology.propTypes = {
   })),
   lastProvider: PropTypes.string,
   errorProvider: PropTypes.string,
+  recentRequests: PropTypes.arrayOf(PropTypes.shape({
+    timestamp: PropTypes.string,
+    model: PropTypes.string,
+    provider: PropTypes.string,
+    promptTokens: PropTypes.number,
+    completionTokens: PropTypes.number,
+    status: PropTypes.string,
+  })),
 };
