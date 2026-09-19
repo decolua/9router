@@ -10,7 +10,7 @@ const KIND_ENDPOINT = {
   embedding: "/v1/embeddings",
   imageToText: "/v1/chat/completions",
   webSearch: "/v1/search",
-  webFetch: "/v1/fetch",
+  webFetch: "/v1/web/fetch",
 };
 
 const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);

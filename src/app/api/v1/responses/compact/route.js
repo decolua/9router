@@ -1,5 +1,7 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { errorResponse } from "open-sse/utils/error.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 
 let initialized = false;
 
@@ -26,7 +28,13 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    // Same 400 shape handleChat returns for /v1/responses (chat.js "Invalid JSON body").
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid JSON body");
+  }
   body._compact = true;
   const newRequest = new Request(request.url, {
     method: "POST",
