@@ -9,6 +9,11 @@
 // the scheduler. Logs carry id + provider + verdict only — never error text or
 // credential material.
 
+// T3.3: don't probe connections whose OAuth refresh is in error-backoff — the
+// verdict would just repeat the circuit reason while the credential churns.
+// Pure predicate module, zero new graph imports here.
+import { canRefreshNow } from "@/lib/tokenHealth/refreshCircuit.js";
+
 export const DEFAULT_INTERVAL_MS = 60 * 60 * 1000;
 export const BACKOFF_MS = [5, 10, 30, 120].map((m) => m * 60 * 1000);
 export const INCONCLUSIVE_MIN_MS = 30 * 60 * 1000;
@@ -103,7 +108,7 @@ export async function runCredentialHealthTick(deps = {}) {
     for (const connection of connections || []) {
       if (!connection || !connection.id) continue;
       active.add(connection.id);
-      if (isDue(connection, now)) due.push(connection);
+      if (isDue(connection, now) && canRefreshNow(connection, now)) due.push(connection);
     }
     for (const id of runtime.keys()) {
       if (!active.has(id)) runtime.delete(id);

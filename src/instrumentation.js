@@ -27,5 +27,9 @@ export async function register() {
     // Keep dashboard connection status fresh without clicks (CREDENTIAL_HEALTH=off to disable).
     const { startCredentialHealth } = await import("@/lib/credentialHealth/scheduler.js");
     startCredentialHealth();
+
+    // Renew OAuth tokens before they expire, with refresh-error backoff (TOKEN_HEALTH=off to disable).
+    const { startTokenHealth } = await import("@/lib/tokenHealth/scheduler.js");
+    startTokenHealth();
   }
 }
