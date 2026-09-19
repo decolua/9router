@@ -12,7 +12,7 @@ const OPTIONAL_FIELDS = [
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
-function resetHealthStateOnActivation(existing, patch) {
+export function resetHealthStateOnActivation(existing, patch, modelLockScope) {
   if (patch?.testStatus !== "active") return patch;
 
   const normalized = {
@@ -25,8 +25,27 @@ function resetHealthStateOnActivation(existing, patch) {
     backoffLevel: 0,
   };
 
-  for (const key of Object.keys(existing || {})) {
-    if (key.startsWith(MODEL_LOCK_PREFIX)) normalized[key] = null;
+  // F27/RM5 (T1.1 §M5): the old blanket loop nulled EVERY modelLock_* key on any
+  // testStatus:"active" patch, so a per-model activation — a reactive 401 refresh,
+  // or POST /api/models/availability {action:"clearCooldown", model} — silently
+  // unlocked OTHER models of the same account, including quota locks whose resetAt
+  // is hours away, sending the gateway back to hammer exhausted models.
+  // Scoping rules:
+  //  * modelLockScope given → reset ONLY that model's lock;
+  //  * the patch itself declares specific modelLock_* keys (the caller enumerated
+  //    exactly what to clear, e.g. clearCooldown / clearAccountError) → respect the
+  //    declaration, leave sibling locks alone;
+  //  * neither (legacy account-wide activation: dashboard re-enable, OAuth
+  //    re-import) → keep wiping every modelLock_* (unchanged behavior).
+  if (modelLockScope) {
+    normalized[`${MODEL_LOCK_PREFIX}${modelLockScope}`] = null;
+    return normalized;
+  }
+  const declaresLocks = Object.keys(patch).some((k) => k.startsWith(MODEL_LOCK_PREFIX));
+  if (!declaresLocks) {
+    for (const key of Object.keys(existing || {})) {
+      if (key.startsWith(MODEL_LOCK_PREFIX)) normalized[key] = null;
+    }
   }
 
   return normalized;
@@ -212,14 +231,18 @@ export async function createProviderConnection(data) {
 }
 
 // Critical: OAuth refresh token race — atomic merge inside transaction
-export async function updateProviderConnection(id, data) {
+// F27/RM5: optional opts.modelLockScope limits an activation reset (patch.testStatus
+// === "active") to a single model's lock, so a per-model event (reactive 401 refresh,
+// clearCooldown) can't unlock the account's other models. Omitting it = legacy
+// account-wide reset. The scope never leaks into the persisted row.
+export async function updateProviderConnection(id, data, opts = {}) {
   const db = await getAdapter();
   let result;
   db.transaction(() => {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const normalized = resetHealthStateOnActivation(existing, data);
+    const normalized = resetHealthStateOnActivation(existing, data, opts?.modelLockScope);
     const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);

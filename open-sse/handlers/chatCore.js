@@ -14,6 +14,7 @@ import { createErrorResult, parseUpstreamError, formatProviderError } from "../u
 import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import * as streamModule from "../utils/stream.js";
 import { getExecutor } from "../executors/index.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
@@ -37,6 +38,31 @@ import {
   TOOL_LOOP_BREAKER_MESSAGE,
   TOOL_LOOP_BREAKER_THRESHOLD,
 } from "../config/appConstants.js";
+
+/**
+ * F27/RM7 — the stream.js flush settles the shared trackPendingRequest guard
+ * (see open-sse/utils/stream.js beginPendingGuard/settlePendingGuard). Detect
+ * it once; if an environment provides an older stream.js without the helpers,
+ * fall back to direct trackPendingRequest calls (still single-decrement via the
+ * per-request settle latch below). This is what keeps the +1 (executor dispatch)
+ * and every −1 (translate failure, flush, disconnect, error, non-stream done)
+ * paired exactly once per request.
+ *
+ * The lookup is wrapped because a namespace access on a partially-mocked
+ * module (unit tests) THROWS for missing exports rather than yielding
+ * undefined — treated as "helpers unavailable" exactly like an old stream.js.
+ */
+let pendingGuard = null;
+try {
+  if (
+    typeof streamModule.beginPendingGuard === "function" &&
+    typeof streamModule.settlePendingGuard === "function"
+  ) {
+    pendingGuard = streamModule;
+  }
+} catch {
+  pendingGuard = null;
+}
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -153,6 +179,33 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   reqLogger.logRawRequest(body);
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
+  // F27/RM7 — per-request pending accounting latch. beginPending() fires the +1
+  // exactly once (at executor dispatch, the ONLY +1 in this flow); settlePending()
+  // fires the −1 exactly once and is idempotent. Sites that used to decrement raw
+  // (translate failure, onDisconnect, onError, non-stream trackDone, provider error)
+  // now go through it, and stream.js flush settles the SAME guard (keyed on the
+  // per-request reqLogger) so the flush-vs-disconnect double-decrement can't fire.
+  // The translate-failure case is a strict no-op: the request never began, so the
+  // old −1 there was stealing a live request's tally (T1.1 §M7).
+  let pendingBegun = false;
+  let pendingSettled = false;
+  const beginPending = () => {
+    if (pendingBegun) return;
+    pendingBegun = true;
+    if (pendingGuard) pendingGuard.beginPendingGuard(reqLogger, model, provider, connectionId);
+    else trackPendingRequest(model, provider, connectionId, true);
+  };
+  const settlePending = (error = false) => {
+    if (pendingSettled) return;
+    // Never-begun → never decrement. The lone +1 lives in beginPending(); a −1
+    // without it zeroes a concurrent request on the same (connectionId, model)
+    // and cancels usageRepo's 60 s safeguard timer.
+    if (!pendingBegun) return;
+    pendingSettled = true;
+    if (pendingGuard) pendingGuard.settlePendingGuard(reqLogger, error);
+    else trackPendingRequest(model, provider, connectionId, false, error);
+  };
+
   // Native passthrough: CLI tool and provider are the same ecosystem
   // Skip all translation/normalization — only model and Bearer are swapped
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
@@ -197,7 +250,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
     if (!translatedBody) {
-      trackPendingRequest(model, provider, connectionId, false, true);
+      // F27/RM7 (T1.1 §M7): this path used to fire a raw −1/error while the request's
+      // +1 had not happened yet — stealing a live request's tally on the same
+      // (connectionId, model). Nothing is pending for this request: settle is a
+      // guarded no-op, and the 400 below carries the failure signal instead.
+      settlePending(true);
       return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Failed to translate request for ${sourceFormat} → ${targetFormat}`);
     }
     toolNameMap = translatedBody._toolNameMap;
@@ -340,7 +397,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
 
   const executor = getExecutor(provider);
-  trackPendingRequest(model, provider, connectionId, true);
+  beginPending();
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
 
   const msgCount = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || translatedBody.request?.contents?.length || 0;
@@ -348,11 +405,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const streamController = createStreamController({
     onDisconnect: (reason) => {
-      trackPendingRequest(model, provider, connectionId, false);
+      settlePending();
       if (onDisconnect) onDisconnect(reason);
     },
     onError: (error) => {
-      trackPendingRequest(model, provider, connectionId, false);
+      settlePending();
       if (onDisconnect) onDisconnect(error);
     },
     log, provider, model, reqTag
@@ -416,7 +473,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   } catch (error) {
     const isConnectTimeout = /fetch connect timeout/i.test(error?.message || "");
     const mappedStatus = error?.name === "AbortError" ? (isConnectTimeout ? HTTP_STATUS.REQUEST_TIMEOUT : 499) : HTTP_STATUS.BAD_GATEWAY;
-    trackPendingRequest(model, provider, connectionId, false, true);
+    settlePending(true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${mappedStatus}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
@@ -469,7 +526,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         if (log?.line) log.line(reqTag, "🔑", `TOKEN REFRESHED · ${provider}/${model}`);
         Object.assign(credentials, newCredentials);
         if (onCredentialsRefreshed) {
-          try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
+          // F27/RM5: the second arg carries WHICH model this request was for, so
+          // the persistence callback can scope the activation-driven modelLock_*
+          // reset (connectionsRepo updateProviderConnection(id, patch,
+          // { modelLockScope })) instead of unlocking every other model of the
+          // account on an unrelated 401 refresh. Single-arg callbacks (current
+          // chat.js) ignore it — behavior-preserving.
+          try { await onCredentialsRefreshed(newCredentials, { model }); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
           const retryResult = await executor.execute({
@@ -499,7 +562,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Provider returned error
   if (!providerResponse.ok) {
-    trackPendingRequest(model, provider, connectionId, false, true);
+    settlePending(true);
     const { statusCode, message, resetsAtMs } = await parseUpstreamError(providerResponse, executor);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${statusCode}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
@@ -525,7 +588,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const attemptUsageEventId = usageEventId || randomUUID();
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log, usageEventId: attemptUsageEventId };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
-  const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
+  const trackDone = () => settlePending();
 
   // Provider forced streaming but client wants JSON
   if (!clientRequestedStreaming && providerRequiresStreaming) {

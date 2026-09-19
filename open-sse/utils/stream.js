@@ -15,6 +15,44 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 const sharedEncoder = new TextEncoder();
 
 /**
+ * F27/RM7 — settle-once guard for trackPendingRequest accounting.
+ *
+ * The request's +1 (chatCore) had up to three competing −1s (stream.js flush,
+ * chatCore onDisconnect, chatCore onError) plus a −1 that fired *before* any +1
+ * (translate-failure path) — the early −1 stole another live request's tally on
+ * the same (connectionId, model) and the double-settles zeroed live counters via
+ * usageRepo's Math.max(0, …) clamp (also killing the 60 s PENDING_TIMEOUT_MS
+ * safeguard, T1.1 §M7).
+ *
+ * The guard binds the increment to a per-request token (the reqLogger object,
+ * created once per handleChatCore call). begin = +1 (once); settle = −1,
+ * idempotent, and a strict no-op for a token that never began. Streams with no
+ * guard registered (standalone open-sse consumers) keep the legacy raw
+ * decrement. Keyed in a WeakMap so an un-settled entry can never leak.
+ */
+const pendingGuards = new WeakMap();
+
+export function beginPendingGuard(token, model, provider, connectionId) {
+  if (!token || typeof token !== "object" || pendingGuards.has(token)) return;
+  pendingGuards.set(token, { model, provider, connectionId, settled: false });
+  trackPendingRequest(model, provider, connectionId, true);
+}
+
+export function settlePendingGuard(token, error = false) {
+  if (!token || typeof token !== "object") return false;
+  const guard = pendingGuards.get(token);
+  if (!guard) return false; // never began → never emit an unpaired −1
+  if (guard.settled) return true;
+  guard.settled = true;
+  trackPendingRequest(guard.model, guard.provider, guard.connectionId, false, error);
+  return true;
+}
+
+export function hasPendingGuard(token) {
+  return !!token && typeof token === "object" && pendingGuards.has(token);
+}
+
+/**
  * Stream modes
  */
 const STREAM_MODE = {
@@ -235,6 +273,9 @@ export function createSSEStream(options = {}) {
 
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
+          // F27/RM8: passthrough forwarded the upstream sentinel but never
+          // latched it → flush appended a SECOND `data: [DONE]`.
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
           if (responsesTerminal) finalizeStream();
           continue;
@@ -269,7 +310,11 @@ export function createSSEStream(options = {}) {
             sseEmittedCount++;
           }
 
-          if (keepsOpenAIResponsesFormat && !streamDoneSent) {
+          if ((keepsOpenAIResponsesFormat || sourceFormat === FORMATS.OPENAI) && !streamDoneSent) {
+            // F27/RM8: an OpenAI-format client ALWAYS ends with the sentinel —
+            // previously it was only kept for responses→responses, so the
+            // upstream `data: [DONE]` was swallowed and the translated stream
+            // ended with no terminal (client hangs → failover).
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
@@ -377,7 +422,12 @@ export function createSSEStream(options = {}) {
     flush(controller) {
       const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
       dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
-      trackPendingRequest(model, provider, connectionId, false);
+      // F27/RM7: settle through the per-request guard when chatCore began one —
+      // this flush and chatCore's onDisconnect/onError race (flush ran, reader
+      // still draining); the guard makes exactly ONE −1 win. Unguarded streams
+      // (standalone open-sse consumers) keep the legacy raw decrement.
+      if (hasPendingGuard(reqLogger)) settlePendingGuard(reqLogger);
+      else trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;
@@ -390,6 +440,11 @@ export function createSSEStream(options = {}) {
             }
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
+            // F27/RM8: a trailing sentinel that never crossed transform() (no
+            // closing newline) was forwarded here AND re-appended below → 2×
+            // `data: [DONE]`. Latch it.
+            const bufTrimmed = buffer.trim();
+            if (bufTrimmed.startsWith("data:") && bufTrimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
           }
 
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -479,9 +534,28 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
+        // F27/RM8: translate mode never emitted the OpenAI sentinel for ANY
+        // non-Responses client (T1.1 §M8) — an OpenAI-format client backed by a
+        // claude/gemini/kiro provider got "SSE that simply ends" and hung until
+        // timeout/failover. Terminate every translated stream exactly once.
+        if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+          const doneOutput = "data: [DONE]\n\n";
+          reqLogger?.appendConvertedChunk?.(doneOutput);
+          controller.enqueue(sharedEncoder.encode(doneOutput));
+          streamDoneSent = true;
+        }
+
         finalizeStream();
       } catch (error) {
         console.log("Error in flush:", error);
+        // F27/RM8: a tail-translation throw also left an OpenAI client without
+        // its terminal. Best-effort: the controller may already be torn down.
+        try {
+          if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+            controller.enqueue(sharedEncoder.encode("data: [DONE]\n\n"));
+            streamDoneSent = true;
+          }
+        } catch { /* stream already closed/errored */ }
         finalizeStream();
       }
     }

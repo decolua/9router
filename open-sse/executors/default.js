@@ -82,6 +82,12 @@ export class DefaultExecutor extends BaseExecutor {
   }
 
   // Fallback json_schema → json_object for openai-compatible providers without native Structured Output.
+  // F27/RM9 (T1.1 §M9): PURE — the old `messages.map(m => ({ ...m }))` was a
+  // shallow copy, so `sys.content.push(...)` mutated the CALLER's content array.
+  // BaseExecutor calls transformRequest again on every retry iteration (502 → up
+  // to 3 URL retries) and chatCore reuses the same translatedBody after a 401
+  // refresh → the schema prompt accumulated per attempt. Never mutate anything
+  // reachable from `body`; every touched container is re-created.
   applyJsonSchemaFallback(body) {
     if (!this.provider?.startsWith?.("openai-compatible-")) return body;
     const rf = body?.response_format;
@@ -94,7 +100,7 @@ export class DefaultExecutor extends BaseExecutor {
     const sys = messages.find(m => m.role === "system");
     if (sys) {
       if (typeof sys.content === "string") sys.content = `${sys.content}\n\n${prompt}`;
-      else if (Array.isArray(sys.content)) sys.content.push({ type: "text", text: `\n\n${prompt}` });
+      else if (Array.isArray(sys.content)) sys.content = [...sys.content, { type: "text", text: `\n\n${prompt}` }];
     } else {
       messages.unshift({ role: "system", content: prompt });
     }
