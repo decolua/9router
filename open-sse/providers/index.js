@@ -27,6 +27,42 @@ const MEDIA_KEYS = new Set([
   "modelsFetcher", "mediaPriority", "hiddenKinds",
 ]);
 
+// Canonical JSON (sorted object keys) so "same list, different key insertion order"
+// compares equal — we only want to flag real catalog divergence, not serialization noise.
+function stableStringify(value) {
+  if (value === null || typeof value !== "object") {
+    const s = JSON.stringify(value);
+    return s === undefined ? String(value) : s;
+  }
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
+  return `{${Object.keys(value).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(",")}}`;
+}
+
+// PROVIDER_MODELS key = entry.alias || entry.id. If two registry entries map to the
+// same key the write is last-writer-wins (preserved on purpose: renaming/deduping keys
+// would change routing). Policy: warn ONLY when the normalized lists DIFFER, naming both
+// origins — today's sole collision (mimo-free alias "mmf" vs mmf id "mmf") has identical
+// lists, so it stays silent and a differing catalog edit becomes visible instead of quiet.
+export function buildProviderModelMap(entries, target = {}) {
+  const writers = new Map();
+  const label = (e) => (e.alias ? `${e.id} (alias "${e.alias}")` : `${e.id} (id)`);
+  for (const entry of entries) {
+    if (entry.models === undefined) continue;
+    const key = entry.alias || entry.id;
+    const models = entry.models.map(normalizeModel);
+    const prev = writers.get(key);
+    if (prev && stableStringify(prev.models) !== stableStringify(models)) {
+      console.warn(
+        `[providers] PROVIDER_MODELS key "${key}" collision: ${label(prev)} vs ${label(entry)} ` +
+          `have DIFFERENT model lists — keeping last-writer ${entry.id} (registry order, unchanged behavior)`,
+      );
+    }
+    target[key] = models;
+    writers.set(key, { models, id: entry.id, alias: entry.alias });
+  }
+  return target;
+}
+
 export const PROVIDERS = {};
 export const PROVIDER_MODELS = {};
 export const PROVIDER_OAUTH = {};
@@ -36,7 +72,6 @@ for (const entry of REGISTRY) {
     PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth);
     if (entry.transports) PROVIDERS[entry.id].transports = entry.transports;
   }
-  if (entry.models !== undefined) PROVIDER_MODELS[entry.alias || entry.id] = entry.models.map(normalizeModel);
   if (entry.oauth) PROVIDER_OAUTH[entry.id] = entry.oauth;
   // Build PROVIDER_MEDIA from top-level fields (post-migration) + legacy entry.media
   const mediaFields = {};
@@ -46,6 +81,9 @@ for (const entry of REGISTRY) {
   if (entry.media) Object.assign(mediaFields, entry.media);
   if (Object.keys(mediaFields).length) PROVIDER_MEDIA[entry.id] = mediaFields;
 }
+
+// Single pass over REGISTRY for PROVIDER_MODELS (collision-aware; key order = registry order, as before)
+buildProviderModelMap(REGISTRY, PROVIDER_MODELS);
 
 // TTS model/voice tables keyed by special names (openai-tts-models, ...), not provider ids
 Object.assign(PROVIDER_MODELS, buildTtsProviderModels());
