@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { getClientIp } from "@/lib/auth/loginLimiter";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -24,6 +25,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+
 
 /**
  * Handle chat completion request
@@ -51,8 +53,9 @@ export async function handleChat(request, clientRawRequest = null) {
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.
-  const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
+  let { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
+
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
@@ -66,23 +69,53 @@ export async function handleChat(request, clientRawRequest = null) {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
-  // Enforce API key if enabled in settings
+ if (typeof modelStr !== "string" || !modelStr.trim()) {
+    log.warn("CHAT", "Missing model");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Enforce API key if provided or if required by settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+  if (settings.requireApiKey && !apiKey) {
+    log.warn("AUTH", "Missing API key (requireApiKey=true)");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+  }
+
+  if (apiKey) {
+    const clientIp = getClientIp(request);
+    const valid = await isValidApiKey(apiKey, modelStr, clientIp);
+    if (valid === "KEY_DISABLED") {
+      log.warn("AUTH", "API key is disabled");
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "API key is disabled");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (valid === "QUOTA_EXCEEDED") {
+      log.warn("AUTH", "API key quota exceeded");
+      return errorResponse(HTTP_STATUS.TOO_MANY_REQUESTS, "API key token limit exceeded");
+    }
+    if (valid === "RPM_EXCEEDED") {
+      log.warn("AUTH", "API key RPM limit exceeded");
+      return errorResponse(HTTP_STATUS.TOO_MANY_REQUESTS, "API key rate limit exceeded (RPM limit reached)");
+    }
+    if (valid === "TPM_EXCEEDED") {
+      log.warn("AUTH", "API key TPM limit exceeded");
+      return errorResponse(HTTP_STATUS.TOO_MANY_REQUESTS, "API key rate limit exceeded (TPM limit reached)");
+    }
+    if (valid === "IP_NOT_ALLOWED") {
+      log.warn("AUTH", `IP "${clientIp}" not in whitelist for this API key`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN, `Client IP (${clientIp}) is not authorized to use this API key`);
+    }
+    if (valid === "MODEL_NOT_ALLOWED") {
+      log.warn("AUTH", `Model "${modelStr}" not allowed for this API key`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
+    }
+ if (valid === "KEY_EXPIRED") {
+ log.warn("AUTH", "API key expired");
+ return errorResponse(HTTP_STATUS.FORBIDDEN, "API key has expired");
+ }
+    if (!valid && settings.requireApiKey) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
-  }
-
-  if (!modelStr) {
-    log.warn("CHAT", "Missing model");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -218,12 +251,51 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
 
-  const { provider, model } = modelInfo;
+  let { provider, model } = modelInfo;
+ let effectiveModel = model;
+
+ // Model overrides: a Model Studio name wins over a per-model override.
+ try {
+  const { getStudioModel, getModelOverride } = await import("@/lib/db/repos/modelEditorRepo.js");
+  const studio = await getStudioModel(modelStr);
+  const override = studio || (provider ? await getModelOverride(`${provider}|${model}`) : null);
+  if (override) {
+   if (!studio && override.targetModel) {
+    // A model override may point at another provider, and then its target is a model
+    // string too: resolving it keeps a `kr/...` prefix out of the upstream body.
+    const target = String(override.targetModel).trim();
+    const resolvedTarget = target.includes("/") ? await getModelInfo(target) : null;
+    if (resolvedTarget?.provider) {
+     provider = resolvedTarget.provider;
+     model = resolvedTarget.model;
+     effectiveModel = resolvedTarget.model;
+    } else {
+     effectiveModel = target;
+    }
+   }
+   if (override.systemPrompt) {
+    if (Array.isArray(body.messages)) {
+     body.messages.unshift({ role: "system", content: override.systemPrompt });
+    } else if (typeof body.system === "string") {
+     body.system = override.systemPrompt + "\n\n" + body.system;
+    } else {
+     body.system = override.systemPrompt;
+    }
+   }
+   if (studio) {
+    log.info("CHAT", `Custom model ${modelStr} -> ${provider}/${effectiveModel}`);
+   }
+  }
+ } catch { /* fail open */ }
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
+
+  // What the caller may be told: an alias never names the model that served it.
+  const requestedModel = modelStr && modelStr !== `${provider}/${effectiveModel}` ? modelStr : null;
+  const calledModel = requestedModel || `${provider}/${effectiveModel}`;
 
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
@@ -239,11 +311,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${calledModel}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, `No credentials are serving ${calledModel} right now`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
@@ -266,8 +338,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const chatSettings = await getSettings();
     const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
-      body: { ...body, model: `${provider}/${model}` },
-      modelInfo: { provider, model },
+      body: { ...body, model: `${provider}/${effectiveModel}` },
+      modelInfo: { provider, model: effectiveModel },
+ requestedModel,
       credentials: refreshedCredentials,
       log,
       clientRawRequest,
@@ -276,6 +349,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       apiKey,
       ccFilterNaming: !!chatSettings.ccFilterNaming,
       rtkEnabled: !!chatSettings.rtkEnabled,
+      contextPruningEnabled: !!chatSettings.contextPruningEnabled,
+      maxMessagesLimit: chatSettings.maxMessagesLimit || 20,
+      semanticCacheEnabled: !!chatSettings.semanticCacheEnabled,
       headroomEnabled: !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,

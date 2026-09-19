@@ -22,19 +22,28 @@ export async function createSqlJsAdapter(filePath) {
   const SAVE_DEBOUNCE_MS = 100;
 
   function persist() {
-    const data = db.export();
-    fs.writeFileSync(filePath, Buffer.from(data));
-    dirty = false;
+    try {
+      const data = db.export();
+      fs.writeFileSync(filePath, Buffer.from(data));
+      dirty = false;
+    } catch (e) {
+      console.error("[sqljs] persist error:", e);
+    }
   }
 
-  function scheduleSave() {
+  function scheduleSave(immediate = false) {
     dirty = true;
-    if (saveTimer) clearTimeout(saveTimer);
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (immediate) {
+      persist();
+      return;
+    }
     saveTimer = setTimeout(() => {
       saveTimer = null;
-      if (dirty) {
-        try { persist(); } catch (e) { console.error("[sqljs] save failed:", e); }
-      }
+      if (dirty) persist();
     }, SAVE_DEBOUNCE_MS);
   }
 
@@ -50,7 +59,7 @@ export async function createSqlJsAdapter(filePath) {
       stmt.step();
       const changes = db.getRowsModified();
       const lastInsertRowid = db.exec("SELECT last_insert_rowid() as id")[0]?.values?.[0]?.[0] ?? null;
-      scheduleSave();
+      scheduleSave(true);
       return { changes, lastInsertRowid };
     } finally {
       stmt.free();
@@ -82,7 +91,7 @@ export async function createSqlJsAdapter(filePath) {
 
   function exec(sql) {
     db.exec(sql);
-    scheduleSave();
+    scheduleSave(true);
   }
 
   function transaction(fn) {
@@ -91,7 +100,7 @@ export async function createSqlJsAdapter(filePath) {
     try {
       const result = fn();
       db.exec(`RELEASE ${sp}`);
-      scheduleSave();
+      scheduleSave(true);
       return result;
     } catch (e) {
       try { db.exec(`ROLLBACK TO ${sp}`); db.exec(`RELEASE ${sp}`); } catch {}

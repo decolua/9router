@@ -206,7 +206,31 @@ function rotateModelsFromIndex(models, currentIndex) {
  * @returns {string[]} Rotated models array
  */
 export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
-  if (!models || models.length <= 1 || strategy !== "round-robin") {
+  if (!models || models.length <= 1) {
+    return models;
+  }
+
+  if (strategy === "cheapest") {
+    // Sort models by input cost (cheapest first)
+    return [...models].sort((a, b) => {
+      const partsA = a.split("/");
+      const partsB = b.split("/");
+      const providerA = partsA.length > 1 ? partsA[0] : "";
+      const modelA = partsA.length > 1 ? partsA[1] : a;
+      const providerB = partsB.length > 1 ? partsB[0] : "";
+      const modelB = partsB.length > 1 ? partsB[1] : b;
+
+      // Simple heuristic for free / cheap models
+      const isFreeA = a.includes("free") || a.startsWith("kr/") || a.startsWith("oc/");
+      const isFreeB = b.includes("free") || b.startsWith("kr/") || b.startsWith("oc/");
+      if (isFreeA && !isFreeB) return -1;
+      if (!isFreeA && isFreeB) return 1;
+
+      return a.localeCompare(b);
+    });
+  }
+
+  if (strategy !== "round-robin") {
     return models;
   }
 

@@ -12,11 +12,21 @@ const LOG_LEVEL_COLORS = {
   DEBUG: "text-purple-400",
 };
 
-function colorLine(line) {
-  const match = line.match(/\[(\w+)\]/g);
-  const levelTag = match ? match[1]?.replace(/\[|\]/g, "") : null;
-  const color = LOG_LEVEL_COLORS[levelTag] || "text-green-400";
-  return <span className={color}>{line}</span>;
+function colorLine(line, index) {
+  // Detect log level from tags like [LOG], [INFO], [WARN], [ERROR], [DEBUG]
+  let levelColor = "text-gray-300";
+  if (line.includes("[ERROR]") || line.includes("✗")) levelColor = "text-red-400";
+  else if (line.includes("[WARN]")) levelColor = "text-yellow-400";
+  else if (line.includes("[INFO]") || line.includes("▶")) levelColor = "text-blue-400";
+  else if (line.includes("[DEBUG]")) levelColor = "text-purple-400";
+  else if (line.includes("✓") || line.includes("done")) levelColor = "text-green-400";
+
+  return (
+    <div className="flex gap-2 hover:bg-white/5 px-1 rounded">
+      <span className="text-gray-600 select-none shrink-0 w-8 text-right">{index + 1}</span>
+      <span className={levelColor}>{line}</span>
+    </div>
+  );
 }
 
 export default function ConsoleLogClient() {
@@ -71,10 +81,20 @@ export default function ConsoleLogClient() {
   return (
     <div className="">
       <Card>
-        <div className="flex items-center justify-end px-4 pt-3 pb-2">
-          <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
-            Clear
-          </Button>
+        <div className="flex items-center justify-between px-4 pt-3 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] text-text-muted">receipt_long</span>
+            <span className="text-sm font-medium text-text-main">Console Logs</span>
+            <span className="text-xs text-text-muted">({logs.length} lines)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-xs px-2 py-0.5 rounded ${connected ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"}`}>
+              {connected ? "Connected" : "Disconnected"}
+            </span>
+            <Button size="sm" variant="outline" icon="delete" onClick={handleClear}>
+              Clear
+            </Button>
+          </div>
         </div>
         <div
           ref={logRef}
@@ -85,7 +105,7 @@ export default function ConsoleLogClient() {
           ) : (
             <div className="space-y-0.5">
               {logs.map((line, i) => (
-                <div key={i}>{colorLine(line)}</div>
+                <div key={i}>{colorLine(line, i)}</div>
               ))}
             </div>
           )}

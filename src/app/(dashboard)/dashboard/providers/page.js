@@ -11,6 +11,7 @@ import {
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
+import { getCustomLogo } from "@/shared/utils/providerLogo";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   FREE_PROVIDERS,
@@ -103,6 +104,8 @@ export default function ProvidersPage() {
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
+    useState(false);
+  const [showAddMoonshotCompatibleModal, setShowAddMoonshotCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
   const [testResults, setTestResults] = useState(null);
@@ -268,9 +271,11 @@ export default function ProvidersPage() {
     .map((node) => ({
       id: node.id,
       name: node.name || "OpenAI Compatible",
-      color: "#10A37F",
+      brand: node.brand,
+      color: (node.brand === "moonshot" || /moonshot|kimi/i.test(node.name || "")) ? "#6366F1" : "#10A37F",
       textIcon: "OC",
       apiType: node.apiType,
+      logo: node.logo,
     }))
     .filter(
       (p) => matchSearch(p.name) && matchStatus(getProviderStats(p.id, "apikey")),
@@ -283,6 +288,7 @@ export default function ProvidersPage() {
       name: node.name || "Anthropic Compatible",
       color: "#D97757",
       textIcon: "AC",
+      logo: node.logo,
     }))
     .filter(
       (p) => matchSearch(p.name) && matchStatus(getProviderStats(p.id, "apikey")),
@@ -345,6 +351,14 @@ export default function ProvidersPage() {
       if (ca !== cb) return ca - cb;
       return (a.name || "").localeCompare(b.name || "");
     });
+  const webCookieEntries = Object.entries(WEB_COOKIE_PROVIDERS)
+    .filter(
+      ([key, info]) =>
+        !info.hidden &&
+        matchSearch(info.name) &&
+        matchStatus(getProviderStats(key, ["cookie", "apikey"])),
+    );
+
   // API Key: connected providers first, then alphabetical by name
   const apikeyEntries = Object.entries(APIKEY_PROVIDERS)
     .filter(
@@ -380,6 +394,7 @@ export default function ProvidersPage() {
     oauthEntries.length > 0 ||
     freeEntries.length > 0 ||
     freeTierEntries.length > 0 ||
+    webCookieEntries.length > 0 ||
     apikeyEntries.length > 0 ||
     compatibleProviders.length > 0 ||
     anthropicCompatibleProviders.length > 0;
@@ -412,11 +427,11 @@ export default function ProvidersPage() {
         </div>
       )}
 
-      {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
+      {/* Custom Providers (OpenAI/Anthropic/MoonshotAI Compatible) — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
-            Custom Providers (OpenAI/Anthropic Compatible){" "}
+            Custom Providers (OpenAI/Anthropic/MoonshotAI){" "}
           </h2>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
             <Button
@@ -436,13 +451,22 @@ export default function ProvidersPage() {
             >
               Add OpenAI Compatible
             </Button>
+              <Button
+              size="sm"
+              variant="secondary"
+              icon="add"
+              onClick={() => setShowAddMoonshotCompatibleModal(true)}
+              className="w-full sm:w-auto"
+              >
+              Add MoonshotAI Compatible
+              </Button>
           </div>
         </div>
         {compatibleProviders.length === 0 &&
         anthropicCompatibleProviders.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
             <span className="material-symbols-outlined text-[18px]">extension</span>
-            <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
+            <span>No custom providers — use buttons above to add OpenAI/Anthropic/MoonshotAI compatible endpoints</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
@@ -572,6 +596,29 @@ export default function ProvidersPage() {
       </div>
       )}
 
+      {/* Web Cookie Providers — use browser subscription cookie instead of API key */}
+      {webCookieEntries.length > 0 && (
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+            Web Cookie Providers{" "}
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          {webCookieEntries.map(([key, info]) => (
+            <ApiKeyProviderCard
+              key={key}
+              providerId={key}
+              provider={info}
+              stats={getProviderStats(key, ["cookie", "apikey"])}
+              authType="cookie"
+              onToggle={(active) => handleToggleProvider(key, ["cookie", "apikey"], active)}
+            />
+          ))}
+        </div>
+      </div>
+      )}
+
       {/* API Key Providers — fixed list */}
       {apikeyEntries.length > 0 && (
       <div className="flex flex-col gap-4">
@@ -622,27 +669,6 @@ export default function ProvidersPage() {
       </div>
       )}
 
-      {/* Web Cookie Providers — use browser subscription cookie instead of API key */}
-      {/* <div className="flex flex-col gap-4">
-        <div className="flex items-center justify-between">
-          <h2 className="text-xl font-semibold flex items-center gap-2">
-            Web Cookie Providers{" "}
-          </h2>
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {Object.entries(WEB_COOKIE_PROVIDERS).map(([key, info]) => (
-            <ApiKeyProviderCard
-              key={key}
-              providerId={key}
-              provider={info}
-              stats={getProviderStats(key, "apikey")}
-              authType="apikey"
-              onToggle={(active) => handleToggleProvider(key, "apikey", active)}
-            />
-          ))}
-        </div>
-      </div> */}
-
       <AddCompatibleModal
         variant="openai"
         isOpen={showAddCompatibleModal}
@@ -661,6 +687,15 @@ export default function ProvidersPage() {
           setShowAddAnthropicCompatibleModal(false);
         }}
       />
+        <AddCompatibleModal
+        variant="moonshot"
+        isOpen={showAddMoonshotCompatibleModal}
+        onClose={() => setShowAddMoonshotCompatibleModal(false)}
+        onCreated={(node) => {
+        setProviderNodes((prev) => [...prev, node]);
+        setShowAddMoonshotCompatibleModal(false);
+        }}
+        />
 
       {/* Test Results Modal */}
       {testResults && (
@@ -830,6 +865,10 @@ function ApiKeyProviderCard({
   };
 
   const getIconPath = () => {
+    const customLogo = getCustomLogo(provider);
+    if (customLogo) return customLogo;
+    if (isCompatible && (provider.brand === "moonshot" || /moonshot|kimi/i.test(provider.name || "")))
+      return "/providers/moonshot-ai.png";
     if (isCompatible && provider.apiType)
       return provider.apiType === "responses"
         ? "/providers/oai-r.png"

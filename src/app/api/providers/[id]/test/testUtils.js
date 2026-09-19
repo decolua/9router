@@ -718,40 +718,47 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://llm.chutes.ai/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
-      case "grok-web": {
-        const token = connection.apiKey.startsWith("sso=") ? connection.apiKey.slice(4) : connection.apiKey;
-        const randomHex = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, "0")).join("");
-        const statsigId = Buffer.from("e:TypeError: Cannot read properties of null (reading 'children')").toString("base64");
-        const res = await fetchWithConnectionProxy("https://grok.com/rest/app-chat/conversations/new", {
-          method: "POST",
-          headers: {
-            Accept: "*/*", "Content-Type": "application/json",
-            Cookie: `sso=${token}`, Origin: "https://grok.com", Referer: "https://grok.com/",
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-            "x-statsig-id": statsigId, "x-xai-request-id": crypto.randomUUID(),
-            traceparent: `00-${randomHex(16)}-${randomHex(8)}-00`,
-          },
-          body: JSON.stringify({ temporary: true, modelName: "grok-4", message: "ping", fileAttachments: [], imageAttachments: [], disableSearch: false, enableImageGeneration: false, sendFinalMetadata: true }),
-        }, effectiveProxy);
-        const valid = res.status !== 401 && res.status !== 403;
-        return { valid, error: valid ? null : "Invalid SSO cookie" };
-      }
-      case "perplexity-web": {
-        let sessionToken = connection.apiKey;
-        if (sessionToken.startsWith("__Secure-next-auth.session-token=")) sessionToken = sessionToken.slice("__Secure-next-auth.session-token=".length);
-        const res = await fetchWithConnectionProxy("https://www.perplexity.ai/api/auth/session", {
+      case "deepseek-web": {
+        let token = connection.apiKey.trim();
+        if (token.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(token);
+            if (parsed && typeof parsed.value === "string") token = parsed.value.trim();
+          } catch {}
+        }
+        if (token.includes("userToken=")) {
+          const m = token.match(/userToken=([^;]+)/);
+          if (m) token = m[1].trim();
+        }
+        if (token.startsWith("Bearer ")) token = token.slice(7).trim();
+        token = token.replace(/^["']|["']$/g, "").trim();
+
+        if (!token) return { valid: false, error: "Invalid token format" };
+
+        const res = await fetchWithConnectionProxy("https://chat.deepseek.com/api/v0/users/current", {
           method: "GET",
           headers: {
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36",
-            Cookie: `__Secure-next-auth.session-token=${sessionToken}`,
+            Authorization: `Bearer ${token}`,
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            Origin: "https://chat.deepseek.com",
+            Referer: "https://chat.deepseek.com/",
+            "x-app-version": "20241129.0",
+            "x-client-platform": "web",
           },
-        }, effectiveProxy);
-        if (!res.ok) return { valid: false, error: "Invalid session cookie" };
+        }, effectiveProxy).catch(() => null);
+
+        if (!res || !res.ok) return { valid: false, error: "Invalid token or connection failed" };
         const data = await res.json().catch(() => null);
-        const valid = !!(data && data.user);
-        return { valid, error: valid ? null : "Session expired — re-paste cookie" };
+        if (!data || data.code !== 0 || (data.data && data.data.biz_code !== undefined && data.data.biz_code !== 0)) {
+          return { valid: false, error: data?.msg || data?.data?.biz_msg || "Invalid token - rejected by chat.deepseek.com" };
+        }
+        return { valid: true, error: null };
       }
       case "opencode": {
+        // Connectivity-only probe: GET /models never exercises the Responses
+        // tool path, so a green dashboard test does NOT rule out 403
+        // FreeTierError on POST /zen/v1/responses with tools (requires
+        // bash+read decoys + tool_choice auto — see OpenCodeExecutor).
         const res = await fetchWithConnectionProxy("https://opencode.ai/zen/v1/models", {
           headers: { Authorization: "Bearer public", "User-Agent": "opencode/1.18.31" },
         }, effectiveProxy);

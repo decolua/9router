@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Input, Button, Badge } from "@/shared/components";
+import ProviderLogoField from "@/shared/components/ProviderLogoField";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -13,6 +14,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
     name: "",
     prefix: "",
     baseUrl: DEFAULT_BASE_URL,
+    logo: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -30,9 +32,10 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
         name: node.name || "",
         prefix: node.prefix || "",
         baseUrl: node.baseUrl || DEFAULT_BASE_URL,
+        logo: node.logo || "",
       });
     } else {
-      setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL });
+      setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL, logo: "" });
     }
   }, [isOpen, isEdit, node]);
 
@@ -46,6 +49,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        logo: formData.logo,
       };
       if (!isEdit) payload.type = "custom-embedding";
 
@@ -110,19 +114,23 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
   return (
     <Modal isOpen={isOpen} title={isEdit ? "Edit Custom Embedding" : "Add Custom Embedding"} onClose={onClose}>
       <div className="flex flex-col gap-4">
+        <ProviderLogoField
+          logo={formData.logo}
+          onChange={(next) => setFormData({ ...formData, logo: next })}
+        />
         <Input
           label="Name"
           value={formData.name}
           onChange={(e) => setFormData({ ...formData, name: e.target.value })}
           placeholder="Voyage AI"
-          hint="Required. A friendly label for this embedding provider."
+          hint="A friendly label for this embedding provider"
         />
         <Input
           label="Prefix"
           value={formData.prefix}
           onChange={(e) => setFormData({ ...formData, prefix: e.target.value })}
           placeholder="voyage"
-          hint="Required. Used as the provider prefix for model IDs (e.g. voyage/voyage-3)."
+          hint="The provider prefix used in model IDs (e.g. voyage/voyage-3)"
         />
         <Input
           label="Base URL"
@@ -142,7 +150,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
           value={checkModelId}
           onChange={(e) => setCheckModelId(e.target.value)}
           placeholder="e.g. voyage-3, embed-english-v3.0, text-embedding-3-small"
-          hint="Required for validation. Will send a test embeddings request."
+          hint="Used to send a validation test request"
         />
         <div className="flex items-center gap-3">
           <Button

@@ -4,7 +4,32 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { translateResponse, initState } from "../../translator/index.js";
+import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
+import { collectJsonFrames } from "../../transformer/jsonToStreamConverter.js";
+import { applyModelAlias, calledModelName } from "../../utils/modelAlias.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_BLOCK, CLAUDE_BLOCK, CLAUDE_EVENT, RESPONSES_EVENT, OPENAI_FINISH, MODEL_FALLBACK } from "../../translator/schema/index.js";
+
+// Frames whose `type` is a provider event name, mapped to the translator format
+// that can decode that event stream into OpenAI chunks.
+const EVENT_FRAME_FORMAT = {
+  [CLAUDE_EVENT.MESSAGE_START]: FORMATS.CLAUDE,
+  [CLAUDE_EVENT.CONTENT_BLOCK_START]: FORMATS.CLAUDE,
+  [CLAUDE_EVENT.CONTENT_BLOCK_DELTA]: FORMATS.CLAUDE,
+  [CLAUDE_EVENT.CONTENT_BLOCK_STOP]: FORMATS.CLAUDE,
+  [CLAUDE_EVENT.MESSAGE_DELTA]: FORMATS.CLAUDE,
+  [CLAUDE_EVENT.MESSAGE_STOP]: FORMATS.CLAUDE,
+  [CLAUDE_EVENT.ERROR]: FORMATS.CLAUDE,
+  [RESPONSES_EVENT.CREATED]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.OUTPUT_ITEM_ADDED]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.OUTPUT_TEXT_DELTA]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.REASONING_SUMMARY_TEXT_DELTA]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.FUNCTION_CALL_ARGS_DELTA]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.OUTPUT_ITEM_DONE]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.COMPLETED]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.FAILED]: FORMATS.OPENAI_RESPONSES,
+  [RESPONSES_EVENT.DONE]: FORMATS.OPENAI_RESPONSES,
+};
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -106,28 +131,181 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
- * Parse OpenAI-style SSE text into a single chat completion JSON.
- * Used when provider forces streaming but client wants non-streaming.
+ * Parse an SSE-shaped body into a single chat completion. Used when the provider
+ * streamed but the client wanted JSON, and whenever an upstream labels a body as
+ * `text/event-stream` for a non-streaming request. Real gateways deviate from the
+ * spec constantly — no space after `data:`, `event:` field lines, NDJSON rows
+ * wearing an SSE content-type, Claude/Responses event frames on an OpenAI route,
+ * or a whole JSON document mislabelled as a stream — and every one of those used
+ * to read as "no response" and come back as a 502.
  */
 export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
-  const chunks = [];
-  let streamError = null;
+  const frames = collectJsonFrames(rawSSE);
+  if (frames.length === 0) return null;
 
-  for (const line of String(rawSSE || "").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed.startsWith("data:")) continue;
-    const payload = trimmed.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try {
-      const chunk = JSON.parse(payload);
-      if (chunk?.error) streamError = chunk.error;
-      else chunks.push(chunk);
-    } catch { /* ignore malformed lines */ }
+  const openaiChunks = [];
+  const eventFrames = [];
+  const unknownFrames = [];
+  let streamError = null;
+  let wholeCompletion = null;
+
+  for (const frame of frames) {
+    if (!frame || typeof frame !== "object") continue;
+    if (frame.error) streamError = frame.error;
+    if (Array.isArray(frame.choices) && frame.choices[0]?.message) wholeCompletion = frame;
+    else if (Array.isArray(frame.choices)) openaiChunks.push(frame);
+    else if (EVENT_FRAME_FORMAT[frame.type]) eventFrames.push(frame);
+    else unknownFrames.push(frame);
   }
 
   if (streamError) return { error: streamError };
-  if (chunks.length === 0) return null;
+  if (wholeCompletion) return wholeCompletion;
 
+  if (openaiChunks.length) {
+    const fromChunks = accumulateOpenAIChunks(openaiChunks, fallbackModel);
+    return hasAnswer(fromChunks) ? fromChunks : harvestCompletion(frames, fallbackModel) || fromChunks;
+  }
+  if (eventFrames.length) {
+    const chunks = translateFramesToChunks(eventFrames, EVENT_FRAME_FORMAT[eventFrames[0].type], fallbackModel);
+    const fromEvents = accumulateOpenAIChunks(chunks, fallbackModel);
+    return hasAnswer(fromEvents) ? fromEvents : harvestCompletion(frames, fallbackModel) || fromEvents;
+  }
+  return harvestCompletion(unknownFrames, fallbackModel);
+}
+
+/**
+ * A completion is only usable when it says something or bills something: an empty
+ * one is how a mis-parsed stream hides, so callers can fall back to the harvest.
+ */
+function hasAnswer(body) {
+  const message = body?.choices?.[0]?.message;
+  if (!message) return false;
+  return !!(message.content || message.tool_calls?.length || message.reasoning_content || body?.usage);
+}
+
+/**
+ * Replay provider event frames (Claude Messages / OpenAI Responses) through the
+ * same response translators the live streaming path uses, so this fallback can
+ * never drift from what a normal stream would have produced.
+ */
+function translateFramesToChunks(frames, eventFormat, fallbackModel) {
+  const state = { ...initState(FORMATS.OPENAI), model: fallbackModel, customToolNames: new Set() };
+  const chunks = [];
+  for (const frame of frames) {
+    try {
+      for (const translated of [].concat(translateResponse(eventFormat, FORMATS.OPENAI, frame, state) || [])) {
+        if (translated && typeof translated === "object") chunks.push(translated);
+      }
+    } catch {
+      /* a frame this translator cannot read is picked up by the harvest fallback */
+    }
+  }
+  return chunks;
+}
+
+/**
+ * Last resort: walk the frames and collect whatever assistant text, reasoning,
+ * tool calls and usage they carry, wherever they put it. Deliberately dumb — it
+ * exists so an unfamiliar provider shape surfaces as a rough answer instead of a
+ * blank one.
+ */
+function harvestCompletion(frames, fallbackModel) {
+  let text = "";
+  let reasoning = "";
+  let usage = null;
+  let model = fallbackModel || MODEL_FALLBACK;
+  let finishReason = null;
+  const toolCalls = new Map();
+
+  const pushToolCall = (key, call) => {
+    if (!call?.name && !call?.id) return;
+    toolCalls.set(String(key), call);
+  };
+
+  for (const frame of frames) {
+    if (!frame || typeof frame !== "object") continue;
+    if (frame.model || frame.message?.model) model = frame.model || frame.message.model;
+    usage = frame.usage || frame.message?.usage || frame.response?.usage || frame.usageMetadata || usage;
+    if (frame.delta?.stop_reason) finishReason = toOpenAIFinish(frame.delta.stop_reason, FORMATS.CLAUDE);
+    if (frame.candidates?.[0]?.finishReason) finishReason = toOpenAIFinish(frame.candidates[0].finishReason, FORMATS.GEMINI);
+
+    for (const block of [].concat(frame.content || [])) {
+      if (!block || typeof block !== "object") continue;
+      if (block.type === CLAUDE_BLOCK.TEXT) text += block.text || "";
+      else if (block.type === CLAUDE_BLOCK.THINKING) reasoning += block.thinking || "";
+      else if (block.type === CLAUDE_BLOCK.TOOL_USE) pushToolCall(`blk${block.id || toolCalls.size}`, { id: block.id, name: block.name, input: block.input });
+    }
+    for (const part of [].concat(frame.candidates?.[0]?.content?.parts || [])) {
+      if (!part || typeof part !== "object") continue;
+      if (typeof part.text === "string") {
+        if (part.thought === true) reasoning += part.text;
+        else text += part.text;
+      }
+      if (part.functionCall?.name) pushToolCall(`fn${part.functionCall.name}${toolCalls.size}`, { name: part.functionCall.name, input: part.functionCall.args });
+    }
+    for (const item of [].concat(frame.output || frame.response?.output || [])) {
+      if (!item || typeof item !== "object") continue;
+      if (item.type === RESPONSES_ITEM.OUTPUT_TEXT) text += item.text || "";
+      else if (item.type === RESPONSES_ITEM.MESSAGE) {
+        for (const c of [].concat(item.content || [])) if (typeof c?.text === "string") text += c.text;
+      } else if (item.type === RESPONSES_ITEM.FUNCTION_CALL) {
+        pushToolCall(`rc${item.call_id || item.id || toolCalls.size}`, { name: item.name, input: item.arguments });
+      } else if (item.type === RESPONSES_ITEM.REASONING) {
+        for (const s of [].concat(item.summary || [])) if (typeof s?.text === "string") reasoning += s.text;
+      }
+    }
+
+    const delta = frame.delta;
+    if (typeof delta === "string") text += delta;
+    else if (delta && typeof delta === "object") {
+      if (typeof delta.text === "string") text += delta.text;
+      if (typeof delta.content === "string" && !Array.isArray(frame.choices)) text += delta.content;
+      if (typeof delta.thinking === "string") reasoning += delta.thinking;
+      if (typeof delta.reasoning_content === "string") reasoning += delta.reasoning_content;
+      if (typeof delta.partial_json === "string" && toolCalls.size) {
+        const last = [...toolCalls.values()].pop();
+        last.input = `${typeof last.input === "string" ? last.input : ""}${delta.partial_json}`;
+      }
+      for (const tc of [].concat(delta.tool_calls || [])) {
+        if (!tc?.function?.name && !tc?.function?.arguments) continue;
+        const key = `d${tc.index ?? toolCalls.size}`;
+        const prev = toolCalls.get(key) || { id: tc.id, name: "", input: "" };
+        toolCalls.set(key, {
+          id: tc.id || prev.id,
+          name: `${prev.name || ""}${tc.function?.name || ""}`,
+          input: `${typeof prev.input === "string" ? prev.input : ""}${tc.function?.arguments || ""}`,
+        });
+      }
+    }
+  }
+
+  if (!text && !reasoning && toolCalls.size === 0) return null;
+
+  const message = { role: ROLE.ASSISTANT, content: text || (toolCalls.size ? null : "") };
+  if (reasoning) message.reasoning_content = reasoning;
+  if (toolCalls.size) {
+    message.tool_calls = [...toolCalls.entries()].map(([key, call], index) => ({
+      id: call.id || `call_${index}`,
+      type: OPENAI_BLOCK.FUNCTION,
+      function: {
+        name: call.name || key,
+        arguments: typeof call.input === "string" ? call.input : JSON.stringify(call.input || {}),
+      },
+    }));
+  }
+  const body = {
+    id: `chatcmpl-${Date.now()}`,
+    object: "chat.completion",
+    created: Math.floor(Date.now() / 1000),
+    model,
+    choices: [{ index: 0, message, finish_reason: finishReason || (toolCalls.size ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP) }],
+  };
+  if (usage) body.usage = usage;
+  return body;
+}
+
+/** Accumulate OpenAI chat.completion.chunk frames into one completion. */
+function accumulateOpenAIChunks(chunks, fallbackModel) {
   const first = chunks[0];
   const contentParts = [];
   const reasoningParts = [];
@@ -179,15 +357,16 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
  */
-export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
+export async function handleForcedSSEToJson({ providerResponse, sourceFormat, targetFormat, provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, requestedModel, clientRawRequest, onRequestSuccess, customToolNames, trackDone, appendLog, reqTag, log }) {
   const contentType = providerResponse.headers.get("content-type") || "";
   const isSSE = contentType.includes("text/event-stream") || (contentType === "" && isResponsesProvider(provider));
   if (!isSSE) return null; // not handled here
+  const alias = calledModelName(requestedModel, model);
 
   trackDone();
 
   const ctx = {
-    provider, model, connectionId,
+    provider, model, connectionId, requestedModel,
     request: extractRequestConfig(body, stream),
     providerRequest: finalBody || translatedBody || null
   };
@@ -204,7 +383,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       const usage = jsonResponse.usage || {};
       appendLog({ tokens: usage, status: "200 OK" });
-      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+      saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, requestedModel, endpoint: clientRawRequest?.endpoint, silent: true });
       if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
       // Same cache-inclusive total for the recorded detail, so the DB and the
@@ -225,6 +404,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
       // Client is Responses API → return as-is
       if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+        applyModelAlias(jsonResponse, alias);
         return { success: true, response: new Response(JSON.stringify(jsonResponse), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
       }
 
@@ -281,6 +461,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         };
       }
 
+      applyModelAlias(finalResp, alias);
       return { success: true, response: new Response(JSON.stringify(finalResp), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
     } catch (err) {
       console.error("[ChatCore] Responses API SSE→JSON failed:", err);
@@ -304,7 +485,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
 
     const usage = parsed.usage || {};
     appendLog({ tokens: usage, status: "200 OK" });
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, requestedModel, endpoint: clientRawRequest?.endpoint, silent: true });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
     const totalLatency = Date.now() - requestStartTime;
@@ -347,6 +528,8 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // lost on the non-streaming return path. Inlined (not imported from
     // nonStreamingHandler.js) to avoid a circular import: nonStreamingHandler
     // already imports parseSSEToOpenAIResponse from this module.
+    // Everything above is logging; the document leaving here must name the called model.
+    applyModelAlias(parsed, alias);
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
       : parsed;

@@ -1,104 +1,165 @@
 import { NextResponse } from "next/server";
-import { createProviderNode, getProviderNodes } from "@/models";
+import { createProviderNode, getProviderNodes, updateProviderNode, getProviderNodeById, getProviderConnections, updateProviderConnection } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { normalizeLogo } from "@/shared/utils/providerLogo";
 
 export const dynamic = "force-dynamic";
 
 const OPENAI_COMPATIBLE_DEFAULTS = {
-  baseUrl: "https://api.openai.com/v1",
+ baseUrl: "https://api.openai.com/v1",
 };
 
 const ANTHROPIC_COMPATIBLE_DEFAULTS = {
-  baseUrl: "https://api.anthropic.com/v1",
+ baseUrl: "https://api.anthropic.com/v1",
 };
 
 const CUSTOM_EMBEDDING_DEFAULTS = {
-  baseUrl: "https://api.openai.com/v1",
+ baseUrl: "https://api.openai.com/v1",
 };
 
 // GET /api/provider-nodes - List all provider nodes
 export async function GET() {
-  try {
-    const nodes = await getProviderNodes();
-    return NextResponse.json({ nodes });
-  } catch (error) {
-    console.log("Error fetching provider nodes:", error);
-    return NextResponse.json({ error: "Failed to fetch provider nodes" }, { status: 500 });
-  }
+ try {
+ const nodes = await getProviderNodes();
+ return NextResponse.json({ nodes });
+ } catch (error) {
+ console.log("Error fetching provider nodes:", error);
+ return NextResponse.json({ error: "Failed to fetch provider nodes" }, { status: 500 });
+ }
 }
 
 // POST /api/provider-nodes - Create provider node
 export async function POST(request) {
-  try {
-    const body = await request.json();
-    const { name, prefix, apiType, baseUrl, type } = body;
+ try {
+ const body = await request.json();
+ const { name, prefix, apiType, baseUrl, type, brand, logo } = body;
 
-    if (!name?.trim()) {
-      return NextResponse.json({ error: "Name is required" }, { status: 400 });
-    }
+ if (!name?.trim()) {
+ return NextResponse.json({ error: "Name is required" }, { status: 400 });
+ }
 
-    if (!prefix?.trim()) {
-      return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
-    }
+ if (!prefix?.trim()) {
+ return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
+ }
 
-    // Determine type
-    const nodeType = type || "openai-compatible";
+ const normalizedLogo = normalizeLogo(logo);
+ if (normalizedLogo === undefined) {
+   return NextResponse.json({ error: "Logo must be a small PNG, JPEG, WebP or GIF data URL" }, { status: 400 });
+ }
 
-    if (nodeType === "openai-compatible") {
-      if (!apiType || !["chat", "responses"].includes(apiType)) {
-        return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
-      }
+ // Determine type
+ const nodeType = type || "openai-compatible";
 
-      const node = await createProviderNode({
-        id: `${OPENAI_COMPATIBLE_PREFIX}${apiType}-${generateId()}`,
-        type: "openai-compatible",
-        prefix: prefix.trim(),
-        apiType,
-        baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
-        name: name.trim(),
-      });
-      return NextResponse.json({ node }, { status: 201 });
-    }
+ if (nodeType === "openai-compatible") {
+ if (!apiType || !["chat", "responses"].includes(apiType)) {
+ return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
+ }
 
-    if (nodeType === "custom-embedding") {
-      // Strip trailing slash and /embeddings if user pasted full endpoint
-      let sanitizedBaseUrl = (baseUrl || CUSTOM_EMBEDDING_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
-      if (sanitizedBaseUrl.endsWith("/embeddings")) {
-        sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -"/embeddings".length);
-      }
+ const node = await createProviderNode({
+ id: `${OPENAI_COMPATIBLE_PREFIX}${apiType}-${generateId()}`,
+ type: "openai-compatible",
+ prefix: prefix.trim(),
+ apiType,
+ baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
+ name: name.trim(),
+ brand,
+ logo: normalizedLogo,
+ });
+ return NextResponse.json({ node }, { status: 201 });
+ }
 
-      const node = await createProviderNode({
-        id: `${CUSTOM_EMBEDDING_PREFIX}${generateId()}`,
-        type: "custom-embedding",
-        prefix: prefix.trim(),
-        baseUrl: sanitizedBaseUrl,
-        name: name.trim(),
-      });
-      return NextResponse.json({ node }, { status: 201 });
-    }
+ if (nodeType === "custom-embedding") {
+ // Strip trailing slash and /embeddings if user pasted full endpoint
+ let sanitizedBaseUrl = (baseUrl || CUSTOM_EMBEDDING_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
+ if (sanitizedBaseUrl.endsWith("/embeddings")) {
+ sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -"/embeddings".length);
+ }
 
-    if (nodeType === "anthropic-compatible") {
-      // Sanitize Base URL: remove trailing slash, and remove trailing /messages if user added it
-      // This prevents double-appending /messages at runtime
-      let sanitizedBaseUrl = (baseUrl || ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
-      if (sanitizedBaseUrl.endsWith("/messages")) {
-        sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -9); // remove /messages
-      }
+ const node = await createProviderNode({
+ id: `${CUSTOM_EMBEDDING_PREFIX}${generateId()}`,
+ type: "custom-embedding",
+ prefix: prefix.trim(),
+ baseUrl: sanitizedBaseUrl,
+ name: name.trim(),
+ brand,
+ logo: normalizedLogo,
+ });
+ return NextResponse.json({ node }, { status: 201 });
+ }
 
-      const node = await createProviderNode({
-        id: `${ANTHROPIC_COMPATIBLE_PREFIX}${generateId()}`,
-        type: "anthropic-compatible",
-        prefix: prefix.trim(),
-        baseUrl: sanitizedBaseUrl,
-        name: name.trim(),
-      });
-      return NextResponse.json({ node }, { status: 201 });
-    }
+ if (nodeType === "anthropic-compatible") {
+ // Sanitize Base URL: remove trailing slash, and remove trailing /messages if user added it
+ // This prevents double-appending /messages at runtime
+ let sanitizedBaseUrl = (baseUrl || ANTHROPIC_COMPATIBLE_DEFAULTS.baseUrl).trim().replace(/\/$/, "");
+ if (sanitizedBaseUrl.endsWith("/messages")) {
+ sanitizedBaseUrl = sanitizedBaseUrl.slice(0, -9); // remove /messages
+ }
 
-    return NextResponse.json({ error: "Invalid provider node type" }, { status: 400 });
-  } catch (error) {
-    console.log("Error creating provider node:", error);
-    return NextResponse.json({ error: "Failed to create provider node" }, { status: 500 });
-  }
+ const node = await createProviderNode({
+ id: `${ANTHROPIC_COMPATIBLE_PREFIX}${generateId()}`,
+ type: "anthropic-compatible",
+ prefix: prefix.trim(),
+ baseUrl: sanitizedBaseUrl,
+ name: name.trim(),
+ brand,
+ logo: normalizedLogo,
+ });
+ return NextResponse.json({ node }, { status: 201 });
+ }
+
+ return NextResponse.json({ error: "Invalid provider node type" }, { status: 400 });
+ } catch (error) {
+ console.log("Error creating provider node:", error);
+ return NextResponse.json({ error: "Failed to create provider node" }, { status: 500 });
+ }
+}
+
+// PATCH /api/provider-nodes - Update provider node (prefix, name, baseUrl)
+export async function PATCH(request) {
+ try {
+ const body = await request.json();
+ const { id, ...updateData } = body;
+ if (!id) {
+ return NextResponse.json({ error: "Node ID is required" }, { status: 400 });
+ }
+ const existing = await getProviderNodeById(id);
+ if (!existing) {
+ return NextResponse.json({ error: "Node not found" }, { status: 404 });
+ }
+ // Sanitize prefix
+ if (updateData.prefix !== undefined) {
+ updateData.prefix = updateData.prefix.trim().replace(/^\/+|\/+$/g, "");
+ }
+ // Sanitize baseUrl
+ if (updateData.baseUrl !== undefined) {
+ updateData.baseUrl = updateData.baseUrl.trim().replace(/\/+$/, "");
+ }
+ // Custom logo: "" clears it, an unusable value is refused
+ if (updateData.logo !== undefined) {
+   const logoValue = normalizeLogo(updateData.logo);
+   if (logoValue === undefined) {
+     return NextResponse.json({ error: "Logo must be a small PNG, JPEG, WebP or GIF data URL" }, { status: 400 });
+   }
+   updateData.logo = logoValue;
+ }
+ const updated = await updateProviderNode(id, updateData);
+ // Also update prefix on all connections that reference this node
+ if (updateData.prefix) {
+   const connections = await getProviderConnections({ provider: id });
+   for (const conn of connections) {
+     await updateProviderConnection(conn.id, {
+       ...conn,
+       providerSpecificData: {
+         ...(conn.providerSpecificData || {}),
+         prefix: updateData.prefix,
+       },
+     });
+   }
+ }
+ return NextResponse.json({ node: updated });
+ } catch (error) {
+ console.log("Error updating provider node:", error);
+ return NextResponse.json({ error: "Failed to update provider node" }, { status: 500 });
+ }
 }

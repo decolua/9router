@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { exportDb, getSettings, importDb } from "@/lib/localDb";
+import { exportDb, getSettings, importDb, getDbSummary } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
 
@@ -13,10 +13,21 @@ function isCliRequest(request) {
 
 export async function GET(request) {
   try {
-    if (!isCliRequest(request) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
+    const { searchParams } = new URL(request.url);
+    const isSummary = searchParams.get("summary") === "true";
+
+    if (!isSummary && !isCliRequest(request) && !(await verifyDashboardPassword(request.headers.get(PASSWORD_HEADER)))) {
       return NextResponse.json({ error: "Invalid password" }, { status: 401 });
     }
-    const payload = await exportDb();
+
+    if (isSummary) {
+      const summary = await getDbSummary();
+      return NextResponse.json(summary);
+    }
+
+    const sectionsParam = searchParams.get("sections");
+    const options = sectionsParam ? sectionsParam.split(",").map((s) => s.trim()).filter(Boolean) : null;
+    const payload = await exportDb(options);
     return NextResponse.json(payload);
   } catch (error) {
     console.log("Error exporting database:", error);

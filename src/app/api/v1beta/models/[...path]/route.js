@@ -3,6 +3,7 @@ import {
   clearAccountError,
   getProviderCredentials,
   isValidApiKey,
+  apiKeyGateFailure,
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -179,18 +180,16 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 
 async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
   const apiKey = extractGeminiClientApiKey(request);
   if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+    return settings.requireApiKey
+      ? Response.json({ error: { message: "Missing API key" } }, { status: 401 })
+      : null;
   }
-
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+  const failure = apiKeyGateFailure(await isValidApiKey(apiKey), settings.requireApiKey);
+  if (failure) {
+    return Response.json({ error: { message: failure.message } }, { status: failure.status });
   }
-
   return null;
 }
 

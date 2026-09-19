@@ -16,18 +16,20 @@ export async function GET() {
     const providerNodes = await getProviderNodes();
     const nodeMap = {};
     for (const node of providerNodes) {
-      nodeMap[node.id] = node.name;
+      nodeMap[node.id] = { name: node.name, logo: node.logo || null };
     }
 
     const providers = providerIds.map(providerId => {
       let name = providerId;
+      let nodeLogo = null;
       if (nodeMap[providerId]) {
-        name = nodeMap[providerId];
+        name = nodeMap[providerId].name;
+        nodeLogo = nodeMap[providerId].logo;
       } else {
         const providerConfig = getProviderByAlias(providerId) || AI_PROVIDERS[providerId];
         if (providerConfig?.name) name = providerConfig.name;
       }
-      return { id: providerId, name };
+      return { id: providerId, name, provider: providerId, nodeName: name, nodeLogo, logo: nodeLogo };
     });
 
     return NextResponse.json({ providers });

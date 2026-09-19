@@ -817,7 +817,7 @@ export default function ProxyPoolsPage() {
           <div className="rounded-lg bg-blue-500/5 border border-blue-500/10 p-3 flex flex-col gap-1.5">
             <p className="text-sm text-text-main font-medium">What is Vercel Relay?</p>
             <p className="text-xs text-text-muted">
-              Deploys an edge relay function to Vercel. All AI provider requests will be forwarded through Vercel&apos;s edge network, masking your real IP from providers.
+              Forwards all AI provider requests through Vercel&apos;s edge network so your real IP stays hidden.
             </p>
             <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
               <li>Your IP is replaced by Vercel&apos;s dynamic edge IPs (hundreds of IPs across 20+ global regions)</li>
@@ -839,7 +839,7 @@ export default function ProxyPoolsPage() {
             value={vercelForm.projectName}
             onChange={(e) => setVercelForm((prev) => ({ ...prev, projectName: e.target.value }))}
             placeholder="my-relay"
-            hint="Unique name for your Vercel project. Leave empty for auto-generated name."
+            hint="Name for your Vercel project (leave empty to auto-generate)"
           />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
@@ -865,7 +865,7 @@ export default function ProxyPoolsPage() {
           <div className="rounded-lg bg-orange-500/5 border border-orange-500/10 p-3 flex flex-col gap-1.5">
             <p className="text-sm text-text-main font-medium">What is Cloudflare Relay?</p>
             <p className="text-xs text-text-muted">
-              Deploys a Cloudflare Worker as a proxy relay. All AI provider requests will be forwarded through Cloudflare&apos;s global edge network.
+              Forwards all AI provider requests through Cloudflare&apos;s global edge network.
             </p>
             <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
               <li>High performance global routing and IP masking via Cloudflare Workers</li>
@@ -903,7 +903,7 @@ export default function ProxyPoolsPage() {
             value={cloudflareForm.projectName}
             onChange={(e) => setCloudflareForm((prev) => ({ ...prev, projectName: e.target.value }))}
             placeholder="my-relay"
-            hint="Unique name for your Cloudflare Worker. Leave empty for auto-generated name."
+            hint="Name for your Cloudflare Worker (leave empty to auto-generate)"
           />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button
@@ -929,7 +929,7 @@ export default function ProxyPoolsPage() {
           <div className="rounded-lg bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/10 p-3 flex flex-col gap-1.5">
             <p className="text-sm text-text-main font-medium">What is Deno Relay?</p>
             <p className="text-xs text-text-muted">
-              Deploys a relay worker to Deno Deploy&apos;s global edge network. All AI provider requests are forwarded through Deno&apos;s edge, masking your real IP.
+              Forwards all AI provider requests through Deno&apos;s global edge network to mask your real IP.
             </p>
             <ul className="text-xs text-text-muted list-disc pl-4 space-y-0.5">
               <li>Deno Deploy v2 runs on a high-performance global edge network</li>
@@ -952,7 +952,7 @@ export default function ProxyPoolsPage() {
             value={denoForm.denoToken}
             onChange={(e) => setDenoForm((prev) => ({ ...prev, denoToken: e.target.value }))}
             placeholder="ddo_xxxxxxxxxxxxxxxx"
-            hint={<>Token is used once for deployment, not stored. Found in Organization Settings.</>}
+            hint={<>Used once for deployment and never stored (found in Organization Settings)</>}
             type="password"
           />
           <Input
@@ -967,7 +967,7 @@ export default function ProxyPoolsPage() {
             value={denoForm.projectName}
             onChange={(e) => setDenoForm((prev) => ({ ...prev, projectName: e.target.value }))}
             placeholder="deno-relay"
-            hint="Unique app name. Leave empty for auto-generated name."
+            hint="App name (leave empty to auto-generate)"
           />
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <Button

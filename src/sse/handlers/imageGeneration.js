@@ -3,6 +3,7 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
+  apiKeyGateFailure,
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
@@ -37,10 +38,14 @@ export async function handleImageGeneration(request) {
 
   const apiKey = extractApiKey(request);
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  if (settings.requireApiKey && !apiKey) {
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+  }
+  if (apiKey) {
+    const failure = apiKeyGateFailure(await isValidApiKey(apiKey), settings.requireApiKey);
+    if (failure) {
+      return errorResponse(failure.status, failure.message);
+    }
   }
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");

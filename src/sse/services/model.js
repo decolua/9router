@@ -16,6 +16,9 @@ for (const entry of REGISTRY) {
   for (const alias of entry.aliases || []) RESERVED_PROVIDER_PREFIXES.add(alias);
 }
 
+// How many studio names one request may chain through before it looks like a loop.
+const MAX_STUDIO_HOPS = 3;
+
 export function parseModel(modelStr) {
   const parsed = parseModelCore(modelStr);
   if (parsed?.providerAlias && LOCAL_PROVIDER_ALIASES[parsed.providerAlias]) {
@@ -35,7 +38,7 @@ export async function resolveModelAlias(alias) {
 /**
  * Get full model info (parse or resolve)
  */
-export async function getModelInfo(modelStr) {
+export async function getModelInfo(modelStr, studioHops = 0) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
@@ -74,6 +77,18 @@ export async function getModelInfo(modelStr) {
     // The caller (handleChat) will detect this and handle it as combo
     return { provider: null, model: parsed.model };
   }
+
+  // Check studio models
+  try {
+   const { getStudioModel } = await import("@/lib/db/repos/modelEditorRepo.js");
+   const studio = studioHops < MAX_STUDIO_HOPS ? await getStudioModel(parsed.model) : null;
+   if (studio?.targetModel?.includes("/")) {
+   // The target is a model string too, and it may carry a custom node prefix
+   // (`kr/gpt-oss-120b`). parseModel would hand back `kr` as the provider and
+   // match no credentials, so resolve it the way any other call gets resolved.
+   return await getModelInfo(studio.targetModel, studioHops + 1);
+   }
+  } catch { /* fall through */ }
 
   return getModelInfoCore(modelStr, getModelAliases);
 }

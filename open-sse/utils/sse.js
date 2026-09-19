@@ -1,6 +1,9 @@
+import { SSE_DATA_PREFIX } from "./sseConstants.js";
+
 export function sseChunk(data) {
-  return `data: ${JSON.stringify(data)}\n\n`;
+  return `${SSE_DATA_PREFIX} ${JSON.stringify(data)}\n\n`;
 }
+
 
 // Build OpenAI chat.completion.chunk SSE frame. Key order: id, object, created, model, choices.
 export function chatChunkSse({ id, created, model, delta, finishReason = null }) {

@@ -5,17 +5,21 @@ const mocks = vi.hoisted(() => ({
   saveRequestUsage: vi.fn(),
 }));
 
-vi.mock("../../src/sse/services/auth.js", () => ({
-  getProviderCredentials: async () => ({
+vi.mock("../../src/sse/services/auth.js", async () => {
+  const { apiKeyGateFailure } = await import("../../src/sse/services/keyGate.js");
+  return {
+    apiKeyGateFailure: apiKeyGateFailure,
+    getProviderCredentials: async () => ({
     apiKey: "provider-secret",
     connectionId: "connection-a",
     connectionName: "Provider A",
-  }),
-  markAccountUnavailable: vi.fn(),
-  clearAccountError: vi.fn(),
-  extractApiKey: () => "client-key",
-  isValidApiKey: vi.fn(),
-}));
+    }),
+    markAccountUnavailable: vi.fn(),
+    clearAccountError: vi.fn(),
+    extractApiKey: () => "client-key",
+    isValidApiKey: vi.fn(),
+  };
+});
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({ requireApiKey: false }) }));
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: async () => ({ provider: "openai", model: "text-embedding-3-small" }),

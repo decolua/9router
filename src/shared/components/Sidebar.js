@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -10,7 +10,36 @@ import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
-import NineRemotePromoModal from "./NineRemotePromoModal";
+
+// Poll the detached updater's status endpoint while the server is down.
+// Fails quietly after maxAttempts (updater unreachable: manual flow, https page,
+// or the process already left) — resolve(null) means "no live status available".
+function pollUpdaterStatus(signal, onStatus, maxAttempts = 600) {
+  return new Promise((resolve) => {
+    const url = `http://127.0.0.1:${UPDATER_CONFIG.statusPort}/update/status`;
+    let attempts = 0;
+    const tick = () => {
+      if (signal.aborted) return resolve(null);
+      attempts += 1;
+      fetch(url)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((status) => {
+          if (signal.aborted) return resolve(null);
+          if (status) {
+            onStatus(status);
+            if (status.done) return resolve(status);
+          }
+          if (attempts >= maxAttempts) return resolve(null);
+          setTimeout(tick, UPDATER_CONFIG.statusPollIntervalMs);
+        })
+        .catch(() => {
+          if (signal.aborted || attempts >= maxAttempts) return resolve(null);
+          setTimeout(tick, UPDATER_CONFIG.statusPollIntervalMs);
+        });
+    };
+    tick();
+  });
+}
 
 // const VISIBLE_MEDIA_KINDS = ["embedding", "image", "imageToText", "tts", "stt", "webSearch", "webFetch", "video", "music"];
 const VISIBLE_MEDIA_KINDS = ["embedding", "image", "video", "tts", "stt"];
@@ -29,29 +58,66 @@ const navItems = [
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },
 ];
 
+// Custom features added by this fork — open-ended, new tools land here too.
+const workshopItems = [
+  { href: "/dashboard/arena", label: "Compare Models", icon: "swords" },
+  { href: "/dashboard/model-editor", label: "Custom Models", icon: "auto_awesome" },
+  { href: "/dashboard/plugins", label: "Custom Plugins", icon: "widgets" },
+];
+
 const debugItems = [
-  { href: "/dashboard/console-log", label: "Console Log", icon: "terminal" },
+  { href: "/dashboard/console-log", label: "Console Log", icon: "monitor" },
   { href: "/dashboard/translator", label: "Translator", icon: "translate" },
 ];
 
 const systemItems = [
   { href: "/dashboard/proxy-pools", label: "Proxy Pools", icon: "lan" },
-  { href: "/dashboard/skills", label: "Skills", icon: "extension" },
 ];
+
+function NavLink({ href, icon, label, active, onClick, sub = false }) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      className={cn(
+        "relative flex min-w-0 items-center gap-3 rounded-[10px] transition-all group",
+        sub ? "pl-7 pr-3 py-[6px]" : "px-3 py-[7px]",
+        active
+          ? "bg-primary/10 text-primary font-semibold"
+          : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+      )}
+    >
+      {active && (
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-primary" />
+      )}
+      <span
+        className={cn(
+          "material-symbols-outlined shrink-0 leading-none",
+          sub ? "size-4 text-[16px]" : "size-[18px] text-[18px]",
+          active ? "fill-1 text-primary" : "group-hover:text-primary transition-colors"
+        )}
+      >
+        {icon}
+      </span>
+      <span className="text-[13px] font-medium leading-none min-w-0 truncate" title={label}>{label}</span>
+    </Link>
+  );
+}
 
 export default function Sidebar({ onClose }) {
   const pathname = usePathname();
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [showRemoteModal, setShowRemoteModal] = useState(false);
   const [isDisconnected, setIsDisconnected] = useState(false);
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [autoUpdating, setAutoUpdating] = useState(false);
+  const [updaterStatus, setUpdaterStatus] = useState(null);
   const { copied, copy } = useCopyToClipboard(2000);
 
-  const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
+  const INSTALL_CMD = updateInfo?.installCmd || UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
     fetch("/api/settings")
@@ -75,10 +141,43 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
+  // Auto update: hand off to the detached updater (production CLI install).
+  // Falls back to the manual copy-command panel when the endpoint refuses
+  // (dev build) or errors, so the user always has a working path.
+  const updateAbort = useRef(null);
+  useEffect(() => () => updateAbort.current?.abort(), []);
+
+  const handleUpdate = async () => {
     setShowUpdateModal(false);
     setIsUpdating(true);
+    setAutoUpdating(true);
+    try {
+      const res = await fetch("/api/version/update", { method: "POST" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.warn("Auto update unavailable:", data.message || res.status);
+        setAutoUpdating(false);
+        return; // stay on the manual panel
+      }
+      // Server will exit shortly; watch the detached updater until it finishes
+      setIsDisconnected(true);
+      setIsUpdating(false);
+      updateAbort.current = new AbortController();
+      const status = await pollUpdaterStatus(updateAbort.current.signal, setUpdaterStatus);
+      if (status?.success) {
+        globalThis.location.reload();
+      } else if (status) {
+        setUpdaterStatus(status);
+      } else {
+        // Updater never became reachable: let the plain disconnected overlay stand
+        setAutoUpdating(false);
+      }
+    } catch {
+      // Expected once the server exits mid-request; updater takes over
+      setIsDisconnected(true);
+      setIsUpdating(false);
+      setAutoUpdating(false);
+    }
   };
 
   // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
@@ -103,19 +202,10 @@ export default function Sidebar({ onClose }) {
     setShutdownCountdown(0);
   };
 
-  // Note: legacy updater poll removed. New flow: copy install cmd + shutdown server,
-  // user runs the command manually in another terminal.
-
 
   return (
     <>
       <aside className="flex w-72 flex-col border-r border-border-subtle bg-vibrancy backdrop-blur-xl transition-colors duration-300 min-h-full">
-        {/* Traffic lights */}
-        <div className="flex items-center gap-2 px-6 pt-5 pb-2">
-          <div className="w-3 h-3 rounded-full bg-[#FF5F56]" />
-          <div className="w-3 h-3 rounded-full bg-[#FFBD2E]" />
-          <div className="w-3 h-3 rounded-full bg-[#27C93F]" />
-        </div>
 
         {/* Logo */}
         <div className="px-6 py-4 flex flex-col gap-2">
@@ -133,7 +223,7 @@ export default function Sidebar({ onClose }) {
           {updateInfo && (
             <div className="flex flex-col gap-1.5 rounded p-1 -m-1">
               <span className="text-xs font-semibold text-green-600 dark:text-amber-500">
-                ↑ New version available: v{updateInfo.latestVersion}
+                ↑ {updateInfo.behindBy ? `Update available: ${updateInfo.behindBy} commit${updateInfo.behindBy > 1 ? 's' : ''} behind` : `New version: ${updateInfo.latestVersion}`}
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -159,28 +249,33 @@ export default function Sidebar({ onClose }) {
         {/* Navigation */}
         <nav className="flex-1 px-4 py-2 space-y-0.5 overflow-y-auto custom-scrollbar">
           {navItems.map((item) => (
-            <Link
+            <NavLink
               key={item.href}
               href={item.href}
+              icon={item.icon}
+              label={item.label}
+              active={isActive(item.href)}
               onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive(item.href)
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                {item.icon}
-              </span>
-              <span className="text-[13px] font-medium">{item.label}</span>
-            </Link>
+            />
           ))}
+
+  
+        {/* FEATURE+ section — custom tools added by this fork */}
+          <div className="pt-3 mt-2 space-y-0.5">
+            <p className="px-4 text-xs font-semibold text-text-muted/60 uppercase tracking-wider mb-2">
+              FEATURE+
+            </p>
+            {workshopItems.map((item) => (
+              <NavLink
+                key={item.href}
+                href={item.href}
+                icon={item.icon}
+                label={item.label}
+                active={isActive(item.href)}
+                onClick={onClose}
+              />
+            ))}
+          </div>
 
           {/* System section */}
           <div className="pt-3 mt-2 space-y-0.5">
@@ -192,14 +287,17 @@ export default function Sidebar({ onClose }) {
             <button
               onClick={() => setMediaOpen((v) => !v)}
               className={cn(
-                "w-full flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                "relative w-full flex items-center gap-3 px-3 py-[7px] rounded-[10px] transition-all group",
                 pathname.startsWith("/dashboard/media-providers")
                   ? "bg-primary/10 text-primary"
                   : "text-text-muted hover:bg-surface-2 hover:text-text-main"
               )}
             >
-              <span className="material-symbols-outlined text-[18px]">perm_media</span>
-              <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
+              {pathname.startsWith("/dashboard/media-providers") && (
+                <span className="absolute left-0 top-1/2 -translate-y-1/2 h-5 w-[3px] rounded-r-full bg-primary" />
+              )}
+              <span className="material-symbols-outlined size-[18px] text-[18px] leading-none shrink-0">perm_media</span>
+              <span className="text-[13px] font-medium leading-none flex-1 text-left min-w-0 truncate" title="Media Providers">Media Providers</span>
               <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                 expand_more
               </span>
@@ -207,152 +305,66 @@ export default function Sidebar({ onClose }) {
             {mediaOpen && (
               <div className="pl-4">
                 {MEDIA_PROVIDER_KINDS.filter((k) => VISIBLE_MEDIA_KINDS.includes(k.id)).map((kind) => (
-                  <Link
+                  <NavLink
                     key={kind.id}
                     href={`/dashboard/media-providers/${kind.id}`}
+                    icon={kind.icon}
+                    label={kind.label}
+                    active={pathname.startsWith(`/dashboard/media-providers/${kind.id}`)}
                     onClick={onClose}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                      pathname.startsWith(`/dashboard/media-providers/${kind.id}`)
-                        ? "bg-primary/10 text-primary"
-                        : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                    )}
-                  >
-                    <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
-                    <span className="text-sm">{kind.label}</span>
-                  </Link>
+                    sub
+                  />
                 ))}
-                <Link
+                <NavLink
                   key={COMBINED_WEB_ITEM.id}
                   href={COMBINED_WEB_ITEM.href}
+                  icon={COMBINED_WEB_ITEM.icon}
+                  label={COMBINED_WEB_ITEM.label}
+                  active={pathname.startsWith(COMBINED_WEB_ITEM.href)}
                   onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-4 py-1 rounded-lg transition-all group",
-                    pathname.startsWith(COMBINED_WEB_ITEM.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span className="material-symbols-outlined text-[16px]">{COMBINED_WEB_ITEM.icon}</span>
-                  <span className="text-sm">{COMBINED_WEB_ITEM.label}</span>
-                </Link>
+                  sub
+                />
               </div>
             )}
 
             {systemItems.map((item) => (
-              <Link
+              <NavLink
                 key={item.href}
                 href={item.href}
+                icon={item.icon}
+                label={item.label}
+                active={isActive(item.href)}
                 onClick={onClose}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                  isActive(item.href)
-                    ? "bg-primary/10 text-primary"
-                    : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                )}
-              >
-                <span
-                  className={cn(
-                    "material-symbols-outlined text-[18px]",
-                    isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                  )}
-                >
-                  {item.icon}
-                </span>
-                <span className="text-[13px] font-medium">{item.label}</span>
-              </Link>
+              />
             ))}
 
             {/* Debug items (inside System section, before Settings) */}
             {debugItems.map((item) => {
-              const show = item.href !== "/dashboard/translator" || enableTranslator;
+              const show = item.href !== '/dashboard/translator' || enableTranslator;
               return show ? (
-                <Link
+                <NavLink
                   key={item.href}
                   href={item.href}
+                  icon={item.icon}
+                  label={item.label}
+                  active={isActive(item.href)}
                   onClick={onClose}
-                  className={cn(
-                    "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                    isActive(item.href)
-                      ? "bg-primary/10 text-primary"
-                      : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "material-symbols-outlined text-[18px]",
-                      isActive(item.href) ? "fill-1" : "group-hover:text-primary transition-colors"
-                    )}
-                  >
-                    {item.icon}
-                  </span>
-                  <span className="text-[13px] font-medium">{item.label}</span>
-                </Link>
+                />
               ) : null;
             })}
 
-            {/* Remote */}
-            <button
-              onClick={() => setShowRemoteModal(true)}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                computer
-              </span>
-              <span className="text-[13px] font-medium">9Remote</span>
-              {/* <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
-                New
-              </span> */}
-            </button>
-
-            {/* 9English */}
-            <a
-              href="https://9english.net/"
-              target="_blank"
-              rel="noreferrer"
-              onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group w-full",
-                "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span className="material-symbols-outlined text-[18px] group-hover:text-primary transition-colors">
-                translate
-              </span>
-              <span className="text-[13px] font-medium">9English</span>
-            </a>
-
             {/* Settings */}
-            <Link
-              href="/dashboard/profile"
+            <NavLink
+              href='/dashboard/profile'
+              icon='settings'
+              label='9Router Settings'
+              active={isActive('/dashboard/profile')}
               onClick={onClose}
-              className={cn(
-                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
-                isActive("/dashboard/profile")
-                  ? "bg-primary/10 text-primary"
-                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
-              )}
-            >
-              <span
-                className={cn(
-                  "material-symbols-outlined text-[18px]",
-                  isActive("/dashboard/profile") ? "fill-1" : "group-hover:text-primary transition-colors"
-                )}
-              >
-                settings
-              </span>
-              <span className="text-[13px] font-medium">Settings</span>
-            </Link>
+            />
           </div>
         </nav>
 
       </aside>
-
-      {/* Remote Promo Modal */}
-      <NineRemotePromoModal isOpen={showRemoteModal} onClose={() => setShowRemoteModal(false)} />
 
       {/* Update Confirmation Modal */}
       <ConfirmModal
@@ -360,8 +372,8 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
+        message={`Auto update to v${updateInfo?.latestVersion || ""}? The updater installs the new version and restarts 9Router automatically.`}
+        confirmText="Update Now"
         cancelText="Cancel"
         variant="primary"
       />
@@ -381,14 +393,50 @@ export default function Sidebar({ onClose }) {
             />
           ) : (
             <div className="text-center p-8">
-              <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
-                <span className="material-symbols-outlined text-[32px]">power_off</span>
-              </div>
-              <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
-              <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
-              <Button variant="secondary" onClick={() => globalThis.location.reload()}>
-                Reload Page
-              </Button>
+              {autoUpdating && !updaterStatus?.done ? (
+                <>
+                  <div className="flex items-center justify-center size-16 rounded-full bg-primary/20 text-primary mx-auto mb-4 animate-pulse">
+                    <span className="material-symbols-outlined text-[32px]">system_update_alt</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-white mb-2">Updating 9Router{updateInfo?.latestVersion ? ` to v${updateInfo.latestVersion}` : ""}</h2>
+                  <p className="text-text-muted mb-2">
+                    {updaterStatus?.phase === "installing"
+                      ? "Installing the new version..."
+                      : updaterStatus?.phase === "waitingForExit"
+                        ? "Waiting for the server to stop..."
+                        : "Preparing the update..."}
+                  </p>
+                  {(updaterStatus?.logTail || []).length > 0 && (
+                    <pre className="max-w-lg max-h-32 overflow-auto text-left text-xs font-mono text-white/50 bg-white/5 rounded-lg p-3 mx-auto whitespace-pre-wrap">{updaterStatus.logTail.slice(-4).join("\n")}</pre>
+                  )}
+                </>
+              ) : updaterStatus?.done && !updaterStatus?.success ? (
+                <>
+                  <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
+                    <span className="material-symbols-outlined text-[32px]">error</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-white mb-2">Auto Update Failed</h2>
+                  <pre className="max-w-lg max-h-40 overflow-auto text-left text-xs font-mono text-red-300 bg-white/5 rounded-lg p-3 mb-4 mx-auto whitespace-pre-wrap">
+                    {Array.isArray(updaterStatus.logTail) && updaterStatus.logTail.length > 0
+                      ? updaterStatus.logTail.slice(-8).join("\n")
+                      : updaterStatus.error || "Installer error"}
+                  </pre>
+                  <Button variant="secondary" onClick={() => globalThis.location.reload()}>
+                    Reload Page
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
+                    <span className="material-symbols-outlined text-[32px]">power_off</span>
+                  </div>
+                  <h2 className="text-xl font-semibold text-white mb-2">Server Disconnected</h2>
+                  <p className="text-text-muted mb-6">The proxy server has been stopped.</p>
+                  <Button variant="secondary" onClick={() => globalThis.location.reload()}>
+                    Reload Page
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>

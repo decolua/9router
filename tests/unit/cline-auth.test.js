@@ -1,4 +1,5 @@
-import test from "node:test";
+// The fork runs its suite with vitest; node:test's `test` is not collected here.
+import { it as test } from "vitest";
 import assert from "node:assert/strict";
 import {
   getClineAccessToken,

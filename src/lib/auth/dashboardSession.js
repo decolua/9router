@@ -6,7 +6,8 @@ import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
 import { getSettings } from "@/lib/localDb";
 
-const DEFAULT_PASSWORD = "123456";
+// Fork default password; upstream's 24h session lifetime is kept.
+const DEFAULT_PASSWORD = "seren123";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
 
 function loadJwtSecret() {

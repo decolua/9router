@@ -6,7 +6,7 @@ import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
-import { isLocalRequest } from "@/dashboardGuard";
+import { isTrustedNetworkRequest } from "@/lib/auth/trustedPeer";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
@@ -37,7 +37,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Dashboard access via tunnel is disabled" }, { status: 403 });
     }
 
-    // Default password is '123456' if not set
+    // Default password is 'seren123' if not set
     const storedHash = settings.password;
 
     if (settings.authMode === "sso" || settings.authMode === "saml" || settings.authMode === "oidc") {
@@ -55,17 +55,21 @@ export async function POST(request) {
       isValid = await bcrypt.compare(password, storedHash);
     } else {
       // Use env var or default
-      const initialPassword = process.env.INITIAL_PASSWORD || "123456";
+      const initialPassword = process.env.INITIAL_PASSWORD || "seren123";
       isValid = password === initialPassword;
     }
 
     if (isValid) {
       recordSuccess(ip);
-
-      // Default password still in use on a remote client → force a password
-      // change before the dashboard is exposed remotely (keeps local UX intact).
+      // A fresh install still on the published default password must not hand a
+      // session to a stranger. A Docker bridge or LAN peer counts as the operator's
+      // own machine, so the advertised default works there without INITIAL_PASSWORD.
+      const remoteDefaultLogin =
+        !storedHash && !process.env.INITIAL_PASSWORD && !isTrustedNetworkRequest(request);
+      // Escape hatch for a first login from a public address you cannot reach
+      // localhost from: set ALLOW_REMOTE_DEFAULT_LOGIN=true just for that login.
       const mustChangePassword =
-        !storedHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
+        remoteDefaultLogin && process.env.ALLOW_REMOTE_DEFAULT_LOGIN !== "true";
 
       if (mustChangePassword) {
         // Do NOT issue a session token: a fresh install's default password is
@@ -82,7 +86,7 @@ export async function POST(request) {
         // oversight: issuing any credential before the default password is
         // rotated re-opens the exact attack chain this branch closes.
         return NextResponse.json(
-          { success: false, error: "Default password must be changed before remote access. Change it from the local machine (or set INITIAL_PASSWORD).", mustChangePassword },
+          { success: false, error: "The default password only works from the machine running 9Router, or from the same Docker/LAN network. Open localhost there and change it, or start once with INITIAL_PASSWORD. Set ALLOW_REMOTE_DEFAULT_LOGIN=true to allow the first login from anywhere.", mustChangePassword },
           { status: 403, headers: NO_STORE_HEADERS }
         );
       }

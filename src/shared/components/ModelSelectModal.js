@@ -8,6 +8,7 @@ import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
+import { buildStudioTargetIndex } from "@/shared/utils/studioModelVisibility";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -81,6 +82,7 @@ export default function ModelSelectModal({
   capFilter = null,
   addedModelValues = [],
   closeOnSelect = true,
+  showStudioTargets = false,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -97,6 +99,7 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+   const [studioModels, setStudioModels] = useState([]);
   // Cursor and Cline expose the usable catalog per account, so the static catalog is
   // kept only as a fallback: it goes stale quickly and entitlements differ per account.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
@@ -179,6 +182,22 @@ export default function ModelSelectModal({
 
   useEffect(() => {
     if (isOpen) fetchDisabledModels();
+  }, [isOpen]);
+
+  const fetchStudioModels = async () => {
+    try {
+      const res = await fetch("/api/model-editor");
+      if (!res.ok) throw new Error(`Failed to fetch studio models: ${res.status}`);
+      const data = await res.json();
+      setStudioModels(data.models || []);
+    } catch (error) {
+      console.error("Error fetching model studio models:", error);
+      setStudioModels([]);
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen) fetchStudioModels();
   }, [isOpen]);
 
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
@@ -419,8 +438,39 @@ export default function ModelSelectModal({
       if (group.models.length === 0) delete groups[providerId];
     });
 
+
+    // Models a studio name stands in for stay out of the picker: the studio name
+    // is the one clients should use. The model editor opts out with showStudioTargets.
+    if (!showStudioTargets) {
+      const studioTargets = buildStudioTargetIndex(studioModels);
+      Object.entries(groups).forEach(([providerId, group]) => {
+        const isCustom = isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
+        group.models = group.models.filter((m) => !studioTargets.isStudioTarget([providerId, group.alias], m.id));
+        if (group.models.length === 0) {
+          if (isCustom) {
+            // Keep custom provider visible by including its mapped studio models or a fallback entry
+            const relatedStudio = studioModels
+              .filter((sm) => sm.provider === providerId || sm.provider === group.alias)
+              .map((sm) => ({
+                id: sm.callName,
+                name: sm.displayName || sm.callName,
+                value: sm.callName,
+                isCustom: true,
+              }));
+            group.models = relatedStudio.length > 0 ? relatedStudio : [{
+              id: `__placeholder__${providerId}`,
+              name: `${group.alias || "node"}/model-id`,
+              value: `${group.alias || "node"}/model-id`,
+              isPlaceholder: true,
+            }];
+          } else {
+            delete groups[providerId];
+          }
+        }
+      });
+    }
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels, studioModels, showStudioTargets]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -429,6 +479,18 @@ export default function ModelSelectModal({
     const query = searchQuery.toLowerCase();
     return combos.filter(c => c.name.toLowerCase().includes(query));
   }, [combos, searchQuery, kindFilter]);
+
+  // Studio models are LLM-only user-defined names, so they hide for typed kinds.
+  const filteredStudioModels = useMemo(() => {
+    if (kindFilter || capFilter) return [];
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return studioModels;
+    return studioModels.filter((m) =>
+      m.callName.toLowerCase().includes(query) ||
+      (m.displayName || "").toLowerCase().includes(query) ||
+      m.targetModel.toLowerCase().includes(query)
+    );
+  }, [studioModels, searchQuery, kindFilter, capFilter]);
 
   // Sort models alphabetically, with added models floated to top
   const sortModels = (models) => {
@@ -498,7 +560,7 @@ export default function ModelSelectModal({
       {/* Info bar */}
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
-        <span>Click to add, click again to remove. Changes are saved automatically.</span>
+        <span>Click a model to add it, click again to remove it, and the change is saved automatically.</span>
       </div>
 
       {/* Search - compact */}
@@ -548,6 +610,44 @@ export default function ModelSelectModal({
                       <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                     )}
                     {combo.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Custom model section */}
+        {filteredStudioModels.length > 0 && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-1.5 sticky top-0 bg-surface py-0.5">
+              <span className="material-symbols-outlined size-[14px] text-[14px] leading-none text-primary">auto_awesome</span>
+              <span className="text-xs font-medium leading-none text-primary">Custom Models</span>
+              <span className="text-[10px] text-text-muted">({filteredStudioModels.length})</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {filteredStudioModels.map((studio) => {
+                const isSelected = selectedModel === studio.callName;
+                return (
+                  <button
+                    key={studio.callName}
+                    onClick={() => handleSelect({ id: studio.callName, name: studio.displayName || studio.callName, value: studio.callName })}
+                    title={`Calls ${studio.targetLabel || studio.targetModel}`}
+                    className={`
+                      px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer flex items-center gap-1
+                      ${isSelected
+                        ? "bg-primary text-white border-primary"
+                        : addedModelValues.includes(studio.callName)
+                          ? "bg-primary border-primary text-white hover:bg-primary-hover"
+                          : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
+                      }
+                    `}
+                  >
+                    {addedModelValues.includes(studio.callName) && (
+                      <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
+                    )}
+                    {studio.callName}
+                    <span className="text-[9px] opacity-60 font-normal">custom</span>
                   </button>
                 );
               })}
@@ -654,4 +754,5 @@ ModelSelectModal.propTypes = {
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
+  showStudioTargets: PropTypes.bool,
 };

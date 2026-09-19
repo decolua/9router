@@ -1,4 +1,311 @@
-# v0.5.81 (2026-09-18)
+# v0.5.107-Custom (2026-09-19)
+
+## Custom Features & Enhancements
+- **Auto Update restored**: the sidebar "Update now" button calls the real updater endpoint again. The detached updater installs the new version, restarts 9Router and reopens the dashboard on its own, with live progress (phase and installer log tail) shown in the overlay while the server is down. If the updater is unavailable, for example in a dev build, the flow falls back to the existing copy-command panel so there is always a working path. Failed installs surface the installer log with a reload button instead of a silent hang.
+
+# v0.5.106-Custom (2026-09-19)
+
+## Custom Features & Enhancements
+- **New plugin: Speed Mode**: a fourth Custom Plugin that makes selected models answer instantly instead of reasoning. It injects a direct-answer system instruction and forces a thinking "none" intent, which the unified thinking pipeline converts into each provider's native disable format (OpenAI `reasoning_effort`, Claude `thinking: disabled`, Gemini budget 0, Qwen `enable_thinking: false`, and so on). Claude-native requests set the disable flag in the Anthropic shape so native passthrough never sends an unknown field. Selected models get a cyan bolt badge in the model lists and the plugin picker, managed exactly like the existing plugins on the Custom Plugins page.
+
+# v0.5.105-Custom (2026-09-19)
+
+## Fixes
+- **GitHub link label visible on mobile**: the header "Visit On GitHub" text was hidden behind a responsive `hidden sm:inline` class and showed only the logo on small screens; the label now always renders next to the icon.
+
+# v0.5.104-Custom (2026-09-19)
+
+## Custom Features & Enhancements
+- **Simplify backup section picker**: removed the "Select All" and "Lightweight Only" quick actions from the Download Backup dialog; sections are now picked with the individual checkboxes only.
+
+# v0.5.103-Custom (2026-09-19)
+
+## Fixes
+- **OpenCode free tier: stop 403 FreeTierError on tool-carrying agent requests**: the free tier fingerprints the official agentic client inside the request body. The `/zen/v1/responses` gate now requires the `bash` + `read` tool decoys plus `tool_choice: "auto"` on every request (previously they were only injected when the payload had no tools at all, so any real agent call carrying 1..N tools went out naked and received 403), and the `/zen/v1/chat/completions` gate requires the full `bash`, `glob`, `grep`, `read` quartet, which is now appended whenever any of the four is missing. External client tools are preserved verbatim and only missing fingerprint names are added as no-op declarations. `muse-spark-1.2-contributor-free` is added to the force-auto tool choice quirk alongside 1.3 since both free models reject non-auto choices with 400.
+
+# v0.5.102-Custom (2026-09-19)
+
+## Custom Features & Enhancements
+- **DeepSeek Web tool calling support**: the cookie-based DeepSeek Web provider now supports OpenAI tool calling. Because the web backend is a text-only RAG endpoint, the executor encodes the requested tools as a protocol inside the prompt, converts previous assistant tool_calls and tool result messages into readable transcript turns, and parses the model's reply back into standard OpenAI `tool_calls` deltas with `finish_reason: "tool_calls"` for both streaming and non-streaming requests. Requests without tools follow the original flow unchanged.
+
+## Fixes
+- **Usage visible after backup import**: the Usage Overview Today and 24h views now merge the daily aggregates that shipped inside the backup (for days before today) with live request history, so restored usage is no longer hidden behind an empty default period. Verified with a real export-import roundtrip: restored rows show up in today, 24h and 7d views, while live-only data is never double counted.
+
+# v0.5.101-Custom (2026-09-19)
+
+## Custom Features & Enhancements
+- **Remove 9Remote & 9English menus**: dropped the 9Remote promo entry, the 9English external link, and their unused modal components from the sidebar to keep navigation focused on router tools.
+
+# v0.5.100-Custom (2026-09-19)
+
+## Fixes
+- **Modal header polish**: the "Welcome to 9Router!" title no longer hugs the left edge of the dialog and now sits vertically centered on the same line as the close button. Applied to all dialogs, including the Download Backup header.
+- **Smaller "Heavy" badge**: the Heavy tag in the Download Backup section list now renders in the compact badge size instead of falling back to the large default.
+
+# v0.5.99-Custom (2026-09-18)
+
+## Custom Features & Enhancements
+- **DeepSeek Web (Cookie) Provider**: added `deepseek-web` under the Web Cookie Providers category (positioned between Free Tier and API Key providers). Supports web session token auth (`userToken` from `chat.deepseek.com`), streaming responses, and reasoning content (`<think>`) for models: `deepseek-chat`, `deepseek-reasoner`, `deepseek-v4.1-flash`, `deepseek-v4.1-pro`, `deepseek-v4.1-reasoner`, `deepseek-v3`, and `deepseek-r1`.
+- **Remove Automatic Backup**: decommissioned the scheduled automatic background backup feature and modal to keep the app lightweight, retaining the standard manual Download Backup and Import Backup tools.
+- **Selective Backup Download**: the Download Backup dialog now lets you pick which sections to include (Settings, Providers, API Keys, Combos, Custom Models, Pricing, Usage History). Each section shows its item count and estimated byte size, and the total selected size updates in realtime. Heavy sections (e.g. Usage History) are unchecked by default. Old full backups remain fully import-compatible.
+
+# v0.5.98-Custom (2026-09-17)
+
+## Fixes
+- **Keep original base models visible alongside custom models**: creating a custom studio model no longer hides or overwrites the underlying base model. Both the original target model and the newly created custom model stay fully visible in model pickers, provider details, and `/v1/models`.
+
+# v0.5.97-Custom (2026-09-17)
+
+## Fixes
+- **Fix OpenCode Free Tier 403 FreeTierError**: resolved `"OpenCode's free tier can only be used from within OpenCode"` by tailoring request headers with `User-Agent: opencode/1.18.30`, `anthropic-version: 2023-06-01`, and conforming 30-character OpenCode session and request identifiers (`ses_*`, `msg_*`).
+- **Add Union Alpha & Union Alpha Free support**: added `union-alpha` and `union-alpha-free` to OpenCode's registry with targetFormat `claude` (routed directly to `/zen/v1/messages`), configured vision and reasoning capabilities, and added it to suggested models.
+
+# v0.5.96-Custom (2026-09-17)
+
+## Custom Features & Enhancements
+- **Uncensored Output Plugin Updates**: renamed the third plugin to *Uncensored Output* and updated its icon to an emerald/red key off (`key_off`) badge. Added fallback model matching across requested, routed, and full model identifiers so plugin directives reliably inject into System prompts.
+- **Header "Visit On GitHub" Button**: enhanced the GitHub repository link button in the top right header to display a clear "Visit On GitHub" text label next to the GitHub logo.
+- **Sidebar & UI Polish**: renamed "Custom Models & Editor" to "Custom Models", updated the "Custom Plugins" icon to `widgets`, renamed "Settings" to "9Router Settings", and cleaned up top traffic-light decorative dots.
+- **Custom Provider & Studio Target Picker Fix**: custom providers now stay visible in model selectors even when their underlying base models are mapped to studio custom model names. Upgraded logo data URL storage capacity and added JPEG compression fallback so custom provider logos never vanish.
+
+# v0.5.95-Custom (2026-09-17)
+
+## Custom Features & Enhancements
+- **Direct Override (Unrestricted) Plugin**: added a third custom plugin featuring an open padlock icon (`lock_open`). When attached to selected models, it injects an anti-refusal system directive and technical framing, minimizing standard canned AI refusals for pentesting, code security, and raw technical queries. Enables the `lock_open` badge for selected models.
+
+# v0.5.94-Custom (2026-09-17)
+
+## Custom Features & Enhancements
+- **Custom Plugins menu under FEATURE+**: added `/dashboard/plugins` featuring two modular plugins:
+  - **Image Vision**: extracts text and visual content from images for models that don't natively support vision, making non-vision LLMs able to read image inputs from CLI tools and agents. Enables the Vision (👁️) badge for selected models.
+  - **Think Deeper**: forces deep step-by-step chain-of-thought reasoning before outputting final answers. Enables the Reasoning (🧠) and Think Deeper (💡/psychology) capability badges for selected models.
+- **Model selector integration**: users explicitly choose which models to attach plugins to via `ModelSelectModal`.
+
+# v0.5.93-Custom (2026-09-16)
+
+## Custom Features & Enhancements
+- **Top-positioned logo in provider creation/edit dialogs**: the custom provider Logo upload field is moved to the very top before the Name field across custom compatible and embedding forms.
+- **Edit custom provider logo**: the edit modal for compatible nodes now includes the logo picker and saves logo updates directly.
+- **Provider logo display on Usage**: custom compatible nodes without custom logos now cleanly fallback to their parent provider image (e.g. OpenAI / Anthropic icons) instead of displaying abbreviation text badges like "OP".
+
+# v0.5.92-Custom (2026-09-16)
+
+## Fixes
+- **Fix LAN/Docker default login password**: trusted-peer auth now falls back correctly for local and container deployments.
+- **Fix usage errors page always showing 0**: error tracking counts are now persisted and read back properly.
+
+## Custom Features & Enhancements
+- **Add backend GitHub update detection with commits behind**: the version API now compares the local checkout against the upstream branch and reports how many commits behind, the latest commit message, and a tailored install command.
+- **Add Welcome Modal with star request and update info**: a post-login modal invites users to star the GitHub repo and, when an update is available, shows the commit count, message, and a copyable install command. Dismissible per-session or permanently.
+- **Hide Skills menu from Sidebar**: the Skills navigation item is removed from the System section.
+
+# v0.5.91-Custom (2026-09-16)
+
+## Custom Features & Enhancements
+- **A custom (studio) model now hides the model behind it**: the moment a base model gets a studio name, that base model disappears from every place a client or a picker reads — `GET /v1/models` and its per-kind variants answer with the studio name only, the model pickers (API key allowed models, combos, CLI tool mappings, arena) offer the studio name only, and the provider page Models tab lists the studio name only. So with `qwen-3.8` pointed at `neko/qwen3.8-flash`, nothing shows `neko/qwen3.8-flash` anymore. The raw model is still routable and the Model Studio editor still sees it, because that is exactly where you pick the model a new name should call. The rule is shared in one helper (`buildStudioTargetIndex`) keyed by provider id plus model id, case-insensitive, so the same model name under another provider stays visible.
+
+## Fixes
+- **The x on an allowed-model chip now removes that model**: in the API key forms the chips called a handler that branched on which picker modal was last opened, so with a freshly opened form (or before ever pressing Select Models) clicking x did nothing. Removing and adding models now state plainly which field they edit, and the chip lists in both the create-key and edit-key forms work on their own.
+
+# v0.5.90-Custom (2026-09-16)
+
+## Custom Features & Enhancements
+- **Custom providers can carry their own logo**: the Add and Edit dialogs of every custom node type (OpenAI compatible, Anthropic compatible, MoonshotAI compatible, custom embedding) gained an optional **Logo** field. Pick any PNG, JPEG, WebP or GIF up to 2 MB and the browser crops it to a square, scales it down and stores a few kilobytes on the node; leave it empty (or press Remove) and the familiar default brand icon stays exactly where it was. The chosen logo shows on the provider card, the provider detail header, the media provider list and header, and on Usage in the provider map beside the traffic animation. Because it lives inside the node record, it also travels with Download/Import Backup and the automatic Telegram or GitHub backup.
+- **Logo values are checked on the way in**: the API accepts a logo only as a compact image data URL (no SVG, no remote URL, no oversized payload) and answers with a plain message otherwise, while the picker refuses unreadable files before anything is saved. An update that omits the field leaves the stored logo alone; sending an empty one clears it.
+
+# v0.5.89-Custom (2026-09-16)
+
+## Fixes
+- **Automatic backups now really go out**: the scheduler tick used to hold the same in-flight lock that the send function checks, so every scheduled run rejected itself with "A backup is already being sent" and only retried 30 minutes later, forever. The tick now just decides when a run is due and hands the send over; a regression case drives a due tick against a stubbed Telegram API and asserts one upload actually leaves the process (it fails on the old code, passes on the new one).
+
+## Custom Features & Enhancements
+- **A live countdown tells you when the next backup lands**: under the Automatic Backup button, and again inside the dialog with the exact date, a timer now ticks every second ("Next backup in 23:59:05") against the real schedule instead of a guess. The API answers with the next run taken from the running scheduler, falling back to the stored last-send stamp plus interval, and the page re-reads it the moment the countdown reaches zero. Typed bot or GitHub tokens survive that refresh.
+
+## Improvements
+- **Automatic-backup code nesting fixed**: the service, the config repo and the settings route now use the same two-space-per-level indentation as the rest of `src`, and the startup wiring sits flush with the schedulers next to it. The confirm-password dialog no longer claims the file goes to Telegram when the GitHub channel is selected.
+
+# v0.5.88-Custom (2026-09-14)
+
+## Improvements
+- **The Telegram owner id is now strictly numeric**: the Automatic Backup dialog only accepts digits (non-digits are filtered out while typing, the server rejects anything else with a clear message), since bot sends require the numeric owner id and the "@username" style hint was misleading.
+- **UI copy cleaned of decorative dashes**: status, hint and placeholder strings across the Automatic Backup dialog now use plain punctuation, and the few misaligned indent lines the previous feature commits introduced in the profile page were normalized to the file's existing style.
+
+# v0.5.87-Custom (2026-09-14)
+
+## Custom Features & Enhancements
+- **Automatic Backup moved into its own dialog and learned GitHub**: instead of a full card on the settings page, a single **Automatic Backup** button now sits right above Download Backup — it opens a modal where you pick the channel (Telegram bot or GitHub repository with a write-scoped token, committing to `9router-backups/` plus a `latest.json` pointer on a chosen branch), set the interval, then press **Save Configuration** to store everything and arm the schedule in one click; **Send Test Backup** delivers one backup immediately (password-confirmed) so the whole path can be verified on the spot. Both bot and GitHub tokens are now encrypted at rest with a machine-bound key, so no plaintext credential is ever written to the database or echoed back to the browser.
+
+# v0.5.86-Custom (2026-09-14)
+
+## Custom Features & Enhancements
+- **Backups now deliver themselves to Telegram**: a new Auto Backup (Telegram) card sits above Download Backup in the profile page — set a bot token and owner chat id, pick the interval (every 24 hours, 7 days, 30 days, or custom hours), and the scheduler exports the exact same database backup the manual button downloads and sends it to your chat as a `9router-backup-*.json` file, importable with Import Backup unchanged. The token is stored write-only (never echoed back to the browser, kept out of the settings blob), the schedule survives restarts through the persisted last-sent stamp, sends follow the outbound proxy, oversized backups beyond the bot's upload cap are refused with a clear status instead of a silent stall, and a Send Test Backup button (password-confirmed like the other backup actions) verifies the whole path on demand. The configuration also travels inside every backup, so a restored instance resumes sending on its own schedule.
+
+# v0.5.85-Custom (2026-09-13)
+
+## Custom Features & Enhancements
+- **A key's allowed models now also decide what it can see**: `GET /v1/models` (and `/v1/models/{kind}`, `/v1/models/{provider}/{model}`) answers through the same patterns the request gate uses, so a key limited to `claude-fable-5.1` lists exactly that one model instead of advertising names it would refuse with `403`.
+
+## Fixes
+- **Two custom models on the same base model stop trading places**: older builds stored a display alias for every Model Studio name, and with two names aimed at one target the alias lookup answered whichever matched first — so calling `gpt-5.6-sol` could show up as `claude-haiku-5`, or as the bare base model. Studio names are now cleaned of any leftover alias, whatever value it held, and an alias that carries a studio name can no longer add a second entry for the same model to the listing.
+- **A model name that is not a string is refused instead of crashing**: an array or object in `model` reached SQL as a bound value and died with `Unknown named parameter '0'` inside a 500; it now returns a plain `400 Missing model`.
+
+# v0.5.84-Custom (2026-09-13)
+
+## Fixes
+- **A custom model typed with its provider prefix now resolves**: a Model Studio target saved as `kr/gpt-oss-120b` was read with a bare parse, which handed the prefix back as the provider, matched no credentials, and left the usage row named after the base model — the target is now resolved the same way any other call is, so the studio name is what answers and what Usage bills, while `resolvedModel` still records the base model beside it.
+- **A per-model override may name another provider**: an override whose target carries a prefix is resolved first instead of pasting `prefix/model` onto the current provider, which produced a doubled path upstream.
+
+# v0.5.83-Custom (2026-09-13)
+
+## Improvements
+- **The two Workshop tools are named after what they do**: **Compare Models** runs one prompt across models side by side, and **Custom Models & Editor** is where those extra model names live.
+- **The changelog is one card per day**: releases that landed on the same date now share a single bordered block, with each version kept as its own sub-heading inside it.
+
+## Fixes
+- **The live request panel follows the name you called**: in-flight and streaming requests were tracked under the model the gateway resolved to, so Usage could list `claude-sonnet-5` and `qwen-3.8` at the same moment for one key.
+- **Embeddings stopped splitting a custom model into two rows**: its usage record and its failure text named the resolved target, while every other endpoint reported the studio name, which is what made both names pile up in the same leaderboard.
+
+# v0.5.82-Custom (2026-09-13)
+
+## Custom Features & Enhancements
+- **A Model Studio name now answers as the model it is**: every outbound payload — non-streaming completions, streamed chunks, Claude `message_start`, Responses events and semantic-cache hits — reports the name the caller spoke, so `claude-opus-5` never answers `qwen3.8-flash` while the console, the request detail and the usage `resolvedModel` still record the real target for debugging.
+- **Failure text keeps the route private too**: the "all accounts unavailable" and "no credentials" replies name the model that was called instead of printing the provider connection id and the model behind it.
+
+# v0.5.82-Custom (2026-09-13)
+
+## Custom Features & Enhancements
+- **Every API key has an on/off switch**: the toggle sits on the left of each key row, is stored through the existing key update endpoint, and a switched-off key is refused with `403 API key is disabled` on chat, embeddings, images, video, speech, transcription, search and web fetch — including while the gateway runs without required keys.
+- **FEATURE+ is the section title again** for the tools this fork adds, with Model Battle Arena and Custom Model Editor inside it.
+
+## Fixes
+- **Per-key limits now apply to every endpoint**: chat compared the validator's reason strings one by one while the other endpoints only checked them for truthiness, so an over-quota, expired or model-restricted key could still generate images, embeddings, speech and searches.
+- **A switched-off key can no longer be traded for remote access**: the edge guard accepted any non-false validation result, so the document writer's and battle arena's reason strings unlocked `/v1/*`.
+
+## Removals
+- **PRD Document Writer is gone**: its page, prompt library, checklist reader and saved drafts are deleted, and a migration prunes the drafts an install already has so the database stays clean.
+- **Provider Health is gone**: the board page and its snapshot reader are deleted, while `GET /api/health` stays exactly the anonymous `{"ok":true}` liveness probe that tunnels and uptime checkers ping.
+
+# v0.5.80-Custom (2026-09-13)
+
+## Improvements
+- **Workshop menu names now say what the tool does**: the three custom tools are **Model Battle Arena**, **Custom Model Editor** and **PRD Document Writer** in the sidebar, in each page header and in the model picker group, so nothing has to be guessed from a one-word nickname.
+- **Icons finally respect their own size**: the Material Symbols defaults were an unlayered vendor stylesheet, so every icon rendered at a fixed 24px no matter what was written on it — they now live in Tailwind's base layer and the icon font is declared in `globals.css`, so a `text-[14px]` icon is 14px.
+- **Icon and label share one centre line**: each sidebar and page-title icon is a fixed square flex box that a long label can no longer squash, which is what made rows look crooked.
+- **Model picker group renamed**: the studio group in the model picker is **Custom Models** and its chips carry a `custom` tag instead of the old tool name.
+
+# v0.5.79-Custom (2026-09-12)
+
+## Fixes
+- **A provider that answers JSON when we asked for a stream no longer hangs**: the gateway now reads the response content-type and either replays the completion as live SSE for a streaming client or serves the normal JSON path, so the answer arrives and tokens are billed.
+- **Unreadable upstream bodies fail loudly**: a body that is neither a stream nor valid JSON now returns a clean gateway error instead of a 200 response with nothing in it.
+- **Event-stream bodies are parsed whatever they contain**: a plain JSON document wearing an SSE label, NDJSON rows, Claude Messages events and Responses-API events all decode into a real answer instead of `Invalid SSE response for non-streaming request`.
+- **NDJSON providers work while streaming too**: lines that arrive without a `data:` prefix are now read as frames instead of being dropped, so those upstreams no longer look like an empty model.
+- **A transport quirk no longer grounds an account**: response-shape errors are classified as `lock: false`, so a provider that answers in the wrong format can no longer put a working credential behind a "(reset after 30s)" cooldown.
+- **Studio names stay separate in Usage**: two Forge names pointing at one model now each keep their own row and stats bucket, because the calls that used to produce no usage record at all are producing one.
+
+# v0.5.78-Custom (2026-09-12)
+
+## Fixes
+- **Showdown streams live**: every contender now paints its answer token by token with a ticking elapsed timer, so a slow model reads as "still working" instead of a frozen spinner with no feedback.
+- **One streaming client for both tools**: Showdown and the PRD Writer now talk to the gateway through the same `streamChatCompletion` helper, so reasoning deltas, usage capture and readable error parsing behave identically on both pages.
+
+## Custom Features & Enhancements
+- **Time-to-first-token is measured**: each battle card reports first token, total time, tokens and cost, and the result table gains a First token column with its own badge.
+- **Battles can be stopped**: the run button turns into Stop while anything is in flight, and a cancelled card keeps its partial answer labelled as stopped instead of showing a red failure.
+
+# v0.5.77-Custom (2026-09-12)
+
+## Fixes
+- **A rejected request no longer grounds an account**: 400, 406 and 422 from a provider are now classified as caller mistakes, so they surface immediately instead of cooling the credential for 30 seconds and dragging every other account through the same failure.
+
+## Custom Features & Enhancements
+- **PRD Writer document profiles**: four new profiles — RFC / Tech Spec, Release Notes, Competitive Analysis and Bug Report → Fix Plan — each with its own section outline built from 25 freshly written section briefs.
+- **PRD task list**: one button turns a finished PRD into an ordered `- [ ]` checklist, either parsed straight from the plan section (dependency order, owners, estimates, follow-ups) or extracted by the model when the plan is prose, with copy and `.md` download.
+- **Provider Health board**: a new page that rolls the request log into per-account and per-model success rate, p50/p95 latency, spend, last error and a live cooldown countdown, with test-now and pause/resume wired to the existing endpoints.
+- **Provider Health stays private**: the bare `GET /api/health` probe still answers `{"ok":true}` for tunnels and uptime checks, while `?window=` board data requires a dashboard session and never leaves request or response bodies on the server.
+- **Provider Health explains itself**: the board says when request logging is switched off in Settings instead of showing a page full of zeros.
+
+# v0.5.76-Custom (2026-09-12)
+
+## Fixes
+- **Showdown shows real outcomes**: a model that answers with HTTP 200 but no text is now labelled `empty` with the reason why, instead of dumping raw JSON into the result card.
+- **Showdown errors are readable**: provider failures show one short line plus HTTP status, cooldown and route chips, with the untouched payload behind "Show the raw error".
+- **Silent models can no longer win**: awards and the top ranking ignore answers that produced nothing, so an empty response can't be declared the fastest.
+- **PRD Writer errors formatted**: generation failures surface the parsed provider message with a collapsible raw detail, and a completion that returns nothing is reported as empty instead of leaving a blank document.
+
+# v0.5.75-Custom (2026-09-12)
+
+## Custom Features & Enhancements
+- **PRD Writer**: a workshop tool that turns a short brief into a full, reviewable product requirements document, and it will not generate until you have picked the model that writes it.
+- **PRD controls**: choose the document profile, depth, language, output-token cap and the exact sections to write, then watch the document stream in live.
+- **PRD review pass**: an optional second model red-teams the draft, lists up to 12 defects, and rewrites the whole document with the missing sections filled in.
+- **PRD proof and storage**: a section checklist reports which required headings actually arrived, and every document can be saved, reopened, copied, downloaded as `.md`, or inspected through the exact prompt that produced it.
+- **Workshop menu names**: the custom-tools group is now the single word **Workshop**, and its tools no longer share the word "Model" — **Showdown** (was Model Battle) and **Forge** (was Model Studio).
+- **Distinct menu icons**: Console Log now uses a monitor icon and its log card a list icon, so it no longer looks identical to CLI Tools.
+
+# v0.5.74-Custom (2026-09-11)
+
+## Fixes
+- **Model Studio no longer renames the original model**: a studio name is now resolved through its own record instead of writing a display alias, so `claude-fable-5` appears as an added entry while `custom1/claude-sonnet-5` keeps its own name in every picker.
+- **Legacy studio aliases cleaned up**: display aliases left behind by older builds for studio names are deleted the first time the studio list loads, so previously renamed models reappear under their real name.
+- **Usage shows the called studio name everywhere**: the name you call (e.g. `claude-fable-5`) is now recorded as the request's model across Overview, Leaderboard, Logs and Details, with the real backend model kept only as muted `→ provider/model` text and cost still priced from it.
+
+## Custom Features & Enhancements
+- **MoonshotAI logo is reliable**: compatible nodes created from the MoonshotAI button are tagged with a brand, and that tag (not just the name) now picks the `moonshot-ai.png` logo on cards, the detail page, and its colors.
+
+# v0.5.73-Custom (2026-09-11)
+
+## Fixes
+- **Model Studio page crash**: the per-card copy button now uses the shared copy hook, so a saved model no longer throws the client-side `ReferenceError` that showed "This page couldn't load".
+- **Model Battle data load**: the missing API-key and Model Studio fetch is restored, so a key is pre-selected and virtual (studio) names are priced by their real target model.
+- **Sub-cent battle costs**: costs now show enough digits (e.g. `$0.0034`) instead of every row reading `$0.00`, so the cheapest badge means something.
+- **Backup round trip**: exports now carry `disabledModels`, and import clears the stale request log in the same transaction while keeping usage history in its original order.
+- **Duplicate API key names on rename**: renaming an existing key to a name already in use is now rejected (HTTP 409) with the reason shown in the UI, matching how key creation behaves.
+
+## Custom Features & Enhancements
+- **No password nagging**: the tunnel/endpoint page no longer warns about the default dashboard password or blocks activation over it — the tunnel turns on as-is.
+- **Models are picked, never typed**: the allowed-models field in the API key dialogs is read-only; models come from the picker only (chips + Select Models), so a typo can no longer lock a key out of a model.
+- **Changelog works offline**: a local `/api/changelog` route serves this fork's changelog from disk, falling back to raw GitHub only for what it cannot resolve; the custom section is labelled **Contributed by Serenhope**.
+- **CLI default password**: the terminal settings menu now reports `seren123` as the default dashboard password instead of the old upstream value.
+- **UI polish**: long sidebar labels, provider/model ids, tool titles, badges and the header search now ellipsize instead of pushing buttons out of place, with the full text available on hover.
+- **Sidebar group renamed**: `Model Lab` is now **Custom Suite** — it holds every feature added by this fork, not only the model tools, so future additions have an obvious home.
+
+# v0.5.72-Custom (2026-09-10)
+
+## Custom Features & Enhancements
+- **Model Studio (was Model Editor)**: pick any connected model (built-in, custom provider or compatible) and give it your own callable name, display name, context window and injected system prompt, which then resolves in chat, `/v1/models`, and every model picker.
+- **Model Battle (was Model Arena)**: Side-by-side comparison now supports up to 4 contenders, estimated cost per run, and a **Final Result** board — fastest / cheapest / longest badges, plus a manual "My pick" so quality is decided by you, not a judge model.
+- **Menu Renames**: The `Feature+` group is now **Model Lab** containing **Model Battle** and **Model Studio**.
+- **MoonshotAI Logo**: MoonshotAI compatible providers now use the uploaded `moonshot-ai.png` brand image on cards and detail pages.
+- **Provider Prefixes**: Kept in Model Studio — one editable prefix per custom provider (`prefix/model-id`).
+
+# v0.5.71-Custom (2026-09-10)
+
+## Custom Features & Enhancements
+- **Model Editor**: Edit per-model overrides (rename, target model, context window, system prompt) and manage custom provider prefixes from a dedicated Model Editor page under Feature+.
+- **MoonshotAI Provider**: Added MoonshotAI (Kimi) compatible provider option alongside OpenAI/Anthropic compatible providers.
+- **Extra Combo Strategies**: New combo routing strategies beyond Fallback / Round Robin / Fusion.
+- **Changelog View**: Combined changelog modal — custom contributions shown in a highlighted "Contributed by Seren" section above the official Decolua release notes.
+- **UI Cleanup**: Refined dashboard layout, tidied console log view, and removed the Live Feed page and related controls for a cleaner sidebar.
+- **Backup Fix**: Fixed API key settings and usage statistics being reset on backup import (column/placeholder mismatch).
+
+## Fixes
+- **API Key Creation Bug**: Fixed `createApiKey` INSERT placeholder mismatch (16 columns vs 15 `?`) that made creating any API key silently fail.
+- **API Key Expiry**: Expiry date set during creation is now persisted (was silently dropped).
+- **Unique Key Names**: API key names are enforced unique — server rejects duplicates and the client shows a clear message; no overwriting.
+- **Duplicate API Key**: Added a Duplicate button per key that copies all settings into a new key with an auto-suggested unique name (`X (copy)`, `X (copy 2)`, …); a fresh key value is generated.
+
+# v0.5.70-Custom (2026-09-07)
+
+## Custom Features & Enhancements
+- **API Key Quota & Limits**: Add token limit per API Key with real-time usage tracking and HTTP 429 (`API key token limit exceeded`) response upon quota exhaustion.
+- **Dynamic Auto Reset Interval**: periodic usage resets (`5h`, `7d`, `14d`, `30d`, or custom like `10h`) become selectable whenever `tokenLimit > 0`.
+- **Model Access Control**: API Keys can be restricted to allowed models with wildcard (`claude-*`, `gpt-*`) or exact matching, returning HTTP 403 on unauthorized calls.
+- **Interactive Model Selector**: Integrated `ModelSelectModal` directly into Create & Edit API Key forms, allowing users to pick allowed models visually (same UI as Combo creation) without manual typing.
+- **Key Editing & Management**: key names, token limits, reset intervals, and allowed models stay editable anytime, with a manual `restart_alt` button to zero the used tokens.
+- **UI & Theme Sync**: the app is locked to dark mode with theme and language switchers removed, and custom select dropdowns now follow the app theme.
+
+# v0.5.100 (2026-09-18)
 
 ## Features
 - **Xiaomi MiMo**: merge MiMo Desktop support into `xiaomi-mimo` with dual auth (API key + Desktop/OAuth session), Preview models support, and encrypted-callback OAuth flow

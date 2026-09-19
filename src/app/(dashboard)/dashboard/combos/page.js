@@ -204,7 +204,9 @@ export default function CombosPage() {
           <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
             <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
             <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
-            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
+            <li><span className="font-medium text-text-main">Fastest</span> — picks the model with the lowest recent latency</li>
+            <li><span className="font-medium text-text-main">Cheapest</span> — picks the model with the lowest cost per token</li>
+            <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel and merges their answers into one, giving the best quality at the highest cost because every request bills all panel models plus the judge (N+1 calls)</li>
           </ul>
         </div>
         <Button icon="add" onClick={() => setShowCreateModal(true)} className="w-full sm:w-auto whitespace-nowrap">
@@ -253,6 +255,7 @@ export default function CombosPage() {
         getCaps={getCaps}
       />
 
+
       {/* Create Modal - Use key to force remount and reset state */}
       {showCreateModal && (
         <ComboFormModal
@@ -291,6 +294,8 @@ export default function CombosPage() {
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "fastest", label: "Fastest — lowest latency" },
+  { value: "cheapest", label: "Cheapest — lowest cost" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
@@ -416,7 +421,7 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
         <div className="min-w-0">
           <p className="text-sm font-medium">Vision Adapter</p>
           <p className="text-xs text-text-muted mt-0.5">
-            Your model can&apos;t read image/audio? Auto-switches to a model in the pool below.
+            Auto-switches to a pool model when yours cannot read image/audio.
           </p>
           <ul className="mt-1.5 text-[11px] text-text-muted flex flex-col gap-0.5">
             <li><span className="font-medium text-text-main">Vision</span> — images (png, jpg, webp, …)</li>

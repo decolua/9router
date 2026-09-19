@@ -1,5 +1,5 @@
 // Free OpenCode models that don't use the "-free" id suffix
-const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle"];
+const KNOWN_FREE_OPENCODE_MODELS = ["big-pickle", "union-alpha"];
 
 // Upstream returns "Model is unavailable" for this id (2026-09-02) — re-enable when fixed
 const DEAD_FREE_OPENCODE_MODELS = new Set(["deepseek-v4-flash-free"]);

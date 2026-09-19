@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { normalizeLogo } from "@/shared/utils/providerLogo";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, logo } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -28,6 +29,12 @@ export async function PUT(request, { params }) {
 
     if (!baseUrl?.trim()) {
       return NextResponse.json({ error: "Base URL is required" }, { status: 400 });
+    }
+
+    // An omitted logo leaves the stored one alone, "" clears it
+    const normalizedLogo = logo === undefined ? null : normalizeLogo(logo);
+    if (normalizedLogo === undefined) {
+      return NextResponse.json({ error: "Logo must be a small PNG, JPEG, WebP or GIF data URL" }, { status: 400 });
     }
 
     let sanitizedBaseUrl = baseUrl.trim();
@@ -53,6 +60,7 @@ export async function PUT(request, { params }) {
       prefix: prefix.trim(),
       baseUrl: sanitizedBaseUrl,
     };
+    if (normalizedLogo !== null) updates.logo = normalizedLogo;
 
     if (node.type === "openai-compatible") {
       updates.apiType = apiType;
