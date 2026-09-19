@@ -206,7 +206,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
     let active = true;
     fetchSnapshot()
       .then((snapshot) => { if (active) applySnapshot(snapshot); })
-      .catch((e) => console.log("ModelsCard fetch error:", e));
+      .catch((e) => console.warn("ModelsCard fetch error:", e));
     return () => { active = false; };
   }, [fetchSnapshot, applySnapshot]);
 

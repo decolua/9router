@@ -175,7 +175,10 @@ export function saveComboAttemptFailure({ comboName, member, provider, model, at
       statusOverride: failureStatusOf(status, error),
       metaExtra: { combo: comboName, member, attempt, endpoint: endpoint || null },
     });
-  } catch { /* reporting gap, never a client-visible error */ }
+  } catch (err) {
+    // Reporting gap, never a client-visible error — but leave one warn (message only, no stack).
+    console.warn(`[combo] combo failure-event write swallowed combo=${comboName || "?"} member=${member || "?"} err=${String(err?.message || err)}`);
+  }
 }
 
 /** `error:<httpStatus>` for an answered attempt, `error:<code>`/`error:threw` for a throw. */
@@ -235,5 +238,5 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     endpoint: endpoint || null,
     ...(statusOverride ? { status: statusOverride } : {}),
     ...(meta ? { meta } : {}),
-  }).catch(() => {});
+  }).catch((err) => console.warn(`[usage] usage row write failed provider=${provider} model=${model} err=${String(err?.message || err)}`));
 }

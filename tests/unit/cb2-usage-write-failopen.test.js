@@ -106,6 +106,32 @@ describe("combo failure recorder is fail-open", () => {
     expect(mocks.saveRequestUsage).toHaveBeenCalled();
   });
 
+  it("a DB that REJECTS does not change the response AND leaves a console.warn trace (META-3)", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mocks.saveRequestUsage.mockRejectedValue(new Error("db down"));
+      const { attemptUsage, wrap } = attemptStub();
+
+      const response = await handleComboChat({
+        body: { messages: [{ role: "user", content: "hi" }] },
+        models: ["grok/grok-3", "glm/glm-4"],
+        comboName: "boom",
+        attemptUsage,
+        log,
+        handleSingleModel: wrap(async (_b, m) => (m === "grok/grok-3" ? err(429, "rate limited") : ok())),
+      });
+
+      expect(response.status, "the winning member still answers").toBe(200);
+      await vi.waitFor(() => expect(warnSpy, "the silent swallow now warns at least once").toHaveBeenCalled());
+      expect(
+        warnSpy.mock.calls.some((args) => args.some((a) => String(a).includes("db down"))),
+        "warn carries the failure message (no stack spam)",
+      ).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("saveComboAttemptFailure swallows a writer that throws", () => {
     mocks.saveRequestUsage.mockImplementation(() => { throw new Error("nope"); });
     expect(() => saveComboAttemptFailure({

@@ -40,7 +40,10 @@ function recordAttemptFailure(attemptUsage, status, error) {
       apiKey,
       endpoint,
     });
-  } catch { /* never break the chain for a log line */ }
+  } catch (err) {
+    // Never break the chain for a log line — but leave one warn (message only, no stack).
+    console.warn(`[combo] attempt-failure write swallowed combo=${attemptUsage?.comboName || "?"} member=${attemptUsage?.member || "?"} err=${String(err?.message || err)}`);
+  }
 }
 
 

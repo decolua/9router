@@ -43,6 +43,7 @@ function stableStringify(value) {
 // would change routing). Policy: warn ONLY when the normalized lists DIFFER, naming both
 // origins — today's sole collision (mimo-free alias "mmf" vs mmf id "mmf") has identical
 // lists, so it stays silent and a differing catalog edit becomes visible instead of quiet.
+/** Exported for tests (map-equality proof). */
 export function buildProviderModelMap(entries, target = {}) {
   const writers = new Map();
   const label = (e) => (e.alias ? `${e.id} (alias "${e.alias}")` : `${e.id} (id)`);
