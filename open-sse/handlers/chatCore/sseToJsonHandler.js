@@ -4,7 +4,8 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
+import { openaiToGeminiResponse } from "../../translator/response/openai-to-gemini.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -257,20 +258,32 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }));
       const hasToolCalls = toolCalls.length > 0;
 
+      // Internal OpenAI finish_reason, shared by both client-shape branches.
+      const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
+      const finishReason = hasToolCalls
+        ? OPENAI_FINISH.TOOL_CALLS
+        : (responseDone ? OPENAI_FINISH.STOP : (jsonResponse.status || OPENAI_FINISH.STOP));
+
       if (sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI) {
+        // Delegate to the canonical openai→gemini response translator: it emits
+        // functionCall parts alongside the text and maps finish_reason through
+        // the schema table. The previous inline builder hardcoded parts=[{text}]
+        // + finishReason:"STOP" and dropped the tool calls extracted above (T1.2 M10).
+        const delta = {
+          ...(textContent ? { content: textContent } : {}),
+          ...(hasToolCalls ? { tool_calls: toolCalls.map((tc, i) => ({ ...tc, index: i })) } : {})
+        };
         finalResp = {
-          response: {
-            candidates: [{ content: { role: "model", parts: [{ text: textContent || "" }] }, finishReason: "STOP", index: 0 }],
-            usageMetadata: { promptTokenCount: inTokens, candidatesTokenCount: outTokens, totalTokenCount: inTokens + outTokens },
-            modelVersion: model,
-            responseId: jsonResponse.id || `resp_${Date.now()}`
-          }
+          response: openaiToGeminiResponse({
+            id: jsonResponse.id || `resp_${Date.now()}`,
+            model,
+            choices: [{ index: 0, delta, finish_reason: finishReason }],
+            usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens }
+          }, {})
         };
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;
-        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",

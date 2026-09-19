@@ -8,7 +8,9 @@ import {
 import { getSettings } from "@/lib/localDb";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
-import { initTranslators } from "open-sse/translator/index.js";
+import { initTranslators, translateRequest } from "open-sse/translator/index.js";
+import { FORMATS } from "open-sse/translator/formats.js";
+import { GEMINI_ROLE } from "open-sse/translator/schema/index.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -93,8 +95,12 @@ export async function POST(request, { params }) {
     //   :generateContent       => stream: false (plain JSON)
     const stream = action === ":streamGenerateContent";
 
-    // Convert Gemini request format to OpenAI/internal format
-    const convertedBody = convertGeminiToInternal(body, model, stream);
+    // Translate Gemini request → internal OpenAI shape through the translator
+    // registry (direct gemini:openai route, request/gemini-to-openai.js).
+    // The route must NOT reimplement this: the previous inline converter only
+    // read parts[].text and silently dropped tools, functionCall/
+    // functionResponse parts and inlineData (T1.2 M10).
+    const convertedBody = translateRequest(FORMATS.GEMINI, FORMATS.OPENAI, model, body, stream);
 
     // Create new request with converted body
     const newRequest = new Request(request.url, {
@@ -364,45 +370,6 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   }
 }
 
-/**
- * Convert Gemini request format to OpenAI/internal format.
- *
- * @param {object} geminiBody  - parsed Gemini request body
- * @param {string} model       - resolved model string (e.g. "gemini-pro-high")
- * @param {boolean} stream     - whether to stream (from URL action)
- */
-function convertGeminiToInternal(geminiBody, model, stream) {
-  const messages = [];
-
-  // Convert system instruction
-  if (geminiBody.systemInstruction) {
-    const systemText = geminiBody.systemInstruction.parts
-      ?.map(p => p.text)
-      .join("\n") || "";
-    if (systemText) {
-      messages.push({ role: "system", content: systemText });
-    }
-  }
-
-  // Convert contents to messages
-  if (geminiBody.contents) {
-    for (const content of geminiBody.contents) {
-      const role = content.role === "model" ? "assistant" : "user";
-      const text = content.parts?.map(p => p.text).join("\n") || "";
-      messages.push({ role, content: text });
-    }
-  }
-
-  return {
-    model,
-    messages,
-    stream,
-    max_tokens: geminiBody.generationConfig?.maxOutputTokens,
-    temperature: geminiBody.generationConfig?.temperature,
-    top_p: geminiBody.generationConfig?.topP,
-  };
-}
-
 /** Map OpenAI finish_reason => Gemini finishReason */
 const FINISH_REASON_MAP = {
   stop: "STOP",
@@ -471,7 +438,7 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
 
         const candidate = {
           content: {
-            role: "model",
+            role: GEMINI_ROLE.MODEL,
             parts: parts.length > 0 ? parts : [{ text: "" }],
           },
           index: 0,
@@ -559,7 +526,7 @@ async function convertOpenAIResponseToGemini(response, model) {
   const geminiResponse = {
     candidates: [
       {
-        content: { role: "model", parts },
+        content: { role: GEMINI_ROLE.MODEL, parts },
         finishReason,
         index: 0,
       },
