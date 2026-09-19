@@ -327,6 +327,9 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*qwen*plus*",     caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen*235b*",     caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwq*",           caps: { reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 131072 } },
+  // PAI NIM serves Qwen3.8-Flash-Next-NVFP4 with a 400k window / 120k output,
+  // wider than the generic qwen pattern and not in models.dev for that gateway.
+  { pattern: "*qwen3.8-flash-next-nvfp4*", caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 400000, maxOutput: 120000 } },
   { pattern: "*qwen*",          caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
 
   // ── Kimi (enabled→reasoning_effort; K2.7-code cannot disable) ─────
