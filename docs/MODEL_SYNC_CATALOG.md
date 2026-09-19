@@ -12,9 +12,14 @@ ideas. This implementation is native to 9Router: no OmniRoute code was copied.
 - First sync: fire-and-forget right after `POST /api/providers` creates the
   connection (fail-open — creation never fails because sync failed).
 - Recurring: every 24h via `startConnectionCatalogSync()` (boot + 90s);
-  failures retry in 30min. Disable with `CONNECTION_MODEL_SYNC=off`.
+  failures retry in 30min. `CONNECTION_MODEL_SYNC=off` disables ALL
+  automatic syncs (scheduler, creation-time, migration-suggestions) via the
+  `syncConnectionCatalog({automatic})` chokepoint — the manual button and
+  API POST keep working (that path passes `{automatic:false}`).
 - Manual: dashboard "Models" button per connection → `POST
   /api/providers/[id]/model-catalog`, or `GET` to inspect status/counts.
+  Concurrent calls share one in-flight sync per connection; repeats within
+  30s get the cached result with `deduped:true` (no upstream quota burn).
 - Safety: 15s timeout, 3 attempts with backoff, no retry on 401/403/404,
   empty 200 responses never wipe the previous list, SSRF guard on the URL,
   and no keys/tokens/response bodies in logs.
