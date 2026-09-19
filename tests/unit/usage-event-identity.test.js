@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 const originalDataDir = process.env.DATA_DIR;
@@ -438,7 +439,10 @@ describe("Usage Event Identity (F-01)", () => {
   })();
 
   it("h. every shipped adapter is either exercised below or has a stated reason", () => {
-    const shipped = fs.readdirSync(path.join(process.cwd(), "src/lib/db/adapters")).filter((f) => f.endsWith(".js"));
+    // Anchored on this module, not process.cwd(): the canonical suite runs from
+    // tests/ (CLAUDE.md), where a cwd-relative src/ path does not exist.
+    const adaptersDir = fileURLToPath(new URL("../../src/lib/db/adapters", import.meta.url));
+    const shipped = fs.readdirSync(adaptersDir).filter((f) => f.endsWith(".js"));
     const mapped = ADAPTERS.map((a) => a.file).sort();
     expect(mapped, "a new adapter must be added to ADAPTERS, exercised or excused").toEqual(shipped.sort());
 
