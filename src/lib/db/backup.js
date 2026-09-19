@@ -33,20 +33,32 @@ export function backupFile(srcPath, destDir, destName = null) {
   return dest;
 }
 
-// Lightweight DB backup via ATTACH: create an empty sqlite file, copy every
-// table EXCEPT the excluded ones into it. Avoids duplicating the huge
-// observability log, so the backup stays small regardless of DB size.
-export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
+// Lightweight DB backup: create a fresh SQLite file containing every table
+// EXCEPT the excluded ones (plus explicit indexes), so a multi-hundred-MB DB
+// backs up as a few MB regardless of the observability log size.
+//
+// Two implementations:
+// - Native drivers (bun:sqlite / better-sqlite3 / node:sqlite): ATTACH an
+//   empty on-disk file and INSERT SELECT into it.
+// - sql.js fallback: ATTACH is USELESS there — the "filesystem" is sql.js's
+//   in-memory Emscripten FS, so an attached file never reaches real disk (and
+//   in practice ATTACH throws "unable to open database"). Build the backup in
+//   a fresh in-memory sql.js DB, copy tables row-by-row through the adapter's
+//   public API, and export the buffer to a real file (T1.4 H-2).
+// Failures are NOT swallowed here — they propagate so callers can report an
+// explicit warning that no safety backup exists.
+export async function backupDbLite(adapter, destDir, destName = "data.sqlite") {
   const dest = path.join(destDir, destName);
   try { fs.rmSync(dest, { force: true }); } catch {}
+  const excluded = new Set(BACKUP_EXCLUDE_TABLES);
+
+  if (adapter.driver === "sql.js") return backupViaExport(adapter, dest, excluded);
+
   const escaped = dest.replace(/'/g, "''");
 
   adapter.exec(`ATTACH DATABASE '${escaped}' AS bak`);
   try {
-    const excluded = new Set(BACKUP_EXCLUDE_TABLES);
-    const tables = adapter
-      .all(`SELECT name, sql FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
-      .filter((t) => !excluded.has(t.name));
+    const tables = copyableTables(adapter, excluded);
 
     adapter.transaction(() => {
       for (const t of tables) {
@@ -55,9 +67,70 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
         adapter.exec(createSql);
         adapter.exec(`INSERT INTO bak.${t.name} SELECT * FROM main.${t.name}`);
       }
+      // Explicit indexes too (e.g. migration-owned idx_uh_event — partial
+      // unique index not re-created elsewhere; losing it degrades dedup).
+      for (const t of copyableIndexes(adapter, excluded)) {
+        const createSql = t.sql.replace(/CREATE( UNIQUE)? INDEX /i, "CREATE$1 INDEX bak.");
+        try { adapter.exec(createSql); }
+        catch (e) { console.warn(`[DB][backup] ⚠️ WARNING failed to copy index ${t.name}: ${e.message}`); }
+      }
     });
   } finally {
     try { adapter.exec("DETACH DATABASE bak"); } catch {}
+  }
+  return dest;
+}
+
+function copyableTables(adapter, excluded) {
+  return adapter
+    .all(`SELECT name, sql FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
+    .filter((t) => !excluded.has(t.name));
+}
+
+// Explicit (non-auto) indexes whose target table is not excluded.
+function copyableIndexes(adapter, excluded) {
+  return adapter
+    .all(`SELECT name, sql FROM main.sqlite_master WHERE type='index' AND sql IS NOT NULL`)
+    .filter((t) => {
+      const m = /ON\s+"?(\w+)"?/i.exec(t.sql || "");
+      return !(m && excluded.has(m[1]));
+    });
+}
+
+async function backupViaExport(adapter, dest, excluded) {
+  const { default: initSqlJs } = await import("sql.js");
+  const SQL = await initSqlJs();
+  const bak = new SQL.Database();
+  try {
+    for (const t of copyableTables(adapter, excluded)) {
+      bak.run(t.sql);
+      const rows = adapter.all(`SELECT * FROM main.${t.name}`);
+      if (!rows.length) continue;
+      const cols = Object.keys(rows[0]);
+      const stmt = bak.prepare(
+        `INSERT INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES (${cols.map(() => "?").join(",")})`
+      );
+      try {
+        for (const r of rows) {
+          const vals = cols.map((c) => (r[c] === undefined ? null : r[c]));
+          if (!stmt.run(vals)) throw new Error(`[DB][backup] failed copying row into ${t.name}`);
+        }
+      } finally {
+        stmt.free();
+      }
+    }
+    for (const t of copyableIndexes(adapter, excluded)) {
+      try { bak.run(t.sql); }
+      catch (e) { console.warn(`[DB][backup] ⚠️ WARNING failed to copy index ${t.name}: ${e.message}`); }
+    }
+    const buf = Buffer.from(bak.export());
+    if (!buf.length) throw new Error("[DB][backup] sql.js backup exported an empty buffer");
+    fs.writeFileSync(dest, buf);
+    if (!fs.existsSync(dest) || fs.statSync(dest).size === 0) {
+      throw new Error(`[DB][backup] backup file was not written to disk: ${dest}`);
+    }
+  } finally {
+    try { bak.close(); } catch {}
   }
   return dest;
 }

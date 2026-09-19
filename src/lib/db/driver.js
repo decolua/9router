@@ -1,8 +1,10 @@
 import { ensureDirs, DATA_FILE } from "./paths.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
-if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
+if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false, gen: 0 };
 const state = global._dbAdapter;
+// Hot-reload compat: an older global may predate the `gen` field.
+if (typeof state.gen !== "number") state.gen = 0;
 
 async function tryBunSqlite() {
   // Bun runtime only — built-in, no install needed
@@ -72,14 +74,48 @@ async function initAdapter() {
     state.logged = true;
   }
 
-  const { runMigrationOnce } = await import("./migrate.js");
-  await runMigrationOnce(adapter);
+  // If migration fails the adapter is already open — close it, otherwise the
+  // handle (plus WAL checkpoint timers / beforeExit listeners) leaks forever
+  // and every retry opens yet another one over the same file.
+  try {
+    const { runMigrationOnce } = await import("./migrate.js");
+    await runMigrationOnce(adapter);
+  } catch (e) {
+    try {
+      if (typeof adapter.close === "function") adapter.close();
+    } catch { /* best effort */ }
+    throw e;
+  }
   return adapter;
 }
 
 export async function getAdapter() {
   if (state.instance) return state.instance;
-  if (!state.initPromise) state.initPromise = initAdapter().then((a) => { state.instance = a; return a; });
+  if (!state.initPromise) {
+    // Generation of THIS init attempt. closeAdapter() bumps state.gen, which
+    // invalidates an in-flight init: its adapter is closed as an orphan
+    // instead of being published (fixes the getAdapter × closeAdapter race).
+    const gen = state.gen;
+    const promise = initAdapter().then(
+      (adapter) => {
+        if (state.gen !== gen) {
+          try { if (typeof adapter.close === "function") adapter.close(); } catch { /* best effort */ }
+          throw new Error("[DB] adapter closed during initialization — call getAdapter() again");
+        }
+        state.instance = adapter;
+        if (state.initPromise === promise) state.initPromise = null;
+        return adapter;
+      },
+      (err) => {
+        // A *transient* init failure must not poison the whole process: drop
+        // the rejected promise so the next getAdapter() retries from scratch.
+        // Only clear it if it is still OUR promise (a newer init may own it).
+        if (state.initPromise === promise) state.initPromise = null;
+        throw err;
+      }
+    );
+    state.initPromise = promise;
+  }
   return state.initPromise;
 }
 
@@ -89,17 +125,20 @@ export function getAdapterSync() {
 }
 
 export async function closeAdapter() {
-  if (state.instance) {
-    const adapter = state.instance;
-    state.instance = null;
-    state.initPromise = null;
-    state.logged = false;
-    try {
-      if (typeof adapter.close === "function") {
-        adapter.close();
-      }
-    } catch (e) {
-      console.warn(`[DB] Error closing adapter: ${e?.message || e}`);
+  // Invalidate any in-flight init FIRST (gen bump + promise drop), whether or
+  // not an adapter was ever published. The pending init's .then will close its
+  // adapter as an orphan and reject instead of publishing it.
+  state.gen += 1;
+  state.initPromise = null;
+  state.logged = false;
+  const adapter = state.instance;
+  state.instance = null;
+  if (!adapter) return;
+  try {
+    if (typeof adapter.close === "function") {
+      adapter.close();
     }
+  } catch (e) {
+    console.warn(`[DB] Error closing adapter: ${e?.message || e}`);
   }
 }
