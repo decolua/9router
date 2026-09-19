@@ -67,9 +67,16 @@ const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRunt
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
 
+// F23 (T1.6 M1/M2): the ownership matcher and the escalation engine below are
+// unit-tested by requiring this file (tests/unit/f23-*.test.js). Everything
+// that touches the machine — runtime self-heal installs, process listings and
+// kills, server spawn — runs only when this file is the entry point. A
+// required copy must be inert: it must never kill a process on the test host.
+const IS_MAIN = require.main === module;
+
 // Subcommands (`9router xai video …`) run against an already-running gateway
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
-if (args[0] === "xai" && args[1] === "video") {
+if (IS_MAIN && args[0] === "xai" && args[1] === "video") {
   const { run } = require("./src/cli/commands/xaiVideo");
   run(args.slice(2))
     .then((code) => process.exit(code))
@@ -83,10 +90,10 @@ if (args[0] === "xai" && args[1] === "video") {
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
-try { ensureSqliteRuntime({ silent: true }); } catch {}
+if (IS_MAIN) { try { ensureSqliteRuntime({ silent: true }); } catch {} }
 
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
-try { ensureTrayRuntime({ silent: true }); } catch {}
+if (IS_MAIN) { try { ensureTrayRuntime({ silent: true }); } catch {} }
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
@@ -94,6 +101,18 @@ const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
 
 const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
+
+// Server shutdown budget, module-wide (F23/M1). The server drains in-flight
+// usage writes and checkpoints the SQLite WAL on SIGTERM before exiting
+// (src/shared/services/shutdownCoordinator.js: 3s drain + 2s hard watchdog).
+// SIGKILL cannot be caught, so every kill path must ASK first and only escalate
+// after this grace window — the restart path used to SIGKILL on sight,
+// discarding exactly what the drain exists to save.
+const SHUTDOWN_GRACE_MS = 8000;
+// F23/M5 bound: killTray() waits for the Go tray binary to exit (escalates at
+// 800/1600ms, polls up to ~3s). Exit paths that call process.exit() must wait
+// for it — bounded, so a wedged tray can never hold the launcher open.
+const TRAY_EXIT_BOUND_MS = 4000;
 
 // First non-internal IPv4 — the address remote peers actually reach when bound to 0.0.0.0.
 function getLanIp() {
@@ -110,11 +129,315 @@ function getDisplayHost() {
   return host === DEFAULT_HOST ? "localhost" : host;
 }
 const MAX_PORT_ATTEMPTS = 10;
-// Identifiers for killAllAppProcesses - only kill 9router specifically
-const PROCESS_IDENTIFIERS = [
-  '9router'  // Only package name - avoid killing other apps
-];
 
+// ── Process ownership (F23/T1.6 M2) ─────────────────────────────────────────
+//
+// The old matcher killed any process whose cmdline contained "9router" plus
+// every "next-server" on the machine — i.e. every unrelated Next.js dev server,
+// `grep 9router`, a `tail -f ~/.9router/server.log`, and (via "/9router"
+// matching "/9router-enhanced") even this repo's own dev server. A foreign
+// process is ours only when a FACT ties it to this installation:
+//
+//   1. its argv contains the EXACT installed path (this cli.js, the standalone
+//      server file, or a file under this install's directories); or
+//   2. its working directory IS this installation's standalone app dir — the
+//      standalone server rewrites its process title ("next-server (vX)"), so
+//      argv stops carrying the path; or
+//   3. it owns the app port as a TCP LISTENER — enforced by killProcessOnPort,
+//      never by name guessing.
+//
+// Loose package-name substrings are never a kill reason.
+
+// True when `cmd` references `p` as a complete path element: the character
+// before must be a separator/space (not a path continuation, so
+// "/inst/cli/app" cannot match inside "/inst/cli/application"), and the
+// character after must be end/space/separator — not ".map" or "-old".
+function cmdContainsExactPath(cmd, p, { caseInsensitive = false } = {}) {
+  if (!p) return false;
+  const hay = caseInsensitive ? String(cmd).toLowerCase() : String(cmd);
+  const needle = caseInsensitive ? String(p).toLowerCase() : String(p);
+  let idx = hay.indexOf(needle);
+  while (idx !== -1) {
+    const before = idx === 0 ? " " : hay[idx - 1];
+    const after = idx + needle.length >= hay.length ? " " : hay[idx + needle.length];
+    if (!/[A-Za-z0-9._-]/.test(before) && !/[A-Za-z0-9._-]/.test(after)) return true;
+    idx = hay.indexOf(needle, idx + 1);
+  }
+  return false;
+}
+
+function trimPathSep(p) {
+  return String(p).replace(/[\\/]+$/, "");
+}
+
+// Pure predicate over one parsed process entry: { pid, cmd, cwd? }.
+// opts: { selfPid, ownedPaths: string[], ownedDirs: string[],
+//         caseInsensitive, resolveCwd?: (pid) => string|null }
+function isOwnAppProcess(entry, opts = {}) {
+  if (!entry || entry.pid == null) return false;
+  const { selfPid = null, ownedPaths = [], ownedDirs = [], caseInsensitive = false, resolveCwd = null } = opts;
+  if (selfPid != null && String(entry.pid) === String(selfPid)) return false;
+  const cmd = String(entry.cmd || "");
+
+  for (const p of ownedPaths) {
+    if (cmdContainsExactPath(cmd, p, { caseInsensitive })) return true;
+  }
+  for (const d of ownedDirs) {
+    if (!d) continue;
+    // A file under this install's directory appearing in argv (server.js,
+    // tray binary under <install>/cli/node_modules/…): dir must be followed
+    // by a path separator, so "/inst/cli/app" never matches "/inst/cli/apptool".
+    const dir = trimPathSep(d);
+    if (cmdContainsExactPath(cmd, dir, { caseInsensitive }) ||
+        cmdContainsExactPath(cmd, dir + "/", { caseInsensitive }) ||
+        cmdContainsExactPath(cmd, dir + "\\", { caseInsensitive })) return true;
+    if (resolveCwd) {
+      let cwd = entry.cwd;
+      if (cwd === undefined) {
+        try { cwd = resolveCwd(entry.pid); } catch { cwd = null; }
+      }
+      if (cwd) {
+        const a = trimPathSep(cwd);
+        const b = trimPathSep(dir);
+        const eq = caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
+        if (eq) return true;
+      }
+    }
+  }
+  return false;
+}
+
+// "  4242 /usr/bin/node /opt/9router/cli/app/custom-server.js" → {pid, cmd}
+// Format: `ps -eo pid=,command=`. Header/`ps` itself/garbage → null.
+function parsePidCommand(line) {
+  const m = /^\s*(\d+)\s+(\S.*)$/.exec(String(line));
+  if (!m) return null;
+  return { pid: m[1], cmd: m[2] };
+}
+
+// Windows WMI CSV row: `"4242","C:\Program Files\node.exe ...\cli.js --tray"`
+// (CSV escapes embedded quotes by doubling them.)
+function parseWmiCsvEntry(line) {
+  const m = /^\s*"(\d+)","(.*)"\s*$/.exec(String(line));
+  if (!m) return null;
+  return { pid: m[1], cmd: m[2].replace(/""/g, '"') };
+}
+
+function collectOwnAppPids(entries, opts = {}) {
+  const out = [];
+  for (const e of entries || []) {
+    if (e && isOwnAppProcess(e, opts)) out.push(e);
+  }
+  return out;
+}
+
+// Real process table for the ownership matcher. `ps aux` leaks the USER column
+// into the matched string (a user literally named "9router" used to qualify);
+// `ps -eo pid=,command=` pins exactly pid + argv.
+function readProcessList(platform = process.platform) {
+  const entries = [];
+  try {
+    if (platform === "win32") {
+      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\" OR Name=\\"tray_windows_release.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
+      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: 5000 });
+      for (const line of output.split("\n").slice(1)) {
+        const e = parseWmiCsvEntry(line);
+        if (e) entries.push(e);
+      }
+    } else {
+      const output = execSync("ps -eo pid=,command= 2>/dev/null", { encoding: "utf8", timeout: 5000 });
+      for (const line of output.split("\n")) {
+        const e = parsePidCommand(line);
+        if (e) entries.push(e);
+      }
+    }
+  } catch { /* no processes found */ }
+  return entries;
+}
+
+function readProcCwd(pid) {
+  try { return fs.realpathSync(`/proc/${pid}/cwd`); } catch { return null; }
+}
+
+// ── Ask-shutdown-then-kill engine (F23/T1.6 M1) ─────────────────────────────
+//
+// cleanup()'s graceful branch already SIGTERMs our own server and waits
+// SHUTDOWN_GRACE_MS before escalating; foreign instances (the previous
+// launcher and its detached server, hit by the restart path) must get the same
+// chance. SIGTERM is the "ask": the server's shutdownCoordinator drains
+// in-flight usage writes and checkpoints the WAL on it. Every primitive is
+// injectable so unit tests can drive fake process tables — no real signal is
+// ever sent from a test.
+async function terminatePidsGracefully(pids, {
+  graceMs = SHUTDOWN_GRACE_MS,
+  pollMs = 100,
+  platform = process.platform,
+  signal = (pid, sig) => { process.kill(Number(pid), sig); },
+  isAlive = (pid) => {
+    try { process.kill(Number(pid), 0); return true; }
+    catch (e) { return e && e.code === "EPERM"; } // exists, not ours
+  },
+  sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  now = () => Date.now(),
+} = {}) {
+  const list = [...new Set((pids || []).map(String).filter((p) => /^\d+$/.test(p)))];
+  const res = { asked: [], exited: [], killed: [] };
+  if (list.length === 0) return res;
+
+  const win = platform === "win32";
+  const ask = (pid) => {
+    if (win) execSync(`taskkill /T /PID ${pid} 2>nul`, { stdio: "ignore", shell: true, windowsHide: true, timeout: 3000 });
+    else signal(pid, "SIGTERM");
+  };
+  const force = (pid) => {
+    if (win) execSync(`taskkill /F /T /PID ${pid} 2>nul`, { stdio: "ignore", shell: true, windowsHide: true, timeout: 3000 });
+    else signal(pid, "SIGKILL");
+  };
+
+  for (const pid of list) {
+    try { ask(pid); res.asked.push(pid); } catch { /* already gone */ }
+  }
+
+  let pending = res.asked.slice();
+  const deadline = now() + Math.max(0, graceMs);
+  while (pending.length && now() < deadline) {
+    await sleep(pollMs);
+    pending = pending.filter((pid) => { try { return isAlive(pid); } catch { return true; } });
+  }
+  for (const pid of pending) {
+    try { force(pid); res.killed.push(pid); } catch { /* exited in the meantime */ }
+  }
+  if (res.killed.length) await sleep(Math.min(pollMs * 5, 500));
+  res.exited = res.asked.filter((pid) => !res.killed.includes(pid));
+  return res;
+}
+
+// Resolve `promise` within boundMs. Never rejects, never waits past the bound.
+// True = settled in time; false = the bound expired.
+function settleWithBound(promise, boundMs, { setTimeoutRef = (fn, ms) => setTimeout(fn, ms), clearTimeoutRef = clearTimeout } = {}) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (settled) => {
+      if (done) return;
+      done = true;
+      clearTimeoutRef(timer);
+      resolve(settled);
+    };
+    const timer = setTimeoutRef(() => finish(false), boundMs);
+    Promise.resolve(promise).then(() => finish(true), () => finish(true));
+  });
+}
+
+// PIDs from `lsof -nP -iTCP:PORT -sTCP:LISTEN -t` (LISTEN sockets only).
+// The old `lsof -ti:PORT` also matched CLIENTS connected to the port and took
+// `[0]` — a user's running SDK script talking to the gateway could be the
+// process killed.
+function parseLsofListenerPids(out) {
+  return String(out || "").split(/\r?\n/).map((l) => l.trim()).filter((l) => /^\d+$/.test(l));
+}
+
+// netstat -ano rows: LOCAL address must end with :PORT and state must be
+// LISTENING. findstr ":PORT" alone matches ESTABLISHED rows whose REMOTE side
+// (or a client's ephemeral local port) contains the number.
+function parseNetstatListenerPids(out, port) {
+  const pids = [];
+  String(out || "").split(/\r?\n/).forEach((line) => {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length < 5) return;
+    const [proto, local, , state, pid] = parts;
+    if (!/^(TCP|UDP)/i.test(proto) || !/LISTENING/i.test(state)) return;
+    if (!local.endsWith(`:${port}`)) return;
+    if (/^\d+$/.test(pid) && Number(pid) > 0) pids.push(pid);
+  });
+  return [...new Set(pids)];
+}
+
+function readListenerPids(port, platform = process.platform) {
+  try {
+    if (platform === "win32") {
+      const output = execSync(`netstat -ano | findstr LISTENING`, {
+        encoding: "utf8", shell: true, windowsHide: true, timeout: 5000, stdio: ["pipe", "pipe", "ignore"],
+      });
+      return parseNetstatListenerPids(output, port);
+    }
+    const output = execSync(`lsof -nP -iTCP:${port} -sTCP:LISTEN -t`, {
+      encoding: "utf8", stdio: ["pipe", "pipe", "ignore"], timeout: 5000,
+    });
+    return parseLsofListenerPids(output);
+  } catch { return []; } // lsof/netstat exit non-zero when the port is free
+}
+
+// Kill all launcher/server processes OF THIS INSTALLATION.
+// deps are injectable for tests (fake process tables, fake signals).
+async function killAllAppProcesses(appPort, deps = {}) {
+  const {
+    platform = process.platform,
+    selfPid = process.pid,
+    readProcessListImpl = readProcessList,
+    resolveCwd = platform === "linux" ? readProcCwd : () => null,
+    ownedPaths = [__filename, serverPath],
+    ownedDirs = [standaloneDir, __dirname],
+    caseInsensitive = platform === "win32",
+    graceMs = SHUTDOWN_GRACE_MS,
+    backgroundCleanup = null,
+    ...terminate
+  } = deps;
+
+  // Background: MITM + tunnel/cloudflared run on separate ports/processes —
+  // killing them doesn't free the app port, so don't block the critical path.
+  // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
+  // Injectable: unit tests must never touch this host's real PID files.
+  const runBackground = () => {
+    try { killProxyByPidFile(); } catch {}
+    try { killTunnelByPidFile(); } catch {}
+    try { killCloudflaredByAppPort(appPort); } catch {}
+  };
+  setImmediate(() => (backgroundCleanup || runBackground)(appPort));
+
+  let owned = [];
+  try {
+    const entries = readProcessListImpl(platform);
+    owned = collectOwnAppPids(entries, { selfPid, ownedPaths, ownedDirs, caseInsensitive, resolveCwd });
+  } catch { /* keep going — the port kill below is the safety net */ }
+
+  if (owned.length > 0) {
+    return terminatePidsGracefully(owned.map((e) => e.pid), { graceMs, platform, ...terminate });
+  }
+  return { asked: [], exited: [], killed: [] };
+}
+
+// Kill the process LISTENING on the app port (and nothing else): a client with
+// an ESTABLISHED connection to the gateway is never touched. Ask first, then
+// escalate; then poll until the LISTEN socket is actually gone (bounded) —
+// replacing the old blind 500 ms sleep.
+async function killProcessOnPort(port, deps = {}) {
+  const {
+    platform = process.platform,
+    selfPid = process.pid,
+    readListeners = () => readListenerPids(port, platform),
+    graceMs = SHUTDOWN_GRACE_MS,
+    pollMs = 100,
+    sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+    now = () => Date.now(),
+  } = deps;
+
+  const initial = (readListeners() || []).map(String).filter((p) => /^\d+$/.test(p) && p !== String(selfPid));
+  let res = { asked: [], exited: [], killed: [] };
+  if (initial.length > 0) {
+    res = await terminatePidsGracefully(initial, {
+      graceMs, pollMs, platform, sleep, now,
+      signal: deps.signal, isAlive: deps.isAlive,
+    });
+  }
+
+  // Port-release poll: bounded by a second, small window after the owners are
+  // gone (kernel teardown), instead of assuming 500 ms is enough.
+  const releaseDeadline = now() + 2000;
+  while (now() < releaseDeadline && (readListeners() || []).some((p) => String(p) !== String(selfPid))) {
+    await sleep(pollMs);
+  }
+  return res;
+}
 // Parse arguments
 let port = DEFAULT_PORT;
 let host = DEFAULT_HOST;
@@ -138,8 +461,9 @@ for (let i = 0; i < args.length; i++) {
     skipUpdate = true;
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
-    process.env.TRAY_MODE = "1";
+    if (IS_MAIN) process.env.TRAY_MODE = "1";
   } else if (args[i] === "--help" || args[i] === "-h") {
+    if (!IS_MAIN) continue;
     console.log(`
 Usage: ${APP_NAME} [options]
 
@@ -160,13 +484,14 @@ Commands:
 `);
     process.exit(0);
   } else if (args[i] === "--version" || args[i] === "-v") {
+    if (!IS_MAIN) continue;
     console.log(pkg.version);
     process.exit(0);
   }
 }
 
 // Auto-relaunch after update: detached process has no TTY → fallback to tray
-if (skipUpdate && !trayMode && !process.stdin.isTTY) {
+if (IS_MAIN && skipUpdate && !trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
@@ -319,103 +644,10 @@ function killCloudflaredByAppPort(appPort) {
   return pids;
 }
 
-// Kill all 9router processes
-function killAllAppProcesses(appPort) {
-  return new Promise((resolve) => {
-    try {
-      // Background: MITM + tunnel/cloudflared run on separate ports/processes —
-      // killing them doesn't free the app port, so don't block the critical path.
-      // Server-side MITM manager has stale-lock recovery and starts deferred (~3s).
-      setImmediate(() => {
-        try { killProxyByPidFile(); } catch {}
-        try { killTunnelByPidFile(); } catch {}
-        try { killCloudflaredByAppPort(appPort); } catch {}
-      });
-
-      const platform = process.platform;
-      let pids = [];
-
-      if (platform === "win32") {
-        // Windows: use WMI to get full CommandLine (tasklist /V doesn't include it)
-        try {
-          const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-          const output = execSync(psCmd, {
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: 5000
-          });
-          const lines = output.split("\n").slice(1).filter(l => l.trim());
-          lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
-            const cmd = line.toLowerCase();
-            const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
-            if (isAppProcess) {
-              const match = line.match(/^"(\d+)"/);
-              if (match && match[1] && match[1] !== process.pid.toString()) {
-                pids.push(match[1]);
-              }
-            }
-          });
-        } catch (e) {
-          // No processes found or error - continue
-        }
-      } else {
-        // macOS/Linux: use ps to find all matching processes
-        try {
-          const output = execSync('ps aux 2>/dev/null', {
-            encoding: 'utf8',
-            timeout: 5000
-          });
-          const lines = output.split('\n');
-
-          lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
-            const cmd = line.toLowerCase();
-            const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
-            if (isAppProcess) {
-              const parts = line.trim().split(/\s+/);
-              const pid = parts[1];
-              if (pid && !isNaN(pid) && pid !== process.pid.toString()) {
-                pids.push(pid);
-              }
-            }
-          });
-        } catch (e) {
-          // No processes found or error - continue
-        }
-      }
-
-      // Kill all found processes
-      if (pids.length > 0) {
-        pids.forEach(pid => {
-          try {
-            if (platform === "win32") {
-              execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: 'ignore', shell: true, windowsHide: true, timeout: 3000 });
-            } else {
-              execSync(`kill -9 ${pid} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
-            }
-          } catch (err) {
-            // Process already dead or can't kill - continue
-          }
-        });
-
-        // Wait for processes to fully terminate
-        setTimeout(() => resolve(), 1000);
-      } else {
-        resolve();
-      }
-    } catch (err) {
-      // Silent fail - continue anyway
-      resolve();
-    }
-  });
-}
+// Kill all 9router processes → replaced by the ownership matcher +
+// terminatePidsGracefully above (F23/T1.6 M1+M2): ask (SIGTERM) foreign
+// instances first, wait SHUTDOWN_GRACE_MS, SIGKILL only survivors, and only
+// for processes this installation provably owns.
 
 // Sleep helper using SharedArrayBuffer wait (sync, no busy-loop)
 function sleepSync(ms) {
@@ -464,53 +696,11 @@ function killProxyByPidFile() {
   } catch { }
 }
 
-// Kill any process on specific port
-function killProcessOnPort(port) {
-  return new Promise((resolve) => {
-    try {
-      const platform = process.platform;
-      let pid;
-
-      if (platform === "win32") {
-        try {
-          const output = execSync(`netstat -ano | findstr :${port}`, {
-            encoding: 'utf8',
-            shell: true,
-            windowsHide: true,
-            timeout: 5000
-          }).trim();
-          const lines = output.split('\n').filter(l => l.includes('LISTENING'));
-          if (lines.length > 0) {
-            pid = lines[0].trim().split(/\s+/).pop();
-            execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: 'ignore', shell: true, windowsHide: true, timeout: 3000 });
-          }
-        } catch (e) {
-          // Port is free or error
-        }
-      } else {
-        // macOS/Linux
-        try {
-          const pidOutput = execSync(`lsof -ti:${port}`, {
-            encoding: 'utf8',
-            stdio: ['pipe', 'pipe', 'ignore']
-          }).trim();
-          if (pidOutput) {
-            pid = pidOutput.split('\n')[0];
-            execSync(`kill -9 ${pid} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
-          }
-        } catch (e) {
-          // Port is free or error
-        }
-      }
-
-      // Wait for port to be released
-      setTimeout(() => resolve(), 500);
-    } catch (err) {
-      // Silent fail - continue anyway
-      resolve();
-    }
-  });
-}
+// Kill any process on specific port → replaced by killProcessOnPort above
+// (F23/T1.6 M1+M2): LISTEN sockets only (`lsof -sTCP:LISTEN` / netstat rows
+// filtered to LISTENING + local address, not `lsof -ti:PORT` which also
+// matches clients), ask-shutdown-then-kill, and a bounded port-release poll
+// instead of the blind `kill -9` + fixed 500 ms sleep.
 
 
 // Detect if running in restricted environment (Codespaces, Docker)
@@ -605,17 +795,24 @@ const serverPath = fs.existsSync(customServerPath)
   ? customServerPath
   : path.join(standaloneDir, "server.js");
 
-if (!fs.existsSync(serverPath)) {
+if (IS_MAIN && !fs.existsSync(serverPath)) {
   console.error("Error: Standalone build not found.");
   console.error("Please run 'npm run build:cli' first.");
   process.exit(1);
 }
 
-// Start server immediately; run update check in parallel (not on the critical path).
-const updatePromise = checkForUpdate();
-killAllAppProcesses(port)
-  .then(() => killProcessOnPort(port))
-  .then(() => startServer(updatePromise));
+// F23/T1.6 M1: the restart path (running `9router` again while an old instance
+// lives). Both steps used to SIGKILL on sight, discarding the drain the
+// CHANGELOG's 8 s budget exists to protect. They now ask-shutdown-then-kill:
+// SIGTERM → wait up to SHUTDOWN_GRACE_MS → SIGKILL only survivors, and only
+// processes this installation provably owns (exact paths / cwd / LISTEN owner).
+if (IS_MAIN) {
+  // Start server immediately; run update check in parallel (not on the critical path).
+  const updatePromise = checkForUpdate();
+  killAllAppProcesses(port)
+    .then(() => killProcessOnPort(port))
+    .then(() => startServer(updatePromise));
+}
 
 // Show interface selection menu
 async function showInterfaceMenu(latestVersion) {
@@ -713,12 +910,10 @@ function startServer(updatePromise) {
 
   let server = spawnServer();
 
-  // Server shutdown budget. The server drains in-flight usage writes and
-  // checkpoints the SQLite WAL before exiting (src/shared/services/
-  // shutdownCoordinator.js: 3s drain + 2s hard watchdog). SIGKILL cannot be
-  // caught, so killing the server outright here discards exactly the writes
-  // that drain exists to save.
-  const SHUTDOWN_GRACE_MS = 8000;
+  // Server shutdown budget lives at module scope now (SHUTDOWN_GRACE_MS,
+  // F23/M1) so the restart path (killAllAppProcesses / killProcessOnPort)
+  // asks foreign instances nicely with the SAME grace window we use for our
+  // own child below.
 
   // The server is spawned detached, so it leads its own process group: a signal
   // to -pid reaches it and its children exactly once. Signalling pid AND -pid
@@ -735,6 +930,38 @@ function startServer(updatePromise) {
 
   // Cleanup function - stop the server, gracefully unless told otherwise
   let isCleaningUp = false;
+  // F23/M5: killTray() returns a promise that waits for the Go tray binary to
+  // actually exit (its own 800/1600 ms escalation + 3 s poll). Fire-and-forget
+  // in an exit path that calls process.exit() on the same tick never lets that
+  // run — the documented ghost-NSStatusItem condition. Paths that are about to
+  // exit await this promise via awaitTrayExit().
+  let trayKillPromise = null;
+  function awaitTrayExit(boundMs = TRAY_EXIT_BOUND_MS) {
+    if (!trayKillPromise) return Promise.resolve(true);
+    return settleWithBound(trayKillPromise, boundMs);
+  }
+
+  // F23/M5: set while the "Hide to Tray" handoff is awaiting the server's
+  // drain — the server "close" handler must NOT process.exit() behind the
+  // handoff chain's back (that is how the tray was skipped before).
+  let handoffToTray = false;
+  async function handoffToBackgroundTray() {
+    handoffToTray = false;
+    const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
+      detached: true,
+      stdio: "ignore",
+      windowsHide: true,
+      env: { ...process.env }
+    });
+    bgProcess.unref();
+    console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
+    console.log(`   Server: http://${displayHost}:${port}`);
+    console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
+    // Bound: killTray() escalates at 800/1600 ms and polls ~3 s; a wedged Go
+    // binary must not hold the launcher open forever.
+    await awaitTrayExit();
+    process.exit(0);
+  }
   function cleanup({ graceful = true } = {}) {
     if (isCleaningUp) return;
     isCleaningUp = true;
@@ -742,7 +969,7 @@ function startServer(updatePromise) {
       // Kill tray if running
       try {
         const { killTray } = require("./src/cli/tray/tray");
-        killTray();
+        trayKillPromise = killTray();
       } catch (e) { }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
@@ -874,6 +1101,10 @@ function startServer(updatePromise) {
           await stopServerGracefully();
           await killAllAppProcesses(port);
           await killProcessOnPort(port);
+          // F23/M5: let the Go tray binary finish dying (killTray() promise was
+          // started by cleanup() inside stopServerGracefully) before the exit —
+          // the fixed 200 ms timer used to cut its 800/1600 ms escalation off.
+          await awaitTrayExit();
           setTimeout(() => process.exit(0), 200);
           return;
         } else if (choice === "web") {
@@ -890,11 +1121,12 @@ function startServer(updatePromise) {
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
 
-          // Enable auto startup on OS boot
-          try {
-            const { enableAutoStart } = require("./src/cli/tray/autostart");
-            enableAutoStart(__filename);
-          } catch (e) { }
+          // F23/T1.6 M7: this used to call enableAutoStart() on every hide —
+          // silently installing a boot agent (a 9router --tray process binding
+          // 0.0.0.0 with the default password, restarting at every login) from
+          // a menu item whose label says only "Hide to Tray". Auto-start has
+          // an explicit toggle in the tray menu ("Enable Auto-start"); the
+          // launcher does not presume it anymore.
 
           if (process.platform === "darwin") {
             // macOS: keep current process alive — spawning a detached child puts
@@ -911,25 +1143,21 @@ function startServer(updatePromise) {
             return;
           }
 
-          // Windows/Linux: spawn detached bgProcess (systray works fine in child)
-          console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
-
-          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
-            detached: true,
-            stdio: "ignore",
-            windowsHide: true,
-            env: { ...process.env }
-          });
-          bgProcess.unref();
-
-          console.log(`🔔 9Router is now running in background (PID: ${bgProcess.pid})`);
-          console.log(`   Server: http://${displayHost}:${port}`);
-          console.log(`\n💡 You can close this terminal. Right-click tray icon to quit.\n`);
-
-          // The background process must claim the port right now, so this one
-          // path still kills outright instead of waiting for a drain.
-          cleanup({ graceful: false });
-          process.exit(0);
+          // Windows/Linux: hand off to a detached background process.
+          // F23/T1.6 M1+M5: the old code SIGKILLed the server outright (the
+          // one path the CHANGELOG's 8 s drain does NOT cover) and called
+          // process.exit() on the same tick as cleanup(), so killTray()'s
+          // promise never ran and the child re-registered an icon over a
+          // still-alive Go process (ghost/duplicate NSStatusItem). Now: stop
+          // our server with the same graceful helper the "exit" path uses,
+          // THEN spawn the child so it never races our port, and wait (bound)
+          // for the tray binary to die before leaving.
+          console.log(`\n⏳ Draining server and handing off to background process...`);
+          isShuttingDown = true;
+          handoffToTray = true; // server "close" must not exit() behind our back
+          await stopServerGracefully();
+          await handoffToBackgroundTray();
+          return;
         } else if (choice === "exit") {
           isShuttingDown = true;
           console.log("\nExiting...");
@@ -940,6 +1168,7 @@ function startServer(updatePromise) {
     } catch (err) {
       console.error("Error:", err.message);
       cleanup({ graceful: false });
+      await awaitTrayExit(); // F23/M5: bounded — never hold the launcher open for a wedged tray
       process.exit(1);
     }
   });
@@ -948,11 +1177,17 @@ function startServer(updatePromise) {
     server.on("error", (err) => {
       console.error("Failed to start server:", err.message);
       if (!isShuttingDown) tryRestart();
-      else { cleanup({ graceful: false }); process.exit(1); }
+      // F23/M5: same exit race as the menu path — wait (bounded) for the tray
+      // binary the cleanup() started to release before leaving.
+      else { cleanup({ graceful: false }); awaitTrayExit().then(() => process.exit(1)); }
     });
 
     server.on("close", (code) => {
       if (forceKillTimer) { clearTimeout(forceKillTimer); forceKillTimer = null; }
+      // Hide-to-tray handoff in flight: the handoff chain (stopServerGracefully
+      // → handoffToBackgroundTray) owns the exit now. Exiting here would skip
+      // the tray-await and re-create the ghost-icon race (F23/M5).
+      if (handoffToTray) return;
       if (isShuttingDown || code === 0) {
         process.exit(code || 0);
         return;
@@ -967,15 +1202,21 @@ function startServer(updatePromise) {
     if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
 
     if (restartCount >= MAX_RESTARTS) {
-      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
-      try {
-        const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
-        if (fs.existsSync(dbPath)) {
-          const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-          if (db.settings) db.settings.mitmEnabled = false;
-          fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-        }
-      } catch { /* best effort */ }
+      // F23/T1.6 M6: this block used to rewrite settings.mitmEnabled=false in
+      // ~/.9router/db.json. That file has been dead storage since the SQLite
+      // cutover (src/lib/db/: the server imports legacy db.json ONCE at boot,
+      // then reads settings from data.sqlite), so the "Disabling MIT" message
+      // was a lie: on a fresh install the file does not exist (existsSync →
+      // false, swallowed by catch), and on a migrated install the file still
+      // exists but is never read again — MIT stays enabled either way.
+      // The launcher deliberately does NOT reach into the server's SQLite
+      // instead: the crashing server (or its just-spawned replacement) owns
+      // that DB, the launcher has no SQLite dependency (engines.node >= 18
+      // predates node:sqlite), and a hand-rolled UPDATE would bypass the
+      // repo layer that owns the schema. MITM crash-loop relief belongs in
+      // the server (it detects and can disable its own MITM); the launcher
+      // only restarts and says so honestly.
+      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Restarting. If crashes persist (e.g. after enabling MITM), disable it in the dashboard Settings — the launcher no longer edits server state.`);
       restartCount = 0;
       server = spawnServer();
       attachServerEvents();
@@ -999,3 +1240,23 @@ function startServer(updatePromise) {
 
   attachServerEvents();
 }
+
+// F23/T1.6: exported for unit tests (tests/unit/f23-*.test.js). Requiring this
+// file is inert — the IS_MAIN guards above keep the launcher flow to the entry
+// point so a test host can never be ps-scanned-and-killed by `import`.
+module.exports = {
+  isOwnAppProcess,
+  collectOwnAppPids,
+  cmdContainsExactPath,
+  parsePidCommand,
+  parseWmiCsvEntry,
+  terminatePidsGracefully,
+  settleWithBound,
+  parseLsofListenerPids,
+  parseNetstatListenerPids,
+  killAllAppProcesses,
+  killProcessOnPort,
+  compareVersions,
+  isForkBuild,
+  SHUTDOWN_GRACE_MS,
+};

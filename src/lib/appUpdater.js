@@ -6,6 +6,149 @@ import { UPDATER_CONFIG } from "@/shared/constants/config";
 
 const KILL_TIMEOUT_MS = 5000;
 const PROCESS_WAIT_MS = 1500;
+const DEFAULT_APP_PORT = "20128";
+
+// ── Process ownership (F23/T1.6 M2) ─────────────────────────────────────────
+//
+// Mirrors the launcher's matcher in cli/cli.js (kept as an independent copy:
+// cli/ is a standalone npm package and cannot import from the server bundle —
+// tests/unit/f23-appupdater-ownership.test.js pins both against ONE shared
+// case matrix so they cannot drift the way the /api/version compare did in
+// H1). The old matcher accepted any cmdline containing "9router", "next-server",
+// "cloudflared" or "cli.js" and SIGKILLed it — taking down every unrelated
+// Next.js server on the host, anyone tailing this app's log, and the user's
+// own tunnels to other ports. A process is ours only by FACT: exact installed
+// path in argv, cwd equal to this app's directory, or a cloudflared aimed at
+// THIS app's port.
+
+function cmdContainsExactPath(cmd, p, { caseInsensitive = false } = {}) {
+  if (!p) return false;
+  const hay = caseInsensitive ? String(cmd).toLowerCase() : String(cmd);
+  const needle = caseInsensitive ? String(p).toLowerCase() : String(p);
+  let idx = hay.indexOf(needle);
+  while (idx !== -1) {
+    const before = idx === 0 ? " " : hay[idx - 1];
+    const after = idx + needle.length >= hay.length ? " " : hay[idx + needle.length];
+    if (!/[A-Za-z0-9._-]/.test(before) && !/[A-Za-z0-9._-]/.test(after)) return true;
+    idx = hay.indexOf(needle, idx + 1);
+  }
+  return false;
+}
+
+function trimPathSep(p) {
+  return String(p).replace(/[\\/]+$/, "");
+}
+
+// entry: { pid, cmd, cwd? } — opts: { selfPid, ownedPaths, ownedDirs,
+// caseInsensitive, resolveCwd? }
+export function isOwnAppProcess(entry, opts = {}) {
+  if (!entry || entry.pid == null) return false;
+  const { selfPid = null, ownedPaths = [], ownedDirs = [], caseInsensitive = false, resolveCwd = null } = opts;
+  if (selfPid != null && String(entry.pid) === String(selfPid)) return false;
+  const cmd = String(entry.cmd || "");
+
+  for (const p of ownedPaths) {
+    if (cmdContainsExactPath(cmd, p, { caseInsensitive })) return true;
+  }
+  for (const d of ownedDirs) {
+    if (!d) continue;
+    const dir = trimPathSep(d);
+    if (cmdContainsExactPath(cmd, dir, { caseInsensitive }) ||
+        cmdContainsExactPath(cmd, dir + "/", { caseInsensitive }) ||
+        cmdContainsExactPath(cmd, dir + "\\", { caseInsensitive })) return true;
+    if (resolveCwd) {
+      let cwd = entry.cwd;
+      if (cwd === undefined) {
+        try { cwd = resolveCwd(entry.pid); } catch { cwd = null; }
+      }
+      if (cwd) {
+        const a = trimPathSep(cwd);
+        const b = trimPathSep(dir);
+        const eq = caseInsensitive ? a.toLowerCase() === b.toLowerCase() : a === b;
+        if (eq) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function parsePidCommand(line) {
+  const m = /^\s*(\d+)\s+(\S.*)$/.exec(String(line));
+  if (!m) return null;
+  return { pid: m[1], cmd: m[2] };
+}
+
+export function parseWmiCsvEntry(line) {
+  const m = /^\s*"(\d+)","(.*)"\s*$/.exec(String(line));
+  if (!m) return null;
+  return { pid: m[1], cmd: m[2].replace(/""/g, '"') };
+}
+
+// cloudflared is only ours when it fronts THIS app's port — a bare
+// "cloudflared" substring used to kill the user's tunnels to other services.
+export function collectTunnelPids(entries, port) {
+  const p = String(port || DEFAULT_APP_PORT);
+  const re = new RegExp(`(?:localhost|127\\.0\\.0\\.1):${p}(?!\\d)`);
+  const out = [];
+  for (const e of entries || []) {
+    if (!e || !e.cmd) continue;
+    if (!/\bcloudflared\b/i.test(e.cmd)) continue;
+    if (re.test(e.cmd)) out.push(String(e.pid));
+  }
+  return out;
+}
+
+// Facts about this installation as seen from inside the running server.
+function installOwnership() {
+  const appDir = process.cwd(); // standalone server runs with cwd = <install>/cli/app
+  const installCliDir = path.resolve(appDir, "..");
+  const ownScript = process.argv[1] ? path.resolve(process.argv[1]) : null;
+  return {
+    selfPid: process.pid,
+    ownedPaths: [ownScript, path.join(installCliDir, "cli.js")].filter(Boolean),
+    ownedDirs: [appDir, installCliDir, path.join(getDataDir(), "runtime", "node_modules")],
+    caseInsensitive: process.platform === "win32",
+    resolveCwd: process.platform === "linux" ? readProcCwd : null,
+  };
+}
+
+function readProcCwd(pid) {
+  try { return fs.realpathSync(`/proc/${pid}/cwd`); } catch { return null; }
+}
+
+// Collect PIDs of all 9router processes of THIS install (excluding current)
+function collectAppPids() {
+  const platform = process.platform;
+  const port = process.env.PORT || DEFAULT_APP_PORT;
+  const opts = installOwnership();
+  const entries = [];
+
+  if (platform === "win32") {
+    // One WMI pass, full CommandLine (tasklist /V doesn't include it).
+    try {
+      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\" OR Name=\\"tray_windows_release.exe\\" OR Name=\\"cloudflared.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
+      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
+      for (const line of output.split("\n").slice(1)) {
+        const e = parseWmiCsvEntry(line);
+        if (e) entries.push(e);
+      }
+    } catch { /* no processes */ }
+  } else {
+    try {
+      // `ps aux` leaks the USER column into the matched string (a user named
+      // "9router" qualified for the kill); pin pid + argv instead.
+      const output = execSync("ps -eo pid=,command= 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
+      for (const line of output.split("\n")) {
+        const e = parsePidCommand(line);
+        if (e) entries.push(e);
+      }
+    } catch { /* no processes */ }
+  }
+
+  const owned = entries.filter((e) => isOwnAppProcess(e, opts)).map((e) => String(e.pid));
+  const tunnels = collectTunnelPids(entries, port);
+  return [...new Set([...owned, ...tunnels])].filter((pid) => pid !== String(process.pid));
+}
 
 // Kill MITM server by PID file (MITM may run as admin/sudo)
 function killMitmByPidFile() {
@@ -38,62 +181,9 @@ function killMitmByPidFile() {
 }
 
 // Collect PIDs of all 9router-related processes (excluding current)
-function collectAppPids() {
-  const pids = [];
-  const platform = process.platform;
-
-  if (platform === "win32") {
-    try {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
-      const lines = output.split("\n").slice(1).filter(l => l.trim());
-      lines.forEach(line => {
-        const lower = line.toLowerCase();
-        // Match anything running from 9router install dir or wrapper cli.js
-        const isAppProcess = lower.includes("9router") ||
-          lower.includes("next-server") ||
-          lower.includes("\\bin\\app\\") ||
-          lower.includes("/bin/app/") ||
-          lower.includes("cli.js");
-        if (isAppProcess) {
-          const match = line.match(/^"(\d+)"/);
-          if (match && match[1] && match[1] !== process.pid.toString()) pids.push(match[1]);
-        }
-      });
-    } catch { /* no processes */ }
-
-    // Kill cloudflared + tray binaries (hold app dir lock)
-    for (const procName of ["cloudflared", "tray_windows_release"]) {
-      try {
-        const cmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-Process ${procName} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id"`;
-        const out = execSync(cmd, { encoding: "utf8", windowsHide: true, timeout: KILL_TIMEOUT_MS });
-        out.split("\n").forEach(l => {
-          const pid = l.trim();
-          if (pid && !isNaN(pid)) pids.push(pid);
-        });
-      } catch { /* not running */ }
-    }
-  } else {
-    try {
-      const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
-      output.split("\n").forEach(line => {
-        const isAppProcess = line.includes("9router") ||
-          line.includes("next-server") ||
-          line.includes("cloudflared") ||
-          line.includes("/bin/app/") ||
-          line.includes("tray_darwin") ||
-          line.includes("tray_linux");
-        if (isAppProcess) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[1];
-          if (pid && !isNaN(pid) && pid !== process.pid.toString()) pids.push(pid);
-        }
-      });
-    } catch { /* no processes */ }
-  }
-
-  return pids;
-}
+// → replaced by installOwnership()/isOwnAppProcess above (F23/T1.6 M2):
+// exact installed paths, cwd of the standalone app dir, and cloudflared
+// tunnels aimed at THIS app's port. Never "9router"/"next-server" substrings.
 
 // Copy updater.js into DATA_DIR so npm -g can overwrite node_modules safely
 function getDataDir() {

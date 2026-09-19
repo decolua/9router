@@ -160,19 +160,72 @@ function ensureSqliteRuntime({ silent = false } = {}) {
   };
 }
 
-// Inject runtime + bundled node_modules into NODE_PATH so child Node processes
-// resolve sql.js (bundled in bin/app/node_modules) and better-sqlite3 (runtime).
-function buildEnvWithRuntime(baseEnv = process.env) {
-  const runtimeNm = getRuntimeNodeModules();
-  const bundledNm = path.join(__dirname, "..", "app", "node_modules");
-  const existing = baseEnv.NODE_PATH || "";
-  const NODE_PATH = [runtimeNm, bundledNm, existing].filter(Boolean).join(path.delimiter);
-  return { ...baseEnv, NODE_PATH };
+// ── NODE_PATH policy (F23/T1.6 M3-runtime) ──────────────────────────────────
+//
+// buildEnvWithRuntime() feeds the SPAWNED SERVER's env (cli/cli.js). Node
+// consults NODE_PATH only AFTER walking the requiring module's own
+// node_modules chain. The published artifact ships app/node_modules/sql.js
+// WITHOUT dist/sql-wasm.wasm (npm strips it from nested node_modules), so the
+// bundle copy shadows any self-healed runtime copy forever: exporting a
+// NODE_PATH that contains that broken root advertises a fix that can never
+// load and hides the real state from the server's driver fallback chain
+// (src/lib/db/driver.js: better-sqlite3 → node:sqlite → sql.js, each guarded).
+//
+// Rule: a root earns its place in NODE_PATH only when the module it carries is
+// VALIDATED here. If the bundle contains an unvalidated sql.js, the bundle root
+// is dropped; if the runtime has nothing validated either, no NODE_PATH is
+// exported at all — the server's self-heal lives on what actually resolves.
+//
+// Pure so unit tests can drive it without touching a real filesystem
+// (tests/unit/f23-sqlite-nodepath.test.js). Returns null = "export nothing".
+function planRuntimeNodePath({
+  runtimeNm,
+  bundledNm,
+  existing = "",
+  bundleHasSqlJs,
+  bundleSqlJsWasm,
+  runtimeSqlJsWasm,
+  runtimeBetterSqliteValid,
+  delimiter = path.delimiter,
+}) {
+  if (bundleHasSqlJs && !bundleSqlJsWasm) {
+    const runtimeValidated = Boolean(runtimeSqlJsWasm || runtimeBetterSqliteValid);
+    if (!runtimeValidated) return null;
+    return [runtimeNm, existing].filter(Boolean).join(delimiter);
+  }
+  return [runtimeNm, bundledNm, existing].filter(Boolean).join(delimiter);
+}
+
+// Inject the runtime node_modules into NODE_PATH so child Node processes resolve
+// better-sqlite3 (and sql.js when the bundle does not carry it). Probe overrides
+// exist for tests; production callers pass just the env.
+function buildEnvWithRuntime(baseEnv = process.env, probe = {}) {
+  const fsImpl = probe.fsImpl || fs;
+  const runtimeNm = probe.runtimeNm || getRuntimeNodeModules();
+  const bundledNm = probe.bundledNm || path.join(__dirname, "..", "app", "node_modules");
+  const existing = probe.existing !== undefined ? probe.existing : (baseEnv.NODE_PATH || "");
+  const exists = (p) => {
+    try { return fsImpl.existsSync(p); } catch { return false; }
+  };
+  const plan = planRuntimeNodePath({
+    runtimeNm,
+    bundledNm,
+    existing,
+    bundleHasSqlJs: exists(path.join(bundledNm, "sql.js")),
+    bundleSqlJsWasm: exists(path.join(bundledNm, "sql.js", "dist", "sql-wasm.wasm")),
+    runtimeSqlJsWasm: exists(path.join(runtimeNm, "sql.js", "dist", "sql-wasm.wasm")),
+    runtimeBetterSqliteValid: probe.runtimeBetterSqliteValid !== undefined
+      ? probe.runtimeBetterSqliteValid
+      : isBetterSqliteBinaryValid(),
+  });
+  if (plan === null) return { ...baseEnv }; // nothing validated to export
+  return { ...baseEnv, NODE_PATH: plan };
 }
 
 module.exports = {
   ensureSqliteRuntime,
   buildEnvWithRuntime,
+  planRuntimeNodePath,
   getRuntimeDir,
   getRuntimeNodeModules,
   runNpmInstall,
