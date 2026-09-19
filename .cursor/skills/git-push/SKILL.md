@@ -1,6 +1,6 @@
 ---
 name: git-push
-description: Stage all changes, commit with an auto-generated one-line message, push to the current branch. Use when the user types /git-push, says "push", "commit and push", "ship it", or "save to git".
+description: Stage all changes, commit with an auto-generated one-line message, push to the current branch. Use when the user types /git-push, says "push", "commit and push", "ship it", or "save to git". Core companion: /sync-fork (catch up fork from office upstream).
 disable-model-invocation: true
 ---
 
@@ -12,7 +12,20 @@ status → add → commit → push. One shell call per step. Stop at first failu
 
 Scripts live in this repo (relative to workspace root). Works on any PC after clone/pull — no hardcoded drive letter.
 
+## Core companions
+
+These ship with the git toolkit. Install/copy them together (see SYNC.md).
+
+| Skill | Path | When |
+|-------|------|------|
+| **sync-fork** | `.cursor/skills/sync-fork/SKILL.md` | Catch up this fork from **office** upstream (`decolua/9router`) before/after local work; or `/git-push --sync` |
+
 ## Steps
+
+0. **Optional office sync** — if user invoked `/git-push --sync` or said "sync office first" / "sync from office then push":
+   - Run [sync-fork](../sync-fork/SKILL.md) **completely** first (or `powershell -NoProfile -ExecutionPolicy Bypass -File .cursor\skills\sync-fork\scripts\sync-fork.ps1 -RepoPath .`).
+   - If sync-fork exits non-zero (dirty tree, conflicts, not a fork) → **stop**. Do not commit/push.
+   - On success → continue from step 1 with the post-sync tree.
 
 1. `git status --short`
    - Empty → reply "nothing to commit", stop.
@@ -62,6 +75,7 @@ Scripts live in this repo (relative to workspace root). Works on any PC after cl
 - Never `--force`, never `--no-verify`. Never amend except via step 4b (`strip-trailers.ps1`).
 - Never commit if `git status` shows a merge/rebase in progress.
 - No git repo → ask "init git?" once; on yes: `git init -q` then continue.
+- Catching up with office is **`/sync-fork`**, not a silent fetch inside every push (avoids merging mid-WIP). Use step 0 only when user asked.
 
 ## Example
 
@@ -73,4 +87,11 @@ style: conventional
 trailers: stripped 1
 4676dd4 feat: write result md on exit → origin/master
 WHAT: write result md on exit. WHY: keep deploy run record without manual notes.
+```
+
+```
+$ /git-push --sync
+synced: upstream/master → origin/master
+office: decolua/9router
+… then normal commit/push if local changes remain …
 ```
