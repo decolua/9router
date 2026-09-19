@@ -36,6 +36,7 @@ import {
   recordFailure,
   recordSuccess,
   canExecute,
+  settleProbe,
   shouldRecordBreakerFailure,
   STATE,
 } from "open-sse/utils/circuitBreaker.js";
@@ -438,7 +439,15 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           releaseOnce();
         },
         onDisconnect: () => {
-          if (!streamOutcome) streamOutcome = "disconnect";
+          if (!streamOutcome) {
+            streamOutcome = "disconnect";
+            // RH1: an aborted stream never reaches onStreamComplete, so the
+            // HALF_OPEN probe consumed by canExecute() above would stay
+            // in-flight (no slot, no outcome) until the breaker's probe
+            // safety timer. Settle it now as a conservative failure. No-op
+            // unless a probe is outstanding — CLOSED disconnects never count.
+            if (breakerName) settleProbe(breakerName, "client disconnect");
+          }
           releaseOnce();
         },
       });

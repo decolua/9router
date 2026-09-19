@@ -189,6 +189,39 @@ class CircuitBreaker {
     this._halfOpenProbeSafetyTimer = null;
   }
 
+  /**
+   * Settle an in-flight HALF_OPEN probe whose caller ended without reporting
+   * an outcome — e.g. the client aborted the SSE stream before [DONE], so
+   * neither recordSuccess nor recordFailure will ever run for it. Without this
+   * the breaker sits in HALF_OPEN with no slots (neither pass nor block) until
+   * the probe safety timer. Resolve it conservatively as a failure: an
+   * unobserved probe proves nothing about provider health, so drop back to
+   * OPEN immediately (same bookkeeping as _onFailure's HALF_OPEN branch).
+   *
+   * Deliberately bypasses the `isFailure` classifier: this is not a claim
+   * that the provider returned a failure code, it is the resolution of an
+   * unresolved probe. No-ops unless a probe slot is actually outstanding, so
+   * ordinary CLOSED/DEGRADED client aborts never count toward the breaker.
+   *
+   * @param {string} [reason] - short label for the warn log
+   * @returns {boolean} whether an outstanding probe was settled
+   */
+  settleProbe(reason = "aborted without outcome") {
+    if (this.state !== STATE.HALF_OPEN) return false;
+    if (this.halfOpenRemaining >= this.halfOpenRequests) return false; // never consumed
+    this._clearHalfOpenProbeSafety();
+    this.failureCount++;
+    this.lastFailureTime = Date.now();
+    if (this.failureWindowMs > 0) {
+      this.failureTimestamps.push(Date.now());
+      this._pruneFailureTimestamps();
+    }
+    this.openProbeCycles++;
+    this._transition(STATE.OPEN);
+    console.warn(`[circuitBreaker] HALF_OPEN probe aborted (${reason}) → OPEN (${this.name})`);
+    return true;
+  }
+
   canExecute() {
     const now = Date.now();
     // Both CLOSED and DEGRADED admit the request, so this never changes the
@@ -366,6 +399,18 @@ export function canExecute(name) {
   const breaker = registry.get(name);
   if (!breaker) return true;
   return breaker.canExecute();
+}
+
+/**
+ * Public settle for a HALF_OPEN probe that ended without an outcome (client
+ * aborted the stream). Re-opens the breaker instead of stranding it in
+ * HALF_OPEN until the probe safety timer. No-op when nothing is in flight.
+ * @returns {boolean} whether an outstanding probe was settled
+ */
+export function settleProbe(name, reason = "aborted without outcome") {
+  const breaker = registry.get(name);
+  if (!breaker) return false;
+  return breaker.settleProbe(reason);
 }
 
 /** Pure: do not OPEN→HALF_OPEN. Used by getProviderCredentials. */
