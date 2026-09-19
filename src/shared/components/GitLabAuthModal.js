@@ -169,7 +169,7 @@ export default function GitLabAuthModal({ isOpen, providerInfo, onSuccess, onClo
               <code className="bg-sidebar px-1 rounded text-xs">ai_features</code>.
             </p>
             <Input label="GitLab Base URL" value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={GITLAB_COM} />
-            <Input label="Personal Access Token" value={pat} onChange={(e) => setPat(e.target.value)} placeholder="glpat-xxxxxxxxxxxxxxxxxxxx" type="password" />
+            <Input label="Personal Access Token" value={pat} onChange={(e) => setPat(e.target.value)} placeholder="glpat-****************" type="password" />
             {error && <p className="text-sm text-red-500">{error}</p>}
             <div className="flex gap-2">
               <Button onClick={handlePATSubmit} fullWidth disabled={!pat.trim() || loading} loading={loading}>
