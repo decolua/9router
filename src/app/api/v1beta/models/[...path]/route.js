@@ -10,7 +10,8 @@ import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators, translateRequest } from "open-sse/translator/index.js";
 import { FORMATS } from "open-sse/translator/formats.js";
-import { GEMINI_ROLE } from "open-sse/translator/schema/index.js";
+import { OPENAI_FINISH } from "open-sse/translator/schema/index.js";
+import { openaiToGeminiResponse } from "open-sse/translator/response/openai-to-gemini.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -370,14 +371,6 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   }
 }
 
-/** Map OpenAI finish_reason => Gemini finishReason */
-const FINISH_REASON_MAP = {
-  stop: "STOP",
-  length: "MAX_TOKENS",
-  tool_calls: "STOP",
-  content_filter: "SAFETY",
-};
-
 /**
  * Transform an OpenAI SSE stream into a Gemini SSE stream.
  *
@@ -390,7 +383,36 @@ const FINISH_REASON_MAP = {
  *   data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Hi"}]},"index":0}]}
  *   data: {"candidates":[{"content":{"role":"model","parts":[{"text":""}]},"finishReason":"STOP","index":0}],"usageMetadata":{...}}
  *   (stream closes — no [DONE])
+ *
+ * F33 (REV-B nit 1): per-chunk mapping is delegated to the canonical
+ * openaiToGeminiResponse (response/openai-to-gemini.js), same pattern F18
+ * applied to sseToJsonHandler. The inline copy only read delta.content /
+ * reasoning_content and silently dropped delta.tool_calls, so Gemini clients
+ * never saw functionCall parts. toRouteStreamFrame re-projects the canonical
+ * chunk onto this route's legacy frame envelope (no responseId, modelVersion
+ * only on the finish frame with usage) so pure-text streams stay
+ * byte-identical for existing clients.
  */
+function toRouteStreamFrame(gem, parsed, model) {
+  const candidate = gem.candidates?.[0];
+  // Canonical's trailing usage-only chunk (empty candidates) has no frame in
+  // this route's legacy shape — drop it, as the old inline code did.
+  if (!candidate) return null;
+  // Legacy key order: content → index → finishReason.
+  const projected = { content: candidate.content, index: 0 };
+  if (candidate.finishReason) projected.finishReason = candidate.finishReason;
+  const frame = { candidates: [projected] };
+  if (candidate.finishReason && parsed?.usage) {
+    if (gem.usageMetadata) frame.usageMetadata = gem.usageMetadata;
+    frame.modelVersion = parsed.model || model;
+  }
+  return frame;
+}
+
+function encodeGeminiFrame(encoder, frame) {
+  return encoder.encode("data: " + JSON.stringify(frame) + "\r\n\r\n");
+}
+
 function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
   if (!upstreamResponse.ok || !upstreamResponse.body) {
     return upstreamResponse;
@@ -398,6 +420,9 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
 
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
+  // Canonical converter state, per stream: accumulates incremental
+  // delta.tool_calls fragments and the finish-emit bookkeeping.
+  const state = {};
 
   const transformStream = new TransformStream({
     transform(chunk, controller) {
@@ -420,57 +445,31 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
           continue;
         }
 
-        const choice = parsed.choices?.[0];
-        if (!choice) continue;
+        const gem = openaiToGeminiResponse(parsed, state);
+        if (!gem) continue;
 
-        const delta = choice.delta || {};
+        const frame = toRouteStreamFrame(gem, parsed, model);
+        if (!frame) continue;
 
-        const parts = [];
-        if (delta.reasoning_content) {
-          parts.push({ text: delta.reasoning_content, thought: true });
-        }
-        if (delta.content) {
-          parts.push({ text: delta.content });
-        }
-
-        // Skip pure role-only deltas with no content and no finish signal
-        if (parts.length === 0 && !choice.finish_reason) continue;
-
-        const candidate = {
-          content: {
-            role: GEMINI_ROLE.MODEL,
-            parts: parts.length > 0 ? parts : [{ text: "" }],
-          },
-          index: 0,
-        };
-
-        if (choice.finish_reason) {
-          candidate.finishReason = FINISH_REASON_MAP[choice.finish_reason] || "STOP";
-        }
-
-        const geminiChunk = { candidates: [candidate] };
-
-        // Attach usage + modelVersion on the final chunk (when finish_reason is set)
-        if (choice.finish_reason && parsed.usage) {
-          geminiChunk.usageMetadata = {
-            promptTokenCount: parsed.usage.prompt_tokens || 0,
-            candidatesTokenCount: parsed.usage.completion_tokens || 0,
-            totalTokenCount: parsed.usage.total_tokens || 0,
-          };
-          const reasoningTokens =
-            parsed.usage.completion_tokens_details?.reasoning_tokens;
-          if (reasoningTokens) {
-            geminiChunk.usageMetadata.thoughtsTokenCount = reasoningTokens;
-          }
-          geminiChunk.modelVersion = parsed.model || model;
-        }
-
-        controller.enqueue(
-          encoder.encode("data: " + JSON.stringify(geminiChunk) + "\r\n\r\n")
-        );
+        controller.enqueue(encodeGeminiFrame(encoder, frame));
       }
     },
-    // No flush() needed: Gemini SSE ends by stream close, not a sentinel
+    flush(controller) {
+      // Providers that close the stream without a finish_reason chunk would
+      // otherwise swallow the accumulated tool calls (the canonical converter
+      // emits them only on finish). Synthesize the terminal chunk so their
+      // functionCall parts still land — pure-text streams are untouched.
+      if (state._geminiFinishSent) return;
+      if (!Object.keys(state._toolCallAccum || {}).length) return;
+      const gem = openaiToGeminiResponse(
+        { choices: [{ index: 0, delta: {}, finish_reason: OPENAI_FINISH.STOP }] },
+        state
+      );
+      if (!gem) return;
+      const frame = toRouteStreamFrame(gem, null, model);
+      if (!frame) return;
+      controller.enqueue(encodeGeminiFrame(encoder, frame));
+    },
   });
 
   return new Response(upstreamResponse.body.pipeThrough(transformStream), {
@@ -486,6 +485,13 @@ function transformOpenAISSEToGeminiSSE(upstreamResponse, model) {
 /**
  * Convert an OpenAI chat.completion JSON response into a Gemini
  * GenerateContentResponse so that Gemini CLI can parse it.
+ *
+ * F33 (REV-B nit 1): the message is shaped as a delta chunk and handed to the
+ * canonical openaiToGeminiResponse (the inline copy only read
+ * message.content, dropping tool_calls). The result is re-projected onto the
+ * route's legacy envelope (candidates(content→finishReason→index) →
+ * modelVersion → usageMetadata, no responseId) to keep pure-text JSON
+ * byte-identical for existing clients.
  */
 async function convertOpenAIResponseToGemini(response, model) {
   if (!response.ok) return response;
@@ -515,35 +521,45 @@ async function convertOpenAIResponseToGemini(response, model) {
 
   const { message, finish_reason } = choice;
 
-  const parts = [];
-  if (message.reasoning_content) {
-    parts.push({ text: message.reasoning_content, thought: true });
-  }
-  parts.push({ text: message.content || "" });
+  // Non-streaming message.tool_calls carry no positional `index` (chat.completion
+  // shape); the canonical accumulator keys by it, so add it — same F18 pattern
+  // as sseToJsonHandler, otherwise parallel calls would merge into one.
+  const delta = message?.tool_calls
+    ? { ...message, tool_calls: message.tool_calls.map((tc, i) => ({ ...tc, index: i })) }
+    : message;
 
-  const finishReason = FINISH_REASON_MAP[finish_reason] || "STOP";
+  const gem = openaiToGeminiResponse(
+    {
+      id: body.id,
+      model: body.model || model,
+      choices: [
+        {
+          index: 0,
+          delta,
+          // Legacy shape always carried a finishReason; force the default
+          // rather than omitting the field when upstream left it unset.
+          finish_reason: finish_reason || OPENAI_FINISH.STOP,
+        },
+      ],
+      usage: body.usage,
+    },
+    {}
+  );
 
+  const candidate = gem.candidates[0];
   const geminiResponse = {
     candidates: [
       {
-        content: { role: GEMINI_ROLE.MODEL, parts },
-        finishReason,
+        content: candidate.content,
+        finishReason: candidate.finishReason,
         index: 0,
       },
     ],
     modelVersion: body.model || model,
   };
 
-  if (body.usage) {
-    geminiResponse.usageMetadata = {
-      promptTokenCount: body.usage.prompt_tokens || 0,
-      candidatesTokenCount: body.usage.completion_tokens || 0,
-      totalTokenCount: body.usage.total_tokens || 0,
-    };
-    const reasoningTokens = body.usage.completion_tokens_details?.reasoning_tokens;
-    if (reasoningTokens) {
-      geminiResponse.usageMetadata.thoughtsTokenCount = reasoningTokens;
-    }
+  if (gem.usageMetadata) {
+    geminiResponse.usageMetadata = gem.usageMetadata;
   }
 
   return Response.json(geminiResponse, {
