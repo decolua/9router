@@ -1,7 +1,8 @@
 // T3.4 (T-D): /v1/models lifecycle behaviour. Same harness as
 // f11-models-union.test.js (multi-account union — untouched rules verified
 // still intact), plus the models.dev lifecycle layer:
-//  - retired/EOL is hidden ONLY while no live account lists it;
+//  - retired/EOL is hidden ONLY while no live account lists it — "listing"
+//    counts a synced catalogue AND the account's curated enabledModels (F35);
 //  - retired-with-live-account stays and gains the metadata;
 //  - deprecated/alpha/beta always stay and gain the metadata;
 //  - user-declared custom/alias ids are never feed-revoked.
@@ -96,8 +97,12 @@ beforeEach(() => {
   installLifecycle({});
 });
 
-describe("lifecycle: curated list, no synced catalogue (feed decides)", () => {
-  it("hides a retired id, keeps deprecated/alpha with the metadata", async () => {
+describe("lifecycle: curated list, no synced catalogue", () => {
+  // F35 (REV-B nit 3) reversed this case's expectation: an active account's
+  // curated enabledModels IS listing evidence (the user activated the id on
+  // purpose), so the retired feed may only annotate it, never hide it. The
+  // conservative rule stands: retired + NO account listing it = hidden.
+  it("keeps a retired id the account curated, annotating deprecated/alpha too", async () => {
     mocks.getProviderConnections.mockResolvedValue([
       conn("bai", { providerSpecificData: { enabledModels: ["dead", "dep", "alpha-one", "fine"] } }),
     ]);
@@ -107,8 +112,7 @@ describe("lifecycle: curated list, no synced catalogue (feed decides)", () => {
       "bai/alpha-one": "alpha",
     });
     const all = await buildModelsList(["llm"]);
-    const ids = all.map((m) => m.id);
-    expect(ids).not.toContain("bai/dead");
+    expect(entry(all, "bai/dead").lifecycle).toBe("retired");
     expect(entry(all, "bai/dep").lifecycle).toBe("deprecated");
     expect(entry(all, "bai/alpha-one").lifecycle).toBe("alpha");
     expect("lifecycle" in entry(all, "bai/fine")).toBe(false);

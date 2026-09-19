@@ -571,10 +571,11 @@ export async function buildModelsList(kindFilter, options = {}) {
       });
       // Live account evidence for the models.dev lifecycle (T-D): every id at
       // least one account's synced catalogue still lists (anything but
-      // `unavailable` counts, including temporarily-absent). The feed may hide
-      // a model, but never one an account still claims — symmetric with the
-      // "missing from 2 syncs" rule. Gateway-prefixed catalogue ids also match
-      // on their last segment.
+      // `unavailable` counts, including temporarily-absent) OR any active
+      // account curates in its enabledModels (F35, REV-B nit 3). The feed may
+      // hide a model, but never one an account still claims — symmetric with
+      // the "missing from 2 syncs" rule. Gateway-prefixed catalogue ids also
+      // match on their last segment.
       const accountListedIds = new Set();
       const addLiveEvidence = (rawIds) => {
         for (const raw of rawIds || []) {
@@ -585,7 +586,15 @@ export async function buildModelsList(kindFilter, options = {}) {
           if (id.includes("/")) accountListedIds.add(id.split("/").pop());
         }
       };
-      for (const view of accountViews) addLiveEvidence(view.available);
+      for (const view of accountViews) {
+        addLiveEvidence(view.available);
+        // F35 (REV-B nit 3): a curated enabledModels id is listing evidence
+        // even without a synced catalogue — revoked only by that SAME
+        // account's own `unavailable` entry, the same exclusion the curated
+        // union below applies. Conservative rule intact: feed retired +
+        // NO account listing it = still hidden.
+        addLiveEvidence(view.enabled.filter((id) => !view.unavailable.has(stripProviderPrefix(id))));
+      }
       const hasExplicitEnabledModels = accountViews.some((v) => v.enabled.length > 0);
 
       let rawModelIds;

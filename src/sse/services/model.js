@@ -127,6 +127,20 @@ function connectionHasSyncedCatalog(connection) {
   return Array.isArray(connection.modelCatalog?.models) && Boolean(connection.modelCatalog.lastSuccessAt);
 }
 
+// F35 (REV-B nit 3): a curated enabledModels id is listing evidence too — the
+// user activated it on purpose, catalogue synced or not. Only that SAME
+// account's own `unavailable` catalogue entry revokes its curation, mirroring
+// the union rule in /v1/models.
+function accountCuratesModel(connection, model) {
+  const raw = connection?.providerSpecificData?.enabledModels;
+  if (!Array.isArray(raw)) return false;
+  const curates = raw.some((id) => typeof id === "string" && id.trim() !== ""
+    && catalogEntryIdMatches({ id: id.trim() }, model));
+  if (!curates) return false;
+  const models = connectionHasSyncedCatalog(connection) ? connection.modelCatalog.models : [];
+  return !models.some((entry) => entry?.availability === "unavailable" && catalogEntryIdMatches(entry, model));
+}
+
 function providerIsPassthrough(providerId) {
   return REGISTRY.some((entry) => entry.id === providerId && entry.passthroughModels === true);
 }
@@ -153,10 +167,12 @@ async function filterUnavailableComboMembers(models) {
     // A synced catalogue that still lists the member (available or
     // temporarily-absent) beats every feed signal: the models.dev lifecycle
     // never removes what an account still lists — same authority shape as the
-    // "missing from 2 syncs" rule (docs/MODEL_SYNC_CATALOG.md).
+    // "missing from 2 syncs" rule (docs/MODEL_SYNC_CATALOG.md). F35 (REV-B
+    // nit 3): an active account's curated enabledModels counts as listing
+    // evidence too, even when that account never synced a catalogue.
     const listedLive = catalogued.some((connection) =>
       catalogListsModel(connection.modelCatalog.models, info.provider, info.model)
-    );
+    ) || accounts.some((connection) => accountCuratesModel(connection, info.model));
     if (listedLive) return member;
     const knownSomewhere = catalogued.some((connection) =>
       catalogKnowsModel(connection.modelCatalog.models, info.model)
