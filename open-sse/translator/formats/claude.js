@@ -101,9 +101,88 @@ function capCacheControlBlocks(body) {
   for (const b of rest.slice(0, Math.max(0, rest.length - keep))) delete b.cache_control;
 }
 
+// Text of a synthesized answer for a tool_use nobody replied to. Kept identical
+// to the OpenAI-leg analogue in request/claude-to-openai.js
+// (fixMissingToolResponsesOpenAI) so the same dropped call reads the same way on
+// either leg. No `is_error`: the OpenAI leg has no error channel and nothing in
+// this repo synthesizes one (the pivot even drops it — see T1.2 M9), so adding a
+// flag here would make the two legs disagree about the same repair.
+export const SYNTHETIC_TOOL_RESULT_TEXT = "[No response received]";
+
+// Anthropic rejects the whole request when an assistant `tool_use` has no
+// matching `tool_result` in the user message that immediately follows it
+// ("every tool_use must have a tool_result" → HTTP 400). Parallel batches are
+// answered partially in real agent loops, and the generic pre-translation repair
+// cannot see it: `hasToolResults` (concerns/toolCall.js) answers true when ANY
+// id of the batch is replied to, so [A,B] with a result for A alone is treated
+// as complete. This is the Claude-shaped, completeness-aware counterpart: every
+// unanswered id of a turn gets one synthetic result, inserted inside the
+// existing tool_result group (results must lead the user turn). A trailing
+// assistant turn is a prefill, not a dangling call, so it is left alone — the
+// same guard the generic helper applies.
+export function synthesizeMissingToolResults(messages) {
+  if (!Array.isArray(messages)) return messages;
+
+  for (let i = 0; i < messages.length - 1; i++) {
+    const msg = messages[i];
+    if (msg?.role !== ROLE.ASSISTANT || !Array.isArray(msg.content)) continue;
+
+    const callIds = [];
+    for (const block of msg.content) {
+      if (block?.type === CLAUDE_BLOCK.TOOL_USE && block.id && !callIds.includes(block.id)) {
+        callIds.push(block.id);
+      }
+    }
+    if (callIds.length === 0) continue;
+
+    const next = messages[i + 1];
+    // Pass 2 of fixToolUseOrdering already normalizes content to block arrays;
+    // the wrap keeps the helper safe to call on a raw Claude-shaped list. An
+    // empty/absent string is dropped rather than turned into an empty text
+    // block (Anthropic rejects those).
+    const nextContent = Array.isArray(next.content)
+      ? next.content
+      : (typeof next.content === "string" && next.content.trim()
+        ? [{ type: CLAUDE_BLOCK.TEXT, text: next.content }]
+        : []);
+    const answered = new Set(
+      nextContent
+        .filter(b => b?.type === CLAUDE_BLOCK.TOOL_RESULT)
+        .map(b => b.tool_use_id)
+    );
+    const missingIds = callIds.filter(id => !answered.has(id));
+    if (missingIds.length === 0) continue;
+
+    const synthetic = missingIds.map(id => ({
+      type: CLAUDE_BLOCK.TOOL_RESULT,
+      tool_use_id: id,
+      content: SYNTHETIC_TOOL_RESULT_TEXT,
+    }));
+
+    // Only a user turn may carry tool_results; anything else after the call
+    // (a second assistant turn) needs its own user message.
+    if (next.role !== ROLE.USER) {
+      messages.splice(i + 1, 0, { role: ROLE.USER, content: synthetic });
+      continue;
+    }
+
+    // Append to the tail of the existing tool_result group so real results keep
+    // their order and no non-result block ends up before them.
+    let lastResultIndex = -1;
+    for (let k = 0; k < nextContent.length; k++) {
+      if (nextContent[k]?.type === CLAUDE_BLOCK.TOOL_RESULT) lastResultIndex = k;
+    }
+    nextContent.splice(lastResultIndex + 1, 0, ...synthetic);
+    next.content = nextContent;
+  }
+
+  return messages;
+}
+
 // Fix tool_use/tool_result ordering for Claude API
 // 1. Assistant message with tool_use: remove text AFTER tool_use (Claude doesn't allow)
 // 2. Merge consecutive same-role messages
+// 3. Synthesize tool_results for parallel calls that were only partly answered
 export function fixToolUseOrdering(messages) {
   if (messages.length <= 1) return messages;
 
@@ -157,7 +236,7 @@ export function fixToolUseOrdering(messages) {
     }
   }
 
-  return merged;
+  return synthesizeMissingToolResults(merged);
 }
 
 // Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)

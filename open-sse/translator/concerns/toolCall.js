@@ -165,7 +165,16 @@ export function getToolCallIds(msg) {
   return ids;
 }
 
-// Check if user message has tool_result for given ids (OpenAI format: role=tool, Claude format: tool_result in content)
+// Check if user message has tool_result for given ids (OpenAI format: role=tool,
+// Claude format: tool_result in content)
+//
+// ANY-id by design: this is the *trigger* for fixMissingToolResponses below ("did
+// this batch get any reply at all?"), and it has exactly that one call site. A
+// partially answered parallel batch ([A,B] with a result for A only) stays
+// "answered" here; per-id completeness is enforced on the Claude leg by
+// synthesizeMissingToolResults (formats/claude.js), which sees the final
+// translated shape. Tightening this predicate would change the payload contract
+// of every non-kiro target at once.
 export function hasToolResults(msg, toolCallIds) {
   if (!msg || !toolCallIds.length) return false;
 
