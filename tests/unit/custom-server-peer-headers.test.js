@@ -60,11 +60,17 @@ describe("custom-server peer header sanitizing", () => {
     expect(headers["x-9r-via-proxy"]).toBeUndefined();
   });
 
-  it("marks via-proxy and adopts the forwarded IP for a loopback proxy hop", async () => {
+  // F21'/T1.3-F-6: the previous version of this test asserted the wrapper adopted the
+  // FIRST x-forwarded-for entry (203.0.113.9 below) — the hop the original client
+  // controls. That assertion embedded the vulnerability: an attacker rotating the
+  // leftmost value rotated loginLimiter's bucket. Forwarding headers no longer decide
+  // the IP unless TRUSTED_PROXY_HOPS opts in (see f21-xff-handling.test.js); the
+  // via-proxy marker and the XFF strip stay exactly as before.
+  it("marks via-proxy but keeps the socket address for a loopback proxy hop", async () => {
     const headers = await get({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" });
 
     expect(headers["x-9r-via-proxy"]).toBe("1");
-    expect(headers["x-9r-real-ip"]).toBe("203.0.113.9");
+    expect(headers["x-9r-real-ip"]).toMatch(/^(::ffff:)?127\.0\.0\.1$/);
     expect(headers["x-forwarded-for"]).toBeUndefined();
   });
 

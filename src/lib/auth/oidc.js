@@ -30,8 +30,10 @@ export function getPublicOrigin(request) {
   }
 
   const forwardedProto = request?.headers?.get?.("x-forwarded-proto") || "";
-  const forwardedHost = request?.headers?.get?.("x-forwarded-host") || "";
-  const host = forwardedHost || request?.headers?.get?.("host") || "";
+  // x-forwarded-host is deliberately NOT consulted (T1.3-F-8): any caller can forge it
+  // and it flows straight into the redirect_uri sent to the IdP. Public origin comes
+  // from BASE_URL above or the Host header the server actually received.
+  const host = request?.headers?.get?.("host") || "";
   if (host) {
     const protocol = (forwardedProto || new URL(request.url).protocol || "http:").replace(/:$/, "");
     return `${protocol}://${host}`.replace(/\/+$/, "");

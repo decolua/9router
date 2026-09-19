@@ -69,7 +69,12 @@ const PROTECTED_API_PATHS = [
 ];
 
 // Routes that spawn child processes or read host secrets — restrict to localhost.
+// /api/version/update and /api/version/shutdown also run `npm i -g` / kill processes:
+// they were already in ALWAYS_PROTECTED, so this is not a second policy for them —
+// it tightens the ORIGIN on top (a LAN peer with a stolen JWT must not trigger them).
 const LOCAL_ONLY_PATHS = [
+  "/api/version/update",
+  "/api/version/shutdown",
   "/api/cli-tools/cowork-settings",
   "/api/cli-tools/antigravity-mitm",
   "/api/mcp/",
@@ -88,6 +93,20 @@ const LOCAL_ONLY_PATHS = [
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+// The cli-tools/*-settings family merges caller-supplied `env` into config files under
+// the host's HOME (~/.claude/settings.json and friends — T1.3-F-4): a remote peer can
+// point a coding agent at an attacker base URL with its own token. Any write method on
+// those routes is local-only; GET stays reachable through the normal policy so a
+// dashboard opened from the LAN can still render the current configuration.
+const CLI_TOOLS_SETTINGS_WRITE_RE = /^\/api\/cli-tools\/[a-z0-9-]+-settings(\/|$)/;
+const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+function isLocalOnlyPath(pathname, method) {
+  if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) return true;
+  const m = String(method || "").toUpperCase();
+  return WRITE_METHODS.has(m) && CLI_TOOLS_SETTINGS_WRITE_RE.test(pathname);
+}
 
 // Accepts a Host header, a URL hostname or a raw socket address. Splitting on the first
 // colon only works for IPv4 and would reduce every IPv6 form to "", so a dual-stack
@@ -193,6 +212,7 @@ function isPublicApi(pathname) {
 
 export const __test__ = {
   isLocalRequest,
+  isLocalOnlyPath,
   isPublicLlmApi,
   extractApiKey,
   canAccessPublicLlmApi,
@@ -203,7 +223,7 @@ export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
   // Local-only gate for spawn-capable / host-secret routes.
-  if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+  if (isLocalOnlyPath(pathname, request.method)) {
     if (!(await canAccessLocalOnlyRoute(request))) {
       return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
     }

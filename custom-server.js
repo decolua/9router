@@ -55,6 +55,16 @@ const CORS_HEADERS = {
 // Wrap Next standalone HTTP server: derive client IP from the TCP socket
 // (unspoofable) and strip client-supplied forwarding headers so downstream
 // rate-limiting keys on the real peer address instead of attacker-controlled XFF.
+// TRUSTED_PROXY_HOPS=N says "exactly N local reverse proxies sit in front of me and
+// each one APPENDS its real peer address to x-forwarded-for" (nginx
+// proxy_add_x_forwarded_for style). The trusted client IP is then the Nth entry from
+// the RIGHT — entries to its left were attacker-controlled before the first proxy saw
+// the request. Default 0: never derive the client IP from any header.
+function trustedProxyHops() {
+  const n = Number.parseInt(process.env.TRUSTED_PROXY_HOPS, 10);
+  return Number.isSafeInteger(n) && n > 0 ? n : 0;
+}
+
 http.createServer = (...args) => {
   const handler = args.find((a) => typeof a === "function");
   const rest = args.filter((a) => typeof a !== "function");
@@ -72,12 +82,21 @@ http.createServer = (...args) => {
     const xRealIp = req.headers["x-real-ip"];
     const viaProxy = !!(xff || xRealIp);
     const isLoopbackProxy = socketIp === "127.0.0.1" || socketIp === "::1" || socketIp === "::ffff:127.0.0.1";
-    // Trust forwarding headers only when the TCP peer is a local reverse proxy.
-    // Direct/public sockets remain keyed by the unspoofable peer address.
-    const proxyIp = xRealIp || (xff ? String(xff).split(",")[0].trim() : "");
-    const ip = isLoopbackProxy && proxyIp ? proxyIp : socketIp;
+    // Trust forwarding headers only when the TCP peer is a local reverse proxy AND the
+    // operator declared how many append-hops to trust. Direct/public sockets and the
+    // default configuration always key on the unspoofable peer address.
+    const hops = xff ? String(xff).split(",").map((s) => s.trim()).filter(Boolean) : [];
+    const trust = isLoopbackProxy ? trustedProxyHops() : 0;
+    let ip = socketIp;
+    if (trust > 0) {
+      if (hops.length) ip = hops[Math.max(0, hops.length - trust)];
+      else if (xRealIp) ip = String(xRealIp).trim();
+    }
     delete req.headers["x-9r-real-ip"];
     delete req.headers["x-forwarded-for"];
+    // Never forwarded to Next: it feeds OIDC redirect_uri / SAML destinations
+    // (T1.3-F-8) and a public origin must come from BASE_URL or the Host header.
+    delete req.headers["x-forwarded-host"];
     delete req.headers["x-9r-via-proxy"];
     delete req.headers["x-9r-peer-token"];
     req.headers["x-9r-real-ip"] = ip;
