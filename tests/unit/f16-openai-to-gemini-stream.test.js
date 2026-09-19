@@ -122,6 +122,24 @@ describe("F16 openai→gemini response route (provider openai, cliente gemini)",
     expect(lastCandidate(out)?.finishReason).toBe("STOP");
   });
 
+  it("name repetido em deltas sucessivos não duplica (REV-B nit4: 'Read'+'Read' → 'Read')", () => {
+    // Provedores OpenAI-compat comuns reenviam function.name em todo delta de tool_call.
+    const out = runStream(FORMATS.OPENAI, FORMATS.GEMINI, [
+      openaiChunk({
+        tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "Read", arguments: '{"path":' } }],
+      }),
+      openaiChunk({
+        tool_calls: [{ index: 0, function: { name: "Read", arguments: '"a.ts"}' } }],
+      }),
+      openaiChunk({}, "tool_calls"),
+    ]);
+    const parts = out.flatMap((c) => c.candidates?.[0]?.content?.parts || []);
+    const fc = parts.find((p) => p.functionCall);
+    expect(fc).toBeDefined();
+    expect(fc.functionCall.name).toBe("Read"); // RED hoje: "ReadRead" (accum.name += )
+    expect(fc.functionCall.args).toEqual({ path: "a.ts" });
+  });
+
   it("não vaza o sentinel literal [DONE] nem texto de controle no output", () => {
     const events = [
       openaiChunk({ role: "assistant", content: "" }),

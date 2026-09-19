@@ -88,7 +88,9 @@ export function openaiToGeminiResponse(chunk, state) {
       }
       const accum = state._toolCallAccum[idx];
       if (tc.id) accum.id = tc.id;
-      if (tc.function?.name) accum.name += tc.function.name;
+      // Name arrives complete and may repeat on every delta — set once only
+      // (REV-B nit4: `+=` produced "Read"+"Read"="ReadRead").
+      if (!accum.name && tc.function?.name) accum.name = tc.function.name;
       if (tc.function?.arguments) accum.arguments += tc.function.arguments;
     }
     // Skip emit — wait for finish_reason
