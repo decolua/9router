@@ -4,6 +4,11 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { buildComboUsageMap } from "@/shared/utils/usageFilters";
+// CB4 — combo success stats come from ONE endpoint (GET /api/usage/combo-stats),
+// never re-derived from usage/stats on the client. Same read + display model
+// the combo cards use, shared so there is a single source of truth.
+import { useComboStats } from "@/app/(dashboard)/dashboard/combos/components/useComboStats.js";
+import { formatPct, buildComboSuccessMap, mapPeriodToRange } from "@/app/(dashboard)/dashboard/combos/components/comboStats.js";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
@@ -200,6 +205,7 @@ const COMBO_COLUMNS = [
   { field: "rawModel", label: "Model" },
   { field: "provider", label: "Provider" },
   { field: "requests", label: "Requests", align: "right" },
+  { field: "successRate", label: "Success %", align: "right" },
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
@@ -239,6 +245,11 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
+
+  // CB4 — combo success rates share the combo-stats endpoint. The UsageStats
+  // period is clamped to a window the route actually supports.
+  const comboStatsRange = mapPeriodToRange(period);
+  const { data: comboStatsData } = useComboStats(comboStatsRange);
 
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
@@ -397,6 +408,20 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       }
       case "combo": {
         const comboMap = buildComboUsageMap(stats.byModel, combos);
+        // CB4 — the Success % column is the server-computed combo rate straight
+        // from /api/usage/combo-stats (buildComboSuccessMap), keyed by combo
+        // name. Never a client recompute from byModel; never a fabricated 0%/100%.
+        const comboSuccessMap = buildComboSuccessMap(comboStatsData);
+        const successCell = (rate, isSummary) => (
+          <td
+            className={`px-6 py-3 text-right font-medium whitespace-nowrap ${
+              rate === null || rate === undefined ? "text-text-muted" : "text-text-main"
+            }`}
+            title={isSummary ? `Combo success rate · last ${comboStatsRange} · from /api/usage/combo-stats` : "Combo-level rate (see group row)"}
+          >
+            {formatPct(rate)}
+          </td>
+        );
         return {
           columns: COMBO_COLUMNS,
           // Only combos whose members actually recorded usage are listed.
@@ -408,6 +433,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
               <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-text-muted">—</td>
               <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+              {successCell(comboSuccessMap[group.groupKey] ?? null, true)}
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
             </>
           ),
@@ -417,6 +443,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
               <td className="px-6 py-3 font-medium">{item.rawModel}</td>
               <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+              {/* Success % is a combo-level metric; a per-model rate is not a
+                  source number, so detail rows stay "—" rather than echo the
+                  group value or invent one. */}
+              {successCell(null, false)}
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),
@@ -509,7 +539,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         };
       }
     }
-  }, [stats, tableView, sortBy, sortOrder, combos]);
+  }, [stats, tableView, sortBy, sortOrder, combos, comboStatsData, comboStatsRange]);
 
   if (!stats && !loading) return <div className="text-text-muted">Failed to load usage statistics.</div>;
 

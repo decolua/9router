@@ -9,6 +9,9 @@ import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModa
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { useComboStats } from "./components/useComboStats.js";
+import ComboStatsBadge from "./components/ComboStatsBadge.js";
+import { pickComboEntry } from "./components/comboStats.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
@@ -55,6 +58,9 @@ export default function CombosPage() {
   const { getCaps } = useModelCaps();
   const [confirmState, setConfirmState] = useState(null);
   const { copied, copy } = useCopyToClipboard();
+  // CB4 — one read of combo success stats for every card on the page (24h
+  // window). Fail-open: a gap leaves each chip "—", it never blocks the cards.
+  const { data: comboStats } = useComboStats("24h");
 
   useEffect(() => {
     fetchData();
@@ -240,6 +246,7 @@ export default function CombosPage() {
               onDelete={() => handleDelete(combo.id)}
               strategy={comboStrategies[combo.name] || {}}
               onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
+              comboStats={comboStats}
             />
           ))}
         </div>
@@ -294,8 +301,10 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
+function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, comboStats = null }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const statsEntry = pickComboEntry(comboStats, combo.name);
+  const coverage = comboStats && comboStats.coverage ? comboStats.coverage : null;
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
@@ -328,6 +337,12 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
               )}
+            </div>
+            {/* CB4 — discreet combo success chip; click expands an in-line
+                per-member breakdown (no new page). "—" / "parcial" are honest
+                states, never fabricated numbers. */}
+            <div className="mt-1.5">
+              <ComboStatsBadge entry={statsEntry} coverage={coverage} />
             </div>
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
