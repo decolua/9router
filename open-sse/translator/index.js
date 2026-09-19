@@ -64,8 +64,8 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   
   // Kiro performs stricter source-aware reconciliation after session replay.
   // The generic helper inserts OpenAI `role: tool` messages, which a direct
-  // Claude→Kiro translator cannot consume and which cannot repair partial
-  // parallel tool results.
+  // Claude→Kiro translator cannot consume. (Partial parallel tool results are
+  // repaired separately for Claude targets in formats/claude.js — Pass 3.)
   if (targetFormat !== FORMATS.KIRO) {
     fixMissingToolResponses(result);
   }
@@ -294,6 +294,7 @@ import "./response/claude-to-openai.js";
 import "./response/openai-to-claude.js";
 import "./response/gemini-to-openai.js";
 import "./response/openai-to-antigravity.js";
+import "./response/openai-to-gemini.js";
 import "./response/openai-responses.js";
 import "./response/kiro-to-openai.js";
 import "./response/cursor-to-openai.js";
