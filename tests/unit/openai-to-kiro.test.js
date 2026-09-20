@@ -11,7 +11,14 @@ import { openaiToKiroRequest } from "../../open-sse/translator/request/openai-to
 
 const contentOf = (result) =>
   result.conversationState.currentMessage.userInputMessage.content;
-const systemPromptOf = (result) => result.systemPrompt || "";
+// Upstream v0.5.69 (1fc2a81d) removed the top-level systemPrompt field from
+// Kiro payloads — the system instruction now travels inside the session-start
+// (first user) message content. For single-turn requests there is no history
+// yet: the prefixed current message IS the session start.
+const systemPromptOf = (result) => {
+  const msg0 = (result.conversationState?.history || []).find((m) => m.userInputMessage)?.userInputMessage.content;
+  return msg0 || result.conversationState?.currentMessage?.userInputMessage?.content || "";
+};
 
 describe("openaiToKiroRequest", () => {
   describe("basic message conversion", () => {
@@ -582,8 +589,12 @@ describe("openaiToKiroRequest", () => {
         {}
       );
 
-      expect(first.systemPrompt).toBe(second.systemPrompt);
-      expect(first.systemPrompt).not.toContain("Current time");
+      // Upstream parity: the thinking prefix now rides in the session-start
+      // user message — identical across turns — while the time context stays
+      // per-turn (fresh for every request).
+      const prefixOf = (r) => systemPromptOf(r).split("[Context:")[0];
+      expect(prefixOf(first)).toBe(prefixOf(second));
+      expect(prefixOf(first)).toContain("<thinking_mode>enabled</thinking_mode>");
       expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
     });
 

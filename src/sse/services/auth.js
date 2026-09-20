@@ -2,6 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { getRelayedClientApiKey } from "@/lib/federation/clientAuth.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
@@ -340,6 +341,15 @@ export async function clearAccountError(connectionId, currentConnection, model =
  * Extract API key from request headers
  */
 export function extractApiKey(request) {
+  // FED-011: a LINKED edge proxies /v1 with its own federation token in
+  // Authorization and carries the end client's key in
+  // X-9r-Client-Authorization (proxy.js buildUpstreamHeaders). When the
+  // presented Bearer IS the federation token, authenticate the end client
+  // from the relay header instead — the federation token is never a client
+  // API key.
+  const relayed = getRelayedClientApiKey(request);
+  if (relayed) return relayed;
+
   // Check Authorization header first
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) {

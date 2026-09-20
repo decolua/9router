@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { nowIso, stampInsert, stampUpsertConflict } from "../../federation/stamp.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -102,9 +103,10 @@ export async function updateSettings(updates) {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
+    const s = stampInsert(db);
     db.run(
-      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)],
+      `INSERT INTO settings(id, data${s.cols}) VALUES(1, ?${s.placeholders}) ON CONFLICT(id) DO UPDATE SET data = excluded.data${stampUpsertConflict()}`,
+      [stringifyJson(next), ...s.params],
     );
   });
   return mergeWithDefaults(next);
