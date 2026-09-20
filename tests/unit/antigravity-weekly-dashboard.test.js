@@ -82,17 +82,82 @@ describe("Antigravity dashboard normalization with weekly quotas", () => {
     expect(weeklyRows[1].name).toMatch(/Weekly/);
   });
 
-  it("order: gemini family, claude family, weekly, then other", () => {
-    const quotas = parseQuotaData("antigravity", data);
+  it("order: session, weekly, then other models", () => {
+    const dataWithBoth = {
+      quotas: {
+        gemini_session: {
+          displayName: "Gemini (5h)",
+          used: 100,
+          total: 1000,
+          resetAt: "2026-09-08T05:00:00Z",
+          remainingPercentage: 90,
+        },
+        gemini_weekly: {
+          displayName: "Gemini (Weekly)",
+          used: 250,
+          total: 1000,
+          resetAt: "2026-09-15T00:00:00Z",
+          remainingPercentage: 75,
+        },
+        claude_gpt_session: {
+          displayName: "Claude & GPT (5h)",
+          used: 50,
+          total: 1000,
+          resetAt: "2026-09-08T05:00:00Z",
+          remainingPercentage: 95,
+        },
+        claude_gpt_weekly: {
+          displayName: "Claude & GPT (Weekly)",
+          used: 500,
+          total: 1000,
+          resetAt: "2026-09-14T00:00:00Z",
+          remainingPercentage: 50,
+        },
+      },
+    };
+    const quotas = parseQuotaData("antigravity", dataWithBoth);
     const keys = quotas.map((q) => q.modelKey);
 
-    const geminiIdx = keys.indexOf("gemini");
-    const claudeIdx = keys.indexOf("claude");
+    const geminiSessionIdx = keys.indexOf("gemini_session");
     const geminiWeeklyIdx = keys.indexOf("gemini_weekly");
+    const claudeSessionIdx = keys.indexOf("claude_gpt_session");
     const claudeWeeklyIdx = keys.indexOf("claude_gpt_weekly");
 
-    expect(geminiIdx).toBeLessThan(geminiWeeklyIdx);
-    expect(claudeIdx).toBeLessThan(claudeWeeklyIdx);
+    expect(geminiSessionIdx).toBeLessThan(geminiWeeklyIdx);
+    expect(claudeSessionIdx).toBeLessThan(claudeWeeklyIdx);
+  });
+
+  it("uses summary session rows over synthetic model rows when present", () => {
+    const dataWithSession = {
+      quotas: {
+        ...data.quotas,
+        gemini_session: {
+          displayName: "Gemini (5h)",
+          used: 100,
+          total: 1000,
+          resetAt: "2026-09-08T05:00:00Z",
+          remainingPercentage: 90,
+        },
+        claude_gpt_session: {
+          displayName: "Claude & GPT (5h)",
+          used: 50,
+          total: 1000,
+          resetAt: "2026-09-08T05:00:00Z",
+          remainingPercentage: 95,
+        },
+      },
+    };
+
+    const quotas = parseQuotaData("antigravity", dataWithSession);
+    const names = quotas.map((q) => q.name);
+
+    expect(names).toContain("Gemini (5h)");
+    expect(names).toContain("Claude & GPT (5h)");
+    expect(names).toContain("Gemini (Weekly)");
+    expect(names).toContain("Claude & GPT (Weekly)");
+    // Synthesized model rows are replaced by the summary session rows
+    expect(names).not.toContain("Gemini (Flash / Pro)");
+    expect(names).not.toContain("Claude (Sonnet / Opus)");
   });
 
   it("works with no weekly keys present (backward compat)", () => {
