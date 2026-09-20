@@ -14,6 +14,9 @@ export const CLAUDE_STOP = {
   MAX_TOKENS: "max_tokens",
   TOOL_USE: "tool_use",
   STOP_SEQUENCE: "stop_sequence",
+  // Anthropic's API-level refusal (streaming classifier / ToS). Arrives in
+  // message_delta with zero output tokens; stop_details carries the reason.
+  REFUSAL: "refusal",
 };
 
 // Gemini finishReason values.
