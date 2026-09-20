@@ -17,6 +17,7 @@ import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels"
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
+import VisibleModelsModal from "./VisibleModelsModal";
 import ConnectionRow from "./ConnectionRow";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
@@ -75,6 +76,8 @@ export default function ProviderDetailPage() {
   const [liveModelsError, setLiveModelsError] = useState(null);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
+  const [enabledModelIds, setEnabledModelIds] = useState([]);
+  const [showVisibleModels, setShowVisibleModels] = useState(false);
   const [confirmState, setConfirmState] = useState(null);
   const [showAgRiskModal, setShowAgRiskModal] = useState(false);
   const [oneByOneRunning, setOneByOneRunning] = useState(false);
@@ -212,6 +215,17 @@ export default function ProviderDetailPage() {
       if (res.ok) setDisabledModelIds(data.ids || []);
     } catch (error) {
       console.log("Error fetching disabled models:", error);
+    }
+  }, [providerStorageAlias]);
+
+  // Visible-model allowlist for this provider (empty = no restriction).
+  const fetchEnabledModels = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/models/enabled?providerAlias=${encodeURIComponent(providerStorageAlias)}`, { cache: "no-store" });
+      const data = await res.json();
+      if (res.ok) setEnabledModelIds(data.ids || []);
+    } catch (error) {
+      console.log("Error fetching enabled models:", error);
     }
   }, [providerStorageAlias]);
 
@@ -467,7 +481,8 @@ export default function ProviderDetailPage() {
     fetchAliases();
     fetchCustomModels();
     fetchDisabledModels();
-  }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
+    fetchEnabledModels();
+  }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels, fetchEnabledModels]);
 
   // Live per-connection catalogs (cursor, zed): the static registry carries
   // no usable list, so resolve from the active connection. Fires only when
@@ -1814,6 +1829,20 @@ export default function ProviderDetailPage() {
         {providerId === "zed" && !!liveModelsError && (
           <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
         )}
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowVisibleModels(true)}
+            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs text-text-main transition-colors hover:border-primary/40 hover:bg-primary/5"
+          >
+            <span className="material-symbols-outlined text-sm">visibility</span>
+            Visible models{enabledModelIds.length > 0 ? ` (${enabledModelIds.length})` : ""}
+          </button>
+          <span className="text-[11px] text-text-muted">
+            {enabledModelIds.length > 0
+              ? `Only these ${enabledModelIds.length} models are exposed on /v1/models`
+              : "All models are exposed on /v1/models"}
+          </span>
+        </div>
         {renderModelsSection()}
       </Card>
 
@@ -1908,6 +1937,22 @@ export default function ProviderDetailPage() {
             setShowAddCustomModel(false);
           }}
           onClose={() => setShowAddCustomModel(false)}
+        />
+      )}
+
+      {showVisibleModels && (
+        <VisibleModelsModal
+          isOpen
+          onClose={() => setShowVisibleModels(false)}
+          providerId={providerId}
+          providerAlias={providerStorageAlias}
+          connections={connections}
+          customModels={customModels}
+          disabledModelIds={disabledModelIds}
+          onSaved={(ids) => {
+            setEnabledModelIds(ids);
+            fetchDisabledModels();
+          }}
         />
       )}
 

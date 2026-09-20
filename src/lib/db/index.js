@@ -55,6 +55,11 @@ export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
 
+// Enabled (visible-model allowlist) per provider alias
+export {
+  getEnabledModels, getEnabledByProvider, setEnabledModels,
+} from "./repos/enabledModelsRepo.js";
+
 // Usage
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
