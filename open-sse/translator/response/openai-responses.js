@@ -140,7 +140,13 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
     for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-    sendCompleted(state, emit);
+    // Upstreams report usage either on the finish chunk itself or on a trailing
+    // chunk whose `choices` array is empty (OpenAI does the latter). Emitting
+    // response.completed here would freeze the payload before that trailing chunk
+    // is parsed, so when usage is not known yet we leave completion to
+    // flushEvents(), which runs once the upstream stream ends and by then has
+    // seen every chunk.
+    if (state.usage) sendCompleted(state, emit);
   }
 
   return events;
