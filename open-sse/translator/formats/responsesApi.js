@@ -1,5 +1,32 @@
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 
+const STORED_ITEM_REFERENCE_PATTERN = /^(?:at|msg|amsg|rs|lsh|fc|tsc|fco|ctc|ctco|tso|ws|ig|cmp|resp)_/;
+const STATELESS_CALL_ITEM_TYPES = new Set([
+  RESPONSES_ITEM.FUNCTION_CALL,
+  RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
+  RESPONSES_ITEM.CUSTOM_TOOL_CALL,
+  RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT,
+]);
+
+/**
+ * Remove stored references and optional call item IDs from a stateless Responses replay.
+ * call_id remains the correlation key; IDs on every other item type are preserved.
+ */
+export function normalizeStatelessResponseInput(input) {
+  if (!Array.isArray(input)) return input;
+
+  return input.flatMap((item) => {
+    if (typeof item === "string" && STORED_ITEM_REFERENCE_PATTERN.test(item)) return [];
+    if (!item || typeof item !== "object" || Array.isArray(item)) return [item];
+    if (item.type === RESPONSES_ITEM.ITEM_REFERENCE) return [];
+    if (!STATELESS_CALL_ITEM_TYPES.has(item.type) || !Object.hasOwn(item, "id")) return [item];
+
+    const normalizedItem = { ...item };
+    delete normalizedItem.id;
+    return [normalizedItem];
+  });
+}
+
 /**
  * Normalize Responses API input to array format.
  * Accepts string or array, returns array of message items.
