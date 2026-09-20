@@ -81,6 +81,8 @@ export default function ModelSelectModal({
   capFilter = null,
   addedModelValues = [],
   closeOnSelect = true,
+  excludeCombos = false,
+  selectionHint = "Click to add, click again to remove. Changes are saved automatically.",
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -130,8 +132,8 @@ export default function ModelSelectModal({
   };
 
   useEffect(() => {
-    if (isOpen) fetchCombos();
-  }, [isOpen]);
+    if (isOpen && !excludeCombos) fetchCombos();
+  }, [isOpen, excludeCombos]);
 
   const fetchProviderNodes = async () => {
     try {
@@ -200,6 +202,7 @@ export default function ModelSelectModal({
       // user-added models may have typed capabilities (for example imageToText)
       // while still being valid chat/combo targets.
       if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || !getModelKind(m) || getModelKind(m) === "llm");
+      if (kindFilter === "llm") return models.filter((m) => m.isPlaceholder || !getModelKind(m) || getModelKind(m) === "llm");
       if (!TYPED_KINDS.has(kindFilter)) return models;
       return models.filter((m) => m.isPlaceholder || getModelKind(m) === kindFilter);
     };
@@ -424,11 +427,11 @@ export default function ModelSelectModal({
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
-    if (kindFilter || capFilter) return [];
+    if (excludeCombos || kindFilter || capFilter) return [];
     if (!searchQuery.trim()) return combos;
     const query = searchQuery.toLowerCase();
     return combos.filter(c => c.name.toLowerCase().includes(query));
-  }, [combos, searchQuery, kindFilter]);
+  }, [combos, searchQuery, kindFilter, capFilter, excludeCombos]);
 
   // Sort models alphabetically, with added models floated to top
   const sortModels = (models) => {
@@ -444,6 +447,11 @@ export default function ModelSelectModal({
     const filtered = {};
     Object.entries(groupedModels).forEach(([providerId, group]) => {
       let models = group.models;
+      // Auto-routing has no follow-up model-ID editor: placeholders are not usable targets.
+      if (kindFilter === "llm") {
+        models = models.filter((m) => !m.isPlaceholder && (!getModelKind(m) || getModelKind(m) === "llm"));
+        if (!models.length) return;
+      }
       // Filter by input-modality capability (vision/pdf/audioInput/videoInput).
       if (capFilter) {
         models = models.filter((m) => getCaps(m.value)?.[capFilter] === true);
@@ -465,7 +473,7 @@ export default function ModelSelectModal({
     });
 
     return filtered;
-  }, [groupedModels, searchQuery, addedModelValues]);
+  }, [groupedModels, searchQuery, addedModelValues, kindFilter]);
 
   const handleSelect = (model) => {
     const value = model?.value || model?.name || model;
@@ -498,7 +506,7 @@ export default function ModelSelectModal({
       {/* Info bar */}
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
         <span className="material-symbols-outlined text-primary shrink-0" style={{ fontSize: "14px" }}>info</span>
-        <span>Click to add, click again to remove. Changes are saved automatically.</span>
+        <span>{selectionHint}</span>
       </div>
 
       {/* Search - compact */}
@@ -654,4 +662,6 @@ ModelSelectModal.propTypes = {
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
+  excludeCombos: PropTypes.bool,
+  selectionHint: PropTypes.string,
 };

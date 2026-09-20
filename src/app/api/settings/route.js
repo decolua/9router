@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { validateAutoRoutingStrategies } from "@/lib/autoRoutingValidation";
 import bcrypt from "bcryptjs";
 import { isValidTimeZone } from "@/shared/utils/timeZone";
 
@@ -45,6 +46,11 @@ export async function PATCH(request) {
 
     if (Object.prototype.hasOwnProperty.call(body, "timeZone") && !isValidTimeZone(body.timeZone)) {
       return NextResponse.json({ error: "Invalid timezone" }, { status: 400 });
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "comboStrategies")) {
+      const error = await validateAutoRoutingStrategies(body.comboStrategies);
+      if (error) return NextResponse.json({ error }, { status: 400 });
     }
 
     // If updating password, hash it

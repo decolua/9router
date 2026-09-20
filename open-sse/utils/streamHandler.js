@@ -15,8 +15,12 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
+export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "", signal } = {}) {
   const abortController = new AbortController();
+  const onAbort = () => abortController.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  if (signal?.aborted) onAbort();
+  const cleanup = () => signal?.removeEventListener("abort", onAbort);
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
@@ -40,6 +44,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleDisconnect: (reason = "client_closed") => {
       if (disconnected) return;
       disconnected = true;
+      cleanup();
 
       // Debug-only: Responses API has no [DONE] sentinel, so codex/droid close the
       // socket on every completed request. "📊 done" is the authoritative outcome line.
@@ -57,6 +62,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleComplete: () => {
       if (disconnected) return;
       disconnected = true;
+      cleanup();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);
@@ -68,6 +74,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
     handleError: (error) => {
       if (disconnected) return;
       disconnected = true;
+      cleanup();
 
       if (abortTimeout) {
         clearTimeout(abortTimeout);

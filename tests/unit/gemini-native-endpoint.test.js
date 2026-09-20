@@ -89,6 +89,17 @@ describe("Gemini native v1beta endpoint", () => {
     expect(names).toContain("models/gemini-2.5-pro-preview-tts");
   });
 
+  it("forwards client cancellation to chat and its classifier", async () => {
+    const controller = new AbortController();
+    await POST(makeGeminiRequest("smart:generateContent", { contents: [{ role: "user", parts: [{ text: "hello" }] }] }, {}, controller.signal), {
+      params: Promise.resolve({ path: ["smart:generateContent"] }),
+    });
+    const forwarded = mocks.handleChat.mock.calls[0][0];
+    expect(forwarded.signal.aborted).toBe(false);
+    controller.abort();
+    expect(forwarded.signal.aborted).toBe(true);
+  });
+
   it("passes Gemini AUDIO generateContent requests through to Google's native endpoint", async () => {
     const body = audioBody();
     const response = await POST(makeGeminiRequest("gemini-3.1-flash-tts-preview:generateContent", body), {

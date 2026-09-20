@@ -254,12 +254,19 @@ export async function getAllAccessTokens(userInfo, log) {
   return results;
 }
 
-export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null) {
+export async function refreshWithRetry(refreshFn, maxRetries = 3, log = null, signal = null) {
   for (let attempt = 0; attempt < maxRetries; attempt++) {
+    if (signal?.aborted) return null;
     if (attempt > 0) {
       const delay = attempt * 1000;
       log?.debug?.("TOKEN_REFRESH", `Retry ${attempt}/${maxRetries} after ${delay}ms`);
-      await new Promise(r => setTimeout(r, delay));
+      await new Promise((resolve) => {
+        const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", finish); resolve(); };
+        const timer = setTimeout(finish, delay);
+        signal?.addEventListener("abort", finish, { once: true });
+        if (signal?.aborted) finish();
+      });
+      if (signal?.aborted) return null;
     }
 
     try {

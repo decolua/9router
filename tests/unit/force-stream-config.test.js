@@ -32,7 +32,7 @@ vi.mock("../../open-sse/utils/bypassHandler.js", () => ({
 
 vi.mock("../../open-sse/utils/streamHandler.js", () => ({
   createStreamController: vi.fn(() => ({
-    signal: undefined,
+    signal: new AbortController().signal,
     handleComplete: vi.fn(),
     handleError: vi.fn(),
   })),
@@ -71,6 +71,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({

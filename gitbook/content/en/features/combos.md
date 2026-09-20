@@ -26,6 +26,50 @@ Model: premium-coding
 
 ---
 
+## Auto Routing with an LLM Classifier
+
+Choose **Auto Routing — LLM tiers** on a combo card to route each request by difficulty. A small LLM classifies the current ask before 9Router sends the original request to the selected tier. Clients continue to use the combo name as their model.
+
+1. Create a combo with at least one emergency fallback model.
+2. Select **Auto Routing** and choose a fast **Classifier model**.
+3. Configure all four tiers: **Simple**, **Medium**, **Complex**, and **Reasoning**. Each tier needs at least one model; models can be shared across tiers.
+4. Add and reorder models within each tier. These models can come from any configured LLM provider, independently of the combo’s emergency pool. Nested combos are not supported in classifier or tier selections.
+5. Optionally change **Advanced → Classifier timeout (ms)** (default 2,000 ms; maximum 120,000 ms), then click **Save Auto Routing**. Cancelling leaves the current strategy unchanged.
+
+The classifier receives the latest human ask (up to 8,000 characters), up to three preceding user/assistant text turns (8,000 characters total), and caller system context (2,000 characters). Truncated text is marked. Tool outputs, reasoning blocks, and media payloads are excluded; required input capabilities are listed as metadata. The final answering model receives the original request, including tools and media, through the existing translation pipeline.
+
+Each classification adds latency and may incur provider charges. Conversation text is sent to the selected classifier provider even when a different provider answers the request. Classifier usage and completion usage are recorded as separate calls. Classification runs on every request without caching or session pinning.
+
+On a successful classification, tier models are tried in their configured order. Existing capability adapters can prioritize models that support the request’s input. Retryable failures advance through the tier, then the emergency fallback pool, skipping models already tried. Non-retryable failures retain their existing behavior. Classifier errors, timeouts, invalid output, or a missing usable human ask go directly to the combo’s existing fallback order. A cancelled client request does not start fallback calls.
+
+Use **Configure routing** on an active combo to edit its settings. Settings follow the combo when renamed and are removed when the combo is deleted. Switching to another strategy retains the saved auto-routing configuration.
+
+The settings API stores the configuration under `comboStrategies[comboName]`:
+
+```json
+{
+  "comboStrategies": {
+    "smart": {
+      "fallbackStrategy": "auto-routing",
+      "autoRouting": {
+        "classifierModel": "openai/gpt-4o-mini",
+        "timeoutMs": 2000,
+        "tiers": {
+          "SIMPLE": ["openai/gpt-4o-mini"],
+          "MEDIUM": ["openai/gpt-4o"],
+          "COMPLEX": ["openai/gpt-4o"],
+          "REASONING": ["openai/gpt-4o"]
+        }
+      }
+    }
+  }
+}
+```
+
+When updating settings directly, preserve other entries in `comboStrategies`. Choose models appropriate for your own quality and cost requirements; the example above demonstrates the configuration shape.
+
+---
+
 ## Why Use Combos?
 
 ### 1. Maximize Subscription Value

@@ -1,4 +1,5 @@
 import "open-sse/index.js";
+import { randomUUID } from "node:crypto";
 
 import {
   getProviderCredentials,
@@ -19,10 +20,12 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { FORMATS, detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { handleAutoRoutingChat } from "open-sse/services/autoRouting.js";
+import { AUTO_ROUTING_STRATEGY, isConcreteModel } from "open-sse/config/autoRouting.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
 /**
@@ -93,49 +96,9 @@ export async function handleChat(request, clientRawRequest = null) {
   const requiredCapabilities = detectRequiredCapabilities(body);
 
   // Check if model is a combo (has multiple models with fallback)
-  const comboModels = await getComboModels(modelStr);
+  const comboModels = await getComboModels(modelStr, { includeEmpty: true });
   if (comboModels) {
-    // Check for combo-specific strategy first, fallback to global
-    const comboStrategies = settings.comboStrategies || {};
-    const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
-    const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings);
-    const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
-
-    if (comboStrategy === "fusion") {
-      log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
-      return handleFusionChat({
-        body,
-        models: comboModels,
-        handleSingleModel: (b, m, isPanel) => {
-          let cleanRawReq = clientRawRequest;
-          if (isPanel && clientRawRequest) {
-            const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-            cleanRawReq = { ...clientRawRequest, body: cleanBody };
-          }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
-        },
-        log,
-        comboName: modelStr,
-        judgeModel: comboStrategies[modelStr]?.judgeModel,
-        tuning: comboStrategies[modelStr]?.fusionTuning,
-      });
-    }
-
-    const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-    return handleComboChat({
-      body,
-      models: augmentedModels,
-      handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-        adapterAdded
-      ),
-      log,
-      comboName: modelStr,
-      comboStrategy,
-      comboStickyLimit
-    });
+    return dispatchCombo({ body, models: comboModels, modelStr, settings, clientRawRequest, request, apiKey });
   }
 
   // Single model request — may still switch to a capacity-adapter model if the
@@ -160,59 +123,60 @@ export async function handleChat(request, clientRawRequest = null) {
   return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
 }
 
+// Keep top-level and recursively resolved combos on the same strategy path.
+async function dispatchCombo({ body, models, modelStr, settings, clientRawRequest, request, apiKey }) {
+  const strategy = settings.comboStrategies?.[modelStr] || {};
+  const comboStrategy = strategy.fallbackStrategy || settings.comboStrategy || "fallback";
+  const single = (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey);
+  if (comboStrategy === AUTO_ROUTING_STRATEGY) {
+    return handleAutoRoutingChat({
+      body, models, config: strategy.autoRouting, settings, log, comboName: modelStr,
+      signal: request?.signal,
+      handleSingleModel: (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, { signal: request?.signal }),
+      classify: (classifierBody, model, signal) => handleSingleModelChat(
+        classifierBody, model,
+        // A fresh identity also avoids the account-scoped session fallback used
+        // by stateful providers when a caller supplies no explicit session ID.
+        { endpoint: "/v1/chat/completions", body: classifierBody, headers: { accept: "application/json", "x-session-id": `auto-routing:${randomUUID()}` } },
+        null, apiKey, { classifier: true, signal }
+      ),
+    });
+  }
+  if (comboStrategy === "fusion") {
+    return handleFusionChat({
+      body, models, log, comboName: modelStr, judgeModel: strategy.judgeModel, tuning: strategy.fusionTuning,
+      handleSingleModel: (b, m, isPanel) => {
+        let raw = clientRawRequest;
+        if (isPanel && raw) {
+          const { tools, tool_choice, ...cleanBody } = raw.body || {};
+          raw = { ...raw, body: cleanBody };
+        }
+        return handleSingleModelChat(b, m, raw, request, apiKey);
+      },
+    });
+  }
+  const augmented = augmentModelsWithCapacityAdapter(models, detectRequiredCapabilities(body), settings);
+  return handleComboChat({
+    body, models: augmented, log, comboName: modelStr, comboStrategy,
+    comboStickyLimit: settings.comboStickyRoundRobinLimit,
+    handleSingleModel: withCapacityAdapterStripping(single, augmented.filter((m) => !models.includes(m))),
+  });
+}
+
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, options = {}) {
+  if (options.classifier && !isConcreteModel(modelStr)) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Classifier must be a concrete model");
+  if (options.signal?.aborted) return errorResponse(499, "Request aborted");
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
-    const comboModels = await getComboModels(modelStr);
+    const comboModels = await getComboModels(modelStr, { includeEmpty: true });
     if (comboModels) {
-      const chatSettings = await getSettings();
-      // Check for combo-specific strategy first, fallback to global
-      const comboStrategies = chatSettings.comboStrategies || {};
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
-      const requiredCapabilities = detectRequiredCapabilities(body);
-      const augmentedModels = augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings);
-      const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
-
-      if (comboStrategy === "fusion") {
-        log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
-        return handleFusionChat({
-          body,
-          models: comboModels,
-          handleSingleModel: (b, m, isPanel) => {
-            let cleanRawReq = clientRawRequest;
-            if (isPanel && clientRawRequest) {
-              const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-              cleanRawReq = { ...clientRawRequest, body: cleanBody };
-            }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
-          },
-          log,
-          comboName: modelStr,
-          judgeModel: comboStrategies[modelStr]?.judgeModel,
-          tuning: comboStrategies[modelStr]?.fusionTuning,
-        });
-      }
-
-      const comboStickyLimit = chatSettings.comboStickyRoundRobinLimit;
-      log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
-      return handleComboChat({
-        body,
-        models: augmentedModels,
-        handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-          adapterAdded
-        ),
-        log,
-        comboName: modelStr,
-        comboStrategy,
-        comboStickyLimit
-      });
+      if (options.classifier) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Classifier must be a concrete model");
+      return dispatchCombo({ body, models: comboModels, modelStr, settings: await getSettings(), clientRawRequest, request, apiKey });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
@@ -231,6 +195,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
+    if (options.signal?.aborted) return errorResponse(499, "Request aborted");
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
     // All accounts unavailable
@@ -250,6 +215,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
+    if (options.signal?.aborted) return errorResponse(499, "Request aborted");
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
@@ -264,7 +230,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Use shared chatCore
     const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+    if (options.signal?.aborted) return errorResponse(499, "Request aborted");
+    const providerThinking = options.classifier ? null : (chatSettings.providerThinking || {})[provider] || null;
     const result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
@@ -274,25 +241,26 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       connectionId: credentials.connectionId,
       userAgent,
       apiKey,
-      ccFilterNaming: !!chatSettings.ccFilterNaming,
-      rtkEnabled: !!chatSettings.rtkEnabled,
-      headroomEnabled: !!chatSettings.headroomEnabled,
+      ccFilterNaming: !options.classifier && !!chatSettings.ccFilterNaming,
+      rtkEnabled: !options.classifier && !!chatSettings.rtkEnabled,
+      headroomEnabled: !options.classifier && !!chatSettings.headroomEnabled,
       headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
       headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
       headroomTimeoutMs: chatSettings.headroomTimeoutMs,
-      cavemanEnabled: !!chatSettings.cavemanEnabled,
+      cavemanEnabled: !options.classifier && !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
-      ponytailEnabled: !!chatSettings.ponytailEnabled,
+      ponytailEnabled: !options.classifier && !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
-      pxpipeEnabled: !!chatSettings.pxpipeEnabled,
+      pxpipeEnabled: !options.classifier && !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
       // Lazily warms the in-process module on first use; null when not installed (fail-open)
-      pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
+      pxpipeTransform: !options.classifier && chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      signal: options.signal,
+      sourceFormatOverride: options.classifier ? FORMATS.OPENAI : request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -307,6 +275,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
+    if (options.signal?.aborted) return errorResponse(499, "Request aborted");
     if (result.success) return result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking

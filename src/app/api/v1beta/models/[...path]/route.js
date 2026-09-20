@@ -101,6 +101,7 @@ export async function POST(request, { params }) {
       method: "POST",
       headers: request.headers,
       body: JSON.stringify(convertedBody),
+      signal: request.signal,
     });
 
     const response = await handleChat(newRequest);

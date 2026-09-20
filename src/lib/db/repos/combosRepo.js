@@ -2,6 +2,19 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+// Strategy settings are keyed by name. Keep their lifecycle in the same database
+// transaction as the combo so API, CLI, and repository callers behave identically.
+function moveComboStrategy(db, oldName, newName = null) {
+  const row = db.get(`SELECT data FROM settings WHERE id = 1`);
+  if (!row) return;
+  const settings = parseJson(row.data, {});
+  if (!Object.prototype.hasOwnProperty.call(settings.comboStrategies || {}, oldName)) return;
+  const strategy = settings.comboStrategies[oldName];
+  delete settings.comboStrategies[oldName];
+  if (newName) settings.comboStrategies[newName] = strategy;
+  db.run(`UPDATE settings SET data = ? WHERE id = 1`, [stringifyJson(settings)]);
+}
+
 function rowToCombo(row) {
   if (!row) return null;
   return {
@@ -61,6 +74,7 @@ export async function updateCombo(id, data) {
       `UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?`,
       [merged.name, merged.kind, stringifyJson(merged.models || []), merged.updatedAt, id]
     );
+    if (row.name !== merged.name) moveComboStrategy(db, row.name, merged.name);
     result = merged;
   });
   return result;
@@ -68,6 +82,13 @@ export async function updateCombo(id, data) {
 
 export async function deleteCombo(id) {
   const db = await getAdapter();
-  const res = db.run(`DELETE FROM combos WHERE id = ?`, [id]);
-  return (res?.changes ?? 0) > 0;
+  let deleted = false;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM combos WHERE id = ?`, [id]);
+    if (!row) return;
+    const res = db.run(`DELETE FROM combos WHERE id = ?`, [id]);
+    deleted = (res?.changes ?? 0) > 0;
+    if (deleted) moveComboStrategy(db, row.name);
+  });
+  return deleted;
 }

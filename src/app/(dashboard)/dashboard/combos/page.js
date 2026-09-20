@@ -6,6 +6,8 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle } from "@/shared/components";
+import AutoRoutingModal from "@/shared/components/AutoRoutingModal";
+import { AUTO_ROUTING_STRATEGY } from "open-sse/config/autoRouting.js";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -159,29 +161,24 @@ export default function CombosPage() {
     });
   };
 
-  // Merge a per-combo strategy patch into settings.comboStrategies. Passing an empty
-  // patch (strategy back to default "fallback") drops the entry entirely.
+  // Preserve each strategy’s configuration when changing the active strategy.
   const handleSetComboStrategy = async (comboName, patch) => {
-    try {
-      const updated = { ...comboStrategies };
-      const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
-        delete updated[comboName];
-      } else {
-        updated[comboName] = next;
-      }
-
-      await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ comboStrategies: updated }),
-      });
-
-      setComboStrategies(updated);
-    } catch (error) {
-      console.log("Error updating combo strategy:", error);
+    // Read the latest strategy map so configuring one card preserves other combos.
+    const latestRes = await fetch("/api/settings", { cache: "no-store" });
+    if (!latestRes.ok) throw new Error("Unable to load combo settings");
+    const latest = await latestRes.json();
+    const updated = { ...(latest.comboStrategies || {}) };
+    updated[comboName] = { ...(updated[comboName] || {}), ...patch };
+    const res = await fetch("/api/settings", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ comboStrategies: updated }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Unable to save combo settings");
     }
+    setComboStrategies(updated);
   };
 
   if (loading) {
@@ -204,6 +201,7 @@ export default function CombosPage() {
           <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
             <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
             <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
+            <li><span className="font-medium text-text-main">Auto Routing</span> — a small classifier chooses a difficulty tier and its ordered model pool</li>
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
           </ul>
         </div>
@@ -292,13 +290,22 @@ const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
   { value: "fusion", label: "Fusion — panel + judge" },
+  { value: AUTO_ROUTING_STRATEGY, label: "Auto Routing — LLM tiers" },
 ];
 
 function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [showAutoRouting, setShowAutoRouting] = useState(false);
+  const [strategyError, setStrategyError] = useState("");
+  const setStrategy = async (patch) => {
+    setStrategyError("");
+    try { await onSetStrategy(patch); }
+    catch (error) { setStrategyError(error.message); }
+  };
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const isFusion = current === "fusion";
+  const isAutoRouting = current === AUTO_ROUTING_STRATEGY;
 
   return (
     <Card padding="sm" className="group">
@@ -309,6 +316,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
           </div>
           <div className="min-w-0 flex-1">
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            {isAutoRouting && <p className="mt-1 text-xs text-text-muted">Emergency fallback pool</p>}
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
@@ -324,6 +332,11 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
               )}
             </div>
+            {isAutoRouting && <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="break-all text-xs text-text-muted">Classifier: {strategy.autoRouting?.classifierModel || "Not configured"}</span>
+              <Button size="sm" variant="secondary" onClick={() => setShowAutoRouting(true)}>Configure routing</Button>
+            </div>}
+            {strategyError && <p role="alert" className="mt-2 text-xs text-red-500">{strategyError}</p>}
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
@@ -338,7 +351,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
                 </button>
                 {judge && (
                   <button
-                    onClick={() => onSetStrategy({ judgeModel: "" })}
+                    onClick={() => setStrategy({ judgeModel: "" })}
                     className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
                     title="Reset judge to Auto"
                   >
@@ -357,7 +370,7 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
             <Select
               options={STRATEGY_OPTIONS}
               value={current}
-              onChange={(e) => onSetStrategy({ fallbackStrategy: e.target.value })}
+              onChange={(e) => e.target.value === AUTO_ROUTING_STRATEGY ? setShowAutoRouting(true) : setStrategy({ fallbackStrategy: e.target.value })}
               selectClassName="py-1.5 text-xs"
             />
           </div>
@@ -393,12 +406,16 @@ function ComboCard({ combo, getCaps, activeProviders = [], copied, onCopy, onEdi
         </div>
       </div>
 
+      {showAutoRouting && <AutoRoutingModal config={strategy.autoRouting} activeProviders={activeProviders}
+        onClose={() => setShowAutoRouting(false)}
+        onSave={(autoRouting) => onSetStrategy({ fallbackStrategy: AUTO_ROUTING_STRATEGY, autoRouting })} />}
+
       {/* Judge model picker (single-select; combo members make natural judges too) */}
       {showJudgeSelect && (
         <ModelSelectModal
           isOpen={showJudgeSelect}
           onClose={() => setShowJudgeSelect(false)}
-          onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
+          onSelect={(m) => { setStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
           activeProviders={activeProviders}
           title="Select Judge Model"
           addedModelValues={judge ? [judge] : []}
