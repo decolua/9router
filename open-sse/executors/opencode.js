@@ -499,9 +499,11 @@ export class OpenCodeExecutor extends BaseExecutor {
       body.store = false;
       normalizeResponsesTools(body);
       sanitizeResponsesItems(body);
-      if (!Array.isArray(body.tools) || body.tools.length === 0) {
-        cloakOpencodeTools(body, true);
-      }
+      // Free-tier gate requires both bash and read present in the tools payload;
+      // external clients (Codex etc.) ship their own tool set, so always cloak
+      // instead of only when tools are empty — otherwise upstream 403s with
+      // "OpenCode's free tier can only be used from within OpenCode".
+      cloakOpencodeTools(body, true);
     } else if (body && typeof body === "object") {
       cloakOpencodeTools(body, false);
     }

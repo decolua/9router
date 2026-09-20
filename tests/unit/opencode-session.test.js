@@ -312,6 +312,36 @@ describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
     expect(chatFull.tools[0].function.description).toBe("existing");
   });
 
+  it("cloaks responses-model requests that already carry external tools", () => {
+    const executor = getExecutor("opencode");
+
+    const withExternalTools = executor.transformRequest("muse-spark-1.3-contributor-free", {
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      tools: [
+        {
+          type: "function",
+          name: "exec_command",
+          description: "Codex tool",
+          parameters: { type: "object", properties: { cmd: { type: "string" } } },
+        },
+      ],
+    });
+    const names = withExternalTools.tools.map((t) => t.name);
+    expect(names).toContain("exec_command");
+    expect(names).toContain("bash");
+    expect(names).toContain("read");
+
+    const alreadyCloaked = executor.transformRequest("muse-spark-1.3-contributor-free", {
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      tools: [
+        { type: "function", name: "bash", description: "existing", parameters: { type: "object", properties: {} } },
+        { type: "function", name: "read", description: "existing", parameters: { type: "object", properties: {} } },
+      ],
+    });
+    expect(alreadyCloaked.tools.length).toBe(2);
+    expect(alreadyCloaked.tools.map((t) => t.description)).toEqual(["existing", "existing"]);
+  });
+
   it("declares forceStream on the opencode transport so chatCore serves SSE upstream", async () => {
     const { PROVIDERS } = await import("../../open-sse/config/providers.js");
     expect(PROVIDERS.opencode?.forceStream).toBe(true);
