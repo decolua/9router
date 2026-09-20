@@ -7,7 +7,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 }));
 
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
-const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+const { projectCompletionToClientFormat } = await import("../../open-sse/translator/response/completionProjector.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
 
 // A chat.completion body as returned by a chat-native upstream (e.g. op-ericding)
@@ -30,8 +30,7 @@ const CHAT_TOOL_BODY = {
 
 describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)", () => {
   it("translates chat.completion tool_calls into Responses function_call output", () => {
-    // translateNonStreamingResponse(body, targetFormat=PROVIDER format, sourceFormat=CLIENT format)
-    const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES);
+    const out = projectCompletionToClientFormat(CHAT_TOOL_BODY, FORMATS.OPENAI_RESPONSES);
     expect(out.object).toBe("response");
     expect(out).not.toHaveProperty("choices");
     const fc = (out.output || []).find((o) => o.type === "function_call");
@@ -51,12 +50,7 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
         arguments: "{\"input\":\"return await tools.shell({command: 'pwd'});\"}"
       }
     };
-    const out = translateNonStreamingResponse(
-      customBody,
-      FORMATS.OPENAI,
-      FORMATS.OPENAI_RESPONSES,
-      new Set(["exec"])
-    );
+    const out = projectCompletionToClientFormat(customBody, FORMATS.OPENAI_RESPONSES, new Set(["exec"]));
     const call = (out.output || []).find((item) => item.type === "custom_tool_call");
     expect(call).toMatchObject({
       call_id: "call_exec",
@@ -71,7 +65,7 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
       ...CHAT_TOOL_BODY,
       choices: [{ index: 0, message: { role: "assistant", content: "hello" }, finish_reason: "stop" }]
     };
-    const out = translateNonStreamingResponse(body, FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES);
+    const out = projectCompletionToClientFormat(body, FORMATS.OPENAI_RESPONSES);
     const msg = (out.output || []).find((o) => o.type === "message");
     expect(msg).toBeTruthy();
     expect(msg.content[0].type).toBe("output_text");
@@ -79,7 +73,7 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
   });
 
   it("leaves chat->chat untouched", () => {
-    const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI);
+    const out = projectCompletionToClientFormat(CHAT_TOOL_BODY, FORMATS.OPENAI);
     expect(out.object).toBe("chat.completion");
     expect(out.choices[0].message.tool_calls[0].function.name).toBe("shell");
   });
