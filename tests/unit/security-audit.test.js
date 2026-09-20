@@ -48,15 +48,18 @@ describe("AUDIT-002: API key masking", () => {
     expect(livePath.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("byApiKey object keys should use masked key, not raw key", () => {
+  it("byApiKey object keys should use a safe identity, never raw or masked keys", () => {
     const source = fs.readFileSync(
       path.resolve("src/lib/db/repos/usageRepo.js"),
       "utf-8"
     );
-    // The 24h path should use apiKeyMasked in the akKey template
-    expect(source).toContain("${apiKeyMasked}|${r.model}|${r.provider");
-    // Should NOT use raw r.apiKey in the key
+    // Grouping identity comes from the shared helper (record ID or salted HMAC)
+    expect(source).toContain("function makeApiKeyIdentity");
+    expect(source).toContain("${identity}|${r.model}|${r.provider");
+    // NEVER the raw key: it leaks via JSON property names
     expect(source).not.toContain("${r.apiKey}|${r.model}|${r.provider");
+    // NEVER the display mask: identical for all of an install's keys (collides)
+    expect(source).not.toContain("${apiKeyMasked}|${r.model}|${r.provider");
   });
 });
 
