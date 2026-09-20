@@ -37,6 +37,12 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
   const customToolNames = new Set();
+  // Per-request tool-name maps: sanitized name -> original name, and sub-tool -> namespace.
+  // Attached to the translated body (`_toolNameMap` is the existing convention chatCore
+  // already lifts into stream state) so the response side resolves names without any
+  // cross-request state. The globalThis mirrors below are legacy fallbacks.
+  const toolNameMap = new Map();
+  const nsToolNames = new Map();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -184,22 +190,79 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   ];
   if (responseTools.length > 0) {
     result.tools = responseTools
-      .map(tool => {
+      .flatMap(tool => {
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
-        if (tool.function) return tool;
+        if (tool.function) {
+          // Some providers reject dotted tool names; sanitize and keep the map so the
+          // response side restores the original name.
+          const fn = tool.function;
+          if (fn?.name && fn.name.includes(".")) {
+            const safe = fn.name.replace(/\./g, "__");
+            toolNameMap.set(safe, fn.name);
+            globalThis.__CB_TOOL_MAP__ ||= {};
+            globalThis.__CB_TOOL_MAP__[safe] = fn.name;
+            return { ...tool, function: { ...fn, name: safe } };
+          }
+          return tool;
+        }
+        // Responses API namespace tool (e.g. codex `collaboration`): a group of sub-tools.
+        // Chat Completions has no namespace concept, so expand each sub-tool into an
+        // individual `{namespace}.{subtool}` function. The response side splits the name
+        // back into Responses `name` + `namespace`.
+        if (tool.type === "namespace" && Array.isArray(tool.tools)) {
+          const ns = tool.name || "";
+          return tool.tools
+            .filter(sub => sub && sub.name)
+            .map(sub => {
+              // Keep a flat-name -> namespace map so the response side can route a
+              // tool call that arrives by flat name (wait_agent, not collaboration.wait_agent).
+              if (ns) {
+                nsToolNames.set(sub.name, ns);
+                globalThis.__CB_NS_TOOLS__ ||= {};
+                globalThis.__CB_NS_TOOLS__[sub.name] = ns;
+              }
+              // Some providers (deepseek, codebuddy) reject dotted tool names, so
+              // sanitize dots to `__` on the way out and keep the map for the
+              // response side to restore the namespace-qualified name.
+              const full = ns ? `${ns}.${sub.name}` : sub.name;
+              const safe = full.includes(".") ? full.replace(/\./g, "__") : full;
+              if (full !== safe) {
+                toolNameMap.set(safe, full);
+                globalThis.__CB_TOOL_MAP__ ||= {};
+                globalThis.__CB_TOOL_MAP__[safe] = full;
+              }
+              return {
+                type: OPENAI_BLOCK.FUNCTION,
+                function: {
+                  name: safe,
+                  description: String(sub.description || tool.description || ""),
+                  parameters: normalizeToolParameters(sub.parameters),
+                  strict: sub.strict
+                }
+              };
+            });
+        }
         // Responses API function/custom tool: { type, name, description, parameters|format }.
         // Chat Completions has no freeform custom-tool declaration, so expose custom
         // tools as functions with one raw `input` string while retaining their names
         // in translator-only metadata for the response conversion.
         const name = tool.name;
         if (!name || typeof name !== "string" || name.trim() === "") return null;
+        // Some providers reject dotted tool names; sanitize every function/custom tool
+        // name and keep the map so the response side restores the original.
+        const safeName = name.includes(".") ? name.replace(/\./g, "__") : name;
+        if (safeName !== name) {
+          toolNameMap.set(safeName, name);
+          globalThis.__CB_TOOL_MAP__ ||= {};
+          globalThis.__CB_TOOL_MAP__[safeName] = name;
+        }
         if (tool.type === "custom") {
           customToolNames.add(name);
           const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
           return {
             type: OPENAI_BLOCK.FUNCTION,
             function: {
-              name,
+              name: safeName,
               description: [String(tool.description || ""), formatHint].filter(Boolean).join("\n\n"),
               parameters: {
                 type: "object",
@@ -220,7 +283,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         return {
           type: OPENAI_BLOCK.FUNCTION,
           function: {
-            name,
+            name: safeName,
             description: String(tool.description || ""),
             parameters: normalizeToolParameters(tool.parameters),
             strict: tool.strict
@@ -230,6 +293,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+
+  // Hand the response side this request's own name maps (chatCore lifts `_toolNameMap` into
+  // stream state). The legacy globalThis mirrors below are REPLACED per request — never
+  // accumulated — so they cannot grow unbounded or leak names into another request.
+  if (toolNameMap.size > 0) result._toolNameMap = toolNameMap;
+  globalThis.__CB_TOOL_MAP__ = toolNameMap.size > 0 ? Object.fromEntries(toolNameMap) : null;
+  globalThis.__CB_NS_TOOLS__ = nsToolNames.size > 0 ? Object.fromEntries(nsToolNames) : null;
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)

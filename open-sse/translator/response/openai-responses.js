@@ -10,6 +10,103 @@ import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
+// Namespace tools are expanded into dotted names (`collaboration.spawn_agent`) on the
+// request side. Split them back into Responses `name` + `namespace` so the client router
+// can route the tool call. Flat names pass through unchanged.
+//
+// Providers also *inject* namespace prefixes the client never declared (codex rollout
+// 01a0abe6: provider returned `functions.exec`, bare `functions` and bare `collaboration`
+// while the request declared the sub-tool names). Those are canonicalized against the tool
+// names the request actually declared — never against a guessed alias table. Unresolvable
+// names are logged and forwarded UNCHANGED (never dropped, never fabricated).
+const TOOL_NAME_PREFIX_SEPARATOR = ".";
+
+// Tool names declared by this request, indexed for canonicalization.
+// `names` = every declared tool/sub-tool, `namespaces` = declared namespace groups,
+// `subtools` = sub-tool -> its declared namespace.
+function declaredTools(state) {
+  if (state._declaredTools) return state._declaredTools;
+  const names = new Set();
+  const namespaces = new Set();
+  const subtools = new Map();
+  for (const tool of Array.isArray(state.body?.tools) ? state.body.tools : []) {
+    if (!tool) continue;
+    if (tool.type === "namespace" && Array.isArray(tool.tools)) {
+      if (tool.name) namespaces.add(tool.name);
+      for (const sub of tool.tools) {
+        if (!sub?.name) continue;
+        names.add(sub.name);
+        if (tool.name) subtools.set(sub.name, tool.name);
+      }
+    } else if (typeof tool.name === "string" && tool.name) {
+      names.add(tool.name);
+    }
+  }
+  state._declaredTools = { names, namespaces, subtools };
+  return state._declaredTools;
+}
+
+function warnUnresolvedToolName(state, emitted, reason, declared) {
+  state._warnedToolNames ||= new Set();
+  if (state._warnedToolNames.has(emitted)) return;
+  state._warnedToolNames.add(emitted);
+  console.warn(`[RESPONSES] unresolved tool-call name "${emitted}" (${reason}) — forwarding unchanged`, {
+    emitted,
+    reason,
+    declared: declared?.names ? [...declared.names] : null,
+    declaredNamespaces: declared?.namespaces ? [...declared.namespaces] : null
+  });
+}
+
+function splitToolName(name, state) {
+  if (typeof name !== "string") return { name: name || "", namespace: null };
+  const declared = declaredTools(state);
+
+  // 1. Exact match against a name this request declared -> pass through unchanged.
+  if (declared.names.has(name)) return { name, namespace: null };
+
+  // 2. Reverse-translate a name we sanitized on the way out (dots -> `__`). State-scoped
+  // first (per-request), globalThis mirror only as a legacy fallback.
+  const mapped = state?.toolNameMap?.get?.(name) || globalThis.__CB_TOOL_MAP__?.[name] || null;
+  const full = mapped || name;
+  if (mapped && full.includes(TOOL_NAME_PREFIX_SEPARATOR)) {
+    // The dotted form is ours (restored from the request's own declaration), so splitting
+    // it is authoritative rather than a guess.
+    const dot = full.indexOf(TOOL_NAME_PREFIX_SEPARATOR);
+    return {
+      name: full.slice(dot + 1),
+      namespace: full.slice(0, dot)
+    };
+  }
+
+  // 3. Declared-name canonicalization: try each dotted suffix of the emitted name. This is
+  // what absorbs provider-injected prefixes (`functions.exec` -> declared `exec`) without a
+  // hardcoded alias table — the suffix must match a name the request declared.
+  const parts = full.split(TOOL_NAME_PREFIX_SEPARATOR);
+  for (let i = 0; i < parts.length; i++) {
+    const candidate = parts.slice(i).join(TOOL_NAME_PREFIX_SEPARATOR);
+    if (!declared.names.has(candidate)) continue;
+    const ns = declared.subtools.get(candidate) || (i > 0 ? parts[i - 1] : null);
+    return { name: candidate, namespace: ns && declared.namespaces.has(ns) ? ns : null };
+  }
+
+  // 4. Flat name that is a declared namespace sub-tool (legacy __CB_NS_TOOLS__ path, for
+  // pipelines that reach here without the request body).
+  const legacyNs = globalThis.__CB_NS_TOOLS__?.[full];
+  if (legacyNs) return { name: full, namespace: legacyNs };
+
+  // 5. Bare declared namespace name (e.g. `functions`, `collaboration`): the provider
+  // emitted the group itself with no sub-tool, so there is nothing to route to.
+  if (declared.namespaces.has(full)) {
+    warnUnresolvedToolName(state, name, "emitted bare namespace name without a sub-tool", declared);
+    return { name: full, namespace: null };
+  }
+
+  // 6. No match -> structured warn, forward unchanged.
+  warnUnresolvedToolName(state, name, "no declared tool name matches", declared);
+  return { name: full, namespace: null };
+}
+
 /**
  * Translate OpenAI chunk to Responses API events
  * @returns {Array} Array of events with { event, data } structure
@@ -295,7 +392,7 @@ function emitToolCall(state, emit, tc) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: "" } : { arguments: "" }),
         call_id: callId,
-        name: state.funcNames[tcIdx] || ""
+        ...splitToolName(state.funcNames[tcIdx] || "", state)
       }
     });
   }
@@ -356,7 +453,7 @@ function closeToolCall(state, emit, idx) {
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
         ...(custom ? { input: extractCustomToolInput(args) } : { arguments: args }),
         call_id: callId,
-        name: state.funcNames[idx] || ""
+        ...splitToolName(state.funcNames[idx] || "", state)
       }
     });
 
