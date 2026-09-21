@@ -112,6 +112,8 @@ export const MODEL_CAPABILITIES = {
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai", contextWindow: 1000000, maxOutput: 131072 },
   "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
   "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
+  // GLM-5.2 has 1M context — pattern *glm-5* only gives 200k, so override here
+  "glm-5.2":           { reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
 
   // DeepSeek's first V4 model with image input; text limits match V4-Flash.
   "deepseek-v4-flash-vision-exp": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
@@ -211,6 +213,10 @@ export const PROVIDER_CAPABILITIES = {
     "minimax-m3":         { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 128000 },
     "kimi-k2.7":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 32000 },
     "kimi-k2.6":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 32000 },
+    "kimi-k2.5":          { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 164000, maxOutput: 32000 },
+    "hy3-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 192000, maxOutput: 64000 },
+    "deepseek-v4-flash":  { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 50000 },
+    "deepseek-v3-2-volc": { reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 96000, maxOutput: 32000 },
     // Per-model values mirror the server's product-config payload (the plugin
     // fetches it from copilot.tencent.com; the `models[]` entries carry
     // maxInputTokens/maxOutputTokens/supportsImages). contextWindow =
@@ -231,45 +237,6 @@ export const PROVIDER_CAPABILITIES = {
     // the old endpoint still answers 200 but the published list is the
     // contract). maxOutput 128000 per the server's product-config payload.
     "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
-  },
-  // CodeBuddy intl — same gateway catalog as CN, so deepseek-v4.1-flash mirrors
-  // the codebuddy-cn entry (the openai-style reasoning_effort format matters:
-  // the generic *deepseek-v4* pattern would otherwise pick the vendor-native
-  // "deepseek" thinking shape, which the CodeBuddy gateway does not accept).
-  "codebuddy-intl": {
-    "deepseek-v4.1-flash": { vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
-  },
-  // Qoder — upstream exposes opaque internal ids (dfmodel, kmodel, …); the
-  // registry `name` is display-only and capability lookup matches on the raw
-  // id, so every qoder model would fall through to DEFAULT_CAPABILITIES
-  // (200K) without this map. contextWindow follows the real model family's
-  // spec: the /algo/api/v2/model/list max_input_tokens under-reports some
-  // windows (GLM-5.3 / Kimi-K3 / Qwen3.8-Max claim 180K but accept more).
-  // max_output_tokens arrives as 0 for every model, so outputs are
-  // best-guess from the real model family. Vision tags below follow the
-  // upstream is_vl flag. The executor uploads inlined images to
-  // /api/v2/image/upload and leaves image_urls/chat_context.imageUrls null
-  // (same as qodercli). reasoning:true on all of them — every model can
-  // reason; the upstream is_reasoning flag only drives model_config selection.
-  // thinkingFormat keeps the true-model family for documentation/UI, but
-  // thinkingCanDisable:false everywhere: the executor only forwards
-  // messages/tools/max_tokens, and thinking is fixed upstream via
-  // modelConfig.is_reasoning — client thinking intent is dropped, so "none"
-  // must never be offered as an option.
-  "qoder": {
-    "ultimate":       { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Opus 5
-    "performance":    { vision: true, reasoning: true, thinkingFormat: "claude-adaptive", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // Claude Sonnet 5
-    "dmodel":         { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Pro
-    "dfmodel":        { reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // DeepSeek-V4-Flash
-    "gmodel":         { reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },      // GLM-5.3
-    "gfmodel":        { vision: true, reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 }, // GLM-5.3-Flash
-    "kmodel_latest":  { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Kimi-K3
-    "kmodel":         { vision: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 256000, maxOutput: 65536 },  // Kimi-K2.7-Code
-    "mmodel":         { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 512000 }, // MiniMax-M3
-    "qmodel_latest":  { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Max
-    "qmodel":         { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.7-Plus
-    "qfmodel":        { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },  // Qwen3.8-Flash
-    "qmodel_38max":   { vision: true, reasoning: true, thinkingFormat: "qwen", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 65536 },      // Qwen3.8-Max
   },
   // Poolside Laguna — OpenAI-compatible, all reasoning-capable (32K max output).
   "poolside": {
@@ -357,7 +324,7 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
-  { pattern: "*qwen*max*",      caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
+  { pattern: "*qwen*max*",      caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.5*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.6*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
   { pattern: "*qwen3.7*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000, maxOutput: 65536 } },
@@ -396,14 +363,15 @@ export const PATTERN_CAPABILITIES = [
 
   // ── MiniMax (M3 = adaptive; M2.x cannot disable) ─────────────────
   { pattern: "*minimax*image*", caps: { imageOutput: true } },
-  { pattern: "*minimax-m3*",    caps: { vision: true, reasoning: true, thinkingFormat: "minimax", contextWindow: 1048576, maxOutput: 512000 } },
-  { pattern: "*minimax-m2.7*",  caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
+  { pattern: "*minimax-m3*",    caps: { vision: true, reasoning: true, thinkingFormat: "minimax", contextWindow: 1000000, maxOutput: 131072 } },
+  { pattern: "*minimax-m2.7*",  caps: { vision: true, reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
+  { pattern: "*minimax-m2.5*",  caps: { vision: true, reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 204800, maxOutput: 131072 } },
   { pattern: "*minimax*",       caps: { reasoning: true, thinkingFormat: "minimax", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 } },
 
-  // ── Xiaomi MiMo (vision, 1M / 262K ctx) ──────────────────────────
-  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, contextWindow: 1048576, maxOutput: 131072 } },
-  { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, contextWindow: 262144, maxOutput: 131072 } },
-  { pattern: "*mimo*",          caps: { vision: true, contextWindow: 262144, maxOutput: 131072 } },
+  // ── Xiaomi MiMo (vision + <think>-tag reasoning, always-on, can't disable) ──
+  { pattern: "*mimo*v2.5*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 1048576, maxOutput: 131072 } },
+  { pattern: "*mimo*omni*",     caps: { vision: true, audioInput: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 131072 } },
+  { pattern: "*mimo*",          caps: { vision: true, reasoning: true, thinkingFormat: "deepseek", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 131072 } },
 
   // ── Llama (4 = vision/1M; 3.x = text-only/128K) ──────────────────
   { pattern: "*llama-4*",       caps: { vision: true, contextWindow: 1000000 } },
@@ -440,6 +408,52 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
+
+/**
+ * Aggregate capabilities for a combo from its constituent model IDs.
+ * Each entry in comboModels is a fully-qualified "provider/model" string.
+ *
+ * Union:        vision, pdf, audioInput, videoInput, imageOutput, audioOutput, search
+ * Intersection: tools
+ * Primary:      reasoning fields from the first (primary) model
+ * Conservative: contextWindow = min; maxOutput = max
+ *
+ * @param {string[]} comboModels
+ * @param {Object|null} [comboLookup] optional map of combo name → models array for nested resolution
+ * @param {number} [_depth] internal recursion depth guard
+ * @returns {object|null} full capabilities object, or null for empty input
+ */
+export function aggregateComboCapabilities(comboModels, comboLookup = null, _depth = 0) {
+  if (!comboModels?.length || _depth > 6) return null;
+  const allCaps = comboModels.map((fullId) => {
+    // Nested combo: bare name (no slash) that exists in the lookup — recurse
+    if (!fullId.includes("/") && comboLookup?.[fullId]) {
+      return aggregateComboCapabilities(comboLookup[fullId], comboLookup, _depth + 1)
+          ?? getCapabilitiesForModel(null, fullId);
+    }
+    const slash = fullId.indexOf("/");
+    const provider = slash === -1 ? null : fullId.slice(0, slash);
+    const model = slash === -1 ? fullId : fullId.slice(slash + 1);
+    return getCapabilitiesForModel(provider, model);
+  });
+  const first = allCaps[0];
+  return {
+    vision:      allCaps.some((c) => c.vision),
+    pdf:         allCaps.some((c) => c.pdf),
+    audioInput:  allCaps.some((c) => c.audioInput),
+    videoInput:  allCaps.some((c) => c.videoInput),
+    imageOutput: allCaps.some((c) => c.imageOutput),
+    audioOutput: allCaps.some((c) => c.audioOutput),
+    search:      allCaps.some((c) => c.search),
+    tools:       allCaps.every((c) => c.tools),
+    reasoning:          first.reasoning,
+    thinkingFormat:     first.thinkingFormat,
+    thinkingCanDisable: first.thinkingCanDisable,
+    thinkingRange:      first.thinkingRange,
+    contextWindow: Math.min(...allCaps.map((c) => c.contextWindow)),
+    maxOutput:     Math.max(...allCaps.map((c) => c.maxOutput)),
+  };
+}
 
 /**
  * Resolve capabilities for a model using the 4-step fallback chain,
