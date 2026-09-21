@@ -295,8 +295,16 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {
+      // Structured error chunks may carry the real upstream status (e.g. the
+      // Qoder executor emits status 403 for billing envelopes). Preserve it so
+      // the account loop locks/falls back on the right status instead of a
+      // generic 502. Anything outside 400-599 still maps to 502.
+      const upstreamStatus = Number(parsed.error.status);
+      const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
+        ? upstreamStatus
+        : HTTP_STATUS.BAD_GATEWAY;
       return createErrorResult(
-        HTTP_STATUS.BAD_GATEWAY,
+        status,
         parsed.error.message || "Upstream SSE stream failed"
       );
     }

@@ -336,13 +336,21 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
 
 /**
  * Check if a qoder error message indicates a billing/quota block.
- * Signatures: code 112 (quota exhausted), code 10605 (queue throttle), pricingUrl field.
+ * Signatures: code 110 (billing daily count exceeded), code 112 (quota
+ * exhausted), code 10605 (queue throttle), pricingUrl field.
  */
 function isBillingBlock(inner) {
   if (!inner || typeof inner !== "string") return false;
   const lowerMsg = inner.toLowerCase();
-  // Match: {"code":"112",...}, {"code":"10605",...}, or pricingUrl field
-  return /\"code\"\s*:\s*\"(112|10605)\"/.test(inner) || lowerMsg.includes("pricingurl");
+  if (lowerMsg.includes("pricingurl")) return true;
+  // Parsed code preferred over regex: matches numeric or string "110"/"112"/"10605".
+  try {
+    const parsed = JSON.parse(inner);
+    const code = String(parsed?.code ?? "");
+    if (code === "110" || code === "112" || code === "10605") return true;
+  } catch { /* not JSON — fall through to legacy shape match */ }
+  // Match legacy exact shapes: {"code":"112",...}, {"code":"10605",...}.
+  return /"code"\s*:\s*"(112|10605)"/.test(inner);
 }
 
 /**
@@ -369,10 +377,11 @@ async function peekFirstQoderFrame(reader, decoder) {
 
     let envelope;
     try { envelope = JSON.parse(data); } catch { return { isBilling: false, consumed }; }
-
-    const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
-    const inner = typeof envelope.body === "string" ? envelope.body : "";
-
+    // statusCodeValue is documented numeric, but accept numeric strings defensively.
+    const statusVal = Number(envelope.statusCodeValue) || 200;
+    const inner = typeof envelope.body === "string"
+      ? envelope.body
+      : envelope.body != null ? JSON.stringify(envelope.body) : "";
     if (statusVal !== 200 && isBillingBlock(inner)) {
       return { isBilling: true, statusVal, message: inner || `qoder billing block (${statusVal})` };
     }
@@ -404,7 +413,7 @@ async function peekFirstQoderFrame(reader, decoder) {
  * If detected, return 403 response so chatCore marks connection unavailable
  * and triggers combo fallback instead of leaking error text into chat.
  */
-async function wrapQoderSSE(response, model) {
+async function wrapQoderSSE(response, model, log = null) {
   if (!response.ok || !response.body) return response;
 
   const decoder = new TextDecoder();
@@ -448,11 +457,35 @@ async function wrapQoderSSE(response, model) {
 
     let envelope;
     try { envelope = JSON.parse(data); } catch { return; }
-    const statusVal = typeof envelope.statusCodeValue === "number" ? envelope.statusCodeValue : 200;
+    const statusVal = Number(envelope.statusCodeValue) || 200;
     const inner = typeof envelope.body === "string"
       ? envelope.body
       : envelope.body != null ? JSON.stringify(envelope.body) : "";
     if (statusVal !== 200) {
+      // Always visible: error envelopes are rare and worth one stderr line at
+        // any log level (response bodies carry no credentials).
+      try {
+        console.error(`[QODER] error envelope status=${statusVal} statusType=${typeof envelope.statusCodeValue} bodyType=${typeof envelope.body} body=${truncate(inner, 300)}`);
+      } catch { /* logging must not break the stream */ }
+      if (isBillingBlock(inner)) {
+        // Billing/quota envelope at any stream position (peek only covers the
+        // first frame): emit a structured error chunk, not fake assistant text.
+        // parseSSEToOpenAIResponse understands chunk.error and turns it into a
+        // non-200 result so chat.js locks the model and falls back. Streaming
+        // clients receive a real SSE error instead of "[qoder error ...]" text.
+        const errObj = JSON.stringify({
+          error: {
+            message: inner || `qoder billing block (${statusVal})`,
+            code: "qoder_billing_block",
+            status: 403,
+            type: "quota_error",
+          },
+        });
+        controller.enqueue(encoder.encode(`data: ${errObj}\n\n`));
+        controller.enqueue(encoder.encode(SSE_DONE));
+        doneEmitted = true;
+        return;
+      }
       const msg = inner || `upstream status ${statusVal}`;
       const errChunk = JSON.stringify({
         id: `qoder-error-${Date.now()}`,
@@ -676,7 +709,7 @@ export class QoderExecutor extends BaseExecutor {
       return { response, url, headers, transformedBody: payload };
     }
 
-    const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`);
+    const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`, log);
     return { response: wrapped, url, headers, transformedBody: payload };
   }
 
