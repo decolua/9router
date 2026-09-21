@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "點擊新增，再次點擊移除。變更將自動儲存。",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 風險提示：此提供商使用的訂閱/OAuth 工作階段未獲官方授權用於代理/路由器使用。帳戶可能被限制或封禁。使用風險自負。",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM 透過本地 CA 攔截 IDE 工具（Antigravity、GitHub Copilot、Kiro）的 HTTPS 流量，將請求重新導向到您的提供商。可能違反 ToS → 帳戶封禁風險。使用風險自負。",
-  "Endpoint is exposed without an API key.": "端點未設定 API 金鑰即對外暴露。"
+  "Endpoint is exposed without an API key.": "端點未設定 API 金鑰即對外暴露。",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "兩種連接方式：使用 OrcaRouter 帳號登入，或貼上既有的 API key。兩者最終都會得到一個計入你自己帳戶的普通 OrcaRouter key。",
+  "OrcaRouter API key": "OrcaRouter API key",
+  "Authorization code": "授權碼",
+  "Sign in with OrcaRouter": "使用 OrcaRouter 登入",
+  "Paste the code from the OrcaRouter page": "貼上 OrcaRouter 頁面上的代碼",
+  "Create or revoke keys in the": "在以下位置建立或撤銷 key：",
+  "Capability": "能力",
+  "Select an OrcaRouter model": "選擇 OrcaRouter 模型",
+  "Live catalog": "即時目錄",
+  "Live catalog unavailable — verified offline list": "即時目錄無法使用 — 已驗證的離線清單",
+  "No OrcaRouter models match this capability or input type.": "沒有符合此能力或輸入類型的 OrcaRouter 模型。",
+  "Add an OrcaRouter connection first.": "請先新增 OrcaRouter 連線。",
+  "Images": "圖像",
+  "Loading models…": "正在載入模型…"
 }

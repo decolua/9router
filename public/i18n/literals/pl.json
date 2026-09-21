@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Kliknij, aby dodać, kliknij ponownie, aby usunąć. Zmiany są zapisywane automatycznie.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Ostrzeżenie o ryzyku: Ten dostawca używa sesji subskrypcji/OAuth, która nie jest oficjalnie licencjonowana do użytku proxy/routera. Konto może zostać ograniczone lub zbanowane. Używaj na własne ryzyko.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM przechwytuje ruch HTTPS narzędzi IDE (Antigravity, GitHub Copilot, Kiro) przez lokalne CA, aby przekierować żądania do twoich dostawców. Może naruszyć ToS → ryzyko zbanowania konta. Używaj na własne ryzyko.",
-  "Endpoint is exposed without an API key.": "Punkt końcowy jest dostępny bez klucza API."
+  "Endpoint is exposed without an API key.": "Punkt końcowy jest dostępny bez klucza API.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Dwa sposoby połączenia: zaloguj się na konto OrcaRouter lub wklej istniejący klucz API. Oba dają zwykły klucz OrcaRouter rozliczany na Twoim koncie.",
+  "OrcaRouter API key": "Klucz API OrcaRouter",
+  "Authorization code": "Kod autoryzacji",
+  "Sign in with OrcaRouter": "Zaloguj się przez OrcaRouter",
+  "Paste the code from the OrcaRouter page": "Wklej kod ze strony OrcaRouter",
+  "Create or revoke keys in the": "Twórz lub unieważniaj klucze w",
+  "Capability": "Możliwość",
+  "Select an OrcaRouter model": "Wybierz model OrcaRouter",
+  "Live catalog": "Katalog na żywo",
+  "Live catalog unavailable — verified offline list": "Katalog na żywo niedostępny — zweryfikowana lista offline",
+  "No OrcaRouter models match this capability or input type.": "Żaden model OrcaRouter nie pasuje do tej możliwości ani typu danych wejściowych.",
+  "Add an OrcaRouter connection first.": "Najpierw dodaj połączenie OrcaRouter.",
+  "Images": "Obrazy",
+  "Loading models…": "Ładowanie modeli…"
 }

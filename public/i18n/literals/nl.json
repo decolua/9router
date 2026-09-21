@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Klik om toe te voegen, klik opnieuw om te verwijderen. Wijzigingen worden automatisch opgeslagen.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Risicokennisgeving: Deze provider gebruikt een abonnement/OAuth-sessie die niet officieel is gelicentieerd voor proxy/router-gebruik. Account kan worden beperkt of verbannen. Gebruik op eigen risico.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM onderschept HTTPS-verkeer van IDE-tools (Antigravity, GitHub Copilot, Kiro) via lokale CA om verzoeken om te leiden naar uw providers. Kan ToS schenden → risico op accountban. Gebruik op eigen risico.",
-  "Endpoint is exposed without an API key.": "Het eindpunt is blootgesteld zonder API-sleutel."
+  "Endpoint is exposed without an API key.": "Het eindpunt is blootgesteld zonder API-sleutel.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Twee manieren om te verbinden: log in met uw OrcaRouter-account of plak een bestaande API-sleutel. Beide leveren een normale OrcaRouter-sleutel op die op uw eigen account wordt gefactureerd.",
+  "OrcaRouter API key": "OrcaRouter API-sleutel",
+  "Authorization code": "Autorisatiecode",
+  "Sign in with OrcaRouter": "Inloggen met OrcaRouter",
+  "Paste the code from the OrcaRouter page": "Plak de code van de OrcaRouter-pagina",
+  "Create or revoke keys in the": "Maak of trek sleutels in bij",
+  "Capability": "Mogelijkheid",
+  "Select an OrcaRouter model": "Selecteer een OrcaRouter-model",
+  "Live catalog": "Live-catalogus",
+  "Live catalog unavailable — verified offline list": "Live-catalogus niet beschikbaar — geverifieerde offlinelijst",
+  "No OrcaRouter models match this capability or input type.": "Geen OrcaRouter-modellen komen overeen met deze mogelijkheid of dit invoertype.",
+  "Add an OrcaRouter connection first.": "Voeg eerst een OrcaRouter-verbinding toe.",
+  "Images": "Afbeeldingen",
+  "Loading models…": "Modellen laden…"
 }

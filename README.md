@@ -387,6 +387,10 @@ Default URLs:
   <table>
     <tr>
       <td align="center" width="100">
+        <img src="./public/providers/orcarouter.png" width="50" alt="OrcaRouter"/><br/>
+        <sub>OrcaRouter</sub>
+      </td>
+      <td align="center" width="100">
         <img src="./public/providers/openrouter.png" width="50" alt="OpenRouter"/><br/>
         <sub>OpenRouter</sub>
       </td>

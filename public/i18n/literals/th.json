@@ -1389,5 +1389,19 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ ประกาศความเสี่ยง: Provider นี้ใช้ subscription/OAuth session ที่ไม่ได้รับอนุญาตอย่างเป็นทางการสำหรับการใช้งาน proxy/router บัญชีอาจถูกจำกัดหรือแบน ใช้ด้วยความเสี่ยงของคุณเอง",
   "✓ Confirm Add": "✓ ยืนยันการเพิ่ม",
   "📝 Configure providers in dashboard or use environment variables": "📝 กำหนดค่า providers ใน dashboard หรือใช้ environment variables",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 ต้องใช้ OAuth เพิ่มตอนนี้แล้ว authenticate หลัง Apply; รายการเครื่องมือจะถูกค้นพบหลังการเชื่อมต่อครั้งแรก"
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 ต้องใช้ OAuth เพิ่มตอนนี้แล้ว authenticate หลัง Apply; รายการเครื่องมือจะถูกค้นพบหลังการเชื่อมต่อครั้งแรก",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "สองวิธีในการเชื่อมต่อ: ลงชื่อเข้าใช้ด้วยบัญชี OrcaRouter ของคุณ หรือวาง API key ที่มีอยู่ ทั้งสองวิธีให้คีย์ OrcaRouter ปกติที่เรียกเก็บเงินกับบัญชีของคุณเอง",
+  "OrcaRouter API key": "API key ของ OrcaRouter",
+  "Authorization code": "รหัสการอนุญาต",
+  "Sign in with OrcaRouter": "ลงชื่อเข้าใช้ด้วย OrcaRouter",
+  "Paste the code from the OrcaRouter page": "วางรหัสจากหน้า OrcaRouter",
+  "Create or revoke keys in the": "สร้างหรือเพิกถอนคีย์ได้ที่",
+  "Capability": "ความสามารถ",
+  "Select an OrcaRouter model": "เลือกโมเดล OrcaRouter",
+  "Live catalog": "แค็ตตาล็อกสด",
+  "Live catalog unavailable — verified offline list": "แค็ตตาล็อกสดไม่พร้อมใช้งาน — รายการออฟไลน์ที่ตรวจสอบแล้ว",
+  "No OrcaRouter models match this capability or input type.": "ไม่มีโมเดล OrcaRouter ที่ตรงกับความสามารถหรือประเภทอินพุตนี้",
+  "Add an OrcaRouter connection first.": "เพิ่มการเชื่อมต่อ OrcaRouter ก่อน",
+  "Images": "รูปภาพ",
+  "Loading models…": "กำลังโหลดโมเดล…"
 }

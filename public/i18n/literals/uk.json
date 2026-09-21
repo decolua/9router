@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Натисніть, щоб додати, натисніть ще раз, щоб видалити. Зміни зберігаються автоматично.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Сповіщення про ризик: Цей провайдер використовує сесію підписки/OAuth, яка офіційно не ліцензована для використання через проксі/маршрутизатор. Обліковий запис може бути обмежений або заблокований. Використовуйте на свій страх і ризик.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM перехоплює HTTPS-трафік IDE-інструментів (Antigravity, GitHub Copilot, Kiro) через локальний CA для перенаправлення запитів до ваших провайдерів. Може порушити ToS → ризик блокування облікового запису. Використовуйте на свій страх і ризик.",
-  "Endpoint is exposed without an API key.": "Кінцеву точку відкрито без API-ключа."
+  "Endpoint is exposed without an API key.": "Кінцеву точку відкрито без API-ключа.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Два способи підключення: увійдіть у свій обліковий запис OrcaRouter або вставте наявний ключ API. Обидва дають звичайний ключ OrcaRouter, що оплачується з вашого акаунта.",
+  "OrcaRouter API key": "Ключ API OrcaRouter",
+  "Authorization code": "Код авторизації",
+  "Sign in with OrcaRouter": "Увійти через OrcaRouter",
+  "Paste the code from the OrcaRouter page": "Вставте код зі сторінки OrcaRouter",
+  "Create or revoke keys in the": "Створюйте або відкликайте ключі в",
+  "Capability": "Можливість",
+  "Select an OrcaRouter model": "Виберіть модель OrcaRouter",
+  "Live catalog": "Актуальний каталог",
+  "Live catalog unavailable — verified offline list": "Актуальний каталог недоступний — перевірений офлайн-список",
+  "No OrcaRouter models match this capability or input type.": "Жодна модель OrcaRouter не відповідає цій можливості чи типу введення.",
+  "Add an OrcaRouter connection first.": "Спочатку додайте підключення OrcaRouter.",
+  "Images": "Зображення",
+  "Loading models…": "Завантаження моделей…"
 }

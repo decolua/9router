@@ -123,6 +123,7 @@ import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
 import p122 from "./xquik.js";
+import p124 from "./orcarouter.js";
 export default [
   p0,
   p1,
@@ -246,4 +247,7 @@ export default [
   p120,
   p121,
   p122,
+  // p123 is ollama-search: imported above but intentionally omitted here, matching
+  // the upstream registry (it is reachable through its own route, not as a provider).
+  p124,
 ];

@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "انقر للإضافة، انقر مرة أخرى للإزالة. يتم حفظ التغييرات تلقائيًا.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ تنبيه مخاطر: يستخدم هذا الموفر اشتراكًا/جلسة OAuth غير مرخصة رسميًا للاستخدام عبر البروكسي/الراوتر. قد يتم تقييد الحساب أو حظره. الاستخدام على مسؤوليتك الخاصة.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ يعترض MITM حركة مرور HTTPS لأدوات IDE (Antigravity، GitHub Copilot، Kiro) عبر CA محلية لإعادة توجيه الطلبات إلى مزوديك. قد ينتهك شروط الخدمة → خطر حظر الحساب. الاستخدام على مسؤوليتك الخاصة.",
-  "Endpoint is exposed without an API key.": "نقطة النهاية مكشوفة بدون مفتاح API."
+  "Endpoint is exposed without an API key.": "نقطة النهاية مكشوفة بدون مفتاح API.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "طريقتان للاتصال: سجّل الدخول بحساب OrcaRouter الخاص بك، أو الصق مفتاح API موجودًا. كلاهما ينتج مفتاح OrcaRouter عاديًا يُحاسَب على حسابك.",
+  "OrcaRouter API key": "مفتاح API الخاص بـ OrcaRouter",
+  "Authorization code": "رمز التفويض",
+  "Sign in with OrcaRouter": "تسجيل الدخول باستخدام OrcaRouter",
+  "Paste the code from the OrcaRouter page": "الصق الرمز من صفحة OrcaRouter",
+  "Create or revoke keys in the": "أنشئ المفاتيح أو ألغِها في",
+  "Capability": "القدرة",
+  "Select an OrcaRouter model": "اختر نموذج OrcaRouter",
+  "Live catalog": "الكتالوج المباشر",
+  "Live catalog unavailable — verified offline list": "الكتالوج المباشر غير متاح — قائمة دون اتصال موثّقة",
+  "No OrcaRouter models match this capability or input type.": "لا توجد نماذج OrcaRouter تطابق هذه القدرة أو نوع الإدخال.",
+  "Add an OrcaRouter connection first.": "أضف اتصال OrcaRouter أولاً.",
+  "Images": "الصور",
+  "Loading models…": "جارٍ تحميل النماذج…"
 }

@@ -6,6 +6,7 @@ import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { useOrcaRouterCatalog } from "@/shared/hooks/useOrcaRouterCatalog";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
@@ -116,6 +117,20 @@ export default function ModelSelectModal({
   const cursorModels = useLiveProviderModels(isOpen, cursorConnectionIds, "Cursor");
   const clineModels = useLiveProviderModels(isOpen, clineConnectionIds, "Cline");
   const clinepassModels = useLiveProviderModels(isOpen, clinepassConnectionIds, "ClinePass");
+
+  // OrcaRouter: capability-scoped catalog. `kindFilter` selects the entry point
+  // and `capFilter` on the vision capability is how callers declare that the
+  // request carries an image, so the model list is recomputed when either moves.
+  const orcaCapability = kindFilter === "embedding" ? "embedding"
+    : kindFilter === "image" ? "image"
+    : kindFilter === "video" ? "video"
+    : "chat";
+  const orcaModality = capFilter === "vision" ? "image" : null;
+  const orcaConnectionIds = useMemo(
+    () => activeProviders.filter((p) => p?.provider === "orcarouter").map((p) => p.id),
+    [activeProviders]
+  );
+  const orcaCatalog = useOrcaRouterCatalog(isOpen, orcaConnectionIds, orcaCapability, orcaModality);
 
   const fetchCombos = async () => {
     try {
@@ -241,6 +256,27 @@ export default function ModelSelectModal({
         return;
       }
 
+      // OrcaRouter resolves first: its capability-filtered live catalog is
+      // authoritative and must win over the passthrough branch below, which only
+      // knows locally-registered aliases. An empty slice exposes no options at
+      // all rather than degrading to free text.
+      if (providerId === "orcarouter") {
+        const live = orcaCatalog.models;
+        if (live.length > 0) {
+          groups[providerId] = {
+            name: providerInfo.name,
+            alias,
+            color: providerInfo.color,
+            models: live.map((m) => ({
+              id: m.id,
+              name: m.name || m.id,
+              value: `${alias}/${m.id}`,
+            })),
+          };
+        }
+        return;
+      }
+
       if (providerInfo.passthroughModels) {
         const aliasModels = Object.entries(modelAliases)
           .filter(([, fullModel]) => fullModel.startsWith(`${alias}/`))
@@ -348,7 +384,10 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : [];
+        const liveModels = providerId === "cursor" ? cursorModels
+          : providerId === "cline" ? clineModels
+          : providerId === "clinepass" ? clinepassModels
+          : [];
         const hardcodedModels = liveModels.length > 0
           ? liveModels
           : getModelsByProviderId(providerId);
@@ -420,7 +459,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels, orcaCatalog]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -445,7 +484,10 @@ export default function ModelSelectModal({
     Object.entries(groupedModels).forEach(([providerId, group]) => {
       let models = group.models;
       // Filter by input-modality capability (vision/pdf/audioInput/videoInput).
-      if (capFilter) {
+      // OrcaRouter's server already narrowed options to models that explicitly
+      // declare the requested modality, so re-applying it would drop them all
+      // (their catalog metadata is not in the local capability tables).
+      if (capFilter && providerId !== "orcarouter") {
         models = models.filter((m) => getCaps(m.value)?.[capFilter] === true);
         if (models.length === 0) return;
       }
@@ -466,6 +508,30 @@ export default function ModelSelectModal({
 
     return filtered;
   }, [groupedModels, searchQuery, addedModelValues]);
+
+  // A selected model that the current capability/modality slice no longer
+  // contains must be dropped, not silently kept as an invalid value. The server
+  // already applied the modality rule for OrcaRouter, so `capFilter` is only
+  // re-applied here for providers whose catalog carries no modality metadata.
+  useEffect(() => {
+    if (!isOpen || !selectedModel || !onDeselect) return;
+    const known = Object.values(groupedModels).some((group) =>
+      group.models.some((m) => m.value === selectedModel || m.id === selectedModel)
+    );
+    if (!known) onDeselect({ value: selectedModel, id: selectedModel, name: selectedModel });
+  }, [isOpen, selectedModel, groupedModels, onDeselect]);
+
+  // OrcaRouter visibility for this panel: which catalog slice is on screen, and
+  // whether it failed to load rather than legitimately matching nothing.
+  const orcaCatalogForPanel = useMemo(() => {
+    const active = filteredActiveProviders.some((p) => p?.provider === "orcarouter");
+    const models = orcaCatalog.models;
+    return {
+      models,
+      degraded: orcaCatalog.degraded,
+      empty: active && models.length === 0 && orcaCatalog.degraded && orcaCatalog.loaded,
+    };
+  }, [filteredActiveProviders, orcaCatalog]);
 
   const handleSelect = (model) => {
     const value = model?.value || model?.name || model;
@@ -552,6 +618,35 @@ export default function ModelSelectModal({
                 );
               })}
             </div>
+          </div>
+        )}
+
+        {/* OrcaRouter catalog state: a degraded (fallback) list is labelled rather
+            than presented as live discovery, and an empty slice says so instead of
+            falling back to a free-text model id. */}
+        {orcaCatalogForPanel.models.length > 0 && orcaCatalogForPanel.degraded && (
+          <div
+            className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-amber-500/10 border border-amber-500/30 rounded-lg text-xs text-text-muted"
+            data-testid="orca-catalog-degraded"
+          >
+            <span className="material-symbols-outlined text-amber-500 shrink-0" style={{ fontSize: "14px" }}>cloud_off</span>
+            <span>
+              OrcaRouter live catalog unavailable — showing a verified offline list. Refresh to retry.
+            </span>
+          </div>
+        )}
+        {orcaCatalogForPanel.empty && (
+          <div
+            className="flex flex-col items-center gap-1 py-6 text-center"
+            data-testid="orca-catalog-empty"
+          >
+            <span className="material-symbols-outlined text-text-muted" style={{ fontSize: "22px" }}>search_off</span>
+            <p className="text-xs text-text-muted">
+              No OrcaRouter models match this capability or input type.
+            </p>
+            <p className="text-[10px] text-text-muted">
+              Add an OrcaRouter key, or pick a different capability, then reopen this list.
+            </p>
           </div>
         )}
 

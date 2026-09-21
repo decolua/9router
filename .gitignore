@@ -101,3 +101,6 @@ graphify-out/*
 .start-dev.ps1
 start-dev-silent.cjs
 debug.log
+
+# Generated UI evidence (produced by scripts/capture-orca-evidence.py, never committed)
+/orca-evidence/

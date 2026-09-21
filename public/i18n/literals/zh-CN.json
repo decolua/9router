@@ -1390,5 +1390,19 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 风险提示：此提供商使用的订阅/OAuth 会话未获官方授权用于代理/路由器使用。账户可能被限制或封禁。使用风险自负。",
   "✓ Confirm Add": "✓ 确认添加",
   "📝 Configure providers in dashboard or use environment variables": "📝 在仪表盘中配置提供商或使用环境变量",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 需要 OAuth。立即添加并在应用后认证；工具列表将在首次连接后自动发现。"
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 需要 OAuth。立即添加并在应用后认证；工具列表将在首次连接后自动发现。",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "两种连接方式：使用 OrcaRouter 账号登录，或粘贴已有的 API key。两者最终都会得到一个计入你自己账户的普通 OrcaRouter key。",
+  "OrcaRouter API key": "OrcaRouter API key",
+  "Authorization code": "授权码",
+  "Sign in with OrcaRouter": "使用 OrcaRouter 登录",
+  "Paste the code from the OrcaRouter page": "粘贴 OrcaRouter 页面上的代码",
+  "Create or revoke keys in the": "在以下位置创建或撤销 key：",
+  "Capability": "能力",
+  "Select an OrcaRouter model": "选择 OrcaRouter 模型",
+  "Live catalog": "实时目录",
+  "Live catalog unavailable — verified offline list": "实时目录不可用 — 已验证的离线列表",
+  "No OrcaRouter models match this capability or input type.": "没有符合此能力或输入类型的 OrcaRouter 模型。",
+  "Add an OrcaRouter connection first.": "请先添加 OrcaRouter 连接。",
+  "Images": "图像",
+  "Loading models…": "正在加载模型…"
 }

@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "जोड़ने के लिए क्लिक करें, हटाने के लिए फिर से क्लिक करें। परिवर्तन स्वचालित रूप से सहेजे जाते हैं।",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ जोखिम सूचना: यह प्रदाता एक सब्सक्रिप्शन/OAuth सत्र का उपयोग करता है जो प्रॉक्सी/राउटर उपयोग के लिए आधिकारिक रूप से लाइसेंस प्राप्त नहीं है। खाता प्रतिबंधित या बैन हो सकता है। अपने जोखिम पर उपयोग करें।",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM स्थानीय CA के माध्यम से IDE टूल्स (Antigravity, GitHub Copilot, Kiro) के HTTPS ट्रैफिक को इंटरसेप्ट करता है ताकि अनुरोधों को आपके प्रदाताओं पर पुनर्निर्देशित किया जा सके। ToS का उल्लंघन हो सकता है → खाता बैन का जोखिम। अपने जोखिम पर उपयोग करें।",
-  "Endpoint is exposed without an API key.": "एंडपॉइंट बिना API कुंजी के उजागर है।"
+  "Endpoint is exposed without an API key.": "एंडपॉइंट बिना API कुंजी के उजागर है।",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "जोड़ने के दो तरीके: अपने OrcaRouter खाते से साइन इन करें, या मौजूदा API key पेस्ट करें। दोनों आपके ही खाते में बिल होने वाली सामान्य OrcaRouter key देते हैं।",
+  "OrcaRouter API key": "OrcaRouter API key",
+  "Authorization code": "प्राधिकरण कोड",
+  "Sign in with OrcaRouter": "OrcaRouter से साइन इन करें",
+  "Paste the code from the OrcaRouter page": "OrcaRouter पेज से कोड पेस्ट करें",
+  "Create or revoke keys in the": "key बनाएं या रद्द करें:",
+  "Capability": "क्षमता",
+  "Select an OrcaRouter model": "OrcaRouter मॉडल चुनें",
+  "Live catalog": "लाइव कैटलॉग",
+  "Live catalog unavailable — verified offline list": "लाइव कैटलॉग अनुपलब्ध — सत्यापित ऑफ़लाइन सूची",
+  "No OrcaRouter models match this capability or input type.": "इस क्षमता या इनपुट प्रकार से कोई OrcaRouter मॉडल मेल नहीं खाता।",
+  "Add an OrcaRouter connection first.": "पहले एक OrcaRouter कनेक्शन जोड़ें।",
+  "Images": "छवियाँ",
+  "Loading models…": "मॉडल लोड हो रहे हैं…"
 }

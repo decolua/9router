@@ -1389,5 +1389,19 @@
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Pemberitahuan Risiko: Penyedia ini menggunakan sesi langganan/OAuth yang tidak dilisensikan secara resmi untuk penggunaan proxy/router. Akun mungkin dibatasi atau diblokir. Gunakan dengan risiko Anda sendiri.",
   "✓ Confirm Add": "✓ Konfirmasi Tambah",
   "📝 Configure providers in dashboard or use environment variables": "📝 Konfigurasi penyedia di dasbor atau gunakan variabel lingkungan",
-  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 OAuth diperlukan. Tambah sekarang dan autentikasi setelah Terapkan; daftar alat akan ditemukan setelah koneksi pertama."
+  "🔐 OAuth required. Add now and authenticate after Apply; tool list will be discovered after first connect.": "🔐 OAuth diperlukan. Tambah sekarang dan autentikasi setelah Terapkan; daftar alat akan ditemukan setelah koneksi pertama.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Dua cara untuk terhubung: masuk dengan akun OrcaRouter Anda, atau tempel API key yang sudah ada. Keduanya menghasilkan kunci OrcaRouter biasa yang ditagihkan ke akun Anda sendiri.",
+  "OrcaRouter API key": "API key OrcaRouter",
+  "Authorization code": "Kode otorisasi",
+  "Sign in with OrcaRouter": "Masuk dengan OrcaRouter",
+  "Paste the code from the OrcaRouter page": "Tempel kode dari halaman OrcaRouter",
+  "Create or revoke keys in the": "Buat atau cabut kunci di",
+  "Capability": "Kemampuan",
+  "Select an OrcaRouter model": "Pilih model OrcaRouter",
+  "Live catalog": "Katalog langsung",
+  "Live catalog unavailable — verified offline list": "Katalog langsung tidak tersedia — daftar offline terverifikasi",
+  "No OrcaRouter models match this capability or input type.": "Tidak ada model OrcaRouter yang cocok dengan kemampuan atau jenis masukan ini.",
+  "Add an OrcaRouter connection first.": "Tambahkan koneksi OrcaRouter terlebih dahulu.",
+  "Images": "Gambar",
+  "Loading models…": "Memuat model…"
 }

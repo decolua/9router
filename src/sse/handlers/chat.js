@@ -324,7 +324,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Do not persist a modelLock_* for this path.
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
-      : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
+      : (await markAccountUnavailable(
+          credentials.connectionId, result.status, result.error, provider, model, resetsAtMs,
+          // The credential this attempt actually presented, so a durable-key
+          // provider can mark exactly the generation that was rejected.
+          credentials.accessToken || credentials.apiKey || null
+        )).shouldFallback;
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);

@@ -13,6 +13,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { discoverOrcaRouterModels, resolveApiBase, ORCAROUTER_CAPABILITIES, ORCAROUTER_MODALITIES, ORCAROUTER_ID } from "open-sse/providers/orcarouterCatalog.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -80,6 +81,51 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
+
+/**
+ * OrcaRouter (optional) — resolve one capability's catalog for this account.
+ *
+ * Keeps the API key server-side: the browser only ever receives model metadata.
+ * `capability` is read from the request query, so a text picker and a multimodal
+ * picker can ask for different, already-filtered lists. `modality` narrows that
+ * list further for entry points that actually upload a non-text part.
+ */
+async function resolveOrcaRouterModels(connection, requestUrl) {
+  const params = new URL(requestUrl).searchParams;
+  const capability = params.get("capability") || "chat";
+  if (!ORCAROUTER_CAPABILITIES.includes(capability)) {
+    return { error: `Unsupported capability: ${capability}`, status: 400 };
+  }
+  // Modality is enforced server-side so the browser never has to know which
+  // models declare, say, image input — an undeclared capability fails closed.
+  const modality = params.get("modality") || null;
+  if (modality && !ORCAROUTER_MODALITIES.includes(modality)) {
+    return { error: `Unsupported modality: ${modality}`, status: 400 };
+  }
+
+  const apiKey = connection.accessToken || connection.apiKey;
+  const apiBase = connection.providerSpecificData?.baseUrl || resolveApiBase(process.env);
+  const result = await discoverOrcaRouterModels({ apiKey, apiBase, capability, modality });
+
+  return {
+    models: result.models.map((m) => ({
+      id: m.id,
+      name: m.name,
+      contextLength: m.contextLength ?? undefined,
+      inputModalities: m.inputModalities,
+      endpointTypes: m.endpointTypes,
+      reasoning: m.reasoning,
+      // Defensive: a catalog entry only carries effort levels when the upstream
+      // record declared them, so never assume the array exists.
+      ...(m.reasoningEfforts?.length ? { reasoningEfforts: m.reasoningEfforts } : {}),
+    })),
+    // `source` lets the UI label a degraded catalog instead of silently showing
+    // the cold-start seed as if it were live discovery.
+    source: result.source,
+    degraded: result.degraded,
+    ...(result.error ? { warning: `catalog fallback: ${result.error}` } : {}),
+  };
+}
 
 const getStaticProviderModels = (providerId) =>
   getModelsByProviderId(providerId).map((model) => ({
@@ -504,6 +550,11 @@ const PROVIDER_MODELS_CONFIG = {
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
     }
+  },
+  // OrcaRouter's catalog is capability-scoped (`?capability=`), so it needs the
+  // resolver form rather than a plain OpenAI-shaped URL. The key stays here.
+  [ORCAROUTER_ID]: {
+    customResolver: (connection, requestUrl) => resolveOrcaRouterModels(connection, requestUrl),
   }
 };
 
@@ -603,7 +654,7 @@ export async function GET(request, { params }) {
 
     // Config-driven custom resolver path (OAuth refresh, non-OpenAI shape, etc.)
     if (typeof config.customResolver === "function") {
-      const result = await config.customResolver(connection);
+      const result = await config.customResolver(connection, request.url);
       if (result.error) {
         return NextResponse.json({ error: result.error }, { status: result.status || 500 });
       }
@@ -611,6 +662,10 @@ export async function GET(request, { params }) {
         provider: connection.provider,
         connectionId: connection.id,
         models: result.models,
+        // Catalogs that can degrade (OrcaRouter) report where the list came from
+        // so the UI can label a fallback instead of presenting it as live data.
+        ...(result.source ? { source: result.source } : {}),
+        ...(result.degraded !== undefined ? { degraded: result.degraded } : {}),
         ...(result.warning ? { warning: result.warning } : {})
       });
     }
