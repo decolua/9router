@@ -29,6 +29,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
       headers["Anthropic-Version"] === "2023-06-01" ||
       headers["anthropic-version"] === "2023-06-01";
     expect(hasVersion).toBe(true);
+    expect(headers["User-Agent"]).toBe("claude-cli/2.1.258 (external, sdk-cli)");
   });
 
   it("includes heavy-agent beta flags for claude-opus-5", () => {
@@ -185,6 +186,46 @@ describe("DefaultExecutor.buildHeaders() — anthropic-compatible stripping", ()
     const hasVersion =
       headers["Anthropic-Version"] || headers["anthropic-version"];
     expect(hasVersion).toBeDefined();
+  });
+
+  // A node fronting Anthropic (rotating multi-account proxy, corporate gateway)
+  // needs the same beta flags the `claude` provider sends. Without
+  // context-management-2025-06-27 upstream answers HTTP 400
+  // "context_management: Extra inputs are not permitted" and the combo falls
+  // through to the next model without anyone noticing.
+  it("sends context-management beta for a Claude model on a custom host", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
+      },
+      true,
+      undefined,
+      "claude-opus-5"
+    );
+
+    const betaFlags = (headers["Anthropic-Beta"] || headers["anthropic-beta"] || "")
+      .split(",").map(s => s.trim());
+    expect(betaFlags).toContain("context-management-2025-06-27");
+    // The first-party identity flag is still stripped for a non-Anthropic host.
+    expect(betaFlags).not.toContain("claude-code-20250219");
+  });
+
+  it("gates the beta flags on the model id, not the provider prefix", () => {
+    const executor = new DefaultExecutor("anthropic-compatible-custom");
+    const headers = executor.buildHeaders(
+      {
+        apiKey: "key",
+        providerSpecificData: { baseUrl: "https://myproxy.example.com/v1" },
+      },
+      true,
+      undefined,
+      "kimi-k3"
+    );
+
+    const betaVal = headers["Anthropic-Beta"] || headers["anthropic-beta"] || "";
+    expect(betaVal).not.toContain("context-management-2025-06-27");
   });
 });
 

@@ -110,6 +110,22 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
         }
       }
 
+      // Model-scoped weekly limits (e.g. Fable) arrive in limits[], not as
+      // seven_day_* keys: { kind: "weekly_scoped", percent, resets_at,
+      // scope: { model: { display_name: "Fable" } } }. No limits entry means
+      // the account has no such window — omit the row, never fabricate one.
+      if (Array.isArray(data.limits)) {
+        for (const limit of data.limits) {
+          if (limit?.kind !== "weekly_scoped") continue;
+          const modelName = String(limit?.scope?.model?.display_name || "").trim().toLowerCase();
+          if (!modelName || typeof limit.percent !== "number") continue;
+          quotas[`weekly ${modelName} (7d)`] = createQuotaObject({
+            utilization: Math.max(0, Math.min(100, limit.percent)),
+            resets_at: limit.resets_at,
+          });
+        }
+      }
+
       return {
         plan: "Claude Code",
         extraUsage: data.extra_usage ?? null,

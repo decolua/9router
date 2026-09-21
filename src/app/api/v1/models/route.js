@@ -9,9 +9,9 @@ import { getProviderConnections, getCombos, getCustomModels, getModelAliases } f
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
-import { resolveQoderModels } from "open-sse/services/qoderModels.js";
+import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
-import { resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { resolveClinepassModels, resolveClineModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
@@ -34,15 +34,18 @@ const LIVE_MODEL_RESOLVERS = {
   qoder: async (conn) => {
     const result = await resolveQoderModels({
       accessToken: conn.accessToken,
+      // PAT (pt-...) connections keep the token in apiKey; without it the live
+      // catalog silently fails and /v1/models falls back to the static list.
+      apiKey: conn.apiKey,
       refreshToken: conn.refreshToken,
       email: conn.email,
       displayName: conn.displayName,
       providerSpecificData: conn.providerSpecificData || {}
     });
-    if (!result?.models?.length) return null;
-    return {
-      models: result.models.map((m) => ({ id: m.id, name: m.name })),
-    };
+    // Visible + hidden (enable:false) catalog keys — chat routes all of them.
+    const models = routableQoderModels(result);
+    if (!models.length) return null;
+    return { models: models.map((m) => ({ id: m.id, name: m.name })) };
   },
   kimchi: async (conn) => {
     const result = await resolveKimchiModels({
@@ -71,6 +74,13 @@ const LIVE_MODEL_RESOLVERS = {
   },
   clinepass: async (conn) => {
     const result = await resolveClinepassModels({
+      accessToken: conn.accessToken,
+      apiKey: conn.apiKey,
+    });
+    return result?.models?.length ? { models: result.models } : null;
+  },
+  cline: async (conn) => {
+    const result = await resolveClineModels({
       accessToken: conn.accessToken,
       apiKey: conn.apiKey,
     });

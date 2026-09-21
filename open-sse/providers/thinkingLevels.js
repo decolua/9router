@@ -26,6 +26,7 @@ const FORMAT_LEVELS = {
   qwen: L.base,
   kimi: L.levelMax,
   deepseek: L.hiMax,
+  commandcode: ["none", "low", "medium", "high", "xhigh", "max"],
   minimax: L.onOff,
   hunyuan: L.base,
   step: L.base,
@@ -35,10 +36,29 @@ const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  { provider: "codex", pattern: "*gpt-6*", levels: CODEX_GPT_5_6_LEVELS },
   { provider: "codex", pattern: "*gpt-5.6-sol*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  // DeepSeek v4.* (Alibaba MaaS, probed live): effort low|medium|high|xhigh|max
+  // all 200 via output_config.effort; "none" is a 400 on the anthropic route
+  // (disable thinking instead). none kept for the picker = disable.
+  { pattern: "*deepseek-v4.*", levels: ["none", "low", "medium", "high", "xhigh", "max"] },
+  // codebuddy-cn per-model effort sets — the server's product-config payload
+  // publishes `reasoning.supportedEfforts` per model. NOTE: the chat endpoint
+  // accepts any level you send (probed none/minimal/low/medium/high/xhigh/max
+  // → all 200), but values outside a model's supportedEfforts are silently
+  // clamped, so the declared set stays authoritative for the picker. Models
+  // that publish no supportedEfforts (glm-5.1 / glm-5v-turbo / kimi-k2.x /
+  // kimi-k3-1 / minimax-m3) fall through to the openai format default.
+  { provider: "codebuddy-cn", pattern: "glm-5.3*",     levels: ["low", "high", "max"] },
+  { provider: "codebuddy-cn", pattern: "glm-5.2",      levels: ["high", "xhigh"] },
+  { provider: "codebuddy-cn", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
+  { provider: "codebuddy-cn", pattern: "hy3*",         levels: ["low", "high"] },
+  { provider: "codebuddy-cn", pattern: "hy4*",         levels: ["high"] },
+  // codebuddy-intl rides the same gateway catalog, so its deepseek levels match.
+  { provider: "codebuddy-intl", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.

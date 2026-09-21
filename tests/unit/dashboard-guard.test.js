@@ -125,6 +125,25 @@ describe("dashboard guard public LLM API access", () => {
     expect(response.body.error).toBe("API key required for remote API access");
   });
 
+  it("rejects remote /responses rewrite without API key", async () => {
+    const response = await proxy(request("/responses", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("allows remote /responses rewrite with a valid API key", async () => {
+    mocks.validateApiKey.mockResolvedValue(true);
+
+    const response = await proxy(request("/responses", {
+      host: "router.example.com",
+      authorization: "Bearer sk-valid",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).toHaveBeenCalledWith("sk-valid");
+  });
+
   it("allows remote codex rewrite with valid API key", async () => {
     mocks.validateApiKey.mockResolvedValue(true);
 

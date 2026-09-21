@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
+import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -11,6 +11,8 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
+import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -283,6 +285,75 @@ const PROVIDER_MODELS_CONFIG = {
       return {
         models: getStaticProviderModels("cursor"),
         warning: "Cursor returned no live models; falling back to static catalog.",
+      };
+    },
+  },
+  // Zed has no static catalog by design (live /models only) — same cursor
+  // direct pattern: resolve with the connection's own credentials (never
+  // exposed to the browser), return rich metadata, drop disabled entries.
+  // Empty/failure yields an explicit warning, never a silent zero list.
+  zed: {
+    customResolver: async (connection) => {
+      try {
+        const result = await resolveZedModels({
+          accessToken: connection.accessToken,
+          providerSpecificData: connection.providerSpecificData || {},
+        }, { config: ZED_HOSTED_CONFIG, forceRefresh: true });
+        const models = (result?.models || [])
+          .filter((m) => m && !m.isDisabled)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            provider: m.provider,
+            contextLength: m.contextLength,
+            contextLengthInMaxMode: m.contextLengthInMaxMode,
+            maxOutputTokens: m.maxOutputTokens,
+            supportsTools: m.supportsTools,
+            supportsImages: m.supportsImages,
+            supportsThinking: m.supportsThinking,
+            supportsDisablingThinking: m.supportsDisablingThinking,
+            supportsFastMode: m.supportsFastMode,
+            supportsServerSideCompaction: m.supportsServerSideCompaction,
+            supportedEffortLevels: m.supportedEffortLevels || [],
+            supportsStreamingTools: m.supportsStreamingTools,
+            supportsParallelToolCalls: m.supportsParallelToolCalls,
+          }));
+        if (models.length > 0) return { models };
+        return { models: [], warning: "Zed returned no live models." };
+      } catch (error) {
+        console.log("Failed to fetch Zed models dynamically:", error.message);
+        return { models: [], warning: `Failed to fetch Zed models: ${error.message}` };
+      }
+    },
+  },
+
+  // Cline/ClinePass share api.cline.bot/api/v1/models. The service layer already
+  // handles Bearer-vs-`workos:` auth and swallows failures into null, so these follow
+  // the cursor direct pattern (no refreshFn) and only differ in filtering:
+  // cline returns the whole catalog verbatim, clinepass keeps cline-pass/* only.
+  cline: {
+    customResolver: async (connection) => {
+      const result = await resolveClineModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+      });
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("cline"),
+        warning: "Cline returned no live models; falling back to static catalog.",
+      };
+    },
+  },
+  clinepass: {
+    customResolver: async (connection) => {
+      const result = await resolveClinepassModels({
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+      });
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("clinepass"),
+        warning: "ClinePass returned no live models; falling back to static catalog.",
       };
     },
   },

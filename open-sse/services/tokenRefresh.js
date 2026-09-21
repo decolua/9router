@@ -5,6 +5,7 @@ import {
   refreshXaiToken,
   refreshAccessToken,
   refreshKimiToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshCodexToken,
@@ -24,6 +25,7 @@ import {
 export {
   refreshAccessToken,
   refreshKimiToken,
+  refreshClineToken,
   refreshClaudeOAuthToken,
   refreshGoogleToken,
   refreshCodexToken,
@@ -149,6 +151,9 @@ const REFRESH_HANDLERS = {
   "codebuddy-cn": (c, log, px) => refreshCodebuddyToken(c.refreshToken, log, px),
   "codebuddy-intl": (c, log, px) => refreshCodebuddyIntlToken(c.refreshToken, log, px),
   trae: (c, log, px) => refreshTraeToken(c.refreshToken, c, log, px),
+  cline: (c, log, px) => refreshClineToken(c.refreshToken, log, px),
+  // ClinePass shares Cline's WorkOS auth endpoints, so the same refresh works.
+  clinepass: (c, log, px) => refreshClineToken(c.refreshToken, log, px),
   zed: () => refreshZedToken(),
   windsurf: (c, log, px) => refreshWindsurfToken(c, log, px),
   // Kimi Code OAuth (merged into id `kimi`); legacy id still routes here
