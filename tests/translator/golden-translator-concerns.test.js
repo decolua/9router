@@ -43,8 +43,9 @@ describe("GOLDEN response stream: CommandCode → OpenAI", () => {
       { type: "reasoning-delta", text: "thinking" },
       { type: "tool-input-start", id: "t1", toolName: "get_weather" },
       { type: "tool-input-delta", id: "t1", delta: '{"city":"NYC"}' },
+      { type: "tool-call", toolCallId: "t1", toolName: "get_weather", input: { city: "NYC" } },
       { type: "finish-step", finishReason: "tool-calls", usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 } },
-      { type: "finish" },
+      { type: "finish", finishReason: "tool-calls" },
     ];
     expect(runStream(FORMATS.COMMANDCODE, FORMATS.OPENAI, events)).toMatchSnapshot();
   });

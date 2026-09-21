@@ -4,6 +4,7 @@ import {
   inspectAndWrapCommandCodeResponse,
   CommandCodeExecutor,
 } from "../../open-sse/executors/commandcode.js";
+import { commandCodeToOpenAIResponse } from "../../open-sse/translator/response/commandcode-to-openai.js";
 import { handleComboChat } from "../../open-sse/services/combo.js";
 
 function createNdjsonStream(lines) {
@@ -57,6 +58,27 @@ describe("parseCommandCodeError", () => {
 });
 
 describe("inspectAndWrapCommandCodeResponse", () => {
+  it.each(["ndjson", "sse"])("preserves every event across arbitrary %s chunk boundaries", async (format) => {
+    const events = [
+      { type: "start" },
+      { type: "reasoning-delta", text: "Checking" },
+      { type: "tool-call", toolCallId: "call_chunk", toolName: "Read", input: { file_path: "/tmp/test" } },
+      { type: "finish", finishReason: "tool-calls" },
+    ];
+    const raw = events.map(event => format === "sse"
+      ? `data: ${JSON.stringify(event)}\n\n`
+      : `${JSON.stringify(event)}\n`).join("");
+    for (let split = 0; split <= raw.length; split++) {
+      const response = new Response(createNdjsonStream([raw.slice(0, split), raw.slice(split)]));
+      const wrapped = await inspectAndWrapCommandCodeResponse(response, "test-model");
+      const output = await wrapped.text();
+      expect(output).toContain("Checking");
+      expect(output).toContain("call_chunk");
+      expect(output).toContain('"finish_reason":"tool_calls"');
+      expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+    }
+  });
+
   it("converts initial upstream 200 with error event to 503 Response", async () => {
     const ndjsonBody = createNdjsonStream([
       JSON.stringify({
@@ -112,11 +134,26 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     expect(body.error.message).toContain("Service temporarily unavailable");
   });
 
+  it("keeps provisional tool input buffered so a later error can still retry", async () => {
+    const fakeResponse = new Response(createNdjsonStream([
+      JSON.stringify({ type: "tool-input-start", id: "c1", toolName: "Bash" }) + "\n",
+      JSON.stringify({ type: "tool-input-delta", id: "c1", delta: '{"command":"draft"}' }) + "\n",
+      JSON.stringify({
+        type: "error",
+        error: { type: "server_error", message: "Service temporarily unavailable", statusCode: 503 },
+      }) + "\n",
+    ]), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+
+    const result = await inspectAndWrapCommandCodeResponse(fakeResponse, "deepseek/deepseek-v4-flash");
+    expect(result.status).toBe(503);
+    await expect(result.json()).resolves.toMatchObject({ error: { code: 503 } });
+  });
+
   it("streams successful responses when content is emitted", async () => {
     const ndjsonBody = createNdjsonStream([
       JSON.stringify({ type: "start" }) + "\n",
       JSON.stringify({ type: "text-delta", text: "Hello from Laguna" }) + "\n",
-      JSON.stringify({ type: "finish" }) + "\n",
+      JSON.stringify({ type: "finish", finishReason: "stop" }) + "\n",
     ]);
 
     const fakeResponse = new Response(ndjsonBody, {
@@ -154,7 +191,7 @@ describe("inspectAndWrapCommandCodeResponse", () => {
           rawResponse = new Response(createNdjsonStream([
             JSON.stringify({ type: "start" }) + "\n",
             JSON.stringify({ type: "text-delta", text: "Recovered from lost connection" }) + "\n",
-            JSON.stringify({ type: "finish" }) + "\n"
+            JSON.stringify({ type: "finish", finishReason: "stop" }) + "\n"
           ]), { status: 200, headers: { "Content-Type": "text/event-stream" } });
         }
 
@@ -171,6 +208,45 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     expect(callCount).toBe(2);
     const text = await res.response.text();
     expect(text).toContain("Recovered from lost connection");
+  });
+});
+
+describe("CommandCode reference protocol compatibility", () => {
+  it("uses the current official CLI identity headers", () => {
+    const headers = new CommandCodeExecutor().buildHeaders({ apiKey: "user_test" });
+    expect(headers).toMatchObject({
+      Authorization: "Bearer user_test",
+      "x-command-code-version": "1.54.2",
+      "x-cli-environment": "production",
+      "User-Agent": "cli",
+    });
+    expect(headers["x-session-id"]).toBeUndefined();
+  });
+
+  it("ignores provisional tool input and emits the authoritative tool call", () => {
+    const state = {};
+    expect(commandCodeToOpenAIResponse({ type: "tool-input-start", id: "c1", toolName: "write" }, state)).toBeNull();
+    expect(commandCodeToOpenAIResponse({ type: "tool-input-delta", id: "c1", delta: '{"content":"draft"}' }, state)).toBeNull();
+    expect(commandCodeToOpenAIResponse({
+      type: "tool-call",
+      toolCallId: "c1",
+      toolName: "write",
+      input: { path: "/a", content: "complete" },
+    }, state)).toBeNull();
+
+    const chunks = commandCodeToOpenAIResponse({ type: "finish", finishReason: "tool-calls" }, state);
+    expect(chunks[0].choices[0].delta.tool_calls[0].function.arguments).toBe('{"path":"/a","content":"complete"}');
+    expect(chunks.at(-1).choices[0].finish_reason).toBe("tool_calls");
+  });
+
+  it("rejects a tool finish without an authoritative call", () => {
+    const state = {};
+    commandCodeToOpenAIResponse({ type: "tool-input-start", id: "c1", toolName: "bash" }, state);
+    commandCodeToOpenAIResponse({ type: "tool-input-delta", id: "c1", delta: '{"command":"partial"}' }, state);
+    expect(() => commandCodeToOpenAIResponse(
+      { type: "finish", finishReason: "tool-calls" },
+      state,
+    )).toThrow("no valid tool call");
   });
 });
 

@@ -19,8 +19,9 @@ describe("openaiToCommandCodeRequest — basic envelope", () => {
       messages: [{ role: "user", content: "hi" }],
     }, true);
 
-    expect(out).toHaveProperty("threadId");
+    expect(out).not.toHaveProperty("threadId");
     expect(out).toHaveProperty("memory");
+    expect(out).toMatchObject({ taste: "", skills: null, permissionMode: "standard" });
     expect(out).toHaveProperty("config");
     expect(out).toHaveProperty("params");
     expect(out.params.model).toBe(MODEL);
@@ -156,6 +157,7 @@ describe("openaiToCommandCodeRequest — tools schema conversion", () => {
 
     const t = out.params.tools[0];
     expect(t.name).toBe("weather");
+    expect(t.type).toBe("function");
     expect(t.input_schema).toBeDefined();
     expect(t.input_schema.type).toBe("object");
     expect(t.function).toBeUndefined();
@@ -172,11 +174,11 @@ describe("openaiToCommandCodeRequest — tools schema conversion", () => {
     expect(out.params.tools[0].description).toBe("Ping the server");
   });
 
-  it("does not include tools field when input has none", () => {
+  it("uses an empty tools list when input has none", () => {
     const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
-    expect(out.params.tools).toBeUndefined();
+    expect(out.params.tools).toEqual([]);
   });
 });
 

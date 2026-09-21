@@ -13,6 +13,7 @@ import {
   coerceResponsesOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { LOCAL_SHELL, LOCAL_SHELL_CALL, LOCAL_SHELL_OUTPUT, localShellFunction } from "../concerns/localShell.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -101,7 +102,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       result.messages.push(msg);
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL || itemType === LOCAL_SHELL_CALL) {
+      const name = itemType === LOCAL_SHELL_CALL ? LOCAL_SHELL : item.name;
       // Start or append to assistant message with tool_calls
       if (!currentAssistantMsg) {
         currentAssistantMsg = {
@@ -112,21 +114,21 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         attachPendingReasoning(currentAssistantMsg);
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
-      if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      if (!name || typeof name !== "string" || name.trim() === "") continue;
       if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
-        : item.arguments;
+        : itemType === LOCAL_SHELL_CALL ? item.action : item.arguments;
       currentAssistantMsg.tool_calls.push({
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
     }
-    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
+    else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT || itemType === LOCAL_SHELL_OUTPUT) {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
@@ -142,7 +144,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       // Add tool result immediately
       result.messages.push({
         role: ROLE.TOOL,
-        tool_call_id: item.call_id,
+        tool_call_id: item.call_id || item.id,
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
@@ -185,6 +187,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {
+        if (tool.type === LOCAL_SHELL) return structuredClone(localShellFunction);
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
         // Responses API function/custom tool: { type, name, description, parameters|format }.

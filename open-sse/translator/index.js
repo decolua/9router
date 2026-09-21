@@ -52,6 +52,7 @@ function stripContentTypes(body, stripList = []) {
 export function translateRequest(sourceFormat, targetFormat, model, body, stream = true, credentials = null, provider = null, reqLogger = null, stripList = [], connectionId = null, clientTool = null) {
   ensureInitialized();
   let result = body;
+  let customToolNames;
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);
@@ -93,6 +94,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
         if (toOpenAI) {
           result = toOpenAI(model, result, stream, credentials);
+          customToolNames = result._customToolNames;
           // Log OpenAI intermediate format
           reqLogger?.logOpenAIRequest?.(result);
         }
@@ -155,6 +157,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   //   }
   // }
 
+  // Provider envelopes may replace the body. Keep response-conversion metadata
+  // outside those envelopes so chatCore can consume and remove it before sending.
+  if (customToolNames) result._customToolNames = customToolNames;
   return result;
 }
 

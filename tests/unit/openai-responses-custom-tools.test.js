@@ -3,7 +3,7 @@ import {
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
-import { initState } from "../../open-sse/translator/index.js";
+import { initState, translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const EXEC_TOOL = {
@@ -18,6 +18,24 @@ const EXEC_TOOL = {
 };
 
 describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
+  it("retains custom-tool identity through the Command Code request envelope", () => {
+    const out = translateRequest(FORMATS.OPENAI_RESPONSES, FORMATS.COMMANDCODE, "test-model", {
+      tools: [EXEC_TOOL],
+      input: [{ role: "user", content: "Run pwd" }],
+    }, true, null, "commandcode");
+    expect(out.params.tools[0].name).toBe("exec");
+    expect(out._customToolNames).toEqual(["exec"]);
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    state.customToolNames = new Set(out._customToolNames);
+    const events = [
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: "call_exec", function: { name: "exec", arguments: '{"input":"return 1;"}' } }] }, finish_reason: null }] },
+      { choices: [{ delta: {}, finish_reason: "tool_calls" }] },
+    ].flatMap(chunk => openaiToOpenAIResponsesResponse(chunk, state));
+    expect(events.find(event => event.event === "response.output_item.done").data.item).toMatchObject({
+      type: "custom_tool_call", input: "return 1;", name: "exec", call_id: "call_exec",
+    });
+  });
+
   it("promotes additional_tools custom declarations into Chat tools", () => {
     const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
       input: [

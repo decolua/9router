@@ -40,34 +40,12 @@ exports[`GOLDEN response stream: CommandCode → OpenAI > text + reasoning + too
           "tool_calls": [
             {
               "function": {
-                "arguments": "",
+                "arguments": "{"city":"NYC"}",
                 "name": "get_weather",
               },
               "id": "t1",
               "index": 0,
               "type": "function",
-            },
-          ],
-        },
-        "finish_reason": null,
-        "index": 0,
-      },
-    ],
-    "created": 0,
-    "id": "chatcmpl-<TS>",
-    "model": "commandcode",
-    "object": "chat.completion.chunk",
-  },
-  {
-    "choices": [
-      {
-        "delta": {
-          "tool_calls": [
-            {
-              "function": {
-                "arguments": "{"city":"NYC"}",
-              },
-              "index": 0,
             },
           ],
         },

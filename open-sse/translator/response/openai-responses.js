@@ -4,6 +4,7 @@
  */
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
+import { LOCAL_SHELL, toLocalShellCall } from "../concerns/localShell.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
@@ -25,6 +26,15 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   const nextSeq = () => ++state.seq;
   
   const emit = (eventType, data) => {
+    if (state.localShell && state.funcNames?.[data.output_index] === LOCAL_SHELL) {
+      if (eventType.startsWith("response.function_call_arguments.")) return;
+      if (data.item?.type === RESPONSES_ITEM.FUNCTION_CALL) {
+        if (eventType === "response.output_item.added") return;
+        data.item = toLocalShellCall(data.item);
+        const added = "response.output_item.added";
+        events.push({ event: added, data: { ...data, type: added, sequence_number: nextSeq() } });
+      }
+    }
     data.sequence_number = nextSeq();
     events.push({ event: eventType, data });
   };

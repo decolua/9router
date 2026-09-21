@@ -183,6 +183,6 @@ describe("tool-result images reach Anthropic-compatible and Command Code upstrea
     expect(json).not.toContain("[image omitted]");
     expect(json).toContain(`"type":"image"`);
     expect(json).toContain(`data:image/png;base64,${PNG}`);
-    expect(json).toContain(`"mediaType":"image/png"`);
+    expect(json).toContain(`"mimeType":"image/png"`);
   });
 });

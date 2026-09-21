@@ -45,10 +45,8 @@ describe("OpenAI → Cursor", () => {
 });
 
 describe("OpenAI → CommandCode", () => {
-  // openai-to-commandcode.js:53-57 — safeParseJson returns {} on bad JSON (args silently lost)
-  // KNOWN BUG
-  it.fails("malformed tool arguments are not silently emptied", () => {
-    const out = O2CC({
+  it("malformed tool arguments are not silently emptied", () => {
+    expect(() => O2CC({
       messages: [
         { role: "user", content: "go" },
         { role: "assistant", content: "", tool_calls: [
@@ -56,10 +54,7 @@ describe("OpenAI → CommandCode", () => {
         ] },
         { role: "tool", tool_call_id: "c1", content: "r" },
       ],
-    });
-    const asst = out.params.messages.find((m) => m.role === "assistant");
-    const call = asst.content.find((b) => b.type === "tool-call");
-    expect(Object.keys(call.input).length, "arguments silently dropped to {}").toBeGreaterThan(0);
+    })).toThrow("invalid arguments");
   });
 
   it("image content is preserved as native CommandCode image blocks", () => {
