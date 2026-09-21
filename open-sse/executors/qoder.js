@@ -207,16 +207,16 @@ function truncate(s, n) {
 /**
  * Map the OpenAI-style request body into the exact shape Qoder expects.
  */
-async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null }) {
+async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl" }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
-  
+
   // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
   // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal });
+  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
   if (!modelConfig) {
     // Try a forced refresh once before giving up — the cache may simply
     // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal });
+    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
     const retried = refreshed?.rawConfigs.get(qoderKey);
     if (!retried) {
       throw new Error(
@@ -584,12 +584,13 @@ async function wrapQoderSSE(response, model, log = null) {
 }
 
 export class QoderExecutor extends BaseExecutor {
-  constructor() {
-    super("qoder", PROVIDERS.qoder);
+  constructor(provider = "qoder") {
+    super(provider, PROVIDERS[provider]);
+    this.region = provider === "qoder-cn" ? "cn" : "intl";
   }
 
   buildUrl(credentials) {
-    return `${qoderInferenceBase(credentials)}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
+    return `${qoderInferenceBase(credentials, this.region)}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common&Encode=1`;
   }
 
   // Override execute entirely — Qoder needs:
@@ -604,7 +605,7 @@ export class QoderExecutor extends BaseExecutor {
     const rawToken = credentials?.apiKey || credentials?.accessToken;
     if (isQoderPat(rawToken)) {
       try {
-        credentials = await resolveQoderCredentials(credentials, proxyOptions, signal);
+        credentials = await resolveQoderCredentials(credentials, proxyOptions, signal, this.region);
       } catch (err) {
         log?.error?.("QODER", `PAT exchange failed: ${err.message}`);
         const fakeResp = new Response(
@@ -639,7 +640,7 @@ export class QoderExecutor extends BaseExecutor {
     let qoderKey;
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal }));
+      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -709,7 +710,7 @@ export class QoderExecutor extends BaseExecutor {
       return { response, url, headers, transformedBody: payload };
     }
 
-    const wrapped = await wrapQoderSSE(response, `qoder/${qoderKey}`, log);
+    const wrapped = await wrapQoderSSE(response, `${this.provider}/${qoderKey}`, log);
     return { response: wrapped, url, headers, transformedBody: payload };
   }
 

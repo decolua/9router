@@ -42,12 +42,8 @@ const USAGE_HANDLERS = {
   claude: (c) => getClaudeUsage(c.accessToken, c.proxyOptions, { force: c.force }),
   codex: (c) => getCodexUsage(c.accessToken, c.proxyOptions),
   kiro: (c) => getKiroUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
-  qoder: async (c) => {
-    // PAT (pt-...) connections must be exchanged to a job token before the
-    // quota endpoint accepts them.
-    const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
-    return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions);
-  },
+  qoder: (c) => getQoderUsageFor(c),
+  "qoder-cn": (c) => getQoderUsageFor(c),
   iflow: (c) => getIflowUsage(c.accessToken),
   ollama: (c) => getOllamaUsage(c.apiKey, c.providerSpecificData, c.proxyOptions),
   glm: (c) => getGlmUsage(c.apiKey, c.provider, c.proxyOptions),
@@ -67,6 +63,14 @@ const USAGE_HANDLERS = {
   "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
 };
+
+// Qoder intl/CN share one usage path: PATs must be exchanged to a job token
+// before the quota endpoint accepts them, and the quota URL comes from the
+// provider's own registry usage block (region-correct via c.provider).
+async function getQoderUsageFor(c) {
+  const resolved = await resolveQoderCredentials(c, c.proxyOptions).catch(() => null);
+  return getQoderUsage(resolved?.accessToken || c.accessToken, c.proxyOptions, c.provider || "qoder");
+}
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {
   const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
