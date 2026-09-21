@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **OrcaRouter**: add as a first-class provider with dual auth — paste an `sk-orca-…` API key or sign in with OAuth 2.0 + PKCE (out-of-band code). Model selection comes from the live capability-filtered catalog at `GET https://api.orcarouter.ai/v1/models`, with a small verified fallback seed for cold start and catalog outages. A rejected durable key is marked for reauthentication instead of being refreshed.
+
 # v0.5.81 (2026-09-18)
 
 ## Features

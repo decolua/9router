@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "클릭하여 추가, 다시 클릭하여 제거. 변경 사항은 자동으로 저장됩니다.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ 위험 알림: 이 공급자는 프록시/라우터 사용에 대해 공식적으로 라이선스가 부여되지 않은 구독/OAuth 세션을 사용합니다. 계정이 제한되거나 차단될 수 있습니다. 사용에 대한 책임은 본인에게 있습니다.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM은 로컬 CA를 통해 IDE 도구(Antigravity, GitHub Copilot, Kiro)의 HTTPS 트래픽을 가로채 요청을 공급자로 리다이렉트합니다. ToS 위반 가능성 → 계정 차단 위험. 사용에 대한 책임은 본인에게 있습니다.",
-  "Endpoint is exposed without an API key.": "API 키 없이 엔드포인트가 노출되어 있습니다."
+  "Endpoint is exposed without an API key.": "API 키 없이 엔드포인트가 노출되어 있습니다.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "연결 방법은 두 가지입니다. OrcaRouter 계정으로 로그인하거나 기존 API 키를 붙여넣습니다. 둘 다 본인 계정에 청구되는 일반 OrcaRouter 키가 됩니다.",
+  "OrcaRouter API key": "OrcaRouter API 키",
+  "Authorization code": "인증 코드",
+  "Sign in with OrcaRouter": "OrcaRouter로 로그인",
+  "Paste the code from the OrcaRouter page": "OrcaRouter 페이지의 코드를 붙여넣으세요",
+  "Create or revoke keys in the": "키 생성 및 폐기는",
+  "Capability": "기능",
+  "Select an OrcaRouter model": "OrcaRouter 모델 선택",
+  "Live catalog": "실시간 카탈로그",
+  "Live catalog unavailable — verified offline list": "실시간 카탈로그를 사용할 수 없음 — 검증된 오프라인 목록",
+  "No OrcaRouter models match this capability or input type.": "이 기능 또는 입력 유형과 일치하는 OrcaRouter 모델이 없습니다.",
+  "Add an OrcaRouter connection first.": "먼저 OrcaRouter 연결을 추가하세요.",
+  "Images": "이미지",
+  "Loading models…": "모델 로드 중…"
 }

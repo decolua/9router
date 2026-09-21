@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { ORCAROUTER_ID, credentialHint } from "open-sse/providers/orcarouterCatalog.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -23,6 +24,11 @@ function resetHealthStateOnActivation(existing, patch) {
     errorCode: null,
     rateLimitedUntil: null,
     backoffLevel: 0,
+    // A successful activation is a new, working credential — clear any pending
+    // reauthentication flag left by a previously rejected one.
+    needsReauth: false,
+    reauthReason: null,
+    reauthAt: null,
   };
 
   for (const key of Object.keys(existing || {})) {
@@ -51,6 +57,13 @@ function rowToConn(row) {
 
 function connToRow(c) {
   const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+  // Derive (not inherit) the redacted handle on every write, so replacing a
+  // connection's key can never leave a hint describing the previous secret.
+  if (provider === ORCAROUTER_ID) {
+    const hint = credentialHint(rest.accessToken || rest.apiKey);
+    if (hint) rest.keyHint = hint;
+    else delete rest.keyHint;
+  }
   return {
     id,
     provider,

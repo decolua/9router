@@ -64,10 +64,38 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
 }
 
 /**
+ * Providers whose credential is durable (an API key, not a refreshable token).
+ * A rejected credential is terminal: it must be reauthenticated, never refreshed.
+ */
+export function isDurableCredentialProvider(providerId) {
+  return providerId === "orcarouter";
+}
+
+/**
+ * Reauth fields for a rejected durable credential.
+ *
+ * Returns null when the caller cannot prove which credential was rejected, or
+ * when the stored credential is no longer the one that failed — a late failure
+ * from an old request must never flag a credential the user has since replaced
+ * by signing in again.
+ */
+export function durableCredentialReauthFields(conn, usedCredential, status) {
+  if (!conn) return null;
+  const code = Number(status);
+  if (code !== 401 && code !== 403) return null;
+  if (typeof usedCredential !== "string" || !usedCredential) return null;
+  if (conn.accessToken !== usedCredential && conn.apiKey !== usedCredential) return null;
+  return {
+    needsReauth: true,
+    reauthReason: "credential_rejected",
+    reauthAt: new Date().toISOString(),
+  };
+}
+
+/**
  * Check if account is currently unavailable (cooldown not expired)
  */
-export function isAccountUnavailable(unavailableUntil) {
-  if (!unavailableUntil) return false;
+export function isAccountUnavailable(unavailableUntil) {  if (!unavailableUntil) return false;
   return new Date(unavailableUntil).getTime() > Date.now();
 }
 

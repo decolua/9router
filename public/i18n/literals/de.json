@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Klicken zum Hinzufügen, erneut klicken zum Entfernen. Änderungen werden automatisch gespeichert.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Risikohinweis: Dieser Anbieter verwendet eine Abonnement-/OAuth-Sitzung, die nicht offiziell für die Proxy-/Router-Nutzung lizenziert ist. Das Konto kann eingeschränkt oder gesperrt werden. Nutzung auf eigene Gefahr.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM fängt HTTPS-Verkehr von IDE-Tools (Antigravity, GitHub Copilot, Kiro) über lokale CA ab, um Anfragen an Ihre Anbieter umzuleiten. Kann gegen ToS verstoßen → Risiko der Kontosperrung. Nutzung auf eigene Gefahr.",
-  "Endpoint is exposed without an API key.": "Der Endpunkt ist ohne API-Schlüssel offengelegt."
+  "Endpoint is exposed without an API key.": "Der Endpunkt ist ohne API-Schlüssel offengelegt.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Zwei Wege zur Verbindung: mit Ihrem OrcaRouter-Konto anmelden oder einen vorhandenen API-Schlüssel einfügen. Beide ergeben einen normalen OrcaRouter-Schlüssel, der über Ihr eigenes Konto abgerechnet wird.",
+  "OrcaRouter API key": "OrcaRouter-API-Schlüssel",
+  "Authorization code": "Autorisierungscode",
+  "Sign in with OrcaRouter": "Mit OrcaRouter anmelden",
+  "Paste the code from the OrcaRouter page": "Fügen Sie den Code von der OrcaRouter-Seite ein",
+  "Create or revoke keys in the": "Schlüssel erstellen oder widerrufen in",
+  "Capability": "Fähigkeit",
+  "Select an OrcaRouter model": "OrcaRouter-Modell auswählen",
+  "Live catalog": "Live-Katalog",
+  "Live catalog unavailable — verified offline list": "Live-Katalog nicht verfügbar — verifizierte Offline-Liste",
+  "No OrcaRouter models match this capability or input type.": "Keine OrcaRouter-Modelle passen zu dieser Fähigkeit oder diesem Eingabetyp.",
+  "Add an OrcaRouter connection first.": "Fügen Sie zuerst eine OrcaRouter-Verbindung hinzu.",
+  "Images": "Bilder",
+  "Loading models…": "Modelle werden geladen…"
 }

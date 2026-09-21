@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, isDurableCredentialProvider, durableCredentialReauthFields } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
@@ -234,9 +234,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
  * @param {string} errorText
  * @param {string|null} provider
  * @param {string|null} model - The specific model that triggered the error
+ * @param {number|null} resetsAtMs - Provider-supplied reset timestamp, when known
+ * @param {string|null} usedCredential - The credential the rejected request actually
+ *   used. Lets a durable-credential provider skip marking a credential that has
+ *   already been replaced by a newer login (see the OrcaRouter branch below).
  * @returns {{ shouldFallback: boolean, cooldownMs: number }}
  */
-export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null) {
+export async function markAccountUnavailable(connectionId, status, errorText, provider = null, model = null, resetsAtMs = null, usedCredential = null) {
   if (!connectionId || connectionId === "noauth") return { shouldFallback: false, cooldownMs: 0 };
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
@@ -266,18 +270,32 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
+  // A durable credential (OrcaRouter PKCE key) has no refresh grant: a 401/403
+  // from the relay is terminal, so the exact account that made the rejected
+  // request is flagged for reauthentication instead of being cooled down and
+  // retried with a dead credential.
+  const isDurableProvider = isDurableCredentialProvider(resolveProviderId(provider));
+  const reauthFields = isDurableProvider
+    ? durableCredentialReauthFields(conn, usedCredential, status)
+    : null;
+
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
     testStatus: "unavailable",
-    lastError: reason,
+    lastError: reauthFields ? "OrcaRouter credential rejected — sign in again" : reason,
     errorCode: status,
     lastErrorAt: new Date().toISOString(),
-    backoffLevel: newBackoffLevel ?? backoffLevel
+    backoffLevel: newBackoffLevel ?? backoffLevel,
+    ...(reauthFields || {})
   });
 
   const lockKey = Object.keys(lockUpdate)[0];
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
+
+  if (reauthFields) {
+    log.warn("AUTH", `${connName} needs reauthentication (durable credential rejected with ${status})`);
+  }
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);

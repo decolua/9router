@@ -1037,5 +1037,11 @@
       "preserveCacheControl": true
     },
     "format": "openai"
+  },
+  "orcarouter": {
+    "baseUrl": "https://api.orcarouter.ai/v1/chat/completions",
+    "validateUrl": "https://api.orcarouter.ai/v1/models",
+    "format": "openai",
+    "tokenUrl": "https://www.orcarouter.ai/api/v1/auth/keys"
   }
 }

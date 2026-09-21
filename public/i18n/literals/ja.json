@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "クリックで追加、もう一度クリックで削除。変更は自動的に保存されます。",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ リスク通知: このプロバイダーは、プロキシ/ルーター使用について公式にライセンスされていないサブスクリプション/OAuthセッションを使用しています。アカウントが制限または禁止される可能性があります。自己責任でご使用ください。",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITMはローカルCAを介してIDEツール (Antigravity, GitHub Copilot, Kiro) のHTTPSトラフィックを傍受し、リクエストをプロバイダーにリダイレクトします。ToS違反の可能性 → アカウントBANリスク。自己責任でご使用ください。",
-  "Endpoint is exposed without an API key.": "API キーなしでエンドポイントが公開されています。"
+  "Endpoint is exposed without an API key.": "API キーなしでエンドポイントが公開されています。",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "接続方法は2つあります。OrcaRouter アカウントでサインインするか、既存の API キーを貼り付けます。どちらもご自身のアカウントに課金される通常の OrcaRouter キーになります。",
+  "OrcaRouter API key": "OrcaRouter API キー",
+  "Authorization code": "認証コード",
+  "Sign in with OrcaRouter": "OrcaRouter でサインイン",
+  "Paste the code from the OrcaRouter page": "OrcaRouter ページのコードを貼り付けてください",
+  "Create or revoke keys in the": "キーの作成・失効は",
+  "Capability": "機能",
+  "Select an OrcaRouter model": "OrcaRouter モデルを選択",
+  "Live catalog": "ライブカタログ",
+  "Live catalog unavailable — verified offline list": "ライブカタログを利用できません — 検証済みのオフライン一覧",
+  "No OrcaRouter models match this capability or input type.": "この機能または入力タイプに一致する OrcaRouter モデルはありません。",
+  "Add an OrcaRouter connection first.": "先に OrcaRouter 接続を追加してください。",
+  "Images": "画像",
+  "Loading models…": "モデルを読み込み中…"
 }

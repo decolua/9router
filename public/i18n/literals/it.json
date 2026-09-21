@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Clicca per aggiungere, clicca di nuovo per rimuovere. Le modifiche vengono salvate automaticamente.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Avviso di Rischio: Questo provider utilizza una sessione abbonamento/OAuth non ufficialmente autorizzata per l'uso proxy/router. L'account potrebbe essere limitato o bannato. Usa a tuo rischio.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM intercetta il traffico HTTPS degli strumenti IDE (Antigravity, GitHub Copilot, Kiro) tramite CA locale per reindirizzare le richieste ai tuoi provider. Può violare i ToS → rischio ban account. Usa a tuo rischio.",
-  "Endpoint is exposed without an API key.": "L'endpoint è esposto senza una chiave API."
+  "Endpoint is exposed without an API key.": "L'endpoint è esposto senza una chiave API.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Due modi per connettersi: accedi con il tuo account OrcaRouter oppure incolla una chiave API esistente. Entrambi producono una normale chiave OrcaRouter addebitata sul tuo account.",
+  "OrcaRouter API key": "Chiave API OrcaRouter",
+  "Authorization code": "Codice di autorizzazione",
+  "Sign in with OrcaRouter": "Accedi con OrcaRouter",
+  "Paste the code from the OrcaRouter page": "Incolla il codice dalla pagina OrcaRouter",
+  "Create or revoke keys in the": "Crea o revoca chiavi in",
+  "Capability": "Capacità",
+  "Select an OrcaRouter model": "Seleziona un modello OrcaRouter",
+  "Live catalog": "Catalogo live",
+  "Live catalog unavailable — verified offline list": "Catalogo live non disponibile — elenco offline verificato",
+  "No OrcaRouter models match this capability or input type.": "Nessun modello OrcaRouter corrisponde a questa capacità o tipo di input.",
+  "Add an OrcaRouter connection first.": "Aggiungi prima una connessione OrcaRouter.",
+  "Images": "Immagini",
+  "Loading models…": "Caricamento modelli…"
 }

@@ -193,5 +193,19 @@
   "Click to add, click again to remove. Changes are saved automatically.": "Nhấp để thêm, nhấp lại để xóa. Thay đổi được lưu tự động.",
   "⚠️ Risk Notice: This provider uses a subscription/OAuth session not officially licensed for proxy/router use. Account may be restricted or banned. Use at your own risk.": "⚠️ Cảnh báo rủi ro: Provider này sử dụng subscription/OAuth không được cấp phép chính thức cho mục đích proxy/router. Tài khoản có thể bị hạn chế hoặc cấm. Người dùng tự chịu trách nhiệm.",
   "⚠️ MITM intercepts HTTPS traffic of IDE tools (Antigravity, GitHub Copilot, Kiro) via local CA to redirect requests to your providers. May violate ToS → account ban. Use at your own risk.": "⚠️ MITM chặn lưu lượng HTTPS của các IDE tools (Antigravity, GitHub Copilot, Kiro) qua CA cục bộ để chuyển hướng request đến providers của bạn. Có thể vi phạm ToS → rủi ro bị ban tài khoản. Sử dụng với rủi ro của bạn.",
-  "Endpoint is exposed without an API key.": "Endpoint đang mở mà không có API key."
+  "Endpoint is exposed without an API key.": "Endpoint đang mở mà không có API key.",
+  "Two ways to connect: sign in with your OrcaRouter account, or paste an existing API key. Both end up as a normal OrcaRouter key billed to your own account.": "Hai cách để kết nối: đăng nhập bằng tài khoản OrcaRouter, hoặc dán API key có sẵn. Cả hai đều tạo ra một key OrcaRouter thông thường tính phí vào tài khoản của bạn.",
+  "OrcaRouter API key": "API key OrcaRouter",
+  "Authorization code": "Mã uỷ quyền",
+  "Sign in with OrcaRouter": "Đăng nhập bằng OrcaRouter",
+  "Paste the code from the OrcaRouter page": "Dán mã từ trang OrcaRouter",
+  "Create or revoke keys in the": "Tạo hoặc thu hồi key trong",
+  "Capability": "Khả năng",
+  "Select an OrcaRouter model": "Chọn một mô hình OrcaRouter",
+  "Live catalog": "Danh mục trực tiếp",
+  "Live catalog unavailable — verified offline list": "Danh mục trực tiếp không khả dụng — danh sách ngoại tuyến đã xác minh",
+  "No OrcaRouter models match this capability or input type.": "Không có mô hình OrcaRouter nào phù hợp với khả năng hoặc loại đầu vào này.",
+  "Add an OrcaRouter connection first.": "Thêm kết nối OrcaRouter trước.",
+  "Images": "Hình ảnh",
+  "Loading models…": "Đang tải mô hình…"
 }
