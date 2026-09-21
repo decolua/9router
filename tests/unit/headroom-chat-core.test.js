@@ -294,4 +294,33 @@ describe("handleChatCore Headroom diagnostics", () => {
       }),
     }));
   });
+
+  it("detaches the client abort listener after an executor error", async () => {
+    executeMock.mockRejectedValueOnce(new Error("provider unavailable"));
+    const client = new AbortController();
+    const onDisconnect = vi.fn();
+
+    const result = await handleChatCore({
+      body: { model: "gpt-4o", stream: true, messages: [{ role: "user", content: "hello" }] },
+      modelInfo: { provider: "openai", model: "gpt-4o" },
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
+      connectionId: "test-conn",
+      externalSignal: client.signal,
+      onDisconnect,
+      headroomEnabled: false,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      clientRawRequest: {
+        endpoint: "/v1/responses",
+        body: {},
+        headers: { accept: "text/event-stream" },
+      },
+    });
+
+    expect(result.success).toBe(false);
+    client.abort("late client close");
+    expect(onDisconnect).not.toHaveBeenCalled();
+  });
 });
