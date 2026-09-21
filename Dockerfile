@@ -18,6 +18,10 @@ RUN npm run build
 
 FROM ${NODE_IMAGE} AS runner
 WORKDIR /app
+# The base stage's mirror swap does not reach here: runner starts from
+# ${NODE_IMAGE} directly, so the apk upgrade below would go to
+# dl-cdn.alpinelinux.org and hang forever on networks that cannot reach it.
+RUN sed -i 's|dl-cdn.alpinelinux.org|mirrors.aliyun.com|g' /etc/apk/repositories
 
 LABEL org.opencontainers.image.title="9router"
 
