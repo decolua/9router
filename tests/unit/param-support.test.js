@@ -52,4 +52,48 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.max_tokens).toBe(64000);
   });
+
+  it("drops replayed reasoning fields from assistant messages for strict providers", () => {
+    const makeBody = () => ({
+      messages: [
+        { role: "user", content: "hi" },
+        {
+          role: "assistant",
+          content: "hello",
+          reasoning_content: "thinking...",
+          reasoning: "thinking...",
+          reasoning_details: [{ text: "thinking..." }],
+          tool_calls: [{ id: "c1", type: "function", function: { name: "f", arguments: "{}" } }],
+        },
+        { role: "user", content: "again", reasoning_content: "user-side field stays" },
+      ],
+    });
+
+    for (const [provider, model] of [
+      ["groq", "openai/gpt-oss-120b"],
+      ["mistral", "codestral-latest"],
+      ["cerebras", "gpt-oss-120b"],
+    ]) {
+      const body = makeBody();
+      stripUnsupportedParams(provider, model, body);
+      expect(body.messages[1]).toEqual({
+        role: "assistant",
+        content: "hello",
+        tool_calls: [{ id: "c1", type: "function", function: { name: "f", arguments: "{}" } }],
+      });
+      // only assistant turns are touched
+      expect(body.messages[2].reasoning_content).toBe("user-side field stays");
+    }
+  });
+
+  it("leaves reasoning fields alone for providers that accept or require them", () => {
+    const body = {
+      messages: [{ role: "assistant", content: "hello", reasoning_content: "thinking..." }],
+    };
+
+    stripUnsupportedParams("deepseek", "deepseek-reasoner", body);
+    stripUnsupportedParams("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free", body);
+
+    expect(body.messages[0].reasoning_content).toBe("thinking...");
+  });
 });
