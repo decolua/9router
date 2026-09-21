@@ -5,22 +5,164 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Existing vX.Y.Z tag to publish"
+        required: true
+        type: string
+      promote_latest:
+        description: "Promote this republish to latest"
+        required: false
+        default: false
+        type: boolean
+
+# Keep every release in one FIFO queue. A per-tag group would still allow an
+# older release to finish after a newer release and move latest backwards.
+concurrency:
+  group: docker-publish-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
 
 env:
-  GHCR_IMAGE: ghcr.io/${{ github.repository }}
   DOCKERHUB_IMAGE: decolua/9router
 
 jobs:
-  build-and-push:
+  prepare:
+    name: Validate release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      commit: ${{ steps.release.outputs.commit }}
+      publish_dockerhub: ${{ steps.release.outputs.publish_dockerhub }}
+      promote_latest: ${{ steps.release.outputs.promote_latest }}
+      ghcr_image: ${{ steps.release.outputs.ghcr_image }}
+
+    steps:
+      - name: Check out release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_tag || github.ref_name }}
+          fetch-depth: 1
+
+      - name: Validate tag and package versions
+        id: release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          PROMOTE_LATEST_INPUT: ${{ inputs.promote_latest && 'true' || 'false' }}
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const { execFileSync } = require("child_process");
+
+          const tag = process.env.RELEASE_TAG || "";
+          const match = /^v((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?)$/.exec(tag);
+
+          if (tag.includes("+")) {
+            console.error(`Build metadata is not supported in Docker release tags: ${tag}`);
+            process.exit(1);
+          }
+
+          if (!match) {
+            console.error(`Expected a Docker-safe semver tag like v0.5.81 or v0.5.81-rc.1, received: ${tag || "<empty>"}`);
+            process.exit(1);
+          }
+
+          const version = match[1];
+          if (version.length > 128 || !/^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$/.test(version)) {
+            console.error(`Version is not a valid Docker tag: ${version}`);
+            process.exit(1);
+          }
+
+          const prerelease = version.includes("-")
+            ? version.slice(version.indexOf("-") + 1).split(".")
+            : [];
+          for (const identifier of prerelease) {
+            if (/^\d+$/.test(identifier) && identifier.length > 1 && identifier.startsWith("0")) {
+              console.error(`Numeric prerelease identifiers cannot contain leading zeroes: ${identifier}`);
+              process.exit(1);
+            }
+          }
+
+          const rootVersion = require("./package.json").version;
+          const cliVersion = require("./cli/package.json").version;
+
+          if (rootVersion !== version) {
+            console.error(`package.json version ${rootVersion} does not match tag ${tag}`);
+            process.exit(1);
+          }
+
+          if (cliVersion !== version) {
+            console.error(`cli/package.json version ${cliVersion} does not match tag ${tag}`);
+            process.exit(1);
+          }
+
+          const commit = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+          const publishDockerHub = process.env.REPOSITORY === "decolua/9router";
+          const ghcrImage = `ghcr.io/${process.env.REPOSITORY.toLowerCase()}`;
+          const isPrerelease = version.includes("-");
+          const promoteLatest = (process.env.EVENT_NAME === "push" && !isPrerelease)
+            || process.env.PROMOTE_LATEST_INPUT === "true";
+          const output = process.env.GITHUB_OUTPUT;
+
+          fs.appendFileSync(output, `tag=${tag}\n`);
+          fs.appendFileSync(output, `version=${version}\n`);
+          fs.appendFileSync(output, `commit=${commit}\n`);
+          fs.appendFileSync(output, `publish_dockerhub=${publishDockerHub}\n`);
+          fs.appendFileSync(output, `promote_latest=${promoteLatest}\n`);
+          fs.appendFileSync(output, `ghcr_image=${ghcrImage}\n`);
+
+          console.log(`Validated ${tag} at ${commit}`);
+          console.log(`latest promotion: ${promoteLatest ? "enabled" : "disabled"}`);
+          NODE
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      GHCR_IMAGE: ${{ needs.prepare.outputs.ghcr_image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            suffix: amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            suffix: arm64
+            runner: ubuntu-24.04-arm
+
     permissions:
       contents: read
       packages: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out release source at validated commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.commit }}
+          path: source
+          fetch-depth: 1
 
-      - uses: docker/setup-buildx-action@v3
+      - name: Check out publishing Dockerfile
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: workflow
+          sparse-checkout: |
+            Dockerfile
+          fetch-depth: 1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -29,32 +171,267 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push platform image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: source
+          file: workflow/Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ env.GHCR_IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            APP_VERSION=${{ needs.prepare.outputs.version }}
+            ALPINE_MIRROR=${{ vars.ALPINE_MIRROR || 'dl-cdn.alpinelinux.org' }}
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY || 'https://registry.npmjs.org/' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ needs.prepare.outputs.commit }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+          cache-from: type=gha,scope=9router-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=9router-${{ matrix.suffix }}
+          provenance: false
+          sbom: false
+
+      - name: Smoke-test platform image before publishing digest artifact
+        env:
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -Eeuo pipefail
+          [[ "$IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+
+          container="9router-platform-smoke-${GITHUB_RUN_ID}-${{ matrix.suffix }}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+
+          docker run --detach \
+            --name "$container" \
+            --platform "$PLATFORM" \
+            --publish 20128:20128 \
+            "${GHCR_IMAGE}@${IMAGE_DIGEST}"
+
+          for attempt in {1..45}; do
+            if curl --fail --silent --show-error http://127.0.0.1:20128/api/health; then
+              echo "${PLATFORM} health check passed"
+              exit 0
+            fi
+            if (( attempt % 5 == 0 )); then
+              echo "Waiting for ${PLATFORM} health check (${attempt}/45)" >&2
+            fi
+            sleep 2
+          done
+
+          echo "${PLATFORM} health check failed; container logs follow:" >&2
+          docker logs "$container" || true
+          exit 1
+
+      - name: Save image digest
+        env:
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          test -n "$IMAGE_DIGEST"
+          mkdir -p "$RUNNER_TEMP/digests"
+          printf '%s\n' "$IMAGE_DIGEST" > "$RUNNER_TEMP/digests/${{ matrix.suffix }}.txt"
+
+      - name: Upload image digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.suffix }}
+          path: ${{ runner.temp }}/digests/${{ matrix.suffix }}.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish and verify manifest
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GHCR_IMAGE: ${{ needs.prepare.outputs.ghcr_image }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Download platform digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and verify version manifest
+        env:
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          digest_files=("$RUNNER_TEMP"/digests/*.txt)
+
+          if [[ "${#digest_files[@]}" -ne 2 ]]; then
+            echo "Expected two platform digests, found ${#digest_files[@]}" >&2
+            exit 1
+          fi
+
+          sources=()
+          for digest_file in "${digest_files[@]}"; do
+            digest="$(tr -d '\n' < "$digest_file")"
+            if [[ ! "$digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "Invalid image digest in $digest_file: $digest" >&2
+              exit 1
+            fi
+            sources+=("${GHCR_IMAGE}@${digest}")
+          done
+
+          docker buildx imagetools create \
+            --tag "${GHCR_IMAGE}:${VERSION}" \
+            "${sources[@]}"
+
+          docker buildx imagetools inspect "${GHCR_IMAGE}:${VERSION}" | tee "$RUNNER_TEMP/version-manifest.txt"
+          docker buildx imagetools inspect --raw "${GHCR_IMAGE}:${VERSION}" > "$RUNNER_TEMP/version-manifest.json"
+
+          expected=$'linux/amd64\nlinux/arm64'
+          actual="$(jq -r '[.manifests[] | select(.platform != null and .platform.os != null and .platform.architecture != null) | "\(.platform.os)/\(.platform.architecture)"] | sort | .[]' "$RUNNER_TEMP/version-manifest.json")"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Version manifest platforms do not match exactly:" >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          fi
+
+      - name: Smoke-test resolved version manifest
+        env:
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -Eeuo pipefail
+          container="9router-manifest-smoke-${GITHUB_RUN_ID}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+
+          docker run --detach \
+            --name "$container" \
+            --platform linux/amd64 \
+            --publish 20128:20128 \
+            "${GHCR_IMAGE}:${VERSION}"
+
+          for attempt in {1..30}; do
+            if curl --fail --silent --show-error http://127.0.0.1:20128/api/health; then
+              echo "Resolved version manifest health check passed"
+              exit 0
+            fi
+            if (( attempt % 5 == 0 )); then
+              echo "Waiting for resolved manifest health check (${attempt}/30)" >&2
+            fi
+            sleep 2
+          done
+
+          echo "Resolved version manifest health check failed; container logs follow:" >&2
+          docker logs "$container" || true
+          exit 1
+
       - name: Log in to Docker Hub
+        if: needs.prepare.outputs.publish_dockerhub == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: |
-            ${{ env.GHCR_IMAGE }}
-            ${{ env.DOCKERHUB_IMAGE }}
-          tags: |
-            type=semver,pattern={{version}}
-            type=raw,value=latest,enable={{is_default_branch}}
+      - name: Publish version image to Docker Hub
+        if: needs.prepare.outputs.publish_dockerhub == 'true'
+        env:
+          DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_IMAGE }}
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker buildx imagetools create \
+            --tag "${DOCKERHUB_IMAGE}:${VERSION}" \
+            "${GHCR_IMAGE}:${VERSION}"
 
-      - name: Build and push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache
-          cache-to: type=registry,ref=${{ env.GHCR_IMAGE }}:buildcache,mode=max
-          platforms: linux/amd64,linux/arm64
-          provenance: false
-          sbom: false
+          docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:${VERSION}" | tee "$RUNNER_TEMP/dockerhub-version-manifest.txt"
+          docker buildx imagetools inspect --raw "${DOCKERHUB_IMAGE}:${VERSION}" > "$RUNNER_TEMP/dockerhub-version-manifest.json"
+
+          expected=$'linux/amd64\nlinux/arm64'
+          actual="$(jq -r '[.manifests[] | select(.platform != null and .platform.os != null and .platform.architecture != null) | "\(.platform.os)/\(.platform.architecture)"] | sort | .[]' "$RUNNER_TEMP/dockerhub-version-manifest.json")"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "Docker Hub version manifest platforms do not match exactly:" >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          fi
+
+      - name: Record latest promotion policy
+        env:
+          PROMOTE_LATEST: ${{ needs.prepare.outputs.promote_latest }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          if [[ "$PROMOTE_LATEST" == "true" ]]; then
+            echo "### Latest promotion" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Policy: promote \`latest\` after the verified ${VERSION} manifest." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Latest promotion" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Policy: leave \`latest\` unchanged; this is a numbered-tag-only manual republish." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Promote verified version to latest
+        if: needs.prepare.outputs.promote_latest == 'true'
+        env:
+          DOCKERHUB_IMAGE: ${{ env.DOCKERHUB_IMAGE }}
+          GHCR_IMAGE: ${{ env.GHCR_IMAGE }}
+          PUBLISH_DOCKERHUB: ${{ needs.prepare.outputs.publish_dockerhub }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          docker buildx imagetools create \
+            --tag "${GHCR_IMAGE}:latest" \
+            "${GHCR_IMAGE}:${VERSION}"
+
+          if [[ "$PUBLISH_DOCKERHUB" == "true" ]]; then
+            docker buildx imagetools create \
+              --tag "${DOCKERHUB_IMAGE}:latest" \
+              "${GHCR_IMAGE}:${VERSION}"
+          fi
+
+          docker buildx imagetools inspect "${GHCR_IMAGE}:latest" | tee "$RUNNER_TEMP/ghcr-latest-manifest.txt"
+          docker buildx imagetools inspect --raw "${GHCR_IMAGE}:latest" > "$RUNNER_TEMP/ghcr-latest-manifest.json"
+
+          expected=$'linux/amd64\nlinux/arm64'
+          actual="$(jq -r '[.manifests[] | select(.platform != null and .platform.os != null and .platform.architecture != null) | "\(.platform.os)/\(.platform.architecture)"] | sort | .[]' "$RUNNER_TEMP/ghcr-latest-manifest.json")"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "GHCR latest manifest platforms do not match exactly:" >&2
+            printf '%s\n' "$actual" >&2
+            exit 1
+          fi
+
+          if [[ "$PUBLISH_DOCKERHUB" == "true" ]]; then
+            docker buildx imagetools inspect "${DOCKERHUB_IMAGE}:latest" | tee "$RUNNER_TEMP/dockerhub-latest-manifest.txt"
+            docker buildx imagetools inspect --raw "${DOCKERHUB_IMAGE}:latest" > "$RUNNER_TEMP/dockerhub-latest-manifest.json"
+            actual="$(jq -r '[.manifests[] | select(.platform != null and .platform.os != null and .platform.architecture != null) | "\(.platform.os)/\(.platform.architecture)"] | sort | .[]' "$RUNNER_TEMP/dockerhub-latest-manifest.json")"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "Docker Hub latest manifest platforms do not match exactly:" >&2
+              printf '%s\n' "$actual" >&2
+              exit 1
+            fi
+          fi
+
+          {
+            echo "### Published Docker images"
+            echo "- GHCR: \`${GHCR_IMAGE}:${VERSION}\`"
+            echo "- GHCR latest: \`${GHCR_IMAGE}:latest\`"
+            if [[ "$PUBLISH_DOCKERHUB" == "true" ]]; then
+              echo "- Docker Hub: \`${DOCKERHUB_IMAGE}:${VERSION}\`"
+              echo "- Docker Hub latest: \`${DOCKERHUB_IMAGE}:latest\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
