@@ -6,6 +6,7 @@ import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { USAGE_APIKEY_PROVIDERS } from "@/shared/constants/providers";
+import { ingestAntigravityQuotaSnapshot } from "@/sse/services/antigravityQuota.js";
 
 // Detect auth-expired messages returned by usage providers instead of throwing
 const AUTH_EXPIRED_PATTERNS = ["expired", "authentication", "unauthorized", "401", "re-authorize"];
@@ -180,6 +181,17 @@ export async function GET(request, { params }) {
         usage = await getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
+      }
+    }
+
+    // Antigravity only: warm the routing quota cache with this fresh snapshot
+    // so the pool-aware pre-filter skips exhausted pools BEFORE any request
+    // pays a 429 probing them (Quota Tracker refresh doubles as cache warm-up).
+    if (connection.provider === "antigravity" && usage?.quotas && !usage.message) {
+      try {
+        ingestAntigravityQuotaSnapshot(connection.id, usage.quotas);
+      } catch (ingestError) {
+        console.warn(`[Usage] Failed to ingest quota snapshot for ${connection.email || connection.id}: ${ingestError.message}`);
       }
     }
 

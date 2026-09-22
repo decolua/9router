@@ -309,10 +309,18 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     if (result.success) return result.response;
 
-    // Antigravity 409/429: refresh live quota to get exact resetAt before locking
+    // Antigravity 409/429: refresh live quota to get exact resetAt before locking.
+    // 503 "MODEL_CAPACITY_EXHAUSTED" is included: it is ACCOUNT-specific in
+    // practice — Google refuses the request when the account's remaining pool
+    // is too small to fit it (e.g. 1/1000 left, big agent request). The quota
+    // refresh then shows the pool as practically exhausted and blocks that
+    // account's pool until reset, while healthy accounts keep routing.
     let quotaResetMs = null;
     let resetsAtMs = result.resetsAtMs;
-    if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
+    const isAntigravityCapacity503 = provider === "antigravity"
+      && result.status === 503
+      && /MODEL_CAPACITY_EXHAUSTED|No capacity available/i.test(String(result.error || ""));
+    if (provider === "antigravity" && (result.status === 409 || result.status === 429 || isAntigravityCapacity503)) {
       quotaResetMs = await handleAntigravityQuotaError(
         credentials.connectionId, result.status, model,
         refreshedCredentials.accessToken, credentials.providerSpecificData

@@ -6,6 +6,7 @@
 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
+import { getAntigravityQuotaPool, findPoolBlockForModel, synthesizePoolBlock } from "./antigravityQuotaPools.js";
 import * as log from "../utils/logger.js";
 
 // In-memory cache: connectionId → { [modelId]: { remainingPercentage, resetAt } }
@@ -68,6 +69,38 @@ export function clearAntigravityStrikes(connectionId, model) {
 }
 
 /**
+ * Pool-aware block check for the auth pre-filter.
+ *
+ * Extends the exact-model cache check with a pool-level check: when every
+ * metering entry of the model's quota pool (per-model entries + the pool's
+ * weekly summary) reports 0% remaining with a future resetAt, the account is
+ * exhausted for the WHOLE pool — skip it without another upstream probe.
+ * Sibling models in the OTHER pool stay selectable (the 2-pool split is
+ * exactly why a "quota exhausted" account can still serve other models).
+ *
+ * @param {object} quotas  cached quotas map for one connection
+ * @param {string} model    requested model id
+ * @returns {{ blocked: boolean, resetAt: string|null, reason: string|null }}
+ */
+export function isAntigravityPoolBlocked(quotas, model) {
+  // Pool-level check first: when every meter of the model's pool reports 0%
+  // with a future resetAt, the account is exhausted for the whole pool.
+  // (Runs before the exact-model check so a pool-wide exhaustion is reported
+  // as such even when the requested model's own entry also reads 0%.)
+  const pool = findPoolBlockForModel(quotas, model);
+  if (pool.blocked) {
+    return { blocked: true, resetAt: pool.resetAt, reason: `pool:${getAntigravityQuotaPool(model)}` };
+  }
+  // Exact-model entry still carries a block of its own (e.g. 5h window).
+  const exact = quotas?.[model];
+  if (exact && Number(exact.remainingPercentage) <= 0 && exact.resetAt
+      && Date.parse(exact.resetAt) > Date.now()) {
+    return { blocked: true, resetAt: exact.resetAt, reason: `model:${model}` };
+  }
+  return { blocked: false, resetAt: null, reason: null };
+}
+
+/**
  * Get the quota cache (read-only reference for auth.js pre-filter).
  */
 export function getAntigravityQuotaCache() {
@@ -102,6 +135,34 @@ export async function refreshAntigravityQuota(connectionId, accessToken, provide
   }
 }
 
+/**
+ * Ingest an externally-fetched Antigravity quota snapshot (e.g. from the
+ * dashboard Quota Tracker / /api/usage) into the routing cache. This warms
+ * the pool-aware pre-filter WITHOUT waiting for a first 429 per account —
+ * the cache-block path then skips exhausted pools before any upstream probe.
+ *
+ * Applies the same pool-exhausted guard as _doRefresh so an exhausted pool
+ * propagates to every sibling model in one shot. Never throws.
+ */
+export function ingestAntigravityQuotaSnapshot(connectionId, quotas) {
+  if (!connectionId || !quotas || typeof quotas !== "object") return false;
+
+  let next = quotas;
+  for (const poolModel of ["gemini-3.8-flash-high", "claude-sonnet-4-6"]) {
+    const probe = findPoolBlockForModel(next, poolModel);
+    if (probe.blocked && probe.resetAt) {
+      const before = Object.keys(next).length;
+      next = synthesizePoolBlock(next, poolModel, probe.resetAt);
+      if (Object.keys(next).length > before) {
+        log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | POOL_EXHAUSTED ${getAntigravityQuotaPool(poolModel)} (ingest) — block pool until ${probe.resetAt}`);
+      }
+    }
+  }
+
+  quotaCache.set(connectionId, applyActiveStrikeBlocks(connectionId, next));
+  return true;
+}
+
 async function _doRefresh(connectionId, accessToken, providerSpecificData, now) {
   try {
     const proxyCfg = await resolveConnectionProxyConfig(providerSpecificData || {});
@@ -118,10 +179,28 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
     // Preserve known cache instead of replacing it with an upstream error response.
     if (!usage?.quotas || usage.message) return null;
 
+    let quotas = usage.quotas;
+
+    // Pool-aware guard: if the refresh proves a pool is exhausted (weekly at
+    // 0% with a future resetAt — the binding window for every tier),
+    // propagate the block pool-wide right away so sibling models are skipped
+    // without waiting for their own 429. One probe model per pool is enough:
+    // the summary windows are pool-level, not model-level.
+    for (const poolModel of ["gemini-3.8-flash-high", "claude-sonnet-4-6"]) {
+      const probe = findPoolBlockForModel(quotas, poolModel);
+      if (probe.blocked && probe.resetAt) {
+        const before = Object.keys(quotas).length;
+        quotas = synthesizePoolBlock(quotas, poolModel, probe.resetAt);
+        if (Object.keys(quotas).length > before) {
+          log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | POOL_EXHAUSTED ${getAntigravityQuotaPool(poolModel)} — block pool until ${probe.resetAt}`);
+        }
+      }
+    }
+
     // Update in-memory cache. Caller logs CACHE_BLOCK only if requested model is exhausted.
     // Strike blocks are re-asserted after every refresh so an optimistic
     // upstream reading cannot resurrect a pair we just circuit-broke.
-    quotaCache.set(connectionId, applyActiveStrikeBlocks(connectionId, usage.quotas));
+    quotaCache.set(connectionId, applyActiveStrikeBlocks(connectionId, quotas));
 
     return usage.quotas;
   } catch (e) {
@@ -140,7 +219,35 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
 
   // Throttle applies to error paths too: one quota request per account/30s.
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
-  const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
+  const quotas = await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData);
+  const quota = quotas?.[model];
+
+  // 503 MODEL_CAPACITY_EXHAUSTED is an authoritative "doesn't fit" signal,
+  // regardless of the remaining percentage: upstream rejected THIS request
+  // because the account's pool cannot fit it, so a follow-up request of the
+  // same task (agent turns are similarly sized) will not fit either. Block
+  // the whole pool for this account immediately after one probe — no
+  // threshold guessing, no repeated 503 round-trips per prompt turn.
+  // Prefer the pool's own resetAt from the refreshed snapshot (weekly for
+  // free/plus accounts, weekly/5h for pro); fall back to a short block when
+  // the reading carries no usable reset time.
+  if (status === 503) {
+    const pool = getAntigravityQuotaPool(model);
+    const candidates = [
+      quota,
+      pool ? quotas?.[`${pool}_weekly`] : null,
+      pool ? quotas?.[`${pool}_5h`] : null,
+    ].filter(q => q?.resetAt && Date.parse(q.resetAt) > Date.now());
+    const resetCandidate = candidates.sort((a, b) => Date.parse(b.resetAt) - Date.parse(a.resetAt))[0];
+    const resetAt = resetCandidate?.resetAt || new Date(Date.now() + STRIKE_BLOCK_MS).toISOString();
+
+    strikeCounts.delete(`${connectionId}|${model}`);
+    const cached = synthesizePoolBlock(quotaCache.get(connectionId), model, resetAt);
+    quotaCache.set(connectionId, cached);
+    const reading = resetCandidate ? `reading ${Math.round(resetCandidate.remainingPercentage ?? 0)}%` : "no reading";
+    log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | UPSTREAM_503 ${model} — capacity exceeded, request won't fit (${reading}); CACHE_BLOCK pool until ${resetAt}`);
+    return Date.parse(resetAt);
+  }
 
   // Strike breaker: count every 429 whose quota reading is either optimistic
   // (remaining > 0) or unavailable (quota API 403/error). 3 within the window
@@ -166,9 +273,18 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
       // Synthesize a 0% entry in the shared cache so the auth pre-filter skips
       // this pair on subsequent requests too, not just the current retry loop
       // (the chat handler does not persist modelLock_* for this path).
-      const cached = quotaCache.get(connectionId) || {};
-      cached[model] = { remainingPercentage: 0, resetAt: new Date(blockedUntil).toISOString() };
+      // Pool-wide synthesis: the strike proves upstream keeps 429ing this
+      // model, and quota is metered per POOL (gemini vs claude_gpt) — block
+      // every sibling in the pool so each one doesn't have to pay its own
+      // 429 round-trip to learn the same thing.
+      const cached = synthesizePoolBlock(quotaCache.get(connectionId), model, new Date(blockedUntil).toISOString());
       quotaCache.set(connectionId, cached);
+      // Pool-wide strike block: re-assert across the whole family.
+      for (const [k] of strikeBlocks) {
+        if (k.startsWith(`${connectionId}|`) && getAntigravityQuotaPool(k.slice(connectionId.length + 1)) === getAntigravityQuotaPool(model)) {
+          strikeBlocks.set(k, blockedUntil);
+        }
+      }
       strikeBlocks.set(key, blockedUntil);
       return blockedUntil;
     }
@@ -181,6 +297,17 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
 
   const resetMs = new Date(quota.resetAt).getTime();
   if (resetMs <= Date.now()) return null;
+
+  // Pool-wide exhaustion confirmed upstream: propagate to sibling models so
+  // the pre-filter skips them too. The upstream reading's resetAt (weekly
+  // when weekly is the binding constraint; per-model 5h otherwise) is trusted.
+  const poolProbe = findPoolBlockForModel(quotaCache.get(connectionId), model);
+  const effectiveReset = poolProbe.blocked && poolProbe.resetAt ? poolProbe.resetAt : quota.resetAt;
+  if (effectiveReset !== quota.resetAt) {
+    const cached = synthesizePoolBlock(quotaCache.get(connectionId), model, effectiveReset);
+    quotaCache.set(connectionId, cached);
+    log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | POOL_BLOCK ${getAntigravityQuotaPool(model)} until ${effectiveReset}`);
+  }
 
   log.warn("AG_QUOTA", `${connectionId.slice(0, 8)} | UPSTREAM_${status} ${model} — quota exhausted; CACHE_BLOCK until ${quota.resetAt}`);
   return resetMs;
