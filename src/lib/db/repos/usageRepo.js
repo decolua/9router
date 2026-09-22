@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { createHash } from "crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -7,6 +8,11 @@ function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
   if (key.length <= 8) return key.charAt(0) + "***";
   return key.slice(0, 8) + "***";
+}
+
+function apiKeyIdentity(key) {
+  if (!key || typeof key !== "string") return "local-no-key";
+  return createHash("sha256").update(key).digest("hex").slice(0, 16);
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -500,7 +506,7 @@ export async function getUsageStats(period = "all") {
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
 
-      for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
+      for (const ak of Object.values(day.byApiKey || {})) {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
@@ -508,7 +514,8 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
         const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
-        const apiKeyKey = apiKeyMasked || "local-no-key";
+        const apiKeyKey = apiKeyIdentity(apiKeyVal);
+        const akKey = `${apiKeyKey}|${rawModel}|${provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
@@ -555,8 +562,8 @@ export async function getUsageStats(period = "all") {
       }
 
       const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
-        : "local-no-key";
+        ? `${apiKeyIdentity(e.apiKey)}|${e.model}|${e.provider || "unknown"}`
+        : `local-no-key|${e.model}|${e.provider || "unknown"}`;
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
       const endpoint = e.endpoint || "Unknown";
@@ -627,18 +634,20 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyMap[r.apiKey];
         const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
         const apiKeyMasked = maskApiKey(r.apiKey);
-        const akKey = `${apiKeyMasked}|${r.model}|${r.provider || "unknown"}`;
+        const apiKeyKey = apiKeyIdentity(r.apiKey);
+        const akKey = `${apiKeyKey}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
-          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: r.timestamp };
         }
         const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       } else {
-        if (!stats.byApiKey["local-no-key"]) {
-          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+        const akKey = `local-no-key|${r.model}|${r.provider || "unknown"}`;
+        if (!stats.byApiKey[akKey]) {
+          stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
         }
-        const ake = stats.byApiKey["local-no-key"];
+        const ake = stats.byApiKey[akKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       }
