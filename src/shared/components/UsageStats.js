@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
+import { USAGE_PERIOD_OPTIONS } from "@/lib/usagePeriods.js";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
@@ -192,13 +193,7 @@ const TABLE_OPTIONS = [
   { value: "endpoint", label: "Usage by Endpoint" },
 ];
 
-const PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
-];
+const PERIODS = USAGE_PERIOD_OPTIONS;
 
 export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
   const router = useRouter();
@@ -446,7 +441,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Period selector (hidden when controlled by parent) */}
       {!hidePeriodSelector && (
         <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end">
-          <div className="grid flex-1 grid-cols-5 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex sm:flex-none">
+          <div className="flex flex-1 flex-wrap items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex-none">
             {PERIODS.map((p) => (
               <button
                 key={p.value}

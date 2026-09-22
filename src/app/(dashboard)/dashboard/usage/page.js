@@ -3,15 +3,10 @@
 import { Suspense, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { UsageStats, RequestLogger, CardSkeleton, SegmentedControl } from "@/shared/components";
+import { USAGE_PERIOD_OPTIONS } from "@/lib/usagePeriods.js";
 import RequestDetailsTab from "./components/RequestDetailsTab";
 
-const PERIODS = [
-  { value: "today", label: "Today" },
-  { value: "24h", label: "24h" },
-  { value: "7d", label: "7D" },
-  { value: "30d", label: "30D" },
-  { value: "60d", label: "60D" },
-];
+const PERIODS = USAGE_PERIOD_OPTIONS;
 
 export default function UsagePage() {
   return (
@@ -41,25 +36,31 @@ function UsageContent() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      {/* Tabs + period selector on same row */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-        <SegmentedControl
-          options={[
-            { value: "overview", label: "Overview" },
-            { value: "details", label: "Details" },
-          ]}
-          value={activeTab}
-          onChange={handleTabChange}
-          className="w-full sm:w-auto"
-        />
-        {activeTab === "overview" && (
+      {/* Keep tabs left and periods right on one line without overlap */}
+      <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="relative z-20 shrink-0">
           <SegmentedControl
-            options={PERIODS}
-            value={period}
-            onChange={setPeriod}
-            size="sm"
-            className="w-full sm:w-auto"
+            options={[
+              { value: "overview", label: "Overview" },
+              { value: "details", label: "Details" },
+            ]}
+            value={activeTab}
+            onChange={handleTabChange}
+            className="w-auto shrink-0"
           />
+        </div>
+        {activeTab === "overview" && (
+          <div className="flex min-w-0 flex-1 justify-end overflow-hidden">
+            <div className="overflow-x-auto">
+              <SegmentedControl
+                options={PERIODS}
+                value={period}
+                onChange={setPeriod}
+                size="sm"
+                className="min-w-max"
+              />
+            </div>
+          </div>
         )}
       </div>
 
