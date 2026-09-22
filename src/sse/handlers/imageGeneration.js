@@ -6,6 +6,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -42,6 +43,9 @@ export async function handleImageGeneration(request) {
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
   }
+
+  const limitResponse = await enforceApiKeyLimits(apiKey);
+  if (limitResponse) return limitResponse;
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");

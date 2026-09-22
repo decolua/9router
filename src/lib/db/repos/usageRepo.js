@@ -307,10 +307,38 @@ export async function saveRequestUsage(entry) {
     if (inserted) {
       pushToRing(entry);
       scheduleStatsEvent("update", 250);
+      // Not debounced: per-key limit caches must see new usage immediately
+      if (entry.apiKey) statsEmitter.emit("apiKeyUsage", entry.apiKey);
     }
   } catch (e) {
     console.error("Failed to save usage stats:", e);
   }
+}
+
+// Usage totals for one API key: today and this month (used by per-key limits).
+// Today always falls inside this month, so one scan from monthStart covers both.
+export async function getApiKeyUsageTotals(apiKey, dayStartIso, monthStartIso) {
+  const empty = () => ({ inputTokens: 0, outputTokens: 0, requests: 0, cost: 0 });
+  if (!apiKey) return { day: empty(), month: empty() };
+  const db = await getAdapter();
+  const row = db.get(
+    `SELECT
+       COALESCE(SUM(CASE WHEN timestamp >= ? THEN promptTokens ELSE 0 END), 0) AS dayInput,
+       COALESCE(SUM(CASE WHEN timestamp >= ? THEN completionTokens ELSE 0 END), 0) AS dayOutput,
+       COALESCE(SUM(CASE WHEN timestamp >= ? THEN 1 ELSE 0 END), 0) AS dayRequests,
+       COALESCE(SUM(CASE WHEN timestamp >= ? THEN cost ELSE 0 END), 0) AS dayCost,
+       COALESCE(SUM(promptTokens), 0) AS monthInput,
+       COALESCE(SUM(completionTokens), 0) AS monthOutput,
+       COUNT(*) AS monthRequests,
+       COALESCE(SUM(cost), 0) AS monthCost
+     FROM usageHistory WHERE apiKey = ? AND timestamp >= ?`,
+    [dayStartIso, dayStartIso, dayStartIso, dayStartIso, apiKey, monthStartIso]
+  );
+  const n = (v) => Number(v) || 0;
+  return {
+    day: { inputTokens: n(row?.dayInput), outputTokens: n(row?.dayOutput), requests: n(row?.dayRequests), cost: n(row?.dayCost) },
+    month: { inputTokens: n(row?.monthInput), outputTokens: n(row?.monthOutput), requests: n(row?.monthRequests), cost: n(row?.monthCost) },
+  };
 }
 
 export async function getUsageHistory(filter = {}) {

@@ -1,4 +1,5 @@
 import { handleChat } from "@/sse/handlers/chat.js";
+import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import {
   clearAccountError,
   getProviderCredentials,
@@ -179,19 +180,20 @@ function buildGeminiNativeUrl(requestUrl, model, action) {
 
 async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
-  if (!settings.requireApiKey) return null;
-
   const apiKey = extractGeminiClientApiKey(request);
-  if (!apiKey) {
-    return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+
+  if (settings.requireApiKey) {
+    if (!apiKey) {
+      return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
+    }
+
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
+    }
   }
 
-  const valid = await isValidApiKey(apiKey);
-  if (!valid) {
-    return Response.json({ error: { message: "Invalid API key" } }, { status: 401 });
-  }
-
-  return null;
+  return enforceApiKeyLimits(apiKey);
 }
 
 function buildGeminiNativeAuthHeaders(credentials) {

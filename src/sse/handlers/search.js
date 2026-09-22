@@ -6,6 +6,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { getSettings, getCombos } from "@/lib/localDb";
+import { enforceApiKeyLimits } from "@/lib/apiKeyLimits.js";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleSearchCore } from "open-sse/handlers/search/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -57,6 +58,9 @@ export async function handleSearch(request) {
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
   }
+
+  const limitResponse = await enforceApiKeyLimits(apiKey);
+  if (limitResponse) return limitResponse;
 
   if (!providerInput || typeof providerInput !== "string") {
     log.warn("SEARCH", "Missing provider/model");
