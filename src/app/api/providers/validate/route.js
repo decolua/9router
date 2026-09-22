@@ -582,11 +582,12 @@ export async function POST(request) {
           break;
         }
 
-        case "qoder": {
+        case "qoder":
+        case "qoder-cn": {
           // PAT (pt-...) needs the job-token exchange before it can sign
           // anything — the generic OpenAI-compat probe below can't validate it.
           try {
-            const resolved = await resolveQoderCredentials({ apiKey, providerSpecificData }, null, AbortSignal.timeout(8000));
+            const resolved = await resolveQoderCredentials({ provider, apiKey, providerSpecificData }, null, AbortSignal.timeout(8000));
             const result = await resolveQoderModels(resolved, { forceRefresh: true });
             isValid = !!result?.models?.length;
           } catch (err) {

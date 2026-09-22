@@ -14,6 +14,12 @@ import { GET as deepseekTuiGet } from "../deepseek-tui-settings/route";
 import { GET as jcodeGet } from "../jcode-settings/route";
 import { GET as grokBuildGet } from "../grok-build-settings/route";
 import { GET as devinGet } from "../devin-settings/route";
+import { GET as piGet } from "../pi-settings/route";
+import { GET as ompGet } from "../omp-settings/route";
+import { GET as crushGet } from "../crush-settings/route";
+import { GET as forgeGet } from "../forge-settings/route";
+import { GET as smeltGet } from "../smelt-settings/route";
+import { GET as codewhaleGet } from "../codewhale-settings/route";
 
 const STATUS_GETTERS = {
   claude: claudeGet,
@@ -29,6 +35,12 @@ const STATUS_GETTERS = {
   jcode: jcodeGet,
   "grok-build": grokBuildGet,
   devin: devinGet,
+  pi: piGet,
+  omp: ompGet,
+  crush: crushGet,
+  forge: forgeGet,
+  smelt: smeltGet,
+  codewhale: codewhaleGet,
 };
 
 // Batch endpoint: gather all CLI tool statuses in one round-trip

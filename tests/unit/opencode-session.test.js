@@ -277,39 +277,68 @@ describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
     expect(second).toBe(first);
   });
 
-  it("cloaks free-tier requests with bash and read decoy tools", () => {
+  it("applies the full lowercase free-tier fingerprint quartet", () => {
+  const executor = getExecutor("opencode");
+
+  const chatNoTools = executor.transformRequest("nemotron-3-ultra-free", {
+    messages: [{ role: "user", content: "hi" }],
+  });
+  expect(chatNoTools.stream).toBe(true);
+  expect(chatNoTools.tool_choice).toBe("none");
+  expect(chatNoTools.tools.map((t) => t.function?.name)).toEqual([
+    "bash", "glob", "grep", "read",
+  ]);
+
+  const chatWithTools = executor.transformRequest("nemotron-3-ultra-free", {
+    messages: [{ role: "user", content: "hi" }],
+    tools: [
+      { type: "function", function: { name: "Bash", description: "Claude Code tool" } },
+      { type: "function", function: { name: "Glob", description: "Claude Code tool" } },
+      { type: "function", function: { name: "Grep", description: "Claude Code tool" } },
+      { type: "function", function: { name: "Read", description: "Claude Code tool" } },
+    ],
+    tool_choice: "auto",
+  });
+  expect(chatWithTools.tool_choice).toBe("auto");
+  expect(chatWithTools.tools.map((t) => t.function?.name)).toEqual([
+    "bash", "glob", "grep", "read",
+  ]);
+
+  const chatPartial = executor.transformRequest("nemotron-3-ultra-free", {
+    messages: [{ role: "user", content: "hi" }],
+    tools: [
+      { type: "function", function: { name: "bash", description: "existing" } },
+      { type: "function", function: { name: "read", description: "existing" } },
+    ],
+  });
+  expect(chatPartial.tools.map((t) => t.function?.name)).toEqual([
+    "bash", "read", "glob", "grep",
+  ]);
+  expect(chatPartial.tools[0].function.description).toBe("existing");
+});
+
+  it("cloaks Muse Responses requests even when the client already supplies tools", () => {
     const executor = getExecutor("opencode");
-
-    // Case 1: no tools sent by client -> injects bash + read with tool_choice none
-    const chatNoTools = executor.transformRequest("nemotron-3-ultra-free", {
-      messages: [{ role: "user", content: "hi" }],
-    });
-    expect(chatNoTools.stream).toBe(true);
-    expect(chatNoTools.tool_choice).toBe("none");
-    expect(chatNoTools.tools.map((t) => t.function?.name)).toEqual(["bash", "read"]);
-
-    // Case 2: external CLI tools (e.g. Claude Code Bash) -> preserves Bash, appends read
-    const chatWithTools = executor.transformRequest("nemotron-3-ultra-free", {
-      messages: [{ role: "user", content: "hi" }],
-      tools: [{ type: "function", function: { name: "Bash", description: "Claude Code tool" } }],
+    const transformed = executor.transformRequest("muse-spark-1.3-contributor-free(xhigh)", {
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      tools: [{
+        type: "function",
+        name: "zcode_search",
+        description: "client-provided tool",
+        parameters: { type: "object", properties: {} },
+      }],
       tool_choice: "auto",
-    });
-    expect(chatWithTools.tool_choice).toBe("auto");
-    const names = chatWithTools.tools.map((t) => t.function?.name);
-    expect(names).toContain("Bash");
+      reasoning_effort: "xhigh",
+    }, true, {});
+
+    expect(transformed.stream).toBe(true);
+    expect(transformed.reasoning?.effort).toBe("xhigh");
+    const names = transformed.tools.map((tool) => tool.name);
+    expect(names).toContain("zcode_search");
     expect(names).toContain("bash");
     expect(names).toContain("read");
-
-    // Case 3: already has both bash and read -> do not insert anything
-    const chatFull = executor.transformRequest("nemotron-3-ultra-free", {
-      messages: [{ role: "user", content: "hi" }],
-      tools: [
-        { type: "function", function: { name: "bash", description: "existing" } },
-        { type: "function", function: { name: "read", description: "existing" } },
-      ],
-    });
-    expect(chatFull.tools.length).toBe(2);
-    expect(chatFull.tools[0].function.description).toBe("existing");
+    expect(names.filter((name) => name === "bash")).toHaveLength(1);
+    expect(names.filter((name) => name === "read")).toHaveLength(1);
   });
 
   it("declares forceStream on the opencode transport so chatCore serves SSE upstream", async () => {

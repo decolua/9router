@@ -18,6 +18,18 @@ function textFrame(text) {
   return Buffer.from(wrapConnectRPCFrame(encodeField(1, LEN, update)));
 }
 
+// InteractionUpdate.thinking_delta (field 4) + turn_ended (field 14).
+function thinkingFrame(text) {
+  const thinkingPart = Buffer.from(encodeField(1, LEN, text));
+  const update = Buffer.from(encodeField(4, LEN, thinkingPart));
+  return Buffer.from(wrapConnectRPCFrame(encodeField(1, LEN, update)));
+}
+
+function turnEndedFrame() {
+  const update = Buffer.from(encodeField(14, LEN, new Uint8Array()));
+  return Buffer.from(wrapConnectRPCFrame(encodeField(1, LEN, update)));
+}
+
 function stubAgentSession(executor, frames) {
   const written = [];
   const queue = [...frames];
@@ -48,12 +60,12 @@ function parseSSE(text) {
     .map((data) => JSON.parse(data));
 }
 
-async function runAgent({ frames, stream }) {
+async function runAgent({ frames, stream, model = "gpt-5.2", tools }) {
   const executor = new CursorExecutor();
   const written = stubAgentSession(executor, frames);
   const result = await executor.executeAgent({
-    model: "gpt-5.2",
-    body: { messages: [{ role: "user", content: "hi" }] },
+    model,
+    body: { messages: [{ role: "user", content: "hi" }], ...(tools ? { tools } : {}) },
     stream,
     credentials,
   });
@@ -73,32 +85,45 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     expect(content).toBe("hello");
   });
 
+  it("does not echo client tools on the request_context ack", async () => {
+    const { written, result } = await runAgent({
+      tools: [{ function: { name: "read_file", parameters: { type: "object" } } }],
+      frames: [execRequestFrame(10), textFrame("hello")],
+      stream: true,
+    });
+
+    expect(written.length).toBe(2);
+    expect(written[1].toString("utf8")).not.toContain("read_file");
+    const content = parseSSE(await result.response.text())
+      .map((e) => e.choices?.[0]?.delta?.content || "")
+      .join("");
+    expect(content).toBe("hello");
+  });
+
   it("does not render an unsupported exec request as assistant content", async () => {
-    const { result } = await runAgent({
-      frames: [textFrame("partial answer"), execRequestFrame(2)],
+    const { result, written } = await runAgent({
+      frames: [textFrame("partial answer"), execRequestFrame(2), textFrame(" more")],
       stream: true,
     });
 
     const body = await result.response.text();
-    expect(body).not.toContain("unsupported IDE tool\\n");
+    expect(body).not.toContain("unsupported IDE tool");
     const events = parseSSE(body);
     const content = events.map((e) => e.choices?.[0]?.delta?.content || "").join("");
-    expect(content).toBe("partial answer");
-
-    const errorEvent = events.find((e) => e.error);
-    expect(errorEvent?.error?.message).toContain("unsupported IDE tool");
-    expect(events.some((e) => e.choices?.[0]?.finish_reason === "stop")).toBe(false);
+    expect(content).toBe("partial answer more");
+    expect(events.some((e) => e.error)).toBe(false);
+    expect(written.length).toBe(2); // run frame + IDE rejection
   });
 
-  it("drops frames batched behind an unsupported exec request in the same read", async () => {
+  it("still emits later text after rejecting an IDE exec in the same read", async () => {
     const { result } = await runAgent({
       frames: [Buffer.concat([execRequestFrame(2), textFrame("late")])],
       stream: true,
     });
 
     const body = await result.response.text();
-    expect(body).toContain("unsupported IDE tool");
-    expect(body).not.toContain("late");
+    expect(body).not.toContain("unsupported IDE tool");
+    expect(body).toContain("late");
   });
 
   it("returns a non-200 error body for an unsupported exec request when not streaming", async () => {
@@ -110,5 +135,33 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     expect(result.response.status).not.toBe(200);
     const payload = await result.response.json();
     expect(payload.error.message).toContain("unsupported IDE tool");
+  });
+
+  it("streams Composer visible content from thinking_delta after </think>", async () => {
+    const { result } = await runAgent({
+      model: "composer-2.5",
+      frames: [
+        thinkingFrame("private reasoning that must not leak</think>OK"),
+        turnEndedFrame(),
+      ],
+      stream: true,
+    });
+
+    const events = parseSSE(await result.response.text());
+    const content = events.map((e) => e.choices?.[0]?.delta?.content || "").join("");
+    expect(content).toBe("OK");
+    expect(JSON.stringify(events)).not.toContain("private reasoning");
+  });
+
+  it("flushes Grok thinking as visible content when the turn has no text_delta", async () => {
+    const { result } = await runAgent({
+      model: "grok-4.5",
+      frames: [thinkingFrame("hello from grok"), turnEndedFrame()],
+      stream: true,
+    });
+
+    const events = parseSSE(await result.response.text());
+    const content = events.map((e) => e.choices?.[0]?.delta?.content || "").join("");
+    expect(content).toBe("hello from grok");
   });
 });

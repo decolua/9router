@@ -149,6 +149,13 @@ export function claudeToOpenAIResponse(chunk, state) {
 
       if (chunk.delta?.stop_reason) {
         state.finishReason = convertStopReason(chunk.delta.stop_reason);
+        // A refusal produces no content blocks at all. Surface Anthropic's own
+        // explanation as the message text so the client shows *why* the turn is
+        // empty instead of a blank reply.
+        const refusalNote = chunk.delta.stop_reason === "refusal" && chunk.delta.stop_details?.explanation;
+        if (refusalNote) {
+          results.push(createChunk(state, { content: refusalNote }));
+        }
         const finalChunk = createChunk(state, {}, state.finishReason);
 
         if (state.usage) {

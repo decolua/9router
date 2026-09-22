@@ -118,6 +118,31 @@ Cursor/Cline/Any tool:
 
 ---
 
+## Cursor / Claude Default Combos
+
+Cursor and Claude Code send **unprefixed** model IDs (`composer-2.5`, `claude-opus-5`, `opus`), while 9Router routes with provider prefixes (`cu/composer-2.5`, `cc/claude-opus-5`). Default combo generators bridge that gap.
+
+On **Dashboard → Combos**:
+
+1. Click **Cursor Default** or **Claude Default**
+2. Confirm the preview (new vs already-existing names)
+3. 9Router creates one combo per client model ID, seeded with the matching prefixed route
+
+**Examples:**
+
+| Combo name (what the client sends) | Seeded model (what 9Router routes) |
+|------------------------------------|------------------------------------|
+| `composer-2.5` | `cu/composer-2.5` |
+| `cursor-grok-4.6-high-fast` | `cu/cursor-grok-4.6-high-fast` |
+| `claude-opus-5` | `cc/claude-opus-5` |
+| `opus` | `cc/claude-opus-5` |
+
+Existing combo names are **skipped** (not overwritten). Edit any generated combo afterward to add fallbacks. Click the button again later to pick up new catalog IDs.
+
+> These combos help when Cursor/Claude already talk to 9Router (`/v1` or `ANTHROPIC_BASE_URL`) and send their native model IDs. They do not change Cursor’s built-in Models tab by themselves.
+
+---
+
 ## Example Combos
 
 ### Example 1: Premium Coding (Subscription → Cheap → Free)
