@@ -44,8 +44,8 @@ export function GenericExampleCard({ providerId, kind }) {
 
   // Get models for this kind (e.g., type="image")
   const kindModels = getModelsByProviderId(providerId).filter((m) => getModelKind(m) === kind);
-  // Kinds that need a model identifier in the request (image/video/music)
-  const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText"]);
+  // Kinds that need a model identifier in the request (image/video/music/systemone)
+  const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText", "systemone"]);
   const needsModel = KIND_NEEDS_MODEL.has(kind);
   const allowManualModel = needsModel && kindModels.length === 0;
   const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
