@@ -35,6 +35,45 @@ const statsEmitTimers = global._statsEmitTimers;
 
 export const statsEmitter = global._statsEmitter;
 
+// --- usageHistory retention -------------------------------------------------
+// usageHistory is append-only per-request; without pruning it grows forever and
+// `getUsageStats("all")` / the /usage SSE stream would degrade over months.
+// usageDaily (one row/day) and _meta.totalRequestsLifetime keep lifetime totals,
+// so pruning only drops raw per-request rows older than the retention window.
+// The window keeps every UI period (max 60d) fully backed. Set
+// USAGE_HISTORY_RETENTION_DAYS=0 to disable pruning entirely.
+const USAGE_RETENTION_DAYS = (() => {
+  const raw = process.env.USAGE_HISTORY_RETENTION_DAYS;
+  if (raw == null || raw === "") return 90;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) ? n : 90;
+})();
+const PRUNE_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6h
+
+async function pruneUsageHistory() {
+  if (USAGE_RETENTION_DAYS <= 0) return;
+  try {
+    const db = await getAdapter();
+    const cutoff = new Date(Date.now() - USAGE_RETENTION_DAYS * 86400000).toISOString();
+    // Range delete rides idx_uh_ts, so it stays cheap even on large tables.
+    db.run(`DELETE FROM usageHistory WHERE timestamp < ?`, [cutoff]);
+  } catch (e) {
+    console.error("[usageRepo] pruneUsageHistory failed:", e.message);
+  }
+}
+
+// Schedule once per process (global guard survives HMR module re-evaluation).
+if (!global._usagePruneTimer) {
+  global._usagePruneTimer = setInterval(() => {
+    pruneUsageHistory().catch(() => {});
+  }, PRUNE_INTERVAL_MS);
+  global._usagePruneTimer.unref?.();
+  const bootTimer = setTimeout(() => {
+    pruneUsageHistory().catch(() => {});
+  }, 15000);
+  bootTimer.unref?.();
+}
+
 function scheduleStatsEvent(event, delayMs = 150) {
   const key = event === "update" ? "update" : "pending";
   if (statsEmitTimers[key]) return;
@@ -323,8 +362,14 @@ export async function getUsageHistory(filter = {}) {
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
 
+  // Never return the unbounded table: cap by default so long-lived installs
+  // can't stream the whole history into memory in one response.
+  const limit = Number.isFinite(filter.limit) ? filter.limit : 1000;
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
-  const rows = db.all(`SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id ASC`, params);
+  const rows = db.all(
+    `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, cost, status, tokens FROM usageHistory ${where} ORDER BY id DESC LIMIT ?`,
+    [...params, limit]
+  );
 
   return rows.map((r) => ({
     timestamp: r.timestamp, provider: r.provider, model: r.model,
@@ -537,31 +582,35 @@ export async function getUsageStats(period = "all") {
       }
     }
 
-    // Overlay precise lastUsed timestamps from history
-    const overlayCutoff = maxDays ? Date.now() - maxDays * 86400000 : 0;
-    const histRows = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
-      [new Date(overlayCutoff).toISOString()]
-    );
-    for (const e of histRows) {
-      const ts = e.timestamp;
-      const modelKey = e.provider ? `${e.model} (${e.provider})` : e.model;
-      if (stats.byModel[modelKey] && new Date(ts) > new Date(stats.byModel[modelKey].lastUsed)) stats.byModel[modelKey].lastUsed = ts;
+    // Overlay precise lastUsed timestamps from history. Skip for "all" (maxDays
+    // null): the daily summary already records day-level lastUsed, and scanning
+    // the entire unbounded usageHistory here was the main long-term lag source.
+    if (maxDays) {
+      const overlayCutoff = Date.now() - maxDays * 86400000;
+      const histRows = db.all(
+        `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
+        [new Date(overlayCutoff).toISOString()]
+      );
+      for (const e of histRows) {
+        const ts = e.timestamp;
+        const modelKey = e.provider ? `${e.model} (${e.provider})` : e.model;
+        if (stats.byModel[modelKey] && new Date(ts) > new Date(stats.byModel[modelKey].lastUsed)) stats.byModel[modelKey].lastUsed = ts;
 
-      if (e.connectionId) {
-        const accountName = connectionMap[e.connectionId] || `Account ${e.connectionId.slice(0, 8)}...`;
-        const accountKey = `${e.model} (${e.provider} - ${accountName})`;
-        if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
+        if (e.connectionId) {
+          const accountName = connectionMap[e.connectionId] || `Account ${e.connectionId.slice(0, 8)}...`;
+          const accountKey = `${e.model} (${e.provider} - ${accountName})`;
+          if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
+        }
+
+        const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
+          ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+          : "local-no-key";
+        if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
+
+        const endpoint = e.endpoint || "Unknown";
+        const endpointKey = `${endpoint}|${e.model}|${e.provider || "unknown"}`;
+        if (stats.byEndpoint[endpointKey] && new Date(ts) > new Date(stats.byEndpoint[endpointKey].lastUsed)) stats.byEndpoint[endpointKey].lastUsed = ts;
       }
-
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
-        : "local-no-key";
-      if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
-
-      const endpoint = e.endpoint || "Unknown";
-      const endpointKey = `${endpoint}|${e.model}|${e.provider || "unknown"}`;
-      if (stats.byEndpoint[endpointKey] && new Date(ts) > new Date(stats.byEndpoint[endpointKey].lastUsed)) stats.byEndpoint[endpointKey].lastUsed = ts;
     }
   } else {
     // 24h / today: live history

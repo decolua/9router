@@ -92,6 +92,12 @@ export const QUOTA_AUTOPING_CONFIG = {
   },
 };
 
+// Codex chat preflight: briefly cache successful quota checks so concurrent
+// requests share one Usage API call instead of hammering the same account.
+export const CODEX_QUOTA_GUARD_CONFIG = {
+  healthyCacheMs: 30000,
+};
+
 // Re-export from providers.js for backward compatibility
 export {
   FREE_PROVIDERS,

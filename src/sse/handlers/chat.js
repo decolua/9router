@@ -24,13 +24,14 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { checkCodexQuotaBeforeChat } from "../services/codexQuotaGuard.js";
 
 /**
  * Handle chat completion request
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export async function handleChat(request, clientRawRequest = null, options = {}) {
   let body;
   try {
     body = await request.json();
@@ -48,6 +49,7 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
+  const preferredConnectionId = options.preferredConnectionId || request?.headers?.get("x-connection-id") || null;
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.
@@ -68,7 +70,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey && options.skipApiKeyValidation !== true) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
@@ -113,7 +115,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, preferredConnectionId);
         },
         log,
         comboName: modelStr,
@@ -128,7 +130,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, preferredConnectionId),
         adapterAdded
       ),
       log,
@@ -148,7 +150,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, preferredConnectionId),
         adapterAdded
       ),
       log,
@@ -157,13 +159,13 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, preferredConnectionId);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, preferredConnectionId = null) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -190,7 +192,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, preferredConnectionId);
           },
           log,
           comboName: modelStr,
@@ -205,7 +207,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, preferredConnectionId),
           adapterAdded
         ),
         log,
@@ -231,7 +233,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId,
+      strictPreferredConnection: !!preferredConnectionId,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -251,6 +256,30 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+
+    // Codex auth/quota failures are account-wide. Verify them before sending a
+    // chat request, persist a global lock, then move directly to the next account.
+    if (provider === "codex") {
+      const quotaStatus = await checkCodexQuotaBeforeChat(refreshedCredentials);
+      if (!quotaStatus.available) {
+        await markAccountUnavailable(
+          credentials.connectionId,
+          quotaStatus.status,
+          quotaStatus.error,
+          provider,
+          null,
+          quotaStatus.resetsAtMs,
+        );
+        if (preferredConnectionId) {
+          return errorResponse(quotaStatus.status, quotaStatus.error);
+        }
+        excludeConnectionIds.add(credentials.connectionId);
+        lastError = quotaStatus.error;
+        lastStatus = quotaStatus.status;
+        log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} QUOTA/AUTH BLOCKED (${quotaStatus.status}) → NEXT ACCOUNT`);
+        continue;
+      }
+    }
 
     // Ensure real project ID is available for providers that need it (P0 fix: cold miss)
     if ((provider === "antigravity" || provider === "gemini-cli") && !refreshedCredentials.projectId) {
@@ -312,6 +341,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
     let resetsAtMs = result.resetsAtMs;
+    let lockStatus = result.status;
+    let lockError = result.error;
     if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
       quotaResetMs = await handleAntigravityQuotaError(
         credentials.connectionId, result.status, model,
@@ -320,13 +351,29 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       if (quotaResetMs) resetsAtMs = quotaResetMs;
     }
 
+    // A cached healthy quota can become stale between requests. Confirm Codex
+    // auth/quota errors immediately and use the live reset time for the DB lock.
+    let codexQuotaStatus = null;
+    if (provider === "codex" && (result.status === 401 || result.status === 429)) {
+      codexQuotaStatus = await checkCodexQuotaBeforeChat(refreshedCredentials, { force: true });
+      if (!codexQuotaStatus.available) {
+        lockStatus = codexQuotaStatus.status;
+        lockError = codexQuotaStatus.error;
+        resetsAtMs = codexQuotaStatus.resetsAtMs || resetsAtMs;
+      }
+    }
+
     // Exhausted Antigravity model is blocked only in RAM cache until upstream resetAt.
     // Do not persist a modelLock_* for this path.
+    const lockModel = provider === "codex" && (result.status === 401 || codexQuotaStatus?.available === false)
+      ? null
+      : model;
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
-      : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
+      : (await markAccountUnavailable(credentials.connectionId, lockStatus, lockError, provider, lockModel, resetsAtMs)).shouldFallback;
 
     if (shouldFallback) {
+      if (preferredConnectionId) return result.response;
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;

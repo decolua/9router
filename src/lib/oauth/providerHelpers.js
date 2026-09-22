@@ -47,7 +47,8 @@ function decodeJwtPayload(jwt) {
 function extractEmailFromAccessToken(accessToken) {
   const payload = decodeJwtPayload(accessToken);
   if (!payload) return undefined;
-  return payload.email || payload.preferred_username || payload.sub || undefined;
+  const profileEmail = payload["https://api.openai.com/profile"]?.email;
+  return profileEmail || payload.email || payload.preferred_username || payload.sub || undefined;
 }
 
 export async function fetchKiroProfileArn(accessToken) {
@@ -74,8 +75,9 @@ export function extractCodexAccountInfo(idToken) {
   const payload = decodeJwtPayload(idToken);
   if (!payload) return {};
   const chatgpt = payload["https://api.openai.com/auth"] || {};
+  const profile = payload["https://api.openai.com/profile"] || {};
   return {
-    email: payload.email,
+    email: payload.email || profile.email,
     chatgptAccountId: chatgpt.chatgpt_account_id || payload.account_id,
     chatgptPlanType: chatgpt.chatgpt_plan_type || payload.plan_type,
   };
