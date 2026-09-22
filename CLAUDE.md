@@ -89,3 +89,22 @@ Pre-translate hooks that compress `tool_result` content in-place to cut tokens. 
 - Security-sensitive env: `JWT_SECRET` (session cookie), `INITIAL_PASSWORD` (default `123456` — must override), `API_KEY_SECRET`, `MACHINE_ID_SALT`. Full env contract in `.env.example` and ARCHITECTURE.md's env matrix.
 - Binary/protobuf upstreams (kiro EventStream, cursor protobuf, commandcode NDJSON) don't round-trip through OpenAI — they're handled inside their own executor, not the translator.
 - Versioning: root and `cli/` are versioned independently; changes are logged in `CHANGELOG.md`. Commit style is Conventional Commits (`fix(translator): …`, `feat(...)`).
+
+## Local feature branches vs upstream (decolua/9router) — DO NOT LOSE THIS WORK
+
+`feat/model-search-batch-test` carries local dashboard features that upstream does **not** have:
+- search + batch model test + "Delete N Failed" on compatible-provider model sections,
+- persisted last-test status (`/api/models/test-results`, kv scope `modelTestResults`),
+- `hideFailedModels` filtering in combo model pickers (ModelSelectModal).
+
+Backups of this line (keep them in sync when the branch moves): local branch `backup-feat-model-search-2026-09-14`, remote `origin/feat/model-search-batch-test` (fork smserwan/9router), and a full-history `git bundle` at the repo root (`9router-feat-backup-*.bundle` — restorable with `git clone <bundle> -b feat/model-search-batch-test`).
+
+When pulling in new upstream features, merge **upstream INTO the feature branch** (integration point = feature branch), never reset/rebase the branch away:
+```bash
+git fetch upstream
+git checkout feat/model-search-batch-test
+git merge upstream/master        # resolve conflicts here, keep BOTH sides' features
+# then rebuild + reinstall so the running app keeps the features:
+npm run cli:pack && npm install -g --force ./9router-<ver>.tgz
+```
+Gotcha: `npm update -g 9router` / installing an upstream build **replaces the installed app and silently removes these features** even though git still has them. After any reinstall of a non-local build, re-run `cli:pack` from this branch and reinstall.

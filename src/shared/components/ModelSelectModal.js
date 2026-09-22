@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { fetchModelTestResults } from "@/shared/utils/modelTestResultsClient";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
@@ -81,6 +82,7 @@ export default function ModelSelectModal({
   capFilter = null,
   addedModelValues = [],
   closeOnSelect = true,
+  hideFailedModels = false,
 }) {
   // Filter activeProviders by serviceKinds when kindFilter set (e.g. "webSearch", "webFetch")
   const filteredActiveProviders = useMemo(() => {
@@ -97,6 +99,10 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  // Persisted last-test status (hideFailedModels mode): failed entries are hidden
+  // behind a toggle so stale results never silently remove a picker option.
+  const [testResults, setTestResults] = useState({});
+  const [showFailedModels, setShowFailedModels] = useState(false);
   // Cursor and Cline expose the usable catalog per account, so the static catalog is
   // kept only as a fallback: it goes stale quickly and entitlements differ per account.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
@@ -181,10 +187,35 @@ export default function ModelSelectModal({
     if (isOpen) fetchDisabledModels();
   }, [isOpen]);
 
+  const fetchTestResults = async () => {
+    try {
+      const results = await fetchModelTestResults();
+      setTestResults(results);
+    } catch (error) {
+      console.error("Error fetching model test results:", error);
+      setTestResults({});
+    }
+  };
+
+  useEffect(() => {
+    if (isOpen && hideFailedModels) fetchTestResults();
+  }, [isOpen, hideFailedModels]);
+
+  // Routed-model keys are checked in both storage forms: raw providerId and
+  // display alias (provider pages test the raw form, combo editor the display one).
+  const isFailedModel = (providerId, alias, model) => {
+    if (!model?.id) return false;
+    return (
+      testResults[`${providerId}/${model.id}`]?.state === "error" ||
+      testResults[`${alias}/${model.id}`]?.state === "error"
+    );
+  };
+
   const allProviders = useMemo(() => ({ ...OAUTH_PROVIDERS, ...FREE_PROVIDERS, ...FREE_TIER_PROVIDERS, ...APIKEY_PROVIDERS }), []);
 
-  // Group models by provider with priority order
-  const groupedModels = useMemo(() => {
+  // Group models by provider with priority order. Also returns how many models
+  // the failed-test filter removed, for the "N inactive hidden" toggle label.
+  const { groups: groupedModels, hiddenFailedCount } = useMemo(() => {
     const groups = {};
 
     // Kinds where the provider IS the model (no per-model selection needed)
@@ -407,20 +438,31 @@ export default function ModelSelectModal({
       }
     });
 
-    // Filter out disabled models per provider (disabled keyed by storage alias OR providerId)
+    // Filter out disabled models per provider (disabled keyed by storage alias OR providerId),
+    // then optionally hide models whose last persisted test failed (hideFailedModels).
+    // Already-added models stay visible so an existing selection stays editable.
+    let hiddenFailedCount = 0;
     Object.entries(groups).forEach(([providerId, group]) => {
       const aliasKey = getProviderAlias(providerId);
       const disabledIds = new Set([
         ...(disabledModels[aliasKey] || []),
         ...(disabledModels[providerId] || []),
       ]);
-      if (disabledIds.size === 0) return;
-      group.models = group.models.filter((m) => !disabledIds.has(m.id));
+      if (disabledIds.size > 0) {
+        group.models = group.models.filter((m) => !disabledIds.has(m.id));
+      }
+      if (hideFailedModels && !showFailedModels) {
+        const before = group.models.length;
+        group.models = group.models.filter(
+          (m) => addedModelValues.includes(m.value) || !isFailedModel(providerId, group.alias, m)
+        );
+        hiddenFailedCount += before - group.models.length;
+      }
       if (group.models.length === 0) delete groups[providerId];
     });
 
-    return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels]);
+    return { groups, hiddenFailedCount };
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels, hideFailedModels, showFailedModels, testResults, addedModelValues, isFailedModel]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {
@@ -515,6 +557,21 @@ export default function ModelSelectModal({
             className="w-full pl-8 pr-3 py-1.5 bg-surface border border-border rounded text-xs focus:outline-none focus:ring-1 focus:ring-primary/50"
           />
         </div>
+        {hideFailedModels && (hiddenFailedCount > 0 || showFailedModels) && (
+          <button
+            type="button"
+            onClick={() => setShowFailedModels((v) => !v)}
+            className="mt-2 flex items-center gap-1 text-[11px] text-text-muted hover:text-text-main transition-colors"
+            title={showFailedModels ? "Hide models whose last test failed" : `Show ${hiddenFailedCount} model(s) whose last test failed`}
+          >
+            <span className="material-symbols-outlined text-[14px]">
+              {showFailedModels ? "visibility_off" : "visibility"}
+            </span>
+            {showFailedModels
+              ? "Hiding inactive models — click to show"
+              : `${hiddenFailedCount} inactive model${hiddenFailedCount === 1 ? "" : "s"} hidden (last test failed) — click to show`}
+          </button>
+        )}
       </div>
 
       {/* Models grouped by provider - compact */}
@@ -654,4 +711,5 @@ ModelSelectModal.propTypes = {
   kindFilter: PropTypes.string,
   addedModelValues: PropTypes.arrayOf(PropTypes.string),
   closeOnSelect: PropTypes.bool,
+  hideFailedModels: PropTypes.bool,
 };
