@@ -111,7 +111,7 @@ Any tool supporting OpenAI/Claude-compatible API works.
 Full docs, advanced setup, video tutorials & development guide:
 
 - **GitHub**: https://github.com/decolua/9router
-- **Full README**: https://github.com/decolua/9router/blob/main/app/README.md
+- **Full README**: https://github.com/decolua/9router/blob/master/README.md
 - **Website**: https://9router.com
 
 ---
