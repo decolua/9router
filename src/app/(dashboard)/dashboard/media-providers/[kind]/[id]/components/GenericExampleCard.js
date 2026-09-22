@@ -54,6 +54,7 @@ export function GenericExampleCard({ providerId, kind }) {
   const supportsMask = !!selectedModelObj?.capabilities?.includes("mask");
 
   const [input, setInput] = useState(safeExConfig.defaultInput || "");
+  const [question, setQuestion] = useState("Does this request require urgent attention?");
   const [refImage, setRefImage] = useState("");
   const [maskImage, setMaskImage] = useState("");
   const [extraValues, setExtraValues] = useState(() =>
@@ -117,11 +118,20 @@ export function GenericExampleCard({ providerId, kind }) {
     acc[k] = v;
     return acc;
   }, {});
+  const systemoneQuestions = kind === "systemone" ? {
+    questions: {
+      is_urgent: {
+        type: "noul",
+        instructions: question.trim() || "Does this request require urgent attention?",
+      },
+    },
+  } : {};
   const requestBody = {
     model: modelFull,
     [exConfig.bodyKey]: input,
     ...exConfig.extraBody,
     ...extraBodyFromFields,
+    ...systemoneQuestions,
     ...(supportsEdit && effectiveRefImage ? { image: effectiveRefImage } : {}),
     ...(supportsMask && effectiveMaskImage ? { mask_image: effectiveMaskImage } : {}),
   };
@@ -327,6 +337,29 @@ export function GenericExampleCard({ providerId, kind }) {
             )}
           </div>
         </Row>
+
+        {/* Question for System One */}
+        {kind === "systemone" && (
+          <Row label="Question">
+            <div className="relative">
+              <input
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Enter evaluation question or criteria"
+                className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              />
+              {question && (
+                <button
+                  type="button"
+                  onClick={() => setQuestion("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              )}
+            </div>
+          </Row>
+        )}
 
         {/* Reference image (only for edit-capable image models) */}
         {supportsEdit && (

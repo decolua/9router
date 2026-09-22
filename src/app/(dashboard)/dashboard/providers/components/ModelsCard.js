@@ -119,6 +119,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
 
   const providerAlias = providerAliasOverride || getProviderAlias(providerId);
   const effectiveType = kindFilter || "llm";
+  const supportsTest = kindFilter !== "systemone";
 
   const fetchData = useCallback(async () => {
     try {
@@ -238,7 +239,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
                 onSetAlias={(alias) => handleSetAlias(model.id, alias)}
                 onDeleteAlias={() => handleDeleteAlias(existingAlias)}
                 testStatus={modelTestResults[model.id]}
-                onTest={() => handleTestModel(model.id)}
+                onTest={supportsTest ? () => handleTestModel(model.id) : undefined}
                 isTesting={testingModelId === model.id}
                 isFree={model.isFree}
               />
@@ -255,7 +256,7 @@ export default function ModelsCard({ providerId, kindFilter, providerAliasOverri
               onSetAlias={() => {}}
               onDeleteAlias={() => handleDeleteCustomModel(model.id)}
               testStatus={modelTestResults[model.id]}
-              onTest={() => handleTestModel(model.id)}
+              onTest={supportsTest ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelId === model.id}
               isCustom
             />
