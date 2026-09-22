@@ -191,6 +191,17 @@ function isPublicApi(pathname) {
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
+// Build a basePath-aware URL for redirects (works behind reverse proxy at /9router).
+// request.nextUrl.basePath is populated when basePath is set in next.config.mjs;
+// falls back to env var for cases where basePath isn't configured yet.
+function basePathUrl(path, request) {
+  const bp = request.nextUrl?.basePath
+    || process.env.NINEROUTER_BASE_PATH
+    || process.env.NEXT_PUBLIC_BASE_PATH
+    || "";
+  return new URL(bp + path, request.url);
+}
+
 export const __test__ = {
   isLocalRequest,
   isPublicLlmApi,
@@ -246,7 +257,7 @@ export async function proxy(request) {
           const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
           const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
           if ((tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost)) {
-            return NextResponse.redirect(new URL("/login", request.url));
+            return NextResponse.redirect(basePathUrl("/login", request));
           }
         }
       }
@@ -263,16 +274,16 @@ export async function proxy(request) {
       if (await verifyDashboardAuthToken(token)) {
         return NextResponse.next();
       } else {
-        return NextResponse.redirect(new URL("/login", request.url));
+        return NextResponse.redirect(basePathUrl("/login", request));
       }
     }
 
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(basePathUrl("/login", request));
   }
 
   // Redirect / to /dashboard if logged in, or /dashboard if it's the root
   if (pathname === "/") {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(basePathUrl("/dashboard", request));
   }
 
   return NextResponse.next();
