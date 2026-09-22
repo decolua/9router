@@ -4,6 +4,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
+import { isModelDisabled, filterDisabledModels } from "../services/disabledModels.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -45,8 +46,14 @@ export async function handleTts(request) {
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
-  const comboModels = await getComboModels(modelStr);
+  const rawComboModels = await getComboModels(modelStr);
+  // Disabled models are dropped before rotation so they never cost a round trip
+  const comboModels = rawComboModels ? await filterDisabledModels(rawComboModels) : null;
   if (comboModels) {
+    if (comboModels.length === 0) {
+      log.warn("TTS", `Combo "${modelStr}" has no enabled models`);
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, `All models in combo "${modelStr}" are disabled`);
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
@@ -70,11 +77,16 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+
+  if (await isModelDisabled(provider, model)) {
+    log.warn("TTS", `Model "${modelStr}" is disabled`, { provider, model });
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is disabled`);
+  }
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
-    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style, log });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
@@ -99,7 +111,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
-    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
+    const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style, log });
 
     if (result.success) return result.response;
 

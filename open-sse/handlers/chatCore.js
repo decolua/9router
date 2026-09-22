@@ -31,6 +31,8 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { buildProxyOptions, logProxySelection } from "../utils/proxyOptions.js";
+import { runWithProxyOptions } from "../utils/proxyFetch.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -332,38 +334,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log, provider, model, reqTag
   });
 
-  const proxyOptions = {
-    connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
-    connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
-    connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
-    vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
-  };
-
-  if (proxyOptions.vercelRelayUrl) {
-    const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
-    const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
-    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | vercel-relay=${proxyOptions.vercelRelayUrl}`);
-  } else if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl) {
-    let maskedProxyUrl = proxyOptions.connectionProxyUrl;
-    try {
-      const parsed = new URL(proxyOptions.connectionProxyUrl);
-      const host = parsed.hostname || "";
-      const port = parsed.port ? `:${parsed.port}` : "";
-      const protocol = parsed.protocol || "http:";
-      maskedProxyUrl = `${protocol}//${host}${port}`;
-    } catch {
-      // Keep raw if URL parsing fails
-    }
-
-    const poolId = credentials?.providerSpecificData?.connectionProxyPoolId || "none";
-    const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
-    log?.info?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | pool=${poolId} | url=${maskedProxyUrl}`);
-  }
-
-  if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionNoProxy) {
-    const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
-    log?.debug?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | no_proxy=${proxyOptions.connectionNoProxy}`);
-  }
+  const proxyOptions = buildProxyOptions(credentials);
+  logProxySelection(log, provider, model, credentials, proxyOptions);
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
@@ -371,7 +343,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
   try {
-    const result = await executor.execute({
+    // Ambient context covers executors that call bare `fetch` (grok-web,
+    // perplexity-web, devin-cli) and never accepted `proxyOptions`.
+    const result = await runWithProxyOptions(proxyOptions, () => executor.execute({
       model,
       body: translatedBody,
       stream,
@@ -381,7 +355,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       signal: streamController.signal,
       log,
       proxyOptions,
-    });
+    }));
     providerResponse = result.response;
     providerUrl = result.url;
     providerHeaders = result.headers;
@@ -425,7 +399,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       // refreshWithRetry's 2nd/3rd attempt reuses the already-consumed RT →
       // invalid_grant → auth_failed retryable=false.
       const newCredentials = await refreshWithRetry(async () => {
-        const result = await executor.refreshCredentials(credentials, log);
+        const result = await runWithProxyOptions(proxyOptions, () => executor.refreshCredentials(credentials, log, proxyOptions));
         if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
           if (result.accessToken) credentials.accessToken = result.accessToken;
           credentials.refreshToken = result.refreshToken;
@@ -439,7 +413,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           try { await onCredentialsRefreshed(newCredentials); } catch (e) { log?.warn?.("TOKEN", `onCredentialsRefreshed failed: ${e.message}`); }
         }
         try {
-          const retryResult = await executor.execute({
+          const retryResult = await runWithProxyOptions(proxyOptions, () => executor.execute({
             model,
             body: translatedBody,
             stream,
@@ -449,7 +423,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
             signal: streamController.signal,
             log,
             proxyOptions,
-          });
+          }));
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;

@@ -1,3 +1,12 @@
+# Unreleased
+
+## Fixes
+- **Proxy-Pools**: strict proxy pool failures now refuse direct fallback; OAuth refresh and upstream requests preserve connection proxy context.
+- **Models**: disabled models are enforced during routing.
+
+## Chores
+- **CI**: runtime image includes `undici`; Docker publishing produces verified multi-platform images and promotes `latest` on stable releases.
+
 # v0.5.85 (2026-09-22)
 
 ## Features

@@ -12,6 +12,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 
+// Mock proxyFetch: the handlers now egress through proxyAwareFetch so the
+// connection's proxy pool applies. Delegate to the global fetch stub so the
+// existing call assertions keep describing the same request.
+vi.mock("open-sse/utils/proxyFetch.js", () => ({
+  proxyAwareFetch: (url, init) => globalThis.fetch(url, init),
+  runWithProxyOptions: (_proxyOptions, fn) => fn(),
+  default: (url, init) => globalThis.fetch(url, init),
+}));
+
 const originalFetch = global.fetch;
 
 describe("handleImageGenerationCore", () => {

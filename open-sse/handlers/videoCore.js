@@ -1,6 +1,8 @@
 import { createErrorResult } from "../utils/error.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { refreshTokenByProvider } from "../services/tokenRefresh.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { buildProxyOptions, logProxySelection } from "../utils/proxyOptions.js";
 import { PROVIDER_MEDIA } from "../providers/index.js";
 import { getVideoAdapter } from "./videoProviders/index.js";
 
@@ -98,6 +100,9 @@ export async function handleVideoProxyCore({
   const adapter = getVideoAdapter(provider);
   const fetchSignal = combineSignals(signal, timeoutMs);
 
+  const proxyOptions = buildProxyOptions(credentials);
+  logProxySelection(log, provider, requestId ? `job:${requestId}` : action, credentials, proxyOptions);
+
   // Default (xAI shape) request plan; adapters override URL/method/headers/body.
   const defaultPlan = () => {
     const method = requestId ? "GET" : "POST";
@@ -123,12 +128,12 @@ export async function handleVideoProxyCore({
       : defaultPlan();
     if (plan.error) return { planError: plan.error };
     return {
-      response: await fetch(plan.url, {
+      response: await proxyAwareFetch(plan.url, {
         method: plan.method,
         headers: plan.headers,
         body: plan.body,
         signal: fetchSignal,
-      }),
+      }, proxyOptions),
     };
   };
 
@@ -153,7 +158,7 @@ export async function handleVideoProxyCore({
   ) {
     let refreshed = null;
     try {
-      refreshed = await refreshTokenByProvider(provider, credentials, log);
+      refreshed = await refreshTokenByProvider(provider, credentials, log, proxyOptions);
     } catch (error) {
       log?.warn?.("TOKEN", `${provider} | video refresh error: ${sanitizeSecrets(error.message, credentials)}`);
     }

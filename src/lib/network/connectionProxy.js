@@ -93,6 +93,33 @@ export async function resolveConnectionProxyConfig(
         proxyPool.isActive === true &&
         proxyUrl;
 
+      if (!isValidPool) {
+        // Falling through to legacy/direct here used to be completely silent,
+        // which is why "the proxy pool isn't working" was undiagnosable. Note
+        // that a failed connectivity test flips `isActive` off on its own.
+        const reason = !proxyPool
+          ? "not found (deleted?)"
+          : proxyPool.isActive !== true
+            ? `inactive (lastError: ${proxyPool.lastError || "none"})`
+            : "no proxyUrl set";
+        console.warn(
+          `[resolveConnectionProxyConfig] Proxy pool ${proxyPoolId} is unusable — ${reason}; this connection will NOT use a proxy`
+        );
+
+        // A strict pool means "never egress direct". If the pool is bound but
+        // unusable, falling through to legacy or direct would silently violate
+        // that contract — the exact failure mode strict mode exists to prevent.
+        // Fail hard so the caller surfaces the error instead.
+        if (proxyPool?.strictProxy === true) {
+          const err = new Error(
+            `[resolveConnectionProxyConfig] Proxy pool ${proxyPoolId} is unusable (${reason}) and strictProxy is enabled — refusing to fall back to direct/legacy egress`
+          );
+          // Marker the catch block re-throws on (see below).
+          err.strictProxyRefusal = true;
+          throw err;
+        }
+      }
+
       if (isValidPool) {
         /**
          * Vercel/Cloudflare relay proxies use base URL rewriting
@@ -166,6 +193,9 @@ export async function resolveConnectionProxyConfig(
       ...legacy,
     };
   } catch (error) {
+    // The strict-proxy refusal above must propagate: swallowing it here would
+    // turn "refuse to egress direct" back into a resolved no-proxy config.
+    if (error?.strictProxyRefusal === true) throw error;
     console.error(
       "[resolveConnectionProxyConfig] Failed to resolve proxy config:",
       error

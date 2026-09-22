@@ -136,7 +136,7 @@ describe("inspectAndWrapCommandCodeResponse", () => {
   it("retries when initial stream yields an error and succeeds on second attempt", async () => {
     let callCount = 0;
     const executor = new CommandCodeExecutor();
-    
+
     // Override execute on instance to test retry behavior
     executor.execute = async (opts) => {
       const maxRetries = 2;

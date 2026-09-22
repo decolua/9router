@@ -146,11 +146,11 @@ export async function withCredentialRefreshLock(provider, credentials, refreshFn
   return pending;
 }
 
-export async function refreshProviderCredentials(provider, credentials, log) {
+export async function refreshProviderCredentials(provider, credentials, log, proxyOptions = null) {
   if (!credentials) return null;
 
   return withCredentialRefreshLock(provider, credentials, async () => {
-    const refreshed = await refreshTokenByProvider(provider, credentials, log);
+    const refreshed = await refreshTokenByProvider(provider, credentials, log, proxyOptions);
     return mergeRefreshedCredentials(provider, credentials, refreshed);
   });
 }
