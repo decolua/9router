@@ -29,7 +29,7 @@ import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
-import { FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { FETCH_CONNECT_TIMEOUT_MS, HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   QODER_CHAT_SIG_PATH,
   QODER_CONTEXT_TIER_ENV,
@@ -354,38 +354,47 @@ function isBillingBlock(inner) {
 }
 
 /**
- * Peek the first SSE frame to detect billing errors before piping.
- * Returns { isBilling, statusVal, message, consumed } — `consumed` is every
+ * Peek the first SSE data line to detect upstream errors before piping.
+ * Returns { isError, isBilling, statusVal, message, consumed } — `consumed` is every
  * byte read so far (including the peeked line) so the caller can re-process
  * it and nothing is dropped from the stream.
  */
 async function peekFirstQoderFrame(reader, decoder) {
   let consumed = "";
+  let offset = 0;
+  let upstreamDone = false;
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) return { isBilling: false, consumed, upstreamDone: true };
+    let nl = consumed.indexOf("\n", offset);
+    if (nl === -1 && !upstreamDone) {
+      const { done, value } = await reader.read();
+      upstreamDone = done;
+      consumed += done ? decoder.decode() : decoder.decode(value, { stream: true });
+      continue;
+    }
+    if (offset >= consumed.length) return { isError: false, consumed, upstreamDone };
+    if (nl === -1) nl = consumed.length;
 
-    consumed += decoder.decode(value, { stream: true });
-    const nl = consumed.indexOf("\n");
-    if (nl === -1) continue; // need a full line first
-
-    const line = consumed.slice(0, nl).replace(/\r$/, "").trim();
+    const line = consumed.slice(offset, nl).replace(/\r$/, "").trim();
+    offset = nl + 1;
     if (!line.startsWith("data:")) continue;
 
     const data = line.slice(5).trimStart();
-    if (data === "[DONE]") return { isBilling: false, consumed };
+    if (data === "[DONE]") return { isError: false, consumed, upstreamDone };
 
     let envelope;
-    try { envelope = JSON.parse(data); } catch { return { isBilling: false, consumed }; }
+    try { envelope = JSON.parse(data); } catch { return { isError: false, consumed, upstreamDone }; }
+
     // statusCodeValue is documented numeric, but accept numeric strings defensively.
-    const statusVal = Number(envelope.statusCodeValue) || 200;
-    const inner = typeof envelope.body === "string"
+    const raw = Number(envelope?.statusCodeValue);
+    const statusVal = Number.isNaN(raw) ? 200 : raw;
+    const inner = typeof envelope?.body === "string"
       ? envelope.body
-      : envelope.body != null ? JSON.stringify(envelope.body) : "";
-    if (statusVal !== 200 && isBillingBlock(inner)) {
-      return { isBilling: true, statusVal, message: inner || `qoder billing block (${statusVal})` };
+      : envelope?.body != null ? JSON.stringify(envelope.body) : "";
+
+    if (statusVal !== 200) {
+      return { isError: true, isBilling: isBillingBlock(inner), statusVal, message: inner || `upstream status ${statusVal}` };
     }
-    return { isBilling: false, consumed };
+    return { isError: false, consumed, upstreamDone };
   }
 }
 
@@ -396,8 +405,8 @@ async function peekFirstQoderFrame(reader, decoder) {
  * Each upstream line looks like:
  *   data: {"statusCodeValue":200,"body":"{\"choices\":[{\"delta\":{...}}]}"}
  * The inner body is an OpenAI streaming chunk (or "[DONE]"). We unwrap it
- * and re-emit as `data: <inner>\n\n`. Errors become a synthetic OpenAI error
- * chunk + [DONE].
+ * and re-emit as `data: <inner>\n\n`. First-frame errors become HTTP errors;
+ * errors after streaming starts retain the synthetic chunk + [DONE] path.
  *
  * Critical: Qoder's SSE often keeps the socket open after the terminal
  * [DONE]/error frame (agent keepalive). Non-streaming clients drain via
@@ -409,9 +418,10 @@ async function peekFirstQoderFrame(reader, decoder) {
  * usage from the finish chunk, so we coalesce those two frames (see
  * createQoderSseCoalescer) before forwarding.
  *
- * NEW: Peek first frame to detect billing blocks (code 112/10605/pricingUrl).
- * If detected, return 403 response so chatCore marks connection unavailable
- * and triggers combo fallback instead of leaking error text into chat.
+ * Peek the first frame for errors before committing to HTTP 200. Preserve
+ * upstream error statuses so chatCore can handle failures instead of recording
+ * error text as a successful completion. Billing blocks retain the existing
+ * 403 mapping for quota/account fallback.
  */
 async function wrapQoderSSE(response, model, log = null) {
   if (!response.ok || !response.body) return response;
@@ -419,14 +429,17 @@ async function wrapQoderSSE(response, model, log = null) {
   const decoder = new TextDecoder();
   const reader = response.body.getReader();
 
-  // Peek first frame to detect billing block
+  // Detect errors before returning a successful streaming response.
   const peek = await peekFirstQoderFrame(reader, decoder);
-  if (peek?.isBilling) {
-    // Billing block detected — return 403 so chatCore fails this connection
+  if (peek.isError) {
     await reader.cancel().catch(() => {});
+    const status = peek.isBilling
+      ? HTTP_STATUS.FORBIDDEN
+      : Number.isInteger(peek.statusVal) && peek.statusVal >= HTTP_STATUS.BAD_REQUEST && peek.statusVal <= 599
+        ? peek.statusVal : HTTP_STATUS.BAD_GATEWAY;
     return new Response(
       JSON.stringify({ error: { message: peek.message, code: peek.statusVal } }),
-      { status: 403, headers: { "Content-Type": "application/json" } }
+      { status, headers: { "Content-Type": "application/json" } }
     );
   }
 
@@ -699,8 +712,15 @@ export class QoderExecutor extends BaseExecutor {
       response = await proxyAwareFetch(
         url,
         { method: "POST", headers, body: encodedBodyBuf, signal: mergedSignal },
-        proxyOptions,
+        // A failed proxy request may already have reached Qoder. Replaying
+        // the same COSY signature directly reuses its requestId and returns
+        // 403/code 103. Let the caller retry through execute() with fresh signing.
+        { ...proxyOptions, strictProxy: true },
       );
+    } catch (err) {
+      // strictProxy wraps transport errors; retain caller cancellation semantics.
+      if (mergedSignal.aborted) throw mergedSignal.reason;
+      throw err;
     } finally {
       clearTimeout(connectTimer);
     }

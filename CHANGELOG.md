@@ -3,6 +3,10 @@
 ## Features
 - **Qoder CN**: add the `qoder-cn` provider for qoder.com.cn — same device/OAuth flow and COSY-signed chat protocol as intl Qoder, served from the CN gateway (`gateway.qoder.com.cn` / `openapi.qoder.com.cn`). Region resolution is derived from the provider id (`qoder-cn` → CN) across executor, model catalog, quota usage, validation, and the dashboard.
 
+## Fixes
+- **Qoder**: prevent proxy failures from silently replaying signed inference requests over a direct connection with the same COSY request ID (`403/103 Duplicate request`).
+- **Qoder**: return first-frame upstream errors, including `403/103 Duplicate request`, as HTTP failures instead of assistant text; handle fragmented frames and heartbeat prefixes while preserving billing error mapping.
+
 # v0.5.81 (2026-09-18)
 
 ## Features
