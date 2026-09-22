@@ -110,7 +110,22 @@ PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
 Production mode:
 
 ```bash
+# Create Temporary Memory For Build
+sudo fallocate -l 2G /swapfile_temp
+sudo chmod 600 /swapfile_temp
+sudo mkswap /swapfile_temp
+sudo swapon /swapfile_temp
+
+export MAKEFLAGS="-j1"
+export DLIB_NO_GUI_SUPPORT=1
+export CFLAGS="-mno-avx"
+
 npm run build
+
+# Clear temporary swap
+sudo swapoff /swapfile_temp
+sudo rm /swapfile_temp
+
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
