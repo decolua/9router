@@ -1,3 +1,9 @@
+# Unreleased
+
+## Features
+- **API Keys**: per-key limits — requests/minute, tokens per day and per month (total, input, output), requests per month, and a monthly USD budget. Enforced on every `/v1` endpoint with HTTP 429 + `Retry-After`; empty/0 = unlimited. Day/month windows follow server local time
+- **API Keys**: per-key usage monitor on the Endpoint page (live meters for RPM, tokens today, cost this month, plus every configured limit) backed by `GET /api/keys/usage`
+
 # v0.5.81 (2026-09-18)
 
 ## Features

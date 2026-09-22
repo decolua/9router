@@ -11,12 +11,14 @@ import {
   STATUS_POLL_FAST_MS,
   REACHABLE_MISS_THRESHOLD,
   CLIENT_PING_FAST_MS,
+  KEY_USAGE_POLL_MS,
 } from "./endpointConstants";
 import { clientPingUrl, clientPingAny } from "./endpointPing";
 import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import { KeyUsageSummary, KeyLimitsModal } from "./components/ApiKeyLimits";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -24,6 +26,8 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const [keyUsage, setKeyUsage] = useState({});
+  const [limitsKey, setLimitsKey] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -667,6 +671,33 @@ export default function APIPageClient({ machineId }) {
     });
   };
 
+  const fetchKeyUsage = useCallback(async () => {
+    try {
+      const res = await fetch("/api/keys/usage", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      setKeyUsage(data.usage || {});
+    } catch { /* usage meters are best-effort */ }
+  }, []);
+
+  useEffect(() => {
+    fetchKeyUsage();
+    const timer = setInterval(fetchKeyUsage, KEY_USAGE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [fetchKeyUsage]);
+
+  const handleSaveLimits = async (id, limits) => {
+    const res = await fetch(`/api/keys/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(limits),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "Failed to save limits");
+    setKeys(prev => prev.map(k => k.id === id ? { ...k, ...data.key } : k));
+    fetchKeyUsage();
+  };
+
   const handleToggleKey = async (id, isActive) => {
     try {
       const res = await fetch(`/api/keys/${id}`, {
@@ -1042,8 +1073,16 @@ export default function APIPageClient({ machineId }) {
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
+                  <KeyUsageSummary usage={keyUsage[key.id]} />
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setLimitsKey(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit limits"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1077,6 +1116,15 @@ export default function APIPageClient({ machineId }) {
       </Card>
 
       {/* Add Key Modal */}
+      {limitsKey && (
+        <KeyLimitsModal
+          key={limitsKey.id}
+          apiKey={limitsKey}
+          onClose={() => setLimitsKey(null)}
+          onSave={handleSaveLimits}
+        />
+      )}
+
       <Modal
         isOpen={showAddModal}
         title="Create API Key"

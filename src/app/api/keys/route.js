@@ -27,7 +27,8 @@ export async function POST(request) {
 
     // Always get machineId from server
     const machineId = await getConsistentMachineId();
-    const apiKey = await createApiKey(name, machineId);
+    // Limit fields are picked and normalized by the repo; other body fields are ignored
+    const apiKey = await createApiKey(name, machineId, body);
 
     return NextResponse.json({
       key: apiKey.key,
