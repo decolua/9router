@@ -4,10 +4,10 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Input, Modal } from "@/shared/components";
 
-const formatNumber = (n) => Math.round(n || 0).toLocaleString("en-US");
-const formatUsd = (n) => `$${(n || 0).toFixed(2)}`;
+export const formatNumber = (n) => Math.round(n || 0).toLocaleString("en-US");
+export const formatUsd = (n) => `$${(n || 0).toFixed(2)}`;
 
-function barColor(ratio) {
+export function barColor(ratio) {
   if (ratio >= 1) return "bg-red-500";
   if (ratio >= 0.8) return "bg-orange-500";
   return "bg-primary";
