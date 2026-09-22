@@ -33,6 +33,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   const idx = choice.index || 0;
   const delta = choice.delta || {};
 
+  if (typeof delta.reasoning_encrypted_content === "string" && delta.reasoning_encrypted_content) {
+    state.reasoningEncryptedContent = delta.reasoning_encrypted_content;
+  }
+
   // Emit initial events
   if (!state.started) {
     state.started = true;
@@ -173,14 +177,16 @@ function closeReasoning(state, emit) {
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }
     });
 
+    const item = {
+      id: state.reasoningId,
+      type: RESPONSES_ITEM.REASONING,
+      summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }],
+      ...(state.reasoningEncryptedContent ? { encrypted_content: state.reasoningEncryptedContent } : {}),
+    };
     emit("response.output_item.done", {
       type: "response.output_item.done",
       output_index: state.reasoningIndex,
-      item: {
-        id: state.reasoningId,
-        type: RESPONSES_ITEM.REASONING,
-        summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: state.reasoningBuf }]
-      }
+      item,
     });
   }
 }
