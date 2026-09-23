@@ -6,6 +6,8 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { buildPiProvider } from "../../../../lib/piSettings.js";
 
 const execAsync = promisify(exec);
 
@@ -125,31 +127,11 @@ export async function POST(request) {
 
     if (!existing.providers) existing.providers = {};
 
-    const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    let modelList = [];
-    if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
-      modelList = rawBody.models.map((m) => {
-        if (typeof m === "string") {
-          return { id: m, name: m, contextWindow: 128000, maxTokens: 16384 };
-        }
-        return {
-          id: m.id || "provider/model-id",
-          name: m.name || m.id || "provider/model-id",
-          contextWindow: m.contextWindow || 128000,
-          maxTokens: m.maxTokens || 16384,
-        };
-      });
-    } else {
-      const modelId = model || "provider/model-id";
-      modelList = [{ id: modelId, name: modelId, contextWindow: 128000, maxTokens: 16384 }];
-    }
-
-    existing.providers["9router"] = {
-      baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_9router",
-      api: "openai-completions",
-      models: modelList,
-    };
+    existing.providers["9router"] = buildPiProvider(
+      existing.providers["9router"],
+      { baseUrl, apiKey, models: rawBody.models, model },
+      (modelId) => getCapabilitiesForModel(null, modelId),
+    );
 
     await fs.writeFile(configPath, JSON.stringify(existing, null, 2), "utf-8");
 
