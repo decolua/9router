@@ -29,7 +29,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
       headers["Anthropic-Version"] === "2023-06-01" ||
       headers["anthropic-version"] === "2023-06-01";
     expect(hasVersion).toBe(true);
-    expect(headers["User-Agent"]).toBe("claude-cli/2.1.258 (external, sdk-cli)");
+    expect(headers["User-Agent"]).toBe("claude-cli/2.1.280 (external, sdk-cli)");
   });
 
   it("includes heavy-agent beta flags for claude-opus-5", () => {

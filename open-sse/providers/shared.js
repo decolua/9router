@@ -22,7 +22,7 @@ export function mapStainlessArch() {
 
 // Anthropic API version (single source — reused across claude-format providers/executors)
 export const ANTHROPIC_API_VERSION = "2023-06-01";
-export const CLAUDE_CLI_VERSION = "2.1.258";
+export const CLAUDE_CLI_VERSION = "2.1.280";
 
 // Shared Claude-compatible API headers (reused across claude-format providers)
 export const CLAUDE_API_HEADERS = {
