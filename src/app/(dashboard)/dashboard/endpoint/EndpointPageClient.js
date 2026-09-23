@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, Badge } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -17,8 +17,11 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import ApiKeyModelAccessModal from "./ApiKeyModelAccessModal";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [modelAccessKey, setModelAccessKey] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
@@ -262,7 +265,15 @@ export default function APIPageClient({ machineId }) {
         return data.keys || [];
       };
 
-      let existing = await fetchKeys();
+      const [existingKeys, providersResponse] = await Promise.all([
+        fetchKeys(),
+        fetch("/api/providers").catch(() => null),
+      ]);
+      let existing = existingKeys;
+      if (providersResponse?.ok) {
+        const providersData = await providersResponse.json();
+        setActiveProviders(providersData.connections || []);
+      }
       // Auto-provision a default key for first-time users so the endpoint works out of the box.
       if (existing.length === 0) {
         try {
@@ -1036,14 +1047,31 @@ export default function APIPageClient({ machineId }) {
                       </span>
                     </button>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
+                  <div className="mt-1 flex flex-wrap items-center gap-2">
+                    <p className="text-xs text-text-muted">
+                      Created {new Date(key.createdAt).toLocaleDateString()}
+                    </p>
+                    {key.modelAccess && key.modelAccess.mode !== "all" && (
+                      <Tooltip text={key.modelAccess?.patterns?.length ? key.modelAccess.patterns.join(", ") : "No model patterns set"}>
+                        <Badge variant={key.modelAccess?.mode === "allow" ? "primary" : "warning"} size="sm">
+                          {key.modelAccess?.mode === "allow" ? "Allow" : "Blocked"}: {key.modelAccess?.patterns?.length || 0} rules
+                        </Badge>
+                      </Tooltip>
+                    )}
+                  </div>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setModelAccessKey(key)}
+                    className="inline-flex size-9 items-center justify-center rounded-lg text-text-muted hover:bg-primary/10 hover:text-primary transition-colors"
+                    title="Model access"
+                    aria-label={`Model access for ${key.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">rule</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1075,6 +1103,21 @@ export default function APIPageClient({ machineId }) {
           </div>
         )}
       </Card>
+
+      {modelAccessKey && (
+        <ApiKeyModelAccessModal
+          key={modelAccessKey.id}
+          isOpen={!!modelAccessKey}
+          apiKey={modelAccessKey}
+          activeProviders={activeProviders}
+          requireApiKey={requireApiKey}
+          onClose={() => setModelAccessKey(null)}
+          onSave={(updatedKey) => {
+            setKeys((current) => current.map((key) => key.id === updatedKey.id ? updatedKey : key));
+            setModelAccessKey(updatedKey);
+          }}
+        />
+      )}
 
       {/* Add Key Modal */}
       <Modal

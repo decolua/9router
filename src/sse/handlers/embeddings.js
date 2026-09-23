@@ -5,7 +5,8 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getApiKeyByKey, getSettings } from "@/lib/localDb";
+import { createModelAccessContext, enforceModelAccess, isTopLevelModelBlocked, modelAccessDeniedResponse } from "../services/modelAccess.js";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -65,6 +66,12 @@ export async function handleEmbeddings(request) {
     }
   }
 
+  const keyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
+  const modelAccessContext = createModelAccessContext(keyRecord, modelStr);
+  if (isTopLevelModelBlocked(modelAccessContext, modelStr)) {
+    return modelAccessDeniedResponse(modelAccessContext, modelStr);
+  }
+
   if (!modelStr) {
     log.warn("EMBEDDINGS", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
@@ -82,6 +89,8 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+  const accessDenied = await enforceModelAccess(modelAccessContext, modelStr, provider, model);
+  if (accessDenied) return accessDenied;
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
