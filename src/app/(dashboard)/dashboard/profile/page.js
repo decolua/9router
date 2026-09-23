@@ -1479,6 +1479,21 @@ export default function ProfilePage() {
               </div>
             )}
 
+            {/* Cache Affinity */}
+            <div className="flex items-start sm:items-center justify-between gap-4 pt-2 border-t border-border/50">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-sm sm:text-base">Cache Affinity</p>
+                <p className="text-xs sm:text-sm text-text-muted">
+                  Keep each conversation on the same account so the provider prompt cache keeps hitting
+                </p>
+              </div>
+              <Toggle
+                checked={settings.fallbackStrategy === "cache-affinity"}
+                onChange={() => updateFallbackStrategy(settings.fallbackStrategy === "cache-affinity" ? "fill-first" : "cache-affinity")}
+                disabled={loading}
+              />
+            </div>
+
             {/* Combo Round Robin */}
             <div className="flex items-start sm:items-center justify-between gap-4 pt-4 border-t border-border/50">
               <div className="flex-1 min-w-0">
@@ -1518,7 +1533,9 @@ export default function ProfilePage() {
             <p className="text-xs text-text-muted italic pt-2 border-t border-border/50">
               {settings.fallbackStrategy === "round-robin"
                 ? `Currently distributing requests across all available accounts with ${settings.stickyRoundRobinLimit || 3} calls per account.`
-                : "Currently using accounts in priority order (Fill First)."}
+                : settings.fallbackStrategy === "cache-affinity"
+                  ? "Currently pinning each conversation to one account (Cache Affinity); requests without a conversation key use priority order."
+                  : "Currently using accounts in priority order (Fill First)."}
               {settings.comboStrategy === "round-robin"
                 ? ` Combos rotate after ${settings.comboStickyRoundRobinLimit || 1} call${(settings.comboStickyRoundRobinLimit || 1) === 1 ? "" : "s"} per model.`
                 : " Combos always start with their first model."}
