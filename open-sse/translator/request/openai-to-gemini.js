@@ -66,7 +66,9 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       if (msg.role === ROLE.ASSISTANT && msg.tool_calls) {
         for (const tc of msg.tool_calls) {
           if (tc.type === OPENAI_BLOCK.FUNCTION && tc.id && tc.function?.name) {
-            tcID2Name[tc.id] = tc.function.name;
+            if (!tcID2Name[tc.id]) {
+              tcID2Name[tc.id] = tc.function.name;
+            }
           }
         }
       }
@@ -78,10 +80,14 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id] = msg.content;
+        if (toolResponses[msg.tool_call_id] === undefined) {
+          toolResponses[msg.tool_call_id] = msg.content;
+        }
       }
     }
   }
+
+  const callIdOccurrences = new Map();
 
   // Convert messages
   if (body.messages && Array.isArray(body.messages)) {
@@ -123,21 +129,30 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         }
 
         if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
-          const toolCallIds = [];
+          const toolCalls = [];
           let firstFunctionCallSeen = false;
           for (const tc of msg.tool_calls) {
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
 
+            const rawId = tc.id;
+            let uniqueId = rawId;
+            if (rawId) {
+              const count = callIdOccurrences.get(rawId) || 0;
+              callIdOccurrences.set(rawId, count + 1);
+              uniqueId = count === 0 ? rawId : `${rawId}_${count}`;
+            }
+
             const args = tryParseJSON(tc.function?.arguments || "{}");
-            const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
+            const cachedSig = rawId ? getGeminiThoughtSignatureSync(rawId, sessionId, model) : null;
             // First call gets cached signature or fallback; sibling calls remain unsigned if no cached sig
             const callSig = cachedSig || (!firstFunctionCallSeen ? signature : undefined);
             firstFunctionCallSeen = true;
 
+            const fnName = tc.function?.name;
             const part = {
               functionCall: {
-                id: tc.id,
-                name: sanitizeGeminiFunctionName(tc.function.name),
+                id: uniqueId,
+                name: sanitizeGeminiFunctionName(fnName),
                 args: args
               }
             };
@@ -145,30 +160,67 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               part.thoughtSignature = callSig;
             }
             parts.push(part);
-            toolCallIds.push(tc.id);
+            toolCalls.push({
+              rawId,
+              uniqueId,
+              name: fnName
+            });
           }
 
           if (parts.length > 0) {
             result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
           }
 
+          // Scan adjacent tool messages starting from i + 1
+          const adjacentToolMessages = [];
+          for (let j = i + 1; j < body.messages.length; j++) {
+            const nextMsg = body.messages[j];
+            if (nextMsg.role === ROLE.TOOL) {
+              adjacentToolMessages.push(nextMsg);
+            } else {
+              break;
+            }
+          }
+
           // Check if there are actual tool responses in the next messages
           const isIntermediate = i < body.messages.length - 1;
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid] !== undefined);
+          const hasActualResponses = adjacentToolMessages.length > 0 ||
+            toolCalls.some(tc => tc.rawId && toolResponses[tc.rawId] !== undefined);
 
           if (hasActualResponses || isIntermediate) {
             const toolParts = [];
-            for (const fid of toolCallIds) {
-              let resp = toolResponses[fid];
+            const usedAdjacentIndices = new Set();
+
+            for (let tIdx = 0; tIdx < toolCalls.length; tIdx++) {
+              const tc = toolCalls[tIdx];
+              let resp = undefined;
+
+              // Match adjacent tool response:
+              // 1. By matching tool_call_id
+              const matchIdx = adjacentToolMessages.findIndex(
+                (m, idx) => !usedAdjacentIndices.has(idx) && m.tool_call_id && m.tool_call_id === tc.rawId
+              );
+              if (matchIdx !== -1) {
+                usedAdjacentIndices.add(matchIdx);
+                resp = adjacentToolMessages[matchIdx].content;
+              } else if (adjacentToolMessages.length === toolCalls.length && !usedAdjacentIndices.has(tIdx)) {
+                // 2. By positional fallback in adjacent tool messages (if same count or index matches)
+                usedAdjacentIndices.add(tIdx);
+                resp = adjacentToolMessages[tIdx].content;
+              } else if (tc.rawId && toolResponses[tc.rawId] !== undefined) {
+                // 3. Fallback to global toolResponses map
+                resp = toolResponses[tc.rawId];
+              }
+
               if (resp === undefined) resp = "";
 
-              let name = tcID2Name[fid];
+              let name = tc.name || (tc.rawId ? tcID2Name[tc.rawId] : null);
               if (!name) {
-                const idParts = fid.split("-");
+                const idParts = (tc.rawId || "").split("-");
                 if (idParts.length > 2) {
                   name = idParts.slice(0, -2).join("-");
                 } else {
-                  name = fid;
+                  name = tc.rawId || "unknown";
                 }
               }
 
@@ -181,7 +233,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
               toolParts.push({
                 functionResponse: {
-                  id: fid,
+                  id: tc.uniqueId,
                   name: sanitizeGeminiFunctionName(name),
                   response: { result: parsedResp }
                 }
@@ -325,12 +377,17 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       if (Array.isArray(msg.content)) {
         for (const block of msg.content) {
           if (block.type === CLAUDE_BLOCK.TOOL_USE && block.id && block.name) {
-            toolUseIdToName[block.id] = block.name;
+            if (!toolUseIdToName[block.id]) {
+              toolUseIdToName[block.id] = block.name;
+            }
           }
         }
       }
     }
   }
+
+  const toolUseOccurrences = new Map();
+  const pendingToolUses = new Map();
 
   // Convert Claude messages to Gemini contents
   if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
@@ -343,13 +400,25 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
           if (block.type === CLAUDE_BLOCK.TEXT) {
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
-            const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId, model) : null;
+            const rawId = block.id;
+            let uniqueId = rawId;
+            if (rawId) {
+              const count = toolUseOccurrences.get(rawId) || 0;
+              toolUseOccurrences.set(rawId, count + 1);
+              uniqueId = count === 0 ? rawId : `${rawId}_${count}`;
+              if (!pendingToolUses.has(rawId)) {
+                pendingToolUses.set(rawId, []);
+              }
+              pendingToolUses.get(rawId).push({ uniqueId, name: block.name });
+            }
+
+            const cachedSig = rawId ? getGeminiThoughtSignatureSync(rawId, credentials?._clientSessionId, model) : null;
             const callSig = cachedSig || (!firstToolUseSeen ? signature : undefined);
             firstToolUseSeen = true;
 
             const part = {
               functionCall: {
-                id: block.id,
+                id: uniqueId,
                 name: sanitizeGeminiFunctionName(block.name),
                 args: block.input || {}
               }
@@ -363,13 +432,17 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             if (Array.isArray(content)) {
               content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c)).join("\n");
             }
-            // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
-            const resolvedName = toolUseIdToName[block.tool_use_id]
-              ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
-              : "tool";
+            const rawId = block.tool_use_id;
+            const queue = rawId ? pendingToolUses.get(rawId) : null;
+            const matched = queue && queue.length > 0 ? queue.shift() : null;
+
+            const uniqueId = matched ? matched.uniqueId : (rawId || "");
+            const toolName = matched?.name || (rawId ? toolUseIdToName[rawId] : null) || "tool";
+            const resolvedName = sanitizeGeminiFunctionName(toolName);
+
             parts.push({
               functionResponse: {
-                id: block.tool_use_id,
+                id: uniqueId,
                 name: resolvedName,
                 response: { result: tryParseJSON(content) || content }
               }

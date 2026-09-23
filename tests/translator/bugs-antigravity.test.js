@@ -136,4 +136,192 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("preserves tool call and response pairing across turns with colliding call IDs (Gemini)", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "edit file" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_81334",
+              type: "function",
+              function: { name: "edit", arguments: JSON.stringify({ file: "foo.js" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_81334",
+          content: JSON.stringify({ success: true })
+        },
+        { role: "user", content: "run test" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_81334",
+              type: "function",
+              function: { name: "bash", arguments: JSON.stringify({ command: "bun test" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_81334",
+          content: JSON.stringify({ passed: true })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const modelContents = contents.filter((c) => c.role === "model");
+    const userContents = contents.filter((c) => c.role === "user");
+
+    const call1 = modelContents[0].parts.find((p) => p.functionCall)?.functionCall;
+    const resp1 = userContents[1].parts.find((p) => p.functionResponse)?.functionResponse;
+    const call2 = modelContents[1].parts.find((p) => p.functionCall)?.functionCall;
+    const resp2 = userContents[2].parts.find((p) => p.functionResponse)?.functionResponse;
+
+    expect(call1?.name).toBe("edit");
+    expect(resp1?.name).toBe("edit");
+    expect(resp1?.response?.result).toEqual({ success: true });
+    expect(call1?.id).toBe("call_81334");
+    expect(resp1?.id).toBe("call_81334");
+
+    expect(call2?.name).toBe("bash");
+    expect(resp2?.name).toBe("bash");
+    expect(resp2?.response?.result).toEqual({ passed: true });
+    expect(call2?.id).toBe("call_81334_1");
+    expect(resp2?.id).toBe("call_81334_1");
+  });
+
+  it("preserves tool call and response pairing across turns with colliding call IDs (Claude backend)", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "edit file" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_81334",
+              type: "function",
+              function: { name: "edit", arguments: JSON.stringify({ file: "foo.js" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_81334",
+          content: JSON.stringify({ success: true })
+        },
+        { role: "user", content: "run test" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_81334",
+              type: "function",
+              function: { name: "bash", arguments: JSON.stringify({ command: "bun test" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_81334",
+          content: JSON.stringify({ passed: true })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("claude-opus-4-6-thinking", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const modelContents = contents.filter((c) => c.role === "model");
+    const userContents = contents.filter((c) => c.role === "user");
+
+    const call1 = modelContents[0].parts.find((p) => p.functionCall)?.functionCall;
+    const resp1 = userContents[1].parts.find((p) => p.functionResponse)?.functionResponse;
+    const call2 = modelContents[1].parts.find((p) => p.functionCall)?.functionCall;
+    const resp2 = userContents[2].parts.find((p) => p.functionResponse)?.functionResponse;
+
+    expect(call1?.name).toBe("edit");
+    expect(resp1?.name).toBe("edit");
+    expect(resp1?.response?.result).toEqual({ success: true });
+    expect(call1?.id).toBe("call_81334");
+    expect(resp1?.id).toBe("call_81334");
+
+    expect(call2?.name).toBe("bash");
+    expect(resp2?.name).toBe("bash");
+    expect(resp2?.response?.result).toEqual({ passed: true });
+    expect(call2?.id).toBe("call_81334_1");
+    expect(resp2?.id).toBe("call_81334_1");
+  });
+
+  it("handles parallel tool calls with identical IDs in the same turn without cross-talk", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "read files" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup",
+              type: "function",
+              function: { name: "read_file", arguments: JSON.stringify({ path: "a.txt" }) }
+            },
+            {
+              id: "call_dup",
+              type: "function",
+              function: { name: "read_file", arguments: JSON.stringify({ path: "b.txt" }) }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup",
+          content: JSON.stringify({ data: "content A" })
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup",
+          content: JSON.stringify({ data: "content B" })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const modelContent = contents.find((c) => c.role === "model");
+    const userToolContent = contents.find((c) => c.role === "user" && c.parts.some((p) => p.functionResponse));
+
+    const calls = modelContent.parts.filter((p) => p.functionCall).map((p) => p.functionCall);
+    const resps = userToolContent.parts.filter((p) => p.functionResponse).map((p) => p.functionResponse);
+
+    expect(calls).toHaveLength(2);
+    expect(resps).toHaveLength(2);
+
+    expect(calls[0].id).toBe("call_dup");
+    expect(resps[0].id).toBe("call_dup");
+    expect(resps[0].name).toBe("read_file");
+    expect(resps[0].response?.result).toEqual({ data: "content A" });
+
+    expect(calls[1].id).toBe("call_dup_1");
+    expect(resps[1].id).toBe("call_dup_1");
+    expect(resps[1].name).toBe("read_file");
+    expect(resps[1].response?.result).toEqual({ data: "content B" });
+  });
 });
