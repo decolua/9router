@@ -303,6 +303,11 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
+  const [quotaResetFirst, setQuotaResetFirst] = useState(false);
+  const [strategySaving, setStrategySaving] = useState(false);
+  const [strategyError, setStrategyError] = useState("");
+  const strategySaveRef = useRef(false);
+  const supportsQuotaRouting = ["codex", "claude", "antigravity", "gemini-cli"].includes(providerId);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
 
@@ -318,28 +323,54 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connRes.ok) setConnections((connData.connections || []).filter((c) => c.provider === providerId));
       if (proxyRes.ok) setProxyPools(proxyData.proxyPools || []);
-      const override = (settingsData.providerStrategies || {})[providerId] || {};
-      setProviderStrategy(override.fallbackStrategy || null);
-      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      if (settingsRes.ok) {
+        const override = (settingsData.providerStrategies || {})[providerId] || {};
+        setProviderStrategy(override.fallbackStrategy || null);
+        setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+        setQuotaResetFirst(override.quotaResetFirst === true);
+        setStrategyError("");
+      } else {
+        setStrategyError("Unable to load routing settings. Try again.");
+      }
     } catch (e) { console.log("ConnectionsCard fetch error:", e); }
     finally { setLoading(false); }
   }, [providerId]);
 
   useEffect(() => { fetch_(); }, [fetch_]);
 
-  const saveStrategy = async (strategy, stickyLimit) => {
+  const saveStrategy = async (strategy, stickyLimit, quotaPreference) => {
+    if (strategySaveRef.current) return;
+    strategySaveRef.current = true;
+    setStrategySaving(true);
+    setStrategyError("");
     try {
       const res = await fetch("/api/settings", { cache: "no-store" });
-      const data = res.ok ? await res.json() : {};
+      if (!res.ok) throw new Error("Unable to load routing settings. Try again.");
+      const data = await res.json();
       const current = data.providerStrategies || {};
-      const override = {};
-      if (strategy) override.fallbackStrategy = strategy;
-      if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
+      const override = { ...current[providerId] };
+      if (quotaPreference !== undefined) {
+        override.quotaResetFirst = quotaPreference;
+      } else {
+        delete override.fallbackStrategy;
+        delete override.stickyRoundRobinLimit;
+        if (strategy) override.fallbackStrategy = strategy;
+        if (strategy === "round-robin" && stickyLimit !== "") override.stickyRoundRobinLimit = Number(stickyLimit) || 3;
+      }
       const updated = { ...current };
       if (Object.keys(override).length === 0) delete updated[providerId];
       else updated[providerId] = override;
-      await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
-    } catch (e) { console.log("saveStrategy error:", e); }
+      const saved = await fetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerStrategies: updated }) });
+      if (!saved.ok) throw new Error("Unable to save routing settings. Try again.");
+      setProviderStrategy(override.fallbackStrategy || null);
+      setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
+      setQuotaResetFirst(override.quotaResetFirst === true);
+    } catch (error) {
+      setStrategyError(error.message || "Unable to save routing settings. Try again.");
+    } finally {
+      strategySaveRef.current = false;
+      setStrategySaving(false);
+    }
   };
 
   const handleSwapPriority = async (i1, i2) => {
@@ -406,11 +437,10 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-text-muted font-medium">Round Robin</span>
             <Toggle
+              disabled={strategySaving}
               checked={providerStrategy === "round-robin"}
               onChange={(enabled) => {
                 const strategy = enabled ? "round-robin" : null;
-                setProviderStrategy(strategy);
-                if (enabled && !providerStickyLimit) setProviderStickyLimit("1");
                 saveStrategy(strategy, enabled ? (providerStickyLimit || "1") : providerStickyLimit);
               }}
             />
@@ -419,13 +449,28 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
                 <span className="text-xs text-text-muted">Sticky:</span>
                 <input
                   type="number" min={1} value={providerStickyLimit}
-                  onChange={(e) => { setProviderStickyLimit(e.target.value); saveStrategy("round-robin", e.target.value); }}
+                  disabled={strategySaving}
+                  onChange={(e) => saveStrategy("round-robin", e.target.value)}
                   className="w-16 px-2 py-1 text-xs border border-border rounded-md bg-background focus:outline-none focus:border-primary"
                 />
               </div>
             )}
           </div>
         </div>
+
+        {supportsQuotaRouting && (
+          <div className="mb-4">
+            <Toggle
+              label="Prefer earliest quota reset"
+              description="Use the available account whose applicable quota resets first. Refreshes quota in the background; cooldowns and stagger protection still apply."
+              checked={quotaResetFirst}
+              disabled={strategySaving}
+              onChange={(enabled) => saveStrategy(undefined, undefined, enabled)}
+            />
+            <p className="mt-1 text-xs text-text-muted">Uses the earliest applicable session or weekly reset. Ties use the existing Round Robin or fill-first strategy.</p>
+          </div>
+        )}
+        {strategyError && <p role="alert" className="mb-4 text-sm text-red-500">{strategyError}</p>}
 
         {connections.length === 0 ? (
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

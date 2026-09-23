@@ -1,7 +1,8 @@
 // Ensure proxyFetch is loaded to patch globalThis.fetch
 import "open-sse/index.js";
 
-import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { createQuotaRoutingSnapshot, isQuotaResetFirstEnabled } from "@/shared/services/quotaRouting.js";
+import { getSettings, getProviderConnectionById, updateProviderConnection, updateProviderQuotaRoutingSnapshot } from "@/lib/localDb";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { getExecutor } from "open-sse/executors/index.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -169,6 +170,7 @@ export async function GET(request, { params }) {
     }
 
     // Fetch usage from provider API
+    let startedAtMs = Date.now();
     let usage = await getUsageForProvider(connection, proxyOptions, { force });
 
     // If provider returned an auth-expired message instead of throwing,
@@ -177,11 +179,20 @@ export async function GET(request, { params }) {
       try {
         const retryResult = await refreshAndUpdateCredentials(connection, true, proxyOptions);
         connection = retryResult.connection;
+        startedAtMs = Date.now();
         usage = await getUsageForProvider(connection, proxyOptions, { force });
       } catch (retryError) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
     }
+
+    try {
+      if (isOAuth && usage && !usage.error && !usage.message && isQuotaResetFirstEnabled(await getSettings(), connection.provider)) {
+        const sample = Object.hasOwn(usage, "observedAtMs") ? usage : { ...usage, observedAtMs: startedAtMs };
+        const snapshot = createQuotaRoutingSnapshot(connection.provider, sample);
+        if (snapshot) await updateProviderQuotaRoutingSnapshot(connection.id, snapshot);
+      }
+    } catch {}
 
     return Response.json(usage);
   } catch (error) {

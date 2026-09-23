@@ -41,13 +41,21 @@ function getCodexRateLimitBody(snapshot) {
 
 function formatCodexWindow(window) {
   const used = Math.max(0, Math.min(100, toFiniteNumber(window?.used_percent ?? window?.percent_used, 0)));
-  return {
+  const limitWindowSeconds = toFiniteNumber(window?.limit_window_seconds ?? window?.limitWindowSeconds, null);
+  const windowDurationMs = limitWindowSeconds !== null && limitWindowSeconds > 0
+    ? limitWindowSeconds * 1000
+    : toFiniteNumber(window?.windowDurationMs, null);
+  const result = {
     used,
     total: 100,
     remaining: Math.max(0, 100 - used),
     resetAt: parseResetTime(window?.reset_at ?? window?.resets_at ?? window?.resetAt ?? null),
     unlimited: false,
   };
+  if (windowDurationMs !== null && windowDurationMs > 0) {
+    result.windowDurationMs = windowDurationMs;
+  }
+  return result;
 }
 
 function appendCodexQuotaWindows(quotas, prefix, snapshot) {

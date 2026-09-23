@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import StaggerGroups from "./StaggerGroups";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
@@ -1037,6 +1038,8 @@ export default function ProviderLimits() {
           </button>
         </div>
       </div>
+
+      <StaggerGroups />
 
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (

@@ -3,7 +3,9 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { getStaggerGroup, getStaggerDecision } from "@/shared/services/quotaStagger.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
+import { isQuotaResetFirstEnabled, getConnectionQuotaReset, preferEarliestQuotaReset } from "@/shared/services/quotaRouting.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -16,6 +18,30 @@ function githubMonthlyResetMs(status, errorText, provider) {
   if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+}
+
+function getRelevantLockExpiryMs(connection, model, nowMs) {
+  if (!connection) return null;
+  const allLock = connection.modelLock___all;
+  const modelLock = model ? connection[`modelLock_${model}`] : null;
+  const expiries = [];
+  if (allLock) {
+    const t = new Date(allLock).getTime();
+    if (t > nowMs) expiries.push(t);
+  }
+  if (modelLock) {
+    const t = new Date(modelLock).getTime();
+    if (t > nowMs) expiries.push(t);
+  }
+  if (!model) {
+    for (const [k, val] of Object.entries(connection)) {
+      if (k.startsWith("modelLock_") && val) {
+        const t = new Date(val).getTime();
+        if (t > nowMs) expiries.push(t);
+      }
+    }
+  }
+  return expiries.length > 0 ? Math.max(...expiries) : null;
 }
 
 /**
@@ -77,25 +103,72 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       return null;
     }
 
-    // Antigravity quota cache is lazy: only populated after that account returns 409/429.
+    const settings = await getSettings();
+    const staggerGroups = settings?.quotaStaggerGroups;
+    const hasRelevantStagger = Array.isArray(staggerGroups) && staggerGroups.some(
+      (g) => g?.enabled === true && (g.session?.enabled === true || g.weekly?.enabled === true) && g.protectWindowStart === true
+    );
+    const allActiveConnections = hasRelevantStagger ? ((await getProviderConnections({ isActive: true })) || []) : [];
+
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
+    const nowMs = Date.now();
+    const quotaResetFirst = isQuotaResetFirstEnabled(settings, providerId);
+    let availableConnections = [];
+    const candidateEligibilityList = [];
 
-    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
-    const availableConnections = connections.filter(c => {
-      if (excludeSet.has(c.id)) return false;
-      if (isModelLockActive(c, model)) return false;
-      // Antigravity: skip if live quota exhausted for this model
+    for (const c of connections) {
+      if (excludeSet.has(c.id)) continue;
+
+      const isLocked = isModelLockActive(c, model);
+      const lockExpiryMs = getRelevantLockExpiryMs(c, model, nowMs);
+
+      let isAgBlocked = false;
+      let agResetMs = null;
       if (isAntigravity && model && antigravityQuotaCache) {
         const quota = antigravityQuotaCache.get(c.id)?.[model];
-        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
-          const account = c.id?.slice(0, 8) || "unknown";
-          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
-          return false;
+        if (quota && quota.remainingPercentage <= 0 && quota.resetAt) {
+          const t = new Date(quota.resetAt).getTime();
+          if (t > nowMs) {
+            isAgBlocked = true;
+            agResetMs = t;
+            const account = c.id?.slice(0, 8) || "unknown";
+            log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
+          }
         }
       }
-      return true;
-    });
+
+      let isStaggerWaiting = false;
+      let staggerNotBeforeMs = null;
+      const group = getStaggerGroup(settings, c.id);
+      if (group && group.protectWindowStart === true) {
+        const decision = getStaggerDecision({
+          connection: c,
+          settings,
+          connections: allActiveConnections,
+          nowMs,
+        });
+        if (decision.waiting === true && decision.notBeforeMs && decision.notBeforeMs > nowMs) {
+          isStaggerWaiting = true;
+          staggerNotBeforeMs = decision.notBeforeMs;
+        }
+      }
+
+      const quotaBlockedUntilMs = quotaResetFirst ? getConnectionQuotaReset(c, model, nowMs)?.blockedUntilMs : null;
+      if (!isLocked && !isAgBlocked && !isStaggerWaiting && !quotaBlockedUntilMs) {
+        availableConnections.push(c);
+      } else {
+        const accountEligibilityMs = Math.max(lockExpiryMs || 0, agResetMs || 0, staggerNotBeforeMs || 0, quotaBlockedUntilMs || 0);
+        if (accountEligibilityMs > nowMs) {
+          candidateEligibilityList.push({
+            conn: c,
+            eligibleAtMs: accountEligibilityMs,
+            isQuota: Boolean(quotaBlockedUntilMs && quotaBlockedUntilMs === accountEligibilityMs),
+            isStagger: Boolean(staggerNotBeforeMs && staggerNotBeforeMs === accountEligibilityMs),
+          });
+        }
+      }
+    }
 
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
     connections.forEach(c => {
@@ -108,33 +181,30 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
-      // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
-      if (isAntigravity && model && antigravityQuotaCache) {
-        connections.forEach((c) => {
-          const resetAt = antigravityQuotaCache.get(c.id)?.[model]?.resetAt;
-          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
-        });
-      }
-      const earliest = expiries.sort()[0] || null;
-      if (earliest) {
-        const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+      if (candidateEligibilityList.length > 0) {
+        candidateEligibilityList.sort((a, b) => a.eligibleAtMs - b.eligibleAtMs);
+        const earliestCandidate = candidateEligibilityList[0];
+        const earliestMs = earliestCandidate.eligibleAtMs;
+        const earliest = new Date(earliestMs).toISOString();
+        const lastError = earliestCandidate.isStagger
+          ? `Quota stagger window protected until ${earliest}`
+          : earliestCandidate.isQuota
+            ? `Quota exhausted until ${earliest}`
+            : (earliestCandidate.conn.lastError || `Quota stagger window protected until ${earliest}`);
+        const lastErrorCode = earliestCandidate.isStagger || earliestCandidate.isQuota ? 429 : (earliestCandidate.conn.errorCode || 429);
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked/delayed for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${String(lastError).slice(0, 50)}`);
         return {
           allRateLimited: true,
           retryAfter: earliest,
           retryAfterHuman: formatRetryAfter(earliest),
-          lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          lastError,
+          lastErrorCode,
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
       return null;
     }
 
-    const settings = await getSettings();
-    // Per-provider strategy overrides global setting
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
@@ -145,6 +215,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (connection) {
         log.info("AUTH", `${provider} | pinned to ${connection.id?.slice(0, 8)} (${connection.name || connection.email || "unnamed"})`);
       }
+    }
+    if (!connection && quotaResetFirst) {
+      availableConnections = preferEarliestQuotaReset(availableConnections, model, nowMs);
     }
     if (connection) {
       // skip strategy

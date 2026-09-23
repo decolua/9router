@@ -4,7 +4,7 @@
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { ANTHROPIC_API_VERSION } from "../../providers/shared.js";
-import { U, parseResetTime } from "./shared.js";
+import { U, parseResetTime, toFiniteNumber } from "./shared.js";
 
 // Claude API config (urls from registry, apiVersion is header logic kept here)
 const CLAUDE_CONFIG = {
@@ -40,11 +40,15 @@ export async function getClaudeUsage(accessToken, proxyOptions = null, options =
     const result = await fetchClaudeUsageRaw(accessToken, proxyOptions);
     // Only cache real quota data, not soft-failure {message: ...} payloads
     if (accessToken && result?.quotas) {
+      const freshResult = {
+        ...result,
+        observedAtMs: result.observedAtMs || Date.now(),
+      };
       usageCache.set(accessToken, {
-        result,
+        result: freshResult,
         expiresAt: Date.now() + USAGE_CACHE_TTL_MS,
       });
-      return result;
+      return freshResult;
     }
     // Soft failure (429/error): prefer the last good read over a transient error
     if (stale) return stale;
@@ -81,10 +85,14 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
       const hasUtilization = (window) =>
         window && typeof window === "object" && typeof window.utilization === "number";
 
-      const createQuotaObject = (window) => {
+      const createQuotaObject = (window, defaultDurationMs = null) => {
         const used = window.utilization;
         const remaining = Math.max(0, 100 - used);
-        return {
+        const limitWindowSeconds = toFiniteNumber(window?.limit_window_seconds ?? window?.limitWindowSeconds, null);
+        const windowDurationMs = limitWindowSeconds !== null && limitWindowSeconds > 0
+          ? limitWindowSeconds * 1000
+          : (toFiniteNumber(window?.windowDurationMs, null) ?? defaultDurationMs);
+        const result = {
           used,
           total: 100,
           remaining,
@@ -92,21 +100,25 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
           resetAt: parseResetTime(window.resets_at),
           unlimited: false,
         };
+        if (windowDurationMs !== null && windowDurationMs > 0) {
+          result.windowDurationMs = windowDurationMs;
+        }
+        return result;
       };
 
       if (hasUtilization(data.five_hour)) {
-        quotas["session (5h)"] = createQuotaObject(data.five_hour);
+        quotas["session (5h)"] = createQuotaObject(data.five_hour, 18000000);
       }
 
       if (hasUtilization(data.seven_day)) {
-        quotas["weekly (7d)"] = createQuotaObject(data.seven_day);
+        quotas["weekly (7d)"] = createQuotaObject(data.seven_day, 604800000);
       }
 
       // Parse model-specific weekly windows (e.g. seven_day_sonnet, seven_day_opus)
       for (const [key, value] of Object.entries(data)) {
         if (key.startsWith("seven_day_") && key !== "seven_day" && hasUtilization(value)) {
           const modelName = key.replace("seven_day_", "");
-          quotas[`weekly ${modelName} (7d)`] = createQuotaObject(value);
+          quotas[`weekly ${modelName} (7d)`] = createQuotaObject(value, 604800000);
         }
       }
 
@@ -122,7 +134,9 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
           quotas[`weekly ${modelName} (7d)`] = createQuotaObject({
             utilization: Math.max(0, Math.min(100, limit.percent)),
             resets_at: limit.resets_at,
-          });
+            limit_window_seconds: limit.limit_window_seconds,
+            windowDurationMs: limit.windowDurationMs,
+          }, 604800000);
         }
       }
 
@@ -130,6 +144,7 @@ async function fetchClaudeUsageRaw(accessToken, proxyOptions = null) {
         plan: "Claude Code",
         extraUsage: data.extra_usage ?? null,
         quotas,
+        observedAtMs: Date.now(),
       };
     }
 

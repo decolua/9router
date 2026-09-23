@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
+import { createQuotaRoutingSnapshot, isQuotaResetFirstEnabled } from "../../../shared/services/quotaRouting.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
 const OPTIONAL_FIELDS = [
@@ -224,6 +225,29 @@ export async function updateProviderConnection(id, data) {
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;
+  });
+  return result;
+}
+
+export async function updateProviderQuotaRoutingSnapshot(id, snapshot) {
+  const db = await getAdapter();
+  let result;
+  db.transaction(() => {
+    const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+    result = rowToConn(row);
+    if (!result || result.authType !== "oauth" || !result.isActive ||
+        snapshot?.version !== 1 || snapshot.provider !== result.provider ||
+        !Number.isFinite(snapshot.observedAtMs) || snapshot.observedAtMs > Date.now()) return;
+    const settingsRow = db.get(`SELECT data FROM settings WHERE id = 1`);
+    const settings = parseJson(settingsRow?.data, {});
+    if (!isQuotaResetFirstEnabled(settings, result.provider)) return;
+    const normalized = createQuotaRoutingSnapshot(result.provider, snapshot);
+    if (!normalized) return;
+    const previous = result.quotaRoutingSnapshot;
+    if (Number.isFinite(previous?.observedAtMs) && normalized.observedAtMs <= previous.observedAtMs) return;
+    const data = { ...parseJson(row.data, {}), quotaRoutingSnapshot: normalized };
+    db.run(`UPDATE providerConnections SET data = ? WHERE id = ?`, [stringifyJson(data), id]);
+    result = { ...result, quotaRoutingSnapshot: normalized };
   });
   return result;
 }
