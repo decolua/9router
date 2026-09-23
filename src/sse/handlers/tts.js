@@ -2,7 +2,8 @@ import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getApiKeyByKey, getSettings } from "@/lib/localDb";
+import { createModelAccessContext, enforceModelAccess, isTopLevelModelBlocked, modelAccessDeniedResponse } from "../services/modelAccess.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -34,8 +35,8 @@ export async function handleTts(request) {
   log.request("POST", `${url.pathname} | ${modelStr} | format=${responseFormat}${language ? ` | lang=${language}` : ""}`);
 
   const settings = await getSettings();
+  const apiKey = extractApiKey(request);
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -43,6 +44,12 @@ export async function handleTts(request) {
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+
+  const keyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
+  const modelAccessContext = createModelAccessContext(keyRecord, modelStr);
+  if (isTopLevelModelBlocked(modelAccessContext, modelStr)) {
+    return modelAccessDeniedResponse(modelAccessContext, modelStr);
+  }
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
@@ -54,7 +61,7 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style, modelAccessContext),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -62,14 +69,16 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, modelAccessContext);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, modelAccessContext = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  const accessDenied = await enforceModelAccess(modelAccessContext, modelStr, provider, model);
+  if (accessDenied) return accessDenied;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
 
   // noAuth providers — no credential needed

@@ -2,7 +2,8 @@ import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable,
 } from "../services/auth.js";
-import { getSettings } from "@/lib/localDb";
+import { getApiKeyByKey, getSettings } from "@/lib/localDb";
+import { createModelAccessContext, enforceModelAccess, isTopLevelModelBlocked, modelAccessDeniedResponse } from "../services/modelAccess.js";
 import { getModelInfo } from "../services/model.js";
 import { handleSttCore } from "open-sse/handlers/sttCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -29,8 +30,8 @@ export async function handleStt(request) {
   log.request("POST", `/v1/audio/transcriptions | ${modelStr}`);
 
   const settings = await getSettings();
+  const apiKey = extractApiKey(request);
   if (settings.requireApiKey) {
-    const apiKey = extractApiKey(request);
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
     if (!valid) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
@@ -39,10 +40,18 @@ export async function handleStt(request) {
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!formData.get("file")) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
+  const keyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
+  const modelAccessContext = createModelAccessContext(keyRecord, modelStr);
+  if (isTopLevelModelBlocked(modelAccessContext, modelStr)) {
+    return modelAccessDeniedResponse(modelAccessContext, modelStr);
+  }
+
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  const accessDenied = await enforceModelAccess(modelAccessContext, modelStr, provider, model);
+  if (accessDenied) return accessDenied;
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   // noAuth providers

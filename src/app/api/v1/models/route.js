@@ -5,7 +5,9 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getApiKeyByKey, getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { extractApiKey } from "@/sse/services/auth.js";
+import { filterModelsByAccess } from "@/sse/services/modelAccess.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -586,7 +588,14 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const key = await getApiKeyByKey(apiKey);
+      if (key && key.modelAccess.mode !== "all") {
+        data = filterModelsByAccess(key.modelAccess, data);
+      }
+    }
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

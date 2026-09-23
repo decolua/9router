@@ -16,7 +16,10 @@ vi.mock("../../src/sse/services/auth.js", () => ({
   extractApiKey: () => "client-key",
   isValidApiKey: vi.fn(),
 }));
-vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({ requireApiKey: false }) }));
+vi.mock("@/lib/localDb", () => ({
+  getSettings: async () => ({ requireApiKey: false }),
+  getApiKeyByKey: async () => null,
+}));
 vi.mock("../../src/sse/services/model.js", () => ({
   getModelInfo: async () => ({ provider: "openai", model: "text-embedding-3-small" }),
 }));

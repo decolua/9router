@@ -5,7 +5,8 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { getApiKeyByKey, getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { createModelAccessContext, enforceModelAccess, isTopLevelModelBlocked, modelAccessDeniedResponse } from "../services/modelAccess.js";
 import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -116,6 +117,17 @@ export async function handleVideoCreate(request, action) {
   const resolved = await resolveVideoProvider(bodyInfo.parsed);
   if (resolved.error) return resolved.error;
   const { provider, model } = resolved;
+  if (model) {
+    const requestedModel = bodyInfo.parsed?.model || model;
+    const apiKey = extractApiKey(request);
+    const keyRecord = apiKey ? await getApiKeyByKey(apiKey) : null;
+    const modelAccessContext = createModelAccessContext(keyRecord, requestedModel);
+    if (isTopLevelModelBlocked(modelAccessContext, requestedModel)) {
+      return modelAccessDeniedResponse(modelAccessContext, requestedModel);
+    }
+    const accessDenied = await enforceModelAccess(modelAccessContext, requestedModel, provider, model);
+    if (accessDenied) return accessDenied;
+  }
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.
