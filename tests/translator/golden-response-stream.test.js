@@ -50,6 +50,43 @@ describe("GOLDEN response stream: Claude → OpenAI", () => {
     ];
     expect(runStream(FORMATS.CLAUDE, FORMATS.OPENAI, events)).toMatchSnapshot();
   });
+
+  // Anthropic adaptive thinking (Opus/Sonnet 4.6+) can open and close a thinking
+  // block without ever sending a thinking_delta. Emitting literal <think> tags as
+  // delta.content turned that into a visible "<think></think>" in the reply.
+  it("empty thinking block emits no content deltas", () => {
+    const events = [
+      { type: "message_start", message: { id: "msg_1", model: "claude-opus-4-6" } },
+      { type: "content_block_start", index: 0, content_block: { type: "thinking" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "content_block_start", index: 1, content_block: { type: "text" } },
+      { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "391" } },
+      { type: "content_block_stop", index: 1 },
+      { type: "message_delta", delta: { stop_reason: "end_turn" }, usage: { input_tokens: 10, output_tokens: 5 } },
+    ];
+    const deltas = runStream(FORMATS.CLAUDE, FORMATS.OPENAI, events)
+      .map((c) => c.choices?.[0]?.delta?.content)
+      .filter(Boolean);
+    expect(deltas).toEqual(["391"]);
+  });
+
+  // Thinking must survive as reasoning_content only — the shape every other
+  // *-to-openai translator emits and openai-to-claude reads back.
+  it("thinking is carried by reasoning_content, not <think> tags", () => {
+    const events = [
+      { type: "message_start", message: { id: "msg_1", model: "claude-opus-4-6" } },
+      { type: "content_block_start", index: 0, content_block: { type: "thinking" } },
+      { type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "let me think" } },
+      { type: "content_block_stop", index: 0 },
+      { type: "content_block_start", index: 1, content_block: { type: "text" } },
+      { type: "content_block_delta", index: 1, delta: { type: "text_delta", text: "Hello" } },
+      { type: "content_block_stop", index: 1 },
+    ];
+    const out = runStream(FORMATS.CLAUDE, FORMATS.OPENAI, events);
+    const deltas = out.map((c) => c.choices?.[0]?.delta || {});
+    expect(deltas.map((d) => d.reasoning_content).filter(Boolean)).toEqual(["let me think"]);
+    expect(deltas.map((d) => d.content).filter(Boolean)).toEqual(["Hello"]);
+  });
 });
 
 describe("GOLDEN response stream: Gemini → OpenAI", () => {

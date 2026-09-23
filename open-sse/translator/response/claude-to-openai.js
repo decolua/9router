@@ -60,9 +60,16 @@ export function claudeToOpenAIResponse(chunk, state) {
       if (block?.type === CLAUDE_BLOCK.TEXT) {
         state.textBlockStarted = true;
       } else if (block?.type === CLAUDE_BLOCK.THINKING) {
+        // Thinking is carried by delta.reasoning_content (see content_block_delta
+        // below), which is the convention every other *-to-openai translator uses
+        // and what openai-to-claude reads back via extractReasoningText(). Do not
+        // also emit literal "<think>" / "</think>" as delta.content: clients that
+        // understand reasoning_content render the tags as visible text, and when
+        // Anthropic opens a thinking block but streams no thinking_delta (adaptive
+        // thinking on Opus/Sonnet 4.6+) the result is a bare "<think></think>" in
+        // the reply.
         state.inThinkingBlock = true;
         state.currentBlockIndex = chunk.index;
-        results.push(createChunk(state, { content: "<think>" }));
       } else if (block?.type === CLAUDE_BLOCK.TOOL_USE) {
         const toolCallIndex = state.toolCallIndex++;
         // Restore original tool name from mapping (Claude OAuth)
@@ -113,7 +120,6 @@ export function claudeToOpenAIResponse(chunk, state) {
         break;
       }
       if (state.inThinkingBlock && chunk.index === state.currentBlockIndex) {
-        results.push(createChunk(state, { content: "</think>" }));
         state.inThinkingBlock = false;
       }
       state.textBlockStarted = false;
