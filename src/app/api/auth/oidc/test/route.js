@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { getSettings } from "@/lib/localDb";
 import { fetchOidcDiscovery, getPublicOrigin, probeOidcClientSecret } from "@/lib/auth/oidc";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { fetchPublic } from "@/shared/utils/ssrfGuard.js";
+import { isLocalRequest } from "@/dashboardGuard";
 
 async function canAccessTestRoute() {
   const settings = await getSettings();
@@ -38,13 +40,18 @@ export async function POST(request) {
       return NextResponse.json({ error: "Client ID is required" }, { status: 400 });
     }
 
-    const discovery = await fetchOidcDiscovery(issuerUrl);
+    // SSRF guard for remote callers (GHSA-8g4w): both the issuer and the token_endpoint the
+    // discovery document names are request-controlled, and discovery fields are reflected
+    // back. Local host keeps self-hosted/LAN IdPs, same policy as provider-nodes/validate.
+    const fetchImpl = isLocalRequest(request) ? fetch : fetchPublic;
+    const discovery = await fetchOidcDiscovery(issuerUrl, fetchImpl);
     const redirectUri = `${getPublicOrigin(request)}/api/auth/oidc/callback`;
     const secretProbe = await probeOidcClientSecret({
       tokenEndpoint: discovery.token_endpoint,
       clientId,
       clientSecret,
       redirectUri,
+      fetchImpl,
     });
 
     if (secretProbe.tested && secretProbe.valid === false) {
@@ -79,6 +86,9 @@ export async function POST(request) {
       message: secretProbe.message,
     });
   } catch (error) {
+    if (String(error?.message).startsWith("Blocked URL")) {
+      return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+    }
     return NextResponse.json({ error: error.message || "OIDC test failed" }, { status: 500 });
   }
 }

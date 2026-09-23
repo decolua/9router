@@ -62,9 +62,10 @@ export async function getOidcRuntimeConfig() {
   };
 }
 
-export async function fetchOidcDiscovery(issuerUrl) {
+// fetchImpl lets callers that take the issuer from request input swap in an SSRF-guarded fetch.
+export async function fetchOidcDiscovery(issuerUrl, fetchImpl = fetch) {
   const discoveryUrl = `${trimTrailingSlashes(issuerUrl)}/.well-known/openid-configuration`;
-  const res = await fetch(discoveryUrl, { cache: "no-store" });
+  const res = await fetchImpl(discoveryUrl, { cache: "no-store" });
   if (!res.ok) {
     throw new Error(`Failed to load OIDC discovery document from ${discoveryUrl}`);
   }
@@ -146,6 +147,7 @@ export async function probeOidcClientSecret({
   clientId,
   clientSecret,
   redirectUri,
+  fetchImpl = fetch,
 }) {
   if (!clientSecret) {
     return {
@@ -164,7 +166,7 @@ export async function probeOidcClientSecret({
     code_verifier: "__oidc_test_invalid_verifier__",
   });
 
-  const res = await fetch(tokenEndpoint, {
+  const res = await fetchImpl(tokenEndpoint, {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,

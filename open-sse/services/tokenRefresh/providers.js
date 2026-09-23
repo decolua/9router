@@ -2,6 +2,7 @@ import { PROVIDERS, PROVIDER_OAUTH } from "../../config/providers.js";
 import { OAUTH_ENDPOINTS, GITHUB_COPILOT, buildKimiHeaders } from "../../config/appConstants.js";
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { dedupRefresh } from "./dedup.js";
+import { safeAwsRegion } from "../../config/awsRegion.js";
 import { buildExternalIdpRefreshParams } from "../../../src/lib/oauth/kiroExternalIdp.js";
 
 let _xaiServiceSingleton = null;
@@ -376,8 +377,9 @@ export async function refreshKiroToken(refreshToken, providerSpecificData, log, 
 
   if (clientId && clientSecret) {
     const isIDC = authMethod === "idc";
+    // Body carries clientSecret + refreshToken: never build the host from an unvalidated region.
     const endpoint = isIDC && region
-      ? `https://oidc.${region}.amazonaws.com/token`
+      ? `https://oidc.${safeAwsRegion(region)}.amazonaws.com/token`
       : "https://oidc.us-east-1.amazonaws.com/token";
 
     const response = await proxyAwareFetch(endpoint, {

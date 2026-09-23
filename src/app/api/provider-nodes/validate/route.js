@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { assertPublicUrlResolved, fetchPublic } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 // Fetch with timeout wrapper
-const fetchWithTimeout = (url, options, timeout = 10000) => {
+const fetchWithTimeout = (fetchImpl, url, options, timeout = 10000) => {
   return Promise.race([
-    fetch(url, options),
+    fetchImpl(url, options),
     new Promise((_, reject) => 
       setTimeout(() => reject(new Error("Request timeout")), timeout)
     )
@@ -24,6 +24,7 @@ const isValidUrl = (url) => {
 
 // Parse error details for user-friendly messages
 const getErrorMessage = (error) => {
+  if (error.message?.startsWith("Blocked URL")) return "URL not allowed";
   if (error.cause?.code === "ECONNREFUSED") return "Connection refused - provider node offline or unreachable";
   if (error.cause?.code === "ENOTFOUND") return "DNS lookup failed - invalid domain or network issue";
   if (error.cause?.code === "ETIMEDOUT") return "Connection timeout - provider node too slow";
@@ -66,10 +67,14 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid URL format" }, { status: 400 });
     }
 
-    // SSRF guard for remote callers; local host keeps self-hosted nodes (e.g. ollama-local)
-    if (!isLocalRequest(request)) {
+    // SSRF guard for remote callers; local host keeps self-hosted nodes (e.g. ollama-local).
+    // Resolve DNS and re-check each redirect hop: a literal-only check let a hostname that
+    // resolves to 127.0.0.1/metadata, or a public URL that 30x's inward, through (#3293).
+    const isLocal = isLocalRequest(request);
+    const doFetch = isLocal ? fetch : fetchPublic;
+    if (!isLocal) {
       try {
-        assertPublicUrl(baseUrl);
+        await assertPublicUrlResolved(baseUrl);
       } catch {
         return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
       }
@@ -81,7 +86,7 @@ export async function POST(request) {
       if (!modelId?.trim()) {
         return NextResponse.json({ valid: false, error: "Model ID required for embedding validation" });
       }
-      const embedRes = await fetchWithTimeout(`${normalizedBase}/embeddings`, {
+      const embedRes = await fetchWithTimeout(doFetch, `${normalizedBase}/embeddings`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,
@@ -113,7 +118,7 @@ export async function POST(request) {
       }
 
       const modelsUrl = `${normalizedBase}/models`;
-      const res = await fetchWithTimeout(modelsUrl, {
+      const res = await fetchWithTimeout(doFetch, modelsUrl, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -131,7 +136,7 @@ export async function POST(request) {
 
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
-        const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
+        const chatRes = await fetchWithTimeout(doFetch, `${normalizedBase}/chat/completions`, {
           method: "POST",
           headers: {
             "Authorization": `Bearer ${apiKey}`,
@@ -160,7 +165,7 @@ export async function POST(request) {
 
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
-    const res = await fetchWithTimeout(modelsUrl, {
+    const res = await fetchWithTimeout(doFetch, modelsUrl, {
       headers: { "Authorization": `Bearer ${apiKey}` },
     });
 
@@ -173,7 +178,7 @@ export async function POST(request) {
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
-      const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      const chatRes = await fetchWithTimeout(doFetch, `${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
           "Authorization": `Bearer ${apiKey}`,

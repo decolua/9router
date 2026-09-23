@@ -22,6 +22,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { createHash } from "crypto";
 import { refreshKiroToken } from "./tokenRefresh.js";
+import { safeAwsRegion } from "../config/awsRegion.js";
 
 const KIRO_RUNTIME_SDK_VERSION = "1.0.0";
 const KIRO_AGENT_OS = "windows";
@@ -55,7 +56,8 @@ function stripSyntheticSuffixes(id) {
 function regionFromProfileArn(profileArn) {
   if (!profileArn || typeof profileArn !== "string") return DEFAULT_REGION;
   const parts = profileArn.split(":");
-  if (parts.length >= 4 && parts[3]) return parts[3];
+  // profileArn is stored per-connection and user-editable; the region lands in a URL host.
+  if (parts.length >= 4 && parts[3]) return safeAwsRegion(parts[3], DEFAULT_REGION);
   return DEFAULT_REGION;
 }
 

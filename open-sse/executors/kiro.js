@@ -10,6 +10,7 @@ import { refreshKiroToken } from "../services/tokenRefresh.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { STREAM_FIRST_CHUNK_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { safeAwsRegion } from "../config/awsRegion.js";
 
 const KIRO_REPAIR_BUFFER_MAX_BYTES = 8 * 1024 * 1024;
 const KIRO_REPAIR_HEARTBEAT_MS = 10_000;
@@ -312,7 +313,8 @@ export class KiroExecutor extends BaseExecutor {
     // reject foreign tokens with 401/403, which DO fall through, so trying
     // q/codewhisperer first is safe for every auth method (CLIRO parity).
 
-    const region = (credentials?.providerSpecificData?.region || "us-east-1").trim();
+    // Stored region is user-editable; interpolating it unvalidated would send the bearer off AWS.
+    const region = safeAwsRegion(credentials?.providerSpecificData?.region);
     const regionalize = (u) =>
       region && region !== "us-east-1" && u.includes("amazonaws.com")
         ? u.replace(/([a-z]+)\.[a-z0-9-]+\.amazonaws\.com/, `$1.${region}.amazonaws.com`)

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { readFileSync } from "node:fs";
 
 const mocks = vi.hoisted(() => ({
   nextResponse: Symbol("next"),
@@ -130,6 +131,28 @@ describe("dashboard guard public LLM API access", () => {
 
     expect(response.status).toBe(401);
     expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  it("rejects remote /systemone rewrite without API key", async () => {
+    const response = await proxy(request("/systemone", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toBe("API key required for remote API access");
+  });
+
+  // Middleware runs before next.config.mjs rewrites, so a rewrite source that is not a
+  // guarded prefix reaches the LLM handlers unauthenticated (GHSA-8gmq, #3677).
+  it("guards every root-level rewrite source declared in next.config.mjs", async () => {
+    const config = readFileSync(new URL("../../next.config.mjs", import.meta.url), "utf8");
+    const sources = [...config.matchAll(/source:\s*"([^"]+)"/g)]
+      .map((m) => m[1].split("/:")[0])
+      .filter((s) => !s.startsWith("/api/") && !s.startsWith("/_next"));
+
+    expect(sources.length).toBeGreaterThan(0);
+    for (const source of sources) {
+      const response = await proxy(request(source, { host: "router.example.com" }));
+      expect(response.status, source).toBe(401);
+    }
   });
 
   it("allows remote /responses rewrite with a valid API key", async () => {
@@ -276,6 +299,19 @@ describe("dashboard guard local-only access", () => {
 
     expect(response.status).toBe(403);
   });
+
+  // Siblings of the local-only start/stop routes: restart re-spawns the same proxy and
+  // extras runs pip against the host interpreter.
+  it.each(["/api/headroom/restart", "/api/headroom/extras"])(
+    "rejects remote %s even with a dashboard session",
+    async (pathname) => {
+      mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+
+      const response = await proxy(request(pathname, { host: "router.example.com" }));
+
+      expect(response.status).toBe(403);
+    },
+  );
 
   it("allows local-only route with valid CLI token", async () => {
     const response = await proxy(request("/api/mcp/filesystem/sse", {
