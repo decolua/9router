@@ -417,10 +417,9 @@ export function formatCost(cost) {
  * @param {object} pricing
  * @returns {number} cost in dollars
  */
-export function calculateCostFromTokens(tokens, pricing) {
-  if (!tokens || !pricing) return 0;
-
-  let cost = 0;
+export function calculateCostBreakdown(tokens, pricing) {
+  const zero = { inputCost: 0, cachedCost: 0, cacheWriteCost: 0, outputCost: 0, totalCost: 0 };
+  if (!tokens || !pricing) return zero;
 
   const inputTokens = tokens.prompt_tokens || tokens.input_tokens || 0;
   const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
@@ -429,23 +428,27 @@ export function calculateCostFromTokens(tokens, pricing) {
   // are subsets, so subtract both to avoid charging them at the full input rate.
   const nonCachedInput = Math.max(0, inputTokens - cachedTokens - cacheCreationTokens);
 
-  cost += nonCachedInput * (pricing.input / 1000000);
-
-  if (cachedTokens > 0) {
-    cost += cachedTokens * ((pricing.cached || pricing.input) / 1000000);
-  }
+  const inputCost = nonCachedInput * (pricing.input / 1000000);
+  const cachedCost = cachedTokens > 0
+    ? cachedTokens * ((pricing.cached || pricing.input) / 1000000)
+    : 0;
+  const cacheWriteCost = cacheCreationTokens > 0
+    ? cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000)
+    : 0;
 
   const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-  cost += outputTokens * (pricing.output / 1000000);
-
   const reasoningTokens = tokens.reasoning_tokens || 0;
-  if (reasoningTokens > 0) {
-    cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
-  }
+  // Reasoning bills at output-side rates, so it belongs in the output bucket.
+  const outputCost = outputTokens * (pricing.output / 1000000)
+    + (reasoningTokens > 0 ? reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000) : 0);
 
-  if (cacheCreationTokens > 0) {
-    cost += cacheCreationTokens * ((pricing.cache_creation || pricing.input) / 1000000);
-  }
+  return {
+    inputCost, cachedCost, cacheWriteCost, outputCost,
+    totalCost: inputCost + cachedCost + cacheWriteCost + outputCost,
+  };
+}
 
-  return cost;
+export function calculateCostFromTokens(tokens, pricing) {
+  if (!tokens || !pricing) return 0;
+  return calculateCostBreakdown(tokens, pricing).totalCost;
 }
