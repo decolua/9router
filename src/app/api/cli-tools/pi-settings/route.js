@@ -6,6 +6,9 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { getCombos } from "@/lib/localDb";
+import { getModelInfo } from "@/sse/services/model";
+import { getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 
 const execAsync = promisify(exec);
 
@@ -119,32 +122,48 @@ export async function POST(request) {
     try {
       const raw = await fs.readFile(configPath, "utf-8");
       existing = JSON.parse(raw);
-    } catch {
-      /* No existing config */
+    } catch (error) {
+      // A malformed or unreadable file is not an empty configuration.
+      if (error.code !== "ENOENT") throw error;
     }
 
     if (!existing.providers) existing.providers = {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    let modelList = [];
-    if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
-      modelList = rawBody.models.map((m) => {
-        if (typeof m === "string") {
-          return { id: m, name: m, contextWindow: 128000, maxTokens: 16384 };
+    const previousProvider = existing.providers["9router"] || {};
+    const previousModels = new Map((previousProvider.models || []).map(m => [m.id, m]));
+    const selected = Array.isArray(rawBody.models) && rawBody.models.length > 0
+      ? rawBody.models : [model || "provider/model-id"];
+    const validLimit = value => Number.isFinite(value) && value > 0;
+    let comboLookup;
+    const modelList = [];
+    for (const entry of selected) {
+      const supplied = typeof entry === "string" ? { id: entry } : entry;
+      const id = supplied.id || "provider/model-id";
+      const merged = { ...previousModels.get(id), ...supplied, id };
+      let caps;
+      if (!validLimit(merged.contextWindow) || !validLimit(merged.maxTokens)) {
+        // Reuse the same capability aggregation as /v1/models, including
+        // nested combos. Existing per-model overrides take precedence.
+        if (!id.includes("/")) {
+          comboLookup ??= Object.fromEntries((await getCombos()).map(c => [c.name, c.models]));
+          if (comboLookup[id]) caps = aggregateComboCapabilities(comboLookup[id], comboLookup);
         }
-        return {
-          id: m.id || "provider/model-id",
-          name: m.name || m.id || "provider/model-id",
-          contextWindow: m.contextWindow || 128000,
-          maxTokens: m.maxTokens || 16384,
-        };
+        if (!caps) {
+          const resolved = await getModelInfo(id);
+          caps = getCapabilitiesForModel(resolved.provider, resolved.model || id);
+        }
+      }
+      modelList.push({
+        ...merged,
+        name: merged.name || id,
+        contextWindow: validLimit(merged.contextWindow) ? merged.contextWindow : caps.contextWindow,
+        maxTokens: validLimit(merged.maxTokens) ? merged.maxTokens : caps.maxOutput,
       });
-    } else {
-      const modelId = model || "provider/model-id";
-      modelList = [{ id: modelId, name: modelId, contextWindow: 128000, maxTokens: 16384 }];
     }
 
     existing.providers["9router"] = {
+      ...previousProvider,
       baseUrl: normalizedBaseUrl,
       apiKey: apiKey || "sk_9router",
       api: "openai-completions",
