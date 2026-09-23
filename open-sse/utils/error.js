@@ -6,19 +6,21 @@ import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
  * @param {string} message - Error message
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
+export function buildErrorBody(statusCode, message, diagnostics = {}) {
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
       : { type: "invalid_request_error", code: "" });
 
-  return {
-    error: {
+  const error = {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
       code: errorInfo.code
-    }
   };
+  for (const key of ["type", "param", "code", "request_id"]) {
+    if (diagnostics[key]) error[key] = diagnostics[key];
+  }
+  return { error };
 }
 
 /**
@@ -27,8 +29,8 @@ export function buildErrorBody(statusCode, message) {
  * @param {string} message - Error message
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, diagnostics = {}) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, diagnostics)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
@@ -53,7 +55,7 @@ export async function writeStreamError(writer, statusCode, message) {
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
- * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
+ * @returns {Promise<{statusCode: number, message: string, type?: string, param?: string, code?: string, request_id?: string, resetsAtMs?: number}>}
  */
 export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
@@ -68,24 +70,51 @@ export async function parseUpstreamError(response, executor = null) {
     try {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
-        const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        const msg = safeDiagnostic(parsed.message) || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          type: safeDiagnostic(parsed.type),
+          param: safeDiagnostic(parsed.param),
+          code: safeDiagnostic(parsed.code),
+          request_id: safeRequestId(response, parsed.request_id),
+          resetsAtMs: parsed.resetsAtMs
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
 
   let message = "";
+  let diagnostics = {};
   try {
     const json = JSON.parse(bodyText);
-    message = json.error?.message || json.message || json.error || bodyText;
+    const source = json.error && typeof json.error === "object" ? json.error : json;
+    diagnostics = {
+      type: safeDiagnostic(source?.type),
+      param: safeDiagnostic(source?.param),
+      code: safeDiagnostic(source?.code),
+      request_id: safeRequestId(response, source?.request_id || json.request_id)
+    };
+    message = source?.message || json.message || (typeof json.error === "string" ? json.error : "");
   } catch {
-    message = bodyText;
+    message = "";
   }
 
-  const messageStr = typeof message === "string" ? message : JSON.stringify(message);
+  const messageStr = safeDiagnostic(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, ...diagnostics };
+}
+
+function safeDiagnostic(value) {
+  if (typeof value !== "string") return undefined;
+  return value.replace(/Bearer\s+[^\s]+/gi, "Bearer [REDACTED]").replace(/[\r\n\0]/g, " ").trim().slice(0, 500) || undefined;
+}
+
+function safeRequestId(response, value) {
+  const headerId = response?.headers?.get("x-request-id") || response?.headers?.get("request-id") || response?.headers?.get("x-correlation-id");
+  const candidate = safeDiagnostic(value || headerId);
+  return candidate && /^[A-Za-z0-9._:-]{1,128}$/.test(candidate) ? candidate : undefined;
 }
 
 /**
@@ -95,13 +124,13 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs) {
+export function createErrorResult(statusCode, message, resetsAtMs, diagnostics = {}) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message)
+    response: errorResponse(statusCode, message, diagnostics)
   };
 }
 

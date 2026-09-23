@@ -1,5 +1,8 @@
 import { handleChat } from "@/sse/handlers/chat.js";
+import { correlateResponse, sanitizeErrorResponse } from "@/sse/utils/requestCorrelation.js";
 import { initTranslators } from "open-sse/translator/index.js";
+
+export { sanitizeErrorResponse };
 
 let initialized = false;
 
@@ -25,6 +28,14 @@ export async function OPTIONS() {
  * Now handled by translator pattern (openai-responses format auto-detected)
  */
 export async function POST(request) {
-  await ensureInitialized();
-  return await handleChat(request);
+  const serverRequestId = crypto.randomUUID();
+  try {
+    await ensureInitialized();
+    return await handleChat(request, null, serverRequestId);
+  } catch {
+    return correlateResponse(new Response(JSON.stringify({ error: { message: "Responses request failed", type: "server_error", code: "internal_server_error" } }), {
+      status: 500,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
+    }), serverRequestId);
+  }
 }
