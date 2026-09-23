@@ -15,7 +15,9 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
+import { handleComboChat, handleFusionChat, detectRequiredCapabilities, reorderModelsForTier } from "open-sse/services/combo.js";
+import { classifyTier } from "open-sse/services/jevClassifier.js";
+import { handleSystemone } from "./systemone.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -123,7 +125,50 @@ export async function handleChat(request, clientRawRequest = null) {
     }
 
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+
+    // Smart routing: classify task complexity with Jev (TypeSafe) and reorder the
+    // combo so the tier-appropriate model leads. Fail-open — on any classifier
+    // miss we keep `augmentedModels` as-is and fall through to normal fallback.
+    // The availability/quota ladder + capability auto-switch below are untouched.
+    let effectiveStrategy = comboStrategy;
+    if (comboStrategy === "smart") {
+      const smartCfg = comboStrategies[modelStr] || {};
+      const tierMap = smartCfg.smartTiers;
+      const classifierModel = smartCfg.smartClassifierModel;
+      const classified = await classifyTier({
+        body,
+        log,
+        classifierModel: classifierModel || undefined,
+        criteria: smartCfg.smartCriteria,
+        instructions: smartCfg.smartInstructions,
+        minConfidence: smartCfg.smartMinConfidence,
+        timeoutMs: smartCfg.smartTimeoutMs,
+        evaluateSystemone: (payload, model) => {
+          const headers = new Headers({ "Content-Type": "application/json" });
+          const authorization = request.headers.get("Authorization");
+          if (authorization) headers.set("Authorization", authorization);
+          return handleSystemone(new Request(new URL("/api/v1/systemone", request.url), {
+            method: "POST",
+            headers,
+            body: JSON.stringify({ ...payload, model }),
+          }));
+        },
+      });
+      if (classified) {
+        const reordered = reorderModelsForTier(augmentedModels, classified.tier, tierMap);
+        if (reordered[0] !== augmentedModels[0]) {
+          log.info("CHAT", `Combo "${modelStr}" smart-routing tier=${classified.tier} → ${reordered[0]}`);
+        }
+        augmentedModels.length = 0;
+        augmentedModels.push(...reordered);
+      } else {
+        log.info("CHAT", `Combo "${modelStr}" smart-routing: no confident tier — using default order`);
+      }
+      // Run the reordered chain through the normal fallback ladder.
+      effectiveStrategy = "fallback";
+    }
+
+    log.info("CHAT", `Combo "${modelStr}" with ${augmentedModels.length} models (strategy: ${comboStrategy}${effectiveStrategy !== comboStrategy ? `→${effectiveStrategy}` : ""}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
       models: augmentedModels,
@@ -133,7 +178,7 @@ export async function handleChat(request, clientRawRequest = null) {
       ),
       log,
       comboName: modelStr,
-      comboStrategy,
+      comboStrategy: effectiveStrategy,
       comboStickyLimit
     });
   }

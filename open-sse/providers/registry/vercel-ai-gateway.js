@@ -28,7 +28,11 @@ export default {
       url: "https://ai-gateway.vercel.sh/v1/credits",
     },
   },
-  serviceKinds: ["llm","embedding","image","imageToText","webSearch"],
+  models: [
+    { id: "typesafe-ai/jev", name: "Jev", kind: "systemone" },
+  ],
+  serviceKinds: ["llm","embedding","image","imageToText","webSearch","systemone"],
+  systemoneConfig: { baseUrl: "https://ai-gateway.vercel.sh/typesafe/v1/systemone" },
   embeddingConfig: { baseUrl: "https://ai-gateway.vercel.sh/v1/embeddings" },
   imageConfig: { baseUrl: "https://ai-gateway.vercel.sh/v1/images/generations" },
   searchViaChat: { defaultModel: "openai/gpt-4o-mini", pricingUrl: "https://vercel.com/docs/ai-gateway/pricing" },
