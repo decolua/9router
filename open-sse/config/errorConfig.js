@@ -61,6 +61,18 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+
+  // Terminal billing/credit states. These arrive as 429 from some providers
+  // (Z.AI/GLM code 1113 is a Chinese-language "insufficient balance" body), so
+  // without an explicit rule they fall through to the generic 429 backoff and
+  // get retried forever against an account that cannot recover without a
+  // top-up. Verified live 2026-09-18: GLM returns
+  //   {"error":{"code":"1113","message":"余额不足或无可用资源包,请充值。"}}
+  // Matched before the rate-limit rules so a balance error never looks transient.
+  { text: "余额不足",                  cooldownMs: COOLDOWN.long, terminal: true },
+  { text: "insufficient balance",     cooldownMs: COOLDOWN.long, terminal: true },
+  { text: "请充值",                    cooldownMs: COOLDOWN.long, terminal: true },
+
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },
@@ -69,7 +81,7 @@ export const ERROR_RULES = [
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
-  { status: 402, cooldownMs: COOLDOWN.long },
+  { status: 402, cooldownMs: COOLDOWN.long, terminal: true },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
   { status: 429, backoff: true },
