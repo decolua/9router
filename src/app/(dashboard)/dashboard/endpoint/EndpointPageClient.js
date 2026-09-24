@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -31,7 +31,7 @@ export default function APIPageClient({ machineId }) {
  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
 
  // Cloudflare Tunnel state
-  const [tunnelChecking, setTunnelChecking] = useState(true);
+  const [tunnelChecking, setTunnelChecking] = useState(false);
   const [tunnelEnabled, setTunnelEnabled] = useState(false);
   const [tunnelReachable, setTunnelReachable] = useState(false);
   const [tunnelUrl, setTunnelUrl] = useState("");
@@ -85,6 +85,18 @@ export default function APIPageClient({ machineId }) {
   }, []);
 
   const { copied, copy } = useCopyToClipboard();
+
+  const fetchTunnelStatus = async () => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    try {
+      const response = await fetch("/api/tunnel/status", { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(`Tunnel status HTTP ${response.status}`);
+      return await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
 
   // Security gate: block remote exposure while dashboard uses default password or login is off.
   const isLoginUnsafe = !requireLogin || !hasPassword;
@@ -173,9 +185,7 @@ export default function APIPageClient({ machineId }) {
   // Trust user intent (settingsEnabled): UI stays "enabled" while watchdog restarts process
   const syncTunnelStatus = async () => {
     try {
-      const statusRes = await fetch("/api/tunnel/status", { cache: "no-store" });
-      if (!statusRes.ok) return;
-      const data = await statusRes.json();
+      const data = await fetchTunnelStatus();
       const tEnabled = data.tunnel?.settingsEnabled ?? data.tunnel?.enabled ?? false;
       const tUrl = data.tunnel?.tunnelUrl || "";
       setTunnelUrl(tUrl);
@@ -192,11 +202,12 @@ export default function APIPageClient({ machineId }) {
   };
 
   const loadSettings = async () => {
-    setTunnelChecking(true);
     try {
       const [settingsRes, statusRes] = await Promise.all([
         fetch("/api/settings"),
-        fetch("/api/tunnel/status", { cache: "no-store" })
+        fetchTunnelStatus()
+          .then((data) => ({ ok: true, json: async () => data }))
+          .catch(() => ({ ok: false }))
       ]);
       if (settingsRes.ok) {
         const data = await settingsRes.json();
@@ -222,6 +233,8 @@ export default function APIPageClient({ machineId }) {
       }
     } catch (error) {
       console.log("Error loading settings:", error);
+      setTunnelEnabled(false);
+      setTsEnabled(false);
     } finally {
       setTunnelChecking(false);
     }
@@ -704,15 +717,6 @@ export default function APIPageClient({ machineId }) {
       setBaseUrl(`${window.location.origin}/v1`);
     }
   }, []);
-
-  if (loading) {
-    return (
-      <div className="flex flex-col gap-8">
-        <CardSkeleton />
-        <CardSkeleton />
-      </div>
-    );
-  }
 
   const currentEndpoint = baseUrl;
 
