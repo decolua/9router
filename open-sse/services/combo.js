@@ -266,6 +266,30 @@ export function getComboModelsFromData(modelStr, combosData) {
 }
 
 /**
+ * Resolve caveman prompt-compression settings with per-combo override support.
+ * Checks comboStrategies[comboName] before falling back to global settings.
+ * Uses nullish coalescing (??) so explicit false/empty overrides global true/defaults.
+ *
+ * @param {Object} settings - Global settings object (settingsRepo)
+ * @param {...(string|undefined)} identifiers - Combo names or model identifiers to check (in priority order)
+ * @returns {{ cavemanEnabled: boolean, cavemanLevel: string }}
+ */
+export function resolveCavemanSettings(settings, ...identifiers) {
+  const comboStrategies = settings?.comboStrategies || {};
+  let comboConfig = null;
+  for (const id of identifiers) {
+    if (id && comboStrategies[id]) {
+      comboConfig = comboStrategies[id];
+      break;
+    }
+  }
+  return {
+    cavemanEnabled: !!(comboConfig?.cavemanEnabled ?? settings?.cavemanEnabled),
+    cavemanLevel: comboConfig?.cavemanLevel ?? settings?.cavemanLevel ?? "full",
+  };
+}
+
+/**
  * Handle combo chat with fallback
  * @param {Object} options
  * @param {Object} options.body - Request body
