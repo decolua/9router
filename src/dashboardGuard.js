@@ -192,7 +192,8 @@ function isPublicApi(pathname) {
 }
 
 // Shared with src/proxy.js — the mimo login branch must respect dashboard auth.
-export { isAuthenticated };
+// hasValidCliToken: routes that relax re-auth for the CLI must check the token, not its presence.
+export { isAuthenticated, hasValidCliToken };
 
 export const __test__ = {
   isLocalRequest,
