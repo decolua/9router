@@ -184,7 +184,19 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   ];
   if (responseTools.length > 0) {
     result.tools = responseTools
-      .map(tool => {
+      .flatMap(tool => {
+        if (tool.type === "namespace") {
+          if (typeof tool.name !== "string" || !Array.isArray(tool.tools)) return [];
+          // Chat tools are flat, so keep the namespace in each callable name.
+          return tool.tools.filter(nested => typeof nested?.name === "string" && nested.name.trim()).map(nested => ({
+            type: OPENAI_BLOCK.FUNCTION,
+            function: {
+              name: `${tool.name}.${nested.name}`,
+              description: nested.description || tool.description || "",
+              parameters: normalizeToolParameters(nested.parameters),
+            },
+          }));
+        }
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
         // Responses API function/custom tool: { type, name, description, parameters|format }.

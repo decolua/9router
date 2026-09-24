@@ -18,6 +18,22 @@ const EXEC_TOOL = {
 };
 
 describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
+  it("expands namespace tools with their names and schemas", () => {
+    const parameters = { type: "object", properties: { cmd: { type: "string" } }, required: ["cmd"] };
+    const out = openaiResponsesToOpenAIRequest("gpt-6-sol", {
+      input: "Run a command",
+      tools: [{
+        type: "namespace", name: "functions", description: "Available functions",
+        tools: [{ type: "function", name: "exec_command", description: "Run command", parameters }],
+      }],
+    }, true, null);
+
+    expect(out.tools).toEqual([{
+      type: "function",
+      function: { name: "functions.exec_command", description: "Run command", parameters },
+    }]);
+  });
+
   it("promotes additional_tools custom declarations into Chat tools", () => {
     const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
       input: [
