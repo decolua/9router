@@ -9,6 +9,7 @@ import {
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
+import { isRoutableProvider } from "@/shared/constants/providers.js";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -242,8 +243,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        // 404 is right either way here, because /v1/models filters on isActive too,
+        // so the model genuinely is not in the catalogue. What differs is WHY, and
+        // the 404 code table hardcodes "model_not_found" for both cases.
+        if (isRoutableProvider(provider)) {
+          // We serve this provider; the operator just has no account linked.
+          // Saying "model not found" sends clients hunting for a bad model name
+          // when the fix is a dashboard action only the operator can take.
+          log.warn("AUTH", `No active credentials for provider: ${provider}`);
+          return errorResponse(
+            HTTP_STATUS.NOT_FOUND,
+            `No active credentials for provider: ${provider}. Connect an account for this provider in the dashboard.`,
+            { code: "provider_not_configured" },
+          );
+        }
+        // Not a provider we serve at all, so telling the operator to go connect an
+        // account for it is a dead end. Here "model not found" is the truth, and
+        // naming the unrecognised half is what makes it actionable.
+        log.warn("AUTH", `Unknown provider: ${provider}`);
+        return errorResponse(
+          HTTP_STATUS.NOT_FOUND,
+          `Unknown provider "${provider}" in model "${provider}/${model}". See /v1/models for what this router serves.`,
+        );
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");

@@ -6,7 +6,7 @@ import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
  * @param {string} message - Error message
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
+export function buildErrorBody(statusCode, message, overrides = null) {
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
@@ -15,8 +15,12 @@ export function buildErrorBody(statusCode, message) {
   return {
     error: {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
-      type: errorInfo.type,
-      code: errorInfo.code
+      // ERROR_TYPES maps one code to a whole status, which is right for most of
+      // them but not for 404: it hardcodes "model_not_found", so every 404 claims
+      // the model is unknown even when the real cause is something else. Callers
+      // that know better pass the accurate pair.
+      type: overrides?.type || errorInfo.type,
+      code: overrides?.code || errorInfo.code
     }
   };
 }
@@ -27,8 +31,8 @@ export function buildErrorBody(statusCode, message) {
  * @param {string} message - Error message
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, overrides = null) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, overrides)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
