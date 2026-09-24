@@ -71,7 +71,7 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
-  // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
+  // Live-catalog fetch warning/error (surfaced for Zed and Codex).
   const [liveModelsError, setLiveModelsError] = useState(null);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
@@ -155,9 +155,11 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = (providerId === "cursor" || providerId === "zed") && liveModels.length > 0
-    ? liveModels
-    : staticModels;
+  const models = providerId === "codex" && liveModels.length > 0
+    ? [...staticModels, ...liveModels.filter((m) => !staticModels.some((s) => s.id === m.id))]
+    : ((providerId === "cursor" || providerId === "zed") && liveModels.length > 0
+      ? liveModels
+      : staticModels);
   const providerAlias = getProviderAlias(providerId);
   
   const isOpenAICompatible = isOpenAICompatibleProvider(providerId);
@@ -469,15 +471,40 @@ export default function ProviderDetailPage() {
     fetchDisabledModels();
   }, [fetchConnections, fetchAliases, fetchCustomModels, fetchDisabledModels]);
 
-  // Live per-connection catalogs (cursor, zed): the static registry carries
-  // no usable list, so resolve from the active connection. Fires only when
-  // the provider id or connection list changes — no polling, no loop.
-  // Cursor path is statement-identical to before; zed adds error surfacing.
+  // Fetch account-specific models when the provider or connection list changes.
+  // Codex combines all active accounts and retains static models as fallback.
   useEffect(() => {
-    const isLiveCatalog = providerId === "cursor" || providerId === "zed";
+    const isLiveCatalog = providerId === "codex" || providerId === "cursor" || providerId === "zed";
     if (!isLiveCatalog) {
       setLiveModels([]);
       return;
+    }
+
+    if (providerId === "codex") {
+      const activeConnections = connections.filter((item) => item.isActive !== false && item.id);
+      if (activeConnections.length === 0) {
+        setLiveModels([]);
+        setLiveModelsError(null);
+        return;
+      }
+      let cancelled = false;
+      setLiveModelsError(null);
+      Promise.all(activeConnections.map(async (connection) => {
+        try {
+          const res = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+          const data = await res.json();
+          return res.ok && Array.isArray(data?.models) ? data.models : [];
+        } catch {
+          return [];
+        }
+      })).then((lists) => {
+        if (cancelled) return;
+        const seen = new Set();
+        const fetched = lists.flat().filter((model) => model?.id && !seen.has(model.id) && seen.add(model.id));
+        setLiveModels(fetched);
+        if (fetched.length === 0) setLiveModelsError("Failed to load the Codex model catalog; showing static models.");
+      });
+      return () => { cancelled = true; };
     }
 
     const connection = connections.find((item) => item.isActive !== false);
@@ -1812,7 +1839,7 @@ export default function ProviderDetailPage() {
             })()}
           </div>
         )}
-        {providerId === "zed" && !!liveModelsError && (
+        {(providerId === "zed" || providerId === "codex") && !!liveModelsError && (
           <p className="text-xs text-red-500 mb-3 break-words">{liveModelsError}</p>
         )}
         {renderModelsSection()}

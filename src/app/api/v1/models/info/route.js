@@ -1,6 +1,8 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
+import { getProviderConnections } from "@/models";
+import { resolveCodexModels } from "@/sse/services/codexModels.js";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -42,7 +44,7 @@ function buildInfo({ alias, providerId, model, kind, providerInfo }) {
 
 // id format: "{alias}/{modelId}" - alias may also be providerId
 // requestedKind: optional, disambiguates duplicate ids across kinds (e.g. gemini-2.5-pro llm vs stt)
-function lookup(fullId, requestedKind) {
+async function lookup(fullId, requestedKind) {
   if (!fullId || !fullId.includes("/")) return null;
   const slash = fullId.indexOf("/");
   const alias = fullId.slice(0, slash);
@@ -58,6 +60,22 @@ function lookup(fullId, requestedKind) {
   if (m) {
     const kind = getModelKind(m, "llm");
     return buildInfo({ alias, providerId, model: m, kind, providerInfo });
+  }
+
+  if (providerId === "codex") {
+    try {
+      const connections = (await getProviderConnections())
+        .filter((connection) => connection.provider === "codex" && connection.isActive !== false);
+      const results = await Promise.all(connections.map((connection) => resolveCodexModels(connection)));
+      for (const result of results) {
+        const live = (result.models || []).find((model) =>
+          model.id === modelId && (!requestedKind || getModelKind(model, "llm") === requestedKind)
+        );
+        if (live) return buildInfo({ alias, providerId, model: live, kind: getModelKind(live, "llm"), providerInfo });
+      }
+    } catch {
+      // Keep the existing not-found behavior when account discovery is unavailable.
+    }
   }
 
   // Web search/fetch — virtual model id "search" / "fetch"
@@ -93,7 +111,7 @@ export async function GET(request) {
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
-  const info = lookup(id, kind);
+  const info = await lookup(id, kind);
   if (!info) {
     return Response.json(
       { error: { message: `Model not found: ${id}`, type: "not_found" } },

@@ -1304,6 +1304,10 @@ docker pull decolua/9router:latest   # update to latest
 
 **Data persistence:** `$HOME/.9router/db/data.sqlite` on host ↔ `/app/data/db/data.sqlite` in container.
 
+### Railway
+
+The Railway service and its persistent `/app/data` volume are defined in [`.railway/railway.ts`](.railway/railway.ts). See the [Railway deployment guide](.railway/README.md) for configuration changes, code deployments, secrets, and verification.
+
 ### Environment Variables
 
 | Variable                                             | Default                                  | Description                                                                         |
@@ -1338,7 +1342,7 @@ Notes:
 - Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
 - Auto backups: `${DATA_DIR}/db/backups/`
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
-- Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
+- In Docker and Railway, set `DATA_DIR=/app/data` and mount persistent storage there. The image's legacy `/root/.9router` symlink points to `/app/data-home`, outside that mount; do not rely on it for persisted state.
 
 </details>
 

@@ -22,7 +22,7 @@ const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVI
 
 // Providers with per-account live catalogs via /api/providers/[id]/models.
 // Static registry stays as fallback when live fetch fails or is empty.
-const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass"];
+const LIVE_CATALOG_PROVIDERS = ["codex", "cursor", "cline", "clinepass"];
 
 // Fetch a provider's account-scoped catalog for every active connection and merge
 // the results. Entries collapse by model id on purpose: two connections of the
@@ -97,8 +97,8 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
-  // Cursor and Cline expose the usable catalog per account, so the static catalog is
-  // kept only as a fallback: it goes stale quickly and entitlements differ per account.
+  // These providers expose account-specific catalogs. Codex adds live models to
+  // its static entries; the others use static entries if a live fetch fails.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
   // from the memos below; per-provider arrays stay referentially stable unless
   // activeProviders itself changes.
@@ -110,10 +110,12 @@ export default function ModelSelectModal({
     return map;
   }, [activeProviders]);
   const cursorConnectionIds = liveConnectionIdsByProvider.cursor;
+  const codexConnectionIds = liveConnectionIdsByProvider.codex;
   const clineConnectionIds = liveConnectionIdsByProvider.cline;
   const clinepassConnectionIds = liveConnectionIdsByProvider.clinepass;
 
   const cursorModels = useLiveProviderModels(isOpen, cursorConnectionIds, "Cursor");
+  const codexModels = useLiveProviderModels(isOpen, codexConnectionIds, "Codex");
   const clineModels = useLiveProviderModels(isOpen, clineConnectionIds, "Cline");
   const clinepassModels = useLiveProviderModels(isOpen, clinepassConnectionIds, "ClinePass");
 
@@ -348,10 +350,13 @@ export default function ModelSelectModal({
           hasModels: mergedModels.length > 0,
         };
       } else {
-        const liveModels = providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : [];
-        const hardcodedModels = liveModels.length > 0
-          ? liveModels
-          : getModelsByProviderId(providerId);
+        const liveModels = providerId === "codex" ? codexModels : providerId === "cursor" ? cursorModels : providerId === "cline" ? clineModels : providerId === "clinepass" ? clinepassModels : [];
+        const staticModels = getModelsByProviderId(providerId);
+        // Codex's live catalog can omit static image models and virtual models.
+        // Add account-discovered models without removing those existing choices.
+        const hardcodedModels = providerId === "codex" && liveModels.length > 0
+          ? [...staticModels, ...liveModels.filter((m) => !staticModels.some((s) => s.id === m.id))]
+          : (liveModels.length > 0 ? liveModels : staticModels);
         const hardcodedIds = new Set(hardcodedModels.map((m) => m.id));
 
         // Custom models: if no hardcoded models (e.g. openrouter), show all aliases for this provider
@@ -420,7 +425,7 @@ export default function ModelSelectModal({
     });
 
     return groups;
-  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, cursorModels, clineModels, clinepassModels]);
+  }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, activeProviders, codexModels, cursorModels, clineModels, clinepassModels]);
 
   // Filter combos by search query (and hide combos when kindFilter is set — combos are LLM-only by design)
   const filteredCombos = useMemo(() => {

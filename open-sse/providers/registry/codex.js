@@ -1,8 +1,8 @@
 import { withCodexReviewModels } from "../models/helpers.js";
 
-// Codex CLI version seen by OpenAI's backend — single source for the Version /
-// User-Agent identity headers. Bump when the installed codex CLI is upgraded.
-const CODEX_CLI_VERSION = "0.154.0";
+// Codex CLI compatibility identity used in the Version / User-Agent headers and
+// model discovery. Keep aligned with the current stable CLI release.
+const CODEX_CLI_VERSION = "0.156.1";
 
 export default {
   id: "codex",
@@ -49,6 +49,7 @@ export default {
       resetCreditsConsumeUrl: "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume",
     },
   },
+  // Fallback catalog; connected accounts add models from Codex's live catalog.
   models: [
     { id: "gpt-6-astra", name: "GPT 6.0 Astra" },
     { id: "gpt-5.6-sol", name: "GPT 5.6 Sol" },

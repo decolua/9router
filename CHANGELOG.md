@@ -1,3 +1,11 @@
+# Unreleased
+
+## Features
+- **Codex**: discover account models automatically in the dashboard and `/v1/models`, including models absent from the static registry; retain static models when discovery fails
+
+## Fixes
+- **Codex**: use CLI version 0.156.1 for request headers and model discovery so newly gated models can appear
+
 # v0.5.86 (2026-09-23)
 
 ## Features

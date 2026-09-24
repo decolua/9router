@@ -16,6 +16,7 @@ import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
+import { resolveCodexModels } from "@/sse/services/codexModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 
@@ -44,6 +45,14 @@ async function resolveQoderLiveModels(conn, provider) {
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
+  codex: async (_conn, connections) => {
+    const codexConnections = connections.filter((conn) => conn.provider === "codex");
+    const results = await Promise.all(codexConnections.map((conn) => resolveCodexModels(conn)));
+    const seen = new Set();
+    const models = results.flatMap((result) => result.models || [])
+      .filter((model) => model?.id && !seen.has(model.id) && seen.add(model.id));
+    return models.length ? { models } : null;
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -409,9 +418,13 @@ export async function buildModelsList(kindFilter, options = {}) {
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
-          const live = await liveResolver(conn);
+          const live = await liveResolver(conn, connections);
           if (live?.models?.length) {
-            rawModelIds = live.models.map((m) => m.id);
+            // Codex's account catalog may omit image and virtual models still
+            // present in the static registry, so add its new IDs to that list.
+            rawModelIds = providerId === "codex"
+              ? [...rawModelIds, ...live.models.map((m) => m.id)]
+              : live.models.map((m) => m.id);
             liveModelKindById = new Map(
               live.models
                 .filter((m) => m?.id)

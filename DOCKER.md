@@ -50,6 +50,8 @@ $DATA_DIR/
 Host path: `$HOME/.9router/db/data.sqlite`
 Container path: `/app/data/db/data.sqlite`
 
+Railway uses the same Dockerfile with a persistent volume mounted at `/app/data`. Its service and volume definition, deployment commands, and verification steps are in the [Railway deployment guide](.railway/README.md).
+
 ## Optional env vars
 
 ```bash

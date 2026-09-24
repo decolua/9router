@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
+import { getModelAliases, setModelAlias, getCustomModels, getProviderConnections } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { resolveCodexModels } from "@/sse/services/codexModels.js";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -10,8 +11,27 @@ export async function GET() {
   try {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+    // Keep the built-in catalog available before account setup and on fetch
+    // failures, then add models discovered for connected Codex accounts.
+    const catalog = [...AI_MODELS];
+    try {
+      const connections = (await getProviderConnections())
+        .filter((connection) => connection.provider === "codex" && connection.isActive !== false);
+      const results = await Promise.all(connections.map((connection) => resolveCodexModels(connection)));
+      const seen = new Set(catalog.map((model) => `${model.provider}/${model.model}`));
+      for (const result of results) {
+        for (const model of result.models || []) {
+          const key = `cx/${model.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          catalog.push({ provider: "cx", model: model.id, name: model.name || model.id });
+        }
+      }
+    } catch {
+      // A failed account lookup must not hide the static model catalog.
+    }
 
-    const models = AI_MODELS
+    const models = catalog
       .filter((m) => {
         const alias = getProviderAlias(m.provider) || m.provider;
         const list = disabled[alias] || disabled[m.provider] || [];
