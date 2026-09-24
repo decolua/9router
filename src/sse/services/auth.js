@@ -119,14 +119,32 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       }
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
-        const earliestConn = lockedConns[0];
-        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${earliestConn?.lastError?.slice(0, 50)}`);
+        // Pick the connection that actually owns `earliest`, not just the first
+        // locked one — otherwise the countdown and the error came from different
+        // accounts.
+        const earliestConn = lockedConns.find((c) => getEarliestModelLockUntil(c) === earliest) || lockedConns[0];
+
+        // lastError/errorCode are per-CONNECTION, while locks are per-model, so
+        // the stored error belongs to whichever model failed on this connection
+        // most recently — not necessarily the one being requested. Serving it
+        // regardless leaked one request's error into an unrelated one: a probe
+        // for a bogus model produced a 401 ModelError that was then replayed to
+        // a live conversation on a different model for the whole backoff window,
+        // making good credentials look broken. Only surface it when it provably
+        // belongs to this model.
+        const errorMatchesModel = earliestConn?.lastErrorModel
+          ? earliestConn.lastErrorModel === (model || null)
+          : false;
+        const lastError = errorMatchesModel ? earliestConn?.lastError || null : null;
+        const lastErrorCode = errorMatchesModel ? earliestConn?.errorCode || null : null;
+
+        log.warn("AUTH", `${provider} | all ${connections.length} accounts locked for ${model || "all"} (${formatRetryAfter(earliest)}) | lastError=${errorMatchesModel ? earliestConn?.lastError?.slice(0, 50) : `<withheld: belongs to ${earliestConn?.lastErrorModel || "unknown"}>`}`);
         return {
           allRateLimited: true,
           retryAfter: earliest,
           retryAfterHuman: formatRetryAfter(earliest),
-          lastError: earliestConn?.lastError || null,
-          lastErrorCode: earliestConn?.errorCode || null
+          lastError,
+          lastErrorCode
         };
       }
       log.warn("AUTH", `${provider} | all ${connections.length} accounts unavailable`);
@@ -271,6 +289,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     testStatus: "unavailable",
     lastError: reason,
     errorCode: status,
+    // Which model produced this error. Locks are per-model but lastError is a
+    // single per-connection field, so without this the reader cannot tell
+    // whether the stored error belongs to the model being asked about.
+    lastErrorModel: model || null,
     lastErrorAt: new Date().toISOString(),
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
@@ -328,6 +350,7 @@ export async function clearAccountError(connectionId, currentConnection, model =
       testStatus: "active",
       lastError: null,
       errorCode: null,
+      lastErrorModel: null,
       lastErrorAt: null,
       backoffLevel: 0
     });
