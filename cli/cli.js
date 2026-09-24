@@ -65,7 +65,7 @@ function createSpinner(text) {
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
-const { collectAppPids, killAppPids, readCommand } = require("./src/lib/processScan");
+const { collectAppPids, killAppPids, readCommand, portOccupantToKill } = require("./src/lib/processScan");
 const args = process.argv.slice(2);
 
 // Subcommands (`9router xai video …`) run against an already-running gateway
@@ -323,7 +323,7 @@ function killProcessOnPort(port) {
   return new Promise((resolve) => {
     try {
       const platform = process.platform;
-      let pid;
+      let pid = null;
 
       if (platform === "win32") {
         try {
@@ -333,28 +333,37 @@ function killProcessOnPort(port) {
             windowsHide: true,
             timeout: 5000
           }).trim();
-          const lines = output.split('\n').filter(l => l.includes('LISTENING'));
-          if (lines.length > 0) {
-            pid = lines[0].trim().split(/\s+/).pop();
-            execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: 'ignore', shell: true, windowsHide: true, timeout: 3000 });
-          }
+          const listener = output.split('\n').find(l => l.includes('LISTENING'));
+          if (listener) pid = Number(listener.trim().split(/\s+/).pop());
         } catch (e) {
           // Port is free or error
         }
       } else {
         // macOS/Linux
         try {
-          const pidOutput = execSync(`lsof -ti:${port}`, {
+          // -sTCP:LISTEN: the occupant is a *listener*. A client that merely has an
+          // established connection to this port (a supervisor's health probe, for
+          // instance) is not one — and `lsof -ti:${port}` used to hand us its pid,
+          // which we then killed.
+          const pidOutput = execSync(`lsof -ti tcp:${port} -sTCP:LISTEN`, {
             encoding: 'utf8',
             stdio: ['pipe', 'pipe', 'ignore']
           }).trim();
-          if (pidOutput) {
-            pid = pidOutput.split('\n')[0];
-            execSync(`kill -9 ${pid} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
-          }
+          if (pidOutput) pid = Number(pidOutput.split('\n')[0]);
         } catch (e) {
           // Port is free or error
         }
+      }
+
+      const occupant = portOccupantToKill(pid);
+      if (occupant.reason === "own-process-tree") {
+        // Whoever launched us (a supervisor, a shell, a service manager) is not a
+        // stale copy of us: killing it takes down the thing keeping us running.
+        console.warn(`[port ${port}] is held by pid ${pid}, part of our own process tree — leaving it alone`);
+      } else if (occupant.pid !== null && platform === "win32") {
+        execSync(`taskkill /F /PID ${occupant.pid} 2>nul`, { stdio: 'ignore', shell: true, windowsHide: true, timeout: 3000 });
+      } else if (occupant.pid !== null) {
+        execSync(`kill -9 ${occupant.pid} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
       }
 
       // Wait for port to be released

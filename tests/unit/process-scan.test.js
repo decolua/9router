@@ -13,6 +13,7 @@ const {
   collectAppPids,
   isAppProcess,
   ownProcessChain,
+  portOccupantToKill,
   parseProcessTable,
   parseWindowsProcessTable,
   maxAncestors,
@@ -113,6 +114,26 @@ describe("collectAppPids — verified candidates only", () => {
 
   it("survives a failing process listing", () => {
     expect(collectAppPids({ processes: [], readCommand: () => null, exclude: new Set() })).toEqual([]);
+  });
+});
+
+describe("portOccupantToKill — who may be killed to free a port", () => {
+  const chain = new Set([2, 10, 20, 30]);
+
+  it("returns a listener that is not ours", () => {
+    expect(portOccupantToKill(4242, chain)).toEqual({ pid: 4242, reason: "ok" });
+  });
+
+  it("refuses our own process tree, which is what a health-probe client looks like", () => {
+    // `lsof -ti:<port>` lists clients too, and a supervisor health-checking the
+    // port is the process that started us: killing it takes down the supervisor.
+    expect(portOccupantToKill(20, chain)).toEqual({ pid: null, reason: "own-process-tree" });
+  });
+
+  it("ignores junk, pid 1 and missing output", () => {
+    for (const candidate of [undefined, null, "", "abc", 0, 1, -5]) {
+      expect(portOccupantToKill(candidate, chain)).toEqual({ pid: null, reason: "none" });
+    }
   });
 });
 

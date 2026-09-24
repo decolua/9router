@@ -182,6 +182,22 @@ function collectAppPids(options = {}) {
   return pids;
 }
 
+/**
+ * The pid to free a port from, or why we will not touch it.
+ *
+ * A port occupant is a *listener*. A client with an established connection to
+ * that port (a supervisor's health probe, say) is not one, and our own process
+ * tree is never a target — killing the thing that launched us is how a
+ * supervisor dies. `lsof -ti:${port}` (no LISTEN filter, first line only) used
+ * to hand us exactly those pids.
+ */
+function portOccupantToKill(candidate, chain = ownProcessChain()) {
+  const pid = Number(candidate);
+  if (!Number.isInteger(pid) || pid <= 1) return { pid: null, reason: "none" };
+  if (chain.has(pid)) return { pid: null, reason: "own-process-tree" };
+  return { pid, reason: "ok" };
+}
+
 /** SIGKILL (or `taskkill /F`), best effort — a pid that vanished is not an error. */
 function killAppPids(pids) {
   for (const pid of pids) {
@@ -206,6 +222,7 @@ module.exports = {
   readProcessTable,
   readCommand,
   ownProcessChain,
+  portOccupantToKill,
   collectAppPids,
   killAppPids,
   maxAncestors: MAX_ANCESTORS,
