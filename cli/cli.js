@@ -65,6 +65,7 @@ function createSpinner(text) {
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { collectAppPids, killAppPids, readCommand } = require("./src/lib/processScan");
 const args = process.argv.slice(2);
 
 // Subcommands (`9router xai video …`) run against an already-running gateway
@@ -220,29 +221,15 @@ function killTunnelByPidFile() {
 function killCloudflaredByAppPort(appPort) {
   if (!appPort) return [];
   const portMatchers = [`localhost:${appPort}`, `127.0.0.1:${appPort}`];
-  const pids = [];
+  let pids = [];
   try {
-    if (process.platform === "win32") {
-      const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"cloudflared.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-      const output = execSync(psCmd, { encoding: "utf8", windowsHide: true, timeout: 5000 });
-      const lines = output.split("\n").slice(1).filter(l => l.trim());
-      lines.forEach(line => {
-        if (portMatchers.some(m => line.includes(m))) {
-          const match = line.match(/^"(\d+)"/);
-          if (match && match[1]) pids.push(match[1]);
-        }
-      });
-    } else {
-      const output = execSync("ps -eo pid,command 2>/dev/null", { encoding: "utf8", timeout: 5000 });
-      output.split("\n").forEach(line => {
-        if (line.includes("cloudflared") && portMatchers.some(m => line.includes(m))) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[0];
-          if (pid && !isNaN(pid)) pids.push(pid);
-        }
-      });
-    }
-  } catch { }
+    // Shares the safe scan (pid column, verified candidates, ancestors excluded)
+    // and only keeps the tunnels pointed at this app's port.
+    pids = collectAppPids().filter((pid) => {
+      const cmd = readCommand(pid) || "";
+      return cmd.includes("cloudflared") && portMatchers.some((m) => cmd.includes(m));
+    });
+  } catch {}
   return pids;
 }
 
@@ -256,81 +243,21 @@ function killAllAppProcesses(appPort) {
       setImmediate(() => {
         try { killProxyByPidFile(); } catch {}
         try { killTunnelByPidFile(); } catch {}
-        try { killCloudflaredByAppPort(appPort); } catch {}
+        try { killAppPids(killCloudflaredByAppPort(appPort)); } catch {}
       });
 
-      const platform = process.platform;
+      // Pids come from the pid column and every candidate is verified (alive, still
+      // ours) before the kill; our own process and its ancestors are never targets.
+      // See src/lib/processScan.js for why that matters.
       let pids = [];
-
-      if (platform === "win32") {
-        // Windows: use WMI to get full CommandLine (tasklist /V doesn't include it)
-        try {
-          const psCmd = `powershell -NonInteractive -WindowStyle Hidden -Command "Get-WmiObject Win32_Process -Filter 'Name=\\"node.exe\\"' | Select-Object ProcessId,CommandLine | ConvertTo-Csv -NoTypeInformation"`;
-          const output = execSync(psCmd, {
-            encoding: "utf8",
-            windowsHide: true,
-            timeout: 5000
-          });
-          const lines = output.split("\n").slice(1).filter(l => l.trim());
-          lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing editors/grep/strace/cursor that just have "9router" in cmdline.
-            const cmd = line.toLowerCase();
-            const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("\\9router") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
-            if (isAppProcess) {
-              const match = line.match(/^"(\d+)"/);
-              if (match && match[1] && match[1] !== process.pid.toString()) {
-                pids.push(match[1]);
-              }
-            }
-          });
-        } catch (e) {
-          // No processes found or error - continue
-        }
-      } else {
-        // macOS/Linux: use ps to find all matching processes
-        try {
-          const output = execSync('ps aux 2>/dev/null', {
-            encoding: 'utf8',
-            timeout: 5000
-          });
-          const lines = output.split('\n');
-
-          lines.forEach(line => {
-            // Whitelist: real node process running 9router/cli.js, or next-server.
-            // Avoids killing grep/strace/editors/cursor that incidentally match "9router".
-            const cmd = line.toLowerCase();
-            const isAppProcess =
-              (cmd.includes("node") && cmd.includes("9router") && (cmd.includes("cli.js") || cmd.includes("/9router")))
-              || cmd.includes("next-server");
-            if (isAppProcess) {
-              const parts = line.trim().split(/\s+/);
-              const pid = parts[1];
-              if (pid && !isNaN(pid) && pid !== process.pid.toString()) {
-                pids.push(pid);
-              }
-            }
-          });
-        } catch (e) {
-          // No processes found or error - continue
-        }
+      try {
+        pids = collectAppPids();
+      } catch {
+        // No processes found or error - continue
       }
 
-      // Kill all found processes
       if (pids.length > 0) {
-        pids.forEach(pid => {
-          try {
-            if (platform === "win32") {
-              execSync(`taskkill /F /PID ${pid} 2>nul`, { stdio: 'ignore', shell: true, windowsHide: true, timeout: 3000 });
-            } else {
-              execSync(`kill -9 ${pid} 2>/dev/null`, { stdio: 'ignore', timeout: 3000 });
-            }
-          } catch (err) {
-            // Process already dead or can't kill - continue
-          }
-        });
+        killAppPids(pids);
 
         // Wait for processes to fully terminate
         setTimeout(() => resolve(), 1000);
