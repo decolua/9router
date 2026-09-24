@@ -1,6 +1,8 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
+import { buildModelsList } from "@/app/api/v1/models/route.js";
+import { getProviderConnections } from "@/lib/localDb";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -92,6 +94,24 @@ export async function GET(request) {
       { error: { message: "Missing required query param: id (e.g. ?id=openai/dall-e-3)", type: "invalid_request_error" } },
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
+  }
+  const alias = id.split("/", 1)[0];
+  const codexConnections = (await getProviderConnections())
+    .filter((conn) => conn.provider === "codex" && conn.isActive !== false);
+  const codexPrefixes = new Set(codexConnections.map((conn) => conn.providerSpecificData?.prefix?.trim() || "cx"));
+  const isCodex = alias === "cx" || alias === "codex" || codexPrefixes.has(alias);
+  // Codex OAuth is account-scoped: the static registry is neither an entitlement list
+  // nor an authoritative source for this account's context window.
+  if (isCodex && (!kind || kind === "llm")) {
+    const lookupId = alias === "codex" ? `cx/${id.slice(alias.length + 1)}` : id;
+    const models = await buildModelsList(["llm"]);
+    const live = models.find((model) => model.id === lookupId)
+      || ((alias === "codex" || alias === "cx") && models.find((model) =>
+        codexPrefixes.has(model.owned_by) && model.id === `${model.owned_by}/${id.slice(alias.length + 1)}`));
+    if (live) return Response.json({ ...live, name: id.slice(alias.length + 1), kind: "llm", endpoint: KIND_ENDPOINT.llm },
+      { headers: { "Access-Control-Allow-Origin": "*" } });
+    return Response.json({ error: { message: `Model not found: ${id}`, type: "not_found" } },
+      { status: 404, headers: { "Access-Control-Allow-Origin": "*" } });
   }
   const info = lookup(id, kind);
   if (!info) {
