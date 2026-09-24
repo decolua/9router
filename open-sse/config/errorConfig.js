@@ -61,6 +61,12 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+
+  // Synthetic connect-timeout 502s from BaseExecutor. A long model lock (30s)
+  // cascades under parallel sessions; zero lock re-selects the hung account on
+  // every concurrent turn. Short soft cool: siblings skip briefly; combo moves on.
+  { text: "fetch connect timeout", cooldownMs: 10 * 1000 },
+
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },

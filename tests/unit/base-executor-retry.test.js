@@ -82,6 +82,26 @@ describe("BaseExecutor.execute — network error retry/fallback", () => {
     expect(thrown?.message).toBe("boom");
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
+
+  it("does not spend the 502 retry budget on fetch connect timeout", async () => {
+    // Was: 1 + 3 retries × 60s ≈ 249s before combo fallthrough.
+    const ex = makeExec({
+      baseUrl: "https://x/api",
+      timeoutMs: 30,
+      retry: { 502: { attempts: 3, delayMs: 0 } },
+    });
+    // Sleep past the connect timer so connectCtrl is aborted, then fail once.
+    fetchMock.mockImplementationOnce(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+      throw new Error("fetch connect timeout");
+    });
+    const out = await ex.execute({ model: "m", body: {}, stream: false, credentials: creds });
+    expect(out.response.status).toBe(502);
+    await expect(out.response.json()).resolves.toMatchObject({
+      error: { message: "fetch connect timeout" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("BaseExecutor.execute — computeRetryDelay hook veto", () => {

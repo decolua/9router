@@ -137,6 +137,7 @@ export class BaseExecutor {
       const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
+      let connectTimeoutResult = null;
       try {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
@@ -164,20 +165,38 @@ export class BaseExecutor {
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;
-        const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
+        const isConnectTimeout = connectCtrl.signal.aborted && (
+          error.name === "AbortError" || /fetch connect timeout/i.test(String(error?.message || ""))
+        );
         dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
-        // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
+        // Client-cancelled (not our connect timer) — propagate as AbortError.
         if (error.name === "AbortError" && !isConnectTimeout) throw error;
 
-        // Map network/fetch exceptions to 502 retry config
-        if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) { urlIndex--; continue; }
-
-        if (urlIndex + 1 < fallbackCount) {
+        // Connect timeout: one shot, no 502 retry ladder (was 1+3 × 60s ≈ 249s).
+        // Synthetic 502 so chatCore / ERROR_RULES fall through with the short soft cool —
+        // throwing AbortError would look like a client abort (499).
+        if (isConnectTimeout) {
+          connectTimeoutResult = {
+            response: new Response(
+              JSON.stringify({ error: { message: "fetch connect timeout", type: "server_error" } }),
+              { status: HTTP_STATUS.BAD_GATEWAY, headers: { "Content-Type": "application/json" } },
+            ),
+            url,
+            headers,
+            transformedBody,
+          };
+        } else if (await tryRetry(urlIndex, HTTP_STATUS.BAD_GATEWAY, `network "${error.message}"`)) {
+          // Map network/fetch exceptions to 502 retry config
+          urlIndex--;
+          continue;
+        } else if (urlIndex + 1 < fallbackCount) {
           log?.debug?.("RETRY", `Error on ${url}, trying fallback ${urlIndex + 1}`);
           continue;
+        } else {
+          throw error;
         }
-        throw error;
       }
+      if (connectTimeoutResult) return connectTimeoutResult;
     }
 
     throw lastError || new Error(`All ${fallbackCount} URLs failed with status ${lastStatus}`);

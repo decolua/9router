@@ -29,6 +29,13 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     expect(checkFallbackError(422, "quota exceeded").shouldFallback).toBe(true);
   });
 
+
+  it("falls through synthetic connect-timeout 502 with a short soft cool", () => {
+    const result = checkFallbackError(502, "[502]: fetch connect timeout");
+    expect(result.shouldFallback).toBe(true);
+    expect(result.cooldownMs).toBe(10_000);
+  });
+
   it("keeps the transient cooldown for unmatched server errors", () => {
     const result = checkFallbackError(503, "upstream exploded");
 
