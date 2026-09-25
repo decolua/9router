@@ -92,3 +92,34 @@ describe("resolveClineModels free-tier merge", () => {
     expect(result.models.map((m) => m.id)).not.toContain("cline-pass/glm-5.3");
   });
 });
+
+describe("cline-free namespace pricing", () => {
+  it("bills cline-free/* at zero", async () => {
+    const { getPricingForModel } = await import("../../open-sse/providers/pricing.js");
+    const pricing = getPricingForModel("cline", "cline-free/deepseek-v4.1-flash");
+    expect(pricing).toMatchObject({
+      input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0,
+    });
+  });
+
+  it("bills cline-free/* muse-spark at zero", async () => {
+    const { getPricingForModel } = await import("../../open-sse/providers/pricing.js");
+    expect(getPricingForModel("cline", "cline-free/muse-spark-1.3-contributor").input).toBe(0);
+  });
+
+  it("still bills the paid twin at its published rate", async () => {
+    const { getPricingForModel } = await import("../../open-sse/providers/pricing.js");
+    expect(getPricingForModel("cline", "deepseek/deepseek-v4.1-flash").input).toBe(0.14);
+    expect(getPricingForModel("cline", "meta/muse-spark-1.3-contributor")).toBeNull();
+  });
+
+  it("zero price survives cost calculation over a large usage", async () => {
+    const { getPricingForModel, calculateCostFromTokens } = await import("../../open-sse/providers/pricing.js");
+    const pricing = getPricingForModel("cline", "cline-free/deepseek-v4.1-flash");
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 1_000_000, completion_tokens: 1_000_000, reasoning_tokens: 500_000 },
+      pricing
+    );
+    expect(cost).toBe(0);
+  });
+});
