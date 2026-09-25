@@ -161,6 +161,15 @@ function removeUnsupportedKeywords(obj, keywords) {
     }
 
     const value = obj[key];
+    // Keys of `properties` are field names chosen by the schema author, not keywords:
+    // a field called "title", "format" or "default" must survive. Clean each field's
+    // schema instead.
+    if (key === "properties" && value && typeof value === "object" && !Array.isArray(value)) {
+      for (const fieldSchema of Object.values(value)) {
+        removeUnsupportedKeywords(fieldSchema, keywords);
+      }
+      continue;
+    }
     if (value && typeof value === "object") {
       removeUnsupportedKeywords(value, keywords);
     }
@@ -349,7 +358,7 @@ function ensureArrayItems(obj) {
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
-export function cleanJSONSchemaForAntigravity(schema) {
+export function cleanJSONSchemaForAntigravity(schema, { toolPlaceholders = true } = {}) {
   if (!schema || typeof schema !== "object") return schema;
 
   // Mutate directly (schema is only used once per request)
@@ -434,7 +443,7 @@ export function cleanJSONSchemaForAntigravity(schema) {
     }
   }
 
-  addPlaceholders(cleaned);
+  if (toolPlaceholders) addPlaceholders(cleaned);
 
   return cleaned;
 }

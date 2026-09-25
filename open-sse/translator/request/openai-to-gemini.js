@@ -59,6 +59,20 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     result.generationConfig.maxOutputTokens = body.max_tokens;
   }
 
+  // Structured output: OpenAI response_format -> Gemini responseMimeType/responseSchema.
+  // Without this the Gemini family answers in free text and JSON-mode clients
+  // (e.g. the Vercel AI SDK's generateObject) cannot parse the reply.
+  const responseFormat = body.response_format;
+  if (responseFormat?.type === "json_schema" && responseFormat.json_schema?.schema) {
+    result.generationConfig.responseMimeType = "application/json";
+    result.generationConfig.responseSchema = cleanJSONSchemaForAntigravity(
+      structuredClone(responseFormat.json_schema.schema),
+      { toolPlaceholders: false },
+    );
+  } else if (responseFormat?.type === "json_object") {
+    result.generationConfig.responseMimeType = "application/json";
+  }
+
   // Build tool_call_id -> name map
   const tcID2Name = {};
   if (body.messages && Array.isArray(body.messages)) {
