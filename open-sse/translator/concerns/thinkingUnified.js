@@ -102,9 +102,28 @@ export function extractThinking(body) {
   return null;
 }
 
-// Capture thinking intent from a body. Alias of extractThinking, named for clarity
-// at the call-site where intent is snapshotted before format translation.
-export const captureThinking = extractThinking;
+// Capture thinking intent from a body before format translation strips it.
+// Besides the effort, records whether an OpenAI-shaped client wants the thinking
+// text itself: Claude returns it only with thinking.display "summarized", a field
+// OpenAI has no equivalent for, so the intent cannot survive translation on its own.
+export function captureThinking(body) {
+  const cfg = extractThinking(body);
+  if (!cfg || cfg.mode === "none") return cfg;
+  const display = openAIThinkingDisplay(body);
+  return display ? { ...cfg, display } : cfg;
+}
+
+function openAIThinkingDisplay(body) {
+  // Responses API: reasoning.summary is the explicit request for reasoning text.
+  if (body.reasoning && typeof body.reasoning === "object") {
+    const summary = body.reasoning.summary;
+    return typeof summary === "string" && summary && summary !== "none" ? "summarized" : undefined;
+  }
+  // Chat Completions has no summary knob. A client setting reasoning_effort is
+  // asking for reasoning, and reasoning_content is how it would receive it.
+  if (typeof body.reasoning_effort === "string") return "summarized";
+  return undefined;
+}
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
@@ -380,7 +399,8 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   const supportedLevels = getThinkingLevels(provider, cleanModel);
   // Anthropic's `display` (summarized | omitted) decides whether thinking text
   // comes back at all; keep what the client asked for instead of resetting it.
-  const display = typeof body.thinking?.display === "string" ? body.thinking.display : undefined;
+  // An OpenAI-shaped client's ask arrives via the captured intent instead.
+  const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels, display);
   return body;
