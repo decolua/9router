@@ -119,12 +119,20 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt) => {
+  const onStreamComplete = (contentObj, usage, ttftAt, streamResult = null) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    // A stream can fail after HTTP 200 has already been sent - the upstream
+    // emits `error` / `response.failed` inside the SSE body and the stream then
+    // ends normally. That turn reached the client as a failure, so recording it
+    // as "success" is what made the dashboard all-green while clients retried
+    // (issue #4104).
+    const streamError = streamResult?.error || null;
+    const safeContent = streamError
+      ? `[Streaming failed: ${streamError.message || "unknown error"}]`
+      : contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
@@ -134,9 +142,9 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+      response: { content: safeContent, thinking: safeThinking, type: "streaming", ...(streamError ? { error: streamError } : {}) },
       pxpipe,
-      status: "success"
+      status: streamError ? "error" : "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
