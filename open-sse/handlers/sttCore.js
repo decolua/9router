@@ -32,6 +32,28 @@ async function upstreamError(res) {
   return createErrorResult(res.status, typeof msg === "string" ? msg : JSON.stringify(msg));
 }
 
+// Deepgram verbose_json: speaker-labeled segments + a duration.
+// Provider frames are untrusted — tolerate null/missing fields rather than throw
+// or drop keys, so the envelope shape is invariant for every response.
+const numOr = (v, fallback) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
+function deepgramToVerboseJson(data, text) {
+  const raw = data?.results?.utterances;
+  const utterances = Array.isArray(raw) ? raw.filter((u) => u && typeof u === "object") : [];
+  const metaDuration = numOr(data?.metadata?.duration, 0);
+  const segments = utterances.map((u, i) => ({
+    id: i,
+    start: numOr(u.start, 0),
+    end: numOr(u.end, 0),
+    text: typeof u.transcript === "string" ? u.transcript : "",
+    speaker: numOr(u.speaker, 0),
+  }));
+  // Duration is the last utterance's end; fall back to metadata, then 0, so the
+  // key is always present and always a number.
+  const lastEnd = segments.length ? segments[segments.length - 1].end : 0;
+  const duration = segments.length && lastEnd > 0 ? lastEnd : metaDuration;
+  return { text, duration, segments };
+}
+
 // Deepgram: raw binary POST + model query param
 async function transcribeDeepgram(cfg, file, model, token, formData) {
   const url = new URL(cfg.baseUrl);
@@ -42,6 +64,15 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
   if (typeof lang === "string" && lang.trim()) url.searchParams.set("language", lang.trim());
   else url.searchParams.set("detect_language", "true");
 
+  // Speaker diarization is opt-in: only forward the three provider params when
+  // the client names a diarization model.
+  const diarizeModel = formData.get("diarize_model");
+  if (typeof diarizeModel === "string" && diarizeModel.trim()) {
+    url.searchParams.set("diarize", "true");
+    url.searchParams.set("diarize_model", diarizeModel.trim());
+    url.searchParams.set("utterances", "true");
+  }
+
   const buf = await file.arrayBuffer();
   const res = await fetch(url, {
     method: "POST",
@@ -51,7 +82,8 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
   if (!res.ok) return upstreamError(res);
   const data = await res.json();
   const text = data.results?.channels?.[0]?.alternatives?.[0]?.transcript ?? "";
-  return jsonResponse({ text });
+  if (formData.get("response_format") !== "verbose_json") return jsonResponse({ text });
+  return jsonResponse(deepgramToVerboseJson(data, text));
 }
 
 // AssemblyAI: upload → submit → poll (max 120s)
