@@ -333,6 +333,9 @@ export function createResponsesApiTransformStream(logger = null) {
 
           // Regular text content
           if (content) {
+            // The answer starts, so thinking is over. Upstreams that send reasoning via
+            // reasoning_content never emit "</think>", so close it here rather than at finish.
+            closeReasoning(controller);
             if (!state.msgItemAdded[idx]) {
               state.msgItemAdded[idx] = true;
               const msgId = `msg_${state.responseId}_${idx}`;
@@ -372,6 +375,7 @@ export function createResponsesApiTransformStream(logger = null) {
 
         // Handle tool_calls
         if (delta.tool_calls) {
+          closeReasoning(controller);
           closeMessage(controller, idx);
 
           for (const tc of delta.tool_calls) {
