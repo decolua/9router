@@ -6,14 +6,9 @@
  * Get combo models from combos data
  * @param {string} modelStr - Model string to check
  * @param {Array|Object} combosData - Array of combos or object with combos
- * @param {{ activeProviders?: Set<string>, activeModels?: Set<string> } | null} [filter]
- *   Optional filter — when provided, models whose provider is not in
- *   activeProviders or whose "provider/model" id is not in activeModels are
- *   dropped so the combo stays in sync with live provider connections.
- *   A combo that becomes empty after filtering returns null.
  * @returns {string[]|null} Array of models or null if not a combo
  */
-export function getComboModelsFromData(modelStr, combosData, filter = null) {
+export function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
 
@@ -21,25 +16,7 @@ export function getComboModelsFromData(modelStr, combosData, filter = null) {
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
 
   const combo = combos.find(c => c.name === modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    const models = combo.models;
-    if (!filter || (!filter.activeProviders && !filter.activeModels)) {
-      return models;
-    }
-    const activeProviders = filter.activeProviders;
-    const activeModels = filter.activeModels;
-    const filtered = models.filter((m) => {
-      if (typeof m !== "string" || !m.includes("/")) return true;
-      if (activeProviders) {
-        const provider = m.split("/")[0];
-        if (!activeProviders.has(provider)) return false;
-      }
-      if (activeModels && !activeModels.has(m)) return false;
-      return true;
-    });
-    return filtered.length > 0 ? filtered : null;
-  }
-  return null;
+  return combo && Array.isArray(combo.models) ? combo.models : null;
 }
 
 /**

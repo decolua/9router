@@ -1,7 +1,9 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getModelAliases, getComboByName, getProviderConnections, getProviderNodes } from "@/lib/localDb";
+import { getDisabledModels } from "@/lib/db/index.js";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { AI_PROVIDERS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -87,8 +89,46 @@ export async function getComboModels(modelStr) {
   if (modelStr.includes("/")) return null;
 
   const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  if (!combo || !Array.isArray(combo.models)) return null;
+
+  const [connections, disabledModels] = await Promise.all([
+    getProviderConnections({ isActive: true }),
+    getDisabledModels(),
+  ]);
+  const activeProviders = new Set(connections.map((connection) => connection.provider));
+  const filtered = [];
+
+  for (const modelStr of combo.models) {
+    if (typeof modelStr !== "string" || !modelStr.includes("/")) continue;
+    const slash = modelStr.indexOf("/");
+    const storedPrefix = modelStr.slice(0, slash);
+    const modelInfo = await getModelInfo(modelStr);
+    const provider = AI_PROVIDERS[modelInfo.provider];
+    if (!provider?.noAuth && !activeProviders.has(modelInfo.provider)) continue;
+
+    const disabledKeys = new Set([
+      storedPrefix,
+      modelInfo.provider,
+      getProviderAlias(modelInfo.provider),
+    ]);
+    const isDisabled = [...disabledKeys].some((key) =>
+      Array.isArray(disabledModels[key]) && disabledModels[key].includes(modelInfo.model)
+    );
+    if (!isDisabled) filtered.push(modelStr);
   }
-  return null;
+
+  return filtered;
+}
+
+export async function filterAvailableProviders(providerIds) {
+  const connections = await getProviderConnections({ isActive: true });
+  const activeProviders = new Set(connections.map((connection) => connection.provider));
+
+  return providerIds.filter((providerInput) => {
+    const providerId = resolveProviderId(providerInput);
+    const provider = AI_PROVIDERS[providerId];
+    if (!provider) return false;
+    return provider.noAuth || activeProviders.has(providerId) ||
+      (provider.credentialFallback && activeProviders.has(provider.credentialFallback));
+  });
 }
