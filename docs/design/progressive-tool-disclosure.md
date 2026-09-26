@@ -122,6 +122,24 @@ If BM25 false-negative rates are unacceptable after Phase 2 measurement, Phase 3
 
 ---
 
+
+## 4.5 Provider-aware context budgeting
+
+Tool count is only the first failure mode. A request can stay below a provider's tool-count ceiling while still exceeding its input limit because the conversation history and tool schemas share the same context budget. Kiro, for example, reports `CONTENT_LENGTH_EXCEEDS_THRESHOLD` when the full request becomes too large; this is an input-context failure, not a single-message failure.
+
+The implementation therefore adds a final **tool-context budget** after relevance disclosure and the hard tool-count ceiling:
+
+1. Resolve the target model's `contextWindow` and `maxOutput` capabilities.
+2. Estimate message and tool-schema tokens using the existing dependency-free `JSON bytes / 4` approximation.
+3. Reserve 15% of the context window plus up to 32k output tokens for headroom.
+4. If messages + tool schemas exceed the budget, reuse the BM25 ranking to remove the lowest-value tool schemas until the request fits.
+5. Preserve pinned tools (`ToolSearch`, forced tools, and history-referenced tools).
+6. If the **messages alone** exceed the budget, do not destructively trim history in this layer. Emit a diagnostic stating that tool disclosure cannot solve a history overflow; history compaction is a separate concern.
+
+This gives 9router a useful separation of responsibilities: **tool disclosure spends the scarce capability budget; history management owns conversation-state preservation.** It also means the same session-aware ranking mechanism is useful even when `disclosureEnabled` is off: the router can prevent an otherwise valid tool-rich request from becoming an upstream context-length failure.
+
+The estimator is intentionally a preflight guard rather than a billing/tokenizer implementation. Provider usage remains authoritative, and the budget is conservative so small estimation errors do not become provider-side 400s.
+
 ## 5. Active Mode — Proxy-Loop Tool Discovery (Phase 3)
 
 This is the direct implementation of the Agent SDK efficiency pattern inside 9router.
