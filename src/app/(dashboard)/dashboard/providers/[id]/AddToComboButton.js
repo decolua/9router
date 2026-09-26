@@ -111,20 +111,21 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
         className={buttonClassName}
         title={translate("Add to a combo")}
       >
-        <span className="material-symbols-outlined text-sm">add</span>
+        <span className="material-symbols-outlined text-[17px]!">add</span>
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-50 mt-1 w-60 max-w-[85vw] rounded-lg border border-border bg-surface p-2 shadow-2xl">
+        <div className="absolute left-0 top-full z-50 mt-1 w-64 max-w-[85vw] rounded-lg border border-border bg-surface p-2 shadow-2xl">
+          <p className="mb-1.5 px-0.5 text-[11px] font-semibold text-text-main">{translate("Add to a combo")}</p>
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={translate("Search combos…")}
             autoFocus
-            className="mb-1.5 w-full rounded border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+            className="mb-1.5 w-full rounded-md border border-border bg-bg px-2 py-1.5 text-xs focus:border-primary focus:outline-none"
           />
-          <div className="max-h-40 overflow-y-auto">
+          <div className="max-h-52 overflow-y-auto">
             {filtered.length === 0 && (
               <p className="px-1 py-1 text-[11px] text-text-muted">{translate("No combos found")}</p>
             )}
@@ -138,17 +139,26 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
                   type="button"
                   disabled={isIn || isBusy}
                   onClick={() => handleAdd(combo)}
-                  className={`flex w-full items-center justify-between gap-2 rounded px-1.5 py-1 text-left text-xs transition-colors ${
-                    isIn ? "cursor-not-allowed text-text-muted/50" : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+                  className={`flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1.5 text-left text-xs transition-colors ${
+                    isIn ? "cursor-not-allowed text-text-muted/60" : "text-text-main hover:bg-black/5 dark:hover:bg-white/5"
                   }`}
                 >
-                  <span className="truncate">{combo.name}</span>
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className="material-symbols-outlined shrink-0 text-[14px]! text-text-muted">layers</span>
+                    <span className="truncate">{combo.name}</span>
+                    {Array.isArray(combo.models) && (
+                      <span className="shrink-0 text-[10px] text-text-muted/70">{combo.models.length}</span>
+                    )}
+                  </span>
                   {isJustAdded ? (
-                    <span className="material-symbols-outlined shrink-0 text-[14px] text-green-500">check</span>
+                    <span className="material-symbols-outlined shrink-0 text-[15px]! text-green-500">check</span>
                   ) : isBusy ? (
-                    <span className="material-symbols-outlined shrink-0 text-[14px]" style={{ animation: "spin 1s linear infinite" }}>progress_activity</span>
+                    <span className="material-symbols-outlined shrink-0 text-[15px]!" style={{ animation: "spin 1s linear infinite" }}>progress_activity</span>
                   ) : isIn ? (
-                    <span className="shrink-0 text-[9px]">{translate("Already in this combo")}</span>
+                    <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-green-600/80 dark:text-green-400/80" title={translate("Already in this combo")}>
+                      <span className="material-symbols-outlined text-[13px]!">check_circle</span>
+                      {translate("Added")}
+                    </span>
                   ) : null}
                 </button>
               );
@@ -168,7 +178,7 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
                   }}
                   placeholder={translate("Combo name")}
                   autoFocus
-                  className="min-w-0 flex-1 rounded border border-border bg-background px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                  className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2 py-1.5 text-xs focus:border-primary focus:outline-none"
                 />
                 <button
                   type="button"
@@ -176,16 +186,16 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
                   disabled={!newName.trim() || busyId === "__new__"}
                   className="shrink-0 rounded p-1 text-primary hover:bg-primary/10 disabled:opacity-40"
                 >
-                  <span className="material-symbols-outlined text-sm">check</span>
+                  <span className="material-symbols-outlined text-[17px]!">check</span>
                 </button>
               </div>
             ) : (
               <button
                 type="button"
                 onClick={() => setCreating(true)}
-                className="flex w-full items-center gap-1 rounded px-1.5 py-1 text-left text-xs text-primary hover:bg-primary/5"
+                className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-medium text-primary hover:bg-primary/5"
               >
-                <span className="material-symbols-outlined text-[14px]">add</span>
+                <span className="material-symbols-outlined text-[15px]!">add</span>
                 {translate("New combo…")}
               </button>
             )}

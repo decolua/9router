@@ -9,6 +9,16 @@
 - Quota: each quota shows name, reset time and hide button on one line and the bar with the full used/total on the next, instead of "0…" / "US$…".
 - Translator, Skills, PXPIPE and Chat: no more content running past the right edge (file names, copy buttons, period tabs, History/Clear bar).
 
+## Polish for the model import, context/reasoning and add-to-combo UI
+- Model rows: context, reasoning, combo and "disabled" chips share one shape and size; the context chip tooltip gives the exact token count and its source; the model name is readable (no tiny italics); cards have regular widths (two per line on wide screens).
+- The **+** (add to combo) stays faintly visible with a mouse instead of leaving an empty gap; its popover has a title, shows how many models each combo has and marks combos that already include the model.
+- **Detect** uses a clearer icon and opens its result inside the screen with a title.
+- Our icons render at their intended size (the global Material Symbols rule pinned every icon at 24px; our components now override it).
+- Import dialog: Portuguese texts, "Variable price" instead of `$-1000000`, labelled context filter ("Context ≥ 128k"), context and reasoning chips per model, and on phones the id pattern fields fold behind "Id filters" so the list keeps its room.
+- Daily auto-import card (Settings): Portuguese texts, provider names instead of generated ids, readable error reasons, imported/failed counts as chips.
+- Provider list: the error reason stays on one line (full text on hover) instead of a three-line red block.
+- Translations keep the spaces around translated words ("1 Conectado", not "1Conectado").
+
 # v0.5.91-enhanced.3 (2026-09-26)
 
 ## Model context, reasoning and add-to-combo on the provider page

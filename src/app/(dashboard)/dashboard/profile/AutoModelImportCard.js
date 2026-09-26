@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Card, Button, Toggle, Select } from "@/shared/components";
+import { Card, Button, Toggle, Select, ErrorReason } from "@/shared/components";
 import { translate } from "@/i18n/runtime";
+import { AI_PROVIDERS } from "@/shared/constants/providers";
 
 export default function AutoModelImportCard() {
   const [loading, setLoading] = useState(true);
@@ -17,6 +18,9 @@ export default function AutoModelImportCard() {
   const [saving, setSaving] = useState(false);
   const [runLoading, setRunLoading] = useState(false);
   const [error, setError] = useState("");
+  // Custom (OpenAI-compatible) nodes are stored under generated ids; show
+  // their names instead of "openai-compatible-chat-8bfc…".
+  const [nodeNames, setNodeNames] = useState(null);
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -41,7 +45,21 @@ export default function AutoModelImportCard() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchSettings();
+    fetch("/api/provider-nodes")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return; // unknown ≠ removed: keep null so nothing is flagged
+        const names = {};
+        for (const node of data?.nodes || []) if (node?.id && node?.name) names[node.id] = node.name;
+        setNodeNames(names);
+      })
+      .catch(() => {});
   }, []);
+
+  const providerName = (id) => nodeNames?.[id] || AI_PROVIDERS[id]?.name || id;
+  // A rule can outlive its provider (custom node deleted): say so instead of
+  // leaving a bare generated id. Only once the node list has loaded.
+  const isRemovedProvider = (id) => nodeNames !== null && !nodeNames[id] && !AI_PROVIDERS[id];
 
   // autoModelImport is one settings key that the daily sweep also writes
   // (lastRunAt/lastResult), and PATCH /api/settings replaces top-level keys
@@ -131,7 +149,7 @@ export default function AutoModelImportCard() {
     <Card>
       <div className="flex items-center gap-3 mb-4">
         <div className="size-10 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
-          <span className="material-symbols-outlined text-[20px]">
+          <span className="material-symbols-outlined text-[20px]!">
             schedule
           </span>
         </div>
@@ -193,26 +211,32 @@ export default function AutoModelImportCard() {
         {/* Last run info */}
         {lastRunAt && lastResult && (
           <div className="pt-4 border-t border-border">
-            <p className="text-sm font-medium mb-2">Last run: {lastRunAt}</p>
+            <p className="text-sm font-medium mb-2">
+              <span>Last run</span>: <span className="font-normal text-text-muted">{lastRunAt}</span>
+            </p>
             <div className="space-y-2">
               {lastResult.providers && lastResult.providers.length > 0 ? (
                 lastResult.providers.map((provider) => (
                   <div
                     key={provider.providerId}
-                    className="flex items-start justify-between p-2 rounded-lg bg-surface-2"
+                    className="flex items-start justify-between gap-2 p-2 rounded-lg bg-surface-2"
                   >
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs sm:text-sm font-medium">
-                        {provider.providerId}
-                      </p>
-                      <p className="text-xs text-text-muted">
-                        {provider.imported || 0} imported, {provider.failed || 0}{" "}
-                        failed
+                      <p className="truncate text-xs sm:text-sm font-medium" title={provider.providerId}>
+                        {providerName(provider.providerId)}
                       </p>
                       {provider.error && (
-                        <p className="text-xs text-red-600 dark:text-red-400 mt-1">
-                          {provider.error}
-                        </p>
+                        <ErrorReason error={provider.error} compact className="mt-1 text-xs" />
+                      )}
+                    </div>
+                    <div className="flex shrink-0 items-center gap-1 text-[11px]">
+                      <span className="rounded-md bg-green-500/10 px-1.5 py-0.5 text-green-700 dark:text-green-400">
+                        {provider.imported || 0} <span>imported</span>
+                      </span>
+                      {provider.failed > 0 && (
+                        <span className="rounded-md bg-red-500/10 px-1.5 py-0.5 text-red-600 dark:text-red-400">
+                          {provider.failed} <span>failed</span>
+                        </span>
                       )}
                     </div>
                   </div>
@@ -236,17 +260,24 @@ export default function AutoModelImportCard() {
                     key={providerId}
                     href={`/dashboard/providers/${providerId}`}
                   >
-                    <div className="flex items-start justify-between p-2 rounded-lg bg-surface-2 hover:bg-surface-3 transition-colors cursor-pointer">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs sm:text-sm font-medium text-primary hover:underline">
-                          {providerId}
+                    <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-surface-2 hover:bg-surface-3 transition-colors cursor-pointer">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
+                        <p className={`truncate text-xs sm:text-sm font-medium ${isRemovedProvider(providerId) ? "text-text-muted" : "text-text-main"}`} title={providerId}>
+                          {providerName(providerId)}
                         </p>
+                        {isRemovedProvider(providerId) && (
+                          <span className="rounded-md bg-amber-500/10 px-1.5 py-0.5 text-[11px] text-amber-700 dark:text-amber-400">
+                            Provider removed
+                          </span>
+                        )}
                         {rule?.testFirst && (
-                          <p className="text-xs text-text-muted">
-                            Tests before import
-                          </p>
+                          <span className="inline-flex items-center gap-0.5 rounded-md bg-green-500/10 px-1.5 py-0.5 text-[11px] text-green-700 dark:text-green-400">
+                            <span className="material-symbols-outlined text-[12px]!">science</span>
+                            <span>Tests before import</span>
+                          </span>
                         )}
                       </div>
+                      <span className="material-symbols-outlined shrink-0 text-[18px]! text-text-muted">chevron_right</span>
                     </div>
                   </Link>
                 );

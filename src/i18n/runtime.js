@@ -38,7 +38,14 @@ export function translate(text) {
   const trimmed = text.trim();
   if (!trimmed) return text;
   if (currentLocale === "en") return text;
-  return translationMap[trimmed] || text;
+  const hit = translationMap[trimmed];
+  if (!hit) return text;
+  // Keep the surrounding spaces: JSX like `{n} Connected` is its own text
+  // node " Connected", and dropping the space renders "1Conectado".
+  if (trimmed === text) return hit;
+  const lead = text.slice(0, text.indexOf(trimmed));
+  const trail = text.slice(lead.length + trimmed.length);
+  return lead + hit + trail;
 }
 
 // Get current locale - exported for use in components

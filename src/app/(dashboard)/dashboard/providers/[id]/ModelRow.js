@@ -1,6 +1,6 @@
 import PropTypes from "prop-types";
 import { CapacityBadges } from "@/shared/components";
-import ModelMetaChips from "./ModelMetaChips";
+import ModelMetaChips, { MODEL_CHIP_CLASS } from "./ModelMetaChips";
 import AddToComboButton from "./AddToComboButton";
 import DetectMetaButton from "./DetectMetaButton";
 
@@ -19,7 +19,8 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
     : undefined;
 
   return (
-    <div className={`group min-w-0 max-w-full rounded-lg border px-3 py-2 ${borderColor} hover:bg-sidebar/50`}>
+    // Regular widths (full, or half on wide screens) instead of content-sized cards.
+    <div className={`group w-full min-w-0 max-w-full rounded-lg border px-3 py-2 xl:w-[calc(50%-0.375rem)] ${borderColor} hover:bg-sidebar/50`}>
       <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 sm:flex-nowrap sm:items-center">
         {selectable && (
           <input
@@ -31,7 +32,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           />
         )}
         <span
-          className="material-symbols-outlined shrink-0 text-base"
+          className="material-symbols-outlined shrink-0 text-[18px]! text-text-muted"
           style={iconColor ? { color: iconColor } : undefined}
         >
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
@@ -43,25 +44,25 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               combos={combos}
               comboNames={comboNames}
               onChanged={onComboChanged}
-              buttonClassName="rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-sidebar hover:text-primary pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
+              buttonClassName="rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-primary/10 hover:text-primary pointer-fine:opacity-40 pointer-fine:group-hover:opacity-100"
             />
-            <code className="min-w-0 break-all rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:max-w-[360px] sm:truncate sm:break-normal">{displayModel}</code>
+            <code className="min-w-0 break-all rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted sm:truncate sm:break-normal" title={displayModel}>{displayModel}</code>
           </div>
-          <span className="flex min-w-0 flex-wrap items-center text-[9px] gap-1 pl-1">
-            {model.name && <span className="truncate text-[9px] italic text-text-muted/70">{model.name}</span>}
+          <span className="flex min-w-0 flex-wrap items-center gap-1 pl-1">
+            {model.name && <span className="max-w-full truncate text-[11px] text-text-muted">{model.name}</span>}
             {comboNames.length > 0 && (
-              <span className="inline-flex max-w-full items-center gap-0.5 rounded bg-primary/10 px-1 py-px font-mono text-[9px] text-primary" title={`Used in: ${comboNames.join(", ")}`}>
-                <span className="material-symbols-outlined text-[10px]">layers</span>
+              <span className={`${MODEL_CHIP_CLASS} max-w-full border-primary/25 bg-primary/10 text-primary`} title={`Used in: ${comboNames.join(", ")}`}>
+                <span className="material-symbols-outlined text-[12px]!">layers</span>
                 <span className="truncate">{comboNames.slice(0, 2).join(", ")}{comboNames.length > 2 ? ` +${comboNames.length - 2}` : ""}</span>
               </span>
             )}
             {disabledInUse && (
-              <span className="inline-flex items-center rounded bg-black/10 px-1 py-px font-mono text-[9px] text-text-muted dark:bg-white/10">
+              <span className={`${MODEL_CHIP_CLASS} border-border bg-black/5 text-text-muted dark:bg-white/10`}>
                 disabled
               </span>
             )}
             <ModelMetaChips caps={caps} />
-            <CapacityBadges caps={caps ? { ...caps, reasoning: false } : caps} colorOverride="text-text-muted/70" size={12} />
+            <CapacityBadges caps={caps ? { ...caps, reasoning: false } : caps} colorOverride="text-text-muted/70" size={14} />
           </span>
         </div>
         {/* Phones: actions get their own line so the model id is never cut. */}
@@ -80,7 +81,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               disabled={isTesting}
               className={`rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-primary ${isTesting ? "opacity-100" : "opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"}`}
             >
-              <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+              <span className="material-symbols-outlined text-[17px]!" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
@@ -94,7 +95,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             onClick={() => onCopy(displayModel, `model-${model.id}`)}
             className="rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary"
           >
-            <span className="material-symbols-outlined text-sm">
+            <span className="material-symbols-outlined text-[17px]!">
               {copied === `model-${model.id}` ? "check" : "content_copy"}
             </span>
           </button>
@@ -108,7 +109,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
             title="Remove custom model"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span className="material-symbols-outlined text-[17px]!">close</span>
           </button>
         ) : onDisable ? (
           <button
@@ -116,7 +117,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
             title="Disable this model"
           >
-            <span className="material-symbols-outlined text-sm">close</span>
+            <span className="material-symbols-outlined text-[17px]!">close</span>
           </button>
         ) : null}
         </div>

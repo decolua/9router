@@ -22,32 +22,45 @@ function sourceLabel(source) {
 // it reasons on this provider, each with a tooltip naming the source. Caller
 // is responsible for not also rendering the reasoning capability badge
 // elsewhere on the same row (see CapacityBadges usage in ModelRow).
+// One shape for every chip on a model row (context, reasoning, combos) so
+// they line up; icon sizes need `!` because the global Material Symbols rule
+// (globals.css) otherwise pins every icon at 24px.
+export const MODEL_CHIP_CLASS = "inline-flex h-[18px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium leading-none";
+
+// Small pills next to a model's name: its measured context window and whether
+// it reasons on this provider, each with a tooltip naming the source. Caller
+// is responsible for not also rendering the reasoning capability badge
+// elsewhere on the same row (see CapacityBadges usage in ModelRow).
 export default function ModelMetaChips({ caps, className = "" }) {
   if (!caps) return null;
   const contextLabel = formatContextLength(caps.contextWindow);
   const contextSource = caps.contextSource || "estimated";
   const showReasoning = caps.reasoning === true;
   const reasoningSource = caps.reasoningSource || "estimated";
+  const estimated = contextSource === "estimated";
 
   if (!contextLabel && !showReasoning) return null;
 
   return (
     <span className={`inline-flex items-center gap-1 ${className}`}>
       {contextLabel && (
-        <Tooltip text={sourceLabel(contextSource)}>
+        <Tooltip text={`${translate("Context window")}: ${Number(caps.contextWindow).toLocaleString()} tokens · ${sourceLabel(contextSource)}`}>
           <span
-            className={`inline-flex items-center rounded bg-black/5 px-1 py-px font-mono text-[9px] cursor-help dark:bg-white/5 ${
-              contextSource === "estimated" ? "text-text-muted/50" : "text-text-muted"
+            className={`${MODEL_CHIP_CLASS} cursor-help font-mono tabular-nums ${
+              estimated
+                ? "border-dashed border-border text-text-muted/60"
+                : "border-border bg-black/[0.03] text-text-muted dark:bg-white/[0.04]"
             }`}
           >
-            {contextSource === "estimated" ? `~${contextLabel}` : contextLabel}
+            <span className="material-symbols-outlined text-[12px]!">memory</span>
+            {estimated ? `~${contextLabel}` : contextLabel}
           </span>
         </Tooltip>
       )}
       {showReasoning && (
-        <Tooltip text={sourceLabel(reasoningSource)}>
-          <span className="inline-flex items-center gap-0.5 rounded bg-black/5 px-1 py-px text-[9px] text-amber-600 cursor-help dark:bg-white/5 dark:text-amber-400">
-            <span className="material-symbols-outlined text-[10px] leading-none">neurology</span>
+        <Tooltip text={`${translate("Reasoning")} · ${sourceLabel(reasoningSource)}`}>
+          <span className={`${MODEL_CHIP_CLASS} cursor-help border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300`}>
+            <span className="material-symbols-outlined text-[12px]!">neurology</span>
             {translate("Reasoning")}
           </span>
         </Tooltip>

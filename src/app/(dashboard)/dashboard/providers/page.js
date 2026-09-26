@@ -50,10 +50,19 @@ function getStatusDisplay(connected, error, errorCode, errorReason = null) {
       : errorCode
         ? `${error} Error (${errorCode})`
         : `${error} Error`;
+    // One line: the reason is truncated inside the card, full text on hover.
+    // Words sit in their own text nodes so the page translator still reaches
+    // them when this renders before the dictionary has loaded.
     parts.push(
-      <Badge key="error" variant="error" size="sm" dot>
-        {errText}
-      </Badge>,
+      <span key="error" className="inline-flex min-w-0 max-w-full" title={errText}>
+        <Badge variant="error" size="sm" dot className="min-w-0 max-w-full [&>span:first-child]:shrink-0">
+          <span className="truncate">
+            {reasonTitle ? (
+              <>{error} <span>Error</span> · <span>{reasonTitle}</span></>
+            ) : errText}
+          </span>
+        </Badge>
+      </span>,
     );
   }
   if (parts.length === 0) {

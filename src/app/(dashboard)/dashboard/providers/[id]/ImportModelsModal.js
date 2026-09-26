@@ -17,6 +17,7 @@ import {
   formatPricePerMillion,
 } from "@/shared/utils/importProviderModels.js";
 import { splitNdjsonLines, flushNdjsonBuffer } from "@/shared/utils/ndjson.js";
+import { MODEL_CHIP_CLASS } from "./ModelMetaChips";
 
 const TIER_BADGE_VARIANT = { free: "success", paid: "default", credits: "warning", unknown: "default" };
 
@@ -80,6 +81,8 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
   const [filters, setFilters] = useState(DEFAULT_IMPORT_FILTERS);
   const [testFirst, setTestFirst] = useState(true);
   const [saveRule, setSaveRule] = useState(false);
+  // Phones: the id pattern fields stay folded so the model list keeps its room.
+  const [showIdFilters, setShowIdFilters] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
 
   const [runModels, setRunModels] = useState([]);
@@ -422,19 +425,29 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
 
             <div className="flex flex-wrap items-center gap-3">
               <Toggle size="sm" checked={filters.onlyNew} onChange={(v) => setFilter("onlyNew", v)} label={translate("Only new")} />
-              <div className="min-w-[140px]">
+              <div className="min-w-[170px]">
                 <Select
                   selectClassName="py-1.5"
                   value={String(filters.minContext)}
                   onChange={(e) => setFilter("minContext", Number(e.target.value))}
-                  options={MIN_CONTEXT_OPTIONS.map((o) => ({ value: String(o.value), label: o.label }))}
+                  options={MIN_CONTEXT_OPTIONS.map((o) => ({ value: String(o.value), label: o.value ? `${translate("Context")} ≥ ${o.label}` : translate("Any context") }))}
                   placeholder={translate("Min context")}
                   aria-label={translate("Minimum context")}
                 />
               </div>
+              <button
+                type="button"
+                onClick={() => setShowIdFilters((v) => !v)}
+                className="inline-flex items-center gap-1 text-xs font-medium text-text-muted hover:text-primary sm:hidden"
+                aria-expanded={showIdFilters || Boolean(filters.include || filters.exclude)}
+              >
+                <span className="material-symbols-outlined text-[16px]!">tune</span>
+                {translate("Id filters")}
+                {(filters.include || filters.exclude) && <span className="size-1.5 rounded-full bg-primary" />}
+              </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className={cn("grid-cols-1 gap-3 sm:grid sm:grid-cols-2", showIdFilters || filters.include || filters.exclude ? "grid" : "hidden")}>
               <Input
                 type="text"
                 value={filters.include}
@@ -480,9 +493,13 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
               const contextLabel = formatContextLength(c.contextLength);
               const promptLabel = c.pricing ? formatPricePerMillion(c.pricing.prompt) : null;
               const completionLabel = c.pricing ? formatPricePerMillion(c.pricing.completion) : null;
-              const priceLabel = promptLabel !== null || completionLabel !== null
-                ? `$${promptLabel ?? "?"} / $${completionLabel ?? "?"} per 1M`
-                : null;
+              // OpenRouter marks routers/variable pricing with negative prices.
+              const variablePrice = c.pricing && (Number(c.pricing.prompt) < 0 || Number(c.pricing.completion) < 0);
+              const priceLabel = variablePrice
+                ? translate("Variable price")
+                : promptLabel !== null || completionLabel !== null
+                  ? `$${promptLabel ?? "?"} / $${completionLabel ?? "?"} ${translate("per 1M tokens")}`
+                  : null;
 
               return (
                 <label
@@ -499,7 +516,7 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
                     onChange={() => toggleSelected(c.id)}
                     className="size-4 shrink-0 rounded accent-brand-500 disabled:cursor-not-allowed"
                   />
-                  <span className="font-mono text-xs text-text-main">{c.id}</span>
+                  <span className="min-w-0 break-all font-mono text-xs text-text-main">{c.id}</span>
                   {c.name && c.name !== c.id && <span className="text-xs text-text-muted">({c.name})</span>}
                   <Badge variant={TIER_BADGE_VARIANT[c.tier] || "default"} size="sm">
                     {translate(capitalize(c.tier))}
@@ -507,7 +524,18 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
                   <Badge variant="default" size="sm">
                     {translate(kindLabel(c.kind))}
                   </Badge>
-                  {contextLabel && <span className="text-[11px] text-text-muted">{contextLabel}</span>}
+                  {contextLabel && (
+                    <span className={`${MODEL_CHIP_CLASS} border-border bg-black/[0.03] font-mono tabular-nums text-text-muted dark:bg-white/[0.04]`} title={`${translate("Context window")}: ${Number(c.contextLength).toLocaleString()} tokens`}>
+                      <span className="material-symbols-outlined text-[12px]!">memory</span>
+                      {contextLabel}
+                    </span>
+                  )}
+                  {c.reasoning === true && (
+                    <span className={`${MODEL_CHIP_CLASS} border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300`}>
+                      <span className="material-symbols-outlined text-[12px]!">neurology</span>
+                      {translate("Reasoning")}
+                    </span>
+                  )}
                   {priceLabel && <span className="text-[11px] text-text-muted">{priceLabel}</span>}
                   {c.alreadyImported && (
                     <Badge variant="info" size="sm">
