@@ -97,6 +97,20 @@ describe("applyThinking per provider format", () => {
     expect(out.output_config).toEqual({ effort: "high" });
     expect(out.thinking).toBeUndefined();
   });
+  it("claude 4.7+/5.x adaptive models pass xhigh through (native support)", () => {
+    // Upstream 400 enum on Opus 5: effort should be 'low', 'medium', 'high',
+    // 'xhigh' or 'max' — xhigh must not be degraded to high on these models.
+    for (const model of ["claude-opus-5", "claude-opus-4-7", "claude-opus-4-8", "claude-sonnet-5", "claude-fable-5-1"]) {
+      const out = apply("claude", model, { reasoning_effort: "xhigh" }, "claude");
+      expect(out.output_config).toEqual({ effort: "xhigh" });
+    }
+  });
+  it("older adaptive models (4.6 era) clamp xhigh to high", () => {
+    const out = apply("claude", "claude-opus-4-6", { reasoning_effort: "xhigh" }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    const outSonnet = apply("claude", "claude-sonnet-4-6", { reasoning_effort: "xhigh" }, "claude");
+    expect(outSonnet.output_config).toEqual({ effort: "high" });
+  });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 24576 });
