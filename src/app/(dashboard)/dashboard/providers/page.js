@@ -27,12 +27,19 @@ import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
 
-function getStatusDisplay(connected, error, errorCode) {
+function getStatusDisplay(connected, error, onHold, errorCode) {
   const parts = [];
   if (connected > 0) {
     parts.push(
       <Badge key="connected" variant="success" size="sm" dot>
         {connected} Connected
+      </Badge>,
+    );
+  }
+  if (onHold > 0) {
+    parts.push(
+      <Badge key="onhold" variant="warning" size="sm" dot>
+        {onHold} On hold
       </Badge>,
     );
   }
@@ -177,19 +184,22 @@ export default function ProvidersPage() {
     );
 
     const getEffectiveStatus = (conn) => {
-      const isCooldown = Object.entries(conn).some(
-        ([k, v]) =>
-          k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now(),
-      );
-      return conn.testStatus === "unavailable" && !isCooldown
-        ? "active"
-        : conn.testStatus;
+      // Parked keys stay "on hold" until they succeed again — even between
+      // cooldown expiry and next use — so exhausted keys never read "active".
+      if (conn.testStatus === "unavailable") return "on hold";
+      return conn.testStatus;
     };
 
     const connected = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
       return status === "active" || status === "success";
     }).length;
+
+    const onHoldConns = providerConnections.filter((c) => {
+      return getEffectiveStatus(c) === "on hold";
+    });
+
+    const onHold = onHoldConns.length;
 
     const errorConns = providerConnections.filter((c) => {
       const status = getEffectiveStatus(c);
@@ -203,7 +213,7 @@ export default function ProvidersPage() {
     const allDisabled =
       total > 0 && providerConnections.every((c) => c.isActive === false);
 
-    const latestError = errorConns.sort(
+    const latestError = [...errorConns, ...onHoldConns].sort(
       (a, b) => new Date(b.lastErrorAt || 0) - new Date(a.lastErrorAt || 0),
     )[0];
     const errorCode = latestError ? getConnectionErrorTag(latestError) : null;
@@ -211,7 +221,7 @@ export default function ProvidersPage() {
       ? getRelativeTime(latestError.lastErrorAt)
       : null;
 
-    return { connected, error, total, errorCode, errorTime, allDisabled };
+    return { connected, error, onHold, total, errorCode, errorTime, allDisabled };
   };
 
   const matchStatus = (stats, isNoAuth) =>
@@ -694,7 +704,7 @@ export default function ProvidersPage() {
 }
 
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, onHold, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
   const dotColors = {
@@ -751,7 +761,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                    {getStatusDisplay(connected, error, onHold, errorCode)}
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
@@ -810,7 +820,7 @@ function ApiKeyProviderCard({
   authType,
   onToggle,
 }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, onHold, errorCode, errorTime, allDisabled } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
@@ -877,7 +887,7 @@ function ApiKeyProviderCard({
                   </Badge>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                    {getStatusDisplay(connected, error, onHold, errorCode)}
                     {isCompatible && (
                       <Badge variant="default" size="sm">
                         {provider.apiType === "responses"

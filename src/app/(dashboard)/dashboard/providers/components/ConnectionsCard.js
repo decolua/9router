@@ -85,7 +85,9 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
     return () => document.removeEventListener("mousedown", handler);
   }, [showProxyDropdown]);
 
-  const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
+  // Parked keys (e.g. Gemini 429) read "on hold" until they succeed again —
+  // never green "active", which would hide exhausted keys.
+  const effectiveStatus = connection.testStatus === "unavailable" ? "on hold" : connection.testStatus;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 

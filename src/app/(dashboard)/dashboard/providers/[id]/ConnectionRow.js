@@ -111,9 +111,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     };
   }, [modelLockUntil]);
 
-  // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
+  // A key that errored (e.g. Gemini 429) stays parked ("on hold") until it
+  // succeeds again — even after its cooldown expires and before its next use.
+  // Showing green "active" here hides exhausted keys, so surface orange instead.
+  const effectiveStatus = connection.testStatus === "unavailable"
+    ? "on hold"
     : connection.testStatus;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
