@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { rememberEndpoint } from "./cliEndpointPresets";
+import { getCurrentCodexProviderBaseUrl } from "./codexConfig";
 
 export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [codexStatus, setCodexStatus] = useState(initialStatus || null);
@@ -64,8 +65,7 @@ export default function CodexToolCard({ tool, isExpanded, onToggle, baseUrl, api
   }, [codexStatus]);
 
   const getCurrentBaseUrl = () => {
-    const parsed = codexStatus?.config?.match(/base_url\s*=\s*"([^"]+)"/);
-    return parsed ? parsed[1] : "";
+    return getCurrentCodexProviderBaseUrl(codexStatus?.config);
   };
 
   const currentBaseUrl = getCurrentBaseUrl();
