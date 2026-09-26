@@ -147,12 +147,12 @@ export const MODEL_CAPABILITIES = {
   "union-alpha": { vision: true, contextWindow: 262144, maxOutput: 131072 },
 };
 
-const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 272000, maxOutput: 128000 };
 
 // Codex OAuth (ChatGPT backend) — per-model context window reported by upstream
 // (lower than OpenAI API's 1.05M). Sol differs from Terra/Luna. #2720
-const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 372000, maxOutput: 128000 };
-const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
+const CODEX_GPT_56_SOL_CAPS  = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 372000, maxOutput: 128000 };
+const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 272000, maxOutput: 128000 };
 
 /**
  * Provider-specific capability overrides. Keyed by provider alias/id.
@@ -173,8 +173,11 @@ export const PROVIDER_CAPABILITIES = {
   "opencode-go": {
     "glm-5.3-flash": { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
   },
+  // OpenAI reasoning models reject `reasoning_effort: "none"` outright
+  // ("Unsupported value: 'reasoning_effort' does not support 'none'"), so they
+  // must clamp to the minimum instead of disabling. #4031
   "codex": {
-    "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
+    "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 272000, maxOutput: 128000 },
     "gpt-5.6-sol":               CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-sol-review":        CODEX_GPT_56_SOL_CAPS,
     "gpt-5.6-terra":             CODEX_GPT_56_DEFAULT_CAPS,
