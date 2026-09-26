@@ -30,8 +30,8 @@ export async function getCustomModels() {
 }
 
 // Atomic upsert inside transaction to prevent duplicate races.
-// Re-adding an existing model updates caps/name without resetting omitted fields.
-export async function addCustomModel({ providerAlias, id, type = "llm", name, caps }) {
+// Re-adding an existing model updates caps/name/transport without resetting omitted fields.
+export async function addCustomModel({ providerAlias, id, type = "llm", name, caps, transport }) {
   const k = customKey(providerAlias, id, type);
   const db = await getAdapter();
   let added = false;
@@ -39,11 +39,11 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ca
     const row = db.get(`SELECT value FROM kv WHERE scope = 'customModels' AND key = ?`, [k]);
     if (row) {
       const prev = parseJson(row.value) || {};
-      const next = { ...prev, ...(name ? { name } : {}), ...(caps ? { caps } : {}) };
+      const next = { ...prev, ...(name ? { name } : {}), ...(caps ? { caps } : {}), ...(transport ? { transport } : {}) };
       db.run(`UPDATE kv SET value = ? WHERE scope = 'customModels' AND key = ?`, [stringifyJson(next), k]);
       return;
     }
-    const value = stringifyJson({ providerAlias, id, type, name: name || id, ...(caps ? { caps } : {}) });
+    const value = stringifyJson({ providerAlias, id, type, name: name || id, ...(caps ? { caps } : {}), ...(transport ? { transport } : {}) });
     db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
     added = true;
   });

@@ -3,6 +3,7 @@ import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache, lastCacheableToolIndex } from "../translator/formats/claude.js";
+import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
@@ -22,6 +23,7 @@ import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.j
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { toolFilter } from "../utils/toolFilter.js";
 import { disclosureTools, HARD_TOOL_CEILING } from "../utils/toolDisclosure.js";
+import { budgetToolsToContext } from "../utils/toolBudget.js";
 import { takeRenamedToolNames } from "../utils/opencodeFingerprint.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
@@ -265,6 +267,32 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           log?.debug?.("TOOLDISCLOSE", `ceiling: ${stats.before}→${stats.after} tools (-${stats.stripped}, safety cap ${HARD_TOOL_CEILING})`);
           translatedBody.tools = capped;
         }
+      }
+    }
+
+    // Provider-aware context budget: tool schemas are part of the input context.
+    // This is an always-on correctness backstop, not a token-saver preference.
+    // When messages + tool schemas approach the target model's context window,
+    // progressively cull lower-ranked tools while preserving pinned/active tools.
+    if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+      const caps = getCapabilitiesForModel(provider, model);
+      const budgeted = budgetToolsToContext(
+        translatedBody.tools,
+        translatedBody,
+        connectionId,
+        caps,
+      );
+      if (budgeted.stats?.changed) {
+        translatedBody.tools = budgeted.tools;
+        log?.debug?.(
+          "TOOLDISCLOSE",
+          `context: ${budgeted.stats.before}→${budgeted.stats.after} tools; ${budgeted.stats.messageTokens} msg + ${budgeted.stats.toolTokensBefore} tool ≈ ${budgeted.stats.totalTokensBefore} tokens; budget ${budgeted.stats.inputBudgetTokens}${budgeted.stats.messagesOverBudget ? " (messages alone exceed budget)" : ""}`,
+        );
+      } else if (budgeted.stats?.messagesOverBudget) {
+        log?.warn?.(
+          "TOOLDISCLOSE",
+          `context: messages alone ≈ ${budgeted.stats.messageTokens} tokens exceeds input budget ${budgeted.stats.inputBudgetTokens}; tool disclosure cannot solve history overflow`,
+        );
       }
     }
 
@@ -552,7 +580,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs);
+    return createErrorResult(statusCode, errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers));
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };

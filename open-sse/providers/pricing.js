@@ -2,8 +2,28 @@
 //
 // Fallback order (first match wins):
 //   1. PROVIDER_PRICING[provider][model]  — provider-specific override
-//   2. MODEL_PRICING[model]               — canonical model price (provider-agnostic)
-//   3. PATTERN_PRICING                    — glob pattern match (e.g. "codex-*")
+//   2. FREE_MODEL_NAMESPACES               — upstream bills these at $0
+//   3. MODEL_PRICING[model]               — canonical model price (provider-agnostic)
+//   4. PATTERN_PRICING                    — glob pattern match (e.g. "codex-*")
+
+/**
+ * Namespaces upstream meters at $0. A free model must never inherit a paid
+ * rate: the vendor-prefix strip in getPricingForModel() would turn
+ * "cline-free/deepseek-v4.1-flash" into "deepseek-v4.1-flash" and match
+ * MODEL_PRICING, so the namespace is checked before both fallbacks.
+ */
+export const FREE_MODEL_NAMESPACES = ["cline-free/"];
+
+export const ZERO_PRICING = {
+  input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0,
+};
+
+/** True when the model id sits in a namespace upstream bills at $0. */
+export function isFreeModel(model) {
+  if (!model) return false;
+  const lower = String(model).toLowerCase();
+  return FREE_MODEL_NAMESPACES.some((ns) => lower.startsWith(ns));
+}
 
 /**
  * Canonical model pricing — provider-agnostic.
@@ -361,10 +381,11 @@ export function matchPattern(pattern, model) {
 }
 
 /**
- * Resolve pricing for a model using the 3-step fallback chain:
+ * Resolve pricing for a model using the 4-step fallback chain:
  *   1. PROVIDER_PRICING[provider][model]
- *   2. MODEL_PRICING[model]
- *   3. PATTERN_PRICING (glob match)
+ *   2. free namespace (upstream bills $0)
+ *   3. MODEL_PRICING[model]
+ *   4. PATTERN_PRICING (glob match)
  *
  * @param {string} provider
  * @param {string} model
@@ -378,12 +399,15 @@ export function getPricingForModel(provider, model) {
     return PROVIDER_PRICING[provider][model];
   }
 
-  // 2. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
+  // 2. Free namespaces bill $0 regardless of the model name behind them.
+  if (isFreeModel(model)) return ZERO_PRICING;
+
+  // 3. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
   if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
   if (MODEL_PRICING[model]) return MODEL_PRICING[model];
 
-  // 3. Pattern match
+  // 4. Pattern match
   for (const { pattern, pricing } of PATTERN_PRICING) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return pricing;

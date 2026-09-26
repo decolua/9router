@@ -24,6 +24,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 
 /**
  * Handle chat completion request
@@ -228,6 +229,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
+  let lastHeaders = null;
   let lastStatus = null;
 
   while (true) {
@@ -239,14 +241,14 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
         log.warn("AUTH", `No active credentials for provider: ${provider}`);
         return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
@@ -332,6 +334,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const shouldFallback = provider === "antigravity" && quotaResetMs
       ? true
       : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
+
+    lastHeaders = upstreamResponseHeaders(result.response?.headers);
 
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
