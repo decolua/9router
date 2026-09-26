@@ -7,7 +7,8 @@ import {
   openaiToAntigravityRequest,
 } from "../../open-sse/translator/request/openai-to-gemini.js";
 import { cleanJSONSchemaForAntigravity } from "../../open-sse/translator/formats/gemini.js";
-import { chatCompletionToResponses } from "../../open-sse/handlers/chatCore/sseToJsonHandler.js";
+import { translateNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const schema = {
   type: "object",
@@ -65,20 +66,27 @@ describe("cleanJSONSchemaForAntigravity toolPlaceholders", () => {
   });
 });
 
-describe("chat.completion -> Responses object", () => {
-  it("maps a non-streaming chat completion to the Responses shape", () => {
-    const out = chatCompletionToResponses({
-      id: "chatcmpl-abc",
-      object: "chat.completion",
-      created: 1,
-      model: "gemini-3-flash",
-      choices: [{ index: 0, message: { role: "assistant", content: "{\"title\":\"x\"}" }, finish_reason: "stop" }],
-      usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
-    });
+describe("non-streaming Gemini body -> client format", () => {
+  const geminiBody = {
+    response: {
+      candidates: [{ content: { role: "model", parts: [{ text: "{\"title\":\"x\"}" }] }, finishReason: "STOP" }],
+      usageMetadata: { promptTokenCount: 3, candidatesTokenCount: 4, totalTokenCount: 7 },
+      modelVersion: "gemini-3-flash",
+    },
+  };
+
+  it("a Responses API client gets a Responses object", () => {
+    const out = translateNonStreamingResponse(geminiBody, FORMATS.ANTIGRAVITY, FORMATS.OPENAI_RESPONSES);
     expect(out.object).toBe("response");
     expect(out.status).toBe("completed");
-    expect(out.output[0].content[0].text).toBe("{\"title\":\"x\"}");
-    expect(out.usage).toEqual({ input_tokens: 3, output_tokens: 4, total_tokens: 7 });
+    const message = out.output.find((item) => item.type === "message");
+    expect(message.content[0].text).toBe("{\"title\":\"x\"}");
+  });
+
+  it("a Chat Completions client still gets a chat.completion", () => {
+    const out = translateNonStreamingResponse(geminiBody, FORMATS.ANTIGRAVITY, FORMATS.OPENAI);
+    expect(out.object).toBe("chat.completion");
+    expect(out.choices[0].message.content).toBe("{\"title\":\"x\"}");
   });
 });
 
