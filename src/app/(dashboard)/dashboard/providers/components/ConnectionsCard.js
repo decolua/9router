@@ -4,36 +4,13 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
-
-// ── CooldownTimer ──────────────────────────────────────────────
-function CooldownTimer({ until }) {
-  const [remaining, setRemaining] = useState("");
-
-  useEffect(() => {
-    const update = () => {
-      const diff = new Date(until).getTime() - Date.now();
-      if (diff <= 0) { setRemaining(""); return; }
-      const s = Math.floor(diff / 1000);
-      if (s < 60) setRemaining(`${s}s`);
-      else if (s < 3600) setRemaining(`${Math.floor(s / 60)}m ${s % 60}s`);
-      else setRemaining(`${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`);
-    };
-    update();
-    const t = setInterval(update, 1000);
-    return () => clearInterval(t);
-  }, [until]);
-
-  if (!remaining) return null;
-  return <span className="text-xs text-orange-500 font-mono">⏱ {remaining}</span>;
-}
-
-CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
+import OnHoldBadge from "./OnHoldBadge";
 
 // ── ConnectionRow ──────────────────────────────────────────────
 function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
-  const [isCooldown, setIsCooldown] = useState(false);
+  const [cooldownUntil, setCooldownUntil] = useState(null);
   const proxyDropdownRef = useRef(null);
 
   const proxyPoolMap = new Map((proxyPools || []).map((p) => [p.id, p]));
@@ -68,7 +45,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
       const until = Object.entries(connection)
         .filter(([k]) => k.startsWith("modelLock_"))
         .map(([, v]) => v).filter(v => v && new Date(v).getTime() > Date.now()).sort()[0] || null;
-      setIsCooldown(!!until);
+      setCooldownUntil(until);
     };
     check();
     const t = modelLockUntil ? setInterval(check, 1000) : null;
@@ -116,11 +93,18 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium truncate">{displayName}</p>
           <div className="flex flex-wrap items-center gap-2 mt-1">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
-            </Badge>
+            {connection.isActive === false ? (
+              <Badge variant={getStatusVariant()} size="sm" dot>
+                disabled
+              </Badge>
+            ) : effectiveStatus === "on hold" ? (
+              <OnHoldBadge until={cooldownUntil} />
+            ) : (
+              <Badge variant={getStatusVariant()} size="sm" dot>
+                {effectiveStatus || "Unknown"}
+              </Badge>
+            )}
             {hasAnyProxy && <Badge variant={proxyBadgeVariant} size="sm">Proxy</Badge>}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="text-xs text-red-500 truncate max-w-[300px]" title={connection.lastError}>{connection.lastError}</span>
             )}
