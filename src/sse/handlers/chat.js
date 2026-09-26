@@ -15,7 +15,6 @@ import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 import { getTransform as getPxpipeTransform } from "@/lib/pxpipe/loader.js";
 import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
-import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
@@ -25,6 +24,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 
 /**
  * Handle chat completion request
@@ -229,8 +229,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Try with available accounts (fallback on errors)
   const excludeConnectionIds = new Set();
   let lastError = null;
-  let lastStatus = null;
   let lastHeaders = null;
+  let lastStatus = null;
 
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
@@ -293,6 +293,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null,
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
+      toolDisclosure: (chatSettings.toolDisclosureEnabled || chatSettings.toolDisclosureFilterEnabled) ? {
+        disclosureEnabled: !!chatSettings.toolDisclosureEnabled,
+        filterEnabled: !!chatSettings.toolDisclosureFilterEnabled,
+        maxTools: chatSettings.toolDisclosureMaxTools ?? 20,
+        excludeServers: chatSettings.toolDisclosureExcludeServers || [],
+        excludeTools: chatSettings.toolDisclosureExcludeTools || [],
+      } : null,
       // Detect source format by endpoint + body
       sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
       onCredentialsRefreshed: async (newCreds) => {
@@ -328,12 +335,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       ? true
       : (await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, resetsAtMs)).shouldFallback;
 
+    lastHeaders = upstreamResponseHeaders(result.response?.headers);
+
     if (shouldFallback) {
       log.warn("FALLBACK", `⇄ ACC:${credentials.connectionName} UNAVAILABLE (${result.status}) → NEXT ACCOUNT`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;
-      lastHeaders = upstreamResponseHeaders(result.response?.headers);
       continue;
     }
 

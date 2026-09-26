@@ -51,6 +51,8 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/design/
+!docs/design/**
 test/*
 open-sse/test/*
 RM.vn.md

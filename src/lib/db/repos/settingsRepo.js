@@ -62,6 +62,11 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  toolDisclosureEnabled: false,
+  toolDisclosureFilterEnabled: false,
+  toolDisclosureMaxTools: 20,
+  toolDisclosureExcludeServers: [],
+  toolDisclosureExcludeTools: [],
 };
 
 async function readRaw() {
