@@ -35,7 +35,7 @@ function shouldInject(message, scope) {
 }
 
 function applyRule(body, rule) {
-  if (!rule || !body?.messages) return body;
+  if (!rule || !Array.isArray(body?.messages)) return body;
   const messages = body.messages.map(m =>
     shouldInject(m, rule.scope) ? { ...m, reasoning_content: PLACEHOLDER } : m
   );

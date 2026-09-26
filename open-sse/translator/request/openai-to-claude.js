@@ -7,6 +7,7 @@ import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { countCacheControlBlocks } from "../formats/claude.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -36,15 +37,16 @@ export function openaiToClaudeRequest(model, body, stream) {
   const systemParts = [];
 
   if (body.messages && Array.isArray(body.messages)) {
+    const isSystemRole = (role) => role === ROLE.SYSTEM || role === ROLE.DEVELOPER || role === "developer";
     // Extract system messages
     for (const msg of body.messages) {
-      if (msg.role === ROLE.SYSTEM) {
+      if (isSystemRole(msg.role)) {
         systemParts.push(typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"));
       }
     }
 
     // Filter out system messages for separate processing
-    const nonSystemMessages = body.messages.filter(m => m.role !== ROLE.SYSTEM);
+    const nonSystemMessages = body.messages.filter(m => !isSystemRole(m.role));
 
     // Process messages with merging logic
     // CRITICAL: tool_result must be in separate message immediately after tool_use
@@ -100,6 +102,7 @@ export function openaiToClaudeRequest(model, body, stream) {
     for (let i = result.messages.length - 1; i >= 0; i--) {
       const message = result.messages[i];
       if (message.role === ROLE.ASSISTANT && Array.isArray(message.content) && message.content.length > 0) {
+        if (countCacheControlBlocks(result) >= 4) break;
         // Find the last block that can have cache_control (not thinking blocks)
         const validBlockTypes = [CLAUDE_BLOCK.TEXT, CLAUDE_BLOCK.TOOL_USE, CLAUDE_BLOCK.TOOL_RESULT, CLAUDE_BLOCK.IMAGE];
         for (let j = message.content.length - 1; j >= 0; j--) {
@@ -177,7 +180,7 @@ Respond ONLY with the JSON object, no other text.`);
       });
     }
 
-    if (result.tools.length > 0) {
+    if (result.tools.length > 0 && countCacheControlBlocks(result) < 4) {
       result.tools[result.tools.length - 1].cache_control = { type: "ephemeral", ttl: "1h" };
     }
   }

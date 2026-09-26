@@ -115,20 +115,43 @@ function stripCloakSuffix(name) {
   return original.length > 0 ? original : null;
 }
 
+function resolveOriginalToolName(name, toolNameMap) {
+  if (typeof name !== "string") return name;
+  if (toolNameMap && typeof toolNameMap.get === "function" && toolNameMap.has(name)) {
+    return toolNameMap.get(name);
+  }
+  const fallback = stripCloakSuffix(name);
+  return fallback || name;
+}
+
 // Decloak tool_use names in non-streaming Claude response body (INPUT side)
 export function decloakToolNames(body, toolNameMap) {
-  if (!Array.isArray(body?.content)) return body;
-  const content = body.content.map(block => {
-    if (block?.type !== "tool_use") return block;
-    if (toolNameMap?.has(block.name)) {
-      return { ...block, name: toolNameMap.get(block.name) };
+  if (!body || typeof body !== "object") return body;
+
+  // Claude format: body.content = [{ type: "tool_use", name: "..." }]
+  if (Array.isArray(body.content)) {
+    body.content = body.content.map(block => {
+      if (block?.type === "tool_use" && typeof block.name === "string") {
+        return { ...block, name: resolveOriginalToolName(block.name, toolNameMap) };
+      }
+      return block;
+    });
+  }
+
+  // OpenAI format: body.choices[].message.tool_calls
+  if (Array.isArray(body.choices)) {
+    for (const choice of body.choices) {
+      if (Array.isArray(choice?.message?.tool_calls)) {
+        for (const tc of choice.message.tool_calls) {
+          if (tc?.function?.name) {
+            tc.function.name = resolveOriginalToolName(tc.function.name, toolNameMap);
+          }
+        }
+      }
     }
-    // toolNameMap missing/stale for this name — fall back to suffix stripping
-    // rather than forwarding an unresolvable "<tool>_ide" name to the client.
-    const fallback = stripCloakSuffix(block.name);
-    return fallback ? { ...block, name: fallback } : block;
-  });
-  return { ...body, content };
+  }
+
+  return body;
 }
 
 /**
@@ -155,8 +178,8 @@ export function decloakStreamChunk(chunk, toolNameMap) {
   if (chunk.type !== "content_block_start") return chunk;
   const block = chunk.content_block;
   if (block?.type !== "tool_use" || typeof block.name !== "string") return chunk;
-  const original = toolNameMap?.get(block.name) || stripCloakSuffix(block.name);
-  if (!original) return chunk;
+  const original = resolveOriginalToolName(block.name, toolNameMap);
+  if (!original || original === block.name) return chunk;
   return { ...chunk, content_block: { ...block, name: original } };
 }
 
