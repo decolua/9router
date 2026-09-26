@@ -62,6 +62,15 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  memoryToolPruningEnabled: false,
+  memoryMaxToolTurnsKeepFull: 2,
+  memoryMaxHistoricalToolChars: 4000,
+  memoryMediaPruningEnabled: false,
+  memoryCompactionEnabled: false,
+  memoryCompactionThresholdTokens: 128000,
+  memoryRecentTurnsToKeep: 8,
+  memoryCacheAnchorEnabled: true,
+  memoryHandoffEnabled: false,
 };
 
 async function readRaw() {
