@@ -5,12 +5,13 @@ import { resolveTransport } from "../../open-sse/services/provider.js";
 
 // Chat-only models (no /messages, no /responses support on opencode-go)
 const CHAT_ONLY = ["glm-5.3", "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6", "kimi-k3",
-  "deepseek-flash", "longcat-2.0", "mimo-v2.5", "mimo-v2.5-pro", "hy4-preview", "hy3"];
+  "deepseek-flash", "longcat-2.0", "mimo-v2.5", "mimo-v2.5-pro", "mimo-v2.6-flash", "mimo-v2.6-pro", "hy4-preview", "hy3",
+  "omen-alpha"];
 // Models that also expose the Anthropic /messages endpoint
 const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5",
-  "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus"];
+  "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus", "space-bunny-free"];
 // Models that also expose the OpenAI /responses endpoint
-const RESPONSES_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash"];
+const RESPONSES_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4.1-flash"];
 
 // Mirror of chatCore's per-model transport guard: use the sourceFormat-matched
 // transport only when the model declares support for that sourceFormat.
@@ -26,12 +27,12 @@ describe("OpenCode Go model catalog", () => {
     expect(ids).toEqual([
       "deepseek-flash",
       "glm-5.3-flash", "glm-5.3", "glm-5.2", "glm-5.1", "kimi-k2.7-code", "kimi-k2.6", "kimi-k3",
-      "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp",
-      "longcat-2.0", "mimo-v2.5", "mimo-v2.5-pro",
-      "minimax-m3", "minimax-m2.7", "minimax-m2.5",
+      "deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4.1-flash",
+      "longcat-2.0", "mimo-v2.5", "mimo-v2.5-pro", "mimo-v2.6-flash", "mimo-v2.6-pro",
+      "minimax-m3", "minimax-m2.7", "minimax-m2.5", "space-bunny-free",
       "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus",
-      "hy4-preview", "hy3",
-      "grok-4.6", "gpt-5.6-luna",
+      "hy4-preview", "hy3", "omen-alpha",
+      "grok-4.6", "grok-4.7", "gpt-5.6-luna", "gpt-6-luna",
       "muse-spark-1.2-contributor", "muse-spark-1.3-contributor",
     ]);
   });
@@ -108,7 +109,7 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
   });
 
   it("routes Muse Spark (responses-only) to /responses, never to /messages", () => {
-    for (const m of ["muse-spark-1.2-contributor", "muse-spark-1.3-contributor", "grok-4.6", "gpt-5.6-luna"]) {
+    for (const m of ["muse-spark-1.2-contributor", "muse-spark-1.3-contributor", "grok-4.6", "grok-4.7", "gpt-5.6-luna", "gpt-6-luna"]) {
       expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai-responses"]);
       expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
       expect(pickTransport("opencode-go", "claude", "opencode-go", m)).toBeNull();
