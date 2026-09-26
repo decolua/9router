@@ -40,6 +40,12 @@ export default {
     website: "https://github.com/ggml-org/llama.cpp",
   },
   category: "apikey",
+  // Same gap as the TTS and STT entries.
+  baseUrlField: {
+    label: "Base URL",
+    placeholder: "http://localhost:8080/v1",
+    help: "OpenAI base URL — /embeddings is appended.",
+  },
   auth: {
     apiKey: {
       // Note the /v1: the adapter appends "/embeddings" to whatever it is given,
