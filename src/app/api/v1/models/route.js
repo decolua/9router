@@ -18,6 +18,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { resolveCodexCatalog } from "@/lib/codexModels.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -44,6 +45,10 @@ async function resolveQoderLiveModels(conn, provider) {
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
+  codex: async (conn) => {
+    const models = await resolveCodexCatalog(conn);
+    return models === null ? null : { models };
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -302,8 +307,13 @@ export async function buildModelsList(kindFilter, options = {}) {
 
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
-    if (!activeConnectionByProvider.has(conn.provider)) {
-      activeConnectionByProvider.set(conn.provider, conn);
+    const providerKey = conn.provider === "codex"
+      ? `codex:${conn.providerSpecificData?.prefix || getProviderAlias("codex") || "cx"}`
+      : conn.provider;
+    if (!activeConnectionByProvider.has(providerKey)) activeConnectionByProvider.set(providerKey, []);
+    // Other providers retain their previous first-connection behavior.
+    if (conn.provider === "codex" || activeConnectionByProvider.get(providerKey).length === 0) {
+      activeConnectionByProvider.get(providerKey).push(conn);
     }
   }
 
@@ -336,6 +346,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     );
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = aliasToProviderId[alias] || alias;
+      if (providerId === "codex") continue;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
@@ -354,7 +365,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       // Custom models without active connection are LLM-only by current schema
       if (!kindFilter.includes(LLM_KIND)) continue;
       const providerAlias = customModel.providerAlias;
-      if (!providerAlias) continue;
+      if (!providerAlias || providerAlias === "cx" || providerAlias === "codex") continue;
 
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
@@ -366,7 +377,9 @@ export async function buildModelsList(kindFilter, options = {}) {
       });
     }
   } else {
-    for (const [providerId, conn] of activeConnectionByProvider.entries()) {
+    for (const group of activeConnectionByProvider.values()) {
+      const conn = group[0];
+      const providerId = conn.provider;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
 
       const staticAlias = PROVIDER_ID_TO_ALIAS[providerId] || providerId;
@@ -388,6 +401,8 @@ export async function buildModelsList(kindFilter, options = {}) {
       );
       let liveModelKindById = new Map();
       let liveCapabilitiesById = new Map();
+      let liveMaxContextById = new Map();
+      let codexLive = false;
 
       let rawModelIds = hasExplicitEnabledModels
         ? Array.from(
@@ -407,11 +422,44 @@ export async function buildModelsList(kindFilter, options = {}) {
       // -thinking/-agentic variants per account). On failure, fall back to
       // whatever rawModelIds already holds.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels) {
+      if (liveResolver && (!hasExplicitEnabledModels || providerId === "codex")) {
         try {
-          const live = await liveResolver(conn);
-          if (live?.models?.length) {
-            rawModelIds = live.models.map((m) => m.id);
+          let live;
+          if (providerId === "codex") {
+            const routingAccounts = connections.filter((account) => account.provider === "codex");
+            const catalogs = await Promise.all(routingAccounts.map((account) => liveResolver(account)));
+            const byId = new Map();
+            for (const [index, catalog] of catalogs.entries()) {
+              const allowed = routingAccounts[index].providerSpecificData?.enabledModels;
+              for (const model of catalog?.models || []) {
+                if (Array.isArray(allowed) && allowed.length && !allowed.includes(model.id)) continue;
+                const previous = byId.get(model.id);
+                if (previous) {
+                  // A shared ID must not advertise a window larger than another active account permits.
+                  const currentWindow = model.capabilities?.contextWindow;
+                  const priorWindow = previous.capabilities?.contextWindow;
+                  if (Number.isFinite(currentWindow) && Number.isFinite(priorWindow)) {
+                    previous.capabilities = { ...previous.capabilities, contextWindow: Math.min(currentWindow, priorWindow) };
+                  }
+                  if (Number.isFinite(model.maxContextWindow) && Number.isFinite(previous.maxContextWindow)) {
+                    previous.maxContextWindow = Math.min(model.maxContextWindow, previous.maxContextWindow);
+                  } else delete previous.maxContextWindow;
+                } else byId.set(model.id, { ...model });
+              }
+            }
+            // Routing can select any account: advertise the intersection, not the union.
+            live = { models: [...byId.values()].filter((model) => catalogs.every((catalog, index) => {
+              const allowed = routingAccounts[index].providerSpecificData?.enabledModels;
+              return catalog?.models?.some((candidate) => candidate.id === model.id)
+                && (!Array.isArray(allowed) || !allowed.length || allowed.includes(model.id));
+            })) };
+          } else {
+            live = await liveResolver(conn);
+          }
+          if (live && (live.models?.length || (providerId === "codex" && Array.isArray(live.models)))) {
+            codexLive = providerId === "codex";
+            rawModelIds = live.models.map((m) => m.id)
+              .filter((id) => providerId === "codex" || !hasExplicitEnabledModels || enabledModels.includes(id));
             liveModelKindById = new Map(
               live.models
                 .filter((m) => m?.id)
@@ -421,6 +469,10 @@ export async function buildModelsList(kindFilter, options = {}) {
               live.models
                 .filter((m) => m?.id && m.capabilities)
                 .map((m) => [m.id, m.capabilities])
+            );
+            liveMaxContextById = new Map(
+              live.models.filter((m) => m?.id && m.maxContextWindow)
+                .map((m) => [m.id, m.maxContextWindow])
             );
           }
         } catch (err) {
@@ -484,7 +536,9 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
-      const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+      // A successful Codex catalog is authoritative: stale custom IDs and aliases must not
+      // reintroduce models that the account cannot use (or has hidden).
+      const mergedModelIds = codexLive ? modelIds : Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
@@ -529,6 +583,8 @@ export async function buildModelsList(kindFilter, options = {}) {
           }
           if (Number.isFinite(contextWindow)) model.context_length = contextWindow;
           if (Number.isFinite(maxOutput)) model.max_completion_tokens = maxOutput;
+          const maxContextWindow = liveMaxContextById.get(modelId);
+          if (Number.isFinite(maxContextWindow)) model.max_context_window = maxContextWindow;
         }
         models.push(model);
       }
