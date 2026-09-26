@@ -48,3 +48,16 @@ Phase 0: emit a dedicated `TOOLDISCLOSE` log line (tool count + `toolSchemaBytes
 ## Not in this PR
 
 No code changes. This is discovery + design only. Implementation starts with Phase 1 (static filter) in a separate branch once Phase 0 measurement confirms the problem at real-session scale.
+
+
+## Current implementation update (2026-09-26)
+
+The implementation has since been synchronized with upstream `master` at v0.5.91 and expanded beyond the original passive BM25 design:
+
+- **120-tool hard safety ceiling** is enforced as a correctness backstop for providers that reject large tool arrays.
+- **Provider-aware context budgeting** estimates message + tool-schema input size from the target model's `contextWindow`/`maxOutput` capabilities and reuses BM25 ranking to cull schemas when the combined request approaches the input budget.
+- **Message-only overflow is detected, not destructively rewritten**. The router logs that tool disclosure cannot solve a history overflow, keeping conversation-state trimming as a separate layer.
+- **Upstream header/error propagation** from current `master` was retained while resolving the merge against v0.5.91.
+- Added regression coverage for the context-budget path alongside the existing disclosure/filter/hard-ceiling/e2e suites.
+
+The result is a single capability-budgeting pipeline: static policy → session-aware relevance → hard tool-count safety → context-aware tool budget → provider dispatch.
