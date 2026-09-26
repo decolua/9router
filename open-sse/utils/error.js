@@ -1,4 +1,5 @@
 import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
+import { parseRetryDelayToMs as parseGoogleRetryDelayToMs } from "./geminiRetry.js";
 
 /**
  * Build OpenAI-compatible error response body
@@ -75,9 +76,24 @@ export async function parseUpstreamError(response, executor = null) {
   }
 
   let message = "";
+  let resetsAtMs;
   try {
     const json = JSON.parse(bodyText);
     message = json.error?.message || json.message || json.error || bodyText;
+    // Generic Google RetryInfo surface: executors without parseError (embeddings,
+    // image, systemone cores) still park the key for the reported delay.
+    const details = json.error?.details;
+    if (response.status === 429 && Array.isArray(details)) {
+      for (const d of details) {
+        if (d?.["@type"] === "type.googleapis.com/google.rpc.RetryInfo" && d?.retryDelay != null) {
+          const ms = parseGoogleRetryDelayToMs(d.retryDelay);
+          if (ms != null) {
+            resetsAtMs = Date.now() + ms;
+            break;
+          }
+        }
+      }
+    }
   } catch {
     message = bodyText;
   }
@@ -85,7 +101,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, resetsAtMs };
 }
 
 /**

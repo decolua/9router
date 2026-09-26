@@ -41,6 +41,14 @@ export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 
+// Gemini free-tier 429 cooldown: upstream reports RetryInfo.retryDelay ("22s") and
+// "Please retry in 22.23s" in the message. When upstream gives no hint (key fully
+// out of quota), park the key 1-3h instead of hammering it with backoff retries.
+export const GEMINI_RETRY = {
+  noHintMinMs: 60 * 60 * 1000,
+  noHintMaxMs: 3 * 60 * 60 * 1000,
+};
+
 // Cooldown durations (ms)
 const COOLDOWN = {
   long: 2 * 60 * 1000,

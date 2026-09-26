@@ -8,10 +8,9 @@ import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, getProvidersByKind } from "@/shared/constants/providers";
 
 function getEffectiveStatus(conn) {
-  const isCooldown = Object.entries(conn).some(
-    ([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now()
-  );
-  return conn.testStatus === "unavailable" && !isCooldown ? "active" : conn.testStatus;
+  // Parked keys (e.g. Gemini 429) read "on hold" until they succeed again.
+  if (conn.testStatus === "unavailable") return "on hold";
+  return conn.testStatus;
 }
 
 function ProviderCard({ provider, kind, connections }) {
@@ -19,6 +18,7 @@ function ProviderCard({ provider, kind, connections }) {
   const isNoAuth = !!providerInfo?.noAuth;
   const providerConns = connections.filter((c) => c.provider === provider.id);
   const connected = providerConns.filter((c) => { const s = getEffectiveStatus(c); return s === "active" || s === "success"; }).length;
+  const onHold = providerConns.filter((c) => getEffectiveStatus(c) === "on hold").length;
   const error = providerConns.filter((c) => { const s = getEffectiveStatus(c); return s === "error" || s === "expired" || s === "unavailable"; }).length;
   const total = providerConns.length;
   const allDisabled = total > 0 && providerConns.every((c) => c.isActive === false);
@@ -30,8 +30,9 @@ function ProviderCard({ provider, kind, connections }) {
     return (
       <>
         {connected > 0 && <Badge variant="success" size="sm" dot>{connected} Connected</Badge>}
+        {onHold > 0 && <Badge variant="warning" size="sm" dot>{onHold} On hold</Badge>}
         {error > 0 && <Badge variant="error" size="sm" dot>{error} Error</Badge>}
-        {connected === 0 && error === 0 && <Badge variant="default" size="sm">{total} Added</Badge>}
+        {connected === 0 && onHold === 0 && error === 0 && <Badge variant="default" size="sm">{total} Added</Badge>}
       </>
     );
   };

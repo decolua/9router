@@ -1,7 +1,8 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, MODEL_LOCK_ALL } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
+import { resolveGeminiCooldownMs } from "open-sse/utils/geminiRetry.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
@@ -247,6 +248,17 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   // Provider-specific precise cooldown (e.g. codex usage_limit_reached resets_at) overrides backoff
   let shouldFallback, cooldownMs, newBackoffLevel;
+  const isGemini429 = resolveProviderId(provider) === "gemini" && Number(status) === 429;
+  // Gemini native/TTS/STT paths call markAccountUnavailable with the raw body and
+  // no resetsAtMs — resolve the policy here so every path parks the key.
+  // Take the longest applicable cooldown: daily exhaustion (or no hint) parks
+  // 1-3h even when the body also carries a seconds-scale RetryInfo delay.
+  if (isGemini429) {
+    const policyMs = resolveGeminiCooldownMs(errorText);
+    if (!(resetsAtMs && resetsAtMs > Date.now()) || policyMs > resetsAtMs - Date.now()) {
+      resetsAtMs = Date.now() + policyMs;
+    }
+  }
   if (githubResetAtMs) {
     shouldFallback = true;
     cooldownMs = githubResetAtMs - Date.now();
@@ -254,7 +266,10 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
     // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    cooldownMs = resolveProviderId(provider) === "antigravity"
+    // Gemini 429 carries its own retryDelay (or a 1-3h park for exhausted keys) —
+    // honor it fully instead of truncating to the generic 30m cap.
+    const isPreciseProvider = resolveProviderId(provider) === "antigravity" || isGemini429;
+    cooldownMs = isPreciseProvider
       ? resetsAtMs - Date.now()
       : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
@@ -265,6 +280,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
+  // Gemini 429 means the whole key is unusable for the cooldown — lock the account
+  // (modelLock___all) as well as the model so rotation skips the key entirely
+  // until the delay expires, then re-enables it via clearAccountError on success.
+  if (isGemini429 && !githubResetAtMs) {
+    lockUpdate[MODEL_LOCK_ALL] = lockUpdate[Object.keys(lockUpdate)[0]];
+  }
 
   await updateProviderConnection(connectionId, {
     ...lockUpdate,
@@ -275,7 +296,7 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     backoffLevel: newBackoffLevel ?? backoffLevel
   });
 
-  const lockKey = Object.keys(lockUpdate)[0];
+  const lockKey = Object.keys(lockUpdate).join("+");
   const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
   log.warn("AUTH", `${connName} locked ${lockKey} for ${Math.round(cooldownMs / 1000)}s [${status}]`);
 

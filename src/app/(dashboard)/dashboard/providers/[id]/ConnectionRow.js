@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle, Tooltip } from "@/shared/components";
-import CooldownTimer from "./CooldownTimer";
+import { Badge, Toggle, Tooltip, OnHoldBadge } from "@/shared/components";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
@@ -84,8 +83,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       ? connection.displayName.trim()
       : null;
 
-  // Use useState + useEffect for impure Date.now() to avoid calling during render
-  const [isCooldown, setIsCooldown] = useState(false);
+  // Earliest active model-lock (the key's actual return-to-service time).
+  // Stored in state + refreshed every second so the badge countdown ticks.
+  const [cooldownUntil, setCooldownUntil] = useState(null);
 
   // Get earliest model lock timestamp (useEffect handles the Date.now() comparison)
   const modelLockUntil = Object.entries(connection)
@@ -101,7 +101,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
         .map(([, v]) => v)
         .filter(v => v && new Date(v).getTime() > Date.now())
         .sort()[0] || null;
-      setIsCooldown(!!until);
+      setCooldownUntil(until);
     };
 
     checkCooldown();
@@ -111,9 +111,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     };
   }, [modelLockUntil]);
 
-  // Determine effective status (override unavailable if cooldown expired)
-  const effectiveStatus = (connection.testStatus === "unavailable" && !isCooldown)
-    ? "active"  // Cooldown expired u2192 treat as active
+  // A key that errored (e.g. Gemini 429) stays parked ("on hold") until it
+  // succeeds again — even after its cooldown expires and before its next use.
+  // Showing green "active" here hides exhausted keys, so surface orange instead.
+  const effectiveStatus = connection.testStatus === "unavailable"
+    ? "on hold"
     : connection.testStatus;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
@@ -164,9 +166,17 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
             <p className="text-xs text-text-muted truncate">{secondaryDisplayName}</p>
           )}
           <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5 sm:gap-2">
-            <Badge variant={getStatusVariant()} size="sm" dot>
-              {connection.isActive === false ? "disabled" : (effectiveStatus || "Unknown")}
-            </Badge>
+            {connection.isActive === false ? (
+              <Badge variant={getStatusVariant()} size="sm" dot>
+                disabled
+              </Badge>
+            ) : effectiveStatus === "on hold" ? (
+              <OnHoldBadge until={cooldownUntil} />
+            ) : (
+              <Badge variant={getStatusVariant()} size="sm" dot>
+                {effectiveStatus || "Unknown"}
+              </Badge>
+            )}
             <Badge variant="default" size="sm">
               {authLabel}
             </Badge>
@@ -175,7 +185,6 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 Proxy
               </Badge>
             )}
-            {isCooldown && connection.isActive !== false && <CooldownTimer until={modelLockUntil} />}
             {connection.lastError && connection.isActive !== false && (
               <span className="max-w-full truncate text-xs text-red-500 sm:max-w-[300px]" title={connection.lastError}>
                 {connection.lastError}
