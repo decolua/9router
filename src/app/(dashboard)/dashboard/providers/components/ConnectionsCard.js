@@ -3,8 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
-import OnHoldBadge from "./OnHoldBadge";
+import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal, OnHoldBadge } from "@/shared/components";
 
 // ── ConnectionRow ──────────────────────────────────────────────
 function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {

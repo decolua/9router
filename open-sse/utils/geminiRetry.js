@@ -67,3 +67,37 @@ export function randomGeminiNoHintCooldownMs() {
   const { noHintMinMs, noHintMaxMs } = GEMINI_RETRY;
   return noHintMinMs + Math.floor(Math.random() * (noHintMaxMs - noHintMinMs));
 }
+
+const QUOTA_FAILURE_TYPE = "type.googleapis.com/google.rpc.QuotaFailure";
+
+// True when the 429 body reports a *daily* quota violation
+// (quotaId like "...PerDay..."). Daily exhaustion won't clear when the
+// seconds-scale RetryInfo delay expires, so the key needs an hours-scale park.
+export function hasDailyQuotaViolation(bodyText) {
+  if (!bodyText) return false;
+  const text = typeof bodyText === "string" ? bodyText : JSON.stringify(bodyText);
+  try {
+    const parsed = JSON.parse(text);
+    const details = parsed?.error?.details;
+    if (Array.isArray(details)) {
+      for (const d of details) {
+        if (d?.["@type"] !== QUOTA_FAILURE_TYPE) continue;
+        const violations = Array.isArray(d?.violations) ? d.violations : [];
+        if (violations.some((v) => String(v?.quotaId || "").toLowerCase().includes("perday"))) {
+          return true;
+        }
+      }
+      return false;
+    }
+  } catch {
+    // not JSON — try raw-text pattern below
+  }
+  return /"quotaId"\s*:\s*"[^"]*perday[^"]*"/i.test(text);
+}
+
+// Full Gemini 429 cooldown policy in one place: daily exhaustion (or no hint
+// at all) parks the key 1-3h; pure per-minute rate limiting honors RetryInfo.
+export function resolveGeminiCooldownMs(bodyText) {
+  if (hasDailyQuotaViolation(bodyText)) return randomGeminiNoHintCooldownMs();
+  return parseGeminiRetryDelayMs(bodyText) ?? randomGeminiNoHintCooldownMs();
+}

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
-import { Badge } from "@/shared/components";
+import Badge from "./Badge";
 import { formatOnHoldRemaining } from "@/shared/utils/connectionStatus";
 
 // "on hold" badge with live countdown. `until` is the earliest active model-lock

@@ -2,7 +2,7 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, MODEL_LOCK_ALL } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { parseGeminiRetryDelayMs, randomGeminiNoHintCooldownMs } from "open-sse/utils/geminiRetry.js";
+import { resolveGeminiCooldownMs } from "open-sse/utils/geminiRetry.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
@@ -250,10 +250,14 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   let shouldFallback, cooldownMs, newBackoffLevel;
   const isGemini429 = resolveProviderId(provider) === "gemini" && Number(status) === 429;
   // Gemini native/TTS/STT paths call markAccountUnavailable with the raw body and
-  // no resetsAtMs — extract RetryInfo here so every path parks the key.
-  if (isGemini429 && !(resetsAtMs && resetsAtMs > Date.now())) {
-    const hintMs = parseGeminiRetryDelayMs(errorText) ?? randomGeminiNoHintCooldownMs();
-    resetsAtMs = Date.now() + hintMs;
+  // no resetsAtMs — resolve the policy here so every path parks the key.
+  // Take the longest applicable cooldown: daily exhaustion (or no hint) parks
+  // 1-3h even when the body also carries a seconds-scale RetryInfo delay.
+  if (isGemini429) {
+    const policyMs = resolveGeminiCooldownMs(errorText);
+    if (!(resetsAtMs && resetsAtMs > Date.now()) || policyMs > resetsAtMs - Date.now()) {
+      resetsAtMs = Date.now() + policyMs;
+    }
   }
   if (githubResetAtMs) {
     shouldFallback = true;

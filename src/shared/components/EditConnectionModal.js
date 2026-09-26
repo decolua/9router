@@ -6,6 +6,7 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
+import OnHoldBadge from "@/shared/components/OnHoldBadge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 
@@ -66,6 +67,17 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+
+  // Active rate-limit locks on this key (earliest expiry first)
+  const holdLocks = connection ? Object.entries(connection)
+    .filter(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now())
+    .sort((a, b) => new Date(a[1]).getTime() - new Date(b[1]).getTime()) : [];
+  const holdUntil = holdLocks[0]?.[1] || null;
+  const isOnHold = connection?.testStatus === "unavailable";
+  const holdModelLabel = (key) => {
+    const name = key.replace(/^modelLock_/, "");
+    return name === "__all" ? "all models" : name;
+  };
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -183,6 +195,34 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   return (
     <Modal isOpen={isOpen} title="Edit Connection" onClose={onClose}>
       <div className="flex flex-col gap-4">
+        {isOnHold && (
+          <div className="rounded-lg border border-yellow-500/30 bg-yellow-500/10 p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <OnHoldBadge until={holdUntil} />
+              {holdUntil && (
+                <span className="text-xs text-text-muted">
+                  back {new Date(holdUntil).toLocaleString()}
+                </span>
+              )}
+            </div>
+            {holdLocks.length > 0 && (
+              <p className="mt-1.5 text-xs text-text-muted">
+                Parked: {holdLocks.slice(0, 6).map(([k]) => holdModelLabel(k)).join(", ")}
+                {holdLocks.length > 6 ? ` +${holdLocks.length - 6} more` : ""}
+              </p>
+            )}
+            {!holdUntil && (
+              <p className="mt-1 text-xs text-text-muted">
+                Cooldown expired — the key will be retried on the next request.
+              </p>
+            )}
+            {connection.lastError && (
+              <p className="mt-1 text-xs text-red-500 break-words" title={connection.lastError}>
+                {connection.lastError}
+              </p>
+            )}
+          </div>
+        )}
         <Input
           label="Name"
           value={formData.name}
@@ -305,6 +345,9 @@ EditConnectionModal.propTypes = {
     authType: PropTypes.string,
     provider: PropTypes.string,
     providerSpecificData: PropTypes.object,
+    testStatus: PropTypes.string,
+    lastError: PropTypes.string,
+    lastErrorAt: PropTypes.string,
   }),
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
     id: PropTypes.string,

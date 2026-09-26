@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Badge, Toggle, Tooltip } from "@/shared/components";
-import OnHoldBadge from "../components/OnHoldBadge";
+import { Badge, Toggle, Tooltip, OnHoldBadge } from "@/shared/components";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);

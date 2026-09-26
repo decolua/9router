@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { parseRetryDelayToMs, parseGeminiRetryDelayMs, randomGeminiNoHintCooldownMs } from "../../open-sse/utils/geminiRetry.js";
+import { parseRetryDelayToMs, parseGeminiRetryDelayMs, randomGeminiNoHintCooldownMs, hasDailyQuotaViolation, resolveGeminiCooldownMs } from "../../open-sse/utils/geminiRetry.js";
 import { GEMINI_RETRY } from "../../open-sse/config/errorConfig.js";
 
 const authMocks = vi.hoisted(() => ({
@@ -60,6 +60,65 @@ describe("randomGeminiNoHintCooldownMs", () => {
       expect(ms).toBeGreaterThanOrEqual(GEMINI_RETRY.noHintMinMs);
       expect(ms).toBeLessThan(GEMINI_RETRY.noHintMaxMs);
     }
+  });
+});
+
+const PER_DAY_429 = JSON.stringify({
+  error: {
+    code: 429,
+    message: "You exceeded your current quota. Please retry in 16.79s.",
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaMetric: "generativelanguage.googleapis.com/generate_content_free_tier_requests", quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier" }],
+      },
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "16s" },
+    ],
+  },
+});
+
+const PER_MINUTE_429 = JSON.stringify({
+  error: {
+    code: 429,
+    message: "Please retry in 16.79s.",
+    status: "RESOURCE_EXHAUSTED",
+    details: [
+      {
+        "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+        violations: [{ quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier" }],
+      },
+      { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "16s" },
+    ],
+  },
+});
+
+describe("hasDailyQuotaViolation", () => {
+  it("detects PerDay quotaIds", () => {
+    expect(hasDailyQuotaViolation(PER_DAY_429)).toBe(true);
+    expect(hasDailyQuotaViolation(PER_MINUTE_429)).toBe(false);
+    expect(hasDailyQuotaViolation("")).toBe(false);
+    expect(hasDailyQuotaViolation(null)).toBe(false);
+  });
+});
+
+describe("resolveGeminiCooldownMs", () => {
+  it("parks 1-3h on daily exhaustion despite a seconds-scale retryDelay", () => {
+    for (let i = 0; i < 20; i++) {
+      const ms = resolveGeminiCooldownMs(PER_DAY_429);
+      expect(ms).toBeGreaterThanOrEqual(GEMINI_RETRY.noHintMinMs);
+      expect(ms).toBeLessThan(GEMINI_RETRY.noHintMaxMs);
+    }
+  });
+
+  it("honors retryDelay for pure per-minute rate limiting", () => {
+    expect(resolveGeminiCooldownMs(PER_MINUTE_429)).toBe(16000);
+  });
+
+  it("parks 1-3h when there is no hint", () => {
+    const ms = resolveGeminiCooldownMs("[429] Rate limit exceeded");
+    expect(ms).toBeGreaterThanOrEqual(GEMINI_RETRY.noHintMinMs);
+    expect(ms).toBeLessThan(GEMINI_RETRY.noHintMaxMs);
   });
 });
 
@@ -134,5 +193,19 @@ describe("markAccountUnavailable parks the whole gemini key", () => {
     expect(cooldownMs).toBeLessThan(GEMINI_RETRY.noHintMaxMs);
     const update = authMocks.updateProviderConnection.mock.calls[0][1];
     expect(update["modelLock___all"]).toBeTruthy();
+  });
+
+  it("escalates daily exhaustion to 1-3h even with a short provided resetsAtMs", async () => {
+    authMocks.getProviderConnections.mockResolvedValue([{ id: "conn1", backoffLevel: 0 }]);
+    const { markAccountUnavailable } = await loadAuth();
+    const { shouldFallback, cooldownMs } = await markAccountUnavailable(
+      "conn1", 429, PER_DAY_429, "gemini", "gemini-3.8-flash", Date.now() + 16000
+    );
+    expect(shouldFallback).toBe(true);
+    expect(cooldownMs).toBeGreaterThanOrEqual(GEMINI_RETRY.noHintMinMs);
+    expect(cooldownMs).toBeLessThan(GEMINI_RETRY.noHintMaxMs);
+    const update = authMocks.updateProviderConnection.mock.calls[0][1];
+    expect(update["modelLock___all"]).toBeTruthy();
+    expect(update["modelLock_gemini-3.8-flash"]).toBeTruthy();
   });
 });
