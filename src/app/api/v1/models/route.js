@@ -307,6 +307,40 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  /**
+   * Resolve the effective token envelope of a combo from its members.
+   *
+   * A pool can never accept more than its most restrictive member, so the
+   * smallest window wins. Members are "provider/model" strings; anything we
+   * cannot resolve is skipped rather than guessed, and a pool with no resolvable
+   * member gets no limits at all — emitting a made-up number would make clients
+   * compact at a threshold nobody validated.
+   */
+  function comboTokenLimits(memberIds) {
+    let contextWindow = null;
+    let maxOutput = null;
+    for (const raw of memberIds || []) {
+      const memberId = typeof raw === "string" ? raw.trim() : String(raw?.model || raw?.id || "").trim();
+      if (!memberId) continue;
+      const slash = memberId.indexOf("/");
+      // Provider-less ids cannot be resolved against the capability tables.
+      if (slash <= 0) continue;
+      const provider = memberId.slice(0, slash);
+      const model = memberId.slice(slash + 1);
+      if (!model) continue;
+      const caps = getCapabilitiesForModel(provider, model);
+      const ctx = caps?.contextWindow;
+      const out = caps?.maxOutput;
+      if (Number.isFinite(ctx) && ctx > 0) {
+        contextWindow = contextWindow === null ? ctx : Math.min(contextWindow, ctx);
+      }
+      if (Number.isFinite(out) && out > 0) {
+        maxOutput = maxOutput === null ? out : Math.min(maxOutput, out);
+      }
+    }
+    return { contextWindow, maxOutput };
+  }
+
   const models = [];
 
   // Lookup map so aggregateComboCapabilities can recursively resolve nested combos
@@ -325,6 +359,13 @@ export async function buildModelsList(kindFilter, options = {}) {
     } else {
       const comboCaps = aggregateComboCapabilities(combo.models, comboByName);
       if (comboCaps) entry.capabilities = comboCaps;
+      // Token limits under the snake_case names the OpenAI/OpenRouter convention
+      // uses. Without them a client reading /v1/models has to guess the window
+      // from the model name, and a pool of 1M members read as ~128k compacts far
+      // too early. Emitted only when at least one member resolved (see #3486).
+      const { contextWindow, maxOutput } = comboTokenLimits(combo.models);
+      if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
+      if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
     }
     models.push(entry);
   }
