@@ -16,5 +16,15 @@ describe("Codex settings refresh", () => {
     expect(routeSource).not.toContain('"use server";');
     expect(routeSource).toContain('export const dynamic = "force-dynamic";');
     expect(cardSource).toContain('fetch("/api/cli-tools/codex-settings", { cache: "no-store" })');
+    expect(cardSource).toContain("setSelectedApiKey(apiKey);");
+    expect(cardSource).toContain("setCustomBaseUrl(baseUrl);");
+  });
+
+  it("keeps an unmatched active URL in the custom endpoint slot", async () => {
+    const selectorSource = await readSource("../../src/app/(dashboard)/dashboard/cli-tools/components/BaseUrlSelect.js");
+
+    expect(selectorSource).toContain("if (current) {");
+    expect(selectorSource).toContain("setCustomInput(current);");
+    expect(selectorSource).toContain("onChange(current);");
   });
 });
