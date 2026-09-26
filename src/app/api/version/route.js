@@ -1,4 +1,5 @@
 import https from "https";
+import fs from "fs";
 import pkg from "../../../../package.json" with { type: "json" };
 
 const NPM_PACKAGE_NAME = "9router";
@@ -6,6 +7,19 @@ const VERSION_CACHE_TTL_MS = 3600000; // cache npm latest lookup for 1h
 
 // Survive hot reload; one cache per process
 const versionCache = (global.__npmVersionCache ??= { value: null, fetchedAt: 0 });
+
+// Detect if the app is running inside a Docker container.
+// /.dockerenv exists in every Docker container; cgroup also shows docker.
+function isRunningInDocker() {
+  try {
+    if (fs.existsSync("/.dockerenv")) return true;
+  } catch { /* ignore */ }
+  try {
+    const cgroup = fs.readFileSync("/proc/1/cgroup", "utf8");
+    if (typeof cgroup === "string" && /docker|containerd/.test(cgroup)) return true;
+  } catch { /* ignore */ }
+  return false;
+}
 
 // Fetch latest version from npm registry
 function fetchLatestVersion() {
@@ -56,6 +70,15 @@ export async function GET() {
   const latestVersion = await getLatestVersionCached();
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
+  const isDocker = isRunningInDocker();
 
-  return Response.json({ currentVersion, latestVersion, hasUpdate });
+  return Response.json({
+    currentVersion,
+    latestVersion,
+    hasUpdate,
+    isDocker,
+    // "docker" = run docker compose pull && up -d on the host
+    // "npm" = run npm i -g 9router@latest (CLI/npm install)
+    updateMethod: isDocker ? "docker" : "npm",
+  });
 }
