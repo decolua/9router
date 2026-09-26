@@ -41,6 +41,11 @@ export default function ProfilePage() {
     oidcScopes: "openid profile email",
     oidcLoginLabel: "Sign in with OIDC",
   });
+  // frame-log retention is edited locally and committed on blur/Enter
+  // so we don't PATCH on every keystroke.
+  const [retentionInput, setRetentionInput] = useState("12");
+  const [maxLogSizeInput, setMaxLogSizeInput] = useState("512");
+  const [obsStatus, setObsStatus] = useState({ type: "", message: "" });
   const [oidcClientSecret, setOidcClientSecret] = useState("");
   const [oidcStatus, setOidcStatus] = useState({ type: "", message: "" });
   const [oidcLoading, setOidcLoading] = useState(false);
@@ -117,6 +122,8 @@ export default function ProfilePage() {
         ) {
           setOidcExpanded(true);
         }
+        setRetentionInput(String(data?.observabilityRetentionHours ?? 12));
+        setMaxLogSizeInput(String(data?.observabilityMaxLogSizeMb ?? 512));
         setProxyForm({
           outboundProxyEnabled: data?.outboundProxyEnabled === true,
           outboundProxyUrl: data?.outboundProxyUrl || "",
@@ -648,6 +655,71 @@ export default function ProfilePage() {
       console.error("Failed to update enableObservability:", err);
     }
   };
+
+  // raw upstream SSE frame capture — a sub-switch of the master
+  // toggle above. The server gate ANDs the two, so this is inert while observability is off.
+  const updateObservabilityFrameLogging = async (enabled) => {
+    setObsStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ observabilityFrameLogging: enabled }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, observabilityFrameLogging: enabled }));
+      } else {
+        setObsStatus({ type: "error", message: "Failed to update frame logging" });
+      }
+    } catch (err) {
+      console.error("Failed to update observabilityFrameLogging:", err);
+      setObsStatus({ type: "error", message: "Failed to update frame logging" });
+    }
+  };
+
+  // the two rolling caps on the frame logs. Neither switches capture
+  // off — they only bound how many artifacts are kept.
+  const commitObservabilityNumber = async (key, raw, { min, max, fallback, setInput, ok }) => {
+    const value = parseInt(raw, 10);
+    const reset = () => setInput(String(settings[key] ?? fallback));
+    if (!Number.isFinite(value) || value < min || value > max) {
+      setObsStatus({ type: "error", message: `Value must be between ${min} and ${max}` });
+      reset();
+      return;
+    }
+    if (value === settings[key]) return;
+    setObsStatus({ type: "", message: "" });
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      if (res.ok) {
+        setSettings(prev => ({ ...prev, [key]: value }));
+        setObsStatus({ type: "success", message: ok(value) });
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setObsStatus({ type: "error", message: data.error || "Failed to update setting" });
+        reset();
+      }
+    } catch (err) {
+      console.error(`Failed to update ${key}:`, err);
+      setObsStatus({ type: "error", message: "Failed to update setting" });
+    }
+  };
+
+  const commitRetentionHours = () => commitObservabilityNumber(
+    "observabilityRetentionHours", retentionInput,
+    { min: 1, max: 720, fallback: 12, setInput: setRetentionInput,
+      ok: (v) => `Keeping a rolling ${v}-hour window of frame logs` },
+  );
+
+  const commitMaxLogSize = () => commitObservabilityNumber(
+    "observabilityMaxLogSizeMb", maxLogSizeInput,
+    { min: 1, max: 65536, fallback: 512, setInput: setMaxLogSizeInput,
+      ok: (v) => `Frame logs will use at most ${v} MB` },
+  );
 
   const reloadSettings = async () => {
     try {
@@ -1619,6 +1691,81 @@ export default function ProfilePage() {
               disabled={loading}
             />
           </div>
+
+          {/* Raw upstream SSE frame capture + its two rolling caps.
+              Help text must describe what the control actually does — this one writes the
+              full unredacted upstream traffic to disk, which is the expensive and sensitive
+              part, and neither cap ever switches capture off. */}
+          <div className="flex items-start sm:items-center justify-between gap-4 mt-4 pt-4 border-t border-border">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Raw Frame Logging</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Writes the raw, unparsed SSE frames received from the upstream provider to
+                disk — one folder per request under <span className="font-mono">$DATA_DIR/logs/frames</span>,
+                including the full request and response bodies and their headers. This is the
+                artifact that shows the provider&apos;s terminal frame and finish reason when a
+                response arrives empty. It is high volume (hundreds of KB per large request)
+                and contains prompt content, so treat it as sensitive.
+                {" "}Capture continues until you switch it off; the two limits below only bound
+                how much is kept on disk.
+                {!observabilityEnabled && " Requires Enable Observability above."}
+              </p>
+            </div>
+            <Toggle
+              checked={settings.observabilityFrameLogging === true}
+              onChange={updateObservabilityFrameLogging}
+              disabled={loading || !observabilityEnabled}
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Frame Log Retention (hours)</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Rolling time window: you always keep the last N hours of frame logs, and older
+                folders are deleted. This does not turn frame logging off. 1–720 hours.
+              </p>
+            </div>
+            <Input
+              type="number"
+              min={1}
+              max={720}
+              value={retentionInput}
+              onChange={(e) => setRetentionInput(e.target.value)}
+              onBlur={commitRetentionHours}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              disabled={loading}
+              className="w-full sm:w-28"
+            />
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-4">
+            <div className="flex-1 min-w-0">
+              <p className="font-medium text-sm sm:text-base">Frame Log Size Limit (MB)</p>
+              <p className="text-xs sm:text-sm text-text-muted">
+                Rolling disk budget for the frame-log folder. Over budget, the oldest sessions
+                are deleted first; if the budget or free disk runs out, frame capture pauses
+                rather than filling the volume that holds the database. This does not turn
+                frame logging off either.
+              </p>
+            </div>
+            <Input
+              type="number"
+              min={1}
+              max={65536}
+              value={maxLogSizeInput}
+              onChange={(e) => setMaxLogSizeInput(e.target.value)}
+              onBlur={commitMaxLogSize}
+              onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+              disabled={loading}
+              className="w-full sm:w-28"
+            />
+          </div>
+          {obsStatus.message && (
+            <p className={`text-xs mt-2 ${obsStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+              {obsStatus.message}
+            </p>
+          )}
         </Card>
 
         {/* Account actions */}
