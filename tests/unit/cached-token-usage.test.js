@@ -1,13 +1,14 @@
 import { describe, it, expect } from "vitest";
 import { canonicalizeUsage, extractUsage, mergeUsage } from "../../open-sse/utils/usageTracking.js";
-import { calculateCostFromTokens } from "../../open-sse/providers/pricing.js";
+import { calculateCostFromTokens, MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 import { buildUsage, toOpenAIUsage } from "../../open-sse/translator/concerns/usage.js";
 
 // Canonical convention (single source of truth for storage + cost):
 //   prompt_tokens             = total input INCLUDING cache read + cache creation
 //   cached_tokens             = cache-read portion (subset of prompt_tokens)
 //   cache_creation_input_tokens = cache-write portion (subset of prompt_tokens)
-//   completion_tokens         = output
+//   completion_tokens         = output INCLUDING reasoning tokens
+//   reasoning_tokens          = reasoning portion (subset of completion_tokens)
 // Discriminator: Claude reports cache separately (prompt EXCLUDES cache);
 // OpenAI/Gemini report prompt INCLUDING cached_tokens.
 describe("canonicalizeUsage", () => {
@@ -129,6 +130,101 @@ describe("calculateCostFromTokens (canonical inclusive convention)", () => {
   it("matches plain input pricing when no cache present", () => {
     const cost = calculateCostFromTokens({ prompt_tokens: 100, completion_tokens: 50 }, pricing);
     expect(cost).toBeCloseTo((100 * 3 + 50 * 15) / 1_000_000, 12);
+  });
+
+  it("does not charge reasoning tokens twice when completion is reasoning-inclusive", () => {
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 100, completion_tokens: 80, reasoning_tokens: 30 },
+      { input: 3, output: 15, reasoning: 15 }
+    );
+    expect(cost).toBeCloseTo((100 * 3 + 80 * 15) / 1_000_000, 12);
+  });
+
+  it("uses the long-context tier after the configured threshold", () => {
+    const tieredPricing = {
+      input: 2.5,
+      output: 15,
+      cached: 0.25,
+      long_context: { threshold: 272000, input: 5, output: 22.5, cached: 0.5 },
+    };
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 300000, completion_tokens: 1000, cached_tokens: 100000 },
+      tieredPricing
+    );
+    expect(cost).toBeCloseTo((200000 * 5 + 100000 * 0.5 + 1000 * 22.5) / 1_000_000, 12);
+  });
+
+  it("supports inclusive long-context thresholds", () => {
+    const tieredPricing = {
+      input: 2,
+      output: 6,
+      long_context: { threshold: 200000, inclusive: true, input: 4, output: 12 },
+    };
+    const cost = calculateCostFromTokens(
+      { prompt_tokens: 200000, completion_tokens: 1000 },
+      tieredPricing
+    );
+    expect(cost).toBeCloseTo((200000 * 4 + 1000 * 12) / 1_000_000, 12);
+  });
+});
+
+describe("Gemini reasoning usage", () => {
+  it("keeps thinking tokens inside canonical completion tokens", () => {
+    const usage = extractUsage({
+      usageMetadata: {
+        promptTokenCount: 100,
+        candidatesTokenCount: 50,
+        thoughtsTokenCount: 30,
+        totalTokenCount: 180,
+      },
+    });
+    expect(usage.completion_tokens).toBe(80);
+    expect(usage.reasoning_tokens).toBe(30);
+  });
+});
+
+describe("current provider pricing", () => {
+  it("uses Anthropic's Claude Sonnet 5 rates", () => {
+    expect(MODEL_PRICING["claude-sonnet-5"]).toMatchObject({
+      input: 2,
+      output: 10,
+      cached: 0.2,
+      cache_creation: 2.5,
+    });
+  });
+
+  it("maps the generic GPT-5.6 alias to GPT-5.6 Sol pricing", () => {
+    expect(MODEL_PRICING["gpt-5.6"]).toMatchObject({
+      input: 4,
+      output: 20,
+      cached: 0.4,
+      long_context: {
+        threshold: 272000,
+        input: 8,
+        output: 30,
+        cached: 0.8,
+      },
+    });
+  });
+
+  it("includes GPT-5.6 Luna long-context pricing", () => {
+    expect(MODEL_PRICING["gpt-5.6-luna"].long_context).toMatchObject({
+      threshold: 272000,
+      input: 0.4,
+      output: 1.8,
+      cached: 0.04,
+      cache_creation: 0.5,
+    });
+  });
+
+  it("includes Grok 4.6 long-context pricing", () => {
+    expect(MODEL_PRICING["grok-4.6"].long_context).toMatchObject({
+      threshold: 200000,
+      inclusive: true,
+      input: 4,
+      output: 12,
+      cached: 1,
+    });
   });
 });
 
