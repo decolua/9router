@@ -495,7 +495,10 @@ let catalogSource = null;
  */
 export function setCatalogSource(source) {
   catalogSource = source;
-  if (typeof globalThis !== "undefined") globalThis.__9rCatalogSource = source;
+  if (typeof globalThis !== "undefined") {
+    if (source) globalThis.__9rCatalogSource = source;
+    else delete globalThis.__9rCatalogSource;
+  }
 }
 
 function getCatalogSource() {
