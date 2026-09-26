@@ -71,6 +71,7 @@ export async function GET() {
   const currentVersion = pkg.version;
   const hasUpdate = latestVersion ? compareVersions(latestVersion, currentVersion) > 0 : false;
   const isDocker = isRunningInDocker();
+  const hasDockerAutoUpdate = isDocker && !!process.env.DOCKER_UPDATE_TRIGGER_FILE;
 
   return Response.json({
     currentVersion,
@@ -79,6 +80,6 @@ export async function GET() {
     isDocker,
     // "docker" = run docker compose pull && up -d on the host
     // "npm" = run npm i -g 9router@latest (CLI/npm install)
-    updateMethod: isDocker ? "docker" : "npm",
+    updateMethod: hasDockerAutoUpdate ? "docker-auto" : isDocker ? "docker" : "npm",
   });
 }

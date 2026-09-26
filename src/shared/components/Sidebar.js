@@ -48,11 +48,13 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState(null);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
-  const isDockerUpdate = updateInfo?.updateMethod === "docker";
+  const isDockerUpdate = updateInfo?.updateMethod?.startsWith("docker");
+  const isAutomaticDockerUpdate = updateInfo?.updateMethod === "docker-auto";
   const installCmd = isDockerUpdate
     ? UPDATER_CONFIG.dockerInstallCmdLatest
     : UPDATER_CONFIG.installCmdLatest;
@@ -81,10 +83,33 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     setShowUpdateModal(false);
+    setUpdateError(null);
     setIsUpdating(true);
+    if (!isAutomaticDockerUpdate) return;
+
+    try {
+      const response = await fetch("/api/version/update", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to start update");
+
+      const deadline = Date.now() + 120000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        try {
+          const versionResponse = await fetch(`/api/version?t=${Date.now()}`, { cache: "no-store" });
+          const version = await versionResponse.json();
+          if (version.currentVersion === updateInfo?.latestVersion) {
+            globalThis.location.reload();
+            return;
+          }
+        } catch { /* expected while container restarts */ }
+      }
+      throw new Error("Update timed out. Reload the page to check the server.");
+    } catch (error) {
+      setUpdateError(error.message);
+    }
   };
 
   // npm installs need the app stopped; Docker Compose replaces the container itself.
@@ -374,10 +399,12 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={isDockerUpdate
+        message={isAutomaticDockerUpdate
+          ? `Download and install v${updateInfo?.latestVersion || ""} now? 9Router will restart automatically.`
+          : isDockerUpdate
           ? `Show the Docker Compose command for v${updateInfo?.latestVersion || ""}? Run it on the host from the directory containing compose.yml.`
           : `Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
+        confirmText={isAutomaticDockerUpdate ? "Update Now" : "Show Command"}
         cancelText="Cancel"
         variant="primary"
       />
@@ -386,7 +413,9 @@ export default function Sidebar({ onClose }) {
       {(isDisconnected || isUpdating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
-            <ManualUpdatePanel
+            isAutomaticDockerUpdate ? (
+              <AutomaticUpdatePanel error={updateError} onCancel={handleCancelUpdate} />
+            ) : <ManualUpdatePanel
               latestVersion={updateInfo?.latestVersion}
               installCmd={installCmd}
               isDocker={isDockerUpdate}
@@ -478,6 +507,24 @@ function ManualUpdatePanel({ latestVersion, installCmd, isDocker, copied, onCopy
     </div>
   );
 }
+
+function AutomaticUpdatePanel({ error, onCancel }) {
+  return (
+    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white text-center">
+      <span className="material-symbols-outlined text-[40px] text-amber-400 animate-spin">progress_activity</span>
+      <h2 className="text-lg font-semibold mt-3">Updating 9Router</h2>
+      <p className="text-sm text-white/60 mt-2">
+        {error || "Pulling the latest Docker image. The server will restart automatically."}
+      </p>
+      {error && <Button variant="secondary" fullWidth onClick={onCancel} className="mt-4">Close</Button>}
+    </div>
+  );
+}
+
+AutomaticUpdatePanel.propTypes = {
+  error: PropTypes.string,
+  onCancel: PropTypes.func.isRequired,
+};
 
 ManualUpdatePanel.propTypes = {
   latestVersion: PropTypes.string,
