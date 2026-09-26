@@ -1,3 +1,8 @@
+# v0.5.92 (unreleased)
+
+## Fixes
+- **Fallback**: only hand a 4xx back to the client for the request-scoped statuses (400/405/406/413/414/415/422). The "any unmatched 4xx" opt-out also caught account-scoped statuses, so a 412 — Fireworks' "account is suspended" — was returned to the caller instead of rotating to the provider's next connection.
+
 # v0.5.91 (2026-09-26)
 
 ## Features

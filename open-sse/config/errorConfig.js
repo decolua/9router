@@ -38,6 +38,16 @@ export const BACKOFF_CONFIG = {
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
 
+/**
+ * Client errors that describe the request itself rather than the credential:
+ * a malformed body, a method/media type the endpoint refuses, an oversized
+ * payload or a validation failure. Only these suppress account fallback.
+ * Every other 4xx says something about the credential or the route and must keep
+ * rotating connections — 412 is Fireworks' "account is suspended", and 409/423/428
+ * are account- or route-scoped too.
+ */
+export const REQUEST_SCOPED_STATUSES = new Set([400, 405, 406, 413, 414, 415, 422]);
+
 // Hard cap for provider-reported rate limit cooldown (e.g. codex resets_at can be 5-6h)
 export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 

@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS, REQUEST_SCOPED_STATUSES } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -53,9 +53,14 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
   // ("all 1 accounts locked for <model> | lastError=[400]: ..."), which hides the
   // real cause from the caller and makes unrelated sessions look like they hit the
   // same limit. Hand the upstream error back for this request instead.
+  // Opt in by status (REQUEST_SCOPED_STATUSES), never by "any 4xx that matched no
+  // rule": that caught account-scoped statuses too, so a 412 from a provider whose
+  // key was suspended was handed straight back to the client instead of rotating to
+  // the next connection of the same provider. An unrecognised 4xx falls through to
+  // the transient default below — the pre-rule behaviour — and still falls back.
   // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
   // text rules still win for rate-limit / quota / capacity wording.
-  if (status >= 400 && status < 500 && status !== 401 && status !== 402 && status !== 403 && status !== 429) {
+  if (REQUEST_SCOPED_STATUSES.has(status)) {
     return { shouldFallback: false, cooldownMs: 0 };
   }
 
