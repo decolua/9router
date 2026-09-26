@@ -81,6 +81,9 @@ describe("non-streaming Gemini body -> client format", () => {
     expect(out.status).toBe("completed");
     const message = out.output.find((item) => item.type === "message");
     expect(message.content[0].text).toBe("{\"title\":\"x\"}");
+    // the Responses API gives every output item an id; strict clients require it
+    expect(message.id).toMatch(/^msg_/);
+    expect(message.status).toBe("completed");
   });
 
   it("a Chat Completions client still gets a chat.completion", () => {
