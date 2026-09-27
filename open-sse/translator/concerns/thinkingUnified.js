@@ -10,7 +10,7 @@ import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel }
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
   openai: "openai",
-  "openai-responses": "openai",
+  "openai-responses": "openai-responses",
   "openai-response": "openai",
   codex: "openai",
   claude: "claude-budget",
@@ -129,6 +129,7 @@ const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-bu
 
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
+  if (targetFormat === "openai-responses") return "openai-responses";
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
@@ -251,7 +252,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, display, existingReasoning = null) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -262,6 +263,16 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       if (none && canDisable) { body.reasoning_effort = "none"; break; }
       const level = toLevel(eff);
       if (level) body.reasoning_effort = normalizeOpenAILevel(level, supportedLevels);
+      break;
+    }
+    case "openai-responses": {
+      const reasoning = existingReasoning || {};
+      if (none && canDisable) {
+        body.reasoning = { ...reasoning, effort: "none" };
+        break;
+      }
+      const level = toLevel(eff);
+      if (level) body.reasoning = { ...reasoning, effort: normalizeOpenAILevel(level, supportedLevels) };
       break;
     }
     case "claude-adaptive": {
@@ -404,7 +415,13 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // comes back at all; keep what the client asked for instead of resetting it.
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
+  const existingReasoning = targetFormat === "openai-responses"
+    && body.reasoning
+    && typeof body.reasoning === "object"
+    && !Array.isArray(body.reasoning)
+    ? { ...body.reasoning }
+    : null;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display, existingReasoning);
   return body;
 }
