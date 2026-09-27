@@ -14,6 +14,7 @@ import {
 } from "../config/grokCli.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { readToolStrict, restoreToolStrict } from "../translator/concerns/toolStrict.js";
 import { getConsistentMachineId } from "../shared/machineId.js";
 
 // Server-generated item id prefixes that /responses cannot resolve when store=false
@@ -297,11 +298,14 @@ function normalizeGrokCliTools(body) {
           ? fn.parameters
           : { type: "object", properties: {} };
 
+    // Keep the client-declared strict: omitted means strict-normalized on Responses.
+    const strict = readToolStrict(tool);
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, 128);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    restoreToolStrict(tool, strict);
     validNames.add(tool.name);
     return true;
   });
