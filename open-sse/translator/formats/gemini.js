@@ -341,6 +341,32 @@ function ensureArrayItems(obj) {
   for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
 }
 
+// Gemini's JSON Schema proto uses "properties" as the field name for sub-schemas of an object.
+// When a tool parameter itself is literally named "properties", the serialised wire value becomes
+// schema.properties["properties"] = { type: "object", ... } — the parser cannot distinguish the
+// keyword from the parameter name and rejects the whole request with 400 INVALID_ARGUMENT.
+//
+// Fix: rename any property called "properties" (case-sensitive) to "properties_" in every
+// object sub-schema, and update the parallel "required" array to match.
+// The rename is applied recursively so nested objects are also covered.
+function renamePropertiesConflict(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (obj.properties && typeof obj.properties === "object") {
+    if (Object.prototype.hasOwnProperty.call(obj.properties, "properties")) {
+      obj.properties["properties_"] = obj.properties["properties"];
+      delete obj.properties["properties"];
+      if (Array.isArray(obj.required)) {
+        const idx = obj.required.indexOf("properties");
+        if (idx !== -1) obj.required[idx] = "properties_";
+      }
+    }
+    for (const v of Object.values(obj.properties)) {
+      renamePropertiesConflict(v);
+    }
+  }
+  if (obj.items && typeof obj.items === "object") renamePropertiesConflict(obj.items);
+}
+
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
@@ -428,6 +454,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
   }
 
   addPlaceholders(cleaned);
+
+  // Phase 6: Rename any property literally named "properties" to "properties_".
+  // Must run after addPlaceholders (Phase 5) so that phase cannot re-introduce the conflict.
+  // Gemini's wire format uses "properties" as the keyword for object sub-schemas; a parameter
+  // with that exact name collides with the keyword and causes 400 INVALID_ARGUMENT.
+  // Affects real MCP servers: Notion (notion-create-pages) and Atlassian (getJiraIssue).
+  renamePropertiesConflict(cleaned);
 
   return cleaned;
 }
