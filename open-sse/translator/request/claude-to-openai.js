@@ -231,6 +231,21 @@ function convertClaudeMessage(msg) {
           }
           break;
         }
+
+        default:
+          // Block types not handled by this translator (e.g. container_upload, file).
+          // OpenAI Chat Completions has no equivalent, so we cannot forward the block.
+          // However, silently dropping the entire user message (returning null) is worse:
+          // it sends messages:[] to the provider with no indication to the caller.
+          // Instead, keep the message alive with a text notice so the turn is preserved
+          // and the provider can still respond meaningfully.
+          if (block.type) {
+            parts.push({
+              type: OPENAI_BLOCK.TEXT,
+              text: `[${block.type} block omitted: not supported on this route]`
+            });
+          }
+          break;
       }
     }
 
