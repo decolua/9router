@@ -172,6 +172,7 @@ function buildQoderModelsResolver(providerId) {
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
+  nan: createOpenAIModelsConfig("https://api.nan.builders/v1/models"),
   claude: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",

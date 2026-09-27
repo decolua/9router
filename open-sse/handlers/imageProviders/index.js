@@ -20,6 +20,7 @@ const ADAPTERS = {
   recraft: createOpenAIAdapter("recraft"),
   "vercel-ai-gateway": createOpenAIAdapter("vercel-ai-gateway"),
   xai: createOpenAIAdapter("xai"),
+  nan: createOpenAIAdapter("nan"),
   gemini,
   codex,
   sdwebui,

@@ -154,7 +154,7 @@ async function tortoise({ baseUrl, text, voiceId }) {
 }
 
 // OpenAI-compatible upstream (qwen3-tts, etc.)
-async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
+async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId, responseFormat = "mp3" }) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   const res = await fetch(baseUrl, {
@@ -164,12 +164,12 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
       model: modelId,
       input: text,
       voice: voiceId || "alloy",
-      response_format: "mp3",
+      response_format: responseFormat,
       speed: 1.0,
     }),
   });
   if (!res.ok) await throwUpstreamError(res);
-  return responseToBase64(res, "mp3");
+  return responseToBase64(res, responseFormat);
 }
 
 // format → handler dispatcher

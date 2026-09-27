@@ -27,7 +27,7 @@ import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
 
-function getStatusDisplay(connected, error, errorCode) {
+function getStatusDisplay(connected, error, errorCode, total) {
   const parts = [];
   if (connected > 0) {
     parts.push(
@@ -43,6 +43,14 @@ function getStatusDisplay(connected, error, errorCode) {
     parts.push(
       <Badge key="error" variant="error" size="sm" dot>
         {errText}
+      </Badge>,
+    );
+  }
+  const untested = total - connected - error;
+  if (untested > 0) {
+    parts.push(
+      <Badge key="untested" variant="default" size="sm" dot>
+        {untested} Untested
       </Badge>,
     );
   }
@@ -250,6 +258,8 @@ export default function ProvidersPage() {
       });
       const data = await res.json();
       setTestResults(data);
+      const refreshed = await fetch("/api/providers").catch(() => null);
+      if (refreshed?.ok) setConnections((await refreshed.json()).connections || []);
       if (data.summary) {
         const { passed, failed, total } = data.summary;
         if (failed === 0) notify.success(`All ${total} tests passed`);
@@ -694,7 +704,7 @@ export default function ProvidersPage() {
 }
 
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, total, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
   const dotColors = {
@@ -751,7 +761,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                   <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                    {getStatusDisplay(connected, error, errorCode, total)}
                     {errorTime && (
                       <span className="text-text-muted">{errorTime}</span>
                     )}
@@ -810,7 +820,7 @@ function ApiKeyProviderCard({
   authType,
   onToggle,
 }) {
-  const { connected, error, errorCode, errorTime, allDisabled } = stats;
+  const { connected, error, total, errorCode, errorTime, allDisabled } = stats;
   const isCompatible = providerId.startsWith(OPENAI_COMPATIBLE_PREFIX);
   const isAnthropicCompatible = providerId.startsWith(
     ANTHROPIC_COMPATIBLE_PREFIX,
@@ -877,7 +887,7 @@ function ApiKeyProviderCard({
                   </Badge>
                 ) : (
                   <>
-                    {getStatusDisplay(connected, error, errorCode)}
+                    {getStatusDisplay(connected, error, errorCode, total)}
                     {isCompatible && (
                       <Badge variant="default" size="sm">
                         {provider.apiType === "responses"
