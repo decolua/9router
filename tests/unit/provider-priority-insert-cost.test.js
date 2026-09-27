@@ -1,11 +1,43 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import {
-  createProviderConnection,
-  getProviderConnections,
-  deleteProviderConnection,
-  updateProviderConnection,
-} from "../../src/lib/db/index.js";
+// #4407: these cases write real connection rows. Without DATA_DIR isolation the
+// static import binds src/lib/db to the developer's own ~/.9router, and every
+// run leaves ~70 active fixture connections behind (visible in the dashboard
+// and in /v1/models). Point the DB at a temp dir BEFORE the module is loaded,
+// which means a dynamic import inside beforeAll — a static one is hoisted.
+let createProviderConnection;
+let getProviderConnections;
+let deleteProviderConnection;
+let updateProviderConnection;
+
+let tempDir;
+const originalDataDir = process.env.DATA_DIR;
+
+beforeAll(async () => {
+  tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-priority-"));
+  process.env.DATA_DIR = tempDir;
+  delete global._dbAdapter;
+  vi.resetModules();
+  ({
+    createProviderConnection,
+    getProviderConnections,
+    deleteProviderConnection,
+    updateProviderConnection,
+  } = await import("../../src/lib/db/index.js"));
+});
+
+afterAll(() => {
+  try {
+    global._dbAdapter?.instance?.close?.();
+  } catch {}
+  delete global._dbAdapter;
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
+  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+});
 
 // #4311: POST /api/providers was O(pool) per insert. Inside one transaction it
 // read the whole pool AND renumbered every row's priority, so a 5k-key import
@@ -76,13 +108,15 @@ describe("name collision no longer destroys a key silently (#4311)", () => {
   // Seeded once: these cases each mutate the SAME row, so a per-test seed
   // would make the later assertions depend on earlier ones.
   const P = `openai-compatible-clash-${Date.now()}`;
-  const original = (async () => {
-    await seed(P, 1);
-    return (await getProviderConnections({ provider: P }))[0];
-  })();
+  let originalPromise;
+  const original = () =>
+    (originalPromise ??= (async () => {
+      await seed(P, 1);
+      return (await getProviderConnections({ provider: P }))[0];
+    })());
 
   it("throws a typed conflict instead of overwriting, when overwrite is refused", async () => {
-    const orig = await original;
+    const orig = await original();
     await expect(
       createProviderConnection({
         provider: P,
@@ -99,7 +133,7 @@ describe("name collision no longer destroys a key silently (#4311)", () => {
   });
 
   it("still overwrites when the caller opts in", async () => {
-    const orig = await original;
+    const orig = await original();
     const updated = await createProviderConnection({
       provider: P,
       authType: "apikey",
@@ -115,7 +149,7 @@ describe("name collision no longer destroys a key silently (#4311)", () => {
   it("defaults to the previous overwrite behaviour for existing callers", async () => {
     // Every other call site in the repo (oauth routes, bulk import) omits the
     // flag, so they must keep working exactly as before.
-    const orig = await original;
+    const orig = await original();
     const updated = await createProviderConnection({
       provider: P,
       authType: "apikey",
@@ -126,7 +160,7 @@ describe("name collision no longer destroys a key silently (#4311)", () => {
   });
 
   it("does not collide across different providers", async () => {
-    const orig = await original;
+    const orig = await original();
     const other = await createProviderConnection({
       provider: "openai-compatible-other",
       authType: "apikey",
