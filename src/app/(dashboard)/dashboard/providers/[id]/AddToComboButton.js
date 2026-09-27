@@ -111,7 +111,7 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
         className={buttonClassName}
         title={translate("Add to a combo")}
       >
-        <span className="material-symbols-outlined text-[17px]!">add</span>
+        <span className="material-symbols-outlined text-[17px]">add</span>
       </button>
 
       {open && (
@@ -144,19 +144,19 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
                   }`}
                 >
                   <span className="flex min-w-0 items-center gap-1.5">
-                    <span className="material-symbols-outlined shrink-0 text-[14px]! text-text-muted">layers</span>
+                    <span className="material-symbols-outlined shrink-0 text-[14px] text-text-muted">layers</span>
                     <span className="truncate">{combo.name}</span>
                     {Array.isArray(combo.models) && (
                       <span className="shrink-0 text-[10px] text-text-muted/70">{combo.models.length}</span>
                     )}
                   </span>
                   {isJustAdded ? (
-                    <span className="material-symbols-outlined shrink-0 text-[15px]! text-green-500">check</span>
+                    <span className="material-symbols-outlined shrink-0 text-[15px] text-green-500">check</span>
                   ) : isBusy ? (
-                    <span className="material-symbols-outlined shrink-0 text-[15px]!" style={{ animation: "spin 1s linear infinite" }}>progress_activity</span>
+                    <span className="material-symbols-outlined shrink-0 text-[15px]" style={{ animation: "spin 1s linear infinite" }}>progress_activity</span>
                   ) : isIn ? (
                     <span className="inline-flex shrink-0 items-center gap-0.5 text-[10px] text-green-600/80 dark:text-green-400/80" title={translate("Already in this combo")}>
-                      <span className="material-symbols-outlined text-[13px]!">check_circle</span>
+                      <span className="material-symbols-outlined text-[13px]">check_circle</span>
                       {translate("Added")}
                     </span>
                   ) : null}
@@ -186,7 +186,7 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
                   disabled={!newName.trim() || busyId === "__new__"}
                   className="shrink-0 rounded p-1 text-primary hover:bg-primary/10 disabled:opacity-40"
                 >
-                  <span className="material-symbols-outlined text-[17px]!">check</span>
+                  <span className="material-symbols-outlined text-[17px]">check</span>
                 </button>
               </div>
             ) : (
@@ -195,7 +195,7 @@ export default function AddToComboButton({ fullModel, combos, comboNames = [], o
                 onClick={() => setCreating(true)}
                 className="flex w-full items-center gap-1.5 rounded-md px-1.5 py-1.5 text-left text-xs font-medium text-primary hover:bg-primary/5"
               >
-                <span className="material-symbols-outlined text-[15px]!">add</span>
+                <span className="material-symbols-outlined text-[15px]">add</span>
                 {translate("New combo…")}
               </button>
             )}

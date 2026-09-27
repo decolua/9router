@@ -243,11 +243,11 @@ export default function QuotaTable({
                 <button
                   type="button"
                   onClick={() => onHideQuota(quota)}
-                  className="order-3 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors sm:order-4 hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
+                  className="order-3 inline-flex h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors sm:order-4 hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
                   title="Hide this quota row"
                   aria-label={`Hide quota ${quota.name}`}
                 >
-                  <span className="material-symbols-outlined text-[15px]">
+                  <span className="material-symbols-outlined text-[15px] pointer-coarse:text-[18px]">
                     visibility_off
                   </span>
                 </button>

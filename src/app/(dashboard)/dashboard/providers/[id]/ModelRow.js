@@ -32,7 +32,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           />
         )}
         <span
-          className="material-symbols-outlined shrink-0 text-[18px]! text-text-muted"
+          className="material-symbols-outlined shrink-0 text-[18px] text-text-muted"
           style={iconColor ? { color: iconColor } : undefined}
         >
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
@@ -52,7 +52,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             {model.name && <span className="max-w-full truncate text-[11px] text-text-muted">{model.name}</span>}
             {comboNames.length > 0 && (
               <span className={`${MODEL_CHIP_CLASS} max-w-full border-primary/25 bg-primary/10 text-primary`} title={`Used in: ${comboNames.join(", ")}`}>
-                <span className="material-symbols-outlined text-[12px]!">layers</span>
+                <span className="material-symbols-outlined text-[12px]">layers</span>
                 <span className="truncate">{comboNames.slice(0, 2).join(", ")}{comboNames.length > 2 ? ` +${comboNames.length - 2}` : ""}</span>
               </span>
             )}
@@ -81,7 +81,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
               disabled={isTesting}
               className={`rounded p-0.5 text-text-muted transition-opacity hover:bg-sidebar hover:text-primary ${isTesting ? "opacity-100" : "opacity-100 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"}`}
             >
-              <span className="material-symbols-outlined text-[17px]!" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+              <span className="material-symbols-outlined text-[17px]" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                 {isTesting ? "progress_activity" : "science"}
               </span>
             </button>
@@ -95,7 +95,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             onClick={() => onCopy(displayModel, `model-${model.id}`)}
             className="rounded p-0.5 text-text-muted hover:bg-sidebar hover:text-primary"
           >
-            <span className="material-symbols-outlined text-[17px]!">
+            <span className="material-symbols-outlined text-[17px]">
               {copied === `model-${model.id}` ? "check" : "content_copy"}
             </span>
           </button>
@@ -109,7 +109,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
             title="Remove custom model"
           >
-            <span className="material-symbols-outlined text-[17px]!">close</span>
+            <span className="material-symbols-outlined text-[17px]">close</span>
           </button>
         ) : onDisable ? (
           <button
@@ -117,7 +117,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
             className="ml-auto rounded p-0.5 text-text-muted opacity-100 transition-opacity hover:bg-red-500/10 hover:text-red-500 pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
             title="Disable this model"
           >
-            <span className="material-symbols-outlined text-[17px]!">close</span>
+            <span className="material-symbols-outlined text-[17px]">close</span>
           </button>
         ) : null}
         </div>

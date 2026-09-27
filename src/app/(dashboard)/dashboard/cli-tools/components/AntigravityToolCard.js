@@ -356,7 +356,7 @@ export default function AntigravityToolCard({
                         className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
                         title="Clear"
                       >
-                        <span className="material-symbols-outlined text-[14px]">close</span>
+                        <span className="material-symbols-outlined text-[14px] pointer-coarse:text-[18px]">close</span>
                       </button>
                     )}
                   </div>

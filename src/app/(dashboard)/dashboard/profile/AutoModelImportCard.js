@@ -149,7 +149,7 @@ export default function AutoModelImportCard() {
     <Card>
       <div className="flex items-center gap-3 mb-4">
         <div className="size-10 rounded-lg bg-purple-500/10 text-purple-500 flex items-center justify-center shrink-0">
-          <span className="material-symbols-outlined text-[20px]!">
+          <span className="material-symbols-outlined text-[20px]">
             schedule
           </span>
         </div>
@@ -272,12 +272,12 @@ export default function AutoModelImportCard() {
                         )}
                         {rule?.testFirst && (
                           <span className="inline-flex items-center gap-0.5 rounded-md bg-green-500/10 px-1.5 py-0.5 text-[11px] text-green-700 dark:text-green-400">
-                            <span className="material-symbols-outlined text-[12px]!">science</span>
+                            <span className="material-symbols-outlined text-[12px]">science</span>
                             <span>Tests before import</span>
                           </span>
                         )}
                       </div>
-                      <span className="material-symbols-outlined shrink-0 text-[18px]! text-text-muted">chevron_right</span>
+                      <span className="material-symbols-outlined shrink-0 text-[18px] text-text-muted">chevron_right</span>
                     </div>
                   </Link>
                 );

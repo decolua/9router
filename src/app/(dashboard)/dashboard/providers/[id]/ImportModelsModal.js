@@ -441,7 +441,7 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
                 className="inline-flex items-center gap-1 text-xs font-medium text-text-muted hover:text-primary sm:hidden"
                 aria-expanded={showIdFilters || Boolean(filters.include || filters.exclude)}
               >
-                <span className="material-symbols-outlined text-[16px]!">tune</span>
+                <span className="material-symbols-outlined text-[16px]">tune</span>
                 {translate("Id filters")}
                 {(filters.include || filters.exclude) && <span className="size-1.5 rounded-full bg-primary" />}
               </button>
@@ -526,13 +526,13 @@ export default function ImportModelsModal({ isOpen, onClose, providerId, onImpor
                   </Badge>
                   {contextLabel && (
                     <span className={`${MODEL_CHIP_CLASS} border-border bg-black/[0.03] font-mono tabular-nums text-text-muted dark:bg-white/[0.04]`} title={`${translate("Context window")}: ${Number(c.contextLength).toLocaleString()} tokens`}>
-                      <span className="material-symbols-outlined text-[12px]!">memory</span>
+                      <span className="material-symbols-outlined text-[12px]">memory</span>
                       {contextLabel}
                     </span>
                   )}
                   {c.reasoning === true && (
                     <span className={`${MODEL_CHIP_CLASS} border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300`}>
-                      <span className="material-symbols-outlined text-[12px]!">neurology</span>
+                      <span className="material-symbols-outlined text-[12px]">neurology</span>
                       {translate("Reasoning")}
                     </span>
                   )}

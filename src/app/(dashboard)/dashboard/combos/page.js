@@ -884,7 +884,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                         }`}
                         title="Move up"
                       >
-                        <span className="material-symbols-outlined text-[16px] leading-none">arrow_upward</span>
+                        <span className="material-symbols-outlined text-[16px] pointer-coarse:text-[20px] leading-none">arrow_upward</span>
                       </button>
                       <button
                         type="button"
@@ -897,7 +897,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                         }`}
                         title="Move down"
                       >
-                        <span className="material-symbols-outlined text-[16px] leading-none">arrow_downward</span>
+                        <span className="material-symbols-outlined text-[16px] pointer-coarse:text-[20px] leading-none">arrow_downward</span>
                       </button>
                     </div>
                   </td>
@@ -913,7 +913,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                       }`}
                       title="Remove model"
                     >
-                      <span className="material-symbols-outlined text-[16px] leading-none">close</span>
+                      <span className="material-symbols-outlined text-[16px] pointer-coarse:text-[20px] leading-none">close</span>
                     </button>
                   </td>
                 </tr>

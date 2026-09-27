@@ -23,8 +23,7 @@ function sourceLabel(source) {
 // is responsible for not also rendering the reasoning capability badge
 // elsewhere on the same row (see CapacityBadges usage in ModelRow).
 // One shape for every chip on a model row (context, reasoning, combos) so
-// they line up; icon sizes need `!` because the global Material Symbols rule
-// (globals.css) otherwise pins every icon at 24px.
+// they line up.
 export const MODEL_CHIP_CLASS = "inline-flex h-[18px] items-center gap-1 rounded-md border px-1.5 text-[10px] font-medium leading-none";
 
 // Small pills next to a model's name: its measured context window and whether
@@ -52,7 +51,7 @@ export default function ModelMetaChips({ caps, className = "" }) {
                 : "border-border bg-black/[0.03] text-text-muted dark:bg-white/[0.04]"
             }`}
           >
-            <span className="material-symbols-outlined text-[12px]!">memory</span>
+            <span className="material-symbols-outlined text-[12px]">memory</span>
             {estimated ? `~${contextLabel}` : contextLabel}
           </span>
         </Tooltip>
@@ -60,7 +59,7 @@ export default function ModelMetaChips({ caps, className = "" }) {
       {showReasoning && (
         <Tooltip text={`${translate("Reasoning")} · ${sourceLabel(reasoningSource)}`}>
           <span className={`${MODEL_CHIP_CLASS} cursor-help border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300`}>
-            <span className="material-symbols-outlined text-[12px]!">neurology</span>
+            <span className="material-symbols-outlined text-[12px]">neurology</span>
             {translate("Reasoning")}
           </span>
         </Tooltip>

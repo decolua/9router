@@ -86,7 +86,7 @@ export default function DetectMetaButton({ providerId, modelId, buttonClassName 
           className={buttonClassName}
         >
           <span
-            className="material-symbols-outlined text-[17px]!"
+            className="material-symbols-outlined text-[17px]"
             style={status === "running" ? { animation: "spin 1s linear infinite" } : undefined}
           >
             {status === "running" ? "progress_activity" : "troubleshoot"}
