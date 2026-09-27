@@ -82,6 +82,7 @@ export async function GET(request) {
     const provider = searchParams.get("provider") || "all";
     const accountStatus = searchParams.get("accountStatus") || "all";
     const sort = searchParams.get("sort") || "priority";
+    const returnAll = searchParams.get("all") === "true" || searchParams.get("all") === "1";
     const page = parsePositiveInt(searchParams.get("page"), 1);
     const pageSize = Math.min(parsePositiveInt(searchParams.get("pageSize"), DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE);
 
@@ -101,17 +102,33 @@ export async function GET(request) {
 
     const sortedConnections = sortConnections(accountFilteredConnections, sort);
     const total = sortedConnections.length;
-    const totalPages = Math.max(1, Math.ceil(total / pageSize));
-    const currentPage = Math.min(page, totalPages);
-    const offset = (currentPage - 1) * pageSize;
-    const pageConnections = sortedConnections.slice(offset, offset + pageSize).map(sanitize);
+    let pageConnections;
+    let currentPage = 1;
+    let totalPages = 1;
+
+    if (returnAll) {
+      pageConnections = sortedConnections.map(sanitize);
+      currentPage = 1;
+      totalPages = 1;
+    } else {
+      totalPages = Math.max(1, Math.ceil(total / pageSize));
+      currentPage = Math.min(page, totalPages);
+      const offset = (currentPage - 1) * pageSize;
+      pageConnections = sortedConnections.slice(offset, offset + pageSize).map(sanitize);
+    }
+
+    const providerCounts = {};
+    for (const conn of eligibleConnections) {
+      providerCounts[conn.provider] = (providerCounts[conn.provider] || 0) + 1;
+    }
 
     return NextResponse.json({
       connections: pageConnections,
       providerOptions,
+      providerCounts,
       pagination: {
         page: currentPage,
-        pageSize,
+        pageSize: returnAll ? total : pageSize,
         total,
         totalPages,
       },

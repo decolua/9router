@@ -783,3 +783,229 @@ export function parseQuotaData(provider, data) {
 
   return normalizedQuotas;
 }
+
+/**
+ * Format reset time display (Today, 12:00 PM)
+ */
+export function formatResetTimeDisplay(resetTime) {
+  if (!resetTime) return null;
+
+  try {
+    const date = new Date(resetTime);
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    let dayStr = "";
+    if (date >= today && date < tomorrow) {
+      dayStr = "Today";
+    } else if (date >= tomorrow && date < new Date(tomorrow.getTime() + 24 * 60 * 60 * 1000)) {
+      dayStr = "Tomorrow";
+    } else {
+      dayStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+
+    const timeStr = date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+
+    return `${dayStr}, ${timeStr}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Identify failed accounts for a provider based on errors and soft error messages
+ */
+export function getProviderFailedAccounts(connections = [], quotaData = {}, errors = {}) {
+  const failed = [];
+  for (const conn of connections) {
+    const errorMsg = errors[conn.id];
+    const quotaEntry = quotaData[conn.id];
+    const quotaMsg = quotaEntry?.message;
+    const hasQuotas = Array.isArray(quotaEntry?.quotas) && quotaEntry.quotas.length > 0;
+
+    if (errorMsg || (quotaMsg && !hasQuotas)) {
+      failed.push({
+        connectionId: conn.id,
+        connection: conn,
+        accountLabel: getConnectionLabel(conn) || conn.email || conn.name || conn.id,
+        error: errorMsg || quotaMsg || "Failed to fetch quota",
+      });
+    }
+  }
+  return failed;
+}
+
+/**
+ * Group connections by provider
+ */
+export function groupConnectionsByProvider(connections = []) {
+  const map = new Map();
+  for (const conn of connections) {
+    const provider = conn.provider || "unknown";
+    if (!map.has(provider)) {
+      map.set(provider, {
+        provider,
+        connections: [],
+        totalAccounts: 0,
+        activeAccounts: 0,
+        inactiveAccounts: 0,
+      });
+    }
+    const group = map.get(provider);
+    group.connections.push(conn);
+    group.totalAccounts += 1;
+    if (conn.isActive ?? true) {
+      group.activeAccounts += 1;
+    } else {
+      group.inactiveAccounts += 1;
+    }
+  }
+  return Array.from(map.values());
+}
+
+/**
+ * Calculate conservative quota summaries across all accounts for a provider
+ */
+export function calculateProviderGroupSummary(
+  provider,
+  connections = [],
+  quotaData = {},
+  errors = {},
+  loading = {},
+  quotaVisibility = {},
+) {
+  const totalAccounts = connections.length;
+  let loadingCount = 0;
+  let checkedAccountsCount = 0;
+
+  const failedAccounts = getProviderFailedAccounts(connections, quotaData, errors);
+  const failedSet = new Set(failedAccounts.map((f) => f.connectionId));
+
+  const bucketsMap = new Map();
+
+  for (const conn of connections) {
+    if (loading[conn.id]) {
+      loadingCount += 1;
+    }
+
+    const quotaEntry = quotaData[conn.id];
+    const rawQuotas = quotaEntry?.quotas;
+
+    if (Array.isArray(rawQuotas) && rawQuotas.length > 0 && !failedSet.has(conn.id)) {
+      checkedAccountsCount += 1;
+      const visibleQuotas = filterQuotasByVisibility(provider, rawQuotas, quotaVisibility);
+
+      for (const q of visibleQuotas) {
+        const bucketKey = getQuotaVisibilityKey(q) || q.name;
+        if (!bucketsMap.has(bucketKey)) {
+          bucketsMap.set(bucketKey, {
+            bucketKey,
+            name: q.name,
+            modelKey: q.modelKey,
+            quotas: [],
+            unlimited: q.unlimited === true,
+            isCreditBalance: q.isCreditBalance === true,
+            currency: q.currency,
+            recurring: q.recurring !== false,
+          });
+        }
+        const bucket = bucketsMap.get(bucketKey);
+        const rem = getRemainingPercentage(q);
+        const resetTime = q.resetAt ? new Date(q.resetAt).getTime() : null;
+
+        bucket.quotas.push({
+          connectionId: conn.id,
+          accountLabel: getConnectionLabel(conn) || conn.id,
+          remaining: rem,
+          resetAt: q.resetAt,
+          resetTime: Number.isFinite(resetTime) ? resetTime : null,
+          unlimited: q.unlimited === true,
+          recurring: q.recurring !== false,
+          used: q.used,
+          total: q.total,
+        });
+
+        bucket.unlimited = bucket.unlimited && q.unlimited === true;
+        bucket.isCreditBalance = bucket.isCreditBalance && q.isCreditBalance === true;
+        bucket.recurring = bucket.recurring && q.recurring !== false;
+      }
+    }
+  }
+
+  const buckets = Array.from(bucketsMap.values()).map((b) => {
+    const now = Date.now();
+    const usableQuotas = b.quotas.filter((q) =>
+      (q.unlimited || (Number.isFinite(q.remaining) && q.remaining > 0)) &&
+      (q.recurring || q.resetTime === null || q.resetTime > now)
+    );
+    const usableAccounts = usableQuotas.length;
+    const exhaustedAccounts = b.quotas.length - usableAccounts;
+    // Only available accounts contribute to the displayed percentage. A zero
+    // on one account must not hide the capacity of the other accounts.
+    const availablePercent = usableAccounts > 0
+      ? Math.round(usableQuotas.reduce((sum, q) => sum + (q.unlimited ? 100 : q.remaining), 0) / usableAccounts)
+      : 0;
+
+    const upcomingResets = usableQuotas
+      .map((q) => q.resetTime)
+      .filter((t) => t !== null && Number.isFinite(t) && t > now);
+    const nextUsableResetAt = upcomingResets.length > 0
+      ? new Date(Math.min(...upcomingResets)).toISOString()
+      : null;
+
+    const firstQuota = b.quotas[0] || null;
+
+    return {
+      bucketKey: b.bucketKey,
+      name: b.name,
+      modelKey: b.modelKey,
+      checkedAccounts: b.quotas.length,
+      totalAccounts,
+      usableAccounts,
+      exhaustedAccounts,
+      availablePercent,
+      nextUsableResetAt,
+      unlimited: b.unlimited,
+      isCreditBalance: b.isCreditBalance,
+      currency: b.currency,
+      recurring: b.recurring,
+      used: firstQuota ? firstQuota.used : undefined,
+      total: firstQuota ? firstQuota.total : undefined,
+    };
+  });
+
+  const allUniqueRawQuotas = [];
+  const seenRawKeys = new Set();
+  for (const conn of connections) {
+    const raw = quotaData[conn.id]?.quotas;
+    if (Array.isArray(raw)) {
+      for (const q of raw) {
+        const key = getQuotaVisibilityKey(q);
+        if (key && !seenRawKeys.has(key)) {
+          seenRawKeys.add(key);
+          allUniqueRawQuotas.push(q);
+        }
+      }
+    }
+  }
+  const hiddenRows = getHiddenQuotaRows(provider, allUniqueRawQuotas, quotaVisibility);
+
+  return {
+    provider,
+    totalAccounts,
+    loadingCount,
+    checkedAccountsCount,
+    failedAccounts,
+    errorCount: failedAccounts.length,
+    buckets,
+    hiddenRows,
+    isFullyLoaded: loadingCount === 0 && totalAccounts > 0,
+    hasAnyQuota: buckets.length > 0,
+  };
+}
