@@ -69,6 +69,22 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(body.tool_choice).toBe("none");
   });
 
+  it.each(["gpt-6-sol", "gpt-6-luna"])("registers auto-injected hosted search on %s", async (model) => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    await new CodexExecutor().execute({
+      model,
+      body: { model, input: "Search the web", _autoCodexWebSearch: true },
+      stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([{ type: "web_search" }]);
+    expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
+  });
+
   it("moves hosted search out of a native Lite prefix", async () => {
     const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
       ok: true, status: 200, headers: new Map(),
