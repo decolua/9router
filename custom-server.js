@@ -76,6 +76,16 @@ http.createServer = (...args) => {
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });
+  // Registering a listener is the point of this, not what it does: Node only
+  // emits "upgrade" when one exists (_http_server.js checks listenerCount
+  // first) and otherwise closes the socket, so without this the emit override
+  // below — and with it the h2c downgrade — never runs at all on a server
+  // where nothing else listens for upgrades.
+  server.on("upgrade", (req, socket) => {
+    // Only upgrades nobody handled reach this. Preserve Node's default for
+    // them, without stealing sockets from a listener that may want them.
+    if (server.listenerCount("upgrade") === 1) socket.destroy();
+  });
   const origEmit = server.emit;
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
   server.emit = function (event, ...eventArgs) {

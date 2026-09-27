@@ -9,6 +9,7 @@
     "test:watch": "vitest --reporter=verbose"
   },
   "devDependencies": {
+    "playwright-core": "^1.63.0",
     "vitest": "^4.0.0"
   },
   "engines": {

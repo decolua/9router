@@ -369,8 +369,12 @@ export async function buildModelsList(kindFilter, options = {}) {
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
+  const hasScheduleOnlyClaudeCliAccount = connections.some((connection) =>
+    connection.provider === "claude-cli" && connection.providerSpecificData?.scheduleOnly === true,
+  );
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
+    if (conn.provider === "claude-cli" && conn.providerSpecificData?.scheduleOnly === true) continue;
     if (!activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
     }
@@ -378,7 +382,8 @@ export async function buildModelsList(kindFilter, options = {}) {
 
   // Include no-auth free providers (e.g. opencode) so their models are exposed in /v1/models
   for (const [id, provider] of Object.entries(FREE_PROVIDERS || {})) {
-    if (provider?.noAuth && !activeConnectionByProvider.has(id)) {
+    if (provider?.noAuth && !activeConnectionByProvider.has(id)
+      && !(id === "claude-cli" && hasScheduleOnlyClaudeCliAccount)) {
       activeConnectionByProvider.set(id, {
         id: "noauth",
         provider: id,

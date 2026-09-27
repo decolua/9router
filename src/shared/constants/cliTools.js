@@ -432,6 +432,34 @@ amp --model "{{model}}"
       },
     ],
   },
+  "claude-cli": {
+    id: "claude-cli",
+    name: "Claude Code CLI (-p)",
+    image: "/providers/claude-cli.png",
+    color: "#D97757",
+    description: "Local `claude -p` binary driven by the Claude Code CLI provider — no OAuth token replay",
+    configType: "guide",
+    installUrl: "https://claude.com/claude-code",
+    defaultCommand: "claude",
+    notes: [
+      { type: "info", text: "This is a local dependency, not a routed CLI. The Claude Code CLI provider spawns `claude -p` with tools, host settings and MCP disabled, and streams the reply back as OpenAI chunks." },
+      { type: "info", text: "Traffic looks like an ordinary Claude Code session, which is the point: the plain `claude` provider replays an OAuth token from this server and carries a ban risk." },
+      { type: "warning", text: "Install Claude Code and sign in once (`claude` then /login). Tool calling is not supported on this provider." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Claude Code", desc: "Install the CLI from claude.com/claude-code.", docsUrl: "https://claude.com/claude-code" },
+      { step: 2, title: "Sign in once", desc: "Run `claude` and complete /login so the binary stores its own credentials." },
+      { step: 3, title: "Use the provider", desc: "Pick any Claude Code CLI model under the Providers tab — no API key field needed." },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `# Verify the binary 9Router will spawn
+claude --version
+
+# Pin a custom path if it lives somewhere unusual
+# CLI_CLAUDE_BIN=/path/to/claude`,
+    },
+  },
   devin: {
     id: "devin",
     name: "Devin CLI",
