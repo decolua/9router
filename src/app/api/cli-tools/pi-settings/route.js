@@ -126,28 +126,70 @@ export async function POST(request) {
     if (!existing.providers) existing.providers = {};
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    let modelList = [];
-    if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
-      modelList = rawBody.models.map((m) => {
-        if (typeof m === "string") {
-          return { id: m, name: m, contextWindow: 128000, maxTokens: 16384 };
-        }
-        return {
-          id: m.id || "provider/model-id",
-          name: m.name || m.id || "provider/model-id",
-          contextWindow: m.contextWindow || 128000,
-          maxTokens: m.maxTokens || 16384,
-        };
-      });
-    } else {
-      const modelId = model || "provider/model-id";
-      modelList = [{ id: modelId, name: modelId, contextWindow: 128000, maxTokens: 16384 }];
+
+    // Existing provider block (may have hand-tuned model metadata we must not erase).
+    const existingProvider = existing.providers["9router"] || {};
+    // Build a map of existing models keyed by id for O(1) merge.
+    const existingModelsMap = {};
+    for (const em of existingProvider.models || []) {
+      if (em?.id) existingModelsMap[em.id] = em;
     }
 
+    // Normalize an incoming model entry to a Pi model object.
+    // Handles both plain strings and objects from GenericCliToolCard.
+    // Also normalises snake_case keys (context_window, max_tokens) sent by
+    // one frontend branch (GenericCliToolCard.js L291) to camelCase (#4268).
+    const DEFAULT_CONTEXT = 128000;
+    const DEFAULT_MAX_TOKENS = 16384;
+    function normalizeModel(m) {
+      if (typeof m === "string") {
+        // Plain id string — check if we already have richer metadata saved.
+        const existing = existingModelsMap[m];
+        return {
+          ...(existing || {}),
+          id: m,
+          name: (existing?.name) || m,
+          contextWindow: existing?.contextWindow || DEFAULT_CONTEXT,
+          maxTokens: existing?.maxTokens || DEFAULT_MAX_TOKENS,
+        };
+      }
+      const id = m.id || "provider/model-id";
+      const prev = existingModelsMap[id] || {};
+      // Accept both camelCase and snake_case from the frontend (#4268).
+      const contextWindow = m.contextWindow || m.context_window || prev.contextWindow || DEFAULT_CONTEXT;
+      const maxTokens = m.maxTokens || m.max_tokens || prev.maxTokens || DEFAULT_MAX_TOKENS;
+      return {
+        ...prev,
+        id,
+        name: m.name || m.id || prev.name || id,
+        contextWindow,
+        maxTokens,
+      };
+    }
+
+    let newModels = [];
+    if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
+      newModels = rawBody.models.map(normalizeModel);
+    } else {
+      const modelId = model || "provider/model-id";
+      newModels = [normalizeModel(modelId)];
+    }
+
+    // Merge: keep existing models not in the new selection, then add/update
+    // the ones the user just selected. This way hand-tuned metadata for
+    // models not touched by this save is never erased (#4268).
+    const newModelIds = new Set(newModels.map((m) => m.id));
+    const keptModels = (existingProvider.models || []).filter(
+      (m) => m?.id && !newModelIds.has(m.id)
+    );
+    const modelList = [...keptModels, ...newModels];
+
+    // Merge into the existing provider block rather than replacing it wholesale.
     existing.providers["9router"] = {
+      ...existingProvider,
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_9router",
-      api: "openai-completions",
+      apiKey: apiKey || existingProvider.apiKey || "sk_9router",
+      api: existingProvider.api || "openai-completions",
       models: modelList,
     };
 
