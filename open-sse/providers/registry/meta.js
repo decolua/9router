@@ -36,8 +36,15 @@ export default {
     { id: "muse-spark-1.3", name: "Muse Spark 1.3", targetFormat: "openai-responses" },
     { id: "muse-spark-1.2", name: "Muse Spark 1.2", targetFormat: "openai-responses" },
     { id: "muse-spark-1.1", name: "Muse Spark 1.1", targetFormat: "openai-responses" },
+    // Muse Image — OpenAI-compatible image generation/editing on the same
+    // base URL and MODEL_API_KEY as Muse Spark (base64 or signed-URL output).
+    { id: "muse-image-1.0", name: "Muse Image 1.0", params: ["n", "size", "response_format"], capabilities: ["edit"], kind: "image" },
   ],
-  serviceKinds: ["llm"],
+  serviceKinds: ["llm", "image"],
+  imageConfig: {
+    baseUrl: "https://api.meta.ai/v1/images/generations",
+    editsUrl: "https://api.meta.ai/v1/images/edits",
+  },
   modelsFetcher: { url: "https://api.meta.ai/v1/models", type: "openai" },
   passthroughModels: true,
 };

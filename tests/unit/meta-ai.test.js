@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, afterEach } from "vitest";
 
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { PROVIDERS } from "../../open-sse/config/providers.js";
-import { getModelTargetFormat } from "../../open-sse/config/providerModels.js";
+import { getModelTargetFormat, getModelType } from "../../open-sse/config/providerModels.js";
+import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../open-sse/providers/index.js";
+import { getImageAdapter } from "../../open-sse/handlers/imageProviders/index.js";
+import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { MetaExecutor, parseMetaSuffix } from "../../open-sse/executors/meta.js";
 import "../translator/registerAll.js";
@@ -162,5 +165,135 @@ describe("meta model-id reasoning suffix", () => {
     expect(out.max_output_tokens).toBe(2048);
     expect(out.max_tokens).toBeUndefined();
     expect(out.instructions).toBeDefined();
+  });
+});
+
+describe("meta image (Muse Image)", () => {
+  it("registers Muse Image in the image media providers section", () => {
+    expect(PROVIDER_MEDIA.meta.serviceKinds).toContain("llm");
+    expect(PROVIDER_MEDIA.meta.serviceKinds).toContain("image");
+    expect(PROVIDER_MEDIA.meta.imageConfig.baseUrl).toBe("https://api.meta.ai/v1/images/generations");
+    expect(PROVIDER_MEDIA.meta.imageConfig.editsUrl).toBe("https://api.meta.ai/v1/images/edits");
+
+    const model = PROVIDER_MODELS.meta.find((m) => m.id === "muse-image-1.0");
+    expect(model).toBeTruthy();
+    expect(model.kind).toBe("image");
+    expect(model.capabilities).toContain("edit");
+    expect(getModelType("meta", "muse-image-1.0")).toBe("image");
+  });
+
+  it("keeps Muse Image off the Responses API and out of the reasoning picker", () => {
+    expect(getModelTargetFormat("meta", "muse-image-1.0")).toBeNull();
+
+    const caps = getCapabilitiesForModel("meta", "muse-image-1.0");
+    expect(caps.imageOutput).toBe(true);
+    expect(caps.reasoning).toBeFalsy();
+    expect(getThinkingLevels("meta", "muse-image-1.0")).toBeNull();
+  });
+
+  it("resolves a dedicated image adapter for the meta provider", () => {
+    const adapter = getImageAdapter("meta");
+    expect(adapter).toBeTruthy();
+    expect(typeof adapter.buildBody).toBe("function");
+  });
+
+  it("builds an OpenAI-compatible generation request", async () => {
+    const adapter = getImageAdapter("meta");
+    const body = { prompt: "A red fox", n: 2, size: "1024x1024", response_format: "b64_json" };
+
+    expect(adapter.buildUrl("muse-image-1.0", { apiKey: "k" }, body)).toBe("https://api.meta.ai/v1/images/generations");
+    const built = await adapter.buildBody("muse-image-1.0", body);
+    expect(built).toEqual({ model: "muse-image-1.0", prompt: "A red fox", n: 2, size: "1024x1024", response_format: "b64_json" });
+
+    const headers = adapter.buildHeaders({ apiKey: "k" }, built, "muse-image-1.0", body);
+    expect(headers).toEqual({ "Content-Type": "application/json", Authorization: "Bearer k" });
+  });
+
+  it("switches to the edits endpoint and sends multipart when a reference image is present", async () => {
+    const adapter = getImageAdapter("meta");
+    const dataUrl = `data:image/png;base64,${Buffer.from("fake-png").toString("base64")}`;
+    const body = { prompt: "Make it blue", image: dataUrl, n: 1 };
+
+    expect(adapter.buildUrl("muse-image-1.0", { apiKey: "k" }, body)).toBe("https://api.meta.ai/v1/images/edits");
+    const form = await adapter.buildBody("muse-image-1.0", body);
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("model")).toBe("muse-image-1.0");
+    expect(form.get("prompt")).toBe("Make it blue");
+    expect(form.get("image")).toBeTruthy();
+
+    // Content-Type must be omitted so fetch can set the multipart boundary.
+    const headers = adapter.buildHeaders({ apiKey: "k" }, form, "muse-image-1.0", body);
+    expect(headers["Content-Type"]).toBeUndefined();
+    expect(headers.Authorization).toBe("Bearer k");
+  });
+
+  it("passes an OpenAI-shaped response through unchanged", () => {
+    const adapter = getImageAdapter("meta");
+    const shaped = { created: 123, data: [{ url: "https://example.com/muse.png" }] };
+    expect(adapter.normalize(shaped, "p")).toBe(shaped);
+
+    const normalized = adapter.normalize({ data: [{ b64_json: "abc" }] }, "p");
+    expect(normalized.data).toEqual([{ b64_json: "abc" }]);
+    expect(typeof normalized.created).toBe("number");
+  });
+});
+
+describe("meta image generation (core)", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.restoreAllMocks();
+  });
+
+  it("generates an image through the meta provider", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ created: 1, data: [{ b64_json: "aW1n" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A cat", size: "1024x1024" },
+      modelInfo: { provider: "meta", model: "muse-image-1.0" },
+      credentials: { apiKey: "test-key" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://api.meta.ai/v1/images/generations",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({ Authorization: "Bearer test-key" }),
+        body: expect.stringContaining('"model":"muse-image-1.0"'),
+      })
+    );
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("aW1n");
+  });
+
+  it("edits an image through the meta edits endpoint", async () => {
+    global.fetch = vi.fn().mockResolvedValueOnce(
+      new Response(JSON.stringify({ created: 1, data: [{ url: "https://example.com/edited.png" }] }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "Add a hat", image: `data:image/png;base64,${Buffer.from("x").toString("base64")}` },
+      modelInfo: { provider: "meta", model: "muse-image-1.0" },
+      credentials: { apiKey: "test-key" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const [url, init] = global.fetch.mock.calls[0];
+    expect(url).toBe("https://api.meta.ai/v1/images/edits");
+    expect(init.body).toBeInstanceOf(FormData);
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].url).toBe("https://example.com/edited.png");
   });
 });
