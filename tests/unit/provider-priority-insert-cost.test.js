@@ -1,11 +1,29 @@
-import { describe, expect, it } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { afterAll, describe, expect, it } from "vitest";
 
-import {
+// DATA_DIR is read once at module load, so point it at a temp dir BEFORE the
+// DB module is imported — a static import would seed the real ~/.9router.
+const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "9router-priority-"));
+const originalDataDir = process.env.DATA_DIR;
+process.env.DATA_DIR = tempDir;
+delete global._dbAdapter;
+
+const {
   createProviderConnection,
   getProviderConnections,
   deleteProviderConnection,
   updateProviderConnection,
-} from "../../src/lib/db/index.js";
+} = await import("../../src/lib/db/index.js");
+
+afterAll(() => {
+  try { global._dbAdapter?.instance?.close?.(); } catch {}
+  delete global._dbAdapter;
+  fs.rmSync(tempDir, { recursive: true, force: true });
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
+});
 
 // #4311: POST /api/providers was O(pool) per insert. Inside one transaction it
 // read the whole pool AND renumbered every row's priority, so a 5k-key import
@@ -13,7 +31,7 @@ import {
 // serialized on the same transaction. On top of that, an apikey name collision
 // silently overwrote the stored key with no 409.
 //
-// The test DB persists across tests in a file, so each case uses its own
+// The temp DB is shared by every case in this file, so each case uses its own
 // provider alias; priorities are per-provider.
 
 async function seed(provider, n) {
@@ -59,8 +77,8 @@ describe("provider insert is O(1) in pool size (#4311)", () => {
   });
 
   it("still renumbers on an explicit priority update", async () => {
-    // Unique alias per run: the DB persists across runs, so a fixed alias
-    // would accumulate rows and make this assertion depend on test order.
+    // Unique alias: a fixed one shared with another case would accumulate
+    // rows and make this assertion depend on test order.
     const P = `openai-compatible-upd-${Date.now()}`;
     await seed(P, 4);
     await new Promise((r) => setTimeout(r, 10));
