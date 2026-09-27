@@ -6,6 +6,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { resolveCliApiKeyForWrite } from "@/lib/cliApiKey";
 
 const execAsync = promisify(exec);
 
@@ -51,10 +52,9 @@ const has9RouterInYml = (content) => {
 // Build standard 9Router provider block for models.yml
 const buildOmpProviderYaml = (baseUrl, apiKey) => {
   const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-  const key = apiKey || "sk_9router";
   return `  ${PROVIDER_ID}:
     baseUrl: ${normalizedBaseUrl}
-    apiKey: ${key}
+    apiKey: ${apiKey}
     api: openai-completions
     authHeader: true
     disableStrictTools: true
@@ -95,7 +95,8 @@ export async function POST(request) {
   }
 
   try {
-    const { baseUrl, apiKey } = rawBody || {};
+    const { baseUrl } = rawBody || {};
+    const apiKey = await resolveCliApiKeyForWrite(rawBody?.apiKey);
     if (!baseUrl) {
       return NextResponse.json({ error: { message: "baseUrl is required" } }, { status: 400 });
     }
@@ -137,7 +138,7 @@ export async function POST(request) {
         ).run(
           PROVIDER_ID,
           "api_key",
-          JSON.stringify({ apiKey: apiKey || "sk_9router", baseUrl }),
+          JSON.stringify({ apiKey, baseUrl }),
           Math.floor(Date.now() / 1000),
           Math.floor(Date.now() / 1000)
         );

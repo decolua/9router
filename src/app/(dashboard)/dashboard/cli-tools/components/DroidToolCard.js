@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { resolveCliApiKey } from "@/shared/utils/cliApiKey";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -141,9 +142,7 @@ export default function DroidToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+      const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled });
 
       const res = await fetch("/api/cli-tools/droid-settings", {
         method: "POST",
@@ -192,9 +191,7 @@ export default function DroidToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled, fallback: "<API_KEY_FROM_DASHBOARD>" });
 
     const settingsContent = {
       customModels: modelList.map((m, i) => ({

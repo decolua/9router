@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { resolveCliApiKey } from "@/shared/utils/cliApiKey";
 
 export default function JcodeToolCard({
   tool,
@@ -128,9 +129,7 @@ export default function JcodeToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+      const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled });
 
       const res = await fetch("/api/cli-tools/jcode-settings", {
         method: "POST",
@@ -184,9 +183,7 @@ export default function JcodeToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled, fallback: "<API_KEY_FROM_DASHBOARD>" });
 
     const configToml = `[providers.9router]
 type = "openai-compatible"

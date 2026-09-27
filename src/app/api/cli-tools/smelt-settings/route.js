@@ -6,6 +6,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { resolveCliApiKeyForWrite } from "@/lib/cliApiKey";
 
 const execAsync = promisify(exec);
 
@@ -96,7 +97,7 @@ export async function POST(request) {
     const updated = {
       ...existing,
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_9router",
+      apiKey: await resolveCliApiKeyForWrite(apiKey),
       model: model || existing.model || "provider/model-id",
       _managedBy: "9router",
     };

@@ -6,6 +6,7 @@ import path from "path";
 import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
+import { resolveCliApiKeyForWrite } from "@/lib/cliApiKey";
 
 const execAsync = promisify(exec);
 
@@ -146,7 +147,7 @@ export async function POST(request) {
 
     existing.providers["9router"] = {
       baseUrl: normalizedBaseUrl,
-      apiKey: apiKey || "sk_9router",
+      apiKey: await resolveCliApiKeyForWrite(apiKey),
       api: "openai-completions",
       models: modelList,
     };

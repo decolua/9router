@@ -7,6 +7,7 @@ import os from "os";
 import { exec } from "child_process";
 import { promisify } from "util";
 import { parseTOML, stringifyTOML } from "confbox";
+import { resolveCliApiKeyForWrite } from "@/lib/cliApiKey";
 
 const execAsync = promisify(exec);
 
@@ -97,7 +98,7 @@ export async function POST(request) {
 
     existing.openai = {
       base_url: normalizedBaseUrl,
-      api_key: apiKey || "sk_9router",
+      api_key: await resolveCliApiKeyForWrite(apiKey),
       model: model || "provider/model-id",
     };
 

@@ -8,6 +8,7 @@ import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
+import { resolveCliApiKey } from "@/shared/utils/cliApiKey";
 
 const ENDPOINT = "/api/cli-tools/hermes-settings";
 const HERMES_ROLES = CLI_TOOLS.hermes?.roles || [];
@@ -126,9 +127,7 @@ export default function HermesToolCard({
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+      const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled });
 
       const res = await fetch(ENDPOINT, {
         method: "POST",
@@ -196,9 +195,7 @@ export default function HermesToolCard({
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled, fallback: "<API_KEY_FROM_DASHBOARD>" });
 
     const base = getEffectiveBaseUrl();
     let yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${base}"\n  api_key: \${OPENAI_API_KEY}\n`;

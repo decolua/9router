@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { Card, Button, Badge, Input } from "@/shared/components";
+import { resolveCliApiKey } from "@/shared/utils/cliApiKey";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -74,9 +75,7 @@ export default function MitmServerCard({ apiKeys, cloudEnabled, onStatusChange }
           body: JSON.stringify({ action: "trust-cert", sudoPassword: password }),
         });
       } else if (action === "start") {
-        const keyToUse = selectedApiKey?.trim()
-          || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-          || (!cloudEnabled ? "sk_9router" : null);
+        const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled });
         res = await fetch("/api/cli-tools/antigravity-mitm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
