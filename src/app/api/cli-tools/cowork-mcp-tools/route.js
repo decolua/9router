@@ -1,10 +1,24 @@
 "use server";
 
 import { NextResponse } from "next/server";
-import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
+import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
 
 const TIMEOUT_MS = 8000;
+
+// SSRF-safe fetch for MCP probing: follow redirects manually so each hop target
+// is re-validated through assertPublicUrlResolved before being requested.
+const MAX_MCP_REDIRECTS = 5;
+async function fetchValidated(url, options, redirectsLeft = MAX_MCP_REDIRECTS) {
+  const res = await fetch(url, { ...options, redirect: "manual" });
+  const location = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+  if (!location) return res;
+  if (redirectsLeft <= 0) throw new Error("Blocked URL: too many redirects");
+  const nextUrl = new URL(location, url).toString();
+  await assertPublicUrlResolved(nextUrl);
+  await res.arrayBuffer().catch(() => {});
+  return fetchValidated(nextUrl, options, redirectsLeft - 1);
+}
 
 // Probe MCP server: initialize + tools/list. No auth header — works for authless servers.
 // OAuth servers return 401, signal client to skip tool listing.
@@ -18,7 +32,7 @@ async function probeMcp(url) {
   const timer = setTimeout(() => ac.abort(), TIMEOUT_MS);
   try {
     // Step 1: initialize
-    const initRes = await fetch(url, {
+    const initRes = await fetchValidated(url, {
       method: "POST",
       headers,
       body: JSON.stringify({
@@ -40,7 +54,7 @@ async function probeMcp(url) {
     if (sessionId) listHeaders["mcp-session-id"] = sessionId;
 
     // Step 2: notifications/initialized (required by spec before tools/list)
-    await fetch(url, {
+    await fetchValidated(url, {
       method: "POST",
       headers: listHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }),
@@ -48,7 +62,7 @@ async function probeMcp(url) {
     }).catch(() => {});
 
     // Step 3: tools/list
-    const listRes = await fetch(url, {
+    const listRes = await fetchValidated(url, {
       method: "POST",
       headers: listHeaders,
       body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list" }),
@@ -92,7 +106,7 @@ export async function POST(request) {
     // SSRF guard for remote callers; local host keeps self-hosted MCP servers.
     if (!isLocalRequest(request)) {
       try {
-        assertPublicUrl(url);
+        await assertPublicUrlResolved(url);
       } catch {
         return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
       }
