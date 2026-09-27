@@ -1,6 +1,6 @@
 {
   "name": "9router",
-  "version": "0.5.86",
+  "version": "0.5.91",
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {
     "9router": "./cli.js"
@@ -16,6 +16,7 @@
   "scripts": {
     "dev": "nodemon -I --watch cli.js --watch src --watch hooks --ext js,json cli.js",
     "build": "node scripts/build-cli.js",
+    "build:tray-arm64": "node scripts/buildTrayArm64.js",
     "pack:cli": "npm run build && npm pack --pack-destination ..",
     "publish:cli": "npm run build && npm publish",
     "postinstall": "node hooks/postinstall.js",
@@ -29,7 +30,8 @@
     "react-dom": "19.2.1"
   },
   "comment_sqlite": "sql.js + better-sqlite3 are NOT bundled here. They are installed into ~/.9router/runtime/node_modules by hooks/postinstall.js (and re-checked at runtime by cli.js). This avoids Windows EBUSY errors when updating the global CLI, since native .node files no longer live under the locked install dir.",
-  "comment_systray": "systray2 is NOT bundled here. It is lazy-installed into ~/.9router/runtime/node_modules by hooks/postinstall.js on macOS/Linux only. Windows uses PowerShell NotifyIcon (zero binary). This avoids shipping unsigned Go binaries that trigger antivirus false positives (Kaspersky). We use the systray2 fork because the legacy systray@1.0.5 ships a 2017 x86_64 binary that fails on modern macOS dyld.",
+  "comment_systray": "systray2 is NOT bundled here. It is lazy-installed into ~/.9router/runtime/node_modules by hooks/postinstall.js on macOS/Linux only. Windows uses PowerShell NotifyIcon (zero binary). This avoids shipping unsigned Go binaries that trigger antivirus false positives (Kaspersky). We use the systray2 fork because the legacy systray@1.0.5 ships a 2017 x86_64 binary that fails to load on modern macOS dyld. Neither package ships an arm64 macOS binary, so on Apple Silicon hooks/trayRuntime.js overlays our own arm64 build from the tray-binaries GitHub release; without it the tray requires Rosetta 2.",
+  "comment_tray_arm64": "tray_darwin_arm64 is built by scripts/buildTrayArm64.js (npm run build:tray-arm64) from felixhao28/systray-portable — the same source systray2's binary comes from — and uploaded to the pinned 'tray-binaries' GitHub release. Its sha256 is pinned as ARM64_TRAY_SHA256 in hooks/trayRuntime.js and verified after every download; rebuild and update both together. .github/workflows/tray-binaries.yml builds the same artifact in CI but refuses to publish when the sha diverges from the pin.",
   "engines": {
     "node": ">=18.0.0"
   },

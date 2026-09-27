@@ -1,5 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
+import { transcribeGeminiLive } from "./geminiLiveStt.js";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 // Build auth headers from sttConfig + token
@@ -162,11 +164,26 @@ function jsonResponse(obj) {
   };
 }
 
+// Model-level transport marker (registry models[].transport, e.g. the Gemini
+// live STT entry's "gemini-live", or a custom model's stored transport).
+// Dispatch reads the marker — never a hardcoded model id — so new realtime
+// providers extend sttCore through data, not code.
+function resolveModelTransport(provider, model) {
+  const key = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  const models = PROVIDER_MODELS[key] || PROVIDER_MODELS[provider];
+  if (!Array.isArray(models)) return null;
+  const entry = models.find((m) => m && m.id === model && (m.kind || "llm") === "stt");
+  const marker = typeof entry?.transport === "string" ? entry.transport.trim() : "";
+  return marker || null;
+}
+
 /**
- * STT core handler — dispatch by sttConfig.format.
+ * STT core handler — dispatch by model transport marker, else sttConfig.format.
+ * `transport` is the caller-supplied marker override (custom models resolve
+ * it in the app layer; built-ins fall back to the registry entry marker).
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleSttCore({ provider, model, formData, credentials, sttConfig }) {
+export async function handleSttCore({ provider, model, formData, credentials, sttConfig, transport }) {
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
@@ -186,8 +203,29 @@ export async function handleSttCore({ provider, model, formData, credentials, st
     return createErrorResult(HTTP_STATUS.UNAUTHORIZED, `No credentials for STT provider: ${provider}`);
   }
 
+  // Format-switch extension: an explicit caller marker wins over the registry
+  // marker; with neither, the provider-default sttConfig.format applies.
+  const marker = (typeof transport === "string" && transport.trim()) ? transport.trim() : resolveModelTransport(provider, model);
+
   try {
-    switch (cfg.format) {
+    switch (marker || cfg.format) {
+      case "gemini-live": {
+        const live = await transcribeGeminiLive({ cfg, file, model, token, formData, mimeType: resolveAudioContentType(file) });
+        // response_format parity with the OpenAI-compatible transport: default
+        // envelope stays {text}; verbose_json adds segments mapped from the
+        // Live API's incremental inputTranscription deltas. Those frames carry
+        // NO timestamps, so segments expose {id,text} only (id = delta order,
+        // Whisper-compatible 0-based) — start/end/duration are deliberately
+        // absent rather than fabricated as zeros, which would misrepresent
+        // provider data to callers diffing transports.
+        const fmt = typeof formData?.get === "function"
+          ? String(formData.get("response_format") ?? "").trim().toLowerCase()
+          : "";
+        if (fmt === "verbose_json") {
+          return jsonResponse({ text: live.text, segments: live.chunks.map((segText, id) => ({ id, text: segText })) });
+        }
+        return jsonResponse({ text: live.text });
+      }
       case "deepgram":        return await transcribeDeepgram(cfg, file, model, token, formData);
       case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token);
       case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
@@ -196,6 +234,6 @@ export async function handleSttCore({ provider, model, formData, credentials, st
       default:                return await transcribeOpenAICompatible(cfg, file, model, token, formData);
     }
   } catch (err) {
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");
+    return createErrorResult(err.status || HTTP_STATUS.BAD_GATEWAY, err.message || "STT request failed");
   }
 }
