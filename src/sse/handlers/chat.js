@@ -7,6 +7,7 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
+import { getDisabledByProvider } from "@/lib/db";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
@@ -222,6 +223,20 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   const { provider, model } = modelInfo;
 
   // Routing shown in the unified "▶" line (client model → provider/model)
+
+  // Reject disabled models at routing time (#4249).
+  // disabledModels is UI-only today — check it here so the gate is enforced
+  // on every request path, not just the /v1/models listing.
+  try {
+    const disabledForProvider = await getDisabledByProvider(provider);
+    if (Array.isArray(disabledForProvider) && disabledForProvider.includes(model)) {
+      log.warn("CHAT", `Model "${model}" is disabled for provider "${provider}"`);
+      return errorResponse(HTTP_STATUS.NOT_FOUND, `Model "${model}" is disabled`);
+    }
+  } catch {
+    // Non-fatal: if DB is unavailable, allow the request through rather than
+    // blocking all traffic with a misleading 404.
+  }
 
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
