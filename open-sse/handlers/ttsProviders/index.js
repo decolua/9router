@@ -29,7 +29,7 @@ export function getTtsAdapter(provider) {
 }
 
 // Generic config-driven dispatcher (uses ttsConfig.format)
-export async function synthesizeViaConfig(provider, text, model, credentials) {
+export async function synthesizeViaConfig(provider, text, model, credentials, responseFormat = "mp3") {
   const { AI_PROVIDERS } = await import("@/shared/constants/providers");
   const cfg = AI_PROVIDERS[provider]?.ttsConfig;
   if (!cfg) return null;
@@ -40,8 +40,8 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
   const { PROVIDER_MODELS } = await import("open-sse/config/providerModels.js");
   const ttsModels = (PROVIDER_MODELS[provider] || []).filter(m => (m.kind || m.type) === "tts");
   const defaultModel = ttsModels[0]?.id || "";
-  const { modelId, voiceId } = parseModelVoice(model, defaultModel, "", ttsModels);
-  return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId });
+  const { modelId, voiceId } = parseModelVoice(model, defaultModel, cfg.defaultVoice || "", ttsModels);
+  return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId, responseFormat });
 }
 
 // Voice fetchers (used by /api/media-providers/tts/voices route)

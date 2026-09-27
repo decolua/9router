@@ -72,6 +72,7 @@ const SERVICE_KIND_CAPABILITIES = {
   stt: { audioInput: true },
   tts: { audioOutput: true },
   embedding: { tools: false },
+  rerank: { tools: false },
 };
 
 export function capabilitiesFromServiceKind(kind) {
@@ -158,6 +159,16 @@ const CODEX_GPT_56_DEFAULT_CAPS = { vision: true, reasoning: true, search: true,
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  nan: {
+    "deepseek-v4-flash": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "mimo-v2.5": { vision: true, audioInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "mimo-v2.6-flash": { vision: true, audioInput: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "qwen3.8-flash": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262144 },
+    "glm5.3-flash": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+    "qwen3.6": { vision: true, reasoning: true, thinkingFormat: "openai" },
+    "gemma4": { vision: true, reasoning: true, thinkingFormat: "openai" },
+    "glm5.3": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000 },
+  },
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {

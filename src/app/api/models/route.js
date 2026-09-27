@@ -29,6 +29,7 @@ export async function GET() {
           alias: modelAliases[fullModel] || m.model,
           caps: {
             vision: c.vision,
+            audioInput: c.audioInput,
             search: c.search,
             reasoning: c.reasoning,
             contextWindow: c.contextWindow,
@@ -55,6 +56,7 @@ export async function GET() {
         alias: modelAliases[fullModel] || m.id,
         caps: {
           vision: c.vision,
+          audioInput: c.audioInput,
           search: c.search,
           reasoning: c.reasoning,
           contextWindow: c.contextWindow,

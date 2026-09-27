@@ -700,6 +700,22 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "nan":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([model, quota]) => {
+            normalizedQuotas.push({
+              name: model,
+              used: quota.used,
+              total: quota.total,
+              resetAt: quota.resetAt || null,
+              limitUnknown: quota.limitUnknown === true,
+              unit: quota.unit,
+              apiRequests: quota.apiRequests,
+            });
+          });
+        }
+        break;
+
       case "ollama":
         // Session (5h) / Weekly (7d) / Monthly usage % from ollama.com/api/usage.
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).

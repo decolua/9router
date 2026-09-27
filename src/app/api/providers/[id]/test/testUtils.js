@@ -558,6 +558,17 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         const res = await fetchWithConnectionProxy("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
       }
+      case "nan": {
+        const url = PROVIDERS.nan.baseUrl.replace(/\/chat\/completions$/, "/models");
+        const res = await fetchWithConnectionProxy(url, {
+          headers: { Authorization: `Bearer ${connection.apiKey}`, "User-Agent": "9Router" },
+        }, effectiveProxy);
+        if (res.status === 429) return { valid: true, error: "NaN model list rate limited (429); retry later" };
+        if (!res.ok) return { valid: false, error: `NaN model list: HTTP ${res.status}` };
+        const data = await res.json();
+        const valid = Array.isArray(data?.data) && data.data.length > 0;
+        return { valid, error: valid ? null : "NaN returned no models" };
+      }
       case "vercel-ai-gateway": {
         const res = await fetchWithConnectionProxy("https://ai-gateway.vercel.sh/v1/models", { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
