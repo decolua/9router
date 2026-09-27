@@ -83,15 +83,44 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null 
   );
 }
 
+/**
+ * The server replaces a hidden body with `{ redacted: true }`, so the drawer
+ * used to print that object in sections 1-3 and "[No content]" in section 4 —
+ * which reads as a server that recorded nothing, and is what sent one operator
+ * looking for a bug that was not there.
+ */
+const isRedacted = (value) => !!value && typeof value === "object" && value.redacted === true;
+
+function RedactedBody() {
+  return (
+    <div className="rounded-lg border border-black/5 bg-black/5 p-3 text-xs text-text-muted dark:border-white/5 dark:bg-white/5 sm:p-4">
+      <span className="text-text-main">Message bodies are hidden.</span>{" "}
+      {"The server withholds them so a dashboard session cannot read the conversations "}
+      {"that went through it. To show them, set "}
+      <span className="font-mono">OBSERVABILITY_INCLUDE_PAYLOADS=true</span>
+      {" in the server's environment — it takes access to the server, not just a session on it."}
+    </div>
+  );
+}
+
 export default function RequestDetailsTab() {
   const [details, setDetails] = useState([]);
+  // Whether the server is recording at all. An empty table means one of two
+  // completely different things, and only the server knows which.
+  const [recording, setRecording] = useState(true);
+  // Which control settled it: an environment variable's name, or null when the
+  // dashboard's own switch decides.
+  const [recordingSource, setRecordingSource] = useState(null);
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: 20,
     totalItems: 0,
     totalPages: 0
   });
-  const [loading, setLoading] = useState(false);
+  // True until the first answer arrives: starting false made the first paint
+  // say "No request details found" on a server that has plenty, before any
+  // request had been made.
+  const [loading, setLoading] = useState(true);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
@@ -130,6 +159,10 @@ export default function RequestDetailsTab() {
       const data = await res.json();
 
       setDetails(data.details || []);
+      // Older servers do not report it; assume recording rather than claim a
+      // switch is off when it may not be.
+      setRecording(data.recording !== false);
+      setRecordingSource(data.recordingSource || null);
       setPagination(prev => ({ ...prev, ...data.pagination }));
     } catch (error) {
       console.error("Failed to fetch request details:", error);
@@ -159,8 +192,17 @@ export default function RequestDetailsTab() {
     setPagination(prev => ({ ...prev, pageSize: newPageSize, page: 1 }));
   };
 
+  // A filter change with the page left where it was lands on a page the
+  // narrowed result set may not have — and the pager is hidden when the list
+  // comes back empty, so the tab reads "No request details found" with no
+  // control on screen to get back to the first page.
+  const applyFilters = (next) => {
+    setFilters(next);
+    setPagination(prev => (prev.page === 1 ? prev : { ...prev, page: 1 }));
+  };
+
   const handleClearFilters = () => {
-    setFilters({ provider: "", startDate: "", endDate: "" });
+    applyFilters({ provider: "", startDate: "", endDate: "" });
   };
 
   return (
@@ -172,7 +214,7 @@ export default function RequestDetailsTab() {
             <select
               id="provider-filter"
               value={filters.provider}
-              onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
+              onChange={(e) => applyFilters({ ...filters, provider: e.target.value })}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
                 "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
@@ -195,7 +237,7 @@ export default function RequestDetailsTab() {
               id="start-date-filter"
               type="datetime-local"
               value={filters.startDate}
-              onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+              onChange={(e) => applyFilters({ ...filters, startDate: e.target.value })}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
                 "w-full min-w-0 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -209,7 +251,7 @@ export default function RequestDetailsTab() {
               id="end-date-filter"
               type="datetime-local"
               value={filters.endDate}
-              onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+              onChange={(e) => applyFilters({ ...filters, endDate: e.target.value })}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
                 "w-full min-w-0 text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20"
@@ -250,7 +292,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -259,8 +301,26 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
-                    No request details found
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
+                    {recording ? (
+                      "No request details found"
+                    ) : (
+                      <div className="flex flex-col items-center gap-1">
+                        <span className="text-text-main">Request details are not being recorded.</span>
+                        <span className="text-xs">
+                          {recordingSource ? (
+                            <>
+                              {"Turned off by "}
+                              <span className="font-mono">{recordingSource}</span>
+                              {" in the server's environment. Change it there — while it is set, "}
+                              {"the Observability switch in Settings has no effect."}
+                            </>
+                          ) : (
+                            "Turn on Observability in Settings, and requests from then on will appear here."
+                          )}
+                        </span>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
@@ -441,27 +501,49 @@ export default function RequestDetailsTab() {
 
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {JSON.stringify(selectedDetail.request, null, 2)}
-                </pre>
+                {isRedacted(selectedDetail.request) ? <RedactedBody /> : (
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                    {JSON.stringify(selectedDetail.request, null, 2)}
+                  </pre>
+                )}
               </CollapsibleSection>
 
               {selectedDetail.providerRequest && (
                 <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {JSON.stringify(selectedDetail.providerRequest, null, 2)}
-                  </pre>
+                  {isRedacted(selectedDetail.providerRequest) ? (
+                    <div className="space-y-3">
+                      <RedactedBody />
+                      {selectedDetail.providerRequest.conversation && (
+                        <div>
+                          {/* Turn counts, tool names and block types: what a stuck
+                              client is diagnosed from, and no part of what was said. */}
+                          <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
+                            Conversation shape
+                          </h4>
+                          <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                            {JSON.stringify(selectedDetail.providerRequest.conversation, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                      {JSON.stringify(selectedDetail.providerRequest, null, 2)}
+                    </pre>
+                  )}
                 </CollapsibleSection>
               )}
 
               {selectedDetail.providerResponse && (
                 <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {typeof selectedDetail.providerResponse === 'object'
-                      ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                      : selectedDetail.providerResponse
-                    }
-                  </pre>
+                  {isRedacted(selectedDetail.providerResponse) ? <RedactedBody /> : (
+                    <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                      {typeof selectedDetail.providerResponse === 'object'
+                        ? JSON.stringify(selectedDetail.providerResponse, null, 2)
+                        : selectedDetail.providerResponse
+                      }
+                    </pre>
+                  )}
                 </CollapsibleSection>
               )}
               
@@ -481,9 +563,11 @@ export default function RequestDetailsTab() {
                 <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
                   Content
                 </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {selectedDetail.response?.content || "[No content]"}
-                </pre>
+                {isRedacted(selectedDetail.response) ? <RedactedBody /> : (
+                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+                    {selectedDetail.response?.content || "[No content]"}
+                  </pre>
+                )}
               </CollapsibleSection>
             </div>
           </div>

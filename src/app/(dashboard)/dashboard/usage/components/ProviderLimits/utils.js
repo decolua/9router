@@ -649,17 +649,23 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      // Claude Code CLI bills against the same subscription and reads the same
+      // usage endpoint, so its payload IS claude's payload — same window keys,
+      // same utilization/resets_at. Parsing it any other way is what left it
+      // without a percentage or a reset time.
+      case "claude-cli":
       case "claude":
-        if (data.message) {
-          // Handle error message case
-          normalizedQuotas.push({
-            name: "error",
-            used: 0,
-            total: 0,
-            resetAt: null,
-            message: data.message,
-          });
-        } else if (data.quotas) {
+        // Figures first. A fallback payload carries quotas *and* a message
+        // saying where the numbers came from; reading the message first threw
+        // the figures away and rendered the note in their place.
+        //
+        // And a payload with nothing to show contributes no row at all.
+        // Pushing a placeholder named "error" made the table non-empty, which
+        // is the very condition the card checks before showing the message
+        // instead — so the message never appeared, and in its place sat a red
+        // row reading 0 / infinity with a Hide button. The message is carried
+        // on the payload itself and rendered from there.
+        if (data.quotas && Object.keys(data.quotas).length > 0) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
               name,
@@ -668,6 +674,14 @@ export function parseQuotaData(provider, data) {
               remaining: quota.remaining !== undefined ? quota.remaining : Math.max(0, (quota.total || 100) - (quota.used || 0)),
               remainingPercentage: quota.remainingPercentage !== undefined ? quota.remainingPercentage : calculatePercentage(quota.used, quota.total),
               resetAt: quota.resetAt || null,
+              // Carried through, not dropped. claude-cli falls back to figures
+              // counted by this server when no credential can be resolved, and
+              // those report no limit at all — without these the table would
+              // draw a bar and grade a percentage against a limit nobody
+              // reported. The claude provider never sends them, so this is
+              // inert there.
+              ...(quota.unlimited === true ? { unlimited: true } : {}),
+              ...(quota.detail ? { detail: quota.detail } : {}),
             });
           });
         }
@@ -898,6 +912,16 @@ export function parseQuotaData(provider, data) {
               percentageIsUsed: quota.percentageIsUsed === true,
               resetAt: quota.resetAt || null,
               emptyMessage: quota.emptyMessage || null,
+              // Carried through, not dropped: a provider that reports no limit
+              // sends unlimited:true precisely so no progress bar is drawn for
+              // it. Without these the table fell back to total 0 and drew a
+              // full bar against a limit nobody reported.
+              ...(quota.unlimited === true ? { unlimited: true } : {}),
+              ...(quota.remaining != null ? { remaining: quota.remaining } : {}),
+              ...(quota.remainingPercentage != null
+                ? { remainingPercentage: quota.remainingPercentage }
+                : {}),
+              ...(quota.detail ? { detail: quota.detail } : {}),
             });
           });
         }
@@ -907,7 +931,7 @@ export function parseQuotaData(provider, data) {
     return [];
   }
 
-  if (provider?.toLowerCase() === "claude") {
+  if (provider?.toLowerCase() === "claude" || provider?.toLowerCase() === "claude-cli") {
     const CLAUDE_QUOTA_ORDER = {
       "session (5h)": 0,
       "weekly (7d)": 1,
@@ -941,4 +965,38 @@ export function parseQuotaData(provider, data) {
   }
 
   return normalizedQuotas;
+}
+
+/**
+ * Group connections for the quota tracker's "By provider" view.
+ *
+ * Kept here rather than inside the component so the grouping and the
+ * pick-an-account fallback can be tested without a DOM — the repo has no
+ * render-test tooling.
+ *
+ * @param {Array<{provider: string, id: string}>} connections
+ * @returns {Array<{provider: string, connections: Array<object>}>} sorted by provider
+ */
+export function groupConnectionsByProvider(connections = []) {
+  const byProvider = new Map();
+  for (const conn of Array.isArray(connections) ? connections : []) {
+    if (!conn?.provider) continue;
+    if (!byProvider.has(conn.provider)) byProvider.set(conn.provider, []);
+    byProvider.get(conn.provider).push(conn);
+  }
+  return [...byProvider.entries()]
+    .map(([provider, conns]) => ({ provider, connections: conns }))
+    .sort((a, b) => a.provider.localeCompare(b.provider));
+}
+
+/**
+ * The account a provider's card should show.
+ *
+ * A stored choice can outlive the account it pointed at — deleted, switched
+ * off, or simply on another page — so it falls back to the first rather than
+ * rendering a card with nothing in it.
+ */
+export function pickGroupedConnection(connections = [], selectedId) {
+  if (!Array.isArray(connections) || connections.length === 0) return null;
+  return connections.find((c) => c.id === selectedId) || connections[0];
 }

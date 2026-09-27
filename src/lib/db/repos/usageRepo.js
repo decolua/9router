@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { apiKeyBucketId, deletedKeyLabel } from "./apiKeyUsageRepo.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -504,14 +505,20 @@ export async function getUsageStats(period = "all") {
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
 
-      for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
+      for (const [, ak] of Object.entries(day.byApiKey || {})) {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
+        // The stored composite carries the raw API key (see :92). It stays in
+        // SQLite — re-keying the store would orphan every day already
+        // accumulated — but it must not become a property name in the
+        // response, which reaches the browser. Built from the raw provider,
+        // never providerDisplayName: display names are not unique.
+        const akKey = `${apiKeyBucketId(ak.apiKey, apiKeyMap)}|${rawModel}|${provider}`;
         const providerDisplayName = providerNodeNameMap[provider] || provider;
         const apiKeyVal = ak.apiKey ? ak.apiKey.trim() : null;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
+        const keyName = keyInfo?.name || (apiKeyVal ? deletedKeyLabel(apiKeyVal) : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
-        const keyName = keyInfo?.name || (apiKeyVal ? (apiKeyMasked || apiKeyVal.slice(0, 8) + "...") : "Local (No API Key)");
         const apiKeyKey = apiKeyMasked || "local-no-key";
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
@@ -565,9 +572,15 @@ export async function getUsageStats(period = "all") {
         if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
-        : "local-no-key";
+      // Was `${e.apiKey}|${e.model}|${e.provider||"unknown"}` — identical to the
+      // storage composite (:92) it matched by construction, so pre-fix this
+      // overlaid lastUsed correctly for keyed buckets. Now that stats.byApiKey
+      // is keyed on apiKeyBucketId(...) instead of the raw key, that lookup
+      // would never match again. Rebuilt on the same identity as the daily and
+      // 24h/today loops above so the overlay keeps working; this also
+      // incidentally fixes the no-key branch, whose bare "local-no-key" never
+      // matched the "local-no-key|model|provider" storage composite either.
+      const apiKeyKey = `${apiKeyBucketId(e.apiKey, apiKeyMap)}|${e.model}|${e.provider || ""}`;
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
       const endpoint = e.endpoint || "Unknown";
@@ -637,11 +650,10 @@ export async function getUsageStats(period = "all") {
       if (r.apiKey && typeof r.apiKey === "string") {
         const apiKeyVal = r.apiKey.trim();
         const keyInfo = apiKeyMap[apiKeyVal];
+        const keyName = keyInfo?.name || deletedKeyLabel(apiKeyVal);
         const apiKeyMasked = maskApiKey(apiKeyVal);
-        const keyName = keyInfo?.name || apiKeyMasked || r.apiKey.slice(0, 8) + "...";
-        // Key by the FULL api key (same as the daily rollup + lastUsed overlay)
-        // — masking here collided all keys sharing a prefix into one bucket.
-        const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
+        // Not the raw key: this reaches the browser as a property name.
+        const akKey = `${apiKeyBucketId(r.apiKey, apiKeyMap)}|${r.model}|${r.provider || ""}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
@@ -649,10 +661,17 @@ export async function getUsageStats(period = "all") {
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       } else {
-        if (!stats.byApiKey["local-no-key"]) {
-          stats.byApiKey["local-no-key"] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
+        // Composite, not bare "local-no-key": the daily path (:512) and the
+        // history overlay (:579) both produce "local-no-key|model|provider"
+        // for keyless traffic. A bare key here would merge every model/
+        // provider into one row for 24h/today while 7d/30d/60d/all keep them
+        // split — a period toggle on the API Key Usage page would visibly
+        // reshape this row.
+        const noKeyKey = `local-no-key|${r.model}|${r.provider || ""}`;
+        if (!stats.byApiKey[noKeyKey]) {
+          stats.byApiKey[noKeyKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked: null, keyName: "Local (No API Key)", apiKeyKey: "local-no-key", lastUsed: r.timestamp };
         }
-        const ake = stats.byApiKey["local-no-key"];
+        const ake = stats.byApiKey[noKeyKey];
         ake.requests++; ake.promptTokens += promptTokens; ake.completionTokens += completionTokens; ake.cachedTokens += cachedTokens; ake.cost += entryCost;
         if (new Date(r.timestamp) > new Date(ake.lastUsed)) ake.lastUsed = r.timestamp;
       }

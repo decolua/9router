@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { AUTO_PING_SETTINGS_KEYS } from "@/shared/constants/config";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -96,10 +97,12 @@ export async function PATCH(request) {
       resetComboRotation();
     }
 
-    if (
-      Object.prototype.hasOwnProperty.call(body, "claudeAutoPing") ||
-      Object.prototype.hasOwnProperty.call(body, "codexAutoPing")
-    ) {
+    // Derived from the auto-ping provider table: a provider added there must not
+    // also have to be remembered here, or its schedule saves but never starts
+    // the scheduler until the next restart.
+    if (Object.values(AUTO_PING_SETTINGS_KEYS).some(
+      (key) => Object.prototype.hasOwnProperty.call(body, key),
+    )) {
       // Keep the scheduler absent when no account opted in; load its provider graph only on demand.
       import("@/shared/services/quotaAutoPing")
         .then(({ configureQuotaAutoPing }) => {

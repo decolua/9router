@@ -68,6 +68,19 @@ export const QUOTA_AUTOPING_CONFIG = {
   pingLeadMs: 5000,                     // fire once reset passes (within tolerance)
   refreshAheadMs: 300000,               // refetch usage when within 5min of reset
   failureCooldownMs: 900000,            // avoid failed ping spam while upstream/auth is unhealthy
+  // Cron mode: operator-scheduled pings ("every 5h send a tiny hi") that open a
+  // fresh 5h window on a fixed clock instead of reacting to the reported resetAt.
+  cronPingText: "Only Hi",
+  cronMaxExpressions: 12,               // per connection — guards the settings blob
+  cronFailureCooldownMs: 300000,
+  // How late a missed slot may still fire. A tick can miss a slot's exact
+  // minute (busy tick, an earlier account's slow `claude -p`, a pod restart);
+  // without catch-up that 5h window is simply never opened. Kept at least two
+  // failure cooldowns wide so a failed ping gets retried more than once.
+  cronCatchUpMinutes: 15,
+  // A CLI ping is drained inline inside the tick; without its own deadline a
+  // hung `claude -p` would suspend every provider's pings behind it.
+  cliPingTimeoutMs: 60000,
   providers: {
     claude: {
       settingsKey: "claudeAutoPing",    // preserve existing settings contract
@@ -75,6 +88,8 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingModel: "claude-haiku-4-5-20251001",
       pingText: "hi",
       pingMaxTokens: 1,
+      // Used when a cron schedule opts into via:"cli" (spawns the real binary).
+      cliPingModel: "claude-cli-haiku",
     },
     codex: {
       settingsKey: "codexAutoPing",
@@ -89,8 +104,31 @@ export const QUOTA_AUTOPING_CONFIG = {
       pingInstructions: "Reply with OK.",
       pingReasoningEffort: "none",
     },
+    // Claude Code CLI. Credentials are local (a config directory or a setup
+    // token), so there is no OAuth token to refresh and its connections are
+    // stored with authType "none" — `localCredentials` is what tells the
+    // scheduler both of those things.
+    //
+    // No `quotaKey` and no `getUsage` handler on purpose: Claude Code exposes
+    // no non-interactive quota endpoint, so there is nothing for the reactive
+    // reset-based ping to react to. Only cron schedules apply here.
+    "claude-cli": {
+      settingsKey: "claudeCliAutoPing",
+      localCredentials: true,
+      pingText: "hi",
+      // The only way to reach this provider is the binary itself.
+      cliPingModel: "claude-cli-haiku",
+    },
   },
 };
+
+// providerId → settings key, derived from the table above. Both dashboards and
+// both server-side triggers read this instead of restating the pairs; the list
+// had drifted into five copies, and a provider missing from any one of them
+// silently loses its schedule.
+export const AUTO_PING_SETTINGS_KEYS = Object.fromEntries(
+  Object.entries(QUOTA_AUTOPING_CONFIG.providers).map(([id, cfg]) => [id, cfg.settingsKey]),
+);
 
 // Re-export from providers.js for backward compatibility
 export {

@@ -31,11 +31,13 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
   }
 
   // Without it beside server.js the standalone build serves requests unsanitized.
-  const serverWrapperSource = resolve(projectRoot, "custom-server.js");
-  const serverWrapperDestination = resolve(standaloneDir, "custom-server.js");
-  if (existsSync(serverWrapperSource)) {
-    cpSync(serverWrapperSource, serverWrapperDestination, { force: true });
-    console.log(`[standalone-assets] Copied custom-server.js to ${serverWrapperDestination}`);
+  for (const file of ["custom-server.js"]) {
+    const source = resolve(projectRoot, file);
+    const destination = resolve(standaloneDir, file);
+    if (existsSync(source)) {
+      cpSync(source, destination, { force: true });
+      console.log(`[standalone-assets] Copied ${file} to ${destination}`);
+    }
   }
 }
 

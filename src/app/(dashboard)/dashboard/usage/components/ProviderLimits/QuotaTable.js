@@ -152,8 +152,15 @@ export default function QuotaTable({
         {currentPageRows.map((quota) => {
           const isUnlimited = quota.unlimited === true;
           const isCreditBalance = quota.isCreditBalance === true;
+          // An unlimited row has no remaining to grade, and getColorClasses
+          // reads a missing one as 0% — which painted a healthy counter red
+          // and marked it 🔴. Neutral is the honest colour for "no limit was
+          // reported": nothing here is close to running out, because nothing
+          // here has a limit.
           const colors = isCreditBalance
             ? { text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500", bgLight: "bg-blue-500/10", emoji: "💰" }
+            : isUnlimited
+            ? { text: "text-text-muted", bg: "bg-black/20 dark:bg-white/20", bgLight: "bg-black/5 dark:bg-white/5", emoji: "∞" }
             : getColorClasses(quota.colorPercentage ?? quota.remaining);
           // Qoder flags open-ended plans with `neverExpires` (its API reports a
           // year-9999 sentinel). Return "-"/"Never expires" rather than an empty
@@ -233,15 +240,19 @@ export default function QuotaTable({
                         : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`
                     }
                   >
+                    {/* Just the count here. "Unlimited" belongs in the column
+                        to the right, and printing it in both put it on the row
+                        twice. `detail` is where a provider explains what it
+                        counted, when it has something to say. */}
                     {isUnlimited
-                      ? `${quota.used.toLocaleString()} used · Unlimited`
+                      ? `${quota.used.toLocaleString()} used${quota.detail ? ` · ${quota.detail}` : ""}`
                       : isCreditBalance
                       ? `Credit: ${quota.total.toFixed(2)} ${quota.currency || ""}`
                       : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}${
                           quota.unit ? ` ${quota.unit}` : ""
                         }`}
                   </span>
-                  <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text} shrink-0`}>
+                  <span className={`font-medium ${isUnlimited ? "text-text-muted" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text} shrink-0`}>
                     {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
                   </span>
                 </div>

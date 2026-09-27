@@ -11,6 +11,7 @@ import {
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { getProviderIconSrc } from "@/shared/utils/providerIcon";
+import { providerAuthTypes } from "@/shared/utils/providerAuthTypes";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   FREE_PROVIDERS,
@@ -288,23 +289,11 @@ export default function ProvidersPage() {
       (p) => matchSearch(p.name) && matchStatus(getProviderStats(p.id, "apikey")),
     );
 
-  // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
-  // (and sometimes "api_key"). Card stats must count both so totals match detail.
-  // kiro has no authModes in registry but accepts both (headless uses "api_key").
-  const dualAuthTypes = (info, key) => {
-    if (key === "kiro") return ["oauth", "apikey", "api_key"];
-    const modes = info?.authModes;
-    // Free-tier and API-key providers default to supporting apikey even when the
-    // registry entry omits authModes (e.g. cloudflare-ai, byteplus, ollama,
-    // vertex) — otherwise their apikey connections are invisible on the grid card.
-    if (!Array.isArray(modes)) {
-      return key in FREE_TIER_PROVIDERS || key in APIKEY_PROVIDERS
-        ? ["oauth", "apikey", "api_key"]
-        : "oauth";
-    }
-    if (!modes.includes("apikey")) return "oauth";
-    return ["oauth", "apikey", "api_key"];
-  };
+  // Which authTypes count towards one provider card. Lives in
+  // @/shared/utils/providerAuthTypes so it can be tested directly — getting it
+  // wrong reports "No connections" for accounts that exist and work.
+  const dualAuthTypes = (info, key) =>
+    providerAuthTypes(info, key, { freeTier: FREE_TIER_PROVIDERS, apiKey: APIKEY_PROVIDERS });
 
   const oauthEntries = sortByPriority(
     Object.entries(OAUTH_PROVIDERS).filter(
@@ -754,7 +743,10 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                       Disabled
                     </span>
                   </Badge>
-                ) : isNoAuth ? (
+                ) : isNoAuth && !provider.localSetup ? (
+                  // A no-auth provider with nothing to install is usable as-is.
+                  // One that needs a signed-in CLI or a running bridge is not,
+                  // so it falls through to the real connection count below.
                   <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
                   <>

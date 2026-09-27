@@ -88,7 +88,7 @@ function RecentRequests({ requests = [] }) {
   );
 }
 
-function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
+export function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
   return Object.entries(dataMap || {})
     .map(([key, data]) => {
       const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
@@ -125,7 +125,7 @@ function getGroupKey(item, keyField) {
   }
 }
 
-function groupDataByKey(data, keyField) {
+export function groupDataByKey(data, keyField) {
   if (!Array.isArray(data)) return [];
   const groups = {};
   data.forEach((item) => {
@@ -171,13 +171,40 @@ const ACCOUNT_COLUMNS = [
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
-const API_KEY_COLUMNS = [
+export const API_KEY_COLUMNS = [
   { field: "keyName", label: "API Key Name" },
   { field: "rawModel", label: "Model" },
   { field: "provider", label: "Provider" },
   { field: "requests", label: "Requests", align: "right" },
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
+
+/**
+ * The API-key table's cells, at module scope so the API Key Usage page renders
+ * the same table rather than a copy that drifts from this one.
+ */
+export function renderApiKeySummaryCells(group) {
+  return (
+    <>
+      <td className="px-6 py-3 text-text-muted">—</td>
+      <td className="px-6 py-3 text-text-muted">—</td>
+      <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+      <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+    </>
+  );
+}
+
+export function renderApiKeyDetailCells(item) {
+  return (
+    <>
+      <td className="px-6 py-3 font-medium font-mono text-xs">{item.apiKeyMasked || item.keyName}</td>
+      <td className="px-6 py-3">{item.rawModel}</td>
+      <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+      <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+      <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+    </>
+  );
+}
 
 const ENDPOINT_COLUMNS = [
   { field: "endpoint", label: "Endpoint" },
@@ -389,23 +416,8 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           groupedData: groupDataByKey(sortData(stats.byApiKey, {}, sortBy, sortOrder), "keyName"),
           storageKey: "usage-stats:expanded-apikeys",
           emptyMessage: "No API key usage recorded yet.",
-          renderSummaryCells: (group) => (
-            <>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
-            </>
-          ),
-          renderDetailCells: (item) => (
-            <>
-              <td className="px-6 py-3 font-medium font-mono text-xs">{item.apiKeyMasked || item.keyName}</td>
-              <td className="px-6 py-3">{item.rawModel}</td>
-              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
-              <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
-              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
-            </>
-          ),
+          renderSummaryCells: renderApiKeySummaryCells,
+          renderDetailCells: renderApiKeyDetailCells,
         };
       }
       case "endpoint":

@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, Badge } from "@/shared/components";
+import { Card, Badge, AgentSkillsCard } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   SKILLS,
@@ -75,6 +75,17 @@ function SkillRow({ skill }) {
 export default function SkillsPage() {
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* Third-party SKILL.md documents injected into routed requests. */}
+      <AgentSkillsCard />
+
+      <div className="pt-2">
+        <h2 className="text-sm font-semibold text-text-main">9Router API Skills</h2>
+        <p className="text-xs text-text-muted mt-0.5">
+          Documentation for agents that call this router. Copy a link and paste it to your AI —
+          these are not injected into requests.
+        </p>
+      </div>
+
       <Card padding="md">
         <div className="text-xs text-text-muted mb-2">Paste this to your AI:</div>
         <div className="px-3 py-2 rounded bg-surface-2 font-mono text-[12px] text-text-main">

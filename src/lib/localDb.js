@@ -8,6 +8,8 @@ export {
   reorderProviderConnections, cleanupProviderConnections,
   getProviderNodes, getProviderNodeById,
   createProviderNode, updateProviderNode, deleteProviderNode,
+  getAgentSkills, getEnabledAgentSkills, getAgentSkillById,
+  createAgentSkill, updateAgentSkill, deleteAgentSkill,
   getProxyPools, getProxyPoolById,
   createProxyPool, updateProxyPool, deleteProxyPool,
   getApiKeys, getApiKeyById, getApiKeyByKey, createApiKey, updateApiKey, deleteApiKey, validateApiKey,

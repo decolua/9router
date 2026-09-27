@@ -1,6 +1,13 @@
 services:
   9router:
-    image: decolua/9router:latest
+    # Built here, not pulled: the published image is upstream's and does not
+    # contain Claude Code, so `image:` would silently give you a router where
+    # the claude-cli provider cannot work. Swap to
+    #   image: decolua/9router:latest
+    # if you do not want that provider and would rather skip the build.
+    build:
+      context: .
+    image: 9router-local:latest
     container_name: 9router
     restart: always
     ports:

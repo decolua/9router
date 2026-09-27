@@ -16,6 +16,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { AUTO_PING_SETTINGS_KEYS } from "@/shared/constants/config";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -113,6 +114,25 @@ async function runHeavyStartup() {
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
   }
 
+  // An earlier version of the accounts "Check" button looked for a credentials
+  // file that a token account never has, decided the account was signed out and
+  // wrote isActive:false / testStatus:"pending" — switching off the only kind of
+  // account that works in a container.
+  //
+  // /api/providers awaits the same once-per-process guard, which is what makes
+  // the first page load correct; this covers a process that serves routed
+  // traffic without anyone opening the dashboard. Whichever runs first wins and
+  // the other returns its settled promise.
+  import("@/shared/services/claudeCliAccountRepair")
+    .then(({ repairClaudeCliAccountsOnce }) => repairClaudeCliAccountsOnce())
+    .catch((e) => console.log("[claude-cli] account repair skipped:", e.message));
+
+  // Seed a claude-cli account from env vars (CLAUDE_CLI_OAUTH_TOKEN) so the
+  // credential can live in Infisical / a K8s Secret instead of in the dashboard.
+  import("@/shared/services/claudeCliInfisicalSeed")
+    .then(({ seedClaudeCliFromEnv }) => seedClaudeCliFromEnv())
+    .catch((e) => console.log("[claude-cli] env credential seed skipped:", e.message));
+
   // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent
   // and also started from custom-server.js when that entry is used.
   import("@/sse/services/backgroundTokenRefresh.js")
@@ -123,10 +143,18 @@ async function runHeavyStartup() {
 // Cheap local check: keeps the scheduler module (and its provider graph) unloaded
 // when nothing opted in. An enabled schedule counts on its own.
 function hasQuotaAutoPingEnabled(settings) {
-  return [settings?.claudeAutoPing, settings?.codexAutoPing].some((config) => (
+  // Any trigger keeps the scheduler alive: the reset-based per-connection toggle, an
+  // anchored schedule, or a cron schedule with at least one expression.
+  // Derived from the auto-ping provider table rather than listed here, so a new
+  // provider's schedule actually survives a restart.
+  return Object.values(AUTO_PING_SETTINGS_KEYS).map((key) => settings?.[key]).some((config) =>
     Object.values(config?.connections || {}).some(Boolean)
     || Object.values(config?.schedules || {}).some((schedule) => schedule?.enabled === true)
-  ));
+    || Object.values(config?.cron || {}).some(
+      (entry) => entry?.enabled !== false
+        && (Array.isArray(entry?.expressions) ? entry.expressions : []).some((expression) => String(expression || "").trim())
+    )
+  );
 }
 
 async function autoStartMitm(settings) {

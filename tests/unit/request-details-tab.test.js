@@ -31,7 +31,10 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
-  if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true });
+  // Windows keeps the SQLite file open until the driver is collected, and an
+  // EPERM here failed the whole file even with every test green. The directory
+  // is under %TEMP% either way.
+  try { if (tempDir) fs.rmSync(tempDir, { recursive: true, force: true }); } catch { /* held open */ }
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
 });

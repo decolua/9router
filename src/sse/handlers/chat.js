@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getEnabledAgentSkills } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -34,6 +34,17 @@ import { resolveSmartChoice } from "../services/systemoneRouter.js";
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
+// Fail-open in both senses: a rejected read, and a read that throws before it
+// returns a promise (a storage module that does not have the function), are the
+// same "no skills" — an optional feature is never the reason a completion fails.
+async function loadAgentSkills() {
+  try {
+    return await getEnabledAgentSkills();
+  } catch {
+    return [];
+  }
+}
+
 export async function handleChat(request, clientRawRequest = null) {
   let body;
   try {
@@ -333,6 +344,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       customPromptEnabled: !!chatSettings.customPromptEnabled,
       customPrompt: chatSettings.customPrompt || "",
       reaAllowEnabled: !!chatSettings.reaAllowEnabled,
+      // Read per request so a toggle in the dashboard takes effect on the next
+      // call; the bodies are already in SQLite, so this is a local read, not a
+      // network fetch on the hot path. Fail-open: a skill must never be the
+      // reason a completion fails.
+      agentSkills: await loadAgentSkills(),
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
       pxpipeMinChars: chatSettings.pxpipeMinChars,
       pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
