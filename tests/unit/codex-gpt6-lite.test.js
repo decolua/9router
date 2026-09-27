@@ -17,7 +17,10 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(getCapabilitiesForModel("codex", model)).toMatchObject({
       vision: true,
       reasoning: true,
+      search: true,
       thinkingFormat: "openai",
+      contextWindow: 272000,
+      maxOutput: 128000,
     });
     expect(getThinkingLevels("codex", model)).toEqual(["low", "medium", "high", "xhigh", "max"]);
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
