@@ -116,7 +116,9 @@
     "devin": "devin",
     "devin-cli": "devin-cli",
     "morph": "morph",
-    "morphllm": "morph"
+    "morphllm": "morph",
+    "tm": "tokenmarket",
+    "tokenmarket": "tokenmarket"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -197,6 +199,7 @@
     "tencent": "hunyuan",
     "together": "together",
     "tokenharbor": "tokenharbor",
+    "tokenmarket": "tokenmarket",
     "tokenrouter": "tokenrouter",
     "venice": "venice",
     "vercel-ai-gateway": "vercel-ai-gateway",
@@ -301,6 +304,7 @@
     "stability-ai",
     "together",
     "tokenharbor",
+    "tokenmarket",
     "tokenrouter",
     "venice",
     "vertex",
