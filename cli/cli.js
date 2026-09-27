@@ -507,21 +507,17 @@ function checkForUpdate() {
 // Open browser
 function openBrowser(url) {
   const platform = process.platform;
-  let cmd;
-
-  if (platform === "darwin") {
-    cmd = `open "${url}"`;
-  } else if (platform === "win32") {
-    cmd = `start "" "${url}"`;
-  } else {
-    cmd = `xdg-open "${url}"`;
-  }
-
-  exec(cmd, { windowsHide: true }, (err) => {
-    if (err) {
-      console.log(`Open browser manually: ${url}`);
+  try {
+    if (platform === "darwin") {
+      spawn("open", [url], { stdio: "ignore", detached: true, windowsHide: true }).unref();
+    } else if (platform === "win32") {
+      spawn("cmd", ["/c", "start", "", url], { stdio: "ignore", detached: true, windowsHide: true }).unref();
+    } else {
+      spawn("xdg-open", [url], { stdio: "ignore", detached: true, windowsHide: true }).unref();
     }
-  });
+  } catch {
+    console.log(`Open browser manually: ${url}`);
+  }
 }
 
 // Find standalone server (bundled in bin/app for published package).
