@@ -19,10 +19,24 @@ const n = (v) => (typeof v === "number" ? v : 0);
 // Keeps each provider's exact semantics: claude/gemini fold cache+reasoning, others don't.
 const USAGE_EXTRACTORS = {
   claude(raw) {
-    const input = n(raw.input_tokens), output = n(raw.output_tokens);
-    const cacheRead = n(raw.cache_read_input_tokens), cacheCreate = n(raw.cache_creation_input_tokens);
+    let input = n(raw.input_tokens), output = n(raw.output_tokens);
+    let cacheRead = n(raw.cache_read_input_tokens), cacheCreate = n(raw.cache_creation_input_tokens);
+    const iters = Array.isArray(raw.iterations) ? raw.iterations : null;
+    const servedByFallback = !!iters?.some((it) => it?.type === "fallback_message");
+    if (iters && iters.length > 0 && !servedByFallback) {
+      const exec = iters.filter((it) => it?.type === "compaction" || it?.type === "message");
+      if (exec.length > 0) {
+        input = exec.reduce((a, it) => a + n(it.input_tokens), 0);
+        output = exec.reduce((a, it) => a + n(it.output_tokens), 0);
+        cacheRead = exec.reduce((a, it) => a + n(it.cache_read_input_tokens), 0);
+        cacheCreate = exec.reduce((a, it) => a + n(it.cache_creation_input_tokens), 0);
+      }
+    }
+    const thinking = n(raw.output_tokens_details?.thinking_tokens ?? raw.thinking_tokens);
     const prompt = input + cacheRead + cacheCreate;
-    return { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate };
+    const out = { promptTokens: prompt, completionTokens: output, totalTokens: prompt + output, cachedTokens: cacheRead, cacheCreationTokens: cacheCreate };
+    if (thinking > 0) out.reasoningTokens = thinking;
+    return out;
   },
   gemini(raw) {
     const cached = n(raw.cachedContentTokenCount);

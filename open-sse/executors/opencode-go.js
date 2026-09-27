@@ -8,7 +8,9 @@ import {
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  ensureResponsesStoreInclude,
 } from "../translator/formats/responsesApi.js";
+import { getThinkingLevels } from "../providers/thinkingLevels.js";
 
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeGoSession";
@@ -47,14 +49,30 @@ function isResponsesModel(model) {
   return getModelTargetFormat("opencode-go", model) === FORMATS.OPENAI_RESPONSES;
 }
 
-// Flatten Chat Completions tool declarations into the Responses flat shape and
-// drop hosted/nameless tools the /responses endpoint rejects.
+// Clamp the requested effort to levels the model supports (ultra→max→xhigh).
+function validateReasoningEffort(provider, model, effort) {
+  const levels = getThinkingLevels(provider, baseModelId(model));
+  const clean = String(effort ?? "").toLowerCase().trim();
+  if ((clean === "max" || clean === "ultra") && levels?.length && !levels.includes(clean)) {
+    if (clean === "ultra" && levels.includes("max")) return "max";
+    if (levels.includes("xhigh")) return "xhigh";
+  }
+  return clean;
+}
+
+// Normalize Chat Completions tool declarations into the Responses flat shape.
+// Hosted/provider tools (file_search, web_search, mcp, code_interpreter,
+// computer, shell, image_generation, apply_patch, tool_search, custom,
+// namespace, ...) carry their own wire shape — forward them untouched.
+// Only function-shaped tools are flattened; nameless declarations are dropped.
 function normalizeResponsesTools(body) {
   if (!Array.isArray(body.tools)) return;
   const validNames = new Set();
   body.tools = body.tools.filter((tool) => {
     if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
     const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
+    const rawType = typeof tool.type === "string" ? tool.type : "";
+    if (!fn && rawType && rawType !== "function") return true;
     const rawName = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
     const name = rawName.trim();
     if (!name) return false;
@@ -65,11 +83,17 @@ function normalizeResponsesTools(body) {
     // Mirror the request translator: {type:"object"} without properties is rejected
     // by strict Responses backends, so fill in the empty properties map.
     if (parameters.type === "object" && !parameters.properties) parameters = { ...parameters, properties: {} };
+    const extras = {};
+    for (const key of ["strict", "async", "defer_loading", "allowed_callers", "output_schema", "namespace"]) {
+      const value = tool[key] !== undefined ? tool[key] : fn?.[key];
+      if (value !== undefined) extras[key] = value;
+    }
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    Object.assign(tool, extras);
     validNames.add(tool.name);
     return true;
   });
@@ -142,8 +166,10 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
     return super.execute({ ...args, credentials });
   }
 
-  buildHeaders(credentials, stream = true, url, model) {
-    const headers = super.buildHeaders(credentials || {}, stream, url, model);
+  buildHeaders(credentials, stream = true, url, model, body = null) {
+    const headers = super.buildHeaders(credentials || {}, stream, url, model, body);
+    headers["HTTP-Referer"] = "https://opencode.ai/";
+    headers["X-Title"] = "opencode";
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;
@@ -157,7 +183,10 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     const out = super.transformRequest(model, body);
-    if (!isResponsesModel(model || body?.model)) return out;
+    if (!isResponsesModel(model || body?.model)) {
+      if (out.stream === true && Array.isArray(out.messages) && !out.stream_options) out.stream_options = { include_usage: true };
+      return out;
+    }
     const normalized = normalizeResponsesInput(out.input);
     if (normalized) out.input = normalized;
     if (!Array.isArray(out.input) || out.input.length === 0) {
@@ -171,14 +200,14 @@ export class OpenCodeGoExecutor extends DefaultExecutor {
     delete out.max_tokens;
     delete out.max_completion_tokens;
     if (out.reasoning_effort !== undefined && out.reasoning === undefined) {
-      out.reasoning = { effort: out.reasoning_effort, summary: "auto" };
+      out.reasoning = { effort: validateReasoningEffort("opencode-go", model || out.model, out.reasoning_effort), summary: "auto" };
     }
     if (out.reasoning && typeof out.reasoning === "object" && !Array.isArray(out.reasoning)) {
       if (!out.reasoning.summary) out.reasoning.summary = "auto";
     }
     delete out.reasoning_effort;
     out.stream = true;
-    out.store = false;
+    ensureResponsesStoreInclude(out);
     normalizeResponsesTools(out);
     sanitizeResponsesItems(out);
     return out;

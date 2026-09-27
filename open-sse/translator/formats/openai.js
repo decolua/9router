@@ -1,5 +1,17 @@
 // OpenAI helper functions for translator
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES } from "../schema/index.js";
+import { isReasoningRequest } from "../concerns/paramSupport.js";
+
+// Reasoning requests carry the output cap as max_completion_tokens (OpenAI API),
+// not max_tokens. Normalize the field name so strict upstreams see a single cap.
+export function applyReasoningTokenField(body) {
+  if (!body || typeof body !== "object") return body;
+  if (isReasoningRequest(body) && body.max_tokens !== undefined && body.max_completion_tokens === undefined) {
+    body.max_completion_tokens = body.max_tokens;
+    delete body.max_tokens;
+  }
+  return body;
+}
 
 // Re-export valid-type lists (moved to schema/blocks.js) to keep existing importers working.
 export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
@@ -8,6 +20,7 @@ export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
 // Remove: thinking, redacted_thinking, signature, and other non-OpenAI blocks
 // opts.preserveCacheControl: keep cache_control on content blocks (e.g. for DashScope/alicode)
 export function filterToOpenAIFormat(body, opts = {}) {
+  applyReasoningTokenField(body);
   if (!body.messages || !Array.isArray(body.messages)) return body;
   const keepCache = !!opts.preserveCacheControl;
 

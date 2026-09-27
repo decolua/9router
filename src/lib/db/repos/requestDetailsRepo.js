@@ -159,6 +159,11 @@ export async function saveRequestDetail(detail) {
   }
 }
 
+export async function flushRequestDetails() {
+  if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
+  await flushToDatabase();
+}
+
 export async function getRequestDetails(filter = {}) {
   const db = await getAdapter();
   const conds = [];

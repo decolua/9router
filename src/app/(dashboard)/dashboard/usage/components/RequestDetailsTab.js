@@ -109,6 +109,8 @@ export default function RequestDetailsTab() {
   });
   const [loading, setLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
@@ -162,9 +164,22 @@ export default function RequestDetailsTab() {
     fetchDetails();
   }, [fetchDetails]);
 
-  const handleViewDetail = (detail) => {
+  const handleViewDetail = async (detail) => {
     setSelectedDetail(detail);
+    setDetailError(null);
     setIsDrawerOpen(true);
+    if (!detail?.id) return;
+    setDetailLoading(true);
+    try {
+      const res = await fetch(`/api/usage/request-details/${encodeURIComponent(detail.id)}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to fetch request detail");
+      if (data.detail) setSelectedDetail(data.detail);
+    } catch (error) {
+      setDetailError(error.message || "Failed to fetch request detail");
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const handlePageChange = (newPage) => {
@@ -266,7 +281,7 @@ export default function RequestDetailsTab() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     <div className="flex items-center justify-center gap-2">
                       <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
                       Loading...
@@ -275,7 +290,7 @@ export default function RequestDetailsTab() {
                 </tr>
               ) : details.length === 0 ? (
                 <tr>
-                  <td colSpan="7" className="p-8 text-center text-text-muted">
+                  <td colSpan="9" className="p-8 text-center text-text-muted">
                     No request details found
                   </td>
                 </tr>
@@ -349,7 +364,16 @@ export default function RequestDetailsTab() {
         title="Request Details"
         width="lg"
       >
-        {selectedDetail && (
+        {detailLoading && !selectedDetail?.request ? (
+          <div className="p-8 text-center text-text-muted">
+            <div className="flex items-center justify-center gap-2">
+              <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+              Loading detail...
+            </div>
+          </div>
+        ) : detailError && !selectedDetail?.request ? (
+          <div className="p-8 text-center text-red-600">{detailError}</div>
+        ) : selectedDetail && (
           <div className="space-y-6">
             <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
               <div>

@@ -71,15 +71,167 @@ export function wantsThinkingSummaries(body) {
   return body?.thinking?.display === "summarized";
 }
 
+// Feature-driven beta flags, mirroring the AI SDK Anthropic provider
+// (anthropic-language-model.ts header assembly + anthropic-prepare-tools.ts).
+// Only flags for features present in the wire body are added on top of the base set.
+function featureBetas(body) {
+  const betas = new Set();
+  if (!body || typeof body !== "object") return betas;
+  const tools = Array.isArray(body.tools) ? body.tools : [];
+  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const toolType = (t) => (t && typeof t.type === "string" ? t.type : "");
+  const hasToolType = (re) => tools.some((t) => re.test(toolType(t)));
+  const toolHas = (key) => tools.some((t) => t && typeof t === "object" && t[key] !== undefined);
+
+  if ((Array.isArray(body.mcp_servers) && body.mcp_servers.length > 0) || hasToolType(/^mcp/i)) {
+    betas.add("mcp-client-2025-04-04");
+  }
+  if (Array.isArray(body.safeguards) && body.safeguards.length > 0) {
+    betas.add("dangerous-tool-use-2026-09-03");
+  }
+  if (body.compaction && typeof body.compaction === "object") {
+    betas.add("compact-2026-09-04");
+  }
+  const ctxEdits = body.context_management?.edits || body.contextManagement?.edits;
+  if (Array.isArray(ctxEdits) && ctxEdits.some((e) => e?.type === "compact_20260112")) {
+    betas.add("compact-2026-01-12");
+  }
+  if (body.container && typeof body.container === "object"
+      && Array.isArray(body.container.skills) && body.container.skills.length > 0) {
+    betas.add("code-execution-2025-08-25");
+    betas.add("skills-2025-10-02");
+    betas.add("files-api-2025-04-14");
+  }
+  if (body.task_budget !== undefined || body.taskBudget !== undefined) {
+    betas.add("task-budgets-2026-03-13");
+  }
+  if (body.speed === "fast") {
+    betas.add("fast-mode-2026-02-01");
+  }
+  if (body.thinking?.display === "updates") {
+    betas.add("thinking-display-updates-2026-08-18");
+  }
+  if (body.thinking?.blockBinding != null || body.thinking?.block_binding != null) {
+    betas.add("thinking-binding-controls-2026-08-01");
+  }
+  if (body.fallbacks === "default") {
+    betas.add("server-side-fallback-2026-07-01");
+  } else if (Array.isArray(body.fallbacks) && body.fallbacks.length > 0) {
+    betas.add("server-side-fallback-2026-06-01");
+  }
+  if (body.effort !== undefined || body.output_config?.effort !== undefined) {
+    betas.add("effort-2025-11-24");
+  }
+  if (body.output_config?.format?.type === "json_schema" || tools.some((t) => t?.strict === true)) {
+    betas.add("structured-outputs-2025-11-13");
+  }
+  if (toolHas("input_examples") || toolHas("allowed_callers") || toolHas("defer_loading")) {
+    betas.add("advanced-tool-use-2025-11-20");
+  }
+  if (hasToolType(/code_execution_20250522/)) {
+    betas.add("code-execution-2025-05-22");
+  }
+  if (hasToolType(/code_execution/)) {
+    betas.add("code-execution-2025-08-25");
+  }
+  if (hasToolType(/computer/)) {
+    betas.add("computer-use-2025-01-24");
+  }
+  if (hasToolType(/web_fetch/)) {
+    betas.add("web-fetch-2025-09-10");
+  }
+  let midSystem = false;
+  let toolChange = false;
+  let clearAt = false;
+  const scanBlocks = (blocks) => {
+    if (!Array.isArray(blocks)) return;
+    for (const b of blocks) {
+      if (!b || typeof b !== "object") continue;
+      if (b.type === "tool_addition" || b.type === "tool_removal") toolChange = true;
+      if (b.clearAt !== undefined || b.clear_at !== undefined) clearAt = true;
+    }
+  };
+  scanBlocks(body.system);
+  for (const m of messages) {
+    if (m?.role === "system") midSystem = true;
+    scanBlocks(m?.content);
+  }
+  if (midSystem) {
+    betas.add("mid-conversation-system-2026-04-07");
+    if (body.output_config?.effort !== undefined) {
+      betas.add("mid-conversation-output-config-2026-07-01");
+    }
+  }
+  if (toolChange) {
+    betas.add("mid-conversation-tool-changes-2026-07-01");
+  }
+  if (clearAt) {
+    betas.add("mid-conversation-system-clear-at-2026-08-21");
+  }
+  return betas;
+}
+
 export function selectAnthropicBeta(model = "", body = null) {
   const flags = ANTHROPIC_BETA_BASE.filter((flag) => flag !== ANTHROPIC_BETA_REDACT_THINKING || !wantsThinkingSummaries(body));
   if (/^claude-(opus|sonnet)/.test(model)) flags.push(...ANTHROPIC_BETA_HEAVY_AGENT);
+  const seen = new Set(flags);
+  for (const beta of featureBetas(body)) {
+    if (!seen.has(beta)) {
+      seen.add(beta);
+      flags.push(beta);
+    }
+  }
   return flags.join(",");
 }
 
+// Parse a caller-supplied anthropic-beta header value into individual flags.
+export function getBetasFromHeaders(headers) {
+  if (!headers || typeof headers !== "object") return [];
+  const out = [];
+  for (const [key, value] of Object.entries(headers)) {
+    if (String(key).toLowerCase() !== "anthropic-beta" || typeof value !== "string") continue;
+    for (const part of value.split(",")) {
+      const beta = part.trim().toLowerCase();
+      if (beta && !out.includes(beta)) out.push(beta);
+    }
+  }
+  return out;
+}
+
+// Union selected flags with caller-supplied ones, deduplicated. Returns the header value.
+export function mergeBetas(selected, userBetas) {
+  const base = Array.isArray(selected) ? selected : String(selected || "").split(",");
+  const extra = Array.isArray(userBetas) ? userBetas : (userBetas != null ? [userBetas] : []);
+  const seen = new Set();
+  const out = [];
+  for (const raw of [...base, ...extra]) {
+    const beta = String(raw || "").trim();
+    const key = beta.toLowerCase();
+    if (beta && !seen.has(key)) {
+      seen.add(key);
+      out.push(beta);
+    }
+  }
+  return out.join(",");
+}
+
+// Backward-compat alias: historical variadic comma-list union (tests + DefaultExecutor).
+// Case-insensitive dedupe, consistent with mergeBetas.
 export function mergeAnthropicBeta(...values) {
-  const flags = values.flatMap((v) => (typeof v === "string" ? v.split(",") : [])).map((f) => f.trim()).filter(Boolean);
-  return [...new Set(flags)].join(",");
+  const flags = values
+    .flatMap((v) => (Array.isArray(v) ? v : String(v ?? "").split(",")))
+    .map((f) => String(f || "").trim())
+    .filter(Boolean);
+  const seen = new Set();
+  const out = [];
+  for (const f of flags) {
+    const key = f.toLowerCase();
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push(f);
+    }
+  }
+  return out.join(",");
 }
 
 // Shared baseUrls

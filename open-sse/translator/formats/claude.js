@@ -268,7 +268,14 @@ export function normalizeClaudePassthrough(body, model = "") {
       let hasKeptThinking = false;
       const kept = [];
       for (const block of msg.content) {
-        if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+        if (block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+          if (typeof block.data === "string" && block.data) {
+            hasKeptThinking = true;
+            kept.push(block);
+          }
+          continue;
+        }
+        if (block.type === CLAUDE_BLOCK.THINKING) {
           if (isValidClaudeSignature(block.signature)) {
             hasKeptThinking = true;
             kept.push(block);

@@ -1,4 +1,5 @@
 import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../config/runtimeConfig.js";
+import { isReasoningRequest } from "../concerns/paramSupport.js";
 
 /**
  * Adjust max_tokens based on request context
@@ -10,7 +11,10 @@ import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../config/runtimeConf
  * @returns {number} Adjusted max_tokens
  */
 export function adjustMaxTokens(body, ceiling = DEFAULT_MAX_TOKENS) {
-  let maxTokens = body.max_tokens || DEFAULT_MAX_TOKENS;
+  const reasoning = isReasoningRequest(body);
+  let maxTokens = reasoning
+    ? (body.max_completion_tokens ?? body.max_tokens ?? DEFAULT_MAX_TOKENS)
+    : (body.max_tokens ?? DEFAULT_MAX_TOKENS);
 
   // Auto-increase for tool calling to prevent truncated arguments (min never above max)
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
@@ -32,3 +36,8 @@ export function adjustMaxTokens(body, ceiling = DEFAULT_MAX_TOKENS) {
   return maxTokens;
 }
 
+
+// Output-cap field for a request: reasoning requests use max_completion_tokens.
+export function maxTokenFieldFor(body) {
+  return isReasoningRequest(body) ? "max_completion_tokens" : "max_tokens";
+}

@@ -250,8 +250,20 @@ function stripAll(body) {
   }
 }
 
+// Map a client blockBinding shape to the Anthropic wire block_binding shape.
+function toBlockBindingWire(value) {
+  if (value == null || typeof value !== "object" || Array.isArray(value)) return undefined;
+  if (value.prefixMismatchBehavior !== undefined) {
+    return { prefix_mismatch_behavior: value.prefixMismatchBehavior };
+  }
+  if (value.prefix_mismatch_behavior !== undefined) {
+    return { prefix_mismatch_behavior: value.prefix_mismatch_behavior };
+  }
+  return undefined;
+}
+
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, display, blockBinding, rawOutputConfig) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -268,16 +280,21 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       // Models that can disable thinking need the explicit adaptive switch.
       // Permanently adaptive models such as Fable 5.1 accept effort directly.
-      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
+      // A binding-only recovery request still sends a thinking object without a type.
+      const binding = toBlockBindingWire(blockBinding);
+      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}), ...(binding ? { block_binding: binding } : {}) };
+      else if (binding) body.thinking = { block_binding: binding };
       else delete body.thinking;
       const level = toLevel(eff);
-      body.output_config = { effort: level === "xhigh" || level === "auto" ? "high" : level };
+      body.output_config = { ...(rawOutputConfig || {}), effort: level === "xhigh" || level === "auto" ? "high" : level };
       break;
     }
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled", ...(display ? { display } : {}) } : { type: "enabled", budget_tokens: budget || 8192, ...(display ? { display } : {}) };
+      const budgetBinding = toBlockBindingWire(blockBinding);
+      const budgetExtra = { ...(display ? { display } : {}), ...(budgetBinding ? { block_binding: budgetBinding } : {}) };
+      body.thinking = budget === -1 ? { type: "enabled", ...budgetExtra } : { type: "enabled", budget_tokens: budget || 8192, ...budgetExtra };
       break;
     }
     case "gemini-level": {
@@ -404,7 +421,10 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // comes back at all; keep what the client asked for instead of resetting it.
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
+  const blockBinding = body.thinking?.blockBinding ?? body.thinking?.block_binding ?? undefined;
+  const rawOutputConfig = body.output_config && typeof body.output_config === "object" && !Array.isArray(body.output_config)
+    ? { ...body.output_config } : undefined;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display, blockBinding, rawOutputConfig);
   return body;
 }
