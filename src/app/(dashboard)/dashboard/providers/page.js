@@ -50,10 +50,19 @@ function getStatusDisplay(connected, error, errorCode, errorReason = null) {
       : errorCode
         ? `${error} Error (${errorCode})`
         : `${error} Error`;
+    // One line: the reason is truncated inside the card, full text on hover.
+    // Words sit in their own text nodes so the page translator still reaches
+    // them when this renders before the dictionary has loaded.
     parts.push(
-      <Badge key="error" variant="error" size="sm" dot>
-        {errText}
-      </Badge>,
+      <span key="error" className="inline-flex min-w-0 max-w-full" title={errText}>
+        <Badge variant="error" size="sm" dot className="min-w-0 max-w-full [&>span:first-child]:shrink-0">
+          <span className="truncate">
+            {reasonTitle ? (
+              <>{error} <span>Error</span> · <span>{reasonTitle}</span></>
+            ) : errText}
+          </span>
+        </Badge>
+      </span>,
     );
   }
   if (parts.length === 0) {
@@ -797,7 +806,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, pausedC
           <div className="flex shrink-0 items-center gap-2">
             {stats.total > 0 && (
               <div
-                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                className="opacity-100 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -942,7 +951,7 @@ function ApiKeyProviderCard({
           <div className="flex shrink-0 items-center gap-2">
             {stats.total > 0 && (
               <div
-                className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+                className="opacity-100 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();

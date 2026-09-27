@@ -204,14 +204,14 @@ export default function ConnectionRow({ connection, affectedCombos = [], proxyPo
             disabled={isFirst}
             className={`p-0.5 rounded ${isFirst ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_up</span>
+            <span className="material-symbols-outlined text-sm pointer-coarse:text-[20px]">keyboard_arrow_up</span>
           </button>
           <button
             onClick={onMoveDown}
             disabled={isLast}
             className={`p-0.5 rounded ${isLast ? "text-text-muted/30 cursor-not-allowed" : "hover:bg-sidebar text-text-muted hover:text-primary"}`}
           >
-            <span className="material-symbols-outlined text-sm">keyboard_arrow_down</span>
+            <span className="material-symbols-outlined text-sm pointer-coarse:text-[20px]">keyboard_arrow_down</span>
           </button>
         </div>
         <span className="material-symbols-outlined shrink-0 text-base text-text-muted">

@@ -5,7 +5,7 @@ import { readModelTestResult } from "@/shared/utils/modelTestResult";
 import PropTypes from "prop-types";
 import { Button, CapacityBadges } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
-import ModelMetaChips from "./ModelMetaChips";
+import ModelMetaChips, { MODEL_CHIP_CLASS } from "./ModelMetaChips";
 import AddToComboButton from "./AddToComboButton";
 import DetectMetaButton from "./DetectMetaButton";
 
@@ -34,7 +34,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         />
       )}
       <span
-        className="material-symbols-outlined text-base text-text-muted"
+        className="material-symbols-outlined text-[18px] text-text-muted"
         style={iconColor ? { color: iconColor } : undefined}
       >
         {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
@@ -42,28 +42,28 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-0.5">
           <AddToComboButton fullModel={fullModel} combos={combos} comboNames={comboNames} onChanged={onComboChanged} />
-          <p className="text-sm font-medium truncate">{modelId}</p>
+          <p className="min-w-0 break-all text-sm font-medium sm:truncate sm:break-normal">{modelId}</p>
         </div>
         {comboNames.length > 0 && (
-          <span className="mt-0.5 inline-flex items-center gap-0.5 rounded bg-primary/10 px-1 py-px font-mono text-[9px] text-primary" title={`Used in: ${comboNames.join(", ")}`}>
-            <span className="material-symbols-outlined text-[10px]">layers</span>
+          <span className={`${MODEL_CHIP_CLASS} mt-0.5 max-w-full border-primary/25 bg-primary/10 text-primary`} title={`Used in: ${comboNames.join(", ")}`}>
+            <span className="material-symbols-outlined text-[12px]">layers</span>
             <span className="truncate">{comboNames.slice(0, 2).join(", ")}{comboNames.length > 2 ? ` +${comboNames.length - 2}` : ""}</span>
           </span>
         )}
         {caps && (
           <span className="mt-0.5 flex flex-wrap items-center gap-1">
             <ModelMetaChips caps={caps} />
-            <CapacityBadges caps={{ ...caps, reasoning: false }} colorOverride="text-text-muted/70" size={12} />
+            <CapacityBadges caps={{ ...caps, reasoning: false }} colorOverride="text-text-muted/70" size={14} />
           </span>
         )}
         <div className="flex min-w-0 flex-wrap items-center gap-1 mt-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
+          <code className="min-w-0 break-all rounded bg-sidebar px-1.5 py-0.5 font-mono text-xs text-text-muted">{fullModel}</code>
           <div className="relative group/btn">
             <button
               onClick={() => onCopy(fullModel, `model-${modelId}`)}
               className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary"
             >
-              <span className="material-symbols-outlined text-sm">
+              <span className="material-symbols-outlined text-[17px]">
                 {copied === `model-${modelId}` ? "check" : "content_copy"}
               </span>
             </button>
@@ -78,7 +78,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
                 disabled={isTesting}
                 className="p-0.5 hover:bg-sidebar rounded text-text-muted hover:text-primary transition-colors"
               >
-                <span className="material-symbols-outlined text-sm" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
+                <span className="material-symbols-outlined text-[17px]" style={isTesting ? { animation: "spin 1s linear infinite" } : undefined}>
                   {isTesting ? "progress_activity" : "science"}
                 </span>
               </button>
@@ -101,7 +101,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
         className="p-1 hover:bg-red-50 rounded text-red-500"
         title="Remove model"
       >
-        <span className="material-symbols-outlined text-sm">delete</span>
+        <span className="material-symbols-outlined text-[17px]">delete</span>
       </button>
     </div>
   );

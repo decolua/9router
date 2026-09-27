@@ -1111,8 +1111,10 @@ export default function ProviderLimits() {
               className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
             >
               <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
+                {/* Wraps the action buttons under the name when both don't fit
+                    (phones), instead of cutting the provider name to "O…". */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex min-w-[9rem] flex-1 items-center gap-2">
                     <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
                       <ProviderIcon
                         src={`/providers/${conn.provider}.png`}
@@ -1181,7 +1183,7 @@ export default function ProviderLimits() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1 shrink-0">
+                  <div className="ml-auto flex shrink-0 items-center gap-1">
                     {(isCodex || claudeReset) && (
                       <>
                         <Tooltip

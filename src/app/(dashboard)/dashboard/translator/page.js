@@ -211,15 +211,15 @@ export default function TranslatorPage() {
   };
 
   return (
-    <div className="p-8 space-y-3">
+    <div className="space-y-3 sm:p-8">
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
+      <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-main">Translator Debug</h1>
           <p className="text-sm text-text-muted mt-1">Replay request flow — matches log files</p>
         </div>
         {meta && (
-          <div className="flex items-center gap-2 flex-wrap justify-end">
+          <div className="flex items-center gap-2 flex-wrap sm:justify-end">
             <MetaBadge label="src" value={meta.sourceFormat} color="blue" />
             <span className="material-symbols-outlined text-text-muted text-[14px]">arrow_forward</span>
             <MetaBadge label="dst" value={meta.targetFormat} color="orange" />
@@ -236,16 +236,16 @@ export default function TranslatorPage() {
 
         return (
           <Card key={step.id}>
-            <div className="p-4 space-y-3">
+            <div className="space-y-3 sm:p-4">
               {/* Step header */}
-              <div className="flex items-center justify-between">
-                <button onClick={() => toggle(step.id)} className="flex items-center gap-2 flex-1 text-left group">
+              <div className="flex items-center justify-between gap-2">
+                <button onClick={() => toggle(step.id)} className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-left group">
                   <span className="material-symbols-outlined text-[20px] text-text-muted group-hover:text-primary transition-colors">
                     {isExpanded ? "expand_more" : "chevron_right"}
                   </span>
                   <span className="text-xs font-mono text-text-muted/60 w-4">{step.id}</span>
                   <h3 className="text-sm font-semibold text-text-main">{step.label}</h3>
-                  <span className="text-xs text-text-muted/60 font-mono">{step.file}</span>
+                  <span className="min-w-0 break-all text-xs text-text-muted/60 font-mono">{step.file}</span>
                   {content && <span className="text-xs text-green-500">({content.length} chars)</span>}
                 </button>
                 {!isExpanded && (

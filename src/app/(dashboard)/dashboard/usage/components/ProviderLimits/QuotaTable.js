@@ -172,10 +172,11 @@ export default function QuotaTable({
           return (
             <div
               key={`${quota.name}-${quota.index}`}
-              className={`flex items-center gap-2 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${cellPad}`}
+              className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-black/5 sm:flex-nowrap dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${cellPad}`}
             >
-              {/* Name */}
-              <div className="flex w-36 min-w-0 items-center gap-1.5">
+              {/* Name — phones: name · reset · hide on one line, the bar and
+                  used/total on a full-width second line so numbers aren't cut */}
+              <div className="order-1 flex min-w-0 flex-1 items-center gap-1.5 sm:w-36 sm:flex-none">
                 <span className="text-[10px] shrink-0">{colors.emoji}</span>
                 <span className={`${nameText} font-medium text-text-primary truncate`}>
                   {quota.name}
@@ -183,7 +184,7 @@ export default function QuotaTable({
               </div>
 
               {/* Progress + used/total */}
-              <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
+              <div className={`order-4 min-w-0 basis-full sm:order-2 sm:basis-auto sm:flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
                 {!isUnlimited && !isCreditBalance && (
                 <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                   quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
@@ -209,7 +210,7 @@ export default function QuotaTable({
               </div>
 
               {/* Reset time */}
-              <div className="min-w-0 shrink">
+              <div className="order-2 min-w-0 shrink sm:order-3">
                 {countdown !== "-" || resetDisplay ? (
                   compact ? (
                     <div
@@ -242,11 +243,11 @@ export default function QuotaTable({
                 <button
                   type="button"
                   onClick={() => onHideQuota(quota)}
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
+                  className="order-3 inline-flex h-6 w-6 pointer-coarse:h-8 pointer-coarse:w-8 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors sm:order-4 hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
                   title="Hide this quota row"
                   aria-label={`Hide quota ${quota.name}`}
                 >
-                  <span className="material-symbols-outlined text-[15px]">
+                  <span className="material-symbols-outlined text-[15px] pointer-coarse:text-[18px]">
                     visibility_off
                   </span>
                 </button>

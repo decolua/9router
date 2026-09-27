@@ -428,7 +428,7 @@ export default function OpenCodeToolCard({ tool, isExpanded, onToggle, baseUrl, 
                       className="p-1 text-text-muted hover:text-red-500 rounded transition-colors"
                       title="Clear (will use main model)"
                     >
-                      <span className="material-symbols-outlined text-[14px]">close</span>
+                      <span className="material-symbols-outlined text-[14px] pointer-coarse:text-[18px]">close</span>
                     </button>
                   )}
                 </div>

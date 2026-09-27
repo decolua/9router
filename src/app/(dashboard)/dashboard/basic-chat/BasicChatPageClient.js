@@ -741,16 +741,16 @@ export default function BasicChatPageClient() {
   return (
     <div className="relative flex-1 flex flex-col h-full min-h-0 min-w-0 bg-[#212121] text-white overflow-hidden">
       <div className="relative mx-auto flex flex-1 h-full min-h-0 w-full max-w-4xl flex-col">
-        <div className="flex shrink-0 items-center justify-between gap-3 px-4 py-3 lg:px-6">
-          <div ref={modelMenuRef} className="relative">
+        <div className="flex shrink-0 items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-4 lg:px-6">
+          <div ref={modelMenuRef} className="relative min-w-0 flex-1 sm:flex-none">
             <button
               type="button"
               onClick={() => setModelMenuOpen((value) => !value)}
-              className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-left transition hover:bg-white/8"
+              className="flex w-full min-w-0 items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-left transition hover:bg-white/8 sm:w-auto sm:px-4"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-white">{modelLabel}</span>
+                  <span className="truncate text-sm font-semibold text-white">{modelLabel}</span>
                   <span className="material-symbols-outlined text-[18px] text-white/70">expand_more</span>
                 </div>
                 <p className="truncate text-xs text-white/55">{modelSubLabel}</p>
@@ -798,16 +798,16 @@ export default function BasicChatPageClient() {
             ) : null}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={() => setHistoryOpen((value) => !value)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80 transition hover:bg-white/8"
+              className="rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/80 transition hover:bg-white/8 sm:px-4"
             >
               History
             </button>
-            <Button variant="ghost" size="sm" icon="delete" onClick={handleDeleteCurrentChat} disabled={!activeSessionId || sessions.length === 0}>
-              Clear
+            <Button variant="ghost" size="sm" icon="delete" title="Clear" aria-label="Clear" onClick={handleDeleteCurrentChat} disabled={!activeSessionId || sessions.length === 0}>
+              <span className="hidden sm:inline">Clear</span>
             </Button>
           </div>
         </div>

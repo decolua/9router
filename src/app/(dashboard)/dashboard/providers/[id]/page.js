@@ -1196,7 +1196,7 @@ export default function ProviderDetailPage() {
       {connections
         .map((conn, index) => (
           <div key={conn.id} className="flex min-w-0 items-stretch">
-            <div className="flex shrink-0 items-center pl-1 sm:pl-2">
+            <div className="flex shrink-0 items-start pl-1 pt-4 sm:items-center sm:pl-2 sm:pt-0">
               <input
                 type="checkbox"
                 checked={isSelected(conn.id)}

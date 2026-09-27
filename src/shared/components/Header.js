@@ -180,6 +180,8 @@ const getPageInfo = (pathname) => {
 };
 
 export default function Header({ onMenuClick, showMenuButton = true }) {
+  // Phones: an open page search takes the title's place (the title is in the menu too).
+  const searchVisible = useHeaderSearchStore((s) => s.visible);
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
@@ -227,7 +229,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
   };
 
   return (
-    <header className="shrink-0 flex items-center justify-between gap-3 px-4 lg:px-8 pt-3 pb-2 border-b border-border-subtle bg-surface/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
+    <header className="shrink-0 flex items-center justify-between gap-2 sm:gap-3 px-3 sm:px-4 lg:px-8 pt-3 pb-2 border-b border-border-subtle bg-surface/60 backdrop-blur-xl lg:bg-transparent lg:backdrop-blur-none z-20">
       {/* Mobile menu button */}
       <div className="flex items-center gap-3 lg:hidden shrink-0">
         {showMenuButton && (
@@ -241,7 +243,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       </div>
 
       {/* Page title with breadcrumbs */}
-      <div className="flex flex-col min-w-0 flex-1">
+      <div className={`${searchVisible ? "hidden sm:flex" : "flex"} flex-col min-w-0 flex-1`}>
         {breadcrumbs.length > 0 ? (
           <div className="flex items-center gap-2">
             {breadcrumbs.map((crumb, index) => (
@@ -302,7 +304,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       </div>
 
       {/* Right actions */}
-      <div className="flex items-center gap-1 shrink-0">
+      <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
         {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
           <div
             className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate"
@@ -318,13 +320,13 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
         <HeaderSearch />
         <button
           onClick={() => setDonateOpen(true)}
-          className="flex items-center gap-1.5 px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
+          className="flex items-center gap-1.5 px-2 sm:px-3 h-8 rounded-lg border border-pink-500/30 bg-pink-500/10 text-pink-600 dark:text-pink-400 hover:bg-pink-500/20 transition-colors text-sm font-medium"
           aria-label="Donate"
         >
           <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
           <span className="hidden sm:inline">Donate</span>
         </button>
-        <ThemeToggle />
+        <ThemeToggle variant="header" />
         <HeaderLanguage />
         <HeaderMenu onLogout={handleLogout} />
       </div>

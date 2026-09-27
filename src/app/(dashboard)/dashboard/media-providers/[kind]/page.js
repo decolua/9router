@@ -79,7 +79,7 @@ function MediaProviderCard({ provider, kind, connections, isCustom, onToggle }) 
           </div>
           {total > 0 && (
             <div
-              className="shrink-0 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
+              className="shrink-0 opacity-100 transition-opacity pointer-fine:opacity-0 pointer-fine:group-hover:opacity-100"
               onClick={handleToggleClick}
             >
               <Toggle

@@ -71,7 +71,9 @@ export default function ProviderBarChart({ byProvider }) {
               tick={{ fontSize: 10, fill: "currentColor", fillOpacity: 0.6 }}
               tickLine={false}
               axisLine={false}
-              interval={0}
+              // Skip labels that would collide (narrow screens) instead of overlapping them.
+              interval="preserveStartEnd"
+              minTickGap={4}
               tickFormatter={(v) => v.length > 10 ? v.slice(0, 10) + "…" : v}
             />
             <YAxis

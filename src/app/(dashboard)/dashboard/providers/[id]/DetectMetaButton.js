@@ -86,10 +86,10 @@ export default function DetectMetaButton({ providerId, modelId, buttonClassName 
           className={buttonClassName}
         >
           <span
-            className="material-symbols-outlined text-sm"
+            className="material-symbols-outlined text-[17px]"
             style={status === "running" ? { animation: "spin 1s linear infinite" } : undefined}
           >
-            {status === "running" ? "progress_activity" : "manage_search"}
+            {status === "running" ? "progress_activity" : "troubleshoot"}
           </span>
         </button>
         <span className="pointer-events-none absolute mt-1 top-5 left-1/2 -translate-x-1/2 z-10 whitespace-nowrap text-[10px] text-text-muted opacity-0 transition-opacity group-hover/btn:opacity-100">
@@ -98,16 +98,18 @@ export default function DetectMetaButton({ providerId, modelId, buttonClassName 
       </div>
 
       {(status === "done" || status === "error") && (
-        <div className="absolute left-0 top-full z-40 mt-1 w-56 max-w-[80vw] rounded-md border border-border bg-surface p-1.5 shadow-2xl">
+        // Opens leftwards: the button sits at the row's right edge.
+        <div className="absolute right-0 top-full z-40 mt-1 w-60 max-w-[80vw] rounded-lg border border-border bg-surface p-2 shadow-2xl">
+          <p className="mb-1 text-[11px] font-semibold text-text-main">{translate("Detection result")}</p>
           {status === "error" && result?.contextWindow ? (
-            <p className="mb-1 text-[10px] text-text-muted">
+            <p className="mb-1 text-[11px] text-text-muted">
               {translate("Context")}: {formatContextLength(result.contextWindow)}
             </p>
           ) : null}
           {status === "error" ? (
             <ErrorReason error={error?.message} status={error?.status} compact />
           ) : (
-            <p className="text-[10px] text-text-muted">{summaryText()}</p>
+            <p className="text-[11px] text-text-muted">{summaryText()}</p>
           )}
         </div>
       )}

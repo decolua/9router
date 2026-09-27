@@ -1,3 +1,24 @@
+# v0.5.91-enhanced.4 (2026-09-26)
+
+## Dashboard fits phone screens
+- Header: smaller icon buttons and spacing on phones so the page title is no longer cut to a few letters; the provider search no longer pushes the menu off screen.
+- Pages and cards use tighter padding on phones, giving content more width.
+- Provider page: model ids wrap instead of showing "open…", and the model actions move to their own line; the connection checkbox lines up with its row.
+- Actions that only appeared on mouse hover (test, remove, add to combo, detect, row actions) are always visible on touch screens.
+- Endpoint: the API key text no longer overlaps its toggle and buttons; the local URL gets more room.
+- Quota: each quota shows name, reset time and hide button on one line and the bar with the full used/total on the next, instead of "0…" / "US$…".
+- Translator, Skills, PXPIPE and Chat: no more content running past the right edge (file names, copy buttons, period tabs, History/Clear bar).
+
+## Polish for the model import, context/reasoning and add-to-combo UI
+- Model rows: context, reasoning, combo and "disabled" chips share one shape and size; the context chip tooltip gives the exact token count and its source; the model name is readable (no tiny italics); cards have regular widths (two per line on wide screens).
+- The **+** (add to combo) stays faintly visible with a mouse instead of leaving an empty gap; its popover has a title, shows how many models each combo has and marks combos that already include the model.
+- **Detect** uses a clearer icon and opens its result inside the screen with a title.
+- **Icons across the whole dashboard render at their intended size.** Both the `material-symbols` package CSS and our own globals pinned every icon at 24px outside any CSS layer, so Tailwind size and visibility classes on icons (`text-sm`, `text-[18px]`, `hidden sm:inline`, …) were ignored. The icon font is now declared in `globals.css` and the icon rule sits in `@layer base`. Side effects fixed with it: stray "→" arrows above CLI tool fields no longer show on phones; sidebar items keep their height; the smallest touch targets (API key actions, connection priority arrows, quota hide, combo reorder, CLI "clear" buttons) get a larger icon on touch screens.
+- Import dialog: Portuguese texts, "Variable price" instead of `$-1000000`, labelled context filter ("Context ≥ 128k"), context and reasoning chips per model, and on phones the id pattern fields fold behind "Id filters" so the list keeps its room.
+- Daily auto-import card (Settings): Portuguese texts, provider names instead of generated ids, readable error reasons, imported/failed counts as chips.
+- Provider list: the error reason stays on one line (full text on hover) instead of a three-line red block.
+- Translations keep the spaces around translated words ("1 Conectado", not "1Conectado").
+
 # v0.5.91-enhanced.3 (2026-09-26)
 
 ## Model context, reasoning and add-to-combo on the provider page

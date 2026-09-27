@@ -102,7 +102,7 @@ export default function PxpipeClient() {
           : "Stopped";
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 sm:p-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-lg font-semibold flex items-center gap-2">
           <span className="material-symbols-outlined text-primary">image</span>
@@ -135,12 +135,12 @@ export default function PxpipeClient() {
       <Card className="p-4">
         <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
           <h3 className="font-medium">Token savings (estimated)</h3>
-          <div className="flex items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1">
+          <div className="flex max-w-full items-center gap-1 overflow-x-auto rounded-lg border border-border bg-bg-subtle p-1">
             {WINDOW_TABS.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setWindowId(tab.id)}
-                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap px-2.5 sm:px-3 py-1 rounded-md text-xs font-medium transition-colors ${
                   windowId === tab.id
                     ? "bg-primary text-white shadow-sm"
                     : "text-text-muted hover:text-text hover:bg-bg-hover"

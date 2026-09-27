@@ -12,6 +12,12 @@ export default function ThemeToggle({ className, variant = "default" }) {
       "text-text-muted hover:text-text-main",
       "hover:bg-surface-2 transition-colors"
     ),
+    // Header bar: a notch smaller on phones so the page title keeps its room.
+    header: cn(
+      "flex items-center justify-center size-8 sm:size-10 rounded-full",
+      "text-text-muted hover:text-text-main",
+      "hover:bg-surface-2 transition-colors"
+    ),
     card: cn(
       "flex items-center justify-center size-11 rounded-full",
       "bg-surface/60 hover:bg-surface",
