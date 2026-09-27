@@ -33,7 +33,8 @@ export function hasValidContent(msg) {
       block.type === CLAUDE_BLOCK.TOOL_USE ||
       block.type === CLAUDE_BLOCK.TOOL_RESULT ||
       block.type === CLAUDE_BLOCK.IMAGE ||
-      block.type === CLAUDE_BLOCK.DOCUMENT);
+      block.type === CLAUDE_BLOCK.DOCUMENT ||
+      (block.type && block.type !== CLAUDE_BLOCK.TEXT));
   }
   if (Array.isArray(msg.content)) {
     return msg.content.some(block =>
@@ -41,7 +42,11 @@ export function hasValidContent(msg) {
       block.type === CLAUDE_BLOCK.TOOL_USE ||
       block.type === CLAUDE_BLOCK.TOOL_RESULT ||
       block.type === CLAUDE_BLOCK.IMAGE ||
-      block.type === CLAUDE_BLOCK.DOCUMENT
+      block.type === CLAUDE_BLOCK.DOCUMENT ||
+      // Pass-through any block type not in the known list (e.g. container_upload, file).
+      // Unknown blocks are non-empty content by definition; dropping the whole message
+      // would send messages:[] to the provider with no indication to the caller.
+      (block.type && block.type !== CLAUDE_BLOCK.TEXT)
     );
   }
   return false;
