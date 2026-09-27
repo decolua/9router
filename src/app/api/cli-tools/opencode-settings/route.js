@@ -6,6 +6,7 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { resolveCliApiKeyForWrite } from "@/lib/cliApiKey";
 
 const execAsync = promisify(exec);
 
@@ -112,7 +113,7 @@ export async function POST(request) {
     } catch { /* No existing config */ }
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
-    const keyToUse = apiKey || "sk_9router";
+    const keyToUse = await resolveCliApiKeyForWrite(apiKey);
     const effectiveSubagentModel = subagentModel || modelsArray[0];
 
     // Ensure provider object

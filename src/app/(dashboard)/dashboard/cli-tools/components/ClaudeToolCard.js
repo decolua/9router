@@ -8,6 +8,7 @@ import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { resolveCliApiKey, CLI_PLACEHOLDER_API_KEY } from "@/shared/utils/cliApiKey";
 
 const CLOUD_URL = process.env.NEXT_PUBLIC_CLOUD_URL;
 
@@ -166,7 +167,7 @@ export default function ClaudeToolCard({
       });
       // Restore key from settings.json; ApiKeySelect matches it against saved presets
       const tokenFromFile = env.ANTHROPIC_AUTH_TOKEN;
-      if (tokenFromFile) {
+      if (tokenFromFile && tokenFromFile !== CLI_PLACEHOLDER_API_KEY) {
         setSelectedApiKey(tokenFromFile);
       }
     }
@@ -203,9 +204,7 @@ export default function ClaudeToolCard({
       const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl() };
 
       // Get key from dropdown, fallback to first key or sk_9router for localhost
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+      const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled });
 
       if (keyToUse) {
         env.ANTHROPIC_AUTH_TOKEN = keyToUse;
@@ -275,9 +274,7 @@ export default function ClaudeToolCard({
 
   // Generate settings.json content for manual copy
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled, fallback: "<API_KEY_FROM_DASHBOARD>" });
     const env = { ANTHROPIC_BASE_URL: getEffectiveBaseUrl(), ANTHROPIC_AUTH_TOKEN: keyToUse };
     tool.defaultModels.forEach((model) => {
       const targetModel = modelMappings[model.alias];

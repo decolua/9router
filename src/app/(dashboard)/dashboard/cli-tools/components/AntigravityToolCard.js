@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, Button, Badge, Modal, Input, ModelSelectModal } from "@/shared/components";
 import Image from "next/image";
+import { resolveCliApiKey } from "@/shared/utils/cliApiKey";
 
 export default function AntigravityToolCard({
   tool,
@@ -111,9 +112,7 @@ export default function AntigravityToolCard({
     // Show steps progressing in order
     setStartingStep("cert");
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
+      const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled });
 
       const res = await fetch("/api/cli-tools/antigravity-mitm", {
         method: "POST",

@@ -7,6 +7,7 @@ import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { resolveCliApiKey } from "@/shared/utils/cliApiKey";
 
 export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiKeys, activeProviders, cloudEnabled, initialStatus, tunnelEnabled, tunnelPublicUrl, tailscaleEnabled, tailscaleUrl }) {
   const [status, setStatus] = useState(initialStatus || null);
@@ -78,9 +79,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = (selectedApiKey && selectedApiKey.trim())
-        ? selectedApiKey
-        : (!cloudEnabled ? "sk_9router" : selectedApiKey);
+      const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled, fallback: "" });
 
       const res = await fetch("/api/cli-tools/kilo-settings", {
         method: "POST",
@@ -124,9 +123,7 @@ export default function KiloToolCard({ tool, isExpanded, onToggle, baseUrl, apiK
   };
 
   const getManualConfigs = () => {
-    const keyToUse = (selectedApiKey && selectedApiKey.trim())
-      ? selectedApiKey
-      : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
+    const keyToUse = resolveCliApiKey(selectedApiKey, apiKeys, { cloudEnabled, fallback: "<API_KEY_FROM_DASHBOARD>" });
 
     return [{
       filename: "~/.local/share/kilo/auth.json",
