@@ -44,6 +44,86 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(body.reasoning).toEqual({ effort: "high", context: "all_turns" });
   });
 
+  it.each(["gpt-6-sol", "gpt-6-luna"])("keeps hosted web_search available on %s", async (model) => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    await new CodexExecutor().execute({
+      model,
+      body: {
+        model, input: "Search the web", tools: [
+          { type: "function", name: "run", parameters: { type: "object", properties: {} } },
+          { type: "web_search" },
+        ], tool_choice: "none",
+      },
+      stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([
+      { type: "function", name: "run", parameters: { type: "object", properties: {} } },
+      { type: "web_search" },
+    ]);
+    expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
+    expect(body.tool_choice).toBe("none");
+  });
+
+  it("moves hosted search out of a native Lite prefix", async () => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
+    await new CodexExecutor().execute({
+      model: "gpt-6-sol",
+      body: { model: "gpt-6-sol", input: [
+        { type: "additional_tools", role: "developer", tools: [tool, { type: "web_search" }] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "search" }] },
+      ], tools: null, tool_choice: "none" },
+      stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([tool, { type: "web_search" }]);
+    expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
+    expect(body.tool_choice).toBe("none");
+  });
+
+  it("preserves native Lite developer instructions when switching for hosted search", async () => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({ ok: true, status: 200, headers: new Map() });
+    const instruction = { type: "message", role: "developer", content: [{ type: "input_text", text: "Only answer in French" }] };
+    await new CodexExecutor().execute({
+      model: "gpt-6-sol", body: { model: "gpt-6-sol", input: [
+        { type: "additional_tools", role: "developer", tools: [{ type: "web_search" }] },
+        instruction,
+        { type: "message", role: "user", content: [{ type: "input_text", text: "search" }] },
+      ], instructions: "", tools: null }, stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(body.input).toContainEqual(instruction);
+    expect(body.instructions).toBe("");
+    expect(body.tools).toEqual([{ type: "web_search" }]);
+  });
+
+  it("does not duplicate tools when hosted search appears in both tool locations", async () => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({ ok: true, status: 200, headers: new Map() });
+    const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
+    await new CodexExecutor().execute({
+      model: "gpt-6-sol", body: { model: "gpt-6-sol", input: [
+        { type: "additional_tools", role: "developer", tools: [tool, { type: "web_search" }] },
+        { type: "additional_tools", role: "developer", tools: [tool] },
+        { type: "message", role: "user", content: [{ type: "input_text", text: "search" }] },
+      ], tools: [tool, { type: "web_search" }] }, stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([tool, { type: "web_search" }]);
+    expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
+  });
+
   it("converts an ordinary Responses request to the Lite shape", () => {
     const executor = new CodexExecutor();
     const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
