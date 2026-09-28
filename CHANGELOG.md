@@ -1,3 +1,9 @@
+# v0.5.91-enhanced.5 (2026-09-28)
+
+## `/v1/models` lists only combos and the models each provider shows
+- `GET /v1/models` (and `/v1/models/{kind}`, `/v1/models/free`) now return the combos plus, per provider, the models its dashboard page lists: the built-in list minus disabled models, custom/imported models and aliases. Before, every id from each account's synced catalogue and each compatible node's own `/models` was advertised too — about 3,700 entries on a real install, almost none usable.
+- `?scope=all` keeps the previous full routable catalogue for tooling (combo pruning, reconcilers). Looking up one model (`/v1/models/{provider}/{model}`) still searches the full catalogue. Routing is unchanged: any routable id keeps working even when not listed.
+
 # v0.5.91-enhanced.4 (2026-09-26)
 
 ## Dashboard fits phone screens
