@@ -113,11 +113,15 @@ function normalizeMessages(messages) {
         }
       }));
 
-      result.push({
+      const assistantMsg = {
         role: ROLE.ASSISTANT,
         content: content,
         tool_calls: ollamaToolCalls
-      });
+      };
+      if (msg.reasoning_content) {
+        assistantMsg.thinking = msg.reasoning_content;
+      }
+      result.push(assistantMsg);
       continue;
     }
 
@@ -136,6 +140,11 @@ function normalizeMessages(messages) {
 
     if (images.length > 0) {
       out.images = images;
+    }
+
+    // Preserve reasoning_content as thinking for assistant messages
+    if (role === ROLE.ASSISTANT && msg.reasoning_content) {
+      out.thinking = msg.reasoning_content;
     }
 
     result.push(out);

@@ -39,13 +39,13 @@ export function geminiToOpenAIRequest(model, body, stream) {
     }
   }
 
-  // Convert contents to messages
+  // Convert contents to messages.
+  // convertGeminiContent may return one message or an array (tool results +
+  // co-located call/text). Always spread: push(converted) nests the array as
+  // one element and the next turn 400s on unpaired tool calls.
   if (body.contents && Array.isArray(body.contents)) {
     for (const content of body.contents) {
-      const converted = convertGeminiContent(content);
-      if (converted) {
-        result.messages.push(converted);
-      }
+      appendConvertedMessages(result.messages, convertGeminiContentWithReasoning(content));
     }
   }
 
@@ -71,6 +71,11 @@ export function geminiToOpenAIRequest(model, body, stream) {
   return result;
 }
 
+function appendConvertedMessages(messages, converted) {
+  if (!converted) return;
+  messages.push(...(Array.isArray(converted) ? converted : [converted]));
+}
+
 // Convert Gemini content to OpenAI message
 function convertGeminiContent(content) {
   const role = content.role === GEMINI_ROLE.USER ? ROLE.USER : ROLE.ASSISTANT;
@@ -80,6 +85,7 @@ function convertGeminiContent(content) {
   }
 
   const parts = [];
+  const toolResults = [];
   const toolCalls = [];
 
   for (const part of content.parts) {
@@ -110,11 +116,11 @@ function convertGeminiContent(content) {
     }
 
     if (part.functionResponse) {
-      return {
+      toolResults.push({
         role: ROLE.TOOL,
         tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
         content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
-      };
+      });
     }
   }
 
@@ -124,17 +130,55 @@ function convertGeminiContent(content) {
       result.content = parts.length === 1 ? parts[0].text : parts;
     }
     result.tool_calls = toolCalls;
-    return result;
+    return toolResults.length > 0 ? [...toolResults, result] : result;
   }
 
   if (parts.length > 0) {
-    return {
+    const result = {
       role,
       content: collapseTextParts(parts)
     };
+    return toolResults.length > 0 ? [...toolResults, result] : result;
   }
 
+  if (toolResults.length === 1) return toolResults[0];
+  if (toolResults.length > 1) return toolResults;
   return null;
+}
+
+function convertGeminiContentWithReasoning(content) {
+  if (!Array.isArray(content?.parts)) return convertGeminiContent(content);
+
+  let reasoningContent = "";
+  const visibleParts = [];
+  for (const part of content.parts) {
+    if (part?.thought === true) {
+      if (part.text !== undefined) reasoningContent += part.text;
+    } else {
+      visibleParts.push(part);
+    }
+  }
+
+  if (!reasoningContent) return convertGeminiContent(content);
+
+  const converted = convertGeminiContent({ ...content, parts: visibleParts });
+  const messages = Array.isArray(converted) ? [...converted] : (converted ? [converted] : []);
+  let targetIndex = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role !== ROLE.TOOL) {
+      targetIndex = i;
+      break;
+    }
+  }
+
+  if (targetIndex >= 0) {
+    messages[targetIndex] = { ...messages[targetIndex], reasoning_content: reasoningContent };
+  } else {
+    const role = content.role === GEMINI_ROLE.USER ? ROLE.USER : ROLE.ASSISTANT;
+    messages.push({ role, reasoning_content: reasoningContent });
+  }
+
+  return Array.isArray(converted) ? messages : messages[0];
 }
 
 // Extract text from Gemini content
@@ -149,4 +193,3 @@ function extractGeminiText(content) {
 // Register
 register(FORMATS.GEMINI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
 register(FORMATS.GEMINI_CLI, FORMATS.OPENAI, geminiToOpenAIRequest, null);
-
