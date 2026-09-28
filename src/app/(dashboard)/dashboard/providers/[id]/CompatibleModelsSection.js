@@ -71,7 +71,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, onTestModel: onExternalTestModel, externalTestResults, externalTestingModelIds, disabledModelIds = [] }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -79,6 +79,10 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [modelTestResults, setModelTestResults] = useState({});
 
   const handleTestModel = async (modelId) => {
+    if (onExternalTestModel) {
+      await onExternalTestModel(modelId);
+      return;
+    }
     if (testingModelId) return;
     setTestingModelId(modelId);
     try {
@@ -102,6 +106,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     providerAlias: providerStorageAlias,
     type: "llm",
   });
+  const visibleModels = allModels.filter((model) => !disabledModelIds.includes(model.id));
 
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
@@ -193,9 +198,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         </p>
       )}
 
-      {allModels.length > 0 && (
+      {visibleModels.length > 0 && (
         <div className="flex flex-col gap-3">
-          {allModels.map(({ id, alias, source }) => (
+          {visibleModels.map(({ id, alias, source }) => (
             <CompatibleModelRow
               key={`${source}-${providerStorageAlias}/${id}`}
               modelId={id}
@@ -204,8 +209,8 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
               onCopy={onCopy}
               onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
               onTest={connections.length > 0 ? () => handleTestModel(id) : undefined}
-              testStatus={modelTestResults[id]}
-              isTesting={testingModelId === id}
+              testStatus={externalTestResults?.[id] || modelTestResults[id]}
+              isTesting={externalTestingModelIds?.has(id) || testingModelId === id}
             />
           ))}
         </div>
@@ -229,4 +234,8 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  onTestModel: PropTypes.func,
+  externalTestResults: PropTypes.object,
+  externalTestingModelIds: PropTypes.instanceOf(Set),
+  disabledModelIds: PropTypes.arrayOf(PropTypes.string),
 };
