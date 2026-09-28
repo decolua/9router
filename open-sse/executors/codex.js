@@ -217,7 +217,8 @@ export class CodexExecutor extends BaseExecutor {
    */
   buildHeaders(credentials, stream = true, _url = null, model = null) {
     const headers = super.buildHeaders(credentials, stream);
-    if (isCodexResponsesLiteModel(model && getModelUpstreamId("cx", model))) {
+    const upstreamModelId = model && getModelUpstreamId("cx", model);
+    if (isCodexResponsesLiteModel(upstreamModelId) && !this._hasExplicitWebSearch) {
       headers["x-openai-internal-codex-responses-lite"] = "true";
     }
     headers["session_id"] = this._currentSessionId || credentials?.connectionId || "default";
@@ -451,7 +452,10 @@ export class CodexExecutor extends BaseExecutor {
     // Map virtual Codex review models to the upstream Codex model before suffix parsing.
     body.model = upstreamModel;
 
-    if (responsesLite) {
+    const hasHostedWebSearch = Array.isArray(body.tools) && body.tools.some((t) => t?.type === "web_search");
+    this._hasExplicitWebSearch = hasHostedWebSearch;
+
+    if (responsesLite && !hasHostedWebSearch) {
       // Codex 0.155 carries tools and instructions as input prefix items.
       const input = Array.isArray(body.input) ? body.input : [body.input];
       const hasLitePrefix = input.some((item) => item?.type === "additional_tools");
