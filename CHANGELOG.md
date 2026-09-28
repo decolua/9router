@@ -1,3 +1,9 @@
+# v0.5.91-enhanced.6 (2026-09-28)
+
+## Combo success % and usage now count agent traffic
+- Agents such as Hermes close a streamed `/v1/chat/completions` answer as soon as it reaches its end (`finish_reason`), before the provider's final usage chunk and `[DONE]`. Those answers were recorded nowhere: no row in Usage, no `DONE` line in the log, request details stuck on "Streaming in progress", and no success counted for the combo, so the combo % stayed empty. A stream closed after its end now counts as a completed request with its tokens (from the provider, or estimated when it sent none). A stream the client closes before the end still counts as aborted.
+- Same fix `/v1/responses` already had for Codex, now for chat completions (passthrough and translated streams).
+
 # v0.5.91-enhanced.5 (2026-09-28)
 
 ## `/v1/models` lists only combos and the models each provider shows
