@@ -1,4 +1,4 @@
-import { buildModelsList } from "../route.js";
+import { buildModelsList, modelsScopeFromRequest, MODELS_SCOPE_ALL } from "../route.js";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -37,25 +37,27 @@ function json(data, options = {}) {
  * GET /v1/models/{provider}/{model} - OpenAI-compatible single model lookup.
  * Supported kinds: image, tts, stt, embedding, image-to-text, web.
  */
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   try {
     const { model } = await params;
+    const scope = modelsScopeFromRequest(request);
     const path = Array.isArray(model) ? model : [model];
     const identifier = path.filter(Boolean).join("/");
     if (identifier === "free" && path.length === 1) {
       // Programmatic free-only listing: same chat catalog, tier === "free".
-      const data = (await buildModelsList([LLM_KIND])).filter((m) => m?.tier === "free");
+      const data = (await buildModelsList([LLM_KIND], { scope })).filter((m) => m?.tier === "free");
       return json({ object: "list", data });
     }
     const kindFilter = path.length === 1 ? KIND_SLUG_MAP[identifier] : null;
     if (kindFilter) {
-      const data = await buildModelsList(kindFilter);
+      const data = await buildModelsList(kindFilter, { scope });
       return json({ object: "list", data });
     }
 
-    // Match the same LLM catalog exposed by GET /v1/models. A catch-all
-    // parameter is required because provider-prefixed IDs contain a slash.
-    const models = await buildModelsList([LLM_KIND]);
+    // Match against every routable LLM id (not just the visible listing): a
+    // lookup names one model, so an uncurated but routable id still resolves.
+    // A catch-all parameter is required because provider-prefixed IDs contain a slash.
+    const models = await buildModelsList([LLM_KIND], { scope: MODELS_SCOPE_ALL });
     const matchedModel = models.find((candidate) => candidate.id === identifier);
 
     if (!matchedModel) {

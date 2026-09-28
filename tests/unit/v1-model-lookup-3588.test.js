@@ -6,6 +6,8 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../src/app/api/v1/models/route.js", () => ({
   buildModelsList: mocks.buildModelsList,
+  MODELS_SCOPE_ALL: "all",
+  modelsScopeFromRequest: (request) => (new URL(request.url).searchParams.get("scope") === "all" ? "all" : "visible"),
 }));
 
 const { GET } = await import("../../src/app/api/v1/models/[...model]/route.js");
@@ -33,7 +35,7 @@ describe("GET /v1/models/{id}", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(chatModel);
-    expect(mocks.buildModelsList).toHaveBeenCalledWith(["llm"]);
+    expect(mocks.buildModelsList).toHaveBeenCalledWith(["llm"], { scope: "all" });
   });
 
   it("also handles a decoded slash in a single catch-all segment", async () => {
@@ -53,7 +55,7 @@ describe("GET /v1/models/{id}", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ object: "list", data: [imageModel] });
-    expect(mocks.buildModelsList).toHaveBeenCalledWith(["image"]);
+    expect(mocks.buildModelsList).toHaveBeenCalledWith(["image"], { scope: "visible" });
   });
 
   it("returns an OpenAI-style model_not_found response for an unknown model", async () => {

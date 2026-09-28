@@ -20,6 +20,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { aggregateComboCapabilities, capabilitiesFromServiceKind, getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { getCatalogCost, getCatalogLifecycle } from "open-sse/providers/catalogOverride.js";
 import { makeComboMemberResolver } from "@/shared/utils/comboMemberResolver";
+import { LIVE_CATALOG_PROVIDERS } from "@/shared/utils/importProviderModels";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -268,11 +269,28 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+// Discovery scope. "visible" (the /v1/models default) advertises what each
+// provider page shows under its models — the built-in list minus disabled ids
+// (live list only where the page shows it live), curated enabledModels,
+// custom models and aliases — plus the combos. "all" also lists every id an
+// account's synced catalogue, a live resolver or a compatible node's own
+// /models reports: hundreds per aggregator, almost none of them curated, but
+// tooling that audits routability (combo pruner, reconcilers) needs them.
+export const MODELS_SCOPE_VISIBLE = "visible";
+export const MODELS_SCOPE_ALL = "all";
+
+export function modelsScopeFromRequest(request) {
+  const url = request?.nextUrl || (request?.url ? new URL(request.url) : null);
+  return url?.searchParams?.get("scope") === MODELS_SCOPE_ALL ? MODELS_SCOPE_ALL : MODELS_SCOPE_VISIBLE;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
+ * @param {{ scope?: "visible"|"all", skipDynamicFetch?: boolean }} [options] - scope defaults to "all".
  */
 export async function buildModelsList(kindFilter, options = {}) {
+  const includeCatalog = options.scope !== MODELS_SCOPE_VISIBLE;
   // When this header is present, the /v1/models request came from another
   // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
   // cross-instance recursive loops.
@@ -554,7 +572,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           if (model?.kind) syncedKindById.set(modelId, model.kind);
         }
       }
-      if (!hasExplicitEnabledModels && syncedModels.length > 0) {
+      if (includeCatalog && !hasExplicitEnabledModels && syncedModels.length > 0) {
         const added = new Set();
         rawModelIds = [];
         for (const model of syncedModels) {
@@ -568,7 +586,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
       const hasSyncedModels = syncedModels.length > 0;
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
+      if (includeCatalog && isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
         rawModelIds = await fetchCompatibleModelIds(conn);
         // A live /models answer from the account is the strongest evidence
         // there is that it still lists these ids — the feed may not hide them.
@@ -579,7 +597,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       // -thinking/-agentic variants per account). On failure, fall back to
       // whatever rawModelIds already holds.
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels) {
+      if (liveResolver && !hasExplicitEnabledModels && (includeCatalog || LIVE_CATALOG_PROVIDERS.has(providerId))) {
         try {
           const live = await liveResolver(conn);
           if (live?.models?.length) {
@@ -787,6 +805,7 @@ export async function OPTIONS() {
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
+ * Lists combos + visible models; `?scope=all` adds every synced/live catalogue id.
  */
 export async function GET(request) {
   try {
@@ -795,7 +814,7 @@ export async function GET(request) {
     const url = request?.nextUrl || (request?.url ? new URL(request.url) : null);
     const tierFilter = url?.searchParams?.get("tier");
     const freeOnly = tierFilter === "free";
-    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch, scope: modelsScopeFromRequest(request) });
     if (freeOnly) data = data.filter((m) => m?.tier === "free");
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },

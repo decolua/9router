@@ -24,6 +24,14 @@ ideas. This implementation is native to 9Router: no OmniRoute code was copied.
   empty 200 responses never wipe the previous list, SSRF guard on the URL,
   and no keys/tokens/response bodies in logs.
 
+## Discovery scope
+
+`GET /v1/models` lists combos plus the models each provider page shows
+(built-in list minus disabled, curated `enabledModels`, custom models,
+aliases); the synced catalogue only enriches those with tier/pricing. The
+catalogue's own ids are advertised only with `?scope=all`, which is what the
+rules below describe — tooling that audits routability must read that scope.
+
 ## Removal rule (two consecutive valid syncs)
 
 - A model missing from one valid sync becomes `temporarily-absent` and stays
