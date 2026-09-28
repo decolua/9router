@@ -223,7 +223,14 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     isConnected: () => streamController.isConnected(),
     handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
     handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
+    handleDisconnect: (r) => {
+      dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`);
+      clearStall();
+      // Before the disconnect callbacks: a stream closed after its finish chunk
+      // settles as a success (usage, combo attribution, breaker), not an abort.
+      try { transformStream.finalizeOnClientClose?.(); } catch { /* usage must never break the close */ }
+      streamController.handleDisconnect(r);
+    },
     abort: () => { clearStall(); streamController.abort(); }
   };
 

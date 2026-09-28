@@ -121,6 +121,8 @@ export function createSSEStream(options = {}) {
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
+  // A chunk carrying finish_reason (or Claude's message_delta) reached the client.
+  let finishForwarded = false;
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
@@ -150,7 +152,7 @@ export function createSSEStream(options = {}) {
     }
   };
 
-  return new TransformStream({
+  const transformStream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -180,6 +182,7 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
           let responsesTerminal = false;
+          let isFinishChunk = false;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -245,7 +248,7 @@ export function createSSEStream(options = {}) {
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
-              const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              isFinishChunk = !!parsed.choices?.[0]?.finish_reason;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -282,6 +285,7 @@ export function createSSEStream(options = {}) {
           // F27/RM8: passthrough forwarded the upstream sentinel but never
           // latched it → flush appended a SECOND `data: [DONE]`.
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
+          if (isFinishChunk) finishForwarded = true;
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
           if (responsesTerminal) finalizeStream();
           continue;
@@ -420,6 +424,7 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
             sseEmittedCount++;
+            if (state.finishReason && isFinishChunk) finishForwarded = true;
           }
         }
       }
@@ -566,6 +571,16 @@ export function createSSEStream(options = {}) {
       }
     }
   });
+
+  // Agent clients (openai-python loops, Hermes) close a chat-completions stream
+  // on the finish_reason chunk, before the provider's trailing usage chunk and
+  // [DONE]; the cancel skips flush(). pipeWithDisconnect calls this on that
+  // close: an answer that already reached its finish is a completed request.
+  // A close before the finish stays an abort and records nothing.
+  transformStream.finalizeOnClientClose = () => {
+    if (finishForwarded) finalizeStream();
+  };
+  return transformStream;
 }
 
 export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
