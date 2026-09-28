@@ -3,10 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { createPortal } from "react-dom";
 import PropTypes from "prop-types";
-import { marked } from "marked";
 import { GITHUB_CONFIG } from "@/shared/constants/config";
-
-marked.setOptions({ gfm: true, breaks: true });
 
 export default function ChangelogModal({ isOpen, onClose }) {
   const [html, setHtml] = useState("");
@@ -18,12 +15,17 @@ export default function ChangelogModal({ isOpen, onClose }) {
     if (!isOpen || html) return;
     setLoading(true);
     setError("");
-    fetch(GITHUB_CONFIG.changelogUrl)
-      .then((res) => {
+    Promise.all([
+      fetch(GITHUB_CONFIG.changelogUrl).then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.text();
+      }),
+      import("marked"),
+    ])
+      .then(([md, { marked }]) => {
+        marked.setOptions({ gfm: true, breaks: true });
+        setHtml(marked.parse(md));
       })
-      .then((md) => setHtml(marked.parse(md)))
       .catch((err) => setError(err.message || "Failed to load"))
       .finally(() => setLoading(false));
   }, [isOpen, html]);
