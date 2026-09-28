@@ -67,6 +67,22 @@ export const ERROR_RULES = [
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
 
+  // Per-key credit exhaustion — account-scoped, NOT request-scoped.
+  // Several providers (b.ai, new-api family, Anthropic OAuth) surface a dry
+  // account as HTTP 400 instead of 402/403, e.g. b.ai returns
+  //   400 {"code":"insufficient_user_quota",
+  //        "message":"credit insufficient balance: balance=N required=M"}
+  // The key cannot pay for THIS request but another key in the pool can, so this
+  // must rotate to the next account (same recovery as 402/403) rather than fall
+  // through to the generic 400 no-fallback path below. A genuine request-scoped
+  // 400 (context overflow, malformed body, unsupported parameter) carries none of
+  // these markers and still hits the no-fallback path, so the distinction holds.
+  { text: "insufficient balance",     cooldownMs: COOLDOWN.long },
+  { text: "insufficient_user_quota",  cooldownMs: COOLDOWN.long },
+  { text: "out of extra usage",       cooldownMs: COOLDOWN.long },
+  { text: "run out of funds",         cooldownMs: COOLDOWN.long },
+  { text: "out of funds",             cooldownMs: COOLDOWN.long },
+
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
