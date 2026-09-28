@@ -28,15 +28,6 @@ function startBackgroundTokenRefreshFromCustomServer() {
       } catch (e) {
         console.error("[BackgroundTokenRefresh] start failed:", e && e.message ? e.message : e);
       }
-      const stop = () => {
-        try {
-          m.stopBackgroundTokenRefresh();
-        } catch {
-          /* ignore */
-        }
-      };
-      process.once("SIGINT", stop);
-      process.once("SIGTERM", stop);
     })
     .catch((e) => {
       // Expected in published CLI standalone (src/ not on disk). App bootstrap covers it.

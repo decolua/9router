@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { killAppProcesses } from "@/lib/appUpdater";
+import { runShutdown } from "@/lib/runtime/shutdownCoordinator.js";
 
 // Shutdown app to release file locks for manual update
 export async function POST() {
+  try {
+    await runShutdown("version-shutdown");
+  } catch { /* best effort */ }
+
   try {
     await killAppProcesses();
   } catch { /* best effort */ }

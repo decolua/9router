@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { spawn, exec, execSync } = require("child_process");
+const { stopServerProcess, waitForExit } = require("./src/cli/utils/processShutdown");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -344,21 +345,6 @@ function killAllAppProcesses(appPort) {
   });
 }
 
-// Sleep helper using SharedArrayBuffer wait (sync, no busy-loop)
-function sleepSync(ms) {
-  try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { /* ignore */ }
-}
-
-// Wait until process dies or timeout reached
-function waitForExit(pid, timeoutMs) {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    try { process.kill(pid, 0); } catch { return true; }
-    sleepSync(100);
-  }
-  return false;
-}
-
 // Kill MIT server by PID file (runs privileged, needs special handling)
 // Sends SIGTERM first so MIT can clean up host entries before dying.
 function killProxyByPidFile() {
@@ -650,12 +636,9 @@ function startServer(updatePromise) {
       killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
       killTunnelByPidFile();
-      // Kill server process directly
       if (server.pid) {
-        process.kill(server.pid, "SIGKILL");
+        stopServerProcess(server.pid);
       }
-      // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
     } catch (e) { }
   }
 

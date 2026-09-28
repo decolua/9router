@@ -37,6 +37,16 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
     cpSync(serverWrapperSource, serverWrapperDestination, { force: true });
     console.log(`[standalone-assets] Copied custom-server.js to ${serverWrapperDestination}`);
   }
+
+  // Node file tracing cannot follow timslite's `require(join(__dirname, "timslite.<target>.node"))`,
+  // so it copies the loader but not the platform binding. Mirror the package (optional
+  // dependency — skipped when absent on unsupported platforms) into the standalone tree.
+  const nativeModule = resolve(projectRoot, "node_modules", "timslite");
+  if (existsSync(nativeModule)) {
+    const nativeModuleDestination = resolve(standaloneDir, "node_modules", "timslite");
+    cpSync(nativeModule, nativeModuleDestination, { recursive: true, force: true, dereference: true });
+    console.log(`[standalone-assets] Copied timslite native package to ${nativeModuleDestination}`);
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === resolve(dirname(fileURLToPath(import.meta.url)), "copy-standalone-assets.mjs")) {

@@ -4,6 +4,7 @@
 import * as log from "../utils/logger.js";
 import { getRefreshLeadMs } from "open-sse/services/tokenRefresh.js";
 import { getCredentialExpiryMs } from "open-sse/services/oauthCredentialManager.js";
+import { registerShutdownStep, ShutdownPhase } from "@/lib/runtime/shutdownCoordinator.js";
 
 /** Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger). */
 export const BACKGROUND_REFRESH_LEAD_MS = 30 * 60 * 1000;
@@ -149,6 +150,9 @@ export function startBackgroundTokenRefresh({ intervalMs } = {}) {
   if (isNonServerRuntime()) return false;
 
   started = true;
+  registerShutdownStep("background-token-refresh", () => stopBackgroundTokenRefresh(), {
+    phase: ShutdownPhase.CLEANUP,
+  });
   const period = Number.isFinite(intervalMs) && intervalMs > 0 ? intervalMs : DEFAULT_INTERVAL_MS;
 
   const safeTick = () => {

@@ -15,6 +15,8 @@ export default function Modal({
   closeOnOverlay = true,
   showTrafficLights = true,
   className,
+  // Opt-in full-viewport shell: no header/title/close chrome, no padded body.
+  immersive = false,
 }) {
   const sizes = {
     sm: "max-w-sm",
@@ -42,6 +44,20 @@ export default function Modal({
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
+
+  if (immersive) {
+    return (
+      <div className="fixed inset-0 z-50 bg-surface fade-in">
+        <div
+          className="absolute inset-0"
+          onClick={closeOnOverlay ? onClose : undefined}
+        />
+        <div className="relative h-full w-full">
+          {children}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">

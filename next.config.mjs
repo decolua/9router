@@ -20,7 +20,12 @@ const nextConfig = {
   // letter). That throw happens at module scope, so every consumer of `open` dies on
   // import — including xAI/Grok token refresh, which loads the OAuth service that imports
   // it. Keeping it external preserves the real `import.meta.url` at runtime.
-  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open"],
+  //
+  // `timslite` must stay external too: its index.js loads the addon with
+  // `require(join(__dirname, "timslite.<target>.node"))`. Bundling rewrites __dirname
+  // to the chunk directory and drops the .node files, so the loader throws
+  // "Cannot find timslite native binding" in every deployed standalone build.
+  serverExternalPackages: ["better-sqlite3", "sql.js", "node:sqlite", "bun:sqlite", "open", "timslite"],
   turbopack: {
     root: tracingRoot
   },
