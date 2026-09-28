@@ -44,7 +44,7 @@ export default function LoginPage() {
             window.location.assign("/dashboard");
             return;
           }
-          setHasPassword(!!data.hasPassword);
+          setHasPassword(data.hasPassword !== false);
           setAuthMode(data.authMode || "password");
           setSsoType(data.ssoType || "oidc");
           setOidcConfigured(data.oidcConfigured === true);
@@ -250,13 +250,15 @@ export default function LoginPage() {
                   {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
                 </Button>
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
                 {hasPassword === false && (
-                  <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                    Security risk: no password set. You will be asked to set one when logging in remotely.
-                  </p>
+                  <>
+                    <p className="text-xs text-center text-text-muted mt-2">
+                      Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                    </p>
+                    <p className="text-xs text-center text-amber-600 dark:text-amber-400">
+                      Set a password locally or configure INITIAL_PASSWORD before remote access.
+                    </p>
+                  </>
                 )}
               </form>
             ) : (

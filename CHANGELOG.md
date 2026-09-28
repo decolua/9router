@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Login**: recognize `INITIAL_PASSWORD` when deciding whether to show default-password guidance; avoid showing it when password status is unavailable.
+
 # v0.5.91 (2026-09-26)
 
 ## Features
