@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { parseOAuthCallbackInput } from "@/lib/oauth/utils/callbackParser";
 
 // Providers using the dynamic-port local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
@@ -16,33 +17,6 @@ const LOOPBACK_CALLBACK_PORT = "20128";
 
 function isLoopbackHost(hostname) {
   return hostname === "localhost" || hostname === "127.0.0.1";
-}
-
-/** Parse pasted OAuth callback text: full URL, scheme-less host, or raw query. */
-function parseOAuthCallbackInput(input) {
-  const raw = String(input || "").trim();
-  if (!raw) throw new Error("Paste the callback URL from the address bar");
-
-  let href = raw;
-  if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(href)) {
-    if (/^(localhost|127\.0\.0\.1)(:\d+)?(\/|\?|$)/i.test(href)) {
-      href = `http://${href}`;
-    } else if (href.startsWith("?") || /(?:^|[?&])(code|token|state)=/.test(href)) {
-      const q = href.startsWith("?") ? href : `?${href}`;
-      href = `http://localhost/${q}`;
-    } else {
-      href = `http://${href}`;
-    }
-  }
-
-  const url = new URL(href);
-  return {
-    code: url.searchParams.get("code"),
-    token: url.searchParams.get("token"),
-    state: url.searchParams.get("state"),
-    errorParam: url.searchParams.get("error"),
-    errorDescription: url.searchParams.get("error_description"),
-  };
 }
 
 // Providers offering a paste-token fallback (import-token flow).
@@ -63,6 +37,14 @@ const PASTE_TOKEN_PROVIDERS = {
     placeholder: "Paste sk-ws-... key here...",
     ideName: "Windsurf",
     ideOptional: false,
+  },
+  antigravity: {
+    label: "Refresh Token or Access Token",
+    instructions:
+      "Method 2 (Direct Import): Paste a Google OAuth refresh token (starts with 1//), access token (ya29...), authorization code (4/0...), or credentials JSON.",
+    placeholder: "Paste 1//... or ya29... or JSON here...",
+    ideName: "Antigravity",
+    ideOptional: true,
   },
 };
 
@@ -792,73 +774,73 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback */}
-        {PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
-          <>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🌐 Sign in with browser
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🔑 Paste token
-              </button>
-            </div>
+        {/* Browser OAuth + paste-token fallback tabs */}
+        {(PROXY_OAUTH_PROVIDERS.has(provider) || PASTE_TOKEN_PROVIDERS[provider]) && (step === "waiting" || step === "input" || step === "error") && (
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+            >
+              🌐 Sign in with browser
+            </button>
+            <button
+              type="button"
+              onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+            >
+              🔑 Method 2: Paste token
+            </button>
+          </div>
+        )}
 
-            {authMode === "browser" && (
-              <>
-                {step === "waiting" && (
-                  <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
-                    <span className="material-symbols-outlined text-base text-primary animate-spin">progress_activity</span>
-                    <span className="text-sm">Waiting for browser authorization…</span>
-                  </div>
-                )}
-                {step === "input" && (
-                  <div className="space-y-3">
-                    <p className="text-sm text-text-muted">
-                      Popup was blocked. After authorizing in the browser, paste the full callback URL here:
-                    </p>
-                    <Input
-                      value={callbackUrl}
-                      onChange={(e) => setCallbackUrl(e.target.value)}
-                      placeholder="http://127.0.0.1:.../callback?..."
-                      className="font-mono text-xs"
-                    />
-                    <div className="flex gap-2">
-                      <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>Connect</Button>
-                      <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
-                    </div>
-                  </div>
-                )}
-              </>
+        {/* Paste token view (when paste-token mode is active) */}
+        {authMode === "paste-token" && PASTE_TOKEN_PROVIDERS[provider] && (step === "waiting" || step === "input" || step === "error") && (
+          <div className="space-y-3">
+            {ideStatus && !ideStatus.installed && (
+              <div className={`px-3 py-2 rounded-lg text-sm ${PASTE_TOKEN_PROVIDERS[provider].ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}>
+                {PASTE_TOKEN_PROVIDERS[provider].ideName} IDE not detected.
+                {PASTE_TOKEN_PROVIDERS[provider].ideOptional
+                  ? " You can still grab the token from DevTools or credentials."
+                  : ` Install ${PASTE_TOKEN_PROVIDERS[provider].ideName} IDE to get the token, or use "Sign in with browser".`}
+              </div>
             )}
+            <p className="text-sm text-text-muted">{PASTE_TOKEN_PROVIDERS[provider].instructions}</p>
+            <Input
+              value={pasteToken}
+              onChange={(e) => setPasteToken(e.target.value)}
+              placeholder={PASTE_TOKEN_PROVIDERS[provider].placeholder}
+              className="font-mono text-xs"
+            />
+            <div className="flex gap-2">
+              <Button onClick={handleManualSubmit} fullWidth disabled={!pasteToken}>Connect</Button>
+              <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
+            </div>
+          </div>
+        )}
 
-            {authMode === "paste-token" && (
+        {/* Proxy OAuth browser view (Trae, Windsurf, Zed) */}
+        {authMode === "browser" && PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
+          <>
+            {step === "waiting" && (
+              <div className="flex items-center gap-2 px-3 py-2 border border-border rounded-lg bg-sidebar/50">
+                <span className="material-symbols-outlined text-base text-primary animate-spin">progress_activity</span>
+                <span className="text-sm">Waiting for browser authorization…</span>
+              </div>
+            )}
+            {step === "input" && (
               <div className="space-y-3">
-                {ideStatus && !ideStatus.installed && (
-                  <div className={`px-3 py-2 rounded-lg text-sm ${PASTE_TOKEN_PROVIDERS[provider].ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}>
-                    {PASTE_TOKEN_PROVIDERS[provider].ideName} IDE not detected.
-                    {PASTE_TOKEN_PROVIDERS[provider].ideOptional
-                      ? " You can still grab the token from DevTools."
-                      : ` Install ${PASTE_TOKEN_PROVIDERS[provider].ideName} IDE to get the token, or use "Sign in with browser".`}
-                  </div>
-                )}
-                <p className="text-sm text-text-muted">{PASTE_TOKEN_PROVIDERS[provider].instructions}</p>
+                <p className="text-sm text-text-muted">
+                  Popup was blocked. After authorizing in the browser, paste the full callback URL here:
+                </p>
                 <Input
-                  value={pasteToken}
-                  onChange={(e) => setPasteToken(e.target.value)}
-                  placeholder={PASTE_TOKEN_PROVIDERS[provider].placeholder}
+                  value={callbackUrl}
+                  onChange={(e) => setCallbackUrl(e.target.value)}
+                  placeholder="http://127.0.0.1:.../callback?..."
                   className="font-mono text-xs"
                 />
                 <div className="flex gap-2">
-                  <Button onClick={handleManualSubmit} fullWidth disabled={!pasteToken}>Connect</Button>
+                  <Button onClick={handleManualSubmit} fullWidth disabled={!callbackUrl}>Connect</Button>
                   <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
                 </div>
               </div>
@@ -867,7 +849,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         )}
 
         {/* Waiting + Manual Input combined (non-device-code, non-proxy) */}
-        {(step === "waiting" || step === "input") && !isDeviceCode && !PROXY_OAUTH_PROVIDERS.has(provider) && (
+        {(step === "waiting" || step === "input") && !isDeviceCode && !PROXY_OAUTH_PROVIDERS.has(provider) && authMode !== "paste-token" && (
           <>
             {isLocalhost && (
               <>
@@ -920,7 +902,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                       ? "After authorization, copy the full callback URL or token from your browser."
                     : isLocalhost
                       ? "After authorization, copy the full URL from your browser."
-                      : "Use Open (or paste the URL into a new tab you create with Ctrl+T). After login the address bar becomes http://localhost:20128/callback?code=… — copy that whole URL here. A tab the site opened for you will auto-close; a tab you opened yourself will not."}
+                      : "Use Open (or paste the URL into a new tab with Ctrl+T). After login the address bar becomes http://localhost:20128/callback?code=… — copy that whole URL (or just the code after code=) here."}
                 </p>
                 <Input
                   value={callbackUrl}

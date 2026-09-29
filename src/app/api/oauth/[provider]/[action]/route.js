@@ -380,8 +380,20 @@ export async function POST(request, { params }) {
       }
 
       // Trae/Windsurf: code is either a raw callback URL or a pasted token.
+      // Antigravity (Method 2): code is a pasted refresh token, access token, or credentials JSON.
       // exchangeTokens() handles both paths; no PKCE, skip codex JWT extraction.
-      if (provider === "trae" || provider === "windsurf") {
+      if (
+        provider === "trae" ||
+        provider === "windsurf" ||
+        (provider === "antigravity" && (
+          !redirectUri ||
+          typeof code !== "string" ||
+          code.trim().startsWith("1//") ||
+          code.trim().startsWith("1/") ||
+          code.trim().startsWith("ya29.") ||
+          code.trim().startsWith("{")
+        ))
+      ) {
         const token = typeof code === "string" ? code.trim() : "";
         if (!token) {
           return NextResponse.json({ error: "Missing token or callback URL" }, { status: 400 });
@@ -453,8 +465,8 @@ export async function POST(request, { params }) {
         });
       }
 
-      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token.
-      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi"];
+      // Cline and ClinePass use authorization_code without PKCE. Kimchi returns a browser token. Antigravity uses standard authorization_code without PKCE.
+      const noPkceExchangeProviders = ["cline", "clinepass", "kimchi", "antigravity"];
       if (!code || !redirectUri || (!codeVerifier && !noPkceExchangeProviders.includes(provider))) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
