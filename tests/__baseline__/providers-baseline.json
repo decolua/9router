@@ -1158,5 +1158,9 @@
         }
       }
     ]
+  },
+  "inceptionlabs": {
+    "baseUrl": "https://api.inceptionlabs.ai/v1/chat/completions",
+    "format": "openai"
   }
 }
