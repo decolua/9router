@@ -12,14 +12,13 @@ export default function OnHoldBadge({ until }) {
   const [remaining, setRemaining] = useState(null);
 
   useEffect(() => {
-    if (!until) {
-      setRemaining(null);
-      return;
-    }
+    // Single updater (never a bare setState in the effect body) so the tick is
+    // one code path for "no lock" and "lock expiring".
     const update = () => {
-      setRemaining(formatOnHoldRemaining(new Date(until).getTime() - Date.now()));
+      setRemaining(until ? formatOnHoldRemaining(new Date(until).getTime() - Date.now()) : null);
     };
     update();
+    if (!until) return;
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
   }, [until]);

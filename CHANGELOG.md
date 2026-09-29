@@ -1,3 +1,17 @@
+# Unreleased
+
+## Features
+- **Gemini**: park 429-exhausted API keys for the upstream-reported delay instead of
+  retrying with blind exponential backoff — `RetryInfo.retryDelay` / `Please retry in Xs`
+  become an exact per-key cooldown (`modelLock___all`), so key rotation skips the key on
+  every request path (chat, native v1beta, TTS/STT). Daily-quota exhaustion (`PerDay`
+  violations) and hintless 429s park the key 1-3h, since a seconds-scale hint never clears
+  those
+- **Dashboard**: parked keys show an orange `on hold · 22s` badge with a live countdown
+  (previously a misleading green `active`), an `N On hold` count on provider and media
+  overview cards, and hold state — return time, parked models, last error — in the edit
+  connection modal. Keys re-enable automatically on the next success
+
 # v0.5.86 (2026-09-23)
 
 ## Features

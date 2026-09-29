@@ -1415,5 +1415,8 @@
   "Singapore": "新加坡",
   "Europe · Amsterdam": "欧洲 · 阿姆斯特丹",
   "Russia": "俄罗斯",
-  "India": "印度"
+  "India": "印度",
+  "on hold": "暂停中",
+  "all models": "所有模型",
+  "Cooldown expired — the key will be retried on the next request.": "冷却时间已结束 — 密钥将在下次请求时重试。"
 }

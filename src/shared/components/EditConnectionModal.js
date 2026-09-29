@@ -68,9 +68,18 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
 
-  // Active rate-limit locks on this key (earliest expiry first)
+  // Active rate-limit locks on this key (earliest expiry first). Compared
+  // against a state clock, not Date.now() in render (purity rule); the modal
+  // re-reads it each second so a hold that lapses while open is reflected.
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (!connection) return;
+    const t = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [connection]);
+
   const holdLocks = connection ? Object.entries(connection)
-    .filter(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > Date.now())
+    .filter(([k, v]) => k.startsWith("modelLock_") && v && new Date(v).getTime() > nowMs)
     .sort((a, b) => new Date(a[1]).getTime() - new Date(b[1]).getTime()) : [];
   const holdUntil = holdLocks[0]?.[1] || null;
   const isOnHold = connection?.testStatus === "unavailable";
