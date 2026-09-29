@@ -7,7 +7,7 @@
 /**
  * Process a single SSE message and update state accordingly.
  */
-function processSSEMessage(msg, state) {
+function processSSEMessage(msg, state, onPayload = null) {
   if (!msg.trim()) return;
 
   const eventMatch = msg.match(/^event:\s*(.+)$/m);
@@ -21,6 +21,8 @@ function processSSEMessage(msg, state) {
   let parsed;
   try { parsed = JSON.parse(dataStr); }
   catch { return; }
+
+  onPayload?.(parsed, msg);
 
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
@@ -36,6 +38,7 @@ function processSSEMessage(msg, state) {
     }
   } else if (eventType === "response.failed") {
     state.status = "failed";
+    state.error = parsed.response?.error || parsed.error || null;
   }
 }
 
@@ -46,7 +49,7 @@ const EMPTY_RESPONSE = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
  * @param {ReadableStream} stream - SSE stream from provider
  * @returns {Promise<Object>} Final JSON response in Responses API format
  */
-export async function convertResponsesStreamToJson(stream) {
+export async function convertResponsesStreamToJson(stream, onPayload = null) {
   if (!stream || typeof stream.getReader !== "function") {
     return { id: `resp_${Date.now()}`, object: "response", created_at: Math.floor(Date.now() / 1000), status: "failed", output: [], usage: { ...EMPTY_RESPONSE } };
   }
@@ -60,7 +63,8 @@ export async function convertResponsesStreamToJson(stream) {
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
     usage: { ...EMPTY_RESPONSE },
-    items: new Map()
+    items: new Map(),
+    error: null
   };
 
   try {
@@ -73,13 +77,13 @@ export async function convertResponsesStreamToJson(stream) {
       buffer = messages.pop() || "";
 
       for (const msg of messages) {
-        processSSEMessage(msg, state);
+        processSSEMessage(msg, state, onPayload);
       }
     }
 
     // Flush remaining buffer (last event may not end with \n\n)
     if (buffer.trim()) {
-      processSSEMessage(buffer, state);
+      processSSEMessage(buffer, state, onPayload);
     }
   } finally {
     reader.releaseLock();
@@ -98,6 +102,7 @@ export async function convertResponsesStreamToJson(stream) {
     created_at: state.created,
     status: state.status || "completed",
     output,
-    usage: state.usage
+    usage: state.usage,
+    error: state.error
   };
 }

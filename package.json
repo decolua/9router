@@ -13,6 +13,7 @@
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/custom-server.js",
+    "test:ui": "vitest run --config vitest.ui.config.mjs",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },
@@ -57,9 +58,12 @@
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/react": "^16.3.3",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "jsdom": "^27.4.0",
     "postcss": "^8.5.6",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "vitest": "^4.1.11"
   }
 }

@@ -6,6 +6,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyPolicyError,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
@@ -20,10 +21,14 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
-import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
+import { detectFormatByEndpoint, FORMATS } from "open-sse/translator/formats.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
+import { routeFiniteFreebuff } from "./freebuffRouting.js";
+import { resolveConnectionProxyConfig, getProxyBucketIdentity } from "@/lib/network/connectionProxy";
+import { acquireAccountSlot } from "open-sse/services/accountSemaphore.js";
+import { evaluateCircuit, recordCircuitOutcome } from "open-sse/services/circuitBreaker.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
 /**
@@ -31,7 +36,17 @@ import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
  * Supports: OpenAI, Claude, Gemini, OpenAI Responses API formats
  * Format detection and translation handled by translator
  */
-export async function handleChat(request, clientRawRequest = null) {
+export const DASHBOARD_AUTHORIZED_CONTEXT = Symbol("dashboard-authorized-context");
+const dashboardAuthorizedRequests = new WeakSet();
+
+function sourceFormatForRequest(request, body) {
+  if (dashboardAuthorizedRequests.has(request)) return FORMATS.OPENAI;
+  return request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null;
+}
+
+export async function handleChat(request, clientRawRequest = null, requestContext = null) {
+  const isDashboardAuthorized = requestContext === DASHBOARD_AUTHORIZED_CONTEXT;
+  if (isDashboardAuthorized) dashboardAuthorizedRequests.add(request);
   let body;
   try {
     body = await request.json();
@@ -57,9 +72,10 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Request summary is emitted as the unified "▶" line in chatCore (has fmt/thinking/account)
 
-  // Log API key (masked)
-  const authHeader = request.headers.get("Authorization");
-  const apiKey = extractApiKey(request);
+  // Dashboard authorization is represented only by the server-owned symbol above.
+  // It never accepts client API credentials or API-key-specific policy.
+  const authHeader = isDashboardAuthorized ? null : request.headers.get("Authorization");
+  const apiKey = isDashboardAuthorized ? null : extractApiKey(request);
   if (authHeader && apiKey) {
     const masked = log.maskKey(apiKey);
     log.debug("AUTH", `API Key: ${masked}`);
@@ -69,7 +85,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
+  if (settings.requireApiKey && !isDashboardAuthorized) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
@@ -84,6 +100,14 @@ export async function handleChat(request, clientRawRequest = null) {
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  if (apiKey) {
+    const policyErr = await getApiKeyPolicyError(apiKey, modelStr);
+    if (policyErr) {
+      log.warn("AUTH", policyErr.message);
+      return errorResponse(policyErr.status, policyErr.message);
+    }
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots
@@ -108,13 +132,13 @@ export async function handleChat(request, clientRawRequest = null) {
       return handleFusionChat({
         body,
         models: comboModels,
-        handleSingleModel: (b, m, isPanel) => {
+        handleSingleModel: (b, m, modelEntry, isPanel) => {
           let cleanRawReq = clientRawRequest;
           if (isPanel && clientRawRequest) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { preferredConnectionId: modelEntry?.connectionId });
         },
         log,
         comboName: modelStr,
@@ -129,7 +153,13 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        async (b, m, modelEntry) => {
+          if (apiKey && adapterAdded.includes(m)) {
+            const policyErr = await getApiKeyPolicyError(apiKey, m);
+            if (policyErr) return errorResponse(policyErr.status, policyErr.message);
+          }
+          return handleSingleModelChat(b, m, clientRawRequest, request, apiKey, { preferredConnectionId: modelEntry?.connectionId });
+        },
         adapterAdded
       ),
       log,
@@ -149,7 +179,13 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        async (b, m) => {
+          if (apiKey && adapterAdded.includes(m)) {
+            const policyErr = await getApiKeyPolicyError(apiKey, m);
+            if (policyErr) return errorResponse(policyErr.status, policyErr.message);
+          }
+          return handleSingleModelChat(b, m, clientRawRequest, request, apiKey);
+        },
         adapterAdded
       ),
       log,
@@ -164,7 +200,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, options = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -185,13 +221,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return handleFusionChat({
           body,
           models: comboModels,
-          handleSingleModel: (b, m, isPanel) => {
+          handleSingleModel: (b, m, modelEntry, isPanel) => {
             let cleanRawReq = clientRawRequest;
             if (isPanel && clientRawRequest) {
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, { preferredConnectionId: modelEntry?.connectionId });
           },
           log,
           comboName: modelStr,
@@ -206,7 +242,13 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          async (b, m, modelEntry) => {
+            if (apiKey && adapterAdded.includes(m)) {
+              const policyErr = await getApiKeyPolicyError(apiKey, m);
+              if (policyErr) return errorResponse(policyErr.status, policyErr.message);
+            }
+            return handleSingleModelChat(b, m, clientRawRequest, request, apiKey, { preferredConnectionId: modelEntry?.connectionId });
+          },
           adapterAdded
         ),
         log,
@@ -226,14 +268,41 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
-  // Try with available accounts (fallback on errors)
+  if (provider === "freebuff") {
+    const routed = await routeFiniteFreebuff({
+      provider,
+      model,
+      select: (excludedConnectionIds) => getProviderCredentials(provider, excludedConnectionIds, model, { preferredConnectionId: options.preferredConnectionId }),
+      resolvePool: (selected, forceProxyPoolId) => getProviderCredentials(provider, new Set(), model, {
+        preferredConnectionId: selected.connectionId,
+        forceProxyPoolId,
+        allowedProxyPoolIds: [
+          ...(selected._connection?.providerSpecificData?.proxyPoolIds || []),
+          selected._connection?.providerSpecificData?.proxyPoolId,
+        ],
+      }),
+      dispatch: (credentials) => dispatchChatAttempt({ body, provider, model, credentials, log, clientRawRequest, request, apiKey, userAgent }),
+      shouldFallback: async (credentials, result) => {
+        const fallback = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model, result.resetsAtMs);
+        return fallback.shouldFallback;
+      },
+    });
+    if (routed.response) return routed.response;
+    if (routed.terminal.kind === "quota") {
+      return unavailableResponse(429, `[${provider}/${model}] ${routed.terminal.message}`, routed.terminal.reset, "quota reset pending");
+    }
+    return errorResponse(routed.terminal.status, routed.terminal.message);
+  }
+
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
   let lastHeaders = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId: options.preferredConnectionId,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -250,7 +319,6 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
     }
-
     // Account selection shown in the unified "▶" line (acc:...)
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
@@ -264,10 +332,39 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     }
 
+    const resolvedProxy = await resolveConnectionProxyConfig(refreshedCredentials.providerSpecificData || {}, credentials.connectionId);
+    const bucket = getProxyBucketIdentity(resolvedProxy);
+    if (!bucket) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = "Unable to resolve connection egress bucket";
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+      continue;
+    }
+    const gate = evaluateCircuit(provider, bucket);
+    if (!gate.allowed) {
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = "Selected provider route is cooling down";
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+      continue;
+    }
+    let releaseSlot = null;
+    let resilienceTerminalEvent = null;
+    try {
+      releaseSlot = await acquireAccountSlot({ provider, connectionId: credentials.connectionId, bucket, maxConcurrency: refreshedCredentials.providerSpecificData?.maxConcurrency, warn: (message) => log.warn("RESILIENCE", message) });
+    } catch (error) {
+      log.warn("RESILIENCE", `${provider}/${model} account capacity unavailable; trying next account`);
+      excludeConnectionIds.add(credentials.connectionId);
+      lastError = error.message;
+      lastStatus = HTTP_STATUS.SERVICE_UNAVAILABLE;
+      continue;
+    }
+
     // Use shared chatCore
-    const chatSettings = await getSettings();
-    const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
-    const result = await handleChatCore({
+    let result;
+    try {
+      const chatSettings = await getSettings();
+      const providerThinking = (chatSettings.providerThinking || {})[provider] || null;
+      result = await handleChatCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
@@ -294,7 +391,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       onPxpipeEvent: appendPxpipeEvent,
       providerThinking,
       // Detect source format by endpoint + body
-      sourceFormatOverride: request?.url ? detectFormatByEndpoint(new URL(request.url).pathname, body) : null,
+      sourceFormatOverride: sourceFormatForRequest(request, body),
+      ensureOpenAIDone: dashboardAuthorizedRequests.has(request),
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
@@ -306,10 +404,49 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         await clearAccountError(credentials.connectionId, credentials, model);
         // "Consecutive" strikes: a success clears the breaker for this pair.
         clearAntigravityStrikes(credentials.connectionId, model);
+      },
+      onResilienceEvent: (event, details) => {
+          if (["DISPATCH_FAILED", "STREAM_COMPLETED", "STREAM_FAILED", "CLIENT_ABORTED", "NON_STREAM_COMPLETED"].includes(event)) {
+            if (resilienceTerminalEvent) return;
+            resilienceTerminalEvent = event;
+            releaseSlot?.();
+            releaseSlot = null;
+            recordCircuitOutcome({ provider, bucket, outcome: event, ...details });
+            return;
+          }
+          recordCircuitOutcome({ provider, bucket, outcome: event, ...details });
+       }
+      });
+    } catch (error) {
+      if (!resilienceTerminalEvent) {
+        resilienceTerminalEvent = "DISPATCH_FAILED";
+        recordCircuitOutcome({ provider, bucket, outcome: "DISPATCH_FAILED", status: HTTP_STATUS.BAD_GATEWAY, origin: "processing" });
       }
-    });
+      releaseSlot?.();
+      releaseSlot = null;
+      return errorResponse(HTTP_STATUS.BAD_GATEWAY, error?.message || "Chat dispatch failed");
+    }
 
-    if (result.success) return result.response;
+      if (!result.success && !resilienceTerminalEvent) {
+        resilienceTerminalEvent = "DISPATCH_FAILED";
+        recordCircuitOutcome({
+          provider,
+          bucket,
+          outcome: "DISPATCH_FAILED",
+          status: result.status || result.response?.status || HTTP_STATUS.BAD_GATEWAY,
+          origin: "processing",
+        });
+      }
+      if (result.success && !result.streaming && !resilienceTerminalEvent) {
+        resilienceTerminalEvent = "NON_STREAM_COMPLETED";
+        recordCircuitOutcome({ provider, bucket, outcome: resilienceTerminalEvent });
+      }
+      if ((!result.success || !result.streaming) && releaseSlot) {
+        releaseSlot();
+        releaseSlot = null;
+      }
+
+      if (result.success) return result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;
@@ -339,4 +476,82 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
 
     return result.response;
   }
+}
+
+async function dispatchChatAttempt({ body, provider, model, credentials, log, clientRawRequest, request, apiKey, userAgent }) {
+  const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+  const proxyData = refreshedCredentials.providerSpecificData || {};
+  const resolvedProxy = proxyData.proxyPoolId || proxyData.connectionProxyPoolId
+    ? { source: proxyData.vercelRelayUrl ? "vercel" : "pool", proxyPoolId: proxyData.proxyPoolId || proxyData.connectionProxyPoolId }
+    : await resolveConnectionProxyConfig(proxyData, credentials.connectionId);
+  const bucket = getProxyBucketIdentity(resolvedProxy);
+  if (!bucket) return { success: false, status: HTTP_STATUS.SERVICE_UNAVAILABLE, error: "Unable to resolve Freebuff proxy bucket", poolScoped: { poolId: credentials.providerSpecificData?.proxyPoolId } };
+  const gate = evaluateCircuit(provider, bucket);
+  if (!gate.allowed) return { success: false, status: HTTP_STATUS.SERVICE_UNAVAILABLE, error: "Freebuff proxy pool circuit is cooling down", poolScoped: { poolId: credentials.providerSpecificData?.proxyPoolId } };
+  let releaseSlot;
+  try {
+    releaseSlot = await acquireAccountSlot({ provider, connectionId: credentials.connectionId, bucket, maxConcurrency: refreshedCredentials.providerSpecificData?.maxConcurrency, warn: (message) => log.warn("RESILIENCE", message) });
+  } catch (error) {
+    return { success: false, status: HTTP_STATUS.SERVICE_UNAVAILABLE, error: error.message, poolScoped: { poolId: credentials.providerSpecificData?.proxyPoolId } };
+  }
+  let terminalEvent = null;
+  const onResilienceEvent = (event, details) => {
+    if (["DISPATCH_FAILED", "STREAM_COMPLETED", "STREAM_FAILED", "CLIENT_ABORTED", "NON_STREAM_COMPLETED"].includes(event)) {
+      if (terminalEvent) return;
+      terminalEvent = event;
+      releaseSlot?.();
+      releaseSlot = null;
+      recordCircuitOutcome({ provider, bucket, outcome: event, ...details });
+      return;
+    }
+    recordCircuitOutcome({ provider, bucket, outcome: event, ...details });
+  };
+  let result;
+  try {
+    const chatSettings = await getSettings();
+    result = await handleChatCore({
+    body: { ...body, model: `${provider}/${model}` }, modelInfo: { provider, model }, credentials: refreshedCredentials, log,
+    clientRawRequest, connectionId: credentials.connectionId, userAgent, apiKey,
+    ccFilterNaming: !!chatSettings.ccFilterNaming, rtkEnabled: !!chatSettings.rtkEnabled,
+    headroomEnabled: !!chatSettings.headroomEnabled, headroomUrl: chatSettings.headroomUrl || DEFAULT_HEADROOM_URL,
+    headroomCompressUserMessages: !!chatSettings.headroomCompressUserMessages,
+    cavemanEnabled: !!chatSettings.cavemanEnabled, cavemanLevel: chatSettings.cavemanLevel || "full",
+    ponytailEnabled: !!chatSettings.ponytailEnabled, ponytailLevel: chatSettings.ponytailLevel || "full",
+    pxpipeEnabled: !!chatSettings.pxpipeEnabled, pxpipeMinChars: chatSettings.pxpipeMinChars, pxpipeTimeoutMs: chatSettings.pxpipeTimeoutMs,
+    pxpipeTransform: chatSettings.pxpipeEnabled ? await getPxpipeTransform() : null, onPxpipeEvent: appendPxpipeEvent,
+    providerThinking: (chatSettings.providerThinking || {})[provider] || null,
+    sourceFormatOverride: sourceFormatForRequest(request, body),
+    ensureOpenAIDone: dashboardAuthorizedRequests.has(request),
+    onCredentialsRefreshed: async (newCreds) => updateProviderCredentials(credentials.connectionId, { ...newCreds, existingProviderSpecificData: credentials.providerSpecificData, testStatus: "active" }),
+     onRequestSuccess: async () => clearAccountError(credentials.connectionId, credentials, model),
+    onResilienceEvent,
+    });
+  } catch (error) {
+    if (!terminalEvent) {
+      terminalEvent = "DISPATCH_FAILED";
+      recordCircuitOutcome({ provider, bucket, outcome: "DISPATCH_FAILED", status: HTTP_STATUS.BAD_GATEWAY, origin: "processing" });
+    }
+    releaseSlot?.();
+    releaseSlot = null;
+    return { success: false, status: HTTP_STATUS.BAD_GATEWAY, error: error?.message || "Chat dispatch failed" };
+  }
+  if (!result.success && !terminalEvent) {
+    terminalEvent = "DISPATCH_FAILED";
+    recordCircuitOutcome({
+      provider,
+      bucket,
+      outcome: terminalEvent,
+      status: result.status || result.response?.status || HTTP_STATUS.BAD_GATEWAY,
+      origin: "processing",
+    });
+  }
+  if (result.success && !result.streaming && !terminalEvent) {
+    terminalEvent = "NON_STREAM_COMPLETED";
+    recordCircuitOutcome({ provider, bucket, outcome: terminalEvent });
+  }
+  if ((!result.success || !result.streaming) && releaseSlot) {
+    releaseSlot();
+    releaseSlot = null;
+  }
+  return result;
 }

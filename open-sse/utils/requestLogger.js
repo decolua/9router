@@ -69,25 +69,32 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
+// Redact credentials at the persistence boundary while retaining safe diagnostics.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+
+  const serializedHeaders = typeof headers.entries === "function"
+    ? Object.fromEntries(headers.entries())
+    : { ...headers };
+
+  for (const key of Object.keys(serializedHeaders)) {
+    const normalizedKey = key.toLowerCase();
+    if (
+      normalizedKey.includes("authorization") ||
+      normalizedKey.includes("authentication") ||
+      normalizedKey.includes("cookie") ||
+      normalizedKey.includes("token") ||
+      normalizedKey.includes("api-key") ||
+      normalizedKey.includes("api_key") ||
+      normalizedKey.includes("apikey") ||
+      normalizedKey.includes("credential") ||
+      normalizedKey.includes("secret")
+    ) {
+      serializedHeaders[key] = "[REDACTED]";
+    }
+  }
+
+  return serializedHeaders;
 }
 
 // No-op logger when logging is disabled
@@ -170,7 +177,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {},
+        headers: maskSensitiveHeaders(headers),
         body
       });
     },
@@ -227,6 +234,8 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
     }
   };
 }
+
+export const __test__ = { maskSensitiveHeaders };
 
 // Legacy functions for backward compatibility
 export function logRequest() {}

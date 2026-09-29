@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyPolicyError,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -60,6 +61,15 @@ export async function handleSystemone(request) {
     log.warn("SYSTEMONE", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
+
+  if (apiKey) {
+    const policyErr = await getApiKeyPolicyError(apiKey, modelStr);
+    if (policyErr) {
+      log.warn("AUTH", policyErr.message);
+      return errorResponse(policyErr.status, policyErr.message);
+    }
+  }
+
   if (body.state === undefined || body.state === null) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: state");
   }
@@ -120,20 +130,24 @@ export async function handleSystemone(request) {
     });
 
     if (result.success) {
-      if (result.usage) {
-        saveRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint: url.pathname,
-          tokens: {
-            ...result.usage,
-            total_tokens: result.usage.prompt_tokens + result.usage.completion_tokens,
-          },
-          status: "success",
-        }).catch(() => {});
-      }
+      const usage = result.usage && typeof result.usage === "object" ? result.usage : {};
+      const promptTokens = Number(usage.prompt_tokens ?? usage.input_tokens ?? 0);
+      const completionTokens = Number(usage.completion_tokens ?? usage.output_tokens ?? 0);
+      saveRequestUsage({
+        provider,
+        model,
+        connectionId: credentials.connectionId,
+        apiKey,
+        endpoint: url.pathname,
+        tokens: {
+          ...usage,
+          prompt_tokens: Number.isFinite(promptTokens) ? promptTokens : 0,
+          completion_tokens: Number.isFinite(completionTokens) ? completionTokens : 0,
+          total_tokens: (Number.isFinite(promptTokens) ? promptTokens : 0)
+            + (Number.isFinite(completionTokens) ? completionTokens : 0),
+        },
+        status: "success",
+      }).catch(() => {});
       return result.response;
     }
 

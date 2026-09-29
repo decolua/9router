@@ -106,6 +106,24 @@ export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders 
   };
 }
 
+/** Create a bounded processing failure without exposing raw upstream payloads. */
+export function createGuardErrorResult(errorCode) {
+  const code = String(errorCode || "upstream_tool_malformed");
+  const message = "Upstream tool response validation failed";
+  return {
+    success: false,
+    status: 502,
+    error: code,
+    origin: "processing",
+    response: new Response(JSON.stringify({
+      error: { message, type: "server_error", code },
+    }), {
+      status: 502,
+      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+    }),
+  };
+}
+
 /**
  * Create unavailable response when all accounts are rate limited
  * @param {number} statusCode - Original error status code

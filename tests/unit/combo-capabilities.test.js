@@ -119,6 +119,26 @@ describe("aggregateComboCapabilities — context/output limits", () => {
   });
 });
 
+describe("aggregateComboCapabilities — bound and nested entries", () => {
+  it("accepts bound entries without mutating them", () => {
+    const entries = [
+      "opencode-go/deepseek-v4-pro",
+      { model: "opencode-go/mimo-v2.5", connectionId: "conn-b" },
+    ];
+    const snapshot = structuredClone(entries);
+    const caps = aggregateComboCapabilities(entries);
+    expect(caps.vision).toBe(true);
+    expect(entries).toEqual(snapshot);
+  });
+
+  it("accepts frozen bound entries inside nested combos", () => {
+    const inner = Object.freeze({ model: "opencode-go/mimo-v2.5", connectionId: "conn-a" });
+    const lookup = Object.freeze({ inner: Object.freeze([inner]) });
+    const outer = Object.freeze([{ model: "inner", connectionId: "conn-b" }]);
+    expect(aggregateComboCapabilities(outer, lookup).vision).toBe(true);
+  });
+});
+
 describe("aggregateComboCapabilities — nested combo resolution via comboLookup", () => {
   it("resolves nested combo and unions vision from its members", () => {
     const lookup = { "inner-combo": ["opencode-go/deepseek-v4-pro", "opencode-go/mimo-v2.5"] };

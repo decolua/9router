@@ -1,0 +1,10 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { clearProviderFailureBucket, getProviderFailureCount, recordProviderFailure, resetProviderFailureTracker } from "../../open-sse/services/providerFailureTracker.js";
+beforeEach(() => resetProviderFailureTracker());
+const base = { provider: "openai", bucket: "direct", connectionId: "c1" };
+describe("provider failure tracking", () => {
+  it("deduplicates within five seconds and isolates buckets", () => { expect(recordProviderFailure({ ...base, origin: "upstream_http", status: 503 }, 1000).recorded).toBe(true); expect(recordProviderFailure({ ...base, origin: "upstream_http", status: 503 }, 5000).deduplicated).toBe(true); expect(recordProviderFailure({ ...base, origin: "upstream_http", status: 503 }, 6001).recorded).toBe(true); expect(getProviderFailureCount("openai", "direct", 6001)).toBe(2); expect(getProviderFailureCount("openai", "other", 6001)).toBe(0); });
+  it("accepts only eligible upstream failures", () => { for (const status of [408, 500, 502, 503, 504]) recordProviderFailure({ ...base, connectionId: String(status), origin: "upstream_http", status }); recordProviderFailure({ ...base, connectionId: "timeout", origin: "upstream_timeout", status: 0 }); for (const origin of ["proxy_pool", "local_router", "client_abort", "credential_failure"]) recordProviderFailure({ ...base, connectionId: origin, origin, status: 503 }); recordProviderFailure({ ...base, connectionId: "429", origin: "upstream_http", status: 429 }); expect(getProviderFailureCount("openai", "direct")).toBe(6); });
+  it("clears only the requested bucket", () => { recordProviderFailure({ ...base, origin: "upstream_http", status: 503 }); recordProviderFailure({ ...base, bucket: "other", origin: "upstream_http", status: 503 }); clearProviderFailureBucket("openai", "direct"); expect(getProviderFailureCount("openai", "direct")).toBe(0); expect(getProviderFailureCount("openai", "other")).toBe(1); });
+  it("prunes expired windows", () => { recordProviderFailure({ ...base, origin: "upstream_http", status: 503 }, 1000); expect(getProviderFailureCount("openai", "direct", 1000 + 31 * 1000)).toBe(0); });
+});

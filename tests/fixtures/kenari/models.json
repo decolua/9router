@@ -1,0 +1,4021 @@
+{
+  "data": [
+    {
+      "context_length": 255976,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "agnes-2-0-flash:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "agnes",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": null,
+        "output": null,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 512000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "agnes-2-5-flash:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "agnes",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": null,
+        "output": null,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "claude-fable-5",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "anthropic",
+      "pricing": {
+        "cache_read": 21000000000,
+        "cache_write": 260000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 210000000000,
+        "output": 1000000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 210000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 1000000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 260000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "claude-opus-4-7",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "anthropic",
+      "pricing": {
+        "cache_read": 10000000000,
+        "cache_write": 130000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 100000000000,
+        "output": 520000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 520000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 130000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "claude-opus-4-8",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "anthropic",
+      "pricing": {
+        "cache_read": 10000000000,
+        "cache_write": 130000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 100000000000,
+        "output": 520000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 520000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 130000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "claude-opus-5",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "anthropic",
+      "pricing": {
+        "cache_read": 40000000000,
+        "cache_write": 100000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 100000000000,
+        "output": 500000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 500000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "claude-sonnet-4-6",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "anthropic",
+      "pricing": {
+        "cache_read": 6300000000,
+        "cache_write": 78000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 63000000000,
+        "output": 310000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 63000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 310000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 6300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 78000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "claude-sonnet-5",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "anthropic",
+      "pricing": {
+        "cache_read": 2000000000,
+        "cache_write": 25000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 20000000000,
+        "output": 100000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 25000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "deepseek-v4-flash",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "deepseek",
+      "pricing": {
+        "cache_read": 60000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 2750000000,
+        "output": 5500000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 60000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2750000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 5500000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "high",
+        "max"
+      ],
+      "reasoning_toggle": true,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "deepseek-v4-pro",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "deepseek",
+      "pricing": {
+        "cache_read": 100000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 10000000000,
+        "output": 20000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "high",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-2-5-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 200000000,
+        "cache_write": 500000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 2000000000,
+        "output": 15000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 200000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 15000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-2-5-flash-lite",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 40000000,
+        "cache_write": 350000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 400000000,
+        "output": 1700000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 400000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 1700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 350000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-3-1-flash-lite",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 100000000,
+        "cache_write": 350000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 1000000000,
+        "output": 6000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 350000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 1000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "formats": [
+        "mp3"
+      ],
+      "id": "gemini-3-1-flash-tts",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "name": "Gemini 3.1 Flash TTS",
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 250000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "voices": [
+        "Achernar",
+        "Achird",
+        "Algenib",
+        "Algieba",
+        "Alnilam",
+        "Aoede",
+        "Autonoe",
+        "Callirrhoe",
+        "Charon",
+        "Despina",
+        "Enceladus",
+        "Erinome",
+        "Fenrir",
+        "Gacrux",
+        "Iapetus",
+        "Kore",
+        "Laomedeia",
+        "Leda",
+        "Orus",
+        "Puck",
+        "Pulcherrima",
+        "Rasalgethi",
+        "Sadachbia",
+        "Sadaltager",
+        "Schedar",
+        "Sulafat",
+        "Umbriel",
+        "Vindemiatrix",
+        "Zephyr",
+        "Zubenelgenubi"
+      ]
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-3-1-pro",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 2100000000,
+        "cache_write": 3900000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 21000000000,
+        "output": 125000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 125000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 3900000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-3-6-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 600000000,
+        "cache_write": 300000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 6000000000,
+        "output": 30000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 600000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-3-7-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 600000000,
+        "cache_write": 300000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 6000000000,
+        "output": 30000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 600000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemini-3-8-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 600000000,
+        "cache_write": 300000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 6000000000,
+        "output": 30000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 600000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "videos"
+      ],
+      "id": "gemini-omni-flash",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "name": "Gemini Omni Flash",
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_video",
+          "endpoint": "videos",
+          "micro_idr": 350000000,
+          "unit": "second",
+          "variant": "360p"
+        },
+        {
+          "billable": "output_video",
+          "endpoint": "videos",
+          "micro_idr": 750000000,
+          "unit": "second",
+          "variant": "720p"
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "video_durations": [
+        4,
+        6,
+        8,
+        10
+      ],
+      "video_resolutions": [
+        "360p",
+        "720p"
+      ]
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gemma-4-31b-it",
+      "modalities": {
+        "input": [
+          "image",
+          "text",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": 720000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 1800000000,
+        "output": 7100000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 1800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 7100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 720000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": true,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 131072,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "glm-4-7-flash:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "z-ai",
+      "pricing": {
+        "cache_read": 190000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 1100000000,
+        "output": 7700000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "glm-5-2",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "z-ai",
+      "pricing": {
+        "cache_read": 4000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 10000000000,
+        "output": 66000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 66000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1310720,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "glm-5-3",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "z-ai",
+      "pricing": {
+        "cache_read": 4000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 10000000000,
+        "output": 66000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 66000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "high",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "glm-5-3-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "z-ai",
+      "pricing": {
+        "cache_read": 2500000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 15000000,
+        "output": 50000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2500000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 15000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 50000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "high",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1050000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-5-4",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 5200000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 52000000000,
+        "output": 310000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 310000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 5200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 272000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-5-4-mini",
+      "modalities": {
+        "input": [
+          "pdf",
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 1500000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 15000000000,
+        "output": 94000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 15000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 94000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 272000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-5-5",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 10000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 100000000000,
+        "output": 630000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 630000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 872000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-5-6-luna",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 350000000,
+        "cache_write": 4500000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 3500000000,
+        "output": 20000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 350000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 4500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 3500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 872000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-5-6-sol",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 20800000000,
+        "cache_write": 65000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 52000000000,
+        "output": 310000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 20800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 65000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 310000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 872000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-5-6-terra",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 16800000000,
+        "cache_write": 52000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 42000000000,
+        "output": 250000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 16800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 42000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 250000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1050000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-6-astra",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 20000000000,
+        "cache_write": 200000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 200000000000,
+        "output": 1000000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 200000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 1000000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 200000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "id": "gpt-image-2",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 175000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning": false,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": false
+    },
+    {
+      "context_length": 128000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-oss-120b",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 63000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 630000000,
+        "output": 3500000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 630000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 3500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 63000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": true,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 128000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "gpt-oss-20b",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": 65000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 630000000,
+        "output": 2700000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 630000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 2700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 65000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": true,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 500000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "grok-4-5",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "x-ai",
+      "pricing": {
+        "cache_read": 3250000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 21000000000,
+        "output": 60000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 60000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 3250000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 500000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "grok-4-6",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "x-ai",
+      "pricing": {
+        "cache_read": 3250000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 21000000000,
+        "output": 60000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 60000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 3250000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "id": "grok-imagine-image",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "object": "model",
+      "owned_by": "x-ai",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 300000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "id": "grok-imagine-image-2-0",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "object": "model",
+      "owned_by": "x-ai",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 900000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "id": "grok-imagine-image-quality",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "object": "model",
+      "owned_by": "x-ai",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 750000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "hy3",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "tencent",
+      "pricing": {
+        "cache_read": 270000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 2700000000,
+        "output": 11000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 11000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 270000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "hy3:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "tencent",
+      "pricing": {
+        "cache_read": 2700000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 2700000000,
+        "output": 11000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "hy4-preview",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "tencent",
+      "pricing": {
+        "cache_read": 10000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 500000000,
+        "output": 2000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "low",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "kimi-k2-6",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "moonshotai",
+      "pricing": {
+        "cache_read": 5000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 10000000000,
+        "output": 50000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 5000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 50000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "kimi-k2-7-code",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "moonshotai",
+      "pricing": {
+        "cache_read": 2000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 10000000000,
+        "output": 50000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 50000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "kimi-k3",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "moonshotai",
+      "pricing": {
+        "cache_read": 3000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 30000000000,
+        "output": 150000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 3000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 150000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "high",
+        "max"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "formats": [
+        "mp3",
+        "opus",
+        "aac",
+        "flac"
+      ],
+      "id": "kokoro-tts",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "object": "model",
+      "owned_by": "kokoro",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 75000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "laguna-s-2-1:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "poolside",
+      "pricing": {
+        "cache_read": 190000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 1900000000,
+        "output": 3800000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "laguna-xs-2-1:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "poolside",
+      "pricing": {
+        "cache_read": 1200000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 1200000000,
+        "output": 2500000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1050000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "mimo-v2-5",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "xiaomi",
+      "pricing": {
+        "cache_read": 60000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 2900000000,
+        "output": 5800000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2900000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 5800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 60000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1050000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "mimo-v2-5-pro",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "xiaomi",
+      "pricing": {
+        "cache_read": 75000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 9100000000,
+        "output": 18000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 9100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 18000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 75000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "id": "mimo-v2-5-tts",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "name": "MiMo v2.5 TTS",
+      "object": "model",
+      "owned_by": "xiaomi",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 250000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 1050000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "mimo-v2-5:free",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "xiaomi",
+      "pricing": {
+        "cache_read": 530000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 2000000000,
+        "output": 5300000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 204800,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "minimax-m2-7",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "minimax",
+      "pricing": {
+        "cache_read": 1200000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 6300000000,
+        "output": 25000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 25000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 204800,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "minimax-m2-7-highspeed",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "minimax",
+      "pricing": {
+        "cache_read": 2000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 10400000000,
+        "output": 42000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10400000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 42000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "minimax-m3",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "minimax",
+      "pricing": {
+        "cache_read": 1200000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 6300000000,
+        "output": 25000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 25000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "id": "minimax-speech-2-8-hd",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "name": "MiniMax Speech 2.8 HD",
+      "object": "model",
+      "owned_by": "minimax",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 1500000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "id": "minimax-speech-2-8-turbo",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "audio"
+        ]
+      },
+      "name": "MiniMax Speech 2.8 Turbo",
+      "object": "model",
+      "owned_by": "minimax",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 750000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "mistral-medium-3-5:free",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "mistralai",
+      "pricing": {
+        "cache_read": 31000000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 31000000000,
+        "output": 150000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_options": [
+        "none",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "muse-spark-1-2-contributor",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "meta",
+      "pricing": {
+        "cache_read": 40000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 2000000000,
+        "output": 4000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "muse-spark-1-2-contributor:free",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "meta",
+      "pricing": {
+        "cache_read": 2600000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 26000000000,
+        "output": 89000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "muse-spark-1-3-contributor",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "meta",
+      "pricing": {
+        "cache_read": 40000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 2000000000,
+        "output": 4000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1048576,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "muse-spark-1-3-contributor:free",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "meta",
+      "pricing": {
+        "cache_read": 2100000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 2100000000,
+        "output": 4200000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 131072,
+      "endpoints": [
+        "images"
+      ],
+      "id": "nano-banana-2",
+      "modalities": {
+        "input": [
+          "image",
+          "text"
+        ],
+        "output": [
+          "text",
+          "image"
+        ]
+      },
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 250000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "minimal",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": false
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "id": "nano-banana-2-lite",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "name": "Nano Banana 2 Lite",
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 150000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "id": "nano-banana-pro",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "image"
+        ]
+      },
+      "name": "Nano Banana Pro",
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 350000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "nemotron-3-super-120b-a12b",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "nvidia",
+      "pricing": {
+        "cache_read": 170000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 1700000000,
+        "output": 8400000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 1700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 8400000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 170000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": true,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "nemotron-3-super-120b-a12b:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "nvidia",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 1600000000,
+        "output": 7700000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "nemotron-3-ultra-550b-a55b",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "nvidia",
+      "pricing": {
+        "cache_read": 1200000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 12000000000,
+        "output": 75000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 12000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 75000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": true,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "nemotron-3-ultra-550b-a55b:free",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "nvidia",
+      "pricing": {
+        "cache_read": 4200000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 12000000000,
+        "output": 75000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "qwen3-7-plus",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "qwen",
+      "pricing": {
+        "cache_read": 1300000000,
+        "cache_write": 8400000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 6700000000,
+        "output": 26000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 26000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 8400000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 1000000,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "qwen3-8-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "qwen",
+      "pricing": {
+        "cache_read": 300000000,
+        "cache_write": 750000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 3000000000,
+        "output": 7500000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 3000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 7500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 750000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "id": "qwen3-8-max",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "qwen",
+      "pricing": {
+        "cache_read": 5200000000,
+        "cache_write": 52000000000,
+        "currency": "IDR",
+        "free": false,
+        "input": 42000000000,
+        "output": 120000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 42000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 120000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 5200000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "step-3-7-flash",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "stepfun",
+      "pricing": {
+        "cache_read": 840000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 4200000000,
+        "output": 24000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 4200000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 24000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 840000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "context_length": 262144,
+      "endpoints": [
+        "chat"
+      ],
+      "id": "step-3-7-flash:free",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "stepfun",
+      "pricing": {
+        "cache_read": 840000000,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": true,
+        "input": 4200000000,
+        "output": 24000000000,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "reasoning": true,
+      "reasoning_options": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "tool_call": true
+    },
+    {
+      "endpoints": [
+        "videos"
+      ],
+      "id": "veo-3.1-lite",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "video"
+        ]
+      },
+      "name": "Veo 3.1 Lite",
+      "object": "model",
+      "owned_by": "google",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "output_video",
+          "endpoint": "videos",
+          "micro_idr": 500000000,
+          "unit": "second",
+          "variant": "720p"
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null,
+      "video_durations": [
+        8
+      ],
+      "video_resolutions": [
+        "720p"
+      ]
+    },
+    {
+      "endpoints": [
+        "audio_transcription"
+      ],
+      "id": "whisper-large-v3-turbo",
+      "modalities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "object": "model",
+      "owned_by": "openai",
+      "pricing": {
+        "cache_read": null,
+        "cache_write": null,
+        "currency": "IDR",
+        "free": false,
+        "input": 0,
+        "output": 0,
+        "unit": "micro_idr_per_1m_tokens"
+      },
+      "pricing_lines": [
+        {
+          "billable": "input_audio",
+          "endpoint": "audio_transcription",
+          "micro_idr": 175000,
+          "unit": "second",
+          "variant": null
+        }
+      ],
+      "reasoning_toggle": false,
+      "sunset_at": null
+    }
+  ],
+  "object": "list"
+}

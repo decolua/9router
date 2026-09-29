@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+vi.mock("../../src/lib/usageDb.js", () => ({ saveRequestDetail: vi.fn(async () => {}) }));
+
+import { handleStreamingResponse } from "../../open-sse/handlers/chatCore/streamingHandler.js";
 import { createDisconnectAwareStream, pipeWithDisconnect, createStreamController } from "../../open-sse/utils/streamHandler.js";
 import { buildAbortedResponsesTerminalBytes } from "../../open-sse/utils/responsesStreamHelpers.js";
 import { buildStreamErrorBytes } from "../../open-sse/utils/streamHelpers.js";
@@ -33,6 +36,40 @@ async function readAll(stream) {
 }
 
 describe("Responses abort terminal synthesis", () => {
+  it("emits response.failed for a Responses client after a translated provider stream aborts", async () => {
+    let upstreamController;
+    const providerResponse = new Response(new ReadableStream({
+      start(controller) {
+        upstreamController = controller;
+        controller.enqueue(new TextEncoder().encode('data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1,"model":"gpt-5","choices":[{"index":0,"delta":{"content":"hello"},"finish_reason":null}]}\n\n'));
+      },
+    }), { headers: { "content-type": "text/event-stream" } });
+    const streamController = createStreamController({ provider: "codex", model: "gpt-5" });
+
+    const result = await handleStreamingResponse({
+      providerResponse,
+      provider: "codex",
+      model: "gpt-5",
+      sourceFormat: FORMATS.OPENAI_RESPONSES,
+      targetFormat: FORMATS.OPENAI,
+      userAgent: "test-client",
+      body: {},
+      stream: true,
+      requestStartTime: Date.now(),
+      connectionId: "connection_1",
+      streamController,
+    });
+    upstreamController.error(new Error("upstream disconnected"));
+
+    const text = await result.response.text();
+    const failedEvents = [...text.matchAll(/event: response\.failed\ndata: (.+)\n\n/g)];
+    expect(failedEvents).toHaveLength(1);
+    expect(JSON.parse(failedEvents[0][1])).toMatchObject({ type: "response.failed", response: { status: "failed" } });
+    expect(text).toContain("data: [DONE]");
+    expect(text).not.toContain("event: response.completed");
+    expect(text).not.toContain('data: {"error"');
+  });
+
   it("emits response.failed + [DONE] when upstream errors (abort/stall)", async () => {
     // Upstream readable that errors mid-stream (simulates fetch abort on stall)
     const upstream = new ReadableStream({
@@ -111,6 +148,62 @@ describe("buildStreamErrorBytes", () => {
 
 // The wiring, not just the frame builder: the watchdog must hand its reason to
 // onAbortTerminal and the bytes must reach a real consumer.
+describe("pipeWithDisconnect owned resource cleanup", () => {
+  it("cancels the owned upstream reader exactly once when the consumer cancels", async () => {
+    let upstreamCancelled = 0;
+    const upstream = new ReadableStream({
+      pull() {},
+      cancel() { upstreamCancelled++; },
+    });
+    const out = pipeWithDisconnect({ body: upstream }, new TransformStream(), makeController(), null, 60_000);
+    const reader = out.getReader();
+    await reader.cancel("consumer cancelled");
+    expect(upstreamCancelled).toBe(1);
+  });
+
+  it("releases the owned upstream reader lock after normal EOF", async () => {
+    const upstream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: ok\n\n"));
+        controller.close();
+      },
+    });
+    const out = pipeWithDisconnect({ body: upstream }, new TransformStream(), makeController(), null, 60_000);
+    await readAll(out);
+    expect(upstream.locked).toBe(false);
+  });
+
+  it("routes watchdog timeout through lifecycle error once and clears the timer", async () => {
+    vi.useFakeTimers();
+    try {
+      let upstreamCancelled = 0;
+      const events = [];
+      const upstream = new ReadableStream({
+        pull() {},
+        cancel() { upstreamCancelled++; },
+      });
+      const controller = makeController();
+      const out = pipeWithDisconnect(
+        { body: upstream },
+        new TransformStream(),
+        controller,
+        null,
+        10,
+        { onError: error => events.push(error.message) }
+      );
+      vi.advanceTimersByTime(10);
+      await Promise.resolve();
+      expect(events).toEqual(["stream stall timeout"]);
+      expect(upstreamCancelled).toBe(1);
+      await out.cleanup("duplicate cleanup");
+      expect(upstreamCancelled).toBe(1);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe("stall abort through pipeWithDisconnect", () => {
   it("delivers the error frame and closes the stream", async () => {
     // Real controller: the stub above never fires its signal, and the abort

@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+export { extendConnectionModelLock, clearConnectionModelLockIfObserved, getObservedConnectionModelLock } from "./adaptiveQuotaLocksRepo.js";
+
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
   "accessToken", "refreshToken", "expiresAt", "tokenType",

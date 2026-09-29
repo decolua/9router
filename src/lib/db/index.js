@@ -13,6 +13,7 @@ export {
   createProviderConnection, updateProviderConnection,
   deleteProviderConnection, deleteProviderConnectionsByProvider,
   reorderProviderConnections, cleanupProviderConnections,
+  extendConnectionModelLock, clearConnectionModelLockIfObserved, getObservedConnectionModelLock,
 } from "./repos/connectionsRepo.js";
 
 // Provider nodes
@@ -27,9 +28,15 @@ export {
   createProxyPool, updateProxyPool, deleteProxyPool,
 } from "./repos/proxyPoolsRepo.js";
 
+export {
+  listProxyPoolFitness, upsertProxyPoolFitness, deleteProxyPoolFitness,
+  deleteProxyPoolFitnessVersion, clearProxyPoolFitness, deleteProxyPoolFitnessByPool,
+} from "./repos/proxyPoolFitnessRepo.js";
+
 // API keys
 export {
   getApiKeys, getApiKeyById, createApiKey, updateApiKey, deleteApiKey, validateApiKey,
+  getApiKeyMetadata, touchApiKey,
 } from "./repos/apiKeysRepo.js";
 
 // Combos
@@ -59,7 +66,7 @@ export {
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
   saveRequestUsage, getUsageHistory, getUsageStats, getChartData,
-  appendRequestLog, getRecentLogs,
+  appendRequestLog, getRecentLogs, getDailyUsageForApiKey, getBulkDailyUsage,
 } from "./repos/usageRepo.js";
 
 // Request details
@@ -77,7 +84,23 @@ export async function exportDb() {
     providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
     proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt })),
+    proxyPoolFitness: db.all(`SELECT * FROM proxyPoolFitness`),
+    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({
+      id: r.id,
+      key: r.key,
+      name: r.name,
+      machineId: r.machineId,
+      isActive: r.isActive === 1,
+      createdAt: r.createdAt,
+      allowedModels: parseJson(r.allowedModels, []),
+      blockedModels: parseJson(r.blockedModels, []),
+      allowedCombos: parseJson(r.allowedCombos, []),
+      scopes: parseJson(r.scopes, []),
+      expiresAt: r.expiresAt,
+      lastUsedAt: r.lastUsedAt,
+      maxRequestsPerDay: r.maxRequestsPerDay,
+      maxSpendUsdPerDay: r.maxSpendUsdPerDay,
+    })),
     combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
     modelAliases: {},
     customModels: [],
@@ -105,6 +128,7 @@ export async function importDb(payload) {
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
     db.run(`DELETE FROM proxyPools`);
+    db.run(`DELETE FROM proxyPoolFitness`);
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
@@ -135,10 +159,28 @@ export async function importDb(payload) {
         [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
       );
     }
+    for (const entry of payload.proxyPoolFitness || []) {
+      db.run(
+        `INSERT OR REPLACE INTO proxyPoolFitness(poolId, scope, until, reason, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+        [entry.poolId, entry.scope, entry.until, entry.reason || "", entry.createdAt || new Date().toISOString(), entry.updatedAt || new Date().toISOString()]
+      );
+    }
     for (const k of payload.apiKeys || []) {
       db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, allowedModels, blockedModels, allowedCombos, scopes, expiresAt, lastUsedAt, maxRequestsPerDay, maxSpendUsdPerDay, createdAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          k.id, k.key, k.name || null, k.machineId || null,
+          k.isActive === false ? 0 : 1,
+          stringifyJson(k.allowedModels || []),
+          stringifyJson(k.blockedModels || []),
+          stringifyJson(k.allowedCombos || []),
+          stringifyJson(k.scopes || []),
+          k.expiresAt || null,
+          k.lastUsedAt || null,
+          k.maxRequestsPerDay ?? null,
+          k.maxSpendUsdPerDay ?? null,
+          k.createdAt || new Date().toISOString(),
+        ]
       );
     }
     for (const c of payload.combos || []) {

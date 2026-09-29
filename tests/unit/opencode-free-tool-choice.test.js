@@ -36,7 +36,8 @@ describe("opencode Free 1.3 tool_choice auto-only", () => {
       const body = responsesBody(model, structuredClone(choice));
       const out = new OpenCodeExecutor().transformRequest(model, body, true, CREDS);
       expect(out.tool_choice).toBe("auto");
-      expect(out.tools).toEqual(TOOLS);
+      expect(out.tools).toEqual(expect.arrayContaining([...TOOLS, ...["bash", "glob", "grep", "read"].map((name) => expect.objectContaining({ name }))]));
+      expect(out.tools).toHaveLength(5);
       expect(out.input).toEqual(INPUT);
     }
   });
@@ -46,14 +47,16 @@ describe("opencode Free 1.3 tool_choice auto-only", () => {
       FREE_13, responsesBody(FREE_13, "auto"), true, CREDS,
     );
     expect(autoOut.tool_choice).toBe("auto");
-    expect(autoOut.tools).toEqual(TOOLS);
+    expect(autoOut.tools).toHaveLength(5);
+    expect(autoOut.tools).toEqual(expect.arrayContaining([TOOLS[0], ...["bash", "glob", "grep", "read"].map((name) => expect.objectContaining({ name }))]));
     expect(autoOut.input).toEqual(INPUT);
 
     const absentOut = new OpenCodeExecutor().transformRequest(
       FREE_13, responsesBody(FREE_13, undefined), true, CREDS,
     );
-    expect("tool_choice" in absentOut).toBe(false);
-    expect(absentOut.tools).toEqual(TOOLS);
+    expect(absentOut.tool_choice).toBe("auto");
+    expect(absentOut.tools).toHaveLength(5);
+    expect(absentOut.tools).toEqual(expect.arrayContaining([TOOLS[0], ...["bash", "glob", "grep", "read"].map((name) => expect.objectContaining({ name }))]));
     expect(absentOut.input).toEqual(INPUT);
   });
 
@@ -84,7 +87,8 @@ describe("opencode Free 1.3 tool_choice auto-only", () => {
     const sent = JSON.parse(actualInit.body);
     expect(sent.tool_choice).toBe("auto");
     expect(sent.model).toBe(FREE_13);
-    expect(sent.tools).toEqual(TOOLS);
+    expect(sent.tools).toHaveLength(5);
+    expect(sent.tools).toEqual(expect.arrayContaining([TOOLS[0], ...["bash", "glob", "grep", "read"].map((name) => expect.objectContaining({ name }))]));
     expect(sent.input).toEqual(INPUT);
   });
 });

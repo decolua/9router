@@ -31,6 +31,22 @@ export const PROVIDERS = {};
 export const PROVIDER_MODELS = {};
 export const PROVIDER_OAUTH = {};
 export const PROVIDER_MEDIA = {};
+
+const providerCategories = new Map(REGISTRY.map((entry) => [entry.id, entry.category]));
+const warnedUnknownCategories = new Set();
+const VALID_CATEGORIES = new Set(["oauth", "apikey", "local", "free", "unknown"]);
+export function getProviderCategory(providerId) {
+  const category = providerCategories.get(providerId);
+  if (category === undefined) {
+    if (!warnedUnknownCategories.has(providerId)) {
+      warnedUnknownCategories.add(providerId);
+      console.warn(`[resilience] Unknown provider category for ${String(providerId).slice(0, 64)}`);
+    }
+    return "unknown";
+  }
+  return VALID_CATEGORIES.has(category) ? category : category === "freeTier" ? "free" : "unknown";
+}
+
 for (const entry of REGISTRY) {
   if (entry.transport) {
     PROVIDERS[entry.id] = buildTransport(entry.transport, entry.oauth);

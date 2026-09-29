@@ -65,10 +65,11 @@ export function reorderByCapabilities(models, required) {
   const hard = [...required].filter((c) => HARD_CAPS.has(c));
   const soft = [...required].filter((c) => !HARD_CAPS.has(c));
 
-  const tierOf = (m) => {
-    const slash = typeof m === "string" ? m.indexOf("/") : -1;
-    const provider = slash > 0 ? m.slice(0, slash) : "";
-    const model = slash > 0 ? m.slice(slash + 1) : m;
+  const tierOf = (entry) => {
+    const value = typeof entry === "string" ? entry : entry?.model;
+    const slash = typeof value === "string" ? value.indexOf("/") : -1;
+    const provider = slash > 0 ? value.slice(0, slash) : "";
+    const model = slash > 0 ? value.slice(slash + 1) : value;
     const caps = getCapabilitiesForModel(provider, model);
     if (!hard.every((c) => caps[c] === true)) return 2;
     return soft.every((c) => caps[c] === true) ? 0 : 1;
@@ -265,6 +266,12 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+function getComboModelValue(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object" && typeof entry.model === "string") return entry.model;
+  return "";
+}
+
 /**
  * Handle combo chat with fallback
  * @param {Object} options
@@ -298,11 +305,13 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
   let lastStatus = null;
 
   for (let i = 0; i < rotatedModels.length; i++) {
-    const modelStr = rotatedModels[i];
+    const modelEntry = rotatedModels[i];
+    const modelStr = getComboModelValue(modelEntry);
+    if (!modelStr) continue;
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await handleSingleModel(body, modelStr, modelEntry);
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -545,7 +554,8 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  * @returns {Promise<Response>}
  */
 export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
-  const panel = Array.isArray(models) ? models.filter(Boolean) : [];
+  const panelEntries = Array.isArray(models) ? models.filter((entry) => getComboModelValue(entry)) : [];
+  const panel = panelEntries.map(getComboModelValue);
   if (panel.length === 0) {
     return new Response(
       JSON.stringify({ error: { message: "Fusion combo has no models" } }),
@@ -555,7 +565,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0]);
+    return handleSingleModel(body, panel[0], panelEntries[0]);
   }
 
   const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
@@ -578,7 +588,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
 
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
+  const calls = panelEntries.map((entry) => withTimeout(handleSingleModel(panelBody, getComboModelValue(entry), entry, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
@@ -595,7 +605,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
       const json = await res.clone().json();
       const text = extractPanelText(json);
       if (text) {
-        answers.push({ model, text });
+        answers.push({ model, entry: panelEntries[i], text });
         log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
       } else {
         log.warn("FUSION", `Panel ${model} returned empty content`);
@@ -615,11 +625,12 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
   if (answers.length === 1) {
     log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model);
+    return handleSingleModel(body, answers[0].model, answers[0].entry);
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  return handleSingleModel(judgeBody, judge);
+  const judgeEntry = panelEntries.find((entry) => getComboModelValue(entry) === judge);
+  return handleSingleModel(judgeBody, judge, judgeEntry);
 }

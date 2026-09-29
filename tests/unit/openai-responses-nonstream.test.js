@@ -7,6 +7,7 @@ vi.mock("@/lib/usageDb.js", () => ({
 }));
 
 const { FORMATS } = await import("../../open-sse/translator/formats.js");
+const { applyFingerprintTools, takeFingerprintMetadata } = await import("../../open-sse/utils/opencodeFingerprint.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
 
@@ -86,6 +87,12 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
 });
 
 describe("forced-SSE JSON path for a Responses-API client behind a chat upstream", () => {
+  const fingerprintMetadata = (tools = []) => {
+    const body = { tools: tools.map((name) => ({ type: "function", function: { name } })) };
+    applyFingerprintTools(body, false);
+    return takeFingerprintMetadata(body);
+  };
+
   const sseCtx = (sourceFormat, targetFormat) => {
     const encoder = new TextEncoder();
     const raw = [
@@ -144,5 +151,49 @@ describe("forced-SSE JSON path for a Responses-API client behind a chat upstream
     const json = await result.response.json();
     expect(json.object).toBe("chat.completion");
     expect(json.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+
+  it("rejects an injected-only raw Chat SSE tool before JSON conversion or success accounting", async () => {
+    const ctx = sseCtx(FORMATS.OPENAI, FORMATS.OPENAI);
+    ctx.toolNameMap = fingerprintMetadata();
+    const raw = [
+      'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"name":"grep","arguments":"{\\"secret\\":\\"nope\\"}"}}]},"finish_reason":null}]}',
+      'data: {"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}',
+      'data: [DONE]',
+      "",
+    ].join("\n\n");
+    const encoder = new TextEncoder();
+    ctx.providerResponse = new Response(new ReadableStream({
+      start(controller) { controller.enqueue(encoder.encode(raw)); controller.close(); },
+    }), { headers: { "content-type": "text/event-stream" } });
+
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result.success).toBe(false);
+    expect(result.origin).toBe("processing");
+    expect(ctx.appendLog).not.toHaveBeenCalledWith(expect.objectContaining({ status: "200 OK" }));
+    const error = await result.response.json();
+    expect(error.error.code).toBe("upstream_undeclared_tool");
+    expect(JSON.stringify(error)).not.toContain("secret");
+  });
+
+  it("rejects terminal nested Responses output before the converter drops it", async () => {
+    const ctx = sseCtx(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI_RESPONSES);
+    ctx.provider = "codex";
+    ctx.toolNameMap = fingerprintMetadata();
+    const raw = [
+      'event: response.completed\ndata: {"response":{"output":[{"type":"function_call","name":"grep","call_id":"x","arguments":"{\\"token\\":\\"nope\\"}"}]}}',
+      "",
+    ].join("\n");
+    const encoder = new TextEncoder();
+    ctx.providerResponse = new Response(new ReadableStream({
+      start(controller) { controller.enqueue(encoder.encode(raw)); controller.close(); },
+    }), { headers: { "content-type": "text/event-stream" } });
+
+    const result = await handleForcedSSEToJson(ctx);
+    expect(result.success).toBe(false);
+    expect(ctx.appendLog).not.toHaveBeenCalledWith(expect.objectContaining({ status: "200 OK" }));
+    const error = await result.response.json();
+    expect(error.error.code).toBe("upstream_undeclared_tool");
+    expect(JSON.stringify(error)).not.toContain("token");
   });
 });

@@ -291,6 +291,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "qoder",
         "qoder-cn",
         "grok-cli",
+        "freebuff",
       ];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);

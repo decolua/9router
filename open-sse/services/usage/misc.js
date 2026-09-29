@@ -116,6 +116,9 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
       return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
     }
 
+    // 2026-09: Ollama switched their reported window from session (5h) /
+    // weekly (7d) to a single monthly bucket. Support both shapes so this
+    // keeps working if they ever restore the old fields.
     const monthlyResetAt = planRaw.toLowerCase() === "free" && me?.CreatedAt
       ? nextMonthlyResetFromSignup(me.CreatedAt)
       : null;
@@ -137,6 +140,7 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
       };
     }
 
+    return { plan, quotas };
     return { plan, quotas };
   } catch (error) {
     return { message: `Ollama Cloud error: ${error.message}` };

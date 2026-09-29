@@ -34,6 +34,7 @@
 - **Xiaomi MiMo**: server-assisted desktop login for headless/Docker deployments, five account clusters (cn/sgp/ams/ru/in), and v2.6 pro/flash/pro-ultraspeed models with dual-route (account service vs. cloud API)
 - **Claude**: add Claude Opus 5.5 support
 - **i18n**: translate React text rewrites via characterData mutation observer
+- **Sync (Fork)**: Merged upstream v0.5.86 preserving Testing Studio, proxy pool fitness, freebuff, kenari, and all resilience features.
 
 ## Fixes
 - **Proxy Pools**: keep request headers intact through Vercel/Cloudflare/Deno relays (spreading a `Headers` instance yielded `{}`, dropping auth and content-type)
@@ -107,6 +108,18 @@
 - **Usage**: parse the Fable weekly limit from `limits[]` instead of fabricating a row (#3847)
 - **Auth**: set a 24h `maxAge` on the dashboard session cookie
 
+# v0.5.69.3 (2026-09-09)
+
+## Fixes
+- **Usage**: read Ollama Cloud's new `limits.monthly` quota field alongside the existing session/weekly fields, restoring quota bars for accounts Ollama migrated to monthly limits
+- **Dashboard**: fix Quota Tracker progress-bar width being squeezed/stretched by the variable-length reset countdown text; countdown now renders inline with the used/total row instead of as a separate flex column
+- **Providers**: replace the placeholder Kenari icon with a hand-rendered asset matching kenari.id's brand mark
+
+# v0.5.70 (2026-09-09)
+
+## Features
+- **Providers**: add kenari.id as an OpenAI-compatible provider with automatic usage tracking and IDR→USD pricing
+
 # v0.5.69 (2026-09-05)
 
 ## Features
@@ -159,6 +172,7 @@
 # v0.5.59 (2026-08-29)
 
 ## Features
+- **Testing Studio**: filter Chat models by provider type and filter each Compare column independently; filter choices are temporary while selected-model persistence stays unchanged
 - **Search**: new web search providers — Antigravity (Google Search grounding
   on the existing OAuth account pool, citations keyed and merged by URL) and
   Xquik (X search with `x-api-key` auth, cursor pagination, credit-based
@@ -275,6 +289,7 @@
 # v0.5.55 (2026-08-14)
 
 ## Features
+- **Testing Studio**: add the protected `/dashboard/playground` workspace for streaming chats and up to four parallel model comparisons; `/dashboard/basic-chat` redirects there
 - **Auth**: native SAML 2.0 SSO alongside OIDC — AuthnRequest generation, ACS
   assertion handling, SP metadata export, admin config test, replay-protected
   via a `saml_state` cookie matched against `InResponseTo`
@@ -297,6 +312,8 @@
   tabs tripping 429; manual refresh (↻) sends `force=1` to bypass the cache
 
 ## Fixes
+- **Testing Studio**: Chat currently accepts text prompts only and does not attach or upload images
+
 - **Docker**: ship `sql.js` in the image so the pure-JS DB fallback can start —
   file tracing carried the package's JS without `dist/sql-wasm.wasm`, so a
   container with no native driver aborted with ENOENT and never got a database
