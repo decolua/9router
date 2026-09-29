@@ -124,6 +124,8 @@ export default function UsageChart({ period = "7d" }) {
                 padding: "8px 12px",
                 fontSize: "12px",
               }}
+              labelStyle={{ color: "var(--color-text-main)" }}
+              itemStyle={{ color: "var(--color-text-main)" }}
               formatter={(value) => [cfg.formatter(value), cfg.label]}
             />
             <Area

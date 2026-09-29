@@ -1,9 +1,10 @@
 // Route-level acceptance for the Zed live-model wiring:
 //   GET /api/providers/[connectionId]/models  →  resolveZedModels  →  UI rows
-// RUN WITH AN ISOLATED DB:  DATA_DIR=$(mktemp -d) npx vitest run ...
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { GET } from "@/app/api/providers/[id]/models/route.js";
-import { createProviderConnection } from "@/models/index.js";
+// Self-isolating: DATA_DIR points at a temp dir so seeding never touches ~/.9router.
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 
 // Transport stub BELOW resolveZedModels: proxyAwareFetch captures the native
 // fetch at import time, so stubbing globalThis.fetch cannot intercept it.
@@ -70,6 +71,24 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+// Imports must be dynamic so DATA_DIR is set before the DB layer loads.
+const originalDataDir = process.env.DATA_DIR;
+let GET;
+let createProviderConnection;
+
+beforeAll(async () => {
+  process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "9router-zed-live-"));
+  vi.resetModules();
+  ({ GET } = await import("@/app/api/providers/[id]/models/route.js"));
+  ({ createProviderConnection } = await import("@/models/index.js"));
+});
+
+afterAll(() => {
+  fs.rmSync(process.env.DATA_DIR, { recursive: true, force: true });
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
 });
 
 async function seedZed(n) {

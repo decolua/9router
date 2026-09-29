@@ -4,10 +4,10 @@
 
 import { getGitHubUsage } from "./usage/github.js";
 import { getGeminiUsage, getAntigravityUsage } from "./usage/google.js";
-import { getClaudeUsage } from "./usage/claude.js";
+import { getClaudeUsage, consumeClaudeResetGrant } from "./usage/claude.js";
 import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
 
-export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits };
+export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits, consumeClaudeResetGrant };
 import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
 import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn.js";

@@ -122,6 +122,22 @@ describe("model catalog", () => {
     }
     expect(globalThis.__9rCatalogSource).toBeNull();
   });
+
+  it("detaches the source from a copy that already resolved through it", async () => {
+    capabilities.setCatalogSource({
+      getModalities: (provider) => (provider === "gateway-a" ? { vision: true } : null),
+      getLimits: () => null,
+    });
+    const other = await import("../../open-sse/providers/capabilities.js?copy=3");
+    try {
+      expect(other.getCapabilitiesForModel("gateway-a", "laguna-9-preview").vision).toBe(true);
+    } finally {
+      capabilities.setCatalogSource(null);
+    }
+    // the sync resets the source before rebuilding; a copy that has read the
+    // slot once must not keep serving the uninstalled reader
+    expect(other.getCapabilitiesForModel("gateway-a", "laguna-9-preview").vision).toBe(false);
+  });
 });
 
 describe("catalog schema", () => {

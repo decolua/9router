@@ -96,6 +96,38 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     const executor = new DefaultExecutor("claude");
     expect(() => executor.buildHeaders({ apiKey: "sk" }, false)).not.toThrow();
   });
+
+  it("sets x-claude-code-session-id from metadata.user_id on Claude OAuth", () => {
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders(
+      { accessToken: "sk-ant-oat-test-token" },
+      true,
+      undefined,
+      "claude-opus-5",
+      {
+        metadata: {
+          user_id: '{"device_id":"d","account_uuid":"a","session_id":"sess-abc"}',
+        },
+      }
+    );
+    expect(headers["x-claude-code-session-id"]).toBe("sess-abc");
+  });
+
+  it("omits x-claude-code-session-id for non-OAuth API keys", () => {
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders(
+      { apiKey: "sk-ant-api03-xxx" },
+      true,
+      undefined,
+      "claude-opus-5",
+      {
+        metadata: {
+          user_id: '{"device_id":"d","account_uuid":"a","session_id":"sess-abc"}',
+        },
+      }
+    );
+    expect(headers["x-claude-code-session-id"]).toBeUndefined();
+  });
 });
 
 // ─── anthropic-compatible header stripping ────────────────────────────────────
