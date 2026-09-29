@@ -308,6 +308,7 @@ const PROVIDER_MODELS_CONFIG = {
   atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
   agnes: createOpenAIModelsConfig("https://apihub.agnes-ai.com/v1/models"),
   bai: createOpenAIModelsConfig("https://api.b.ai/v1/models"),
+  cheaperinference: createOpenAIModelsConfig("https://api.cheaperinference.com/v1/models"),
   kimchi: {
     customResolver: async (connection) => {
       const result = await resolveKimchiModels({
