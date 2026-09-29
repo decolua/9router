@@ -590,6 +590,13 @@ export function getCapabilitiesForModel(provider, model) {
     };
   }
 
+  // The Devin Cloud executor forwards text only (images are dropped); it streams
+  // reasoning_content and native tool calls.
+  if (provider === "devin" || provider === "dv") {
+    const base = getCapabilitiesForModel(null, model);
+    return { ...base, vision: false, pdf: false, audioInput: false, videoInput: false, tools: true, reasoning: base.reasoning || /^swe-/.test(baseModel) };
+  }
+
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
