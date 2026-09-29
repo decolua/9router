@@ -43,3 +43,7 @@ _Avoid_: Token Saver, compressor (as the primary name)
 **Format**:
 The wire shape of a Client or Provider request/response (e.g. OpenAI, Claude, Gemini) that the Router translates between.
 _Avoid_: Protocol, schema, dialect (as the primary name)
+
+**Hosted**:
+A deploy where the Router runs on a PaaS, container, or ephemeral VM (Render, Fly, Cloud Run, Sevalla, Docker) rather than the Operator's local machine. Self-update via `npm i -g` is a no-op and shutdown kills the instance, so the update UI is suppressed; updating means redeploying the image. Detected by `isHosted()` in the Deploy Environment module.
+_Avoid_: Container deploy (Sevalla may be a VM, not a container), cloud (too vague)
