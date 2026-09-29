@@ -324,4 +324,243 @@ describe("Antigravity executor", () => {
     expect(resps[1].name).toBe("read_file");
     expect(resps[1].response?.result).toEqual({ data: "content B" });
   });
+
+  it("skips existing raw IDs when disambiguating colliding tool call IDs (Gemini)", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "turn 1" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup",
+              type: "function",
+              function: { name: "fn_1", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup",
+          content: JSON.stringify({ turn: 1 })
+        },
+        { role: "user", content: "turn 2" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup_1",
+              type: "function",
+              function: { name: "fn_2", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup_1",
+          content: JSON.stringify({ turn: 2 })
+        },
+        { role: "user", content: "turn 3" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup",
+              type: "function",
+              function: { name: "fn_3", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup",
+          content: JSON.stringify({ turn: 3 })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const modelContents = contents.filter((c) => c.role === "model");
+    const userToolContents = contents.filter((c) => c.role === "user" && c.parts.some((p) => p.functionResponse));
+
+    const calls = modelContents.map((c) => c.parts.find((p) => p.functionCall)?.functionCall);
+    const resps = userToolContents.map((c) => c.parts.find((p) => p.functionResponse)?.functionResponse);
+
+    expect(calls).toHaveLength(3);
+    expect(resps).toHaveLength(3);
+
+    expect(calls[0]?.id).toBe("call_dup");
+    expect(resps[0]?.id).toBe("call_dup");
+    expect(calls[0]?.name).toBe("fn_1");
+    expect(resps[0]?.name).toBe("fn_1");
+
+    expect(calls[1]?.id).toBe("call_dup_1");
+    expect(resps[1]?.id).toBe("call_dup_1");
+    expect(calls[1]?.name).toBe("fn_2");
+    expect(resps[1]?.name).toBe("fn_2");
+
+    expect(calls[2]?.id).toBe("call_dup_2");
+    expect(resps[2]?.id).toBe("call_dup_2");
+    expect(calls[2]?.name).toBe("fn_3");
+    expect(resps[2]?.name).toBe("fn_3");
+  });
+
+  it("skips existing raw IDs when disambiguating colliding tool call IDs (Claude backend)", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "turn 1" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup",
+              type: "function",
+              function: { name: "fn_1", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup",
+          content: JSON.stringify({ turn: 1 })
+        },
+        { role: "user", content: "turn 2" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup_1",
+              type: "function",
+              function: { name: "fn_2", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup_1",
+          content: JSON.stringify({ turn: 2 })
+        },
+        { role: "user", content: "turn 3" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_dup",
+              type: "function",
+              function: { name: "fn_3", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_dup",
+          content: JSON.stringify({ turn: 3 })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("claude-opus-4-6-thinking", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const modelContents = contents.filter((c) => c.role === "model");
+    const userToolContents = contents.filter((c) => c.role === "user" && c.parts.some((p) => p.functionResponse));
+
+    const calls = modelContents.map((c) => c.parts.find((p) => p.functionCall)?.functionCall);
+    const resps = userToolContents.map((c) => c.parts.find((p) => p.functionResponse)?.functionResponse);
+
+    expect(calls).toHaveLength(3);
+    expect(resps).toHaveLength(3);
+
+    expect(calls[0]?.id).toBe("call_dup");
+    expect(resps[0]?.id).toBe("call_dup");
+    expect(calls[0]?.name).toBe("fn_1");
+    expect(resps[0]?.name).toBe("fn_1");
+
+    expect(calls[1]?.id).toBe("call_dup_1");
+    expect(resps[1]?.id).toBe("call_dup_1");
+    expect(calls[1]?.name).toBe("fn_2");
+    expect(resps[1]?.name).toBe("fn_2");
+
+    expect(calls[2]?.id).toBe("call_dup_2");
+    expect(resps[2]?.id).toBe("call_dup_2");
+    expect(calls[2]?.name).toBe("fn_3");
+    expect(resps[2]?.name).toBe("fn_3");
+  });
+
+  it("does not pair tool responses with mismatched tool call IDs via positional fallback", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "call A" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_A",
+              type: "function",
+              function: { name: "fn_A", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          tool_call_id: "call_B",
+          content: JSON.stringify({ data: "from B" })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const userToolContent = contents.find((c) => c.role === "user" && c.parts.some((p) => p.functionResponse));
+    const resp = userToolContent?.parts.find((p) => p.functionResponse)?.functionResponse;
+
+    expect(resp?.id).toBe("call_A");
+    expect(resp?.response?.result).not.toEqual({ data: "from B" });
+  });
+
+  it("allows positional fallback when tool response has missing tool_call_id", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "call without response id" },
+        {
+          role: "assistant",
+          tool_calls: [
+            {
+              id: "call_A",
+              type: "function",
+              function: { name: "fn_A", arguments: "{}" }
+            }
+          ]
+        },
+        {
+          role: "tool",
+          content: JSON.stringify({ data: "fallback content" })
+        }
+      ]
+    };
+
+    const out = openaiToAntigravityRequest("gemini-3.5-flash-low", body, true, {
+      projectId: "project-1",
+      connectionId: "conn-1"
+    });
+
+    const contents = out.request.contents;
+    const userToolContent = contents.find((c) => c.role === "user" && c.parts.some((p) => p.functionResponse));
+    const resp = userToolContent?.parts.find((p) => p.functionResponse)?.functionResponse;
+
+    expect(resp?.id).toBe("call_A");
+    expect(resp?.response?.result).toEqual({ data: "fallback content" });
+  });
 });

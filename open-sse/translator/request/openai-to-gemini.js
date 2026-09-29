@@ -87,7 +87,21 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
-  const callIdOccurrences = new Map();
+  // Collect all raw call IDs to avoid suffix collisions with pre-existing IDs
+  const allRawCallIds = new Set();
+  if (body.messages && Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (msg.role === ROLE.ASSISTANT && msg.tool_calls && Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc.type === OPENAI_BLOCK.FUNCTION && tc.id) {
+            allRawCallIds.add(tc.id);
+          }
+        }
+      }
+    }
+  }
+
+  const emittedCallIds = new Set();
 
   // Convert messages
   if (body.messages && Array.isArray(body.messages)) {
@@ -137,9 +151,14 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             const rawId = tc.id;
             let uniqueId = rawId;
             if (rawId) {
-              const count = callIdOccurrences.get(rawId) || 0;
-              callIdOccurrences.set(rawId, count + 1);
-              uniqueId = count === 0 ? rawId : `${rawId}_${count}`;
+              if (emittedCallIds.has(uniqueId)) {
+                let counter = 1;
+                while (allRawCallIds.has(`${rawId}_${counter}`) || emittedCallIds.has(`${rawId}_${counter}`)) {
+                  counter++;
+                }
+                uniqueId = `${rawId}_${counter}`;
+              }
+              emittedCallIds.add(uniqueId);
             }
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
@@ -203,8 +222,14 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               if (matchIdx !== -1) {
                 usedAdjacentIndices.add(matchIdx);
                 resp = adjacentToolMessages[matchIdx].content;
-              } else if (adjacentToolMessages.length === toolCalls.length && !usedAdjacentIndices.has(tIdx)) {
-                // 2. By positional fallback in adjacent tool messages (if same count or index matches)
+              } else if (
+                adjacentToolMessages.length === toolCalls.length &&
+                !usedAdjacentIndices.has(tIdx) &&
+                (!adjacentToolMessages[tIdx].tool_call_id ||
+                  !tc.rawId ||
+                  adjacentToolMessages[tIdx].tool_call_id === tc.rawId)
+              ) {
+                // 2. By positional fallback in adjacent tool messages (restricted to missing IDs or matching/duplicate IDs)
                 usedAdjacentIndices.add(tIdx);
                 resp = adjacentToolMessages[tIdx].content;
               } else if (tc.rawId && toolResponses[tc.rawId] !== undefined) {
@@ -386,7 +411,21 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     }
   }
 
-  const toolUseOccurrences = new Map();
+  // Collect all raw tool use IDs to avoid suffix collisions with pre-existing IDs
+  const allToolUseIds = new Set();
+  if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
+    for (const msg of claudeRequest.messages) {
+      if (Array.isArray(msg.content)) {
+        for (const block of msg.content) {
+          if (block.type === CLAUDE_BLOCK.TOOL_USE && block.id) {
+            allToolUseIds.add(block.id);
+          }
+        }
+      }
+    }
+  }
+
+  const emittedToolUseIds = new Set();
   const pendingToolUses = new Map();
 
   // Convert Claude messages to Gemini contents
@@ -403,9 +442,14 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             const rawId = block.id;
             let uniqueId = rawId;
             if (rawId) {
-              const count = toolUseOccurrences.get(rawId) || 0;
-              toolUseOccurrences.set(rawId, count + 1);
-              uniqueId = count === 0 ? rawId : `${rawId}_${count}`;
+              if (emittedToolUseIds.has(uniqueId)) {
+                let counter = 1;
+                while (allToolUseIds.has(`${rawId}_${counter}`) || emittedToolUseIds.has(`${rawId}_${counter}`)) {
+                  counter++;
+                }
+                uniqueId = `${rawId}_${counter}`;
+              }
+              emittedToolUseIds.add(uniqueId);
               if (!pendingToolUses.has(rawId)) {
                 pendingToolUses.set(rawId, []);
               }
