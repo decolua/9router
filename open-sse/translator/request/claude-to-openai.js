@@ -65,19 +65,40 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Tools
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => ({
-      type: OPENAI_BLOCK.FUNCTION,
-      function: {
-        name: tool.name,
-        description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
-      }
-    }));
+    result.tools = body.tools
+      .map(tool => {
+        // Provider-defined/hosted tools (web_search, computer, mcp, ...) have
+        // no Chat equivalent — forward untouched instead of mangling them
+        // into function declarations.
+        if (tool?.type && tool.type !== "function" && tool.type !== "custom" && !tool.function) return tool;
+        const fn = tool.function || {};
+        const name = fn.name || tool.name;
+        if (!name || typeof name !== "string" || !name.trim()) return null;
+        const converted = {
+          type: OPENAI_BLOCK.FUNCTION,
+          function: {
+            name,
+            description: String(fn.description || tool.description || ""),
+            parameters: fn.parameters || tool.input_schema || { type: "object", properties: {} }
+          }
+        };
+        for (const key of ["strict", "cache_control", "eager_input_streaming", "defer_loading", "allowed_callers", "disable_parallel_tool_use"]) {
+          const value = fn[key] !== undefined ? fn[key] : tool[key];
+          if (value !== undefined) converted.function[key] = value;
+        }
+        return converted;
+      })
+      .filter(Boolean);
+    if (result.tools.length === 0) delete result.tools;
   }
 
   // Tool choice
   if (body.tool_choice) {
     result.tool_choice = convertToolChoice(body.tool_choice);
+  }
+
+  if (body.disable_parallel_tool_use !== undefined) {
+    result.parallel_tool_calls = body.disable_parallel_tool_use === false;
   }
 
   if (body.reasoning_effort !== undefined) {
@@ -167,11 +188,23 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    const thinkingTexts = [];
+    let thinkingSignature = null;
+    let redactedThinkingData = null;
 
     for (const block of msg.content) {
       switch (block.type) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+          break;
+
+        case CLAUDE_BLOCK.THINKING:
+          if (typeof block.thinking === "string" && block.thinking) thinkingTexts.push(block.thinking);
+          if (!thinkingSignature && typeof block.signature === "string" && block.signature) thinkingSignature = block.signature;
+          break;
+
+        case CLAUDE_BLOCK.REDACTED_THINKING:
+          if (!redactedThinkingData && typeof block.data === "string" && block.data) redactedThinkingData = block.data;
           break;
 
         case CLAUDE_BLOCK.IMAGE:
@@ -242,6 +275,15 @@ function convertClaudeMessage(msg) {
       return toolResults;
     }
 
+    // Thinking blocks ride on the assistant message (signature replayed verbatim
+    // so a later openai->claude hop can restore them ahead of tool_use).
+    const attachThinking = (target) => {
+      if (role !== ROLE.ASSISTANT) return;
+      if (thinkingTexts.length > 0) target.reasoning_content = thinkingTexts.join("\n");
+      if (thinkingSignature) target.thinking_signature = thinkingSignature;
+      if (redactedThinkingData) target.redacted_thinking_data = redactedThinkingData;
+    };
+
     // If has tool calls, return assistant message with tool_calls
     if (toolCalls.length > 0) {
       const result = { role: ROLE.ASSISTANT };
@@ -249,15 +291,18 @@ function convertClaudeMessage(msg) {
         result.content = collapseTextParts(parts);
       }
       result.tool_calls = toolCalls;
+      attachThinking(result);
       return result;
     }
 
     // Return content
     if (parts.length > 0) {
-      return {
+      const result = {
         role,
         content: collapseTextParts(parts)
       };
+      attachThinking(result);
+      return result;
     }
     
     // Empty content array
@@ -273,9 +318,10 @@ function convertClaudeMessage(msg) {
 function convertToolChoice(choice) {
   if (!choice) return "auto";
   if (typeof choice === "string") return choice;
-  
+
   switch (choice.type) {
     case "auto": return "auto";
+    case "none": return "none";
     case "any": return "required";
     case "tool": return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
     default: return "auto";

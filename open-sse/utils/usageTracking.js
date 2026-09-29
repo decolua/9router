@@ -129,8 +129,18 @@ export function normalizeUsage(usage) {
   assignNumber("total_tokens", usage?.total_tokens);
   assignNumber("cache_read_input_tokens", usage?.cache_read_input_tokens);
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
-  assignNumber("cached_tokens", usage?.cached_tokens);
+  assignNumber("cached_tokens", usage?.cached_tokens ?? usage?.input_tokens_details?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
+  if (normalized.cache_creation_input_tokens === undefined) {
+    assignNumber("cache_creation_input_tokens",
+      usage?.cache_write_tokens ?? usage?.cacheWrite ?? usage?.cache_write
+      ?? usage?.input_tokens_details?.cache_write_tokens ?? usage?.prompt_tokens_details?.cache_write_tokens);
+  }
+  if (normalized.reasoning_tokens === undefined) {
+    assignNumber("reasoning_tokens",
+      usage?.thinking_tokens ?? usage?.output_tokens_details?.reasoning_tokens
+      ?? usage?.output_tokens_details?.thinking_tokens);
+  }
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -166,12 +176,15 @@ export function canonicalizeUsage(usage) {
 
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
-  const reasoning = num(usage.reasoning_tokens);
+  const inputDetails = usage.input_tokens_details && typeof usage.input_tokens_details === "object" ? usage.input_tokens_details : {};
+  const promptDetails = usage.prompt_tokens_details && typeof usage.prompt_tokens_details === "object" ? usage.prompt_tokens_details : {};
+  const outputDetails = usage.output_tokens_details && typeof usage.output_tokens_details === "object" ? usage.output_tokens_details : {};
+  const reasoning = num(usage.reasoning_tokens ?? usage.thinking_tokens ?? outputDetails.reasoning_tokens ?? outputDetails.thinking_tokens);
   // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently
   // drop cache_creation.
-  const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens);
+  const cacheCreation = num(usage.cache_creation_input_tokens ?? usage.cache_write_tokens ?? usage.cacheWrite ?? usage.cache_write ?? inputDetails.cache_write_tokens ?? promptDetails.cache_write_tokens ?? promptDetails.cache_creation_tokens);
 
   let prompt = num(usage.prompt_tokens ?? usage.input_tokens);
   let cached;
@@ -193,7 +206,7 @@ export function canonicalizeUsage(usage) {
     // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
     // nested prompt_tokens_details.cached_tokens shape, so without this the
     // cache-read count is silently dropped on every buildUsage()-derived usage.
-    cached = num(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
+    cached = num(usage.cached_tokens ?? inputDetails.cached_tokens ?? promptDetails.cached_tokens);
   }
 
   const result = {
@@ -207,6 +220,23 @@ export function canonicalizeUsage(usage) {
   };
   if (reasoning > 0) result.reasoning_tokens = reasoning;
   return result;
+}
+
+// Summarize Anthropic iterations[] into executor totals. Skips advisor_message
+// (billed at advisor rates, not rolled into top-level totals). A turn served by
+// a server-side fallback uses the top-level totals as-is (null = use top-level).
+export function summarizeIterations(iterations) {
+  if (!Array.isArray(iterations) || iterations.length === 0) return null;
+  if (iterations.some((it) => it?.type === "fallback_message")) return null;
+  const exec = iterations.filter((it) => it?.type === "compaction" || it?.type === "message");
+  if (exec.length === 0) return null;
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  return {
+    input_tokens: exec.reduce((a, it) => a + n(it.input_tokens), 0),
+    output_tokens: exec.reduce((a, it) => a + n(it.output_tokens), 0),
+    cache_read_input_tokens: exec.reduce((a, it) => a + n(it.cache_read_input_tokens), 0),
+    cache_creation_input_tokens: exec.reduce((a, it) => a + n(it.cache_creation_input_tokens), 0),
+  };
 }
 
 /**
@@ -248,17 +278,20 @@ export function extractUsage(chunk) {
       prompt_tokens: u.input_tokens || 0,
       completion_tokens: u.output_tokens || 0,
       cache_read_input_tokens: u.cache_read_input_tokens,
-      cache_creation_input_tokens: u.cache_creation_input_tokens
+      cache_creation_input_tokens: u.cache_creation_input_tokens,
+      reasoning_tokens: u.output_tokens_details?.thinking_tokens
     });
   }
 
   // Claude format (message_delta event)
   if (chunk.type === "message_delta" && chunk.usage && typeof chunk.usage === "object") {
+    const summarized = summarizeIterations(chunk.usage.iterations);
     return normalizeUsage({
-      prompt_tokens: chunk.usage.input_tokens || 0,
-      completion_tokens: chunk.usage.output_tokens || 0,
-      cache_read_input_tokens: chunk.usage.cache_read_input_tokens,
-      cache_creation_input_tokens: chunk.usage.cache_creation_input_tokens
+      prompt_tokens: summarized?.input_tokens ?? chunk.usage.input_tokens ?? 0,
+      completion_tokens: summarized?.output_tokens ?? chunk.usage.output_tokens ?? 0,
+      cache_read_input_tokens: summarized?.cache_read_input_tokens ?? chunk.usage.cache_read_input_tokens,
+      cache_creation_input_tokens: summarized?.cache_creation_input_tokens ?? chunk.usage.cache_creation_input_tokens,
+      reasoning_tokens: chunk.usage.output_tokens_details?.thinking_tokens
     });
   }
 
@@ -266,12 +299,17 @@ export function extractUsage(chunk) {
   if ((chunk.type === "response.completed" || chunk.type === "response.done") && chunk.response?.usage && typeof chunk.response.usage === "object") {
     const usage = chunk.response.usage;
     const cachedTokens = usage.input_tokens_details?.cached_tokens;
+    const cacheWriteTokens = usage.input_tokens_details?.cache_write_tokens;
+    const details = (cachedTokens || cacheWriteTokens)
+      ? { ...(cachedTokens ? { cached_tokens: cachedTokens } : {}), ...(cacheWriteTokens ? { cache_write_tokens: cacheWriteTokens } : {}) }
+      : undefined;
     return normalizeUsage({
       prompt_tokens: usage.input_tokens || usage.prompt_tokens || 0,
       completion_tokens: usage.output_tokens || usage.completion_tokens || 0,
       cached_tokens: cachedTokens,
-      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens,
-      prompt_tokens_details: cachedTokens ? { cached_tokens: cachedTokens } : undefined
+      cache_creation_input_tokens: cacheWriteTokens,
+      reasoning_tokens: usage.output_tokens_details?.reasoning_tokens ?? usage.output_tokens_details?.thinking_tokens,
+      prompt_tokens_details: details
     });
   }
 
@@ -281,7 +319,8 @@ export function extractUsage(chunk) {
       prompt_tokens: chunk.usage.prompt_tokens,
       completion_tokens: chunk.usage.completion_tokens || 0,
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
-      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
+      cache_creation_input_tokens: chunk.usage.prompt_tokens_details?.cache_write_tokens,
+      reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens ?? chunk.usage.completion_tokens_details?.thinking_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
       completion_tokens_details: chunk.usage.completion_tokens_details
     });

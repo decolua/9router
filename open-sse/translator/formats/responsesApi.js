@@ -76,6 +76,19 @@ export function coerceResponsesOutput(value) {
   }
 }
 
+// Preserve caller store; default to stateless. When stateless with reasoning,
+// request the encrypted continuity blob (AI SDK openai provider behavior).
+export function ensureResponsesStoreInclude(body) {
+  if (!body || typeof body !== "object") return body;
+  if (body.store === undefined) body.store = false;
+  if (body.store === false && body.reasoning) {
+    const include = Array.isArray(body.include) ? [...body.include] : [];
+    if (!include.includes("reasoning.encrypted_content")) include.push("reasoning.encrypted_content");
+    body.include = include;
+  }
+  return body;
+}
+
 /**
  * Convert OpenAI Responses API format to standard chat completions format
  * Responses API uses: { input: [...], instructions: "..." }
@@ -96,9 +109,21 @@ export function convertResponsesApiFormat(body) {
   let currentAssistantMsg = null;
   let pendingToolCalls = [];
   let pendingToolResults = [];
+  // Buffered reasoning continuity: attached to the next assistant message or
+  // function_call group, never emitted as a standalone (empty-content) message
+  // that downstream empty-message filters would drop.
+  let pendingReasoning = "";
+  let pendingReasoningEncrypted = "";
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
+
+  const attachPendingReasoning = (msg) => {
+    if (pendingReasoning) msg.reasoning_content = pendingReasoning;
+    if (pendingReasoningEncrypted) msg.encrypted_content = pendingReasoningEncrypted;
+    pendingReasoning = "";
+    pendingReasoningEncrypted = "";
+  };
 
   for (const item of inputItems) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
@@ -131,7 +156,9 @@ export function convertResponsesApiFormat(body) {
           return c;
         })
         : item.content;
-      result.messages.push({ role: item.role, content });
+      const msg = { role: item.role, content };
+      if (item.role === ROLE.ASSISTANT) attachPendingReasoning(msg);
+      result.messages.push(msg);
     }
     else if (itemType === RESPONSES_ITEM.FUNCTION_CALL) {
       // Start or append to assistant message with tool_calls
@@ -141,15 +168,16 @@ export function convertResponsesApiFormat(body) {
           content: null,
           tool_calls: []
         };
+        attachPendingReasoning(currentAssistantMsg);
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: clampResponsesCallId(item.call_id),
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
-          arguments: item.arguments
+          arguments: coerceResponsesArguments(item.arguments)
         }
       });
     }
@@ -162,18 +190,28 @@ export function convertResponsesApiFormat(body) {
       // Add tool result
       pendingToolResults.push({
         role: ROLE.TOOL,
-        tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
+        tool_call_id: clampResponsesCallId(item.call_id),
+        content: coerceResponsesOutput(item.output)
       });
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
-      // Skip reasoning items - they are for display only
+      // Buffer reasoning continuity onto the next assistant message or
+      // function_call group — a standalone empty-content message would be
+      // dropped by downstream empty-message filters, losing the blob.
+      if (Array.isArray(item.summary)) {
+        const txt = item.summary.map(s => s?.text || "").filter(Boolean).join("\n");
+        if (txt) pendingReasoning = pendingReasoning ? `${pendingReasoning}\n${txt}` : txt;
+      }
+      if (typeof item.encrypted_content === "string" && item.encrypted_content) {
+        pendingReasoningEncrypted = item.encrypted_content;
+      }
       continue;
     }
   }
 
   // Flush remaining
   if (currentAssistantMsg) {
+    attachPendingReasoning(currentAssistantMsg);
     result.messages.push(currentAssistantMsg);
   }
   if (pendingToolResults.length > 0) {

@@ -33,11 +33,12 @@ export default {
     { format: "openai-responses", baseUrl: "https://opencode.ai/zen/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
   ],
   // supportedFormats follow the endpoint table in https://opencode.ai/docs/zen/
-  // (live /zen/v1/models, 2026-09-18: 71 ids).
+  // (live /zen/v1/models).
   models: [
     // Claude (messages)
     { id: "claude-fable-5", name: "Claude Fable 5", supportedFormats: ["claude"] },
     { id: "claude-fable-5-1", name: "Claude Fable 5.1", supportedFormats: ["claude"] },
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5", supportedFormats: ["claude"] },
     { id: "claude-opus-5", name: "Claude Opus 5", supportedFormats: ["claude"] },
     { id: "claude-opus-4-8", name: "Claude Opus 4.8", supportedFormats: ["claude"] },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7", supportedFormats: ["claude"] },
@@ -58,6 +59,8 @@ export default {
     { id: "gemini-3-flash", name: "Gemini 3 Flash", supportedFormats: ["openai"] },
     // GPT / Grok / Muse Spark paid (responses)
     { id: "gpt-6-astra", name: "GPT 6 Astra", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+    { id: "gpt-6-sol", name: "GPT 6 Sol", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+    { id: "gpt-6-luna", name: "GPT 6 Luna", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "gpt-5.6-sol", name: "GPT 5.6 Sol", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "gpt-5.6-terra", name: "GPT 5.6 Terra", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "gpt-5.6-luna", name: "GPT 5.6 Luna", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
@@ -79,14 +82,18 @@ export default {
     { id: "gpt-5-codex", name: "GPT 5 Codex", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "gpt-5-nano", name: "GPT 5 Nano", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "grok-build-0.1", name: "Grok Build 0.1", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+    { id: "grok-4.7", name: "Grok 4.7", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "grok-4.6", name: "Grok 4.6", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "grok-4.5", name: "Grok 4.5", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.3", name: "Muse Spark 1.3", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.2", name: "Muse Spark 1.2", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
-    // Qwen paid (messages)
+    // Qwen paid (endpoint per docs table: 3.8-max chat, rest messages)
+    { id: "qwen3.8-max", name: "Qwen 3.8 Max", supportedFormats: ["openai"] },
+    { id: "qwen3.8-flash", name: "Qwen 3.8 Flash", supportedFormats: ["claude"] },
     { id: "qwen3.6-plus", name: "Qwen 3.6 Plus", supportedFormats: ["claude"] },
     { id: "qwen3.5-plus", name: "Qwen 3.5 Plus", supportedFormats: ["claude"] },
     // DeepSeek / GLM / MiniMax / Kimi / Big Pickle (chat completions)
+    { id: "deepseek-v4.1-flash", name: "DeepSeek V4.1 Flash", supportedFormats: ["openai"] },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai"] },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai"] },
     { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision Exp", supportedFormats: ["openai"] },
@@ -103,6 +110,8 @@ export default {
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
     { id: "kimi-k2.5", name: "Kimi K2.5", supportedFormats: ["openai"] },
     { id: "big-pickle", name: "Big Pickle", supportedFormats: ["openai"] },
+    { id: "space-bunny-free", name: "Space Bunny Free", supportedFormats: ["openai"] },
+    // Retained for backward compatibility (free lane + catalog tests); absent from the live catalog.
     { id: "union-alpha", name: "Union Alpha", supportedFormats: ["claude"] },
     // Free tier on the keyed lane (chat completions)
     { id: "deepseek-v4-flash-free", name: "DeepSeek V4 Flash Free", supportedFormats: ["openai"] },

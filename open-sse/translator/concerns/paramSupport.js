@@ -45,8 +45,54 @@ function clampNumber(body, key, ceiling) {
 }
 
 // Remove unsupported params from body in place; returns body.
+// Sampling params the OpenAI API rejects on reasoning models
+// (openai-chat-language-model.ts getArgs). Detection is field-based, never model-id based.
+const REASONING_SAMPLING_PARAMS = [
+  "temperature", "top_p", "top_k", "logprobs", "top_logprobs",
+  "frequency_penalty", "presence_penalty", "logit_bias",
+];
+
+// SDK fields that must always pass through to the upstream body.
+export const FORWARDED_SDK_FIELDS = [
+  "verbosity", "text_verbosity", "service_tier",
+  "prompt_cache_key", "prompt_cache_options", "prompt_cache_retention",
+  "prediction", "safety_identifier", "metadata", "store", "user",
+  "parallel_tool_calls", "reasoning", "reasoning_effort", "output_config",
+  "speed", "serviceTier", "inferenceGeo", "fallbacks", "safeguards",
+  "compaction", "context_management", "container", "mcp_servers",
+  "taskBudget", "sendReasoning", "structuredOutputMode", "cache_control",
+];
+
+export function isReasoningRequest(body) {
+  if (!body || typeof body !== "object") return false;
+  if (typeof body.reasoning_effort === "string" && body.reasoning_effort) return true;
+  const r = body.reasoning;
+  return !!r && typeof r === "object" && !Array.isArray(r);
+}
+
+export function reasoningEffortValue(body) {
+  if (typeof body?.reasoning_effort === "string" && body.reasoning_effort) {
+    return body.reasoning_effort.toLowerCase();
+  }
+  const effort = body?.reasoning && typeof body.reasoning === "object" ? body.reasoning.effort : null;
+  return typeof effort === "string" && effort ? effort.toLowerCase() : null;
+}
+
+// Drop sampling params for reasoning requests, except effort "none"
+// (gpt-5.1+ with effort none keeps non-reasoning parameters).
+export function stripReasoningSamplingParams(body) {
+  if (!body || typeof body !== "object") return body;
+  if (!isReasoningRequest(body)) return body;
+  if (reasoningEffortValue(body) === "none") return body;
+  for (const key of REASONING_SAMPLING_PARAMS) {
+    if (body[key] !== undefined) delete body[key];
+  }
+  return body;
+}
+
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
+  stripReasoningSamplingParams(body);
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;

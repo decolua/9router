@@ -231,6 +231,19 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
 
+  // Normalize Responses tool_choice to Chat shapes (allowed_tools has no Chat equivalent).
+  if (body.tool_choice !== undefined) {
+    const tc = body.tool_choice;
+    if (typeof tc === "string") result.tool_choice = tc;
+    else if (tc && typeof tc === "object") {
+      if ((tc.type === "function" || tc.type === "custom") && typeof tc.name === "string" && tc.name) {
+        result.tool_choice = { type: OPENAI_BLOCK.FUNCTION, function: { name: tc.name } };
+      } else if (tc.type === "allowed_tools") {
+        result.tool_choice = tc.mode === "required" ? "required" : "auto";
+      } else result.tool_choice = "auto";
+    }
+  }
+
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
   if (result.max_output_tokens !== undefined) {
@@ -425,23 +438,29 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     result.instructions = "";
   }
 
-  // Convert tools format
+  // Convert tools format. Hosted tools (file-search, web-search, computer,
+  // mcp, code-interpreter, shell, image-generation, apply-patch, tool-search,
+  // namespace, ...) carry their own wire shape — forward untouched.
   if (body.tools && Array.isArray(body.tools)) {
     result.tools = body.tools.map(tool => {
       if (tool.type === OPENAI_BLOCK.FUNCTION) {
         // Strict upstreams reject nameless/overlong tool declarations
         const name = typeof tool.function?.name === "string" ? tool.function.name.trim() : "";
         if (!name) return null;
-        return {
+        const converted = {
           type: OPENAI_BLOCK.FUNCTION,
           name: name.slice(0, MAX_TOOL_NAME_LEN),
           description: String(tool.function.description || ""),
-          parameters: normalizeToolParameters(tool.function.parameters),
-          strict: tool.function.strict
+          parameters: normalizeToolParameters(tool.function.parameters)
         };
+        for (const key of ["strict", "async", "defer_loading", "allowed_callers", "output_schema", "namespace"]) {
+          if (tool.function[key] !== undefined) converted[key] = tool.function[key];
+        }
+        return converted;
       }
       return tool;
     }).filter(Boolean);
+    if (result.tools.length === 0) delete result.tools;
   }
 
   // Pass through other relevant fields
@@ -458,6 +477,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
+  if (body.tool_choice !== undefined) result.tool_choice = body.tool_choice;
 
   return result;
 }

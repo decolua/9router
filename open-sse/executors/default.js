@@ -1,6 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
-import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, mergeAnthropicBeta } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE, selectAnthropicBeta, getBetasFromHeaders, mergeAnthropicBeta } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 import { OAUTH_ENDPOINTS, buildKimiHeaders } from "../config/appConstants.js";
 import { buildClineHeaders } from "../shared/clineAuth.js";
@@ -165,11 +165,14 @@ export class DefaultExecutor extends BaseExecutor {
     // a node fronting Kimi or GLM answers on its own ids and never matches, so
     // gateways that would choke on unknown beta flags are left untouched.
     const isClaudeModel = typeof model === "string" && /^claude-/.test(model);
-    const clientBeta = credentials?.rawHeaders?.["anthropic-beta"];
+    const clientBeta = getBetasFromHeaders(credentials?.rawHeaders);
+    const isMessagesUrl = typeof url === "string" && url.includes("/messages");
+    const isOpenCodeClaudeLane = (this.provider === "opencode-zen" || this.provider === "opencode-go") && isMessagesUrl && isClaudeModel;
     if (model && (this.provider === "claude"
-      || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel))) {
+      || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel)
+      || isOpenCodeClaudeLane)) {
       headers["Anthropic-Beta"] = mergeAnthropicBeta(selectAnthropicBeta(model, body), clientBeta);
-    } else if (this.provider === "anthropic" && clientBeta) {
+    } else if (this.provider === "anthropic" && clientBeta.length > 0) {
       headers["Anthropic-Beta"] = mergeAnthropicBeta(headers["Anthropic-Beta"], clientBeta);
     }
 

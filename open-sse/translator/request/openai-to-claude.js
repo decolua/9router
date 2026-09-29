@@ -36,15 +36,15 @@ export function openaiToClaudeRequest(model, body, stream) {
   const systemParts = [];
 
   if (body.messages && Array.isArray(body.messages)) {
-    // Extract system messages
+    // Extract system messages (developer is the system-level role for reasoning models)
     for (const msg of body.messages) {
-      if (msg.role === ROLE.SYSTEM) {
+      if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
         systemParts.push(typeof msg.content === "string" ? msg.content : extractTextContent(msg.content, "\n"));
       }
     }
 
     // Filter out system messages for separate processing
-    const nonSystemMessages = body.messages.filter(m => m.role !== ROLE.SYSTEM);
+    const nonSystemMessages = body.messages.filter(m => m.role !== ROLE.SYSTEM && m.role !== ROLE.DEVELOPER);
 
     // Process messages with merging logic
     // CRITICAL: tool_result must be in separate message immediately after tool_use
@@ -163,6 +163,7 @@ Respond ONLY with the JSON object, no other text.`);
       // upstream code (2013) "invalid tool type". See #2435.
       const toolData = tool.function ?? tool;
       const originalName = toolData.name;
+      if (!originalName || typeof originalName !== "string" || !originalName.trim()) continue;
 
       // Claude OAuth requires prefixed tool names to avoid conflicts
       const toolName = CLAUDE_OAUTH_TOOL_PREFIX + originalName;
@@ -170,11 +171,17 @@ Respond ONLY with the JSON object, no other text.`);
       // Store mapping for response translation (prefixed → original)
       toolNameMap.set(toolName, originalName);
 
-      result.tools.push({
+      // Preserve function-tool options the SDK forwards (strict, caching,
+      // streaming and caller controls) instead of dropping them.
+      const converted = {
         name: toolName,
         description: toolData.description || "",
         input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] }
-      });
+      };
+      for (const key of ["strict", "cache_control", "eager_input_streaming", "defer_loading", "allowed_callers", "disable_parallel_tool_use"]) {
+        if (toolData[key] !== undefined) converted[key] = toolData[key];
+      }
+      result.tools.push(converted);
     }
 
     if (result.tools.length > 0) {
@@ -185,6 +192,13 @@ Respond ONLY with the JSON object, no other text.`);
   // Tool choice
   if (body.tool_choice) {
     result.tool_choice = convertOpenAIToolChoice(body.tool_choice);
+  }
+
+  // Parallel tool use maps to Claude's disable_parallel_tool_use flag.
+  if (body.disable_parallel_tool_use !== undefined) {
+    result.disable_parallel_tool_use = body.disable_parallel_tool_use;
+  } else if (body.parallel_tool_calls !== undefined) {
+    result.disable_parallel_tool_use = body.parallel_tool_calls === false;
   }
 
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.
@@ -253,10 +267,24 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    // Replay thinking carried on the Chat message (signature verbatim) ahead of
+    // any tool_use, matching the SDK block ordering.
+    if (typeof msg.reasoning_content === "string" && msg.reasoning_content) {
+      const thinking = { type: CLAUDE_BLOCK.THINKING, thinking: msg.reasoning_content };
+      if (typeof msg.thinking_signature === "string" && msg.thinking_signature) thinking.signature = msg.thinking_signature;
+      blocks.push(thinking);
+    }
+    if (typeof msg.redacted_thinking_data === "string" && msg.redacted_thinking_data) {
+      blocks.push({ type: CLAUDE_BLOCK.REDACTED_THINKING, data: msg.redacted_thinking_data });
+    }
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
           blocks.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
+        } else if (part.type === CLAUDE_BLOCK.THINKING) {
+          blocks.push(part);
+        } else if (part.type === CLAUDE_BLOCK.REDACTED_THINKING) {
+          blocks.push(part);
         } else if (part.type === CLAUDE_BLOCK.TOOL_USE) {
           // Tool name already has prefix from tool declarations, keep as-is
           blocks.push({ type: CLAUDE_BLOCK.TOOL_USE, id: part.id, name: part.name, input: part.input });

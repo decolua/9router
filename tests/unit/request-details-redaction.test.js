@@ -1,21 +1,33 @@
 import { describe, it, expect } from "vitest";
 
-// Mirror the redaction logic from src/app/api/usage/request-details/route.js
+// Mirror the list-shaping logic from src/app/api/usage/request-details/route.js
 // so we can test it in isolation.
-function redactDetails(details) {
-  return (details || []).map((d) => {
-    const redacted = { ...d };
-    for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-      if (redacted[key] !== undefined) {
-        redacted[key] = { redacted: true };
-      }
+const PAYLOAD_KEYS = ["request", "providerRequest", "providerResponse", "response"];
+
+function stripPayloads(detail) {
+  const meta = { ...(detail || {}) };
+  let bytes = 0;
+  for (const key of PAYLOAD_KEYS) {
+    const value = meta[key];
+    delete meta[key];
+    if (value === undefined || value === null) continue;
+    try {
+      bytes += JSON.stringify(value).length;
+    } catch {
+      continue;
     }
-    return redacted;
-  });
+  }
+  meta.hasDetail = true;
+  meta.payloadBytes = bytes;
+  return meta;
 }
 
-describe("request-details redaction", () => {
-  it("removes conversation payloads but keeps metadata", () => {
+function stripDetails(details) {
+  return (details || []).map(stripPayloads);
+}
+
+describe("request-details list shaping", () => {
+  it("strips conversation payloads but keeps metadata", () => {
     const details = [{
       id: "abc",
       provider: "opencode",
@@ -28,27 +40,31 @@ describe("request-details redaction", () => {
       providerResponse: { choices: [{ message: { content: "secret answer" } }] },
       response: { content: "secret answer" },
     }];
-    const out = redactDetails(details)[0];
+    const out = stripDetails(details)[0];
     expect(out.id).toBe("abc");
     expect(out.provider).toBe("opencode");
     expect(out.model).toBe("deepseek-v4-flash-free");
     expect(out.tokens).toEqual({ prompt_tokens: 10, completion_tokens: 5 });
-    expect(out.request).toEqual({ redacted: true });
-    expect(out.providerRequest).toEqual({ redacted: true });
-    expect(out.providerResponse).toEqual({ redacted: true });
-    expect(out.response).toEqual({ redacted: true });
+    expect(out.request).toBeUndefined();
+    expect(out.providerRequest).toBeUndefined();
+    expect(out.providerResponse).toBeUndefined();
+    expect(out.response).toBeUndefined();
+    expect(out.hasDetail).toBe(true);
+    expect(out.payloadBytes).toBeGreaterThan(0);
   });
 
   it("handles empty details", () => {
-    expect(redactDetails([])).toEqual([]);
-    expect(redactDetails(null)).toEqual([]);
+    expect(stripDetails([])).toEqual([]);
+    expect(stripDetails(null)).toEqual([]);
   });
 
   it("keeps non-sensitive fields untouched", () => {
     const details = [{ id: "x", status: "error", latency: { total: 100 } }];
-    const out = redactDetails(details)[0];
+    const out = stripDetails(details)[0];
     expect(out.id).toBe("x");
     expect(out.status).toBe("error");
     expect(out.latency).toEqual({ total: 100 });
+    expect(out.hasDetail).toBe(true);
+    expect(out.payloadBytes).toBe(0);
   });
 });

@@ -7,12 +7,13 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
-import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
+import { ANTHROPIC_API_VERSION, selectAnthropicBeta, getBetasFromHeaders, mergeBetas } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
   coerceResponsesArguments,
   coerceResponsesOutput,
+  ensureResponsesStoreInclude,
 } from "../translator/formats/responsesApi.js";
 
 const OPENCODE_UA = "opencode/1.18.31";
@@ -307,12 +308,19 @@ function resolveOpencodeRequestId(body, credentials, sessionId) {
   return deriveRequestId(sessionId, body);
 }
 
+// Normalize Chat Completions tool declarations into the Responses flat shape.
+// Hosted/provider tools (file_search, web_search, mcp, code_interpreter,
+// computer, shell, image_generation, apply_patch, tool_search, custom,
+// namespace, ...) carry their own wire shape — forward them untouched.
+// Only function-shaped tools are flattened; nameless declarations are dropped.
 function normalizeResponsesTools(body) {
   if (!Array.isArray(body.tools)) return;
   const validNames = new Set();
   body.tools = body.tools.filter((tool) => {
     if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
     const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
+    const rawType = typeof tool.type === "string" ? tool.type : "";
+    if (!fn && rawType && rawType !== "function") return true;
     const rawName = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
     const name = rawName.trim();
     if (!name) return false;
@@ -321,11 +329,17 @@ function normalizeResponsesTools(body) {
       ? tool.parameters
       : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
     if (parameters.type === "object" && !parameters.properties) parameters = { ...parameters, properties: {} };
+    const extras = {};
+    for (const key of ["strict", "async", "defer_loading", "allowed_callers", "output_schema", "namespace"]) {
+      const value = tool[key] !== undefined ? tool[key] : fn?.[key];
+      if (value !== undefined) extras[key] = value;
+    }
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    Object.assign(tool, extras);
     validNames.add(tool.name);
     return true;
   });
@@ -415,7 +429,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     // always stream upstream and let the handler layer aggregate for non-stream clients.
     if (body && typeof body === "object") body.stream = true;
     if (isResponsesModel(model || body?.model) && body && typeof body === "object") {
-      // ponytail: chỉ model đã xác nhận auto-only; mở allowlist khi có bằng chứng.
+      // Only models confirmed as auto-only; expand the allowlist with evidence.
       if ("tool_choice" in body && body.tool_choice !== "auto"
         && this.config.quirks?.forceAutoToolChoiceModels?.includes(baseModelId(model))) {
         body.tool_choice = "auto";
@@ -435,7 +449,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       delete body.max_completion_tokens;
       normalizeOpencodeReasoning(model, body);
       body.stream = true;
-      body.store = false;
+      ensureResponsesStoreInclude(body);
       normalizeResponsesTools(body);
       sanitizeResponsesItems(body);
       // Free-tier fingerprint tools are required even when an agent client
@@ -444,6 +458,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       applyFingerprintTools(body, true);
     } else if (body && typeof body === "object") {
       applyFingerprintTools(body, false);
+      if (body.stream === true && Array.isArray(body.messages) && !body.stream_options) body.stream_options = { include_usage: true };
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
@@ -459,7 +474,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     return `${base}/zen/v1/chat/completions`;
   }
 
-  buildHeaders(credentials, stream = true, url = "") {
+  buildHeaders(credentials, stream = true, url = "", model = null, body = null) {
     const raw = credentials?.rawHeaders || {};
     const lower = {};
     for (const [k, v] of Object.entries(raw)) lower[k.toLowerCase()] = v;
@@ -475,13 +490,21 @@ export class OpenCodeExecutor extends BaseExecutor {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
+      "HTTP-Referer": "https://opencode.ai/",
+      "X-Title": "opencode",
       "x-opencode-client": lower["x-opencode-client"] || "desktop",
       "x-opencode-session": session,
       "x-opencode-request": requestId,
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
     };
-    if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+    if (url.endsWith("/messages")) {
+      headers["anthropic-version"] = ANTHROPIC_API_VERSION;
+      const betaModel = model || body?.model;
+      if (typeof betaModel === "string" && /^claude-/.test(betaModel)) {
+        headers["Anthropic-Beta"] = mergeBetas(selectAnthropicBeta(betaModel, body), getBetasFromHeaders(lower));
+      }
+    }
     return headers;
   }
 }
