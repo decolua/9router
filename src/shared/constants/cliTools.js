@@ -165,6 +165,22 @@ export const CLI_TOOLS = {
     color: "#8B5CF6",
     description: "Nous Research self-improving AI agent",
     configType: "custom",
+    // Model slots Hermes supports besides the default ("model:" block).
+    // "default" is not listed — the card renders it as the main model picker.
+    roles: [
+      { id: "delegation", label: "Delegation (subagents)" },
+      { id: "vision", label: "Vision" },
+      { id: "web_extract", label: "Web Extract" },
+      { id: "compression", label: "Compression" },
+      { id: "title_generation", label: "Title Generation" },
+      { id: "approval", label: "Approval" },
+      { id: "skills_hub", label: "Skills Hub" },
+      { id: "mcp", label: "MCP" },
+      { id: "memory_query_rewrite", label: "Memory Query Rewrite" },
+      { id: "background_review", label: "Background Review" },
+      { id: "curator", label: "Curator" },
+      { id: "monitor", label: "Monitor" },
+    ],
   },
   droid: {
     id: "droid",
