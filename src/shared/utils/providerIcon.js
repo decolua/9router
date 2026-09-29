@@ -8,6 +8,10 @@ const ICON_ALIASES = {
   "ollama-search": "ollama",
 };
 
+const ICON_URLS = {
+  devin: "https://app.devin.ai/assets/pwa/apple-touch-icon.png",
+};
+
 // Runtime only — first 404 remembers id for the whole session
 const failedIds = new Set();
 
@@ -28,6 +32,8 @@ export function resolveProviderIconId(providerId) {
 
 /** `/providers/{id}.png` or null when previously failed. */
 export function getProviderIconSrc(providerId) {
+  const normalized = normalizeId(providerId);
+  if (ICON_URLS[normalized]) return ICON_URLS[normalized];
   const id = resolveProviderIconId(providerId);
   return id ? `/providers/${id}.png` : null;
 }

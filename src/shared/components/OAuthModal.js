@@ -5,9 +5,9 @@ import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 
-// Providers using the dynamic-port local callback proxy.
+// Providers using a local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
-const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed"]);
+const PROXY_OAUTH_PROVIDERS = new Set(["trae", "windsurf", "zed", "devin"]);
 
 // Providers offering a paste-token fallback (import-token flow).
 // UX warns if the IDE (which issues the token) is not installed.
@@ -205,9 +205,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
   }, []);
 
-  // Trae/Windsurf/Zed proxy OAuth flow: dynamic-port local callback → auto exchange.
+  // Trae/Windsurf/Zed/Devin proxy OAuth flow: local callback → auto exchange.
   const startProxyFlow = useCallback(async (providerId) => {
-    // 1. Start the local callback server (returns a dynamic port + callback URL).
+    // 1. Start the provider callback server and obtain its registered callback URL.
     const startRes = await fetch(`/api/oauth/${providerId}/start-proxy`);
     const startData = await startRes.json();
     if (!startRes.ok || !startData.success || !startData.callbackUrl) {
@@ -237,8 +237,9 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     }
     // 3. Register the session so the proxy can match the incoming callback.
     //    Zed also passes code_verifier (encodes the RSA private key for decrypt)
-    //    + systemId; sent via POST body so secrets never land in URL/query logs.
-    const regBody = { state: authData.state };
+    //    + systemId; Devin needs its registered redirectUri. Sent via POST body
+    //    so secrets never land in URL/query logs.
+    const regBody = { state: authData.state, redirectUri: authData.redirectUri };
     if (authData.codeVerifier) regBody.codeVerifier = authData.codeVerifier;
     if (authData.systemId) regBody.systemId = authData.systemId;
     const regRes = await fetch(`/api/oauth/${providerId}/register-session`, {
@@ -666,7 +667,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       const input = callbackUrl.trim();
 
-      // Trae/Windsurf/Zed proxy flow fallback (popup blocked): paste the full callback URL
+      // Proxy OAuth fallback (popup blocked or remote deployment): paste the full callback URL
       if (PROXY_OAUTH_PROVIDERS.has(provider) && input) {
         const res = await fetch(`/api/oauth/${provider}/exchange`, {
           method: "POST",
@@ -748,6 +749,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
     ? "http://127.0.0.1:56121/callback?code=... or copied code"
     : isKimchiProvider
       ? `${placeholderUrl.replace("code=...", "token=...")} or copied token`
+      : PROXY_OAUTH_PROVIDERS.has(provider)
+      ? "Paste the complete callback URL copied from the browser address bar..."
       : placeholderUrl;
 
   return (
@@ -783,15 +786,15 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                     <span className="text-sm">Waiting for browser authorization…</span>
                   </div>
                 )}
-                {step === "input" && (
+                {(step === "input" || (step === "waiting" && provider === "devin")) && (
                   <div className="space-y-3">
                     <p className="text-sm text-text-muted">
-                      Popup was blocked. After authorizing in the browser, paste the full callback URL here:
+                      After authorizing in the browser, paste the full callback URL here if automatic callback is unavailable:
                     </p>
                     <Input
                       value={callbackUrl}
                       onChange={(e) => setCallbackUrl(e.target.value)}
-                      placeholder="http://127.0.0.1:.../callback?..."
+                      placeholder={manualPlaceholder}
                       className="font-mono text-xs"
                     />
                     <div className="flex gap-2">
