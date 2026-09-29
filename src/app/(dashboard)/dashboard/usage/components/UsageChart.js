@@ -116,9 +116,12 @@ export default function UsageChart({ period = "7d" }) {
             />
             <Tooltip
               contentStyle={{
-                backgroundColor: "var(--color-bg)",
-                border: "1px solid var(--color-border)",
-                borderRadius: "8px",
+                backgroundColor: "var(--color-surface)",
+                border: "1px solid var(--color-border-subtle)",
+                borderRadius: "14px",
+                boxShadow: "var(--shadow-elev)",
+                color: "var(--color-text-main)",
+                padding: "8px 12px",
                 fontSize: "12px",
               }}
               formatter={(value) => [cfg.formatter(value), cfg.label]}
