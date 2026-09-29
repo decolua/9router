@@ -116,7 +116,13 @@
     "devin": "devin",
     "devin-cli": "devin-cli",
     "morph": "morph",
-    "morphllm": "morph"
+    "morphllm": "morph",
+    "br": "bedrock",
+    "bedrock": "bedrock",
+    "aws-bedrock": "bedrock",
+    "brx": "bedrock-xai",
+    "bedrock-xai": "bedrock-xai",
+    "bedrock-grok": "bedrock-xai"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -133,6 +139,8 @@
     "bai": "bai",
     "baidu": "qianfan",
     "bazaarlink": "bzl",
+    "bedrock": "br",
+    "bedrock-xai": "brx",
     "blackbox": "blackbox",
     "bluesminds": "bm",
     "byteplus": "byteplus",
@@ -221,6 +229,8 @@
     "black-forest-labs",
     "blackbox",
     "bm",
+    "br",
+    "brx",
     "byteplus",
     "bzl",
     "cbai",
