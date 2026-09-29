@@ -2,7 +2,12 @@ import { randomUUID } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
+import { FORMATS } from "../translator/formats.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+
+// Marks a body that wrapNdjsonAsOpenAISse already turned into OpenAI SSE.
+// chatCore skips a second translation only when the executor reports that format.
+const OPENAI_WIRE_HEADER = "x-9router-wire-format";
 
 /**
  * CommandCodeExecutor — talks to https://api.commandcode.ai/alpha/generate
@@ -56,6 +61,12 @@ export class CommandCodeExecutor extends BaseExecutor {
       }
 
       result.response = wrappedResponse;
+      // Already OpenAI SSE, including [DONE]. A second commandcode→openai pass
+      // treats that sentinel as consumed and never forwards it, so strict
+      // clients fail after the text with "SSE stream ended without [DONE]".
+      if (wrappedResponse.headers.get(OPENAI_WIRE_HEADER) === "openai") {
+        result.responseFormat = FORMATS.OPENAI;
+      }
       return result;
     }
   }
@@ -313,6 +324,7 @@ function wrapNdjsonAsOpenAISse(streamBody, model, originalResponse = null) {
       "Connection": "keep-alive",
       ...(originalResponse?.headers ? Object.fromEntries(originalResponse.headers.entries()) : {}),
       "content-type": "text/event-stream",
+      [OPENAI_WIRE_HEADER]: "openai",
     },
   });
 }
