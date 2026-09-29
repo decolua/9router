@@ -1113,5 +1113,10 @@
       "429": 2
     },
     "format": "openai"
+  },
+  "cheaperinference": {
+    "baseUrl": "https://api.cheaperinference.com/v1/chat/completions",
+    "validateUrl": "https://api.cheaperinference.com/v1/models",
+    "format": "openai"
   }
 }
