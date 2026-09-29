@@ -91,6 +91,8 @@ export default function ProviderBarChart({ byProvider }) {
                 padding: "8px 12px",
                 fontSize: "12px",
               }}
+              labelStyle={{ color: "var(--color-text-main)" }}
+              itemStyle={{ color: "var(--color-text-main)" }}
               formatter={(value) => [fmt(value), label]}
             />
             <Bar dataKey={viewMode} radius={[4, 4, 0, 0]}>
