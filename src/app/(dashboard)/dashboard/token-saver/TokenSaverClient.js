@@ -16,6 +16,7 @@ export default function TokenSaverClient() {
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
   const [headroomToken, setHeadroomToken] = useState("");
   const [headroomTokenSet, setHeadroomTokenSet] = useState(false);
+  const [headroomTimeoutMs, setHeadroomTimeoutMs] = useState(3000);
   const [headroomStatus, setHeadroomStatus] = useState({
     installed: false,
     running: false,
@@ -418,31 +419,62 @@ export default function TokenSaverClient() {
     patchSetting({ pxpipeMinChars: next });
   };
 
+  const handleHeadroomTimeoutBlur = () => {
+    const raw = Math.round(Number(headroomTimeoutMs));
+    const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
+    setHeadroomTimeoutMs(next);
+    patchSetting({ headroomTimeoutMs: next });
+  };
+
   useEffect(() => {
-    const loadSettings = async () => {
+    const applyToggleFields = (data) => {
+      setRtkEnabledState(data.rtkEnabled !== false);
+      setHeadroomEnabled(!!data.headroomEnabled);
+      setCavemanEnabled(!!data.cavemanEnabled);
+      setPonytailEnabled(!!data.ponytailEnabled);
+    };
+
+    const loadSettings = async ({ togglesOnly = false } = {}) => {
       try {
-        const res = await fetch("/api/settings");
-        if (res.ok) {
-          const data = await res.json();
-          setRtkEnabledState(data.rtkEnabled !== false);
-          setHeadroomEnabled(!!data.headroomEnabled);
-          setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
-          setHeadroomTokenSet(!!data.headroomTokenSet);
-          setCodeAware(data.headroomCodeAware === true);
-          setKompress(data.headroomKompress !== false);
-          setCavemanEnabled(!!data.cavemanEnabled);
-          setCavemanLevel(data.cavemanLevel || "full");
-          setPonytailEnabled(!!data.ponytailEnabled);
-          setPonytailLevel(data.ponytailLevel || "full");
-          setPxpipeEnabled(!!data.pxpipeEnabled);
-          if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
-          refreshHeadroomStatus();
-          // PRD: run the PXPIPE health check automatically when the page opens
-          refreshPxpipeStatus().then(runPxpipeHealth);
-        }
+        const res = await fetch("/api/settings", { headers: { "Cache-Control": "no-store" } });
+        if (!res.ok) return;
+        const data = await res.json();
+        applyToggleFields(data);
+        if (togglesOnly) return;
+        setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
+        setHeadroomTokenSet(!!data.headroomTokenSet);
+        if (typeof data.headroomTimeoutMs === "number") setHeadroomTimeoutMs(data.headroomTimeoutMs);
+        setCodeAware(data.headroomCodeAware === true);
+        setKompress(data.headroomKompress !== false);
+        setCavemanLevel(data.cavemanLevel || "full");
+        setPonytailLevel(data.ponytailLevel || "full");
+        setPxpipeEnabled(!!data.pxpipeEnabled);
+        if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
+        refreshHeadroomStatus();
+        // PRD: run the PXPIPE health check automatically when the page opens
+        refreshPxpipeStatus().then(runPxpipeHealth);
       } catch {}
     };
+
     loadSettings();
+
+    // Same pattern as EndpointPageClient: refresh when the tab is shown again
+    // (tray / other clients may have changed settings). Poll only while visible —
+    // no background spam on hidden tabs or other dashboard pages.
+    const onVisible = () => {
+      if (!document.hidden) loadSettings({ togglesOnly: true });
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    const syncId = setInterval(() => {
+      if (!document.hidden) loadSettings({ togglesOnly: true });
+    }, 1500);
+
+    return () => {
+      clearInterval(syncId);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
   }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
 
   const headroomRunning = !!headroomStatus.running;
@@ -850,6 +882,19 @@ export default function TokenSaverClient() {
               </p>
             </div>
           )}
+          <div className="flex flex-col gap-1">
+            <p className="text-sm font-medium">Timeout (ms)</p>
+            <Input
+              value={String(headroomTimeoutMs)}
+              onChange={(e) => setHeadroomTimeoutMs(e.target.value)}
+              onBlur={handleHeadroomTimeoutBlur}
+              placeholder="3000"
+              className="font-mono text-sm"
+            />
+            <p className="text-xs text-text-muted">
+              Request timeout in milliseconds. Defaults to 3000 ms.
+            </p>
+          </div>
           {headroomManaged ? (
             <Button
               onClick={handleHeadroomStop}

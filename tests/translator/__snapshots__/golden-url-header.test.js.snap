@@ -1,5 +1,27 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
+exports[`GOLDEN buildHeaders (default executor providers) > agentrouter → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > alicode → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -81,14 +103,12 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
   "apiKey": {
     "Accept": "text/event-stream",
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
@@ -96,7 +116,6 @@ exports[`GOLDEN buildHeaders (default executor providers) > anthropic → header
   "oauth": {
     "Accept": "text/event-stream",
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "anthropic-version": "2023-06-01",
     "x-api-key": "<CRED>",
@@ -243,6 +262,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > byteplus → headers
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > cavoti → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > cerebras → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -289,7 +327,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.251 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -307,7 +345,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Dangerous-Direct-Browser-Access": "true",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.251 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -327,7 +365,7 @@ exports[`GOLDEN buildHeaders (default executor providers) > claude → headers (
     "Anthropic-Version": "2023-06-01",
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
-    "User-Agent": "claude-cli/2.1.251 (external, sdk-cli)",
+    "User-Agent": "claude-cli/2.1.258 (external, sdk-cli)",
     "X-App": "cli",
     "X-Stainless-Arch": "arm64",
     "X-Stainless-Helper-Method": "stream",
@@ -349,26 +387,26 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/0.5.81",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "0.5.81",
+    "X-CORE-VERSION": "0.5.81",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM": "win32",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/0.5.81",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "0.5.81",
+    "X-CORE-VERSION": "0.5.81",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM": "win32",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
   "oauth": {
@@ -376,13 +414,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > cline → headers (a
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.4.80",
+    "User-Agent": "9Router/0.5.81",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.4.80",
-    "X-CORE-VERSION": "0.4.80",
+    "X-CLIENT-VERSION": "0.5.81",
+    "X-CORE-VERSION": "0.5.81",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "darwin",
-    "X-PLATFORM-VERSION": "v22.22.0",
+    "X-PLATFORM": "win32",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
 }
@@ -395,26 +433,26 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.50",
+    "User-Agent": "9Router/0.5.81",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.50",
-    "X-CORE-VERSION": "0.5.50",
+    "X-CLIENT-VERSION": "0.5.81",
+    "X-CORE-VERSION": "0.5.81",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v24.15.0",
+    "X-PLATFORM": "win32",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
   "nonStream": {
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.50",
+    "User-Agent": "9Router/0.5.81",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.50",
-    "X-CORE-VERSION": "0.5.50",
+    "X-CLIENT-VERSION": "0.5.81",
+    "X-CORE-VERSION": "0.5.81",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v24.15.0",
+    "X-PLATFORM": "win32",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
   "oauth": {
@@ -422,13 +460,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > clinepass → header
     "Authorization": "Bearer <TOK>",
     "Content-Type": "application/json",
     "HTTP-Referer": "https://cline.bot",
-    "User-Agent": "9Router/0.5.50",
+    "User-Agent": "9Router/0.5.81",
     "X-CLIENT-TYPE": "9router",
-    "X-CLIENT-VERSION": "0.5.50",
-    "X-CORE-VERSION": "0.5.50",
+    "X-CLIENT-VERSION": "0.5.81",
+    "X-CORE-VERSION": "0.5.81",
     "X-IS-MULTIROOT": "false",
-    "X-PLATFORM": "linux",
-    "X-PLATFORM-VERSION": "v24.15.0",
+    "X-PLATFORM": "win32",
+    "X-PLATFORM-VERSION": "v24.16.0",
     "X-Title": "Cline",
   },
 }
@@ -837,35 +875,11 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi → headers (ap
     "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
-    "x-api-key": "<CRED>",
-  },
-  "nonStream": {
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
-    "Content-Type": "application/json",
-    "x-api-key": "<CRED>",
-  },
-  "oauth": {
-    "Accept": "text/event-stream",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
-    "Content-Type": "application/json",
-    "x-api-key": "<CRED>",
-  },
-}
-`;
-
-exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → headers (apiKey / oauth) 1`] = `
-{
-  "apiKey": {
-    "Accept": "text/event-stream",
-    "Anthropic-Beta": "claude-code-20250219,interleaved-thinking-2025-05-14",
-    "Anthropic-Version": "2023-06-01",
-    "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "darwin arm64",
+    "X-Msh-Device-Model": "Windows x64",
+    "X-Msh-Device-Name": "DESKTOP-FFLIO0B",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": "0.5.81",
     "x-api-key": "<CRED>",
   },
   "nonStream": {
@@ -873,9 +887,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "darwin arm64",
+    "X-Msh-Device-Model": "Windows x64",
+    "X-Msh-Device-Name": "DESKTOP-FFLIO0B",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": "0.5.81",
     "x-api-key": "<CRED>",
   },
   "oauth": {
@@ -884,9 +899,10 @@ exports[`GOLDEN buildHeaders (default executor providers) > kimi-coding → head
     "Anthropic-Version": "2023-06-01",
     "Content-Type": "application/json",
     "X-Msh-Device-Id": "kimi-<TS>",
-    "X-Msh-Device-Model": "darwin arm64",
+    "X-Msh-Device-Model": "Windows x64",
+    "X-Msh-Device-Name": "DESKTOP-FFLIO0B",
     "X-Msh-Platform": "9router",
-    "X-Msh-Version": "2.1.2",
+    "X-Msh-Version": "0.5.81",
     "x-api-key": "<CRED>",
   },
 }
@@ -1290,6 +1306,25 @@ exports[`GOLDEN buildHeaders (default executor providers) > tokenrouter → head
 }
 `;
 
+exports[`GOLDEN buildHeaders (default executor providers) > unorouter → headers (apiKey / oauth) 1`] = `
+{
+  "apiKey": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "nonStream": {
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+  "oauth": {
+    "Accept": "text/event-stream",
+    "Authorization": "Bearer <TOK>",
+    "Content-Type": "application/json",
+  },
+}
+`;
+
 exports[`GOLDEN buildHeaders (default executor providers) > venice → headers (apiKey / oauth) 1`] = `
 {
   "apiKey": {
@@ -1407,6 +1442,13 @@ exports[`GOLDEN buildHeaders (default executor providers) > zed → headers (api
 }
 `;
 
+exports[`GOLDEN buildUrl (default executor providers) > agentrouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://agentrouter.org/v1/chat/completions",
+  "stream": "https://agentrouter.org/v1/chat/completions",
+}
+`;
+
 exports[`GOLDEN buildUrl (default executor providers) > alicode → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
@@ -1472,8 +1514,8 @@ exports[`GOLDEN buildUrl (default executor providers) > bazaarlink → url (stre
 
 exports[`GOLDEN buildUrl (default executor providers) > blackbox → url (stream + non-stream) 1`] = `
 {
-  "nonStream": "https://api.blackbox.ai/chat/completions",
-  "stream": "https://api.blackbox.ai/chat/completions",
+  "nonStream": "https://api.blackbox.ai/v1/chat/completions",
+  "stream": "https://api.blackbox.ai/v1/chat/completions",
 }
 `;
 
@@ -1488,6 +1530,13 @@ exports[`GOLDEN buildUrl (default executor providers) > byteplus → url (stream
 {
   "nonStream": "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
   "stream": "https://ark.ap-southeast.bytepluses.com/api/coding/v3/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > cavoti → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://cavoti.com/v1/chat/completions",
+  "stream": "https://cavoti.com/v1/chat/completions",
 }
 `;
 
@@ -1659,13 +1708,6 @@ exports[`GOLDEN buildUrl (default executor providers) > kimi → url (stream + n
 }
 `;
 
-exports[`GOLDEN buildUrl (default executor providers) > kimi-coding → url (stream + non-stream) 1`] = `
-{
-  "nonStream": "https://api.kimi.com/coding/v1/messages?beta=true",
-  "stream": "https://api.kimi.com/coding/v1/messages?beta=true",
-}
-`;
-
 exports[`GOLDEN buildUrl (default executor providers) > llm7 → url (stream + non-stream) 1`] = `
 {
   "nonStream": "https://api.llm7.io/v1/chat/completions",
@@ -1803,6 +1845,13 @@ exports[`GOLDEN buildUrl (default executor providers) > tokenrouter → url (str
 {
   "nonStream": "https://api.tokenrouter.com/v1/chat/completions",
   "stream": "https://api.tokenrouter.com/v1/chat/completions",
+}
+`;
+
+exports[`GOLDEN buildUrl (default executor providers) > unorouter → url (stream + non-stream) 1`] = `
+{
+  "nonStream": "https://api.unorouter.com/v1/chat/completions",
+  "stream": "https://api.unorouter.com/v1/chat/completions",
 }
 `;
 

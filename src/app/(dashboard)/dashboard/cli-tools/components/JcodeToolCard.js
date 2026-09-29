@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
@@ -34,6 +35,8 @@ export default function JcodeToolCard({
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+
+  const currentBaseUrl = jcodeStatus?.config?.providers?.["9router"]?.base_url || "";
 
   const getConfigStatus = () => {
     if (!jcodeStatus?.installed) return null;
@@ -140,6 +143,8 @@ export default function JcodeToolCard({
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkJcodeStatus();
       } else {
@@ -295,6 +300,7 @@ id = "${selectedModel || "cc/claude-opus-4-7"}"`;
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 

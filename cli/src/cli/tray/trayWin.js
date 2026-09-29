@@ -23,8 +23,9 @@ function sendCommand(cmd) {
  * @returns {Object|null} controller with sendAction/kill
  */
 function initWinTray(options) {
-  const { iconPath, tooltip, items, onClick } = options;
+  const { iconPath, tooltip, items, onClick, onMenuOpen } = options;
   clickHandler = onClick;
+  const menuOpenHandler = onMenuOpen;
 
   const scriptPath = path.join(__dirname, "tray.ps1");
 
@@ -53,6 +54,8 @@ function initWinTray(options) {
       const evt = JSON.parse(line);
       if (evt.type === "click" && clickHandler) {
         clickHandler(evt.index);
+      } else if (evt.type === "menu-open" && menuOpenHandler) {
+        menuOpenHandler();
       }
     } catch (e) {}
   });

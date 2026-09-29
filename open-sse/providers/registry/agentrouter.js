@@ -24,6 +24,7 @@ export default {
   },
   models: [
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "glm-5.3", name: "GLM 5.3" },
   ],
   passthroughModels: true,
 };

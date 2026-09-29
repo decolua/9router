@@ -1,0 +1,1 @@
+{"model":"free/gpt-5.6-luna","messages":[{"role":"system","content":"You are a helpful assistant."},{"role":"user","content":"Summarize APInex in one sentence."}],"temperature":0.4}

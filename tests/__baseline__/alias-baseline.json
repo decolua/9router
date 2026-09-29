@@ -119,6 +119,7 @@
     "morphllm": "morph"
   },
   "idToAlias": {
+    "agentrouter": "ar",
     "alicode": "alicode",
     "alicode-intl": "alicode-intl",
     "alims-intl": "alims-intl",
@@ -133,6 +134,7 @@
     "blackbox": "blackbox",
     "bluesminds": "bm",
     "byteplus": "byteplus",
+    "cavoti": "cavoti",
     "cerebras": "cerebras",
     "chutes": "chutes",
     "claude": "cc",
@@ -191,6 +193,7 @@
     "tencent": "hunyuan",
     "together": "together",
     "tokenrouter": "tokenrouter",
+    "unorouter": "unorouter",
     "venice": "venice",
     "vercel-ai-gateway": "vercel-ai-gateway",
     "vertex": "vertex",
@@ -209,6 +212,7 @@
     "alims-intl",
     "alitp-intl",
     "anthropic",
+    "ar",
     "assemblyai",
     "black-forest-labs",
     "blackbox",

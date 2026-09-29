@@ -606,7 +606,7 @@ describe("openaiToKiroRequest", () => {
       );
 
       expect(second.conversationState.conversationId).toBe("hermes-session-openai-replay");
-      expect(second.conversationState.agentContinuationId).toBe(first.conversationState.agentContinuationId);
+      expect(second.conversationState).not.toHaveProperty("agentContinuationId");
       expect(second.conversationState.history[0].userInputMessage.content).toBe(
         first.conversationState.currentMessage.userInputMessage.content
       );

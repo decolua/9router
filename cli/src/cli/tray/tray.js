@@ -46,23 +46,80 @@ function initTray(options) {
     return null;
   }
 
+  configureTrayApi(options?.port);
+
   // Windows uses PowerShell NotifyIcon (AV-safe), others use systray
   if (process.platform === "win32") {
-    return initWindowsTray(options);
+    // Await settings before first paint so RTK label matches dashboard (no race).
+    initWindowsTray(options).catch(() => {});
+    return null;
   }
-  return initUnixTray(options);
+  initUnixTray(options).catch(() => {});
+  return null;
 }
 
+function autostartMenuTitle(enabled) {
+  return enabled ? "✓ Auto-start Enabled" : "Enable Auto-start";
+}
+
+function rtkMenuTitle(enabled) {
+  return enabled ? "✓ RTK Enabled" : "Enable RTK";
+}
+
+function headroomMenuTitle(enabled) {
+  return enabled ? "✓ Headroom Enabled" : "Enable Headroom";
+}
+
+function cavemanMenuTitle(enabled) {
+  return enabled ? "✓ Caveman Enabled" : "Enable Caveman";
+}
+
+function ponytailMenuTitle(enabled) {
+  return enabled ? "✓ Ponytail Enabled" : "Enable Ponytail";
+}
+
+/** @typedef {{ rtk?: boolean, headroom?: boolean, caveman?: boolean, ponytail?: boolean }} TokenSaverFlags */
+
 /**
- * Build menu items array shared between platforms
+ * Build menu items array shared between platforms.
+ * Third arg: TokenSaverFlags object, or legacy boolean = rtk only.
  */
-function buildMenuItems(port, autostartEnabled) {
+function buildMenuItems(port, autostartEnabled, tokenSaver = true) {
+  const flags = typeof tokenSaver === "boolean"
+    ? { rtk: tokenSaver, headroom: false, caveman: false, ponytail: false }
+    : {
+      rtk: tokenSaver?.rtk !== false,
+      headroom: !!tokenSaver?.headroom,
+      caveman: !!tokenSaver?.caveman,
+      ponytail: !!tokenSaver?.ponytail
+    };
+
   return [
     { title: `9Router (Port ${port})`, tooltip: "Server is running", enabled: false },
     { title: "Open Dashboard", tooltip: "Open in browser", enabled: true },
     {
-      title: autostartEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
+      title: autostartMenuTitle(autostartEnabled),
       tooltip: "Run on OS startup",
+      enabled: true
+    },
+    {
+      title: rtkMenuTitle(flags.rtk),
+      tooltip: "Token Saver — compress tool results",
+      enabled: true
+    },
+    {
+      title: headroomMenuTitle(flags.headroom),
+      tooltip: "Token Saver — compress context via Headroom",
+      enabled: true
+    },
+    {
+      title: cavemanMenuTitle(flags.caveman),
+      tooltip: "Token Saver — terse LLM output style",
+      enabled: true
+    },
+    {
+      title: ponytailMenuTitle(flags.ponytail),
+      tooltip: "Token Saver — minimal-code bias",
       enabled: true
     },
     { title: "Quit", tooltip: "Stop server and exit", enabled: true }
@@ -70,7 +127,51 @@ function buildMenuItems(port, autostartEnabled) {
 }
 
 // Menu item indexes
-const MENU_INDEX = { STATUS: 0, DASHBOARD: 1, AUTOSTART: 2, QUIT: 3 };
+const MENU_INDEX = {
+  STATUS: 0,
+  DASHBOARD: 1,
+  AUTOSTART: 2,
+  RTK: 3,
+  HEADROOM: 4,
+  CAVEMAN: 5,
+  PONYTAIL: 6,
+  QUIT: 7
+};
+
+const TOKEN_SAVER_DEFS = {
+  rtk: {
+    index: MENU_INDEX.RTK,
+    settingKey: "rtkEnabled",
+    titleFn: rtkMenuTitle,
+    tooltip: "Token Saver — compress tool results",
+    read: (d) => d?.rtkEnabled !== false,
+    defaultOn: true
+  },
+  headroom: {
+    index: MENU_INDEX.HEADROOM,
+    settingKey: "headroomEnabled",
+    titleFn: headroomMenuTitle,
+    tooltip: "Token Saver — compress context via Headroom",
+    read: (d) => !!d?.headroomEnabled,
+    defaultOn: false
+  },
+  caveman: {
+    index: MENU_INDEX.CAVEMAN,
+    settingKey: "cavemanEnabled",
+    titleFn: cavemanMenuTitle,
+    tooltip: "Token Saver — terse LLM output style",
+    read: (d) => !!d?.cavemanEnabled,
+    defaultOn: false
+  },
+  ponytail: {
+    index: MENU_INDEX.PONYTAIL,
+    settingKey: "ponytailEnabled",
+    titleFn: ponytailMenuTitle,
+    tooltip: "Token Saver — minimal-code bias",
+    read: (d) => !!d?.ponytailEnabled,
+    defaultOn: false
+  }
+};
 
 /**
  * Get current autostart state
@@ -82,6 +183,141 @@ function getAutostartEnabled() {
   } catch (e) {
     return false;
   }
+}
+
+function configureTrayApi(port) {
+  try {
+    const api = require("../api/client");
+    api.configure({ host: "127.0.0.1", port: port || 20128 });
+  } catch (e) {}
+}
+
+/** @type {TokenSaverFlags} */
+let lastTokenSaver = {
+  rtk: null,
+  headroom: null,
+  caveman: null,
+  ponytail: null
+};
+
+function defaultTokenSaverFlags() {
+  return {
+    rtk: lastTokenSaver.rtk !== null ? lastTokenSaver.rtk : true,
+    headroom: lastTokenSaver.headroom !== null ? lastTokenSaver.headroom : false,
+    caveman: lastTokenSaver.caveman !== null ? lastTokenSaver.caveman : false,
+    ponytail: lastTokenSaver.ponytail !== null ? lastTokenSaver.ponytail : false
+  };
+}
+
+/**
+ * Read all Token Saver flags from live settings API.
+ */
+async function getTokenSaverFlags() {
+  try {
+    const api = require("../api/client");
+    const res = await api.getSettings();
+    if (res?.success) {
+      lastTokenSaver = {
+        rtk: TOKEN_SAVER_DEFS.rtk.read(res.data),
+        headroom: TOKEN_SAVER_DEFS.headroom.read(res.data),
+        caveman: TOKEN_SAVER_DEFS.caveman.read(res.data),
+        ponytail: TOKEN_SAVER_DEFS.ponytail.read(res.data)
+      };
+      return { ...lastTokenSaver };
+    }
+  } catch (e) {}
+  return defaultTokenSaverFlags();
+}
+
+/** @deprecated use getTokenSaverFlags — kept for tests */
+async function getRtkEnabled() {
+  const flags = await getTokenSaverFlags();
+  return flags.rtk;
+}
+
+/**
+ * Toggle one Token Saver flag. Returns new enabled state, or null on failure.
+ */
+async function toggleTokenSaverFlag(kind, currentlyOn) {
+  const def = TOKEN_SAVER_DEFS[kind];
+  if (!def) return null;
+  try {
+    const api = require("../api/client");
+    const next = !currentlyOn;
+    const res = await api.updateSettings({ [def.settingKey]: next });
+    if (res?.success) {
+      const enabled = def.read(res.data);
+      lastTokenSaver[kind] = enabled;
+      return enabled;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function updateTokenSaverItem(kind, enabled) {
+  if (!trayInstance) return;
+  const def = TOKEN_SAVER_DEFS[kind];
+  if (!def) return;
+  const title = def.titleFn(enabled);
+  if (isWinTray && typeof trayInstance.updateItem === "function") {
+    trayInstance.updateItem(def.index, title, true);
+  } else if (typeof trayInstance.sendAction === "function") {
+    trayInstance.sendAction({
+      type: "update-item",
+      item: { title, tooltip: def.tooltip, enabled: true },
+      seq_id: def.index
+    });
+  }
+}
+
+function applyTokenSaverFlagsToMenu(flags) {
+  for (const kind of Object.keys(TOKEN_SAVER_DEFS)) {
+    updateTokenSaverItem(kind, !!flags[kind]);
+  }
+}
+
+/**
+ * Re-read settings and update all Token Saver menu labels.
+ */
+function refreshTokenSaverMenuLabels() {
+  getTokenSaverFlags().then((flags) => {
+    if (!trayInstance) return;
+    applyTokenSaverFlagsToMenu(flags);
+  }).catch(() => {});
+}
+
+let tokenSaverPollTimer = null;
+
+function startTokenSaverPoll() {
+  if (tokenSaverPollTimer) return;
+  tokenSaverPollTimer = setInterval(() => refreshTokenSaverMenuLabels(), 1500);
+  if (typeof tokenSaverPollTimer.unref === "function") tokenSaverPollTimer.unref();
+}
+
+function stopTokenSaverPoll() {
+  if (tokenSaverPollTimer) {
+    clearInterval(tokenSaverPollTimer);
+    tokenSaverPollTimer = null;
+  }
+}
+
+function handleTokenSaverClick(kind) {
+  (async () => {
+    const cached = lastTokenSaver[kind];
+    const enabled = cached !== null && cached !== undefined
+      ? cached
+      : (await getTokenSaverFlags())[kind];
+    const optimistic = !enabled;
+    updateTokenSaverItem(kind, optimistic);
+    lastTokenSaver[kind] = optimistic;
+    const next = await toggleTokenSaverFlag(kind, enabled);
+    if (next === null) {
+      lastTokenSaver[kind] = enabled;
+      updateTokenSaverItem(kind, enabled);
+    } else {
+      updateTokenSaverItem(kind, next);
+    }
+  })().catch(() => {});
 }
 
 /**
@@ -100,6 +336,14 @@ function handleClick(index, options, onAutostartToggle) {
       else enableAutoStart();
       onAutostartToggle(!enabled);
     } catch (e) {}
+  } else if (index === MENU_INDEX.RTK) {
+    handleTokenSaverClick("rtk");
+  } else if (index === MENU_INDEX.HEADROOM) {
+    handleTokenSaverClick("headroom");
+  } else if (index === MENU_INDEX.CAVEMAN) {
+    handleTokenSaverClick("caveman");
+  } else if (index === MENU_INDEX.PONYTAIL) {
+    handleTokenSaverClick("ponytail");
   } else if (index === MENU_INDEX.QUIT) {
     console.log("\n👋 Shutting down...");
     if (onQuit) onQuit();
@@ -111,13 +355,14 @@ function handleClick(index, options, onAutostartToggle) {
 /**
  * Windows tray via PowerShell NotifyIcon
  */
-function initWindowsTray(options) {
+async function initWindowsTray(options) {
   const { port } = options;
   try {
     const { initWinTray } = require("./trayWin");
     const iconPath = path.join(__dirname, "icon.ico");
     const autostartEnabled = getAutostartEnabled();
-    const items = buildMenuItems(port, autostartEnabled);
+    const tokenSaver = await getTokenSaverFlags();
+    const items = buildMenuItems(port, autostartEnabled, tokenSaver);
 
     trayInstance = initWinTray({
       iconPath,
@@ -125,13 +370,14 @@ function initWindowsTray(options) {
       items,
       onClick: (index) => {
         handleClick(index, options, (newEnabled) => {
-          const newTitle = newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start";
-          trayInstance.updateItem(MENU_INDEX.AUTOSTART, newTitle, true);
+          trayInstance.updateItem(MENU_INDEX.AUTOSTART, autostartMenuTitle(newEnabled), true);
         });
-      }
+      },
+      onMenuOpen: () => refreshTokenSaverMenuLabels()
     });
 
     isWinTray = true;
+    startTokenSaverPoll();
     return trayInstance;
   } catch (err) {
     return null;
@@ -185,7 +431,7 @@ function chmodTrayBin(pkgName) {
   } catch (e) {}
 }
 
-function initUnixTray(options) {
+async function initUnixTray(options) {
   const { port } = options;
   try {
     const resolved = resolveSystray();
@@ -195,7 +441,8 @@ function initUnixTray(options) {
     chmodTrayBin(isV2 ? "systray2" : "systray");
 
     const autostartEnabled = getAutostartEnabled();
-    const items = buildMenuItems(port, autostartEnabled);
+    const tokenSaver = await getTokenSaverFlags();
+    const items = buildMenuItems(port, autostartEnabled, tokenSaver);
 
     const menu = {
       icon: getIconBase64(),
@@ -216,7 +463,7 @@ function initUnixTray(options) {
         trayInstance.sendAction({
           type: "update-item",
           item: {
-            title: newEnabled ? "✓ Auto-start Enabled" : "Enable Auto-start",
+            title: autostartMenuTitle(newEnabled),
             tooltip: "Run on OS startup",
             enabled: true
           },
@@ -237,6 +484,8 @@ function initUnixTray(options) {
       trayInstance.onError(() => {});
     }
 
+    refreshTokenSaverMenuLabels();
+    startTokenSaverPoll();
     return trayInstance;
   } catch (err) {
     process.stderr.write(`[9router] tray init error: ${err.message}\n`);
@@ -250,6 +499,7 @@ function initUnixTray(options) {
  * spawns a new tray, otherwise the new icon silently fails to register.
  */
 function killTray() {
+  stopTokenSaverPoll();
   const instance = trayInstance;
   const wasWin = isWinTray;
   trayInstance = null;
@@ -318,5 +568,14 @@ function openBrowser(url) {
 
 module.exports = {
   initTray,
-  killTray
+  killTray,
+  buildMenuItems,
+  MENU_INDEX,
+  rtkMenuTitle,
+  headroomMenuTitle,
+  cavemanMenuTitle,
+  ponytailMenuTitle,
+  autostartMenuTitle,
+  getRtkEnabled,
+  getTokenSaverFlags
 };

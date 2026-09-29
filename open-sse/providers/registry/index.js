@@ -66,6 +66,7 @@ import p63 from "./nebius.js";
 import p64 from "./nvidia.js";
 import p65 from "./ollama-local.js";
 import p66 from "./ollama.js";
+import p123 from "./ollama-search.js";
 import p67 from "./openai.js";
 import p68 from "./opencode-go.js";
 import p69 from "./opencode.js";
@@ -121,9 +122,10 @@ import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
-import p122 from "./agentrouter.js";
-import p123 from "./unorouter.js";
-import p124 from "./cavoti.js";
+import p122 from "./xquik.js";
+import p126 from "./agentrouter.js";
+import p127 from "./unorouter.js";
+import p128 from "./cavoti.js";
 
 export default [
   p0,
@@ -193,6 +195,7 @@ export default [
   p64,
   p65,
   p66,
+  p123,
   p67,
   p68,
   p69,
@@ -247,6 +250,7 @@ export default [
   p120,
   p121,
   p122,
-  p123,
-  p124,
+  p126,
+  p127,
+  p128,
 ];

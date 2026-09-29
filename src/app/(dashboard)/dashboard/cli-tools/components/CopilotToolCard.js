@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
@@ -77,6 +78,8 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
     }
   };
 
+  const currentBaseUrl = status?.currentUrl || "";
+
   const getConfigStatus = () => {
     if (!status) return null;
     if (!status.has9Router) return "not_configured";
@@ -123,6 +126,8 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: data.message || "Settings applied! Reload VS Code." });
         checkStatus();
       } else {
@@ -230,6 +235,7 @@ export default function CopilotToolCard({ tool, isExpanded, onToggle, baseUrl, a
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 

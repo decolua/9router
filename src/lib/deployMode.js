@@ -11,10 +11,9 @@ const DETECTORS = [
   { id: "render", detect: () => !!process.env.RENDER },
   { id: "fly", detect: () => !!process.env.FLY_APP_NAME },
   { id: "cloudrun", detect: () => !!process.env.K_SERVICE },
-  // Sevalla exposes no dedicated env var; BASE_URL on its *.sevalla.app domain is
-  // the only reliable runtime signal. ponytail: URL heuristic, swap for a SEVALLA_*
-  // env var if/when the platform exposes one.
-  { id: "sevalla", detect: () => typeof process.env.BASE_URL === "string" && process.env.BASE_URL.endsWith(".sevalla.app") },
+  // Sevalla: prefer the dedicated SVL_APP_ID env var (from master), fall back to
+  // the BASE_URL *.sevalla.app heuristic if the env var is absent.
+  { id: "sevalla", detect: () => !!process.env.SVL_APP_ID || (typeof process.env.BASE_URL === "string" && process.env.BASE_URL.endsWith(".sevalla.app")) },
   { id: "docker", detect: () => { try { return fs.existsSync("/.dockerenv"); } catch { return false; } } },
 ];
 

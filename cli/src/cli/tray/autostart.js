@@ -24,9 +24,9 @@ const APP_LABEL = "com.9router.autostart";
  * entry pointing at a non-existent script.
  */
 function getCliJsPath(cliPath) {
-  if (cliPath) {
+  if (typeof cliPath === "string" && cliPath.trim()) {
     const resolved = path.resolve(cliPath);
-    if (fs.existsSync(resolved)) return resolved;
+    if (path.basename(resolved) === "cli.js" && fs.existsSync(resolved)) return resolved;
   }
   if (process.argv[1]) {
     const resolved = path.resolve(process.argv[1]);
@@ -246,10 +246,15 @@ function enableWindows(cliPath) {
   const routerScript = getCliJsPath(cliPath);
   if (!routerScript) return false;
 
-  // Run node + cli.js directly, hidden window. Avoids the fragile
-  // `9router.cmd` lookup that depended on the npm prefix path.
+  // Run node + cli.js with a 3-second watchdog recovery loop in hidden window.
+  // When process exits with 0 (clean user quit from tray), watchdog terminates.
+  // On abnormal exit/crash (non-zero), watchdog waits 3 seconds and restarts.
   const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run """${nodePath}"" ""${routerScript}"" --tray --skip-update", 0, False
+Do
+  ret = WshShell.Run("""${nodePath}"" ""${routerScript}"" --tray --skip-update", 0, True)
+  If ret = 0 Then Exit Do
+  WScript.Sleep 3000
+Loop
 `;
   fs.writeFileSync(vbsPath, vbsContent);
   return true;

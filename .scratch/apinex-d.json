@@ -1,0 +1,1 @@
+{"model":"gpt-5.6-luna","messages":[{"role":"user","content":"Say hi in 3 words."}],"temperature":0.4,"max_tokens":32}

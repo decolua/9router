@@ -21,6 +21,13 @@ function toIsoDate(value) {
   return Number.isFinite(time) ? date.toISOString() : null;
 }
 
+function errorMessage(value, fallback) {
+  if (!value) return fallback;
+  if (typeof value === "string") return value;
+  if (typeof value.message === "string") return value.message;
+  return JSON.stringify(value);
+}
+
 function getCodexAccountId(providerSpecificData) {
   return providerSpecificData?.workspaceId || providerSpecificData?.accountId || providerSpecificData?.chatgptAccountId || null;
 }
@@ -80,6 +87,23 @@ function getCodexReviewRateLimit(data) {
   }) || null;
 }
 
+function getCodexSparkRateLimit(data) {
+  if (data.spark_rate_limit || data.gpt_5_3_codex_spark_rate_limit) {
+    return data.spark_rate_limit || data.gpt_5_3_codex_spark_rate_limit;
+  }
+
+  const byLimitId = data.rate_limits_by_limit_id;
+  if (byLimitId && typeof byLimitId === "object" && !Array.isArray(byLimitId)) {
+    return byLimitId["gpt-5.3-codex-spark"] || byLimitId.gpt_5_3_codex_spark || byLimitId.spark || null;
+  }
+
+  const additional = Array.isArray(data.additional_rate_limits) ? data.additional_rate_limits : [];
+  return additional.find((entry) => {
+    const id = String(entry?.limit_name || entry?.metered_feature || entry?.id || "").toLowerCase();
+    return id.includes("spark") || id.includes("5.3-codex-spark");
+  }) || null;
+}
+
 export async function getCodexUsage(accessToken, proxyOptions = null) {
   try {
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
@@ -97,16 +121,19 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
     const data = await response.json();
     const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
     const reviewRateLimit = getCodexReviewRateLimit(data);
+    const sparkRateLimit = getCodexSparkRateLimit(data);
     const availableResetCredits = Math.max(0, toFiniteNumber(data.rate_limit_reset_credits?.available_count, 0));
     const quotas = {};
 
     appendCodexQuotaWindows(quotas, "", normalRateLimit);
     appendCodexQuotaWindows(quotas, "review", reviewRateLimit);
+    appendCodexQuotaWindows(quotas, "spark", sparkRateLimit);
 
     return {
       plan: data.plan_type || data.summary?.plan || "unknown",
       limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
       reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
+      sparkLimitReached: getCodexRateLimitBody(sparkRateLimit)?.limit_reached || false,
       resetCredits: { availableCount: availableResetCredits },
       quotas,
     };
@@ -142,7 +169,7 @@ export async function getCodexRateLimitResetCredits(accessToken, proxyOptions = 
   }
 
   if (!response.ok) {
-    const message = data?.message || data?.error || data?.detail || `Codex reset credits API unavailable (${response.status}).`;
+    const message = errorMessage(data?.message || data?.error || data?.detail, `Codex reset credits API unavailable (${response.status}).`);
     throw new Error(message);
   }
 

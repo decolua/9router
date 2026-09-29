@@ -303,6 +303,9 @@ export default function Sidebar({ onClose }) {
                 computer
               </span>
               <span className="text-[13px] font-medium">9Remote</span>
+              {/* <span className="ml-auto rounded-full bg-primary px-1.5 py-0.5 text-[9px] font-bold uppercase text-white">
+                New
+              </span> */}
             </button>
 
             {/* 9English */}
