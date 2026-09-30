@@ -100,13 +100,15 @@ describe("aggregateComboCapabilities — primary model drives reasoning fields",
 });
 
 describe("aggregateComboCapabilities — context/output limits", () => {
-  it("contextWindow is the minimum across all models", () => {
-    // mimo-v2.5: 1048576; kimi-k2.5 (*kimi*k2* pattern): 262144
+  it("contextWindow is the largest window across all models", () => {
+    // mimo-v2.5: 1048576; kimi-k2.5 (*kimi*k2* pattern): 262144.
+    // A combo fails over between models, so it can use the biggest window its
+    // members offer; taking the smallest would compact a 1M model at 256k.
     const caps = aggregateComboCapabilities([
       "opencode-go/mimo-v2.5",
       "opencode-go/kimi-k2.5",
     ]);
-    expect(caps.contextWindow).toBe(262144);
+    expect(caps.contextWindow).toBe(1048576);
   });
 
   it("maxOutput is the maximum across all models", () => {
@@ -116,6 +118,16 @@ describe("aggregateComboCapabilities — context/output limits", () => {
       "opencode-go/kimi-k2.5",
     ]);
     expect(caps.maxOutput).toBe(262144);
+  });
+
+  it("an explicit context window on the combo wins over the auto value", () => {
+    const caps = aggregateComboCapabilities(
+      ["opencode-go/mimo-v2.5", "opencode-go/kimi-k2.5"],
+      null,
+      0,
+      2000000
+    );
+    expect(caps.contextWindow).toBe(2000000);
   });
 });
 
@@ -134,11 +146,17 @@ describe("aggregateComboCapabilities — nested combo resolution via comboLookup
     expect(caps.reasoning).toBe(true);
   });
 
-  it("contextWindow is min across all resolved leaves", () => {
-    // deepseek-v4-pro (*deepseek-v4*): 1000000; mimo-v2.5: 1048576 → min = 1000000
+  it("contextWindow is the largest window across all resolved leaves", () => {
+    // deepseek-v4-pro (*deepseek-v4*): 1000000; mimo-v2.5: 1048576 → max = 1048576
     const lookup = { "inner": ["opencode-go/deepseek-v4-pro"] };
     const caps = aggregateComboCapabilities(["inner", "opencode-go/mimo-v2.5"], lookup);
-    expect(caps.contextWindow).toBe(1000000);
+    expect(caps.contextWindow).toBe(1048576);
+  });
+
+  it("a custom window reaches nested combos too", () => {
+    const lookup = { "inner": ["opencode-go/deepseek-v4-pro"] };
+    const caps = aggregateComboCapabilities(["inner", "opencode-go/mimo-v2.5"], lookup, 0, 2000000);
+    expect(caps.contextWindow).toBe(2000000);
   });
 
   it("handles cycles without throwing", () => {

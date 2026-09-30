@@ -7,23 +7,21 @@ import { THEME_CONFIG } from "@/shared/constants/config";
 const useThemeStore = create(
   persist(
     (set, get) => ({
-      theme: THEME_CONFIG.defaultTheme,
+      theme: "dark",
 
       setTheme: (theme) => {
-        set({ theme });
-        applyTheme(theme);
+        set({ theme: "dark" });
+        applyTheme("dark");
       },
 
       toggleTheme: () => {
-        const currentTheme = get().theme;
-        const newTheme = currentTheme === "dark" ? "light" : "dark";
-        set({ theme: newTheme });
-        applyTheme(newTheme);
+        set({ theme: "dark" });
+        applyTheme("dark");
       },
 
       initTheme: () => {
-        const theme = get().theme;
-        applyTheme(theme);
+        set({ theme: "dark" });
+        applyTheme("dark");
       },
     }),
     {
@@ -37,17 +35,7 @@ function applyTheme(theme) {
   if (typeof window === "undefined") return;
 
   const root = document.documentElement;
-  const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches
-    ? "dark"
-    : "light";
-
-  const effectiveTheme = theme === "system" ? systemTheme : theme;
-
-  if (effectiveTheme === "dark") {
-    root.classList.add("dark");
-  } else {
-    root.classList.remove("dark");
-  }
+  root.classList.add("dark");
 }
 
 export default useThemeStore;

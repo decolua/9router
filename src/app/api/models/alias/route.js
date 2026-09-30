@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias, deleteModelAlias } from "@/models";
+import { reconcileAllowedModels } from "@/lib/db/repos/apiKeysRepo";
 
 export const dynamic = "force-dynamic";
 
@@ -24,7 +25,14 @@ export async function PUT(request) {
       return NextResponse.json({ error: "Model and alias required" }, { status: 400 });
     }
 
+    const previous = (await getModelAliases())?.[alias];
     await setModelAlias(alias, model);
+    // The alias name is the map key, so it does not move. What does move is the
+    // model it resolved to: a key that pinned the old target now follows the alias
+    // to the new one instead of pointing at whatever now occupies that name.
+    if (previous && previous !== model) {
+      await reconcileAllowedModels({ renamed: { [previous.toLowerCase()]: model } });
+    }
 
     return NextResponse.json({ success: true, model, alias });
   } catch (error) {
@@ -44,8 +52,9 @@ export async function DELETE(request) {
     }
 
     await deleteModelAlias(alias);
+    const { emptied } = await reconcileAllowedModels({ removed: [alias] });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, ...(emptied.length ? { keysLeftForReview: emptied } : {}) });
   } catch (error) {
     console.log("Error deleting alias:", error);
     return NextResponse.json({ error: "Failed to delete alias" }, { status: 500 });

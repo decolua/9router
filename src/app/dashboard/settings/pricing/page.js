@@ -101,12 +101,10 @@ export default function PricingSettingsPage() {
         <h2 className="text-xl font-semibold mb-4">How Pricing Works</h2>
         <div className="space-y-3 text-sm text-text-muted">
           <p>
-            <strong>Cost Calculation:</strong> Costs are calculated based on token usage and pricing rates.
-            Each request&apos;s cost is determined by: (input_tokens × input_rate) + (output_tokens × output_rate) + (cached_tokens × cached_rate)
+            <strong>Cost Calculation:</strong> Each request&apos;s cost comes from token usage and rates: (input_tokens × input_rate) + (output_tokens × output_rate) + (cached_tokens × cached_rate)
           </p>
           <p>
-            <strong>Pricing Format:</strong> All rates are in <strong>dollars per million tokens</strong> ($/1M tokens).
-            Example: An input rate of 2.50 means $2.50 per 1,000,000 input tokens.
+            <strong>Pricing Format:</strong> All rates are in <strong>dollars per million tokens</strong> ($/1M tokens), so an input rate of 2.50 means $2.50 per 1,000,000 input tokens.
           </p>
           <p>
             <strong>Token Types:</strong>
@@ -119,8 +117,7 @@ export default function PricingSettingsPage() {
             <li><strong>Cache Creation:</strong> Tokens used to create cache entries (fallback to input rate)</li>
           </ul>
           <p>
-            <strong>Custom Pricing:</strong> You can override default pricing for specific models.
-            Reset to defaults anytime to restore standard rates.
+            <strong>Custom Pricing:</strong> Override the default pricing per model, or reset to standard rates anytime.
           </p>
         </div>
       </Card>
@@ -171,3 +168,4 @@ export default function PricingSettingsPage() {
     </div>
   );
 }
+

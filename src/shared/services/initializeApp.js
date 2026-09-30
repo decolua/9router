@@ -3,6 +3,7 @@ import { fileURLToPath } from "url";
 import { dirname, join } from "path";
 import { existsSync } from "fs";
 import { cleanupProviderConnections, getSettings, updateSettings, getApiKeys } from "@/lib/localDb";
+import { getAutoBackupConfig } from "@/lib/db/repos/autoBackupRepo.js";
 import {
   enableTunnel, enableTailscale,
   isTunnelManuallyDisabled, isTunnelReconnecting, isTailscaleReconnecting,
@@ -111,6 +112,12 @@ async function runHeavyStartup() {
     import("@/shared/services/quotaAutoPing")
       .then(({ startQuotaAutoPing }) => startQuotaAutoPing())
       .catch((e) => console.log("[AutoPing] scheduler start failed:", e.message));
+  }
+
+  if (await getAutoBackupConfig().then((c) => c.enabled).catch(() => false)) {
+    import("@/shared/services/telegramBackup")
+      .then(({ configureTelegramBackup }) => configureTelegramBackup())
+      .catch((e) => console.log("[AutoBackup] scheduler start failed:", e.message));
   }
 
   // Proactive OAuth token refresh (e.g. grok-cli ~6h TTL). Module is idempotent

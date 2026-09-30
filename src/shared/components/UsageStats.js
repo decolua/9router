@@ -13,6 +13,8 @@ function isLLMProvider(id) {
 import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
+import KeyQuotaCard from "@/app/(dashboard)/dashboard/usage/components/KeyQuotaCard";
+import AvailableModelsCard from "@/app/(dashboard)/dashboard/usage/components/AvailableModelsCard";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import dynamic from "next/dynamic";
 // Lazy-load: keeps @xyflow/react and recharts out of the initial bundle
@@ -39,6 +41,16 @@ function TimeAgo({ timestamp }) {
   }, []);
   
   return <>{timeAgo(timestamp)}</>;
+}
+
+function TopologyUnavailableNote() {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-surface/40 px-3 py-2.5">
+      <span className="text-[11px] text-text-muted/70">
+        The provider map is not available for this key. The usage numbers and the request list are.
+      </span>
+    </div>
+  );
 }
 
 function RecentRequests({ requests = [] }) {
@@ -75,6 +87,11 @@ function RecentRequests({ requests = [] }) {
                       <span className="text-primary">{fmt(r.promptTokens)}↑</span>
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
+                      {r.cachedTokens > 0 && (
+                        <div>
+                          <Badge variant="info" size="sm" icon="cached" className="mt-0.5" title={`${fmt(r.cachedTokens)} prompt tokens served from cache`}>CACHE {fmt(r.cachedTokens)}</Badge>
+                        </div>
+                      )}
                     </td>
                     <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
@@ -148,6 +165,9 @@ function groupDataByKey(data, keyField) {
     s.cachedCost += item.cachedCost || 0;
     s.outputCost += item.outputCost || 0;
     s.pending += item.pending || 0;
+    if (item.resolvedModel && !s.resolvedModel) s.resolvedModel = item.resolvedModel;
+    if (item.provider && !s.provider) s.provider = item.provider;
+    if (item.rawModel && !s.rawModel) s.rawModel = item.rawModel;
     if (item.lastUsed && (!s.lastUsed || new Date(item.lastUsed) > new Date(s.lastUsed))) {
       s.lastUsed = item.lastUsed;
     }
@@ -213,6 +233,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [fetching, setFetching] = useState(false);
+  // null until /api/auth/status answers, then true for an API-key session. Both
+  // this and the stats fetch are in flight together, and the charts only render
+  // once `loading` is false, so waiting for it costs no visible flash.
+  const [isApiKeyUser, setIsApiKeyUser] = useState(null);
+  // The signing-in key's own token allowance, for the same session.
+  const [keyQuota, setKeyQuota] = useState(null);
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
@@ -222,9 +248,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
+  // Which kind of session is looking at this. A key-authenticated session gets the
+  // provider map swapped for a note and its own quota shown; a failed lookup falls
+  // back to the password view so an admin is never left without the page they expect.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/status")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (!cancelled) setIsApiKeyUser(d?.role === "apikey"); })
+      .catch(() => { if (!cancelled) setIsApiKeyUser(false); });
+    return () => { cancelled = true; };
+  }, []);
+
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
   useEffect(() => {
+    // Providers feed the topology and nothing else. An API-key session never
+    // renders it, so the two requests are not worth making.
+    if (isApiKeyUser !== false) return;
     Promise.all([
       fetch("/api/providers").then((r) => r.ok ? r.json() : null),
       fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
@@ -232,8 +273,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       .then(([d, nodesData]) => {
         // Build node name lookup for custom providers
         const nodeNameMap = {};
+        const nodeLogoMap = {};
         for (const node of (nodesData?.nodes || [])) {
           nodeNameMap[node.id] = node.name;
+          nodeLogoMap[node.id] = node.logo;
         }
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
@@ -245,6 +288,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         }).map((c) => ({
           ...c,
           nodeName: nodeNameMap[c.provider] || null,
+          nodeLogo: nodeLogoMap[c.provider] || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
           .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
@@ -252,7 +296,25 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         setProviders([...unique, ...noAuthProviders]);
       })
       .catch(() => {});
-  }, []);
+  }, [isApiKeyUser]);
+
+  // The key's own quota. /api/usage/api-keys narrows to the session's key, so
+  // this returns at most that one row and nothing about any other key.
+  useEffect(() => {
+    if (isApiKeyUser !== true) return undefined;
+    let cancelled = false;
+    const load = () => {
+      fetch("/api/usage/api-keys", { cache: "no-store" })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d) => { if (!cancelled) setKeyQuota(d?.keys?.[0] || null); })
+        .catch(() => { if (!cancelled) setKeyQuota(null); });
+    };
+    load();
+    // This page does not poll its own numbers either, and 30s is often enough
+    // for someone watching a limit while they work.
+    const timer = setInterval(load, 30000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [isApiKeyUser]);
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
@@ -279,16 +341,24 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       });
   }, [period]);
 
-  // SSE connection - real-time updates for activeRequests + recentRequests only
+  // SSE connection - real-time updates synced to selected period
+  const esRef = useRef(null);
+  const [chartUpdateKey, setChartUpdateKey] = useState(0);
+
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    if (esRef.current) esRef.current.close();
+
+    const es = new EventSource(`/api/usage/stream?period=${period}`);
+    esRef.current = es;
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
         setStats((prev) => {
-          if (!prev) return prev;
+          if (!prev) return data;
+          if (data._type === "full") {
+            return { ...data };
+          }
           return {
             ...prev,
             activeRequests: data.activeRequests,
@@ -297,6 +367,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
             pending: data.pending,
           };
         });
+        if (data._type === "full") {
+          setChartUpdateKey((k) => k + 1);
+        }
         if (hasLoadedStats.current) setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
@@ -306,7 +379,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [period]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -339,7 +412,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           ),
           renderDetailCells: (item) => (
             <>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
+              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>
+                {item.rawModel}
+                {item.resolvedModel && item.resolvedModel !== item.rawModel && <div className="truncate text-xs text-text-muted" title={item.resolvedModel}>→ {item.resolvedModel}</div>}
+              </td>
               <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
@@ -374,7 +450,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           renderDetailCells: (item) => (
             <>
               <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.accountName || `Account ${item.connectionId?.slice(0, 8)}...`}</td>
-              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>{item.rawModel}</td>
+              <td className={`px-6 py-3 font-medium transition-colors ${item.pending > 0 ? "text-primary" : ""}`}>
+                {item.rawModel}
+                {item.resolvedModel && item.resolvedModel !== item.rawModel && <div className="truncate text-xs text-text-muted" title={item.resolvedModel}>→ {item.resolvedModel}</div>}
+              </td>
               <td className="px-6 py-3"><Badge variant={item.pending > 0 ? "primary" : "neutral"} size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
@@ -399,7 +478,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           renderDetailCells: (item) => (
             <>
               <td className="px-6 py-3 font-medium">{item.keyName}</td>
-              <td className="px-6 py-3">{item.rawModel}</td>
+              <td className="px-6 py-3">
+                {item.rawModel}
+                {item.resolvedModel && item.resolvedModel !== item.rawModel && <div className="truncate text-xs text-text-muted" title={item.resolvedModel}>→ {item.resolvedModel}</div>}
+              </td>
               <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
@@ -425,7 +507,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           renderDetailCells: (item) => (
             <>
               <td className="px-6 py-3 font-medium font-mono text-sm">{item.endpoint}</td>
-              <td className="px-6 py-3">{item.rawModel}</td>
+              <td className="px-6 py-3">
+                {item.rawModel}
+                {item.resolvedModel && item.resolvedModel !== item.rawModel && <div className="truncate text-xs text-text-muted" title={item.resolvedModel}>→ {item.resolvedModel}</div>}
+              </td>
               <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
@@ -467,11 +552,27 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         </div>
       )}
 
+      {/* The signing-in key's own allowance, for an API-key session. */}
+      {!loading && isApiKeyUser && keyQuota && <KeyQuotaCard quota={keyQuota} />}
+
+      {/* Models this key may call. Key sessions only: admins keep the page
+          exactly as it was, with no card rendered for them. */}
+      {!loading && isApiKeyUser && <AvailableModelsCard visible={isApiKeyUser === true} />}
+
       {/* Overview cards */}
       {loading ? spinner : <OverviewCards stats={stats} />}
 
-      {/* Provider topology + Recent Requests */}
-      {loading ? spinner : (
+      {/* Provider map + Recent Requests. The map shows every provider wired into
+          9Router, which is infrastructure rather than one key's usage, so an
+          API-key session gets a quiet note in its place. The note drops the
+          two-column grid too: RecentRequests is pinned to a fixed height, and
+          a three-line note beside it would leave most of the row empty. */}
+      {loading || isApiKeyUser === null ? spinner : isApiKeyUser ? (
+        <>
+          <TopologyUnavailableNote />
+          <RecentRequests requests={stats.recentRequests || []} />
+        </>
+      ) : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
             providers={providers}
@@ -483,15 +584,19 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         </div>
       )}
 
-      {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} />}
+      {/* Charts. Both chart endpoints are scoped to the session's allowed models,
+          so a key-authenticated session sees its own numbers, not the global view. */}
+      {loading ? spinner : (
+        <>
+          <UsageChart period={period} updateKey={chartUpdateKey} />
 
-      {/* Provider and model breakdown charts */}
-      {!loading && (stats.byProvider || stats.byModel) && (
-        <div className="grid min-w-0 grid-cols-1 gap-2 lg:grid-cols-2">
-          <ProviderBarChart byProvider={stats.byProvider} />
-          <TopModelsChart byModel={stats.byModel} />
-        </div>
+          {(stats.byProvider || stats.byModel) && (
+            <div className="grid min-w-0 grid-cols-1 gap-2 lg:grid-cols-2">
+              <ProviderBarChart byProvider={stats.byProvider} />
+              <TopModelsChart byModel={stats.byModel} />
+            </div>
+          )}
+        </>
       )}
 
       {/* Table with dropdown selector */}

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
-import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { verifyDashboardAuthToken, getDashboardAuthSession } from "@/lib/auth/dashboardSession";
+import { normalizePermissions, requiredPermissionsForApiPath, canOpenPage, firstAllowedPage } from "@/lib/auth/permissionPaths";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
@@ -57,6 +58,7 @@ const PROTECTED_API_PATHS = [
   "/api/proxy-pools",
   "/api/combos",
   "/api/models",
+ "/api/model-editor",
   "/api/usage",
   "/api/oauth",
   "/api/cloud",
@@ -151,12 +153,16 @@ function extractApiKey(request) {
 async function hasValidApiKey(request) {
   const apiKey = extractApiKey(request);
   if (!apiKey) return false;
-  return await validateApiKey(apiKey);
+  const valid = await validateApiKey(apiKey);
+  // A validator reason string still lets the request reach its handler, which answers
+  // with the precise status, except for a key the owner switched off.
+  return valid === true || (typeof valid === "string" && valid !== "KEY_DISABLED");
 }
 
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
+  if (await hasValidToken(request)) return true;
   return await hasValidApiKey(request);
 }
 
@@ -170,6 +176,15 @@ async function canAccessLocalOnlyRoute(request) {
 async function hasValidToken(request) {
   const token = request.cookies.get("auth_token")?.value;
   return await verifyDashboardAuthToken(token);
+}
+
+// Claims of a session that signed in with an API key. Password sessions get null
+// here and are treated as full administrators everywhere else in this file.
+async function getApiKeySession(request) {
+  const token = request.cookies.get("auth_token")?.value;
+  const session = await getDashboardAuthSession(token);
+  if (!session || session.role !== "apikey") return null;
+  return { session, permissions: normalizePermissions(session.permissions) };
 }
 
 // Read settings directly from DB to avoid self-fetch deadlock in proxy
@@ -207,8 +222,15 @@ export const __test__ = {
 export async function proxy(request) {
   const { pathname } = request.nextUrl;
 
+  // Sessions signed in with an API key carry their own permission set. Read once
+  // here so every gate below sees the same claims.
+  const apiKeySession = await getApiKeySession(request);
+
   // Local-only gate for spawn-capable / host-secret routes.
   if (LOCAL_ONLY_PATHS.some((p) => pathname.startsWith(p))) {
+    if (apiKeySession) {
+      return NextResponse.json({ error: "This route is not available to API key sessions" }, { status: 403 });
+    }
     if (!(await canAccessLocalOnlyRoute(request))) {
       return NextResponse.json({ error: "Local only: CLI token required" }, { status: 403 });
     }
@@ -216,6 +238,9 @@ export async function proxy(request) {
 
   // Always protected - require valid JWT or local CLI token (machineId-based)
   if (ALWAYS_PROTECTED.some((p) => pathname.startsWith(p))) {
+    if (apiKeySession) {
+      return NextResponse.json({ error: "This route is not available to API key sessions" }, { status: 403 });
+    }
     if (await hasValidCliToken(request) || await hasValidToken(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -229,13 +254,30 @@ export async function proxy(request) {
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
     if (isPublicApi(pathname)) return NextResponse.next();
-    if (await hasValidCliToken(request) || await isAuthenticated(request))
+    if (await hasValidCliToken(request) || await isAuthenticated(request)) {
+      if (apiKeySession) {
+        const needed = requiredPermissionsForApiPath(pathname, request.method);
+        if (!needed || !needed.some((key) => apiKeySession.permissions[key])) {
+          return NextResponse.json(
+            { error: "This API key does not have permission for this endpoint" },
+            { status: 403 }
+          );
+        }
+      }
       return NextResponse.next();
+    }
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Protect all dashboard routes
   if (pathname.startsWith("/dashboard")) {
+    // A key-signed session never reaches a page its permissions do not cover, even
+    // when login is turned off, and lands on the first page it is allowed to open.
+    if (apiKeySession && !canOpenPage(pathname, apiKeySession.permissions)) {
+      const landing = firstAllowedPage(apiKeySession.permissions);
+      return NextResponse.redirect(new URL(landing || "/login", request.url));
+    }
+
     let requireLogin = true;
     let tunnelDashboardAccess = true;
 

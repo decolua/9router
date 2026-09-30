@@ -13,14 +13,14 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
   const iconColor = testStatus === "ok" ? "#22c55e" : testStatus === "error" ? "#ef4444" : undefined;
 
   return (
-    <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
+    <div className={`group min-w-0 max-w-full px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
       <div className="flex items-center gap-2">
         <span className="material-symbols-outlined text-base" style={iconColor ? { color: iconColor } : undefined}>
           {testStatus === "ok" ? "check_circle" : testStatus === "error" ? "cancel" : "smart_toy"}
         </span>
-        <div className="flex flex-col gap-1">
-          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
-          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
+        <div className="flex flex-col gap-1 min-w-0">
+          <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded min-w-0 truncate" title={fullModel}>{fullModel}</code>
+          {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1 truncate" title={model.name}>{model.name}</span>}
         </div>
         {onTest && (
           <div className="relative group/btn">

@@ -43,7 +43,7 @@ export default function Footer() {
               </span>
             </div>
             <p className="text-text-muted mb-6 max-w-sm font-light">
-              The unified interface for modern AI infrastructure. Secure, observable, and scalable.
+              A secure, observable, and scalable interface for your AI infrastructure.
             </p>
             {/* Social links */}
             <div className="flex gap-4">

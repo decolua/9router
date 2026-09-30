@@ -63,37 +63,22 @@ describe("OpenCode Free Muse Spark thinking", () => {
     expect(out.max_tokens).toBeUndefined();
   });
 
-  it("routes Union Alpha through Anthropic Messages", () => {
-    const caps = getCapabilitiesForModel(PROVIDER, "union-alpha");
-    expect(caps.vision).toBe(true);
-    expect(caps.contextWindow).toBe(262144);
-    expect(caps.maxOutput).toBe(131072);
+  it("no longer offers Union Alpha and sends every remaining free model to a live endpoint", () => {
+    const freeModels = PROVIDER_MODELS.oc || [];
+    expect(freeModels.some((model) => model.id === "union-alpha")).toBe(false);
+    expect(freeModels.some((model) => model.id === "union-alpha-free")).toBe(false);
 
+    // With the Claude Messages path gone, the only two upstreams left are
+    // chat/completions for plain chat models and /responses for Muse Spark.
     const executor = new OpenCodeExecutor();
-
-    expect(getModelTargetFormat("oc", "union-alpha")).toBe(FORMATS.CLAUDE);
-    const url = executor.buildUrl("union-alpha");
-    expect(url).toBe("https://opencode.ai/zen/v1/messages");
-    expect(executor.buildHeaders({}, true, url)).toMatchObject({
-      "anthropic-version": "2023-06-01",
-    });
-    expect(executor.buildHeaders({}, true, executor.buildUrl("big-pickle")))
-      .not.toHaveProperty("anthropic-version");
-
-    const translated = translateRequest(
-      FORMATS.OPENAI,
-      FORMATS.CLAUDE,
-      "union-alpha",
-      { messages: [{ role: "user", content: "ping" }], max_tokens: 1 },
-      false,
-      {},
-      PROVIDER,
-    );
-    expect(translated).toMatchObject({
-      model: "union-alpha",
-      messages: [{ role: "user", content: [{ type: "text", text: "ping" }] }],
-      max_tokens: 1,
-    });
+    for (const model of freeModels) {
+      const url = executor.buildUrl(model.id);
+      expect([
+        "https://opencode.ai/zen/v1/chat/completions",
+        "https://opencode.ai/zen/v1/responses",
+      ]).toContain(url);
+      expect(executor.buildHeaders({}, true)).not.toHaveProperty("anthropic-version");
+    }
   });
 
   it("leaves the other free models on Chat Completions", () => {

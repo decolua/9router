@@ -1,12 +1,15 @@
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   AI_PROVIDERS,
+  FREE_PROVIDERS,
   getProviderAlias,
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getStudioModels } from "@/lib/localDb";
+import { getAllowedModelsOfKey, matchesAllowedModels } from "@/lib/db/repos/apiKeysRepo.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { buildStudioTargetIndex } from "@/shared/utils/studioModelVisibility";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
@@ -247,6 +250,14 @@ function providerMatchesKinds(providerId, kindFilter) {
   return kindFilter.some((k) => kinds.includes(k));
 }
 
+// Providers that need no credential are callable the moment 9Router runs, so they
+// never own a connection row. Without this pass they only appeared while the whole
+// provider table was empty, and any client that reads /v1/models (Hermes, Cline,
+// SDK model pickers) could not see a single one of their models.
+const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(
+  (id) => FREE_PROVIDERS[id].noAuth && !FREE_PROVIDERS[id].hidden
+);
+
 // Combo matches kindFilter when its `kind` field is in the list.
 // Combos with no kind are treated as LLM.
 function comboMatchesKinds(combo, kindFilter) {
@@ -254,15 +265,25 @@ function comboMatchesKinds(combo, kindFilter) {
   return kindFilter.includes(kind);
 }
 
+/** The caller's API key, from either header; empty when the request carries none. */
+function readCallerApiKey(request) {
+ const auth = String(request?.headers?.get("authorization") || "");
+ const bearer = auth.match(/^Bearer\s+(.+)$/i);
+ return (bearer?.[1] || request?.headers?.get("x-api-key") || "").trim() || null;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
 export async function buildModelsList(kindFilter, options = {}) {
-  // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
-  // cross-instance recursive loops.
-  const skipDynamicFetch = options.skipDynamicFetch === true;
+ // A restricted API key only ever sees the models it may actually call, so the
+ // listing can never promise a model the request gate would refuse.
+ const callerPatterns = await getAllowedModelsOfKey(readCallerApiKey(options.request));
+ // When this header is present, the /v1/models request came from another
+ // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
+ // cross-instance recursive loops.
+ const skipDynamicFetch = options.skipDynamicFetch === true;
   let connections = [];
   try {
     connections = await getProviderConnections();
@@ -292,13 +313,26 @@ export async function buildModelsList(kindFilter, options = {}) {
     console.log("Could not fetch model aliases");
   }
 
-  let disabledByAlias = {};
+  
+  let studioModels = [];
+  try {
+    studioModels = await getStudioModels();
+  } catch (e) {
+    console.log("Could not fetch model studio models");
+  }
+  // Studio names are records of their own now; a leftover alias carrying one would
+  // list the same model twice under two different names.
+  const studioNames = new Set(studioModels.map((s) => String(s.callName).toLowerCase()));
+ let disabledByAlias = {};
   try {
     disabledByAlias = await getDisabledModels();
   } catch (e) {
     console.log("Could not fetch disabled models");
   }
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
+
+  // A studio name hides the model it points at, everywhere it would be listed.
+  const studioTargets = buildStudioTargetIndex(studioModels);
 
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
@@ -323,9 +357,32 @@ export async function buildModelsList(kindFilter, options = {}) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     } else {
-      const comboCaps = aggregateComboCapabilities(combo.models, comboByName);
-      if (comboCaps) entry.capabilities = comboCaps;
+      const comboCaps = aggregateComboCapabilities(combo.models, comboByName, 0, Number(combo.contextWindow) || 0);
+      if (comboCaps) {
+        entry.capabilities = comboCaps;
+        // Same reason single models publish it: a client that only reads
+        // context_length must not fall back to guessing the window from the name.
+        if (Number.isFinite(comboCaps.contextWindow)) entry.context_length = comboCaps.contextWindow;
+        if (Number.isFinite(comboCaps.maxOutput)) entry.max_completion_tokens = comboCaps.maxOutput;
+      }
     }
+    models.push(entry);
+  }
+  
+  // Custom model (studio) names are user-defined callable IDs (alias + per-model overrides).
+  for (const studio of studioModels) {
+    if (!kindFilter.includes(LLM_KIND)) continue;
+    const entry = {
+      id: studio.callName,
+      object: "model",
+      owned_by: "model-studio",
+      resolved_model: studio.targetModel,
+    };
+    const caps = getCapabilitiesForModel(studio.provider, studio.model);
+    if (caps) entry.capabilities = caps;
+    const contextWindow = Number(studio.contextWindow) || caps?.contextWindow;
+    if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
+    if (Number.isFinite(caps?.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
     models.push(entry);
   }
 
@@ -340,6 +397,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id)) continue;
+        if (studioTargets.isStudioTarget([providerId, alias], model.id)) continue;
         models.push({
           id: `${alias}/${model.id}`,
           object: "model",
@@ -358,6 +416,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
+      if (studioTargets.isStudioTarget(providerAlias, modelId)) continue;
 
       models.push({
         id: `${providerAlias}/${modelId}`,
@@ -461,7 +520,9 @@ export async function buildModelsList(kindFilter, options = {}) {
         })
         .filter((modelId) => modelId !== "");
 
-      const aliasModelIds = Object.values(modelAliases || {})
+      const aliasModelIds = Object.entries(modelAliases || {})
+ .filter(([aliasName]) => !studioNames.has(String(aliasName).toLowerCase()))
+ .map(([, fullModel]) => fullModel)
         .filter((fullModel) => {
           if (typeof fullModel !== "string" || !fullModel.includes("/")) return false;
           return (
@@ -495,6 +556,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId)) continue;
+        // Hidden behind a studio name: only the studio name is published.
+        if (studioTargets.isStudioTarget([providerId, staticAlias, outputAlias], modelId)) continue;
 
         const model = {
           id: `${outputAlias}/${modelId}`,
@@ -554,6 +617,30 @@ export async function buildModelsList(kindFilter, options = {}) {
     }
   }
 
+  // Credential-free providers have no connection row to iterate, so list them here.
+  // A provider that does have a live connection was already published above.
+  for (const providerId of NO_AUTH_PROVIDER_IDS) {
+    if (activeConnectionByProvider.has(providerId)) continue;
+    if (!providerMatchesKinds(providerId, kindFilter)) continue;
+    const alias = getProviderAlias(providerId);
+    const providerModels = PROVIDER_MODELS[PROVIDER_ID_TO_ALIAS[providerId] || providerId] || [];
+    for (const model of providerModels) {
+      if (!kindFilter.includes(modelKind(model))) continue;
+      if (isDisabled(alias, model.id)) continue;
+      if (studioTargets.isStudioTarget([providerId, alias], model.id)) continue;
+      const caps = getCapabilitiesForModel(providerId, model.id);
+      const entry = {
+        id: `${alias}/${model.id}`,
+        object: "model",
+        owned_by: alias,
+      };
+      if (caps) entry.capabilities = caps;
+      if (Number.isFinite(caps?.contextWindow)) entry.context_length = caps.contextWindow;
+      if (Number.isFinite(caps?.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
+      models.push(entry);
+    }
+  }
+
   const dedupedModels = [];
   const seenModelIds = new Set();
   for (const model of models) {
@@ -562,7 +649,9 @@ export async function buildModelsList(kindFilter, options = {}) {
     dedupedModels.push(model);
   }
 
-  return dedupedModels;
+  // Same patterns the request gate applies: an unrestricted key still sees everything.
+ if (!callerPatterns) return dedupedModels;
+ return dedupedModels.filter((model) => matchesAllowedModels(callerPatterns, model.id));
 }
 
 /**
@@ -586,7 +675,7 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch, request });
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

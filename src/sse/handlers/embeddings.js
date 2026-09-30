@@ -3,9 +3,12 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
+  apiKeyGateFailure,
   isValidApiKey,
+  shouldLogAuthFailure,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { getClientIp } from "@/lib/auth/loginLimiter";
 import { getModelInfo } from "../services/model.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -53,15 +56,19 @@ export async function handleEmbeddings(request) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
+  if (settings.requireApiKey && !apiKey) {
+    if (shouldLogAuthFailure("embeddings", getClientIp(request), null)) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+  }
+  if (apiKey) {
+    const failure = apiKeyGateFailure(await isValidApiKey(apiKey), settings.requireApiKey);
+    if (failure) {
+      if (shouldLogAuthFailure("embeddings", getClientIp(request), apiKey.slice(0, 8))) {
+        log.warn("AUTH", `${failure.message} (requireApiKey=${settings.requireApiKey})`);
+      }
+      return errorResponse(failure.status, failure.message);
     }
   }
 
@@ -82,6 +89,8 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+  // A studio name is the model the caller owns, so its usage belongs to that name.
+  const requestedModel = modelStr && modelStr !== `${provider}/${model}` ? modelStr : null;
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -103,7 +112,7 @@ export async function handleEmbeddings(request) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("EMBEDDINGS", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return unavailableResponse(status, `[${requestedModel || `${provider}/${model}`}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
         log.error("AUTH", `No credentials for provider: ${provider}`);
@@ -138,6 +147,7 @@ export async function handleEmbeddings(request) {
       const usage = exactEmbeddingUsage(result.usage);
       if (usage) {
         saveRequestUsage({
+        requestedModel,
           provider,
           model,
           connectionId: credentials.connectionId,

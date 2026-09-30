@@ -942,7 +942,7 @@ export default function ProviderLimits() {
                           className="size-6 rounded-md object-contain"
                           fallbackText={provider.slice(0, 2).toUpperCase()}
                         />
-                        <span className="font-medium">
+                        <span className="font-medium min-w-0 truncate" title={provider}>
                           {providerLabel(provider)}
                         </span>
                         {providerFilter === provider && (
@@ -1074,8 +1074,7 @@ export default function ProviderLimits() {
       {/* Provider cards: 2 columns, compact */}
       {expiringFirst && (
         <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
-          Expiring-first currently reorders accounts inside the current page.
-          Cross-page ordering still follows backend pagination.
+          Expiring-first reorders accounts within the current page only, while cross-page ordering still follows backend pagination.
         </div>
       )}
 
@@ -1628,3 +1627,4 @@ export default function ProviderLimits() {
     </div>
   );
 }
+

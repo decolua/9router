@@ -58,8 +58,8 @@ export async function PATCH(request) {
         }
       } else {
         // First time setting password, no current password needed
-        // Allow empty currentPassword or default "123456"
-        if (body.currentPassword && body.currentPassword !== "123456") {
+        // Allow empty currentPassword or default "seren123"
+        if (body.currentPassword && body.currentPassword !== "seren123") {
            return NextResponse.json({ error: "Invalid current password" }, { status: 401 });
         }
       }

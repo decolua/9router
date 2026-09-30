@@ -139,12 +139,12 @@ export const MODEL_CAPABILITIES = {
   "kimi-for-coding-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code":    { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
   "kimi-k2.7-code-highspeed": { vision: true, videoInput: true, reasoning: true, thinkingFormat: "kimi", thinkingCanDisable: false, contextWindow: 262144, maxOutput: 65536 },
+  // OpenCode Zen still serves Union Alpha; the free tier no longer does.
+  "union-alpha":      { vision: true, reasoning: true, thinkingFormat: "anthropic", contextWindow: 262144, maxOutput: 131072 },
   // OpenCode Free Muse Spark — multimodal (text+image per models.dev meta/muse-spark)
   // via OpenAI Responses input_image; reasoning supports up to xhigh.
   "muse-spark-1.2-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
   "muse-spark-1.3-contributor-free": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1048576, maxOutput: 131072 },
-  // OpenCode Free Union Alpha — multimodal (text+vision), 262K context, 131K max output
-  "union-alpha": { vision: true, contextWindow: 262144, maxOutput: 131072 },
 };
 
 const KIRO_GPT_5_6_CAPABILITIES = { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 };
@@ -252,6 +252,18 @@ export const PROVIDER_CAPABILITIES = {
   // Ollama Cloud is actually needed.
   "ollama": {
     "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
+  },
+  // Web-cookie providers: text-only RAG backends, no native function tools.
+  // Kimi Web exposes reasoning deltas as reasoning_content; Gemini Web
+  // surfaces no reasoning channel.
+  "gemini-web": {
+    "gemini-3.1-pro": { tools: false, contextWindow: 1048576, maxOutput: 65536 },
+    "gemini-3.7-flash": { tools: false, contextWindow: 1048576, maxOutput: 65536 },
+    "gemini-3.1-flash-lite": { tools: false, contextWindow: 1048576, maxOutput: 65536 },
+  },
+  "kimi-web": {
+    "k3": { tools: false, reasoning: true, contextWindow: 262144, maxOutput: 65536 },
+    "k2d6": { tools: false, reasoning: true, contextWindow: 262144, maxOutput: 65536 },
   },
 };
 
@@ -421,7 +433,11 @@ export const PATTERN_CAPABILITIES = [
  * Union:        vision, pdf, audioInput, videoInput, imageOutput, audioOutput, search
  * Intersection: tools
  * Primary:      reasoning fields from the first (primary) model
- * Conservative: contextWindow = min; maxOutput = max
+ * Window:       contextWindow and maxOutput both follow the largest member, because a
+ *               combo fails over instead of splitting one conversation across models.
+ *               Reporting the smallest window would make a client compact a 1M model
+ *               down to 256k for no reason. A combo may set its own window, which then
+ *               wins over the auto-detected one.
  *
  * @param {string[]} comboModels
  * @param {Object|null} [comboLookup] optional map of combo name → models array for nested resolution
@@ -431,14 +447,22 @@ export const PATTERN_CAPABILITIES = [
  *   have the server's answer (/api/models, via useModelCaps) pass it here; it is merged over
  *   the local tables, so fields it does not carry (tools, pdf, audio/video, thinking*) survive.
  * @param {number} [_depth] internal recursion depth guard
+ * @param {number} [contextOverride] explicit contextWindow set on the combo
  * @returns {object|null} full capabilities object, or null for empty input
  */
-export function aggregateComboCapabilities(comboModels, comboLookup = null, resolveCaps = null, _depth = 0) {
+export function aggregateComboCapabilities(comboModels, comboLookup = null, resolveCaps = null, _depth = 0, contextOverride = 0) {
+  // Backward compatibility: callers written before resolveCaps existed passed
+  // (comboModels, comboLookup, depth, contextOverride) — shift when arg3 is a number.
+  if (typeof resolveCaps === "number") {
+    contextOverride = Number(_depth) || 0;
+    _depth = resolveCaps;
+    resolveCaps = null;
+  }
   if (!comboModels?.length || _depth > 6) return null;
   const allCaps = comboModels.map((fullId) => {
     // Nested combo: bare name (no slash) that exists in the lookup — recurse
     if (!fullId.includes("/") && comboLookup?.[fullId]) {
-      return aggregateComboCapabilities(comboLookup[fullId], comboLookup, resolveCaps, _depth + 1)
+      return aggregateComboCapabilities(comboLookup[fullId], comboLookup, resolveCaps, _depth + 1, contextOverride)
           ?? resolveCaps?.(fullId)
           ?? getCapabilitiesForModel(null, fullId);
     }
@@ -450,6 +474,9 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
     return override ? { ...local, ...override } : local;
   });
   const first = allCaps[0];
+  const windows = allCaps.map((c) => c.contextWindow).filter(Number.isFinite);
+  const outputs = allCaps.map((c) => c.maxOutput).filter(Number.isFinite);
+  const override = Number(contextOverride);
   return {
     vision:      allCaps.some((c) => c.vision),
     pdf:         allCaps.some((c) => c.pdf),
@@ -458,13 +485,15 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
     imageOutput: allCaps.some((c) => c.imageOutput),
     audioOutput: allCaps.some((c) => c.audioOutput),
     search:      allCaps.some((c) => c.search),
-    tools:       allCaps.every((c) => c.tools),
+    tools:       allCaps.some((c) => c.tools),
     reasoning:          first.reasoning,
     thinkingFormat:     first.thinkingFormat,
     thinkingCanDisable: first.thinkingCanDisable,
     thinkingRange:      first.thinkingRange,
-    contextWindow: Math.min(...allCaps.map((c) => c.contextWindow)),
-    maxOutput:     Math.max(...allCaps.map((c) => c.maxOutput)),
+    contextWindow: Number.isFinite(override) && override > 0
+      ? override
+      : (windows.length ? Math.max(...windows) : DEFAULT_CAPABILITIES.contextWindow),
+    maxOutput: outputs.length ? Math.max(...outputs) : DEFAULT_CAPABILITIES.maxOutput,
   };
 }
 

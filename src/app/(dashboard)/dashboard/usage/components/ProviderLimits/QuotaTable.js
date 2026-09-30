@@ -128,7 +128,7 @@ export default function QuotaTable({
   const pageStart = sortedQuotas.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(page * PAGE_SIZE, sortedQuotas.length);
 
-  const cellPad = compact ? "py-1 px-1.5" : "py-2 px-3";
+  const cellPad = compact ? "py-1 px-1.5" : "py-2.5 px-3";
   const nameText = compact ? "text-[11px]" : "text-sm";
   const resetPrimary = compact ? "text-[11px]" : "text-sm";
   const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
@@ -148,7 +148,7 @@ export default function QuotaTable({
         )}
       </div>
 
-      <div className="space-y-px">
+      <div className="space-y-1.5">
         {currentPageRows.map((quota) => {
           const isUnlimited = quota.unlimited === true;
           const isCreditBalance = quota.isCreditBalance === true;
@@ -162,36 +162,41 @@ export default function QuotaTable({
           // and their resetAt is a hard expiry, so word it as "expires".
           const recurring = quota.recurring !== false;
           const countdownLabel = recurring ? `in ${countdown}` : `expires in ${countdown}`;
+          const resetWord = recurring ? "Reset" : "Expires";
 
           return (
             <div
               key={`${quota.name}-${quota.index}`}
-              className={`flex items-center gap-2 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${cellPad}`}
+              className={`rounded-lg border border-border-subtle bg-bg/50 px-3 py-2 transition-colors hover:border-brand-500/15 hover:bg-surface-2/30 ${cellPad}`}
             >
-              {/* Name */}
-              <div className="flex w-36 min-w-0 items-center gap-1.5">
-                <span className="text-[10px] shrink-0">{colors.emoji}</span>
-                <span className={`${nameText} font-medium text-text-primary truncate`}>
-                  {quota.name}
-                </span>
-              </div>
-
-              {/* Progress + used/total */}
-              <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
-                {!isUnlimited && !isCreditBalance && (
-                <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
-                  quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
-                }`}>
-                  <div
-                    className={`h-full transition-all duration-300 ${colors.bg}`}
-                    style={{ width: `${Math.min(quota.remaining, 100)}%` }}
-                  />
+              <div className="flex flex-col gap-2">
+                {/* Name row */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="text-[11px] shrink-0">{colors.emoji}</span>
+                    <span className={`${nameText} font-medium text-text-main truncate`}>
+                      {quota.name}
+                    </span>
+                  </div>
+                  <span className={`shrink-0 text-xs font-semibold tabular-nums ${colors.text}`}>
+                    {isUnlimited ? "Unlimited" : `${quota.remaining}%`}
+                  </span>
                 </div>
+
+                {/* Progress bar */}
+                {!isUnlimited && !isCreditBalance && (
+                  <div className={`h-1.5 rounded-full overflow-hidden ${colors.bgLight}`}>
+                    <div
+                      className={`h-full rounded-full transition-all duration-500 ${colors.bg}`}
+                      style={{ width: `${Math.min(quota.remaining, 100)}%` }}
+                    />
+                  </div>
                 )}
 
-                <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
+                {/* Meta: used/total + reset */}
+                <div className="flex items-center justify-between gap-2">
                   <span
-                    className="text-text-muted truncate"
+                    className="truncate text-[11px] text-text-muted"
                     title={
                       isUnlimited
                         ? `${quota.used.toLocaleString()} used · Unlimited`
@@ -206,67 +211,46 @@ export default function QuotaTable({
                       ? `Credit: ${quota.total.toFixed(2)} ${quota.currency || ""}`
                       : `${quota.used.toLocaleString()} / ${quota.total > 0 ? quota.total.toLocaleString() : "∞"}`}
                   </span>
-                  <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text} shrink-0`}>
-                    {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {countdown !== "-" && (
+                      <span className={`${resetPrimary} font-medium text-text-main`}>
+                        {countdownLabel}
+                      </span>
+                    )}
+                    {hasHideAction && (
+                      <button
+                        type="button"
+                        onClick={() => onHideQuota(quota)}
+                        className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
+                        title="Hide this quota row"
+                        aria-label={`Hide quota ${quota.name}`}
+                      >
+                        <span className="material-symbols-outlined text-[13px]">
+                          visibility_off
+                        </span>
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Reset time */}
-              <div className="min-w-0 shrink">
-                {countdown !== "-" || resetDisplay ? (
-                  compact ? (
-                    <div
-                      className={`${resetPrimary} text-text-primary font-medium truncate`}
-                      title={resetDisplay || ""}
-                    >
-                      {countdown !== "-" ? countdownLabel : resetDisplay}
-                    </div>
-                  ) : (
-                    <div className="min-w-0 space-y-0.5">
-                      {countdown !== "-" && (
-                        <div className={`${resetPrimary} text-text-primary font-medium truncate`}>
-                          {countdownLabel}
-                        </div>
-                      )}
-                      {resetDisplay && (
-                        <div className={`${resetSecondary} text-text-muted truncate`}>
-                          {resetDisplay}
-                        </div>
-                      )}
-                    </div>
-                  )
-                ) : (
-                  <div className={`${resetPrimary} text-text-muted italic`}>N/A</div>
+                {resetDisplay && (
+                  <div className="text-[10px] text-text-muted/70">
+                    {resetWord} at {resetDisplay}
+                  </div>
                 )}
               </div>
-
-              {/* Hide action */}
-              {hasHideAction && (
-                <button
-                  type="button"
-                  onClick={() => onHideQuota(quota)}
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
-                  title="Hide this quota row"
-                  aria-label={`Hide quota ${quota.name}`}
-                >
-                  <span className="material-symbols-outlined text-[15px]">
-                    visibility_off
-                  </span>
-                </button>
-              )}
             </div>
           );
         })}
       </div>
 
       {totalPages > 1 && (
-        <div className="rounded-md border border-black/10 bg-black/[0.02] px-2 py-1.5 dark:border-white/10 dark:bg-white/[0.03]">
-          <div className="flex items-center justify-between gap-2 text-[10px] text-text-muted">
-            <span>
+        <div className="rounded-lg border border-border-subtle bg-bg/50 px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[10px] text-text-muted">
               Showing {pageStart}-{pageEnd} of {sortedQuotas.length}
             </span>
-            <span>
+            <span className="text-[10px] text-text-muted">
               Page {page} / {totalPages}
             </span>
           </div>

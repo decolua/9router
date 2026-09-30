@@ -83,7 +83,10 @@ export async function getAdapter() {
   return state.initPromise;
 }
 
-export function getAdapterSync() {
-  if (!state.instance) throw new Error("[DB] adapter not initialized — await getAdapter() first");
-  return state.instance;
+export async function closeDb() {
+  if (state.instance) {
+    if (state.instance.close) state.instance.close();
+    state.instance = null;
+    state.initPromise = null;
+  }
 }

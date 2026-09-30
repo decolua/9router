@@ -15,6 +15,35 @@ process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
 
 let backgroundRefreshStarted = false;
 
+// Arm the automatic-backup scheduler as soon as the HTTP server is listening.
+// The Next-side bootstrap also starts it, but only when a page render runs;
+// on a quiet server the timer would otherwise stay dead until the settings
+// page is opened. configureTelegramBackup reads the stored config and no-ops
+// when backups are disabled, so calling it unconditionally is safe.
+let autoBackupStarted = false;
+function startAutoBackupFromCustomServer() {
+  if (autoBackupStarted) return;
+  autoBackupStarted = true;
+  const candidates = [
+    path.join(__dirname, "src", "shared", "services", "telegramBackup.js"),
+    path.join(__dirname, "..", "src", "shared", "services", "telegramBackup.js"),
+  ];
+  const modPath = candidates.find((p) => fs.existsSync(p));
+  if (!modPath) {
+    if (process.env.DEBUG_AUTO_BACKUP) console.error("[AutoBackup] module not found in standalone build");
+    return;
+  }
+  import(pathToFileURL(modPath).href)
+    .then((m) => {
+      m.configureTelegramBackup().catch((e) => {
+        console.error("[AutoBackup] configure failed:", e && e.message ? e.message : e);
+      });
+    })
+    .catch((e) => {
+      if (process.env.DEBUG_AUTO_BACKUP) console.error("[AutoBackup] import failed:", e && e.message ? e.message : e);
+    });
+}
+
 function startBackgroundTokenRefreshFromCustomServer() {
   if (backgroundRefreshStarted) return;
   backgroundRefreshStarted = true;
@@ -75,6 +104,7 @@ http.createServer = (...args) => {
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
+    startAutoBackupFromCustomServer();
   });
   const origEmit = server.emit;
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.

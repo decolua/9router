@@ -9,6 +9,8 @@ function rowToCombo(row) {
     name: row.name,
     kind: row.kind,
     models: parseJson(row.models, []),
+    // 0 means auto: the window follows the largest member model.
+    contextWindow: Number(row.contextWindow) || 0,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
@@ -40,12 +42,13 @@ export async function createCombo(data) {
     name: data.name,
     kind: data.kind || null,
     models: data.models || [],
+    contextWindow: Number(data.contextWindow) || 0,
     createdAt: now,
     updatedAt: now,
   };
   db.run(
-    `INSERT INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-    [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.createdAt, combo.updatedAt]
+    `INSERT INTO combos(id, name, kind, models, contextWindow, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+    [combo.id, combo.name, combo.kind, stringifyJson(combo.models), combo.contextWindow, combo.createdAt, combo.updatedAt]
   );
   return combo;
 }
@@ -58,8 +61,15 @@ export async function updateCombo(id, data) {
     if (!row) return;
     const merged = { ...rowToCombo(row), ...data, updatedAt: new Date().toISOString() };
     db.run(
-      `UPDATE combos SET name = ?, kind = ?, models = ?, updatedAt = ? WHERE id = ?`,
-      [merged.name, merged.kind, stringifyJson(merged.models || []), merged.updatedAt, id]
+      `UPDATE combos SET name = ?, kind = ?, models = ?, contextWindow = ?, updatedAt = ? WHERE id = ?`,
+      [
+        merged.name,
+        merged.kind,
+        stringifyJson(merged.models || []),
+        Number(merged.contextWindow) || 0,
+        merged.updatedAt,
+        id,
+      ]
     );
     result = merged;
   });

@@ -13,7 +13,7 @@ const getColorClasses = (remainingPercentage) => {
       emoji: "🟢"
     };
   }
-  
+
   if (remainingPercentage >= 30) {
     return {
       text: "text-yellow-500",
@@ -22,7 +22,7 @@ const getColorClasses = (remainingPercentage) => {
       emoji: "🟡"
     };
   }
-  
+
   // 0-29% including 0% (out of quota) - show red
   return {
     text: "text-red-500",
@@ -82,48 +82,55 @@ export default function QuotaProgressBar({
 
   // percentage is already remaining percentage (from ProviderLimitCard)
   const remaining = percentage;
-  
+
   return (
-    <div className="space-y-2">
+    <div className="rounded-[12px] border border-border-subtle bg-bg/40 p-3 transition-colors hover:border-brand-500/20">
       {/* Label and percentage */}
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-text-primary">
+      <div className="flex items-center justify-between gap-3">
+        <span className="truncate text-sm font-semibold tracking-tight text-text-main">
           {label}
         </span>
-        <div className="flex items-center gap-1.5">
-          <span className="text-xs">{colors.emoji}</span>
-          <span className={cn("font-medium", colors.text)}>
-            {remaining}%
-          </span>
-        </div>
+        <span
+          className={cn(
+            "shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums",
+            colors.bgLight,
+            colors.text
+          )}
+        >
+          {remaining}%
+        </span>
       </div>
 
       {/* Progress bar */}
       {!unlimited && (
-        <div className={cn("h-2 rounded-full overflow-hidden", colors.bgLight)}>
+        <div
+          className={cn(
+            "mt-2 h-1.5 overflow-hidden rounded-full",
+            colors.bgLight
+          )}
+        >
           <div
-            className={cn("h-full transition-all duration-300", colors.bg)}
+            className={cn("h-full rounded-full transition-all duration-500", colors.bg)}
             style={{ width: `${Math.min(remaining, 100)}%` }}
           />
         </div>
       )}
 
       {/* Usage details and countdown */}
-      <div className="flex items-center justify-between text-xs text-text-muted">
-        <span>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-xs text-text-muted">
+        <span className="tabular-nums">
           {used.toLocaleString()} / {total.toLocaleString()} requests
         </span>
         {countdown !== "-" && (
-          <div className="flex items-center gap-1">
-            <span>•</span>
-            <span className="font-medium">{resetWord} in {countdown}</span>
-          </div>
+          <span className="font-medium text-text-main">
+            {resetWord} in {countdown}
+          </span>
         )}
       </div>
 
       {/* Reset time display */}
       {resetDisplay && (
-        <div className="text-xs text-text-muted/70">
+        <div className="mt-1 text-[11px] text-text-muted/70">
           {resetWord} at {resetDisplay}
         </div>
       )}

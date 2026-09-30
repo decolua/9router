@@ -33,7 +33,7 @@ describe("GET /v1/models/{id}", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(chatModel);
-    expect(mocks.buildModelsList).toHaveBeenCalledWith(["llm"]);
+    expect(mocks.buildModelsList).toHaveBeenCalledWith(["llm"], { request: expect.any(Request) });
   });
 
   it("also handles a decoded slash in a single catch-all segment", async () => {
@@ -53,7 +53,7 @@ describe("GET /v1/models/{id}", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ object: "list", data: [imageModel] });
-    expect(mocks.buildModelsList).toHaveBeenCalledWith(["image"]);
+    expect(mocks.buildModelsList).toHaveBeenCalledWith(["image"], { request: expect.any(Request) });
   });
 
   it("returns an OpenAI-style model_not_found response for an unknown model", async () => {

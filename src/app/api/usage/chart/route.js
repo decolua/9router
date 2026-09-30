@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
 import { getChartData } from "@/lib/usageDb";
+import { getSessionContext } from "@/lib/auth/dashboardPermissions";
 
 const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
+
+export const dynamic = "force-dynamic";
 
 export async function GET(request) {
   try {
@@ -12,7 +15,8 @@ export async function GET(request) {
       return NextResponse.json({ error: "Invalid period" }, { status: 400 });
     }
 
-    const data = await getChartData(period);
+    const ctx = await getSessionContext();
+    const data = await getChartData(period, ctx.apiKeyFilter, ctx.allowedModels);
     return NextResponse.json(data);
   } catch (error) {
     console.error("[API] Failed to get chart data:", error);

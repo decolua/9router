@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { CenterLoading } from "@/shared/components/Loading";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
@@ -15,7 +16,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isXaiApiKey = provider === "xai" && !isCookie;
   const credentialLabel = isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
-    ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
+    ? (provider === "deepseek-web" ? "userToken value" : provider === "gemini-web" ? "__Secure-1PSID value" : provider === "kimi-web" ? "access_token value" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
 
   const isAzure = provider === "azure";
@@ -51,6 +52,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
+  const [bulkProgress, setBulkProgress] = useState(null); // { done, total } while bulk import runs
 
   const buildProviderSpecificData = () => {
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
@@ -143,6 +145,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     if (!plan.length) return;
     setSaving(true);
     setBulkResult(null);
+    setBulkProgress({ done: 0, total: plan.length });
     let success = 0;
     let failed = 0;
     for (const entry of plan) {
@@ -179,16 +182,29 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       } catch {
         failed++;
       }
+      setBulkProgress((prev) => (prev ? { done: Math.min(prev.total, prev.done + 1), total: prev.total } : prev));
     }
     setSaving(false);
+    setBulkProgress(null);
     setBulkResult({ success, failed });
     if (success > 0 && onBulkDone) onBulkDone();
   };
 
   if (!provider) return null;
 
+  const bulkPct = bulkProgress && bulkProgress.total > 0
+    ? Math.round((bulkProgress.done / bulkProgress.total) * 100)
+    : null;
+
+  const handleClose = () => {
+    // Block closing while a bulk import loop is running so a partial batch
+    // is never left behind an unmounted modal.
+    if (saving && bulkProgress) return;
+    onClose();
+  };
+
   return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         {/* Mode switcher */}
         <div className="flex gap-2">
@@ -219,9 +235,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             )}
             <div className="flex gap-2">
               <Button onClick={handleBulkSubmit} fullWidth disabled={saving || !bulkText.trim()}>
-                {saving ? "Adding..." : "Add All Keys"}
+                Add All Keys
               </Button>
-              <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+              <Button onClick={handleClose} variant="ghost" fullWidth disabled={!!bulkProgress}>Cancel</Button>
             </div>
           </div>
         )}
@@ -268,7 +284,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {isXaiApiKey && (
           <p className="text-xs text-text-muted">
-            Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
+            Use a direct xAI API key from console.x.ai instead of Grok Build OAuth.
           </p>
         )}
         {isCookie && authHint && (
@@ -315,7 +331,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {isCompatible && (
           <p className="text-xs text-text-muted">
-            Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
+            Enter the model ID exactly as your endpoint expects it and it becomes the connection default.
           </p>
         )}
         {isCloudflareAi && (
@@ -384,7 +400,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
         {(proxyPools || []).length === 0 && (
           <p className="text-xs text-text-muted">
-            No active proxy pools available. Create one in Proxy Pools page first.
+            Create an active proxy pool in the Proxy Pools page first.
           </p>
         )}
 
@@ -396,12 +412,19 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>
+          <Button onClick={handleClose} variant="ghost" fullWidth>
             Cancel
           </Button>
         </div>
         </>)}
       </div>
+      {bulkProgress && (
+        <CenterLoading
+          fixed={false}
+          message={bulkPct !== null ? `Adding keys ${bulkProgress.done}/${bulkProgress.total}` : "Adding keys"}
+          progress={bulkPct}
+        />
+      )}
     </Modal>
   );
 }

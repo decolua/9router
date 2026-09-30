@@ -414,8 +414,22 @@ export function getPricingForModel(provider, model) {
     }
   }
 
-  return null;
+  // 4. Free-tier / community models — priced at zero so they're distinguishable from unknown
+  if (/(^|[-_/])(free|contributor|community|opencode|zen|preview-?free)([-_]|$)/i.test(model)) {
+    return { input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0 };
+  }
+
+  // 5. Default fallback for any unlisted model so Est. Cost is never always $0.00.
+  //    Users can override any of these rates in the Pricing settings page.
+  return { ...DEFAULT_PRICING };
 }
+
+/**
+ * Default pricing for unlisted models ($/1M tokens).
+ * A conservative mid-range rate so Est. Cost shows a meaningful number
+ * for models that have no explicit pricing entry in the table above.
+ */
+const DEFAULT_PRICING = { input: 0.50, output: 2.00, cached: 0.25, reasoning: 2.00, cache_creation: 0.50 };
 
 /**
  * Get all provider pricing (for UI / API).

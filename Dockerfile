@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1.7
 ARG NODE_IMAGE=node:22-alpine
 ARG ALPINE_MIRROR=dl-cdn.alpinelinux.org
 ARG NPM_REGISTRY=https://registry.npmjs.org/
@@ -20,8 +19,11 @@ ARG NPM_REGISTRY
 RUN apk add --no-cache python3 make g++ linux-headers
 
 COPY package.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm install \
+# No cache mount here on purpose. Railway's builder requires the id to be
+# prefixed with a key it generates per service, and the documented form is
+# rejected as well, so the mount only breaks the build there. The layer above
+# already caches the install, because package.json is copied on its own.
+RUN npm install \
       --registry="${NPM_REGISTRY}" \
       --fetch-retries=5 \
       --fetch-retry-factor=2 \

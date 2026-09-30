@@ -1,10 +1,17 @@
 "use client";
 
 import { useState, useRef } from "react";
+import PropTypes from "prop-types";
 import { Modal, Button } from "@/shared/components";
+import { CenterLoading } from "@/shared/components/Loading";
 import { translate } from "@/i18n/runtime";
 
-const PLACEHOLDER = `[
+// Server-side bulk insert runs serially, so very large payloads are split
+// client-side into batches. Keeps each request small and lets the overlay
+// report real per-account progress.
+const BULK_BATCH_SIZE = 20;
+
+const PLACEHOLDER = `]
   {
     "access_token": "eyJ0eXAiOiJhdCtqd3Qi...",
     "refresh_token": "LZhriF9bf88pPykpXCuZ9...",
@@ -57,6 +64,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
   const [submitting, setSubmitting] = useState(false);
   const [parseError, setParseError] = useState("");
   const [result, setResult] = useState(null);
+  const [importProgress, setImportProgress] = useState(null); // { done, total }
   const [isDragging, setIsDragging] = useState(false);
   const [fileCountInfo, setFileCountInfo] = useState(null);
   const fileInputRef = useRef(null);
@@ -151,19 +159,33 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
     }
 
     setSubmitting(true);
+    setImportProgress({ done: 0, total: accounts.length });
     try {
-      const res = await fetch("/api/oauth/grok-cli/bulk-import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accounts }),
-      });
-      const data = await res.json();
+      let success = 0;
+      let failed = 0;
+      const results = [];
+      for (let offset = 0; offset < accounts.length; offset += BULK_BATCH_SIZE) {
+        const batch = accounts.slice(offset, offset + BULK_BATCH_SIZE);
+        const res = await fetch("/api/oauth/grok-cli/bulk-import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ accounts: batch }),
+        });
+        const data = await res.json();
 
-      if (!res.ok) {
-        setParseError(data?.error || `Request failed: ${res.status}`);
-        return;
+        if (!res.ok) {
+          setParseError(data?.error || `Request failed: ${res.status}`);
+          return;
+        }
+
+        success += data.success || 0;
+        failed += data.failed || 0;
+        for (const item of data.results || []) {
+          results.push({ ...item, index: (item.index ?? 0) + offset });
+        }
+        setImportProgress({ done: Math.min(accounts.length, offset + batch.length), total: accounts.length });
       }
-
+      const data = { success, failed, results };
       setResult(data);
       if (data.success > 0 && typeof onSuccess === "function") {
         onSuccess();
@@ -172,10 +194,14 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
       setParseError(err.message || translate("Request failed"));
     } finally {
       setSubmitting(false);
+      setImportProgress(null);
     }
   };
 
   const failedItems = result?.results?.filter((r) => !r.ok) || [];
+  const importPct = importProgress && importProgress.total > 0
+    ? Math.round((importProgress.done / importProgress.total) * 100)
+    : null;
 
   return (
     <Modal isOpen={isOpen} title={translate("Bulk Add Grok CLI Accounts")} onClose={handleClose}>
@@ -279,6 +305,19 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
           </Button>
         </div>
       </div>
+      {importProgress && (
+        <CenterLoading
+          fixed={false}
+          message={importPct !== null ? `${translate("Importing accounts")} ${importProgress.done}/${importProgress.total}` : translate("Importing accounts")}
+          progress={importPct}
+        />
+      )}
     </Modal>
   );
 }
+
+BulkImportGrokCliModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSuccess: PropTypes.func,
+};

@@ -1,7 +1,10 @@
 import { NextResponse } from "next/server";
-import { FILTERS } from "./filters.js";
+import { FILTERS, FALLBACK_SUGGESTIONS } from "./filters.js";
 
 export const dynamic = "force-dynamic";
+
+const UPSTREAM_TIMEOUT_MS = 15000;
+const UPSTREAM_UNAVAILABLE_MESSAGE = "Live model list is unavailable, showing built-in models instead.";
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
@@ -17,16 +20,23 @@ export async function GET(request) {
     return NextResponse.json({ error: "Unknown filter type" }, { status: 400 });
   }
 
+  const fallback = FALLBACK_SUGGESTIONS[type] ?? [];
+  const unavailable = (message) =>
+    NextResponse.json({ data: fallback, error: message || UPSTREAM_UNAVAILABLE_MESSAGE });
+
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
     if (!res.ok) {
-      return NextResponse.json({ data: [] });
+      return unavailable();
     }
     const json = await res.json();
     const raw = json.data ?? json.models ?? json;
     const data = filter(Array.isArray(raw) ? raw : []);
+    if (data.length === 0 && fallback.length > 0) {
+      return unavailable();
+    }
     return NextResponse.json({ data });
   } catch {
-    return NextResponse.json({ data: [] });
+    return unavailable();
   }
 }

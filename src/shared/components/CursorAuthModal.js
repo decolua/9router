@@ -145,7 +145,7 @@ export default function CursorAuthModal({ isOpen, onSuccess, onClose }) {
                 <div className="flex gap-2">
                   <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
                   <p className="text-sm text-blue-800 dark:text-blue-200">
-                    Cursor IDE not detected. Please paste your tokens manually.
+                    Paste your Cursor tokens manually because the IDE was not detected.
                   </p>
                 </div>
               </div>

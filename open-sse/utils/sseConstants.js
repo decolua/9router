@@ -21,3 +21,9 @@ export const SSE_HEADERS_CORS = {
   "Connection": "keep-alive",
   "Access-Control-Allow-Origin": "*"
 };
+
+// Wire primitives, so no module has to retype them.
+export const SSE_DATA_PREFIX = "data:";
+export const SSE_DONE_DATA = "[DONE]";
+export const SSE_CONTENT_TYPE_EVENT_STREAM = "text/event-stream";
+export const SSE_CONTENT_TYPE_JSON = "application/json";

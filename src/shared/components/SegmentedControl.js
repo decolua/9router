@@ -18,7 +18,9 @@ export default function SegmentedControl({
   return (
     <div
       className={cn(
-        "inline-flex items-center p-1 rounded-[10px] overflow-x-auto",
+        // Wrap rather than scroll. A horizontal scrollbar hides options behind
+        // it, and a tab you cannot see is a tab that does not exist.
+        "inline-flex flex-wrap items-center p-1 rounded-[10px]",
         "bg-surface-2",
         className
       )}

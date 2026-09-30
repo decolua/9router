@@ -34,6 +34,45 @@ export function PageLoading({ message = "Loading..." }) {
   );
 }
 
+// Centered busy overlay for long operations (e.g. backup export/import).
+// Renders above modals with a dark blurred backdrop, a large spinner
+// centered on screen, an optional message, and an optional progress bar.
+// Pass fixed={false} to render as an absolute fill inside a relative
+// parent (e.g. inside a modal) instead of a fullscreen fixed overlay.
+export function CenterLoading({ message, progress = null, fixed = true, className }) {
+  const pct =
+    typeof progress === "number" ? Math.min(100, Math.max(0, progress)) : null;
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className={cn(
+        "flex items-center justify-center bg-black/55 backdrop-blur-[3px]",
+        fixed ? "fixed inset-0 z-[70]" : "absolute inset-0 z-10 rounded-[10px]",
+        className
+      )}
+    >
+      <div className="flex flex-col items-center justify-center px-6 text-center">
+        <Spinner size="xl" />
+        {message ? (
+          <p className="mt-4 text-sm font-medium text-white">{message}</p>
+        ) : null}
+        {pct !== null ? (
+          <div className="mt-4 h-1.5 w-48 overflow-hidden rounded-full bg-white/20">
+            <div
+              className="h-full rounded-full bg-white transition-all"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+export const BusyOverlay = CenterLoading;
+
 // Skeleton loading
 export function Skeleton({ className, ...props }) {
   return (

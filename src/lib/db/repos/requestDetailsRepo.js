@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { buildAllowedModelsSql } from "./allowedModels.js";
 
 const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
@@ -116,6 +117,7 @@ async function flushToDatabase() {
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
             pxpipe: item.pxpipe || undefined,
+            resolvedModel: item.resolvedModel || undefined,
           };
 
           db.run(
@@ -170,6 +172,9 @@ export async function getRequestDetails(filter = {}) {
   if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  // Scoped sessions narrow the listing to the models their key may actually use.
+  const allowed = buildAllowedModelsSql(filter.allowedModelPatterns);
+  if (allowed) { conds.push(allowed.sql); params.push(...allowed.params); }
 
   const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
   const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
@@ -192,9 +197,16 @@ export async function getRequestDetails(filter = {}) {
   };
 }
 
-export async function getDistinctProviders() {
+export async function getDistinctProviders(allowedModelPatterns = null) {
   const db = await getAdapter();
-  const rows = db.all(`SELECT DISTINCT provider FROM requestDetails WHERE provider IS NOT NULL ORDER BY provider ASC`);
+  const allowed = buildAllowedModelsSql(allowedModelPatterns);
+  const where = allowed
+    ? `provider IS NOT NULL AND ${allowed.sql}`
+    : "provider IS NOT NULL";
+  const rows = db.all(
+    `SELECT DISTINCT provider FROM requestDetails WHERE ${where} ORDER BY provider ASC`,
+    allowed ? allowed.params : []
+  );
   return rows.map((r) => r.provider);
 }
 

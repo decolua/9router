@@ -183,7 +183,7 @@ export default function NewProviderPage() {
             placeholder="e.g., Production API, Dev Environment"
             value={formData.displayName}
             onChange={(e) => handleChange("displayName", e.target.value)}
-            hint="Optional. A friendly name to identify this configuration."
+            hint="A friendly name for this configuration (optional)"
           />
 
           {/* Active Toggle */}

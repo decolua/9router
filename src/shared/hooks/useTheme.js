@@ -25,36 +25,15 @@ function getServerSnapshot() {
 export function useTheme() {
   const { theme, setTheme, toggleTheme, initTheme } = useThemeStore();
 
-  // Use useSyncExternalStore to safely subscribe to system theme
-  const systemPrefersDark = useSyncExternalStore(
-    subscribeToSystemTheme,
-    getSystemThemeSnapshot,
-    getServerSnapshot
-  );
-
   useEffect(() => {
     initTheme();
   }, [initTheme]);
 
-  // Listen for system theme changes when theme is "system"
-  useEffect(() => {
-    if (theme !== "system") return;
-
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleChange = () => initTheme();
-
-    mediaQuery.addEventListener("change", handleChange);
-    return () => mediaQuery.removeEventListener("change", handleChange);
-  }, [theme, initTheme]);
-
-  // Compute isDark from current state (no effect needed)
-  const isDark = theme === "dark" || (theme === "system" && systemPrefersDark);
-
   return {
-    theme,
+    theme: "dark",
     setTheme,
     toggleTheme,
-    isDark,
+    isDark: true,
   };
 }
 

@@ -14,7 +14,11 @@ function buildMaps(models) {
     if (!m.caps) continue;
     if (m.fullModel) byFull[m.fullModel] = m.caps;
     if (m.routedModel) byFull[m.routedModel] = m.caps;
-    if (m.model) byId[m.model] = m.caps;
+    // Combo entries share their bare name across the picker; keep them out of
+    // byId so they never shadow a real model with the same id.
+    if (m.model && !m.isCombo) byId[m.model] = m.caps;
+    // Studio entries answer for their bare callName from either key shape.
+    if (m.isStudio && m.model) byFull[m.model] = m.caps;
   }
   return { byFull, byId };
 }

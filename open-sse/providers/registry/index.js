@@ -26,6 +26,7 @@ import p23 from "./coqui.js";
 import p24 from "./cursor.js";
 import p25 from "./deepgram.js";
 import p26 from "./deepseek.js";
+import p26b from "./deepseek-web.js";
 import p27 from "./edge-tts.js";
 import p28 from "./elevenlabs.js";
 import p29 from "./exa.js";
@@ -35,6 +36,7 @@ import p32 from "./firecrawl.js";
 import p33 from "./fireworks.js";
 import p34 from "./gemini-cli.js";
 import p35 from "./gemini.js";
+import p35b from "./gemini-web.js";
 import p36 from "./github.js";
 import p37 from "./gitlab.js";
 import p38 from "./glm-cn.js";
@@ -42,7 +44,6 @@ import p39 from "./glm.js";
 import p40 from "./google-pse.js";
 import p41 from "./google-tts.js";
 import p42 from "./grok-cli.js";
-import p43 from "./grok-web.js";
 import p44 from "./groq.js";
 import p45 from "./huggingface.js";
 import p46 from "./hyperbolic.js";
@@ -53,6 +54,7 @@ import p50 from "./jina-reader.js";
 import p51 from "./kilocode.js";
 import p52 from "./kimchi.js";
 import p53 from "./kimi.js";
+import p53b from "./kimi-web.js";
 import p54 from "./kiro.js";
 import p55 from "./linkup.js";
 import p56 from "./local-device.js";
@@ -72,7 +74,6 @@ import p68 from "./opencode-go.js";
 import p68z from "./opencode-zen.js";
 import p69 from "./opencode.js";
 import p70 from "./openrouter.js";
-import p71 from "./perplexity-web.js";
 import p72 from "./perplexity.js";
 import p73 from "./perplexity-agent.js";
 import p74 from "./playht.js";
@@ -158,6 +159,7 @@ export default [
   p24,
   p25,
   p26,
+  p26b,
   p27,
   p28,
   p29,
@@ -167,6 +169,7 @@ export default [
   p33,
   p34,
   p35,
+  p35b,
   p36,
   p37,
   p38,
@@ -174,7 +177,6 @@ export default [
   p40,
   p41,
   p42,
-  p43,
   p44,
   p45,
   p46,
@@ -185,6 +187,7 @@ export default [
   p51,
   p52,
   p53,
+  p53b,
   p54,
   p55,
   p56,
@@ -205,7 +208,6 @@ export default [
   p68z,
   p69,
   p70,
-  p71,
   p72,
   p73,
   p74,

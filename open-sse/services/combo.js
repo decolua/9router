@@ -9,7 +9,23 @@ import { extractTextContent } from "../translator/formats/gemini.js";
 
 // Hard capabilities = input modalities; missing one drops request data (e.g. image
 // stripped). Must be prioritized. Soft (e.g. search) only degrades a feature.
-const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput"]);
+const HARD_CAPS = new Set(["vision", "pdf", "audioInput", "videoInput", "tools"]);
+
+// Deep-copy the request body so translator in-place mutations (tool_use/tool_result
+// reshaping, role rewriting) don't leak across combo fallback iterations or parallel
+// panel calls. Covers: OpenAI/Claude `messages`, Gemini `contents`, Responses `input`.
+function deepCopyBody(body) {
+  if (!body || typeof body !== "object") return body;
+  const copyItem = (m) => ({ ...m, content: Array.isArray(m.content) ? m.content.map(b => ({ ...b })) : m.content });
+  const copyContentsItem = (m) => ({ ...m, parts: Array.isArray(m.parts) ? m.parts.map(b => ({ ...b })) : m.parts });
+  const copyInputItem = (m) => ({ ...m, content: Array.isArray(m.content) ? m.content.map(b => ({ ...b })) : m.content });
+  return {
+    ...body,
+    ...(Array.isArray(body.messages) ? { messages: body.messages.map(copyItem) } : {}),
+    ...(Array.isArray(body.contents) ? { contents: body.contents.map(copyContentsItem) } : {}),
+    ...(Array.isArray(body.input)    ? { input:    body.input.map(copyInputItem)    } : {}),
+  };
+}
 
 // Prefixes used when flattening tool turns into plain prose for panel models.
 const TOOL_CALL_PREFIX = "[Called tools: ";
@@ -180,6 +196,12 @@ export function detectRequiredCapabilities(body) {
 
   // search: temporarily disabled in auto-switch (feature not wired yet).
 
+  // tools: when body.tools is a non-empty array or body.tool_choice is present,
+  // the request needs a tool-capable model (providers without tools would ignore
+  // the tool definitions / tool_choice).
+  if (Array.isArray(body.tools) && body.tools.length > 0) required.add("tools");
+  else if (body.tool_choice != null) required.add("tools");
+
   return required;
 }
 
@@ -206,7 +228,11 @@ function rotateModelsFromIndex(models, currentIndex) {
  * @returns {string[]} Rotated models array
  */
 export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
-  if (!models || models.length <= 1 || strategy !== "round-robin") {
+  if (!models || models.length <= 1) {
+    return models;
+  }
+
+  if (strategy !== "round-robin") {
     return models;
   }
 
@@ -302,7 +328,10 @@ export async function handleComboChat({ body, models, handleSingleModel, log, co
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await handleSingleModel(
+        deepCopyBody(body),
+        modelStr
+      );
       
       // Success (2xx) - return response
       if (result.ok) {
@@ -555,7 +584,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0]);
+    return handleSingleModel(deepCopyBody(body), panel[0]);
   }
 
   const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
@@ -568,7 +597,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   // Fusion runs panel models non-streaming; drop stream_options too, or providers
   // like DeepSeek reject it with "stream_options should be set along with stream = true".
   // See issue #3024.
-  const panelBody = { ...rest, stream: false };
+  const panelBody = deepCopyBody({ ...rest, stream: false });
 
   // Flatten tool turns to prose so panel models keep context without emitting tool_calls.
   if (Array.isArray(panelBody.messages)) {
@@ -578,7 +607,9 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
 
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
+  // Copy the body per panel so translators in one parallel call cannot
+  // mutate the objects used by the other panels.
+  const calls = panel.map((m) => withTimeout(handleSingleModel(deepCopyBody(panelBody), m, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
@@ -615,11 +646,11 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
   if (answers.length === 1) {
     log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model);
+    return handleSingleModel(deepCopyBody(body), answers[0].model);
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  return handleSingleModel(judgeBody, judge);
+  return handleSingleModel(deepCopyBody(judgeBody), judge);
 }

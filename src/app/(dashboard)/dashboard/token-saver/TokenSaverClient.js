@@ -11,6 +11,9 @@ import {
 } from "../endpoint/endpointConstants";
 
 export default function TokenSaverClient() {
+  const [contextPruningEnabled, setContextPruningEnabled] = useState(false);
+  const [maxMessagesLimit, setMaxMessagesLimit] = useState(20);
+  const [semanticCacheEnabled, setSemanticCacheEnabled] = useState(false);
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
   const [headroomUrl, setHeadroomUrl] = useState("http://localhost:8787");
@@ -103,6 +106,16 @@ export default function TokenSaverClient() {
     } catch (error) {
       console.log("Error updating rtkEnabled:", error);
     }
+  };
+
+  const handleContextPruningEnabled = (value) => {
+    setContextPruningEnabled(value);
+    patchSetting({ contextPruningEnabled: value });
+  };
+
+  const handleSemanticCacheEnabled = (value) => {
+    setSemanticCacheEnabled(value);
+    patchSetting({ semanticCacheEnabled: value });
   };
 
   const handleCavemanEnabled = (value) => {
@@ -421,6 +434,9 @@ export default function TokenSaverClient() {
         if (res.ok) {
           const data = await res.json();
           setRtkEnabledState(data.rtkEnabled !== false);
+          setContextPruningEnabled(!!data.contextPruningEnabled);
+          setMaxMessagesLimit(data.maxMessagesLimit || 20);
+          setSemanticCacheEnabled(!!data.semanticCacheEnabled);
           setHeadroomEnabled(!!data.headroomEnabled);
           setHeadroomUrl(data.headroomUrl || "http://localhost:8787");
           if (typeof data.headroomTimeoutMs === "number") setHeadroomTimeoutMs(data.headroomTimeoutMs);
@@ -504,6 +520,55 @@ export default function TokenSaverClient() {
           <Toggle
             checked={rtkEnabled}
             onChange={() => handleRtkEnabled(!rtkEnabled)}
+          />
+        </div>
+
+        {/* Smart Context Truncation & History Pruning */}
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Smart Context Truncation & Pruning
+            </p>
+            <p className="text-sm text-text-muted">
+              Keep the system prompt and the most recent N messages, trimming older chat turns to save 30-50% input tokens in long sessions
+            </p>
+            {contextPruningEnabled && (
+              <div className="flex items-center gap-2 mt-2">
+                <span className="text-xs text-text-muted">Max recent messages to keep:</span>
+                <input
+                  type="number"
+                  min="4"
+                  max="100"
+                  value={maxMessagesLimit}
+                  onChange={(e) => {
+                    const val = Number(e.target.value) || 20;
+                    setMaxMessagesLimit(val);
+                    patchSetting({ maxMessagesLimit: val });
+                  }}
+                  className="w-16 px-2 py-1 text-xs rounded border border-border bg-surface text-text-main font-mono"
+                />
+              </div>
+            )}
+          </div>
+          <Toggle
+            checked={contextPruningEnabled}
+            onChange={() => handleContextPruningEnabled(!contextPruningEnabled)}
+          />
+        </div>
+
+        {/* Semantic / Local Response Caching */}
+        <div className="flex items-center justify-between py-4 border-b border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Response Caching (Instant & 0-Cost Cache)
+            </p>
+            <p className="text-sm text-text-muted">
+              Keeps identical prompt completions in memory so duplicates return instantly (~10ms) at 0 upstream tokens.
+            </p>
+          </div>
+          <Toggle
+            checked={semanticCacheEnabled}
+            onChange={() => handleSemanticCacheEnabled(!semanticCacheEnabled)}
           />
         </div>
         <div className="flex items-center justify-between py-4 gap-4 flex-wrap">
@@ -837,7 +902,7 @@ export default function TokenSaverClient() {
               className="font-mono text-sm"
             />
             <p className="text-xs text-text-muted">
-              Request timeout in milliseconds. Defaults to 3000 ms.
+              Request timeout in milliseconds (defaults to 3000 ms)
             </p>
           </div>
           {headroomManaged ? (
@@ -851,7 +916,7 @@ export default function TokenSaverClient() {
             </Button>
           ) : headroomRunning ? (
             <p className="text-sm text-success">
-              Headroom proxy is reachable. You can enable the token saver.
+              The Headroom proxy is reachable, so you can enable the token saver.
             </p>
           ) : headroomCanStart ? (
             <Button
@@ -867,8 +932,7 @@ export default function TokenSaverClient() {
             </p>
           ) : !headroomStatus.python ? (
             <p className="text-sm text-warning">
-              Python ≥ 3.10 required for local managed mode. Install Python
-              first, or use an external proxy URL.
+              Install Python ≥ 3.10 first, or point to an external proxy URL.
             </p>
           ) : (
             <div className="flex flex-col gap-1">
@@ -917,8 +981,7 @@ export default function TokenSaverClient() {
       >
         <div className="flex flex-col gap-4">
           <p className="text-sm text-text-muted">
-            Compress prompts using multimodal encoding. Runs in-process — no
-            extra server or environment variables required.
+            Compresses prompts in-process with multimodal encoding, so no extra server or environment variables are needed.
           </p>
           <div className="flex items-center justify-between text-sm">
             <span>Status</span>
@@ -956,8 +1019,7 @@ export default function TokenSaverClient() {
                 {pxpipeActionLoading || pxpipeStatus.installing ? "Installing…" : "Install"}
               </Button>
               <p className="text-xs text-text-muted">
-                Installs the npm package <code className="font-mono">pxpipe-proxy</code> into
-                the 9Router data directory. May take a few minutes.
+                Installs the <code className="font-mono">pxpipe-proxy</code> package into your data directory and may take a few minutes.
               </p>
             </div>
           ) : (
@@ -1034,3 +1096,4 @@ export default function TokenSaverClient() {
     </div>
   );
 }
+

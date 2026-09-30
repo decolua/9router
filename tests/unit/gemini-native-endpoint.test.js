@@ -13,12 +13,16 @@ vi.mock("@/sse/handlers/chat.js", () => ({
   handleChat: mocks.handleChat,
 }));
 
-vi.mock("@/sse/services/auth.js", () => ({
-  getProviderCredentials: mocks.getProviderCredentials,
-  isValidApiKey: mocks.isValidApiKey,
-  markAccountUnavailable: mocks.markAccountUnavailable,
-  clearAccountError: mocks.clearAccountError,
-}));
+vi.mock("@/sse/services/auth.js", async () => {
+  const { apiKeyGateFailure } = await import("@/sse/services/keyGate.js");
+  return {
+    apiKeyGateFailure: apiKeyGateFailure,
+    getProviderCredentials: mocks.getProviderCredentials,
+    isValidApiKey: mocks.isValidApiKey,
+    markAccountUnavailable: mocks.markAccountUnavailable,
+    clearAccountError: mocks.clearAccountError,
+  };
+});
 
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,

@@ -288,9 +288,16 @@ export default function RequestDetailsTab() {
                     <td className="whitespace-nowrap p-4 text-sm text-text-main">
                       {new Date(detail.timestamp).toLocaleString()}
                     </td>
+                    {detail.resolvedModel && detail.resolvedModel !== detail.model ? (
+                    <td className="max-w-[260px] p-4 font-mono text-sm">
+                      <div className="truncate text-text-main" title={detail.model}>{detail.model}</div>
+                      <div className="truncate text-text-muted text-xs" title={`${detail.provider}/${detail.resolvedModel}`}>→ {detail.provider}/{detail.resolvedModel}</div>
+                    </td>
+                    ) : (
                     <td className="max-w-[260px] truncate p-4 font-mono text-sm text-text-main">
                       {detail.model}
                     </td>
+                    )}
                     <td className="max-w-[180px] truncate p-4 text-sm text-text-main">
                        <span className="font-medium">
                          {getProviderName(detail.provider, providerNameCache)}
@@ -366,7 +373,11 @@ export default function RequestDetailsTab() {
                </div>
               <div>
                 <span className="text-text-muted">Model:</span>{" "}
-                <span className="text-text-main font-mono">{selectedDetail.model}</span>
+                {selectedDetail.resolvedModel && selectedDetail.resolvedModel !== selectedDetail.model ? (
+                  <span className="text-text-main font-mono" title={selectedDetail.model}>{selectedDetail.model}{" "}<span className="text-text-muted text-xs" title={`${selectedDetail.provider}/${selectedDetail.resolvedModel}`}>→ {selectedDetail.provider}/{selectedDetail.resolvedModel}</span></span>
+                ) : (
+                  <span className="text-text-main font-mono">{selectedDetail.model}</span>
+                )}
               </div>
               <div>
                 <span className="text-text-muted">Status:</span>{" "}

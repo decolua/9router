@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCustomModels, addCustomModel, deleteCustomModel } from "@/models";
+import { reconcileAllowedModels } from "@/lib/db/repos/apiKeysRepo";
 import { CAPACITY_META, isSttTransport } from "@/shared/constants/models";
 
 export const dynamic = "force-dynamic";
@@ -63,7 +64,10 @@ export async function DELETE(request) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
     await deleteCustomModel({ providerAlias, id, type });
-    return NextResponse.json({ success: true });
+    // Keys pinned to this model now point at nothing. Keys may hold it either
+    // bare or provider-qualified, so both spellings are handed over.
+    const { emptied } = await reconcileAllowedModels({ removed: [id, `${providerAlias}/${id}`] });
+    return NextResponse.json({ success: true, ...(emptied.length ? { keysLeftForReview: emptied } : {}) });
   } catch (error) {
     console.log("Error deleting custom model:", error);
     return NextResponse.json({ error: "Failed to delete custom model" }, { status: 500 });

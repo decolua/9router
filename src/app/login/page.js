@@ -18,6 +18,21 @@ export default function LoginPage() {
   const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [loginMethod, setLoginMethod] = useState("password");
+  const [apiKey, setApiKey] = useState("");
+  const [noAccess, setNoAccess] = useState(false);
+
+  // A key that signed in but holds no permission would bounce between /login and
+  // the dashboard, so it stays here and can sign out instead.
+  const handleSignOut = async () => {
+    setLoading(true);
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } catch {
+      // The cookie may already be gone; the reload below settles the state.
+    }
+    window.location.assign("/login");
+  };
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -41,7 +56,12 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated === true || data.requireLogin === false) {
-            window.location.assign("/dashboard");
+            if (data.role === "apikey" && !data.homePath) {
+              setNoAccess(true);
+              setHasPassword(!!data.hasPassword);
+              return;
+            }
+            window.location.assign(data.homePath || "/dashboard");
             return;
           }
           setHasPassword(!!data.hasPassword);
@@ -70,10 +90,11 @@ export default function LoginPage() {
     setResetHint("");
 
     try {
+      const payload = loginMethod === "apikey" ? { apiKey } : { password };
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify(payload),
       });
 
       if (res.ok) {
@@ -82,10 +103,18 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
-        window.location.assign("/dashboard");
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("9router:justLoggedIn", "true");
+        }
+        if (data.role === "apikey" && !data.homePath) {
+          setNoAccess(true);
+          setHasPassword(true);
+          return;
+        }
+        window.location.assign(data.homePath || "/dashboard");
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
+        setError(data.error || (loginMethod === "apikey" ? "Invalid API Key" : "Invalid password"));
         if (data.resetHint) setResetHint(data.resetHint);
         if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
@@ -108,6 +137,9 @@ export default function LoginPage() {
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
       if (res.ok) {
+        if (typeof window !== "undefined") {
+          sessionStorage.setItem("9router:justLoggedIn", "true");
+        }
         window.location.assign("/dashboard");
       } else {
         const data = await res.json();
@@ -144,6 +176,30 @@ export default function LoginPage() {
         <div className="text-center">
           <div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           <p className="text-text-muted mt-4">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (noAccess) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-bg p-4 relative overflow-hidden">
+        <div className="landing-grid absolute inset-0 pointer-events-none" aria-hidden="true" />
+        <div className="relative z-10 w-full max-w-md">
+          <div className="text-center mb-8">
+            <h1 className="text-3xl font-bold text-primary mb-2">9Router</h1>
+            <p className="text-text-muted">This API key is signed in but holds no dashboard permission</p>
+          </div>
+          <Card>
+            <div className="flex flex-col gap-4">
+              <p className="text-sm text-text-muted text-center">
+                Ask the owner of this instance to grant a permission on the key, or sign in with the dashboard password instead.
+              </p>
+              <Button type="button" variant="primary" className="w-full" loading={loading} onClick={handleSignOut}>
+                Sign out
+              </Button>
+            </div>
+          </Card>
         </div>
       </div>
     );
@@ -217,28 +273,64 @@ export default function LoginPage() {
                   </p>
                 )}
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-medium">Password</label>
-                  <Input
-                    type="password"
-                    placeholder="Enter password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                    autoFocus={!oidcAvailable}
-                  />
-                  {error && <p className="text-xs text-red-500">{error}</p>}
-                  {retryAfter > 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
-                    </p>
-                  )}
-                  {resetHint && (
-                    <p className="text-xs text-text-muted">
-                      Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
-                    </p>
-                  )}
+                {/* Login Method Toggle */}
+                <div className="flex rounded-lg border border-border bg-bg-subtle p-1 mb-1">
+                  <button
+                    type="button"
+                    onClick={() => { setLoginMethod("password"); setError(""); }}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${loginMethod === "password" ? "bg-primary text-white shadow-xs" : "text-text-muted hover:text-text-main"}`}
+                  >
+                    Password Login
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setLoginMethod("apikey"); setError(""); }}
+                    className={`flex-1 py-1.5 text-xs font-semibold rounded-md transition-colors ${loginMethod === "apikey" ? "bg-primary text-white shadow-xs" : "text-text-muted hover:text-text-main"}`}
+                  >
+                    API Key Login
+                  </button>
                 </div>
+
+                {loginMethod === "password" ? (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">Password</label>
+                    <Input
+                      type="password"
+                      placeholder="Enter password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      autoFocus={!oidcAvailable}
+                    />
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    {retryAfter > 0 && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                        Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                      </p>
+                    )}
+                    {resetHint && (
+                      <p className="text-xs text-text-muted">
+                        Forgot password? Open <code className="bg-sidebar px-1 rounded">9router</code> CLI on the host → <b>Settings</b> → <b>Reset Password to Default</b>.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    <label className="text-sm font-medium">API Key</label>
+                    <Input
+                      type="password"
+                      placeholder="Enter your API Key (sk-9r-...)"
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      required
+                      autoFocus
+                    />
+                    {error && <p className="text-xs text-red-500">{error}</p>}
+                    <p className="text-xs text-text-muted">
+                      Log in using an assigned API Key to access authorised features.
+                    </p>
+                  </div>
+                )}
 
                 <Button
                   type="submit"
@@ -247,15 +339,12 @@ export default function LoginPage() {
                   loading={loading}
                   disabled={retryAfter > 0}
                 >
-                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Login"}
+                  {retryAfter > 0 ? `Wait ${retryAfter}s` : loginMethod === "apikey" ? "Login with API Key" : "Login"}
                 </Button>
 
-                <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
-                </p>
-                {hasPassword === false && (
-                  <p className="text-xs text-center text-amber-600 dark:text-amber-400">
-                    Security risk: no password set. You will be asked to set one when logging in remotely.
+                {loginMethod === "password" && (
+                  <p className="text-xs text-center text-text-muted mt-2">
+                    Default password is <code className="bg-sidebar px-1 rounded">seren123</code>
                   </p>
                 )}
               </form>

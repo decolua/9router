@@ -338,7 +338,7 @@ export default function GrokBuildToolCard({
                     <span className="material-symbols-outlined text-primary text-[16px]">account_tree</span>
                     <div>
                       <p className="text-xs font-semibold text-text-main">Subagent model overrides</p>
-                      <p className="text-[10px] text-text-muted">Leave blank to inherit Main Model. Each override keeps its own context window.</p>
+                      <p className="text-[10px] text-text-muted">Leave blank to inherit the Main Model, and each override keeps its own context window</p>
                     </div>
                   </div>
                 </div>

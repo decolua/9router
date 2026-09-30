@@ -13,7 +13,7 @@ const COLORS = {
   cyan: "\x1b[36m"
 };
 
-const DEFAULT_PASSWORD = "123456";
+const DEFAULT_PASSWORD = "seren123";
 
 /**
  * Show settings menu (tunnel + RTK + reset password)
@@ -182,7 +182,7 @@ async function toggleHeadroom(currentlyOn) {
 
 /**
  * Reset dashboard password to default via server API (writes the live SQLite DB).
- * After reset, user can log in with the default password "123456".
+ * After reset, user can log in with the default password "seren123".
  */
 async function resetPassword() {
   const ok = await confirm(`Reset dashboard password to default "${DEFAULT_PASSWORD}"?`);

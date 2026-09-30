@@ -30,7 +30,9 @@ export default function Modal({
     } else {
       document.body.style.overflow = "";
     }
-    return () => { document.body.style.overflow = ""; };
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [isOpen]);
 
   useEffect(() => {
@@ -47,7 +49,7 @@ export default function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-[2px] fade-in"
+        className="absolute inset-0 bg-black/55 backdrop-blur-[3px] fade-in"
         onClick={closeOnOverlay ? onClose : undefined}
       />
 
@@ -57,18 +59,18 @@ export default function Modal({
           "relative w-full bg-surface",
           "border border-border-subtle",
           "rounded-[14px] shadow-[var(--shadow-elev)]",
-          "fade-in",
+          "modal-in",
           sizes[size],
           className
         )}
       >
         {/* Header */}
         {(title || showTrafficLights) && (
-          <div className="flex items-center justify-between p-2 border-b border-border-subtle">
-            <div className="flex items-center">
+          <div className="flex items-center justify-between gap-3 px-4 py-3 border-b border-border-subtle min-h-[52px]">
+            <div className="flex items-center min-w-0 flex-1">
               {/* Traffic lights — desktop only */}
               {showTrafficLights && (
-                <div className="hidden md:flex items-center gap-2 mr-4 ml-2">
+                <div className="hidden md:flex items-center gap-2 mr-4 ml-1 shrink-0">
                   <Tooltip text="Close" position="top" color="#FF5F56">
                     <button
                       onClick={onClose}
@@ -84,16 +86,16 @@ export default function Modal({
                 </div>
               )}
               {title && (
-                <h2 className="text-lg font-semibold text-text-main">{title}</h2>
+                <h2 className="text-base font-semibold text-text-main truncate min-w-0">{title}</h2>
               )}
             </div>
             {/* X button — mobile only */}
             <button
               onClick={onClose}
               aria-label="Close"
-              className="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+              className="md:hidden shrink-0 p-1 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
             >
-              <span className="material-symbols-outlined text-[20px]">close</span>
+              <span className="material-symbols-outlined text-[20px] leading-none">close</span>
             </button>
           </div>
         )}
