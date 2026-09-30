@@ -1325,6 +1325,7 @@ docker pull decolua/9router:latest   # update to latest
 | `REQUIRE_API_KEY`                                    | `false`                                  | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
 | `SEARXNG_URL`                                        | `http://localhost:8888/search`           | Endpoint for the built-in unauthenticated SearXNG web-search provider               |
+| `USAGE_BUFFER_TOKENS`                                | `2000`                                   | Context margin added to the usage reported to the **client** so it compacts early; the recorded turn always keeps the provider's figure. `0` reports the unpadded number |
 
 Notes:
 
