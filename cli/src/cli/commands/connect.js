@@ -1,50 +1,39 @@
 /**
- * `9router connect <server-url>` — point local CLI tools (Claude Code) at a
+ * `9router connect <server-url>` — point local CLI tools (Claude Code, Codex, …) at a
  * REMOTE 9router server. Nothing runs locally: we log in with the dashboard
  * password, reuse/create an API key for this machine, then write the tool's
- * settings file. Works via `npx 9router connect …` with no global install.
+ * settings files (see connectTools.js). Works via `npx 9router connect …` with no global install.
  *
  * The password and API key are never printed (key is masked).
  */
 
-const fs = require("fs");
-const path = require("path");
 const os = require("os");
+const { TOOL_IDS, CLAUDE_MODELS, resolveTools } = require("./connectTools");
 
-const RESET_ENV_KEYS = [
-  "ANTHROPIC_BASE_URL",
-  "ANTHROPIC_AUTH_TOKEN",
-  "ANTHROPIC_DEFAULT_FABLE_MODEL",
-  "ANTHROPIC_DEFAULT_OPUS_MODEL",
-  "ANTHROPIC_DEFAULT_SONNET_MODEL",
-  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
-];
-
-// Mirrors CLI_TOOLS.claude.defaultModels in src/shared/constants/cliTools.js.
-const CLAUDE_MODELS = [
-  { flag: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "cc/claude-fable-5" },
-  { flag: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-5" },
-  { flag: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-5" },
-  { flag: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
-];
+const DEFAULT_MODEL = "cc/claude-sonnet-5";
 
 const HELP = `
 Usage: 9router connect <server-url> [options]
 
-Configure Claude Code on THIS machine to use a remote 9router server.
+Configure CLI tools on THIS machine to use a remote 9router server.
 No local server is started. Run without installing:
 
   npx 9router connect http://<server-host>:20128
+  npx 9router connect http://<server-host>:20128 --tools claude,codex,opencode
 
 Options:
+  --tools <list>         Comma-separated tools to configure (prompted if omitted
+                         in a terminal; default: claude). Supported:
+                         ${TOOL_IDS.join(", ")}, all
   --password <pw>        Dashboard password (or env NINE_ROUTER_PASSWORD;
                          prompted if omitted — preferred, keeps it out of shell history)
   --key-name <name>      API key name to reuse/create (default: cli-<hostname>)
   --api-key <key>        Use this API key, skip login + key lookup
+  --model <model>        Model for non-Claude tools (default: ${DEFAULT_MODEL})
   --fable|--opus|--sonnet|--haiku <model>
-                         Override model mapping (e.g. --sonnet cc/claude-sonnet-5)
+                         Override Claude Code model mapping
   --print-env            Also print OpenAI-compatible env vars for other CLIs
-  --reset                Remove 9router settings from Claude Code and exit
+  --reset                Remove 9router settings from the selected tools and exit
   -h, --help             Show this help
 `;
 
@@ -65,6 +54,8 @@ function parseArgs(argv) {
     if (a === "--password") opts.password = next();
     else if (a === "--key-name") opts.keyName = next();
     else if (a === "--api-key") opts.apiKey = next();
+    else if (a === "--tools") opts.tools = next().split(",");
+    else if (a === "--model") opts.model = next();
     else if (a === "--print-env") opts.printEnv = true;
     else if (a === "--reset") opts.reset = true;
     else if (a === "-h" || a === "--help") opts.help = true;
@@ -151,41 +142,21 @@ async function listModels(server, apiKey) {
   return new Set((res.data?.data || []).map((m) => m.id));
 }
 
-function claudeSettingsPath() {
-  return path.join(os.homedir(), ".claude", "settings.json");
+async function promptTools() {
+  const { MultiSelect } = require("enquirer");
+  const { TOOLS } = require("./connectTools");
+  const picked = await new MultiSelect({
+    message: "Select CLI tools to configure (space to toggle, enter to confirm)",
+    choices: TOOLS.map((t) => ({ name: t.id, message: t.name, hint: t.paths()[0], enabled: t.id === "claude" })),
+    validate: (v) => v.length > 0 || "Select at least one tool",
+  }).run();
+  return picked;
 }
 
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, "utf8").replace(/,(\s*[}\]])/g, "$1"));
-  } catch (err) {
-    if (err.code === "ENOENT") return {};
-    throw new Error(`Cannot parse ${file}: ${err.message}`);
-  }
-}
-
-function writeClaudeSettings(env) {
-  const file = claudeSettingsPath();
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  const current = readJson(file);
-  // One-time backup of the user's pre-9router settings.
-  const backup = `${file}.bak-9router`;
-  if (fs.existsSync(file) && !fs.existsSync(backup)) fs.copyFileSync(file, backup);
-  const next = { ...current, hasCompletedOnboarding: true, env: { ...(current.env || {}), ...env } };
-  fs.writeFileSync(file, JSON.stringify(next, null, 2));
-  return file;
-}
-
-function resetClaudeSettings() {
-  const file = claudeSettingsPath();
-  if (!fs.existsSync(file)) return null;
-  const current = readJson(file);
-  if (current.env) {
-    RESET_ENV_KEYS.forEach((k) => delete current.env[k]);
-    if (Object.keys(current.env).length === 0) delete current.env;
-  }
-  fs.writeFileSync(file, JSON.stringify(current, null, 2));
-  return file;
+async function selectTools(opts) {
+  if (opts.tools) return resolveTools(opts.tools);
+  if (process.stdin.isTTY) return resolveTools(await promptTools());
+  return resolveTools(["claude"]);
 }
 
 async function run(argv) {
@@ -194,9 +165,13 @@ async function run(argv) {
     console.log(HELP);
     return 0;
   }
+  if (opts.tools) resolveTools(opts.tools); // fail fast on unknown tool names
   if (opts.reset) {
-    const file = resetClaudeSettings();
-    console.log(file ? `✅ Removed 9router settings from ${file}` : "Nothing to reset");
+    const tools = await selectTools(opts);
+    for (const t of tools) {
+      const files = await t.reset();
+      console.log(files.length ? `✅ ${t.name}: removed 9router settings (${files.join(", ")})` : `• ${t.name}: nothing to reset`);
+    }
     return 0;
   }
   if (!opts.url) {
@@ -222,28 +197,48 @@ async function run(argv) {
     console.log(`• ${result.created ? "Created" : "Reusing"} API key "${opts.keyName}" (${maskKey(apiKey)})`);
   }
 
+  const tools = await selectTools(opts);
   const available = await listModels(server, apiKey);
-  const env = { ANTHROPIC_BASE_URL: `${server}/v1`, ANTHROPIC_AUTH_TOKEN: apiKey };
-  for (const m of CLAUDE_MODELS) {
-    const model = opts.models[m.flag] || m.defaultValue;
-    env[m.envKey] = model;
+  const warnMissing = (label, model, flag) => {
     if (available && !available.has(model)) {
-      console.log(`\x1b[33m⚠ ${m.flag}: "${model}" not listed by server — override with --${m.flag} <model>\x1b[0m`);
+      console.log(`[33m⚠ ${label}: "${model}" not listed by server — override with ${flag} <model>[0m`);
+    }
+  };
+
+  const claudeModels = {};
+  if (tools.some((t) => t.id === "claude")) {
+    for (const m of CLAUDE_MODELS) {
+      claudeModels[m.envKey] = opts.models[m.flag] || m.defaultValue;
+      warnMissing(`claude ${m.flag}`, claudeModels[m.envKey], `--${m.flag}`);
     }
   }
+  const model = opts.model || DEFAULT_MODEL;
+  if (tools.some((t) => t.id !== "claude")) warnMissing("model", model, "--model");
 
-  const file = writeClaudeSettings(env);
-  console.log(`✅ Claude Code configured → ${file}`);
-  console.log(`   ANTHROPIC_BASE_URL=${env.ANTHROPIC_BASE_URL}`);
-  for (const m of CLAUDE_MODELS) console.log(`   ${m.envKey}=${env[m.envKey]}`);
-  console.log("   Restart Claude Code to apply. Undo: npx 9router connect --reset");
+  const ctx = { baseUrl: server, apiKey, model, claudeModels };
+  let failed = 0;
+  for (const t of tools) {
+    try {
+      const files = await t.apply(ctx);
+      console.log(`✅ ${t.name} → ${files.join(", ")}`);
+    } catch (err) {
+      failed++;
+      console.log(`❌ ${t.name}: ${err.message}`);
+    }
+  }
+  console.log(`   Base URL: ${server}/v1`);
+  if (tools.some((t) => t.id === "claude")) {
+    for (const m of CLAUDE_MODELS) console.log(`   ${m.envKey}=${claudeModels[m.envKey]}`);
+  }
+  if (tools.some((t) => t.id !== "claude")) console.log(`   Model (other tools): ${model}`);
+  console.log(`   Restart the tools to apply. Undo: npx 9router connect --reset --tools ${tools.map((t) => t.id).join(",")}`);
 
   if (opts.printEnv) {
     console.log("\nOpenAI-compatible CLIs (codex, opencode, aider, …):");
     console.log(`   OPENAI_BASE_URL=${server}/v1`);
     console.log(`   OPENAI_API_KEY=${apiKey}`);
   }
-  return 0;
+  return failed ? 1 : 0;
 }
 
 module.exports = { run, __test__: { parseArgs, normalizeServerUrl, extractAuthCookie, maskKey } };
