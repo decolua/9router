@@ -3,6 +3,7 @@
 import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
+import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
 
 function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
@@ -86,41 +87,29 @@ PassthroughModelRow.propTypes = {
   isTesting: PropTypes.bool,
 };
 
-export default function PassthroughModelsSection({ providerAlias, modelAliases, copied, onCopy, onSetAlias, onDeleteAlias }) {
+export default function PassthroughModelsSection({ providerAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
 
-  // Filter aliases for this provider - models are persisted via alias
-  const providerAliases = Object.entries(modelAliases).filter(
-    ([, model]) => model.startsWith(`${providerAlias}/`)
-  );
-
-  const allModels = providerAliases.map(([alias, fullModel]) => ({
-    modelId: fullModel.replace(`${providerAlias}/`, ""),
-    fullModel,
-    alias,
-  }));
-
-  // Generate default alias from modelId (last part after /)
-  const generateDefaultAlias = (modelId) => {
-    const parts = modelId.split("/");
-    return parts[parts.length - 1];
-  };
+  const allModels = getProviderCustomModelRows({
+    customModels,
+    modelAliases,
+    providerAlias,
+    type: "llm",
+  });
 
   const handleAdd = async () => {
     if (!newModel.trim() || adding) return;
     const modelId = newModel.trim();
-    const defaultAlias = generateDefaultAlias(modelId);
-    
-    // Check if alias already exists
-    if (modelAliases[defaultAlias]) {
-      alert(`Alias "${defaultAlias}" already exists. Please use a different model or edit existing alias.`);
+
+    if (allModels.some((model) => model.id === modelId)) {
+      alert("Model already exists for this provider.");
       return;
     }
-    
+
     setAdding(true);
     try {
-      await onSetAlias(modelId, defaultAlias);
+      await onAddCustomModel(modelId);
       setNewModel("");
     } catch (error) {
       console.log("Error adding model:", error);
@@ -157,14 +146,14 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
       {/* Models list */}
       {allModels.length > 0 && (
         <div className="flex flex-col gap-3">
-          {allModels.map(({ modelId, fullModel, alias }) => (
+          {allModels.map(({ id, fullModel, alias, source }) => (
             <PassthroughModelRow
-              key={fullModel}
-              modelId={modelId}
+              key={`${source}-${fullModel}`}
+              modelId={id}
               fullModel={fullModel}
               copied={copied}
               onCopy={onCopy}
-              onDeleteAlias={() => onDeleteAlias(alias)}
+              onDeleteAlias={() => source === "custom" ? onDeleteCustomModel(id) : onDeleteAlias(alias)}
             />
           ))}
         </div>
@@ -176,8 +165,10 @@ export default function PassthroughModelsSection({ providerAlias, modelAliases, 
 PassthroughModelsSection.propTypes = {
   providerAlias: PropTypes.string.isRequired,
   modelAliases: PropTypes.object.isRequired,
+  customModels: PropTypes.arrayOf(PropTypes.object),
   copied: PropTypes.string,
   onCopy: PropTypes.func.isRequired,
-  onSetAlias: PropTypes.func.isRequired,
   onDeleteAlias: PropTypes.func.isRequired,
+  onAddCustomModel: PropTypes.func.isRequired,
+  onDeleteCustomModel: PropTypes.func.isRequired,
 };

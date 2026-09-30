@@ -1,5 +1,224 @@
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 
+// ─── Constants ───────────────────────────────────────────────────────────────
+export const QUOTA_CACHE_KEY = "quotaCacheData";
+export const REFRESH_INTERVAL_MS = 60000;
+// Claude usage/quota endpoint rate-limits; poll it less often than other providers
+export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
+export const DEPLETED_QUOTA_THRESHOLD = 5;
+export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
+export const CONNECTIONS_PAGE_SIZE = 20;
+export const ACCOUNT_PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
+export const ACCOUNT_PAGE_SIZE_MAX = 500;
+export const ACCOUNT_FILTER_OPTIONS = [
+  { value: "all", label: "All accounts" },
+  { value: "active", label: "Active" },
+  { value: "inactive", label: "Turned off" },
+];
+export const QUOTA_SORT_OPTIONS = [
+  { value: "default", label: "Default quota order" },
+  { value: "remaining-asc", label: "% quota: low to high" },
+  { value: "remaining-desc", label: "% quota: high to low" },
+];
+
+// ─── Pure helpers ─────────────────────────────────────────────────────────────
+export function getConnectionLabel(connection) {
+  return connection.name?.trim()
+    || connection.email?.trim()
+    || connection.displayName?.trim()
+    || null;
+}
+
+export function getConnectionQuotaRemaining(connection, quotaData) {
+  const quota = quotaData[connection.id]?.quotas?.[0];
+  if (!quota) return Number.POSITIVE_INFINITY;
+  if (typeof quota.remaining === "number") return quota.remaining;
+  return Number.POSITIVE_INFINITY;
+}
+
+// Stable group-by-provider: first-seen provider order, original order within group.
+function groupByProviderStable(connections) {
+  const seen = new Map();
+  for (const conn of connections) {
+    const key = conn.provider || "";
+    if (!seen.has(key)) seen.set(key, []);
+    seen.get(key).push(conn);
+  }
+  return Array.from(seen.values()).flat();
+}
+
+export function sortVisibleConnections(
+  connections,
+  quotaData,
+  expiringFirst,
+  providerFilter,
+  quotaSortMode,
+) {
+  if (providerFilter === "codex" && quotaSortMode !== "default") {
+    return [...connections].sort((a, b) => {
+      const remainingA = getConnectionQuotaRemaining(a, quotaData);
+      const remainingB = getConnectionQuotaRemaining(b, quotaData);
+      const remainingDiff =
+        quotaSortMode === "remaining-asc"
+          ? remainingA - remainingB
+          : remainingB - remainingA;
+      if (remainingDiff !== 0) return remainingDiff;
+      return (getConnectionLabel(a) || "").localeCompare(
+        getConnectionLabel(b) || "",
+      );
+    });
+  }
+
+  if (!expiringFirst) return groupByProviderStable(connections);
+
+  const getEarliestResetTime = (connection) => {
+    const resetTimes = (quotaData[connection.id]?.quotas || [])
+      .map((quota) =>
+        quota.resetAt
+          ? new Date(quota.resetAt).getTime()
+          : Number.POSITIVE_INFINITY,
+      )
+      .filter((time) => Number.isFinite(time));
+    return resetTimes.length > 0
+      ? Math.min(...resetTimes)
+      : Number.POSITIVE_INFINITY;
+  };
+
+  return [...connections].sort((a, b) => {
+    const expiryDiff = getEarliestResetTime(a) - getEarliestResetTime(b);
+    if (expiryDiff !== 0) return expiryDiff;
+    return (
+      (a.provider || "").localeCompare(b.provider || "") ||
+      (getConnectionLabel(a) || "").localeCompare(getConnectionLabel(b) || "")
+    );
+  });
+}
+
+export function buildLoadingState(connections) {
+  const nextLoadingState = {};
+  connections.forEach((connection) => {
+    nextLoadingState[connection.id] = true;
+  });
+  return nextLoadingState;
+}
+
+export function filterQuotaStateByConnections(state, connections) {
+  const visibleIds = new Set(connections.map((connection) => connection.id));
+  return Object.fromEntries(
+    Object.entries(state).filter(([id]) => visibleIds.has(id)),
+  );
+}
+
+export function getConnectionsPageRange(pagination) {
+  if (!pagination.total) {
+    return { start: 0, end: 0 };
+  }
+  const start = (pagination.page - 1) * pagination.pageSize + 1;
+  const end = Math.min(pagination.page * pagination.pageSize, pagination.total);
+  return { start, end };
+}
+
+export function getConnectionsEmptyMessage(totals, providerFilter, accountFilter) {
+  if (!totals.eligibleConnections) {
+    return {
+      icon: "cloud_off",
+      title: "No Providers Connected",
+      description:
+        "Connect to providers with OAuth to track your API quota limits and usage.",
+    };
+  }
+  if (!totals.providerFilteredConnections) {
+    return {
+      icon: "filter_alt_off",
+      title: "No Accounts Match Current Filters",
+      description:
+        providerFilter === "all"
+          ? "Try changing the account status filter to see more quota trackers."
+          : `No ${accountFilter === "inactive" ? "turned off" : accountFilter === "active" ? "active" : "matching"} accounts found for ${providerFilter}.`,
+    };
+  }
+  return {
+    icon: "filter_alt_off",
+    title: "No Accounts On This Page",
+    description:
+      "Try moving to another page or refreshing the current filters.",
+  };
+}
+
+export function sortRequestFromExpiringFirst(expiringFirst) {
+  return expiringFirst ? "expiring" : "priority";
+}
+
+export function getPageSizeLabel(pageSize, isCustomPageSize) {
+  return isCustomPageSize ? `Custom: ${pageSize} / page` : `${pageSize} / page`;
+}
+
+export function getConnectionsPaginationSummary(pagination) {
+  const { start, end } = getConnectionsPageRange(pagination);
+  return `Showing ${start}-${end} of ${pagination.total}`;
+}
+
+export function getSafePagination(pagination, fallbackPageSize) {
+  return (
+    pagination || {
+      page: 1,
+      pageSize: fallbackPageSize,
+      total: 0,
+      totalPages: 1,
+    }
+  );
+}
+
+export function getSafeTotals(totals, fallbackTotal = 0) {
+  return (
+    totals || {
+      eligibleConnections: fallbackTotal,
+      providerFilteredConnections: fallbackTotal,
+    }
+  );
+}
+
+export function shouldResetPage(previousValue, nextValue) {
+  return previousValue !== nextValue;
+}
+
+export function getPaginationPageValue(dataPagination, fallbackPage) {
+  return dataPagination?.page || fallbackPage;
+}
+
+export function getProviderOptions(dataProviderOptions) {
+  return dataProviderOptions || [];
+}
+
+export async function reconcileConnectionsPage(fetchConnections, targetPage) {
+  return await fetchConnections(targetPage);
+}
+
+export function getQuotaCache() {
+  if (typeof window === "undefined") return {};
+  try {
+    const cached = window.localStorage.getItem(QUOTA_CACHE_KEY);
+    return cached ? JSON.parse(cached) : {};
+  } catch (error) {
+    console.error("Error reading quota cache:", error);
+    return {};
+  }
+}
+
+export function setQuotaCache(connectionId, quotaEntry) {
+  if (typeof window === "undefined") return;
+  try {
+    const cache = getQuotaCache();
+    cache[connectionId] = {
+      ...quotaEntry,
+      cachedAt: new Date().toISOString(),
+    };
+    window.localStorage.setItem(QUOTA_CACHE_KEY, JSON.stringify(cache));
+  } catch (error) {
+    console.error("Error writing quota cache:", error);
+  }
+}
+
 /**
  * Format ISO date string to countdown format (inspired by vscode-antigravity-cockpit)
  * @param {string|Date} date - ISO date string or Date object
@@ -76,6 +295,59 @@ export function calculatePercentage(used, total) {
 }
 
 /**
+ * Get remaining percentage from a normalized quota row
+ * @param {Object} quota - Normalized quota object
+ * @returns {number} Remaining percentage (0-100)
+ */
+export function getRemainingPercentage(quota) {
+  if (quota?.remaining !== undefined) {
+    return Math.max(0, Math.round(quota.remaining));
+  }
+
+  if (quota?.remainingPercentage !== undefined) {
+    return Math.round(quota.remainingPercentage);
+  }
+
+  return calculatePercentage(quota?.used, quota?.total);
+}
+
+export function getQuotaVisibilityKey(quota) {
+  if (!quota || typeof quota !== "object") return "";
+  return String(quota.modelKey || quota.name || "").trim();
+}
+
+/**
+ * Trim hidden quota keys to only those matching currently valid quotas.
+ * Stale or obsolete model keys are dropped.
+ */
+export function trimHiddenQuotaKeys(hidden = [], quotas = []) {
+  if (!Array.isArray(hidden) || hidden.length === 0) return [];
+  const validKeys = new Set(quotas.map(getQuotaVisibilityKey).filter(Boolean));
+  return [...new Set(hidden.map((k) => String(k).trim()).filter((k) => validKeys.has(k)))];
+}
+
+function getProviderHiddenQuotaSet(provider, quotaVisibility, quotas = []) {
+  const hidden = quotaVisibility?.[provider]?.hidden;
+  if (!Array.isArray(hidden) || hidden.length === 0) return new Set();
+  const trimmed = quotas.length > 0 ? trimHiddenQuotaKeys(hidden, quotas) : hidden;
+  return new Set(trimmed.map(String));
+}
+
+export function filterQuotasByVisibility(provider, quotas = [], quotaVisibility = {}) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas);
+  if (hidden.size === 0) return quotas;
+  return quotas.filter((quota) => !hidden.has(getQuotaVisibilityKey(quota)));
+}
+
+export function getHiddenQuotaRows(provider, quotas = [], quotaVisibility = {}) {
+  if (!Array.isArray(quotas) || quotas.length === 0) return [];
+  const hidden = getProviderHiddenQuotaSet(provider, quotaVisibility, quotas);
+  if (hidden.size === 0) return [];
+  return quotas.filter((quota) => hidden.has(getQuotaVisibilityKey(quota)));
+}
+
+/**
  * Parse provider-specific quota structures into normalized array
  * @param {string} provider - Provider name (github, antigravity, codex, kiro, claude)
  * @param {Object} data - Raw quota data from provider
@@ -103,26 +375,162 @@ export function parseQuotaData(provider, data) {
 
       case "antigravity":
         if (data.quotas) {
-          Object.entries(data.quotas).forEach(([modelKey, quota]) => {
+          const entries = Object.entries(data.quotas);
+          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly"]);
+          const sessionKeys = new Set(["gemini_session", "claude_gpt_session"]);
+          const summaryKeys = new Set([...weeklyKeys, ...sessionKeys]);
+          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
+          const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
+          const imageModels = entries.filter(([k]) => k.includes("image"));
+          const summaryModels = entries.filter(([k]) => summaryKeys.has(k));
+          const otherModels = entries.filter(([k]) => !k.startsWith("gemini-") && !k.startsWith("claude-") && !k.includes("image") && !summaryKeys.has(k));
+
+          // Summary keys from retrieveUserQuotaSummary
+          const hasGeminiWeekly = Boolean(data.quotas.gemini_weekly);
+          const hasGeminiSession = Boolean(data.quotas.gemini_session);
+          const hasClaudeWeekly = Boolean(data.quotas.claude_gpt_weekly);
+          const hasClaudeSession = Boolean(data.quotas.claude_gpt_session);
+
+          // 1. Gemini Family:
+          if (hasGeminiSession) {
+            summaryModels.filter(([k]) => k === "gemini_session").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          } else if (geminiModels.length > 0) {
+            const rep = geminiModels.reduce((min, cur) =>
+              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+            )[1];
+            // Only show synthesized Gemini row if its resetAt differs from weekly (i.e. it represents a separate 5h window)
+            const weeklyResetAt = data.quotas.gemini_weekly?.resetAt;
+            const isDuplicateOfWeekly = hasGeminiWeekly && rep.resetAt === weeklyResetAt && (rep.remainingPercentage ?? 0) === 0;
+
+            if (!isDuplicateOfWeekly) {
+              normalizedQuotas.push({
+                name: "Gemini (Flash / Pro)",
+                modelKey: "gemini",
+                used: rep.used || 0,
+                total: rep.total || 0,
+                resetAt: rep.resetAt || null,
+                remainingPercentage: rep.remainingPercentage,
+              });
+            }
+          }
+
+          // Show Gemini weekly row if present
+          if (hasGeminiWeekly) {
+            summaryModels.filter(([k]) => k === "gemini_weekly").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          }
+
+          // 2. Claude & GPT Family:
+          if (hasClaudeSession) {
+            summaryModels.filter(([k]) => k === "claude_gpt_session").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          } else if (claudeModels.length > 0) {
+            const rep = claudeModels.reduce((min, cur) =>
+              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+            )[1];
+            const weeklyResetAt = data.quotas.claude_gpt_weekly?.resetAt;
+            const isDuplicateOfWeekly = hasClaudeWeekly && rep.resetAt === weeklyResetAt && (rep.remainingPercentage ?? 0) === 0;
+
+            if (!isDuplicateOfWeekly) {
+              normalizedQuotas.push({
+                name: "Claude (Sonnet / Opus)",
+                modelKey: "claude",
+                used: rep.used || 0,
+                total: rep.total || 0,
+                resetAt: rep.resetAt || null,
+                remainingPercentage: rep.remainingPercentage,
+              });
+            }
+          }
+
+          // Show Claude & GPT weekly row if present
+          if (hasClaudeWeekly) {
+            summaryModels.filter(([k]) => k === "claude_gpt_weekly").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          }
+
+          // 3. Standalone Image Generation Models (unique usage)
+          imageModels.forEach(([modelKey, quota]) => {
             normalizedQuotas.push({
               name: quota.displayName || modelKey,
-              modelKey: modelKey, // Keep modelKey for sorting
+              modelKey,
               used: quota.used || 0,
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
             });
           });
+
+          // 4. Other models:
+          // In Antigravity, GPT-OSS is explicitly documented by Google as part of the "Claude and GPT models" group:
+          // ("Models within this group: Claude Opus, Claude Sonnet, GPT-OSS").
+          // When summary quotas (claude_gpt_session / claude_gpt_weekly) are present, GPT-OSS is already represented
+          // by the "Claude & GPT" family rows. We only include otherModels if no summary exists for that pool.
+          if (!hasClaudeWeekly && !hasClaudeSession) {
+            otherModels.forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          }
         }
         break;
 
       case "codex":
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            let displayName = quotaType;
+            if (quotaType === "spark_session") displayName = "Spark (5h)";
+            else if (quotaType === "spark_weekly") displayName = "Spark (Weekly)";
+            else if (quotaType === "session") displayName = "5h";
+            else if (quotaType === "weekly") displayName = "Weekly";
+            else if (quotaType === "review_session") displayName = "Review (5h)";
+            else if (quotaType === "review_weekly") displayName = "Review (Weekly)";
+
             normalizedQuotas.push({
-              name: quotaType,
+              name: displayName,
+              quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
+              remaining: quota.remaining,
               resetAt: quota.resetAt || null,
             });
           });
@@ -136,6 +544,32 @@ export function parseQuotaData(provider, data) {
               name: quotaType,
               used: quota.used || 0,
               total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
+      case "qoder":
+      case "qoder-cn":
+        // Qoder ships a `user` quota and (optionally) an `organization`
+        // quota, both with same shape: {total, used, remaining, unit, resetAt}.
+        // Skip an organization bucket when its total is 0 — most personal
+        // Qoder accounts won't have one and rendering "0/0" is misleading.
+        // Don't forward Qoder's `remaining` field: it's an absolute credit
+        // count, but getRemainingPercentage / QuotaTable interpret
+        // `remaining` as a 0-100 percentage and would render 348 credits
+        // as "348%". The percentage is computed from used/total instead.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([quotaType, quota]) => {
+            if (quotaType === "organization" && (!quota || (Number(quota.total) || 0) === 0)) {
+              return;
+            }
+            normalizedQuotas.push({
+              name: quotaType === "user" ? "Personal" : quotaType === "organization" ? "Organization" : quotaType,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              unit: quota.unit,
               resetAt: quota.resetAt || null,
             });
           });
@@ -158,7 +592,141 @@ export function parseQuotaData(provider, data) {
               name,
               used: quota.used || 0,
               total: quota.total || 0,
+              remaining: quota.remaining !== undefined ? quota.remaining : Math.max(0, (quota.total || 100) - (quota.used || 0)),
+              remainingPercentage: quota.remainingPercentage !== undefined ? quota.remainingPercentage : calculatePercentage(quota.used, quota.total),
               resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
+      case "vercel-ai-gateway":
+        // Vercel returns currency credit balance, not request quotas.
+        // The 'Remaining (USD)' row needs explicit remainingPercentage because
+        // its used/total values would otherwise compute the wrong direction
+        // (e.g. used=95.5 / total=100 → 4% instead of 96%).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "codebuddy-cn":
+        // CodeBuddy CN mixes recurring refill packs ("Monthly"/"Weekly"/...)
+        // with one-shot bonus packs ("Bonus Pack N"). Forward `recurring`
+        // so the UI can show "Expires in" for bonus packs (whose resetAt is
+        // a hard expiry, not a refresh) instead of "Reset in".
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              recurring: quota.recurring !== false,
+            });
+          });
+        }
+        break;
+
+      case "grok-cli":
+        // Grok Build credits (on-demand window + prepaid balance).
+        // Do NOT forward absolute `remaining` — getRemainingPercentage treats
+        // it as a 0–100 percentage (same as Qoder). Use remainingPercentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "kimi":
+        // Weekly / Ratelimit from /v1/usages. Prefer remainingPercentage only.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "deepseek":
+        // Credit balance — remainingPercentage only (no absolute remaining).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              isCreditBalance: quota.isCreditBalance ?? true,
+              currency: quota.currency || (name.includes("(") ? name.slice(name.indexOf("(") + 1, name.indexOf(")")) : "USD"),
+            });
+          });
+        }
+        break;
+
+      case "groq":
+        // Requests/Tokens rate-limit windows from response headers — absolute
+        // used/total (calculatePercentage derives the bar), like Codex/Kiro.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+            });
+          });
+        }
+        break;
+
+      case "ollama":
+        // Session (5h) / Weekly (7d) / Monthly usage % from ollama.com/api/usage.
+        // remainingPercentage only — no absolute remaining (UI treats remaining as %).
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
+      case "zed":
+        // Edit predictions + optional hosted model_requests; unlimited uses remainingPercentage.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+              unlimited: quota.unlimited,
             });
           });
         }
@@ -182,15 +750,31 @@ export function parseQuotaData(provider, data) {
     return [];
   }
 
+  if (provider?.toLowerCase() === "claude") {
+    const CLAUDE_QUOTA_ORDER = {
+      "session (5h)": 0,
+      "weekly (7d)": 1,
+      "weekly fable (7d)": 2,
+      "weekly opus (7d)": 3,
+      "weekly sonnet (7d)": 4,
+    };
+    normalizedQuotas.sort((a, b) => (CLAUDE_QUOTA_ORDER[a.name] ?? 99) - (CLAUDE_QUOTA_ORDER[b.name] ?? 99));
+    return normalizedQuotas;
+  }
+
   // Sort quotas according to PROVIDER_MODELS order
   const modelOrder = getModelsByProviderId(provider);
   if (modelOrder.length > 0) {
     const orderMap = new Map(modelOrder.map((m, i) => [m.id, i]));
     
     normalizedQuotas.sort((a, b) => {
-      // Use modelKey for antigravity, otherwise use name
-      const keyA = a.modelKey || a.name;
-      const keyB = b.modelKey || b.name;
+      // Use modelKey for antigravity (mapped to family anchor), otherwise use name
+      let keyA = a.modelKey || a.name;
+      let keyB = b.modelKey || b.name;
+      if (keyA === "gemini" || keyA === "gemini_session") keyA = "gemini-3.8-flash-high";
+      if (keyA === "claude" || keyA === "claude_gpt_session") keyA = "claude-sonnet-4-6";
+      if (keyB === "gemini" || keyB === "gemini_session") keyB = "gemini-3.8-flash-high";
+      if (keyB === "claude" || keyB === "claude_gpt_session") keyB = "claude-sonnet-4-6";
       const orderA = orderMap.get(keyA) ?? 999;
       const orderB = orderMap.get(keyB) ?? 999;
       return orderA - orderB;

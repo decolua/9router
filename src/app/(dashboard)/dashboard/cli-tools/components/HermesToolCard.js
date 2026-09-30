@@ -4,10 +4,13 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
+import { CLI_TOOLS } from "@/shared/constants/cliTools";
 
 const ENDPOINT = "/api/cli-tools/hermes-settings";
+const HERMES_ROLES = CLI_TOOLS.hermes?.roles || [];
 
 export default function HermesToolCard({
   tool,
@@ -31,11 +34,15 @@ export default function HermesToolCard({
   const [message, setMessage] = useState(null);
   const [selectedApiKey, setSelectedApiKey] = useState("");
   const [selectedModel, setSelectedModel] = useState("");
+  const [roleModels, setRoleModels] = useState({});
+  const [modalTarget, setModalTarget] = useState("default");
   const [modalOpen, setModalOpen] = useState(false);
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
+
+  const currentBaseUrl = hermesStatus?.settings?.model?.base_url || "";
 
   const getConfigStatus = () => {
     if (!hermesStatus?.installed) return null;
@@ -58,11 +65,10 @@ export default function HermesToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !hermesStatus) {
-      checkStatus();
+    if (isExpanded) {
+      if (!hermesStatus) checkStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   const fetchModelAliases = async () => {
@@ -80,6 +86,12 @@ export default function HermesToolCard({
       hasInitializedModel.current = true;
       const cfg = hermesStatus.settings?.model;
       if (cfg?.default) setSelectedModel(cfg.default);
+      const initial = {};
+      if (hermesStatus.settings?.delegation?.model) initial.delegation = hermesStatus.settings.delegation.model;
+      for (const [role, rcfg] of Object.entries(hermesStatus.settings?.auxiliary || {})) {
+        if (rcfg?.model) initial[role] = rcfg.model;
+      }
+      setRoleModels(initial);
     }
   }, [hermesStatus]);
 
@@ -124,11 +136,18 @@ export default function HermesToolCard({
         body: JSON.stringify({
           baseUrl: getEffectiveBaseUrl(),
           apiKey: keyToUse,
-          model: selectedModel,
+          selections: [
+            { role: "default", model: selectedModel },
+            ...Object.entries(roleModels)
+              .filter(([, model]) => model?.trim())
+              .map(([role, model]) => ({ role, model: model.trim() })),
+          ],
         }),
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkStatus();
       } else {
@@ -150,6 +169,7 @@ export default function HermesToolCard({
       if (res.ok) {
         setMessage({ type: "success", text: "Settings reset successfully!" });
         setSelectedModel("");
+        setRoleModels({});
         checkStatus();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
@@ -162,8 +182,17 @@ export default function HermesToolCard({
   };
 
   const handleModelSelect = (model) => {
-    setSelectedModel(model.value);
+    if (modalTarget === "default") {
+      setSelectedModel(model.value);
+    } else {
+      setRoleModels((prev) => ({ ...prev, [modalTarget]: model.value }));
+    }
     setModalOpen(false);
+  };
+
+  const openModelModal = (target) => {
+    setModalTarget(target);
+    setModalOpen(true);
   };
 
   const getManualConfigs = () => {
@@ -171,7 +200,17 @@ export default function HermesToolCard({
       ? selectedApiKey
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
-    const yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${getEffectiveBaseUrl()}"\n`;
+    const base = getEffectiveBaseUrl();
+    let yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${base}"\n  api_key: \${OPENAI_API_KEY}\n`;
+    if (roleModels.delegation?.trim()) {
+      yamlContent += `delegation:\n  model: "${roleModels.delegation.trim()}"\n  provider: "custom"\n  base_url: "${base}"\n  api_key: \${OPENAI_API_KEY}\n`;
+    }
+    const auxRoles = Object.entries(roleModels).filter(([role, model]) => role !== "delegation" && model?.trim());
+    if (auxRoles.length > 0) {
+      yamlContent += `auxiliary:\n${auxRoles.map(([role, model]) =>
+        `  ${role}:\n    provider: "custom"\n    model: "${model.trim()}"\n    base_url: "${base}"\n    api_key: \${OPENAI_API_KEY}\n`
+      ).join("")}`;
+    }
     const envContent = `OPENAI_API_KEY=${keyToUse}\n`;
 
     return [
@@ -185,7 +224,7 @@ export default function HermesToolCard({
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/hermes.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/hermes.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -243,6 +282,7 @@ export default function HermesToolCard({
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 
@@ -269,8 +309,49 @@ export default function HermesToolCard({
                     <input type="text" value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)} placeholder="provider/model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
                     {selectedModel && <button onClick={() => setSelectedModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
                   </div>
-                  <button onClick={() => setModalOpen(true)} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
+                  <button onClick={() => openModelModal("default")} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                 </div>
+
+                <details className="group">
+                  <summary className="cursor-pointer select-none text-xs font-semibold text-text-main hover:text-primary transition-colors">
+                    <span className="material-symbols-outlined align-middle text-[16px] text-text-muted group-open:rotate-90 transition-transform">chevron_right</span>
+                    Model Roles (optional)
+                  </summary>
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    {HERMES_ROLES.map((role) => (
+                      <div key={role.id} className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                        <span className="truncate text-xs font-semibold text-text-main sm:text-right sm:text-sm" title={role.label}>{role.label}</span>
+                        <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                        <div className="relative w-full min-w-0">
+                          <input
+                            type="text"
+                            value={roleModels[role.id] || ""}
+                            onChange={(e) => setRoleModels((prev) => ({ ...prev, [role.id]: e.target.value }))}
+                            placeholder="inherit default"
+                            className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5"
+                          />
+                          {roleModels[role.id] && (
+                            <button
+                              onClick={() => setRoleModels((prev) => ({ ...prev, [role.id]: "" }))}
+                              className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors"
+                              title="Clear"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">close</span>
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => openModelModal(role.id)}
+                          disabled={!hasActiveProviders}
+                          className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}
+                        >
+                          Select
+                        </button>
+                      </div>
+                    ))}
+                    <p className="text-xs text-text-muted">Empty roles inherit the default model.</p>
+                  </div>
+                </details>
               </div>
 
               {message && (
@@ -296,15 +377,17 @@ export default function HermesToolCard({
         </div>
       )}
 
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handleModelSelect}
-        selectedModel={selectedModel}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Select Model for Hermes Agent"
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSelect={handleModelSelect}
+          selectedModel={modalTarget === "default" ? selectedModel : roleModels[modalTarget] || ""}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title={`Select Model for Hermes Agent${modalTarget !== "default" ? ` — ${HERMES_ROLES.find((r) => r.id === modalTarget)?.label || modalTarget}` : ""}`}
+        />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}

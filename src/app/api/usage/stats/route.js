@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getUsageStats } from "@/lib/usageDb";
 
-const VALID_PERIODS = new Set(["24h", "7d", "30d", "60d", "all"]);
+const VALID_PERIODS = new Set(["today", "24h", "7d", "30d", "60d", "all"]);
 
 export const dynamic = "force-dynamic";
 

@@ -263,6 +263,38 @@ describe("handleImageGenerationCore", () => {
     );
   });
 
+  it("handles Vercel AI Gateway image generation as OpenAI-compatible", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          created: 1234567890,
+          data: [{ url: "https://example.com/vercel-image.png" }],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A watercolor castle", n: 1, size: "1024x1024" },
+      modelInfo: { provider: "vercel-ai-gateway", model: "openai/gpt-image-1" },
+      credentials: { apiKey: "vag-test-key" },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://ai-gateway.vercel.sh/v1/images/generations",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          Authorization: "Bearer vag-test-key",
+        }),
+        body: expect.stringContaining('"model":"openai/gpt-image-1"'),
+      })
+    );
+  });
+
   it("handles HuggingFace binary response", async () => {
     const imageBuffer = new Uint8Array([0x89, 0x50, 0x4e, 0x47]); // PNG header
     global.fetch.mockResolvedValueOnce(
@@ -284,7 +316,7 @@ describe("handleImageGenerationCore", () => {
     expect(responseBody.data[0].b64_json).toBeTruthy();
   });
 
-  it("generates image with Codex gpt-5.5-image using current Codex version header", async () => {
+  it.each(["gpt-5.5", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("generates image with Codex %s-image using current Codex version header", async (model) => {
     global.fetch.mockResolvedValueOnce(
       new Response(
         [
@@ -303,7 +335,7 @@ describe("handleImageGenerationCore", () => {
         size: "1024x1024",
         output_format: "png",
       },
-      modelInfo: { provider: "codex", model: "gpt-5.5-image" },
+      modelInfo: { provider: "codex", model: `${model}-image` },
       credentials: {
         accessToken: "codex-token",
         providerSpecificData: { chatgptAccountId: "account-123" },
@@ -319,17 +351,58 @@ describe("handleImageGenerationCore", () => {
         headers: expect.objectContaining({
           authorization: "Bearer codex-token",
           "chatgpt-account-id": "account-123",
-          version: "0.129.0",
+          version: "0.154.0",
         }),
       })
     );
 
     const fetchCall = global.fetch.mock.calls[0];
     const requestBody = JSON.parse(fetchCall[1].body);
-    expect(requestBody.model).toBe("gpt-5.5");
+    expect(requestBody.model).toBe(model);
     expect(requestBody.tools).toEqual([
       { type: "image_generation", output_format: "png", size: "1024x1024" },
     ]);
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64codeximage");
+  });
+
+  it("generates image with Codex gpt-image-2.5 tool model", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        [
+          "event: response.output_item.done",
+          'data: {"item":{"type":"image_generation_call","result":"base64codeximage"}}',
+          "",
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A futuristic city",
+        size: "1024x1024",
+        output_format: "png",
+      },
+      modelInfo: { provider: "codex", model: "gpt-image-2.5" },
+      credentials: {
+        accessToken: "codex-token",
+        providerSpecificData: { chatgptAccountId: "account-123" },
+      },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody.model).toBe("gpt-5.5");
+    expect(requestBody.tools).toEqual([
+      { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
+    ]);
+    expect(requestBody.tool_choice).toEqual({ type: "image_generation" });
+    expect(requestBody.reasoning).toEqual({ effort: "medium", summary: "auto" });
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");

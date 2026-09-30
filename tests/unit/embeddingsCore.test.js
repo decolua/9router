@@ -141,6 +141,51 @@ describe("buildEmbeddingsBody", () => {
     const sent = JSON.parse(init.body);
     expect(sent.encoding_format).toBe("float");
   });
+
+  it("gemini single input forwards dimensions as outputDimensionality", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse({
+      embedding: { values: [0.1, 0.2, 0.3] },
+    }));
+
+    await handleEmbeddingsCore(makeOptions({
+      body: {
+        model: "gemini/gemini-embedding-2-preview",
+        input: "test",
+        dimensions: 1536,
+      },
+      modelInfo: { provider: "gemini", model: "gemini-embedding-2-preview" },
+      credentials: { apiKey: "gemini-key" },
+    }));
+
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const sent = JSON.parse(init.body);
+    expect(sent.outputDimensionality).toBe(1536);
+  });
+
+  it("gemini batch input forwards dimensions on each request", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse({
+      embeddings: [
+        { values: [0.1, 0.2, 0.3] },
+        { values: [0.4, 0.5, 0.6] },
+      ],
+    }));
+
+    await handleEmbeddingsCore(makeOptions({
+      body: {
+        model: "gemini/gemini-embedding-2-preview",
+        input: ["hello", "world"],
+        dimensions: 1536,
+      },
+      modelInfo: { provider: "gemini", model: "gemini-embedding-2-preview" },
+      credentials: { apiKey: "gemini-key" },
+    }));
+
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const sent = JSON.parse(init.body);
+    expect(sent.requests).toHaveLength(2);
+    expect(sent.requests[0].outputDimensionality).toBe(1536);
+    expect(sent.requests[1].outputDimensionality).toBe(1536);
+  });
 });
 
 // ─── Test: buildEmbeddingsUrl ────────────────────────────────────────────────
@@ -175,6 +220,21 @@ describe("buildEmbeddingsUrl", () => {
 
     const [url] = vi.mocked(fetch).mock.calls[0];
     expect(url).toBe("https://openrouter.ai/api/v1/embeddings");
+  });
+
+  it("vercel-ai-gateway → https://ai-gateway.vercel.sh/v1/embeddings", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "vercel-ai-gateway", model: "openai/text-embedding-3-small" },
+      credentials: { apiKey: "vag-test-key" },
+    }));
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    const sent = JSON.parse(init.body);
+    expect(url).toBe("https://ai-gateway.vercel.sh/v1/embeddings");
+    expect(init.headers.Authorization).toBe("Bearer vag-test-key");
+    expect(sent.model).toBe("openai/text-embedding-3-small");
   });
 
   it("openai-compatible-* → uses baseUrl from providerSpecificData", async () => {

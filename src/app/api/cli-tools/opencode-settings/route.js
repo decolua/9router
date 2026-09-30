@@ -35,10 +35,16 @@ const checkOpenCodeInstalled = async () => {
 const readConfig = async () => {
   try {
     const content = await fs.readFile(getConfigPath(), "utf-8");
-    return JSON.parse(content);
+    // opencode config files may use JSONC format (trailing commas, comments).
+    // Strip trailing commas before parsing to avoid SyntaxError on valid JSONC.
+    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(stripped);
   } catch (error) {
     if (error.code === "ENOENT") return null;
-    throw error;
+    // If the config file exists but is unparseable (corrupted, exotic JSONC),
+    // treat it as "no config" rather than throwing a 500 that the UI
+    // misinterprets as "opencode not installed".
+    return null;
   }
 };
 
@@ -128,7 +134,7 @@ export async function POST(request) {
     // Add or update entries for all requested models
     for (const m of modelsArray) {
       if (!m || typeof m !== "string") continue;
-      existingProvider.models[m] = { name: m };
+      existingProvider.models[m] = { name: m, modalities: { input: ["text", "image"], output: ["text"] } };
     }
 
     // Save merged provider back

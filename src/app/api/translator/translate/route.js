@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { detectFormat, getTargetFormat } from "open-sse/services/provider.js";
 import { translateRequest } from "open-sse/translator/index.js";
 import { FORMATS } from "open-sse/translator/formats.js";
-import { parseModel } from "open-sse/services/model.js";
+import { getModelInfo } from "@/sse/services/model.js";
 import { getProviderConnections } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/executors/index.js";
 
@@ -18,7 +18,7 @@ export async function POST(request) {
       case 1: {
         // Detect provider + formats from 1_req_client.json
         const clientBody = body.body || body;
-        const { provider, model } = parseModel(clientBody.model);
+        const { provider, model } = await getModelInfo(clientBody.model);
         const sourceFormat = detectFormat(clientBody);
         const targetFormat = getTargetFormat(provider);
         return NextResponse.json({ success: true, result: { provider, model, sourceFormat, targetFormat } });
@@ -28,7 +28,7 @@ export async function POST(request) {
         // source → OpenAI intermediate (mirrors 3_req_openai.json)
         // Translate source→openai only (half of the pipeline)
         const clientBody = body.body || body;
-        const { provider, model } = parseModel(clientBody.model);
+        const { provider, model } = await getModelInfo(clientBody.model);
         const sourceFormat = detectFormat(clientBody);
         const stream = clientBody.stream !== false;
 

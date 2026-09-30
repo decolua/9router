@@ -54,6 +54,7 @@ export class CodexService extends OAuthService {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresIn: tokens.expires_in,
+        lastRefreshAt: new Date().toISOString(),
       }),
     });
 
@@ -75,7 +76,7 @@ export class CodexService extends OAuthService {
       spinner.text = "Starting local server...";
 
       // Start local server for callback (use fixed port 1455 like real Codex CLI)
-      const fixedPort = 1455;
+      const fixedPort = CODEX_CONFIG.fixedPort;
       let callbackParams = null;
       const { port, close } = await startLocalServer((params) => {
         callbackParams = params;
@@ -141,4 +142,3 @@ export class CodexService extends OAuthService {
     }
   }
 }
-

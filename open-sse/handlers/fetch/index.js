@@ -1,4 +1,4 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama
 // Returns normalized shape across all providers
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -49,12 +49,15 @@ function truncate(text, max) {
 }
 
 function parseJinaTitle(text) {
-  const m = String(text || "").match(/^\s*#\s+(.+)$/m);
+  const source = String(text || "");
+  const metadataTitle = source.match(/^\s*Title:\s*(.+)$/mi);
+  if (metadataTitle) return metadataTitle[1].trim();
+  const m = source.match(/^\s*#\s+(.+)$/m);
   return m ? m[1].trim() : null;
 }
 
-function buildData({ provider, url, title, format, text, costUsd, responseMs, upstreamMs }) {
-  return {
+function buildData({ provider, url, title, format, text, links, costUsd, responseMs, upstreamMs }) {
+  const data = {
     provider,
     url,
     title: title || null,
@@ -63,6 +66,8 @@ function buildData({ provider, url, title, format, text, costUsd, responseMs, up
     usage: { fetch_cost_usd: costUsd ?? null },
     metrics: { response_time_ms: responseMs, upstream_latency_ms: upstreamMs }
   };
+  if (Array.isArray(links)) data.links = links;
+  return data;
 }
 
 async function readJsonOrText(res) {
@@ -112,6 +117,18 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     if (provider === "exa") {
       return await runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
     }
+    if (provider === "ollama") {
+      return await runOllama({
+        url,
+        fmt,
+        timeoutMs,
+        apiKey,
+        maxCharacters,
+        costPerQuery,
+        startedAt,
+        baseUrl: providerConfig?.baseUrl,
+      });
+    }
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
   } catch (err) {
     log?.("fetch handler error:", err?.message || err);
@@ -151,11 +168,14 @@ async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPe
 }
 
 async function runJina({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {
-  const target = `https://r.jina.ai/${encodeURIComponent(url)}`;
   const upstreamStart = Date.now();
-  const r = await tryFetch(target, {
-    method: "GET",
-    headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {}
+  const r = await tryFetch("https://r.jina.ai/", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {})
+    },
+    body: JSON.stringify({ url })
   }, timeoutMs);
 
   if (!r.ok) {
@@ -232,6 +252,59 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
     data: buildData({
       provider: "exa", url, title: first.title || null, format: fmt, text,
       costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs
+    })
+  };
+}
+
+async function runOllama({
+  url,
+  fmt,
+  timeoutMs,
+  apiKey,
+  maxCharacters,
+  costPerQuery,
+  startedAt,
+  baseUrl,
+}) {
+  const upstreamStart = Date.now();
+  const r = await tryFetch(baseUrl, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {})
+    },
+    body: JSON.stringify({ url })
+  }, timeoutMs);
+
+  if (!r.ok) {
+    return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  }
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json, text: responseText } = await readJsonOrText(r.res);
+  if (!r.res.ok) {
+    const error = json?.error
+      || json?.message
+      || responseText?.slice(0, 500)
+      || `Ollama error: ${r.res.status}`;
+    return { success: false, status: r.res.status, error };
+  }
+  if (!json || typeof json.content !== "string") {
+    return { success: false, status: 502, error: "Ollama returned an empty or invalid web fetch response" };
+  }
+
+  const text = truncate(json.content, maxCharacters);
+  return {
+    success: true,
+    data: buildData({
+      provider: "ollama",
+      url,
+      title: json.title || null,
+      format: fmt,
+      text,
+      links: json.links,
+      costUsd: costPerQuery,
+      responseMs: Date.now() - startedAt,
+      upstreamMs
     })
   };
 }

@@ -23,7 +23,7 @@ function isCertExpired(certPath) {
  * Generate Root CA certificate (only once, auto-regenerate if expired)
  * This Root CA will sign all dynamic leaf certificates
  */
-async function generateRootCA() {
+function generateRootCA() {
   const exists = fs.existsSync(ROOT_CA_KEY_PATH) && fs.existsSync(ROOT_CA_CERT_PATH);
   if (exists && !isCertExpired(ROOT_CA_CERT_PATH)) {
     console.log("✅ Root CA already exists");

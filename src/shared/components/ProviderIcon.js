@@ -2,18 +2,29 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
+import { getProviderIconSrc, markProviderIconMissing } from "@/shared/utils/providerIcon";
+
+function resolveSrc(src, providerId) {
+  if (providerId) return getProviderIconSrc(providerId);
+  if (!src) return null;
+  const m = String(src).match(/^\/providers\/([^/]+)\.png$/i);
+  if (m) return getProviderIconSrc(m[1]);
+  return src;
+}
 
 export default function ProviderIcon({
   src,
+  providerId,
   alt,
   size = 32,
   className = "",
   fallbackText = "?",
   fallbackColor,
 }) {
+  const effectiveSrc = resolveSrc(src, providerId);
   const [errored, setErrored] = useState(false);
 
-  if (!src || errored) {
+  if (!effectiveSrc || errored) {
     return (
       <span
         className={`inline-flex items-center justify-center font-bold rounded-lg ${className}`.trim()}
@@ -31,18 +42,26 @@ export default function ProviderIcon({
 
   return (
     <img
-      src={src}
+      src={effectiveSrc}
       alt={alt}
       width={size}
       height={size}
       className={className}
-      onError={() => setErrored(true)}
+      loading="lazy"
+      decoding="async"
+      onError={() => {
+        const m = effectiveSrc.match(/^\/providers\/([^/]+)\.png$/i);
+        if (m) markProviderIconMissing(m[1]);
+        if (providerId) markProviderIconMissing(providerId);
+        setErrored(true);
+      }}
     />
   );
 }
 
 ProviderIcon.propTypes = {
   src: PropTypes.string,
+  providerId: PropTypes.string,
   alt: PropTypes.string,
   size: PropTypes.number,
   className: PropTypes.string,

@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
-import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal } from "@/shared/components";
+import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
 
 // ── CooldownTimer ──────────────────────────────────────────────
 function CooldownTimer({ until }) {
@@ -86,12 +87,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
 
   const effectiveStatus = connection.testStatus === "unavailable" && !isCooldown ? "active" : connection.testStatus;
 
-  const getStatusVariant = () => {
-    if (connection.isActive === false) return "default";
-    if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
-    if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";
-    return "default";
-  };
+  const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
   const displayName = isOAuth
     ? connection.name || connection.email || connection.displayName || "OAuth Account"
@@ -308,6 +304,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
+  const [confirmState, setConfirmState] = useState(null);
 
   const fetch_ = useCallback(async () => {
     try {
@@ -358,11 +355,17 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   };
 
   const handleDelete = async (id) => {
-    if (!confirm("Delete this connection?")) return;
-    try {
-      const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
-      if (res.ok) setConnections((prev) => prev.filter((c) => c.id !== id));
-    } catch (e) { console.log("delete error:", e); }
+    setConfirmState({
+      title: "Delete Connection",
+      message: "Delete this connection?",
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/providers/${id}`, { method: "DELETE" });
+          if (res.ok) setConnections((prev) => prev.filter((c) => c.id !== id));
+        } catch (e) { console.log("delete error:", e); }
+      }
+    });
   };
 
   const handleToggleActive = async (id, isActive) => {
@@ -431,7 +434,7 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
           </div>
         ) : (
           <>
-            <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03]">
+            <div className="flex flex-col divide-y divide-black/[0.03] dark:divide-white/[0.03] max-h-[500px] overflow-y-auto pr-1">
               {connections.map((conn, idx) => (
                 <ConnectionRow
                   key={conn.id}
@@ -469,6 +472,16 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
         proxyPools={proxyPools}
         onSave={handleUpdateConnection}
         onClose={() => setShowEditModal(false)}
+      />
+
+      {/* Confirm Modal */}
+      <ConfirmModal
+        isOpen={!!confirmState}
+        onClose={() => setConfirmState(null)}
+        onConfirm={confirmState?.onConfirm}
+        title={confirmState?.title || "Confirm"}
+        message={confirmState?.message}
+        variant="danger"
       />
     </>
   );

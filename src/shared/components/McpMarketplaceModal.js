@@ -154,7 +154,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                   <div className="flex items-start gap-2 px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5">
                     {s.iconUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={s.iconUrl} alt="" className="size-7 rounded shrink-0 object-contain" onError={(e) => { e.target.style.display = "none"; }} />
+                      <img src={s.iconUrl} alt="" className="size-7 rounded shrink-0 object-contain" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
                     ) : (
                       <div className="size-7 rounded bg-surface shrink-0" />
                     )}

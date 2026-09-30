@@ -1,5 +1,7 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
+import { sseChunk } from "../utils/sse.js";
 
 const PPLX_SSE_ENDPOINT = PROVIDERS["perplexity-web"].baseUrl;
 const PPLX_API_VERSION = "2.18";
@@ -289,10 +291,6 @@ async function* extractContent(eventStream, signal) {
   yield { delta: "", answer: fullAnswer, backendUuid: backendUuid ?? undefined, done: true };
 }
 
-function sseChunk(data) {
-  return `data: ${JSON.stringify(data)}\n\n`;
-}
-
 function buildStreamingResponse(eventStream, model, cid, created, history, currentMsg, signal) {
   const encoder = new TextEncoder();
   return new ReadableStream({
@@ -340,7 +338,7 @@ function buildStreamingResponse(eventStream, model, cid, created, history, curre
           id: cid, object: "chat.completion.chunk", created, model, system_fingerprint: null,
           choices: [{ index: 0, delta: {}, finish_reason: "stop", logprobs: null }],
         })));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.enqueue(encoder.encode(SSE_DONE));
 
         sessionStore(history, currentMsg, cleanResponse(fullAnswer), respBackendUuid);
       } catch (err) {
@@ -348,7 +346,7 @@ function buildStreamingResponse(eventStream, model, cid, created, history, curre
           id: cid, object: "chat.completion.chunk", created, model, system_fingerprint: null,
           choices: [{ index: 0, delta: { content: `[Stream error: ${err.message || String(err)}]` }, finish_reason: "stop", logprobs: null }],
         })));
-        controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+        controller.enqueue(encoder.encode(SSE_DONE));
       } finally {
         controller.close();
       }
@@ -493,7 +491,7 @@ export class PerplexityWebExecutor extends BaseExecutor {
       const sseStream = buildStreamingResponse(response.body, model, cid, created, parsed.history, parsed.currentMsg, signal);
       finalResponse = new Response(sseStream, {
         status: 200,
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "X-Accel-Buffering": "no" },
+        headers: { ...SSE_HEADERS_NO_BUFFER },
       });
     } else {
       finalResponse = await buildNonStreamingResponse(response.body, model, cid, created, parsed.history, parsed.currentMsg, signal);

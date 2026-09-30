@@ -7,7 +7,7 @@ function toBoolean(value) {
   return undefined;
 }
 
-const VALID_PROXY_TYPES = ["http", "vercel"];
+const VALID_PROXY_TYPES = ["http", "vercel", "cloudflare", "deno"];
 
 function normalizeProxyPoolInput(body = {}) {
   const name = typeof body?.name === "string" ? body.name.trim() : "";

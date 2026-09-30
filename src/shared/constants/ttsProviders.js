@@ -109,6 +109,22 @@ export const TTS_PROVIDER_CONFIG = {
     hasVoiceIdInput: true,
     voiceSource: "config",
   },
+  "minimax": {
+    hasModelSelector: true,
+    hasBrowseButton: true,
+    hasVoiceIdInput: true,
+    voiceSource: "api-language",
+    apiEndpoint: "/api/media-providers/tts/minimax/voices",
+    defaultVoiceId: "English_expressive_narrator",
+  },
+  "minimax-cn": {
+    hasModelSelector: true,
+    hasBrowseButton: true,
+    hasVoiceIdInput: true,
+    voiceSource: "api-language",
+    apiEndpoint: "/api/media-providers/tts/minimax/voices?provider=minimax-cn",
+    defaultVoiceId: "English_expressive_narrator",
+  },
   "gemini": {
     hasLanguageDropdown: false,
     hasLanguageHint: true, // sends body.language to guide TTS pronunciation
@@ -117,6 +133,18 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "hardcoded",
     modelKey: "gemini-tts-models",
     voiceKey: "gemini-tts-voices",
+    voicesPerModel: true,
+  },
+  "xiaomi-mimo": {
+    hasLanguageDropdown: false,
+    hasModelSelector: true,
+    hasBrowseButton: false,
+    hasVoiceIdInput: false,
+    hasStyleInput: true, // style/voice instructions (role: user)
+    hasLanguageHint: true, // language dropdown (Auto-detect default); voices are language-independent
+    languageOptions: ["Chinese", "English"],
+    voiceSource: "hardcoded",
+    modelKey: "xiaomi-mimo-tts-models",
     voicesPerModel: true,
   },
 };

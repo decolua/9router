@@ -1,6 +1,7 @@
 import { nowSec, urlToBase64 } from "./_base.js";
+import { PROVIDER_MEDIA } from "../../providers/index.js";
 
-const BASE_URL = "https://api.cloudflare.com/client/v4/accounts";
+const BASE_URL = PROVIDER_MEDIA["cloudflare-ai"]?.imageConfig?.baseUrl;
 
 const MULTIPART_MODELS = new Set([
   "@cf/black-forest-labs/flux-2-dev",

@@ -5,6 +5,7 @@
  *  - params.system: STRING at top level (Anthropic-style; system messages NOT allowed in messages[])
  *  - params.messages[*].role ∈ {"user","assistant","tool"}
  *  - params.messages[*].content: Array of content blocks (NEVER a string)
+ *  - image_url / image source → {type:"image", image:"data:...;base64,...", mimeType}
  *  - tool_use blocks (assistant): {type:"tool-call", toolCallId, toolName, input}
  *  - tool_result blocks (role=user): {type:"tool-result", toolCallId, toolName, output}
  *  - tools[*]: Anthropic plain {name, description, input_schema}
@@ -12,6 +13,9 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { randomUUID } from "crypto";
+import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
+import { parseDataUri, encodeDataUri } from "../concerns/image.js";
 
 function flattenText(content) {
   if (content == null) return "";
@@ -27,27 +31,70 @@ function flattenText(content) {
   return String(content);
 }
 
+function toNativeImageBlock(part) {
+  if (!part || typeof part !== "object") return null;
+
+  if (part.type === OPENAI_BLOCK.IMAGE_URL) {
+    const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+    const parsed = parseDataUri(url);
+    if (!parsed) return null;
+    return {
+      type: OPENAI_BLOCK.IMAGE,
+      image: encodeDataUri(parsed.mimeType, parsed.base64),
+      mimeType: parsed.mimeType,
+      mediaType: parsed.mimeType,
+    };
+  }
+
+  if (part.type === OPENAI_BLOCK.IMAGE || part.type === CLAUDE_BLOCK.IMAGE) {
+    if (typeof part.image === "string" && part.image.startsWith("data:")) {
+      const parsed = parseDataUri(part.image);
+      const mime = part.mimeType || parsed?.mimeType || "image/png";
+      return {
+        type: OPENAI_BLOCK.IMAGE,
+        image: part.image,
+        mimeType: mime,
+        mediaType: mime,
+      };
+    }
+    const source = part.source;
+    if (source?.type === "base64" && typeof source.data === "string") {
+      const mime = source.media_type || "image/png";
+      return {
+        type: OPENAI_BLOCK.IMAGE,
+        image: encodeDataUri(mime, source.data),
+        mimeType: mime,
+        mediaType: mime,
+      };
+    }
+  }
+
+  return null;
+}
+
 function toContentBlocks(content) {
-  if (content == null) return [{ type: "text", text: "" }];
-  if (typeof content === "string") return [{ type: "text", text: content }];
+  if (content == null) return [{ type: OPENAI_BLOCK.TEXT, text: "" }];
+  if (typeof content === "string") return [{ type: OPENAI_BLOCK.TEXT, text: content }];
   if (Array.isArray(content)) {
     const blocks = [];
     for (const part of content) {
       if (typeof part === "string") {
-        blocks.push({ type: "text", text: part });
+        blocks.push({ type: OPENAI_BLOCK.TEXT, text: part });
       } else if (part && typeof part === "object") {
-        if (part.type === "text" && typeof part.text === "string") {
-          blocks.push({ type: "text", text: part.text });
-        } else if (part.type === "image_url" || part.type === "image") {
-          blocks.push({ type: "text", text: "[image omitted]" });
-        } else if (typeof part.text === "string") {
-          blocks.push({ type: "text", text: part.text });
+        if (part.type === OPENAI_BLOCK.TEXT && typeof part.text === "string") {
+          blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
+        } else {
+          const image = toNativeImageBlock(part);
+          if (image) blocks.push(image);
+          else if (typeof part.text === "string") {
+            blocks.push({ type: OPENAI_BLOCK.TEXT, text: part.text });
+          }
         }
       }
     }
-    return blocks.length ? blocks : [{ type: "text", text: "" }];
+    return blocks.length ? blocks : [{ type: OPENAI_BLOCK.TEXT, text: "" }];
   }
-  return [{ type: "text", text: String(content) }];
+  return [{ type: OPENAI_BLOCK.TEXT, text: String(content) }];
 }
 
 function safeParseJson(s) {
@@ -64,16 +111,16 @@ function convertMessages(messages = []) {
     if (!m) continue;
     const role = m.role;
 
-    if (role === "system") {
+    if (role === ROLE.SYSTEM) {
       const t = flattenText(m.content);
       if (t) systemTexts.push(t);
       continue;
     }
 
-    if (role === "tool") {
+    if (role === ROLE.TOOL) {
       const value = typeof m.content === "string" ? m.content : flattenText(m.content);
       out.push({
-        role: "tool",
+        role: ROLE.TOOL,
         content: [{
           type: "tool-result",
           toolCallId: m.tool_call_id || "",
@@ -84,10 +131,14 @@ function convertMessages(messages = []) {
       continue;
     }
 
-    if (role === "assistant") {
+    if (role === ROLE.ASSISTANT) {
       const blocks = [];
+      const rc = m.reasoning_content || m.thought || m.reasoning;
+      if (rc || (Array.isArray(m.tool_calls) && m.tool_calls.length > 0)) {
+        blocks.push({ type: "reasoning", text: rc || " " });
+      }
       const text = flattenText(m.content);
-      if (text) blocks.push({ type: "text", text });
+      if (text) blocks.push({ type: OPENAI_BLOCK.TEXT, text });
       if (Array.isArray(m.tool_calls)) {
         for (const tc of m.tool_calls) {
           const fn = tc.function || {};
@@ -99,11 +150,11 @@ function convertMessages(messages = []) {
           });
         }
       }
-      out.push({ role: "assistant", content: blocks.length ? blocks : [{ type: "text", text: "" }] });
+      out.push({ role: ROLE.ASSISTANT, content: blocks.length ? blocks : [{ type: OPENAI_BLOCK.TEXT, text: "" }] });
       continue;
     }
 
-    out.push({ role: "user", content: toContentBlocks(m.content) });
+    out.push({ role: ROLE.USER, content: toContentBlocks(m.content) });
   }
 
   return { messages: out, system: systemTexts.join("\n\n") };
@@ -114,7 +165,7 @@ function convertTools(tools) {
   const result = [];
   for (const t of tools) {
     if (!t) continue;
-    if (t.type === "function" && t.function) {
+    if (t.type === OPENAI_BLOCK.FUNCTION && t.function) {
       result.push({
         name: t.function.name,
         description: t.function.description,
@@ -131,13 +182,13 @@ function convertTools(tools) {
   return result.length ? result : undefined;
 }
 
-export function openaiToCommandCode(model, body, stream /* , credentials */) {
+export function openaiToCommandCodeRequest(model, body, stream /* , credentials */) {
   const { messages, system } = convertMessages(body.messages);
   const params = {
     model,
     messages,
     stream: stream !== false,
-    max_tokens: body.max_tokens ?? body.max_output_tokens ?? 64000,
+    max_tokens: body.max_tokens ?? body.max_output_tokens ?? DEFAULT_MAX_TOKENS,
     temperature: body.temperature ?? 0.3,
   };
 
@@ -167,4 +218,4 @@ export function openaiToCommandCode(model, body, stream /* , credentials */) {
   };
 }
 
-register(FORMATS.OPENAI, FORMATS.COMMANDCODE, openaiToCommandCode, null);
+register(FORMATS.OPENAI, FORMATS.COMMANDCODE, openaiToCommandCodeRequest, null);

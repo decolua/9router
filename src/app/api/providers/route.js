@@ -64,7 +64,7 @@ export async function GET() {
     const safeConnections = connections.map(c => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
-        ? (nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
+        ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
         : c.name;
       return {
         ...c,
@@ -102,8 +102,12 @@ export async function POST(request) {
 
     // Validation
     const isWebCookieProvider = !!WEB_COOKIE_PROVIDERS[provider];
+    // Dual-auth providers (e.g. codebuddy-cn, xai) live under category "oauth" but also
+    // accept an API key via authModes — they aren't in APIKEY_PROVIDERS, so allow them here.
+    const supportsApiKeyMode = !!AI_PROVIDERS[provider]?.authModes?.includes("apikey");
     const isValidProvider = APIKEY_PROVIDERS[provider] ||
       FREE_TIER_PROVIDERS[provider] ||
+      supportsApiKeyMode ||
       isWebCookieProvider ||
       isOpenAICompatibleProvider(provider) ||
       isAnthropicCompatibleProvider(provider) ||
@@ -122,6 +126,8 @@ export async function POST(request) {
 
     let providerSpecificData = normalizeProviderSpecificData(provider, body, body.providerSpecificData);
 
+    // Compatible LLM nodes support multiple API-key connections (key pool); runtime
+    // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.
     if (isOpenAICompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
       if (!node) {
@@ -177,6 +183,9 @@ export async function POST(request) {
       providerSpecificData: mergedProviderSpecificData,
       isActive: true,
       testStatus: testStatus || "unknown",
+      // POST with an id is an explicit edit of that connection; without one, a
+      // name collision is refused rather than silently overwriting a key. #4311
+      allowOverwrite: body.id ? true : (body.allowOverwrite === true || body.overwrite === true),
     });
 
     // Hide sensitive fields
@@ -185,6 +194,12 @@ export async function POST(request) {
 
     return NextResponse.json({ connection: result }, { status: 201 });
   } catch (error) {
+    if (error?.code === "PROVIDER_NAME_CONFLICT") {
+      return NextResponse.json(
+        { error: error.message, code: error.code, existingId: error.existingId, existingName: error.existingName },
+        { status: 409 }
+      );
+    }
     console.log("Error creating provider:", error);
     return NextResponse.json({ error: "Failed to create provider" }, { status: 500 });
   }

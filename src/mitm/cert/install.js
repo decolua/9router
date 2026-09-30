@@ -49,12 +49,14 @@ function checkCertInstalledMac(certPath) {
   return new Promise((resolve) => {
     try {
       const fingerprint = getCertFingerprint(certPath).replace(/:/g, "");
-      // security verify-cert returns 0 only if cert is trusted by system policy
-      exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (error) => {
-        if (!error) return resolve(true);
-        // Fallback: check if fingerprint appears in System keychain with trust
-        exec(`security dump-trust-settings -d 2>/dev/null | grep -i "${fingerprint}"`, { windowsHide: true }, (err2, stdout2) => {
-          resolve(!err2 && !!stdout2?.trim());
+      // Verify exact cert bytes match — same CN with different fingerprint = stale cert
+      exec(`security find-certificate -a -c "${ROOT_CA_CN}" -Z /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (error, stdout) => {
+        if (error || !stdout) return resolve(false);
+        const match = new RegExp(`SHA-1 hash:\\s*${fingerprint}`, "i").test(stdout);
+        if (!match) return resolve(false);
+        // Cert exists with matching fingerprint — confirm trust policy
+        exec(`security verify-cert -c "${certPath}" -p ssl -k /Library/Keychains/System.keychain 2>/dev/null`, { windowsHide: true }, (err2) => {
+          resolve(!err2);
         });
       });
     } catch {

@@ -1,7 +1,15 @@
 /**
  * Wrap chat-completions endpoints (with built-in web search) into the unified
- * /v1/search response format. Supports gemini, openai, xai, kimi, minimax, perplexity.
+ * /v1/search response format. Supports gemini, antigravity, openai, xai, kimi,
+ * minimax, perplexity.
  */
+import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { ANTIGRAVITY_IDE_USER_AGENT } from "../../providers/shared.js";
+
+// Default search model + endpoint derive from registry searchViaChat (single source)
+const searchModel = (id) => PROVIDER_MEDIA[id]?.searchViaChat?.defaultModel;
+const searchEndpoint = (id, model) =>
+  (PROVIDER_MEDIA[id]?.searchViaChat?.endpoint || "").replace("{model}", model || "");
 
 const REQUEST_TIMEOUT_MS = 15000;
 const DEFAULT_MAX_RESULTS = 10;
@@ -22,11 +30,35 @@ function toResult(c, index, provider, retrievedAt) {
     score: null,
     published_at: null,
     favicon_url: null,
-    content: null,
+    content: c.content || null,
     metadata: {},
     citation: { provider, retrieved_at: retrievedAt, rank: index + 1 },
     provider_raw: null
   };
+}
+
+// Antigravity search request envelope (mirrors the IDE client)
+const AG_CLIENT_NAME = "antigravity";
+const AG_SEARCH_GENERATION_CONFIG = { temperature: 1.0, maxOutputTokens: 8192 };
+const AG_CONTEXT_BEFORE = 150;
+const AG_CONTEXT_AFTER = 250;
+
+/** Widen a grounded segment to its surrounding sentence(s) in the answer text. */
+function expandSegment(text, segment) {
+  const { startIndex, endIndex } = segment || {};
+  if (!text || !Number.isInteger(startIndex) || !Number.isInteger(endIndex)) return "";
+  const start = Math.max(0, startIndex - AG_CONTEXT_BEFORE);
+  const end = Math.min(text.length, endIndex + AG_CONTEXT_AFTER);
+  let out = text.slice(start, end).trim();
+  // Drop the partial words the window cut off at either edge
+  if (start > 0) out = `...${out.replace(/^\S+/, "")}`;
+  if (end < text.length) out = `${out.replace(/\S+$/, "")}...`;
+  return out.trim();
+}
+
+/** Join deduped grounding pieces, skipping empties. */
+function joinPieces(set, sep) {
+  return [...(set || [])].filter(Boolean).join(sep).trim();
 }
 
 /** Coerce a citation that might be a raw URL string or an object. */
@@ -40,12 +72,12 @@ function normalizeCitation(c) {
 /**
  * Provider-specific configuration map. All providers must implement:
  * { endpoint, defaultModel, buildBody, buildHeaders, extractAnswer }
+ * Optional: requireCredentials(credentials) → error string when a provider needs
+ * more than a token (returns null when satisfied).
  */
 const CHAT_SEARCH_CONFIG = {
   gemini: {
-    endpoint: (model) =>
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    defaultModel: "gemini-2.5-flash",
+    endpoint: (model) => searchEndpoint("gemini", model),
     buildBody: (query) => ({
       contents: [{ role: "user", parts: [{ text: query }] }],
       tools: [{ google_search: {} }]
@@ -69,9 +101,73 @@ const CHAT_SEARCH_CONFIG = {
     }
   },
 
+  antigravity: {
+    endpoint: () => searchEndpoint("antigravity"),
+    // Upstream 403s on a missing or fabricated project — surface the real cause
+    requireCredentials: (credentials) =>
+      credentials?.projectId ? null : "Antigravity account has no projectId — reconnect the account",
+    buildBody: (query, model, credentials) => ({
+      project: credentials.projectId,
+      model,
+      userAgent: AG_CLIENT_NAME,
+      requestType: "search",
+      request: {
+        contents: [{ role: "user", parts: [{ text: query }] }],
+        tools: [{ googleSearch: {} }],
+        generationConfig: AG_SEARCH_GENERATION_CONFIG
+      }
+    }),
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+      "User-Agent": ANTIGRAVITY_IDE_USER_AGENT
+    }),
+    extractAnswer: (data) => {
+      // Antigravity wraps the Gemini payload in { response: {...} }
+      const response = data?.response || data;
+      const candidate = response?.candidates?.[0];
+      const parts = candidate?.content?.parts || [];
+      const text = parts.map((p) => p?.text || "").filter(Boolean).join("");
+      const grounding = candidate?.groundingMetadata || {};
+      const chunks = grounding.groundingChunks || [];
+      const supports = grounding.groundingSupports || [];
+
+      // Upstream repeats the same source across chunks — key by URL so it stays one citation.
+      // Map, not a plain object: both the index and the URL come from upstream.
+      const sources = new Map();
+      const byIndex = chunks.map((ch) => {
+        const web = ch?.web;
+        const url = web?.uri || web?.url || "";
+        if (!url) return null;
+        if (!sources.has(url)) sources.set(url, { title: web.title || "", snippets: new Set(), contexts: new Set() });
+        return sources.get(url);
+      });
+
+      // Each support ties a sentence of the answer back to the chunks that grounded it
+      for (const s of supports) {
+        const segment = s?.segment;
+        const grounded = segment?.text || "";
+        const expanded = expandSegment(text, segment) || grounded;
+        for (const idx of s?.groundingChunkIndices || []) {
+          const source = Number.isInteger(idx) ? byIndex[idx] : null;
+          if (!source) continue;
+          if (grounded) source.snippets.add(grounded);
+          if (expanded) source.contexts.add(expanded);
+        }
+      }
+
+      const citations = [...sources].map(([url, src]) => {
+        const snippet = joinPieces(src.snippets, " | ") || src.title;
+        return { url, title: src.title, snippet, content: joinPieces(src.contexts, "\n\n") || snippet };
+      });
+
+      const tokens = response?.usageMetadata?.totalTokenCount || 0;
+      return { text, citations, tokens };
+    }
+  },
+
   openai: {
-    endpoint: () => "https://api.openai.com/v1/chat/completions",
-    defaultModel: "gpt-4o-mini",
+    endpoint: () => searchEndpoint("openai"),
     buildBody: (query, model) => {
       const body = {
         model,
@@ -105,8 +201,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   xai: {
-    endpoint: () => "https://api.x.ai/v1/responses",
-    defaultModel: "grok-4.20-reasoning",
+    endpoint: () => searchEndpoint("xai"),
     buildBody: (query, model) => ({
       model,
       input: [{ role: "user", content: query }],
@@ -145,8 +240,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   kimi: {
-    endpoint: () => "https://api.moonshot.cn/v1/chat/completions",
-    defaultModel: "kimi-k2.5",
+    endpoint: () => searchEndpoint("kimi"),
     buildBody: (query, model) => ({
       model,
       messages: [{ role: "user", content: query }],
@@ -195,8 +289,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   minimax: {
-    endpoint: () => "https://api.minimaxi.com/v1/text/chatcompletion_v2",
-    defaultModel: "MiniMax-M2.7",
+    endpoint: () => searchEndpoint("minimax"),
     buildBody: (query, model) => ({
       model,
       messages: [{ role: "user", content: query }],
@@ -254,8 +347,7 @@ const CHAT_SEARCH_CONFIG = {
   },
 
   perplexity: {
-    endpoint: () => "https://api.perplexity.ai/chat/completions",
-    defaultModel: "sonar",
+    endpoint: () => searchEndpoint("perplexity"),
     buildBody: (query, model) => ({
       model,
       messages: [{ role: "user", content: query }]
@@ -271,6 +363,53 @@ const CHAT_SEARCH_CONFIG = {
       const citations = Array.isArray(raw)
         ? raw.map(normalizeCitation).filter(Boolean)
         : [];
+      const tokens = data?.usage?.total_tokens || 0;
+      return { text, citations, tokens };
+    }
+  },
+
+  "perplexity-agent": {
+    endpoint: () => searchEndpoint("perplexity-agent"),
+    buildBody: (query, model) => ({
+      model,
+      input: query,
+      tools: [{ type: "web_search" }]
+    }),
+    buildHeaders: (token) => ({
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`
+    }),
+    extractAnswer: (data) => {
+      const output = Array.isArray(data?.output) ? data.output : [];
+      let text = "";
+      const citations = [];
+      for (const item of output) {
+        const parts = Array.isArray(item?.content) ? item.content : [];
+        for (const p of parts) {
+          if (typeof p?.text === "string") text += p.text;
+          const anns = Array.isArray(p?.annotations) ? p.annotations : [];
+          for (const a of anns) {
+            const c = normalizeCitation(a?.url ? a : a?.url_citation);
+            if (c) citations.push(c);
+          }
+        }
+        const results = Array.isArray(item?.results) ? item.results : [];
+        for (const r of results) {
+          const url = r?.url || r?.link;
+          if (!url) continue;
+          citations.push({
+            url,
+            title: r?.title || "",
+            snippet: r?.snippet || ""
+          });
+        }
+      }
+      if (!citations.length && Array.isArray(data?.citations)) {
+        for (const c of data.citations) {
+          const n = normalizeCitation(c);
+          if (n) citations.push(n);
+        }
+      }
       const tokens = data?.usage?.total_tokens || 0;
       return { text, citations, tokens };
     }
@@ -320,13 +459,18 @@ export async function handleChatSearch({
     };
   }
 
+  const credentialError = cfg.requireCredentials?.(credentials);
+  if (credentialError) {
+    return { success: false, status: 401, error: credentialError };
+  }
+
   const limit =
     Number.isFinite(maxResults) && maxResults > 0
       ? Math.floor(maxResults)
       : DEFAULT_MAX_RESULTS;
-  const useModel = model || cfg.defaultModel;
+  const useModel = model || searchModel(provider);
   const url = cfg.endpoint(useModel);
-  const body = cfg.buildBody(query, useModel);
+  const body = cfg.buildBody(query, useModel, credentials);
   const headers = cfg.buildHeaders(token);
 
   const controller = new AbortController();

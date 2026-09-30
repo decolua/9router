@@ -15,6 +15,7 @@ const { installCert, uninstallCert } = require("./cert/install");
 const { isCertExpired } = require("./cert/rootCA");
 const { DATA_DIR, MITM_DIR } = require("./paths");
 const { log, err } = require("./logger");
+const { LSOF_BIN } = require("./config");
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 
@@ -40,6 +41,7 @@ async function resolveMitmRouterBaseUrl() {
 const MITM_PORT = 443;
 const MITM_WIN_NODE_PORT = 8443;
 const PID_FILE = path.join(MITM_DIR, ".mitm.pid");
+const LOCK_FILE = path.join(MITM_DIR, ".mitm.lock");
 
 const MITM_MAX_RESTARTS = 5;
 const MITM_RESTART_DELAYS_MS = [5000, 10000, 20000, 30000, 60000];
@@ -108,7 +110,7 @@ function getProcessUsingPort443() {
         if (processMatch) return processMatch[1].replace(".exe", "");
       }
     } else {
-      const result = execSync("lsof -i :443", { encoding: "utf8", windowsHide: true });
+      const result = execSync(`${LSOF_BIN} -i :443`, { encoding: "utf8", windowsHide: true });
       const lines = result.trim().split("\n");
       if (lines.length > 1) return lines[1].split(/\s+/)[0];
     }
@@ -298,7 +300,7 @@ function getPort443Owner(sudoPassword) {
       });
     } else {
       // Only find process actually LISTENING on TCP port 443
-      exec("lsof -nP -iTCP:443 -sTCP:LISTEN -t", { windowsHide: true }, (err, stdout) => {
+      exec(`${LSOF_BIN} -nP -iTCP:443 -sTCP:LISTEN -t`, { windowsHide: true }, (err, stdout) => {
         if (err || !stdout?.trim()) return resolve(null);
         const pid = parseInt(stdout.trim().split("\n")[0], 10);
         if (!pid || isNaN(pid)) return resolve(null);
@@ -399,19 +401,22 @@ async function getMitmStatus() {
 
 async function scheduleMitmRestart(apiKey) {
   if (mitmIsRestarting) return;
+  // Set guard synchronously before any await to prevent concurrent calls
+  // from passing the check above.
+  mitmIsRestarting = true;
 
   const aliveMs = Date.now() - mitmLastStartTime;
   if (aliveMs >= MITM_RESTART_RESET_MS) mitmRestartCount = 0;
 
   if (mitmRestartCount >= MITM_MAX_RESTARTS) {
     err("Max restart attempts reached. Giving up.");
+    mitmIsRestarting = false;
     return;
   }
 
   const attempt = mitmRestartCount;
   const delay = MITM_RESTART_DELAYS_MS[Math.min(attempt, MITM_RESTART_DELAYS_MS.length - 1)];
   mitmRestartCount++;
-  mitmIsRestarting = true;
 
   log(`Restarting in ${delay / 1000}s... (${mitmRestartCount}/${MITM_MAX_RESTARTS})`);
   await new Promise((r) => setTimeout(r, delay));
@@ -485,7 +490,25 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     throw new Error("MITM server is already running");
   }
 
-  await killLeftoverMitm(sudoPassword);
+  // Atomically claim lock to prevent concurrent startServer across processes.
+  // O_EXCL (flag: "wx") fails with EEXIST if the file already exists.
+  try {
+    fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
+  } catch (e) {
+    if (e.code === "EEXIST") {
+      let stale = false;
+      try {
+        const pid = parseInt(fs.readFileSync(LOCK_FILE, "utf-8").trim(), 10);
+        stale = !pid || !isProcessAlive(pid);
+      } catch { stale = true; } // unreadable lock → treat as stale
+      if (!stale) throw new Error("MITM server is already starting (lock contention)");
+      try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+      fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
+    } else throw e;
+  }
+
+  try {
+    await killLeftoverMitm(sudoPassword);
 
   if (!IS_WIN) {
     const portStatus = await checkPort443Free();
@@ -634,6 +657,25 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     mitmLastStartTime = Date.now();
   }
 
+  // Set NODE_EXTRA_CA_CERTS so Node-based GUI apps (Electron/AG language_server) trust MITM cert
+  if (IS_MAC) {
+    const rootCAPath = path.join(MITM_DIR, "rootCA.crt");
+    if (fs.existsSync(rootCAPath)) {
+      exec(`launchctl setenv NODE_EXTRA_CA_CERTS "${rootCAPath}"`, { windowsHide: true }, (e) => {
+        if (e) log(`[launchctl] Failed to set NODE_EXTRA_CA_CERTS: ${e.message}`);
+        else log(`[launchctl] NODE_EXTRA_CA_CERTS set to ${rootCAPath}`);
+      });
+    }
+  } else if (IS_WIN) {
+    const rootCAPath = path.join(MITM_DIR, "rootCA.crt");
+    if (fs.existsSync(rootCAPath)) {
+      exec(`setx NODE_EXTRA_CA_CERTS "${rootCAPath}"`, { windowsHide: true }, (e) => {
+        if (e) log(`[setx] Failed to set NODE_EXTRA_CA_CERTS: ${e.message}`);
+        else log(`[setx] NODE_EXTRA_CA_CERTS set for current user`);
+      });
+    }
+  }
+
   let startError = null;
   if (serverProcess) {
     serverProcess.stdout.on("data", (data) => {
@@ -659,6 +701,7 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
       serverProcess = null;
       serverPid = null;
       try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
+      try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
       // Auto-restart on unexpected exit
       if (code !== 0 && !mitmIsRestarting) scheduleMitmRestart(apiKey);
     });
@@ -686,7 +729,15 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
   await saveMitmSettings(true, sudoPassword);
   if (sudoPassword) setCachedPassword(sudoPassword);
 
+  // Server is healthy — remove lock file (PID file persists as the marker)
+  try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+
   return { running: true, pid: serverPid };
+  } catch (e) {
+    // Clean up lock on any failure
+    try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+    throw e;
+  }
 }
 
 /**
@@ -745,7 +796,21 @@ async function stopServer(sudoPassword) {
     await removeAllDNSEntries(sudoPassword);
   }
 
+  // Unset NODE_EXTRA_CA_CERTS so apps don't keep trusting stale MITM cert
+  if (IS_MAC) {
+    exec(`launchctl unsetenv NODE_EXTRA_CA_CERTS`, { windowsHide: true }, (e) => {
+      if (e) log(`[launchctl] Failed to unset NODE_EXTRA_CA_CERTS: ${e.message}`);
+      else log(`[launchctl] NODE_EXTRA_CA_CERTS unset`);
+    });
+  } else if (IS_WIN) {
+    exec(`reg delete HKCU\\Environment /F /V NODE_EXTRA_CA_CERTS`, { windowsHide: true }, (e) => {
+      if (e) log(`[reg] Failed to unset NODE_EXTRA_CA_CERTS: ${e.message}`);
+      else log(`[reg] NODE_EXTRA_CA_CERTS unset`);
+    });
+  }
+
   try { fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
+  try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
   await saveMitmSettings(false, null);
   mitmIsRestarting = false;
 

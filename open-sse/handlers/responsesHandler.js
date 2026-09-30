@@ -4,9 +4,10 @@
  */
 
 import { handleChatCore } from "./chatCore.js";
-import { convertResponsesApiFormat } from "../translator/helpers/responsesApiHelper.js";
+import { convertResponsesApiFormat } from "../translator/formats/responsesApi.js";
 import { createResponsesApiTransformStream } from "../transformer/responsesTransformer.js";
 import { convertResponsesStreamToJson } from "../transformer/streamToJsonConverter.js";
+import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
 
 /**
  * Handle /v1/responses request
@@ -87,12 +88,7 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
       success: true,
       response: new Response(transformedBody, {
         status: 200,
-        headers: {
-          "Content-Type": "text/event-stream",
-          "Cache-Control": "no-cache",
-          "Connection": "keep-alive",
-          "Access-Control-Allow-Origin": "*"
-        }
+        headers: { ...SSE_HEADERS_CORS }
       })
     };
   }

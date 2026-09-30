@@ -18,7 +18,6 @@ export { default as ModelSelectModal } from "./ModelSelectModal";
 export { default as ManualConfigModal } from "./ManualConfigModal";
 export { default as ComboFormModal } from "./ComboFormModal";
 export { default as McpMarketplaceModal } from "./McpMarketplaceModal";
-export { default as UsageStats } from "./UsageStats";
 export { default as LanguageSwitcher } from "./LanguageSwitcher";
 export { default as NineRemoteButton } from "./NineRemoteButton";
 export { default as HeaderMenu } from "./HeaderMenu";
@@ -28,6 +27,8 @@ export { default as KiroAuthModal } from "./KiroAuthModal";
 export { default as KiroOAuthWrapper } from "./KiroOAuthWrapper";
 export { default as KiroSocialOAuthModal } from "./KiroSocialOAuthModal";
 export { default as CursorAuthModal } from "./CursorAuthModal";
+export { default as ZedAuthModal } from "./ZedAuthModal";
+export { default as XiaomiMimoAuthModal } from "./XiaomiMimoAuthModal";
 export { default as IFlowCookieModal } from "./IFlowCookieModal";
 export { default as GitLabAuthModal } from "./GitLabAuthModal";
 export { default as EditConnectionModal } from "./EditConnectionModal";
@@ -36,6 +37,7 @@ export { default as NoAuthProxyCard } from "./NoAuthProxyCard";
 export { default as SegmentedControl } from "./SegmentedControl";
 export { default as Tooltip } from "./Tooltip";
 export { default as ProviderInfoCard } from "./ProviderInfoCard";
+export { default as CapacityBadges } from "./CapacityBadges";
 
 // Layouts
 export * from "./layouts";

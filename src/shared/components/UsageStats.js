@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 
@@ -14,8 +14,12 @@ import Badge from "./Badge";
 import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
-import ProviderTopology from "@/app/(dashboard)/dashboard/usage/components/ProviderTopology";
-import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
+import dynamic from "next/dynamic";
+// Lazy-load: keeps @xyflow/react and recharts out of the initial bundle
+const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
+const UsageChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/UsageChart"), { ssr: false });
+const ProviderBarChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderBarChart"), { ssr: false });
+const TopModelsChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/TopModelsChart"), { ssr: false });
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -89,9 +93,16 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
     .map(([key, data]) => {
       const totalTokens = (data.promptTokens || 0) + (data.completionTokens || 0);
       const totalCost = data.cost || 0;
-      const inputCost = totalTokens > 0 ? (data.promptTokens || 0) * (totalCost / totalTokens) : 0;
+      // ponytail: cost split is a token-share allocation of the (rate-accurate)
+      // server total, not a per-rate recompute. cached is a subset of prompt, so
+      // peel it out of the input share. Upgrade to a stored per-component cost
+      // breakdown if exact cached-rate cost display is needed.
+      const cachedTokens = data.cachedTokens || 0;
+      const nonCachedInput = Math.max(0, (data.promptTokens || 0) - cachedTokens);
+      const inputCost = totalTokens > 0 ? nonCachedInput * (totalCost / totalTokens) : 0;
+      const cachedCost = totalTokens > 0 ? cachedTokens * (totalCost / totalTokens) : 0;
       const outputCost = totalTokens > 0 ? (data.completionTokens || 0) * (totalCost / totalTokens) : 0;
-      return { ...data, key, totalTokens, totalCost, inputCost, outputCost, pending: pendingMap[key] || 0 };
+      return { ...data, key, totalTokens, totalCost, inputCost, cachedCost, outputCost, pending: pendingMap[key] || 0 };
     })
     .sort((a, b) => {
       let valA = a[sortBy];
@@ -122,7 +133,7 @@ function groupDataByKey(data, keyField) {
     if (!groups[gk]) {
       groups[gk] = {
         groupKey: gk,
-        summary: { requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
+        summary: { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, totalTokens: 0, cost: 0, inputCost: 0, cachedCost: 0, outputCost: 0, lastUsed: null, pending: 0 },
         items: [],
       };
     }
@@ -130,9 +141,11 @@ function groupDataByKey(data, keyField) {
     s.requests += item.requests || 0;
     s.promptTokens += item.promptTokens || 0;
     s.completionTokens += item.completionTokens || 0;
+    s.cachedTokens += item.cachedTokens || 0;
     s.totalTokens += item.totalTokens || 0;
     s.cost += item.cost || 0;
     s.inputCost += item.inputCost || 0;
+    s.cachedCost += item.cachedCost || 0;
     s.outputCost += item.outputCost || 0;
     s.pending += item.pending || 0;
     if (item.lastUsed && (!s.lastUsed || new Date(item.lastUsed) > new Date(s.lastUsed))) {
@@ -182,10 +195,12 @@ const TABLE_OPTIONS = [
 ];
 
 const PERIODS = [
+  { value: "today", label: "Today" },
   { value: "24h", label: "24h" },
   { value: "7d", label: "7D" },
   { value: "30d", label: "30D" },
   { value: "60d", label: "60D" },
+  { value: "all", label: "All" },
 ];
 
 export default function UsageStats({ period: periodProp, setPeriod: setPeriodProp, hidePeriodSelector = false } = {}) {
@@ -201,16 +216,25 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [tableView, setTableView] = useState("model");
   const [viewMode, setViewMode] = useState("costs");
   const [providers, setProviders] = useState([]);
-  const [periodLocal, setPeriodLocal] = useState("7d");
+  const [periodLocal, setPeriodLocal] = useState("today");
+  const isInitialLoad = useRef(true);
+  const hasLoadedStats = useRef(false);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
   // Fetch connected providers once, deduplicate by provider type
   // Always include noAuth free providers (e.g. opencode) regardless of connections
   useEffect(() => {
-    fetch("/api/providers")
-      .then((r) => r.ok ? r.json() : null)
-      .then((d) => {
+    Promise.all([
+      fetch("/api/providers").then((r) => r.ok ? r.json() : null),
+      fetch("/api/provider-nodes").then((r) => r.ok ? r.json() : null),
+    ])
+      .then(([d, nodesData]) => {
+        // Build node name lookup for custom providers
+        const nodeNameMap = {};
+        for (const node of (nodesData?.nodes || [])) {
+          nodeNameMap[node.id] = node.name;
+        }
         const seen = new Set();
         const unique = (d?.connections || []).filter((c) => {
           if (c.isActive === false) return false;
@@ -218,7 +242,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           if (seen.has(c.provider)) return false;
           seen.add(c.provider);
           return true;
-        });
+        }).map((c) => ({
+          ...c,
+          nodeName: nodeNameMap[c.provider] || null,
+        }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
           .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
           .map((p) => ({ provider: p.id, name: p.name }));
@@ -230,20 +257,27 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
     // First load: show full spinner; subsequent: show subtle fetching indicator
-    if (!stats) setLoading(true);
-    else setFetching(true);
+    if (isInitialLoad.current) {
+      isInitialLoad.current = false;
+      setLoading(true);
+    } else {
+      setFetching(true);
+    }
 
     fetch(`/api/usage/stats?period=${period}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
-        if (data) setStats((prev) => ({ ...prev, ...data }));
+        if (data) {
+          hasLoadedStats.current = true;
+          setStats((prev) => ({ ...prev, ...data }));
+        }
       })
       .catch(() => {})
       .finally(() => {
         setLoading(false);
         setFetching(false);
       });
-  }, [period]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [period]);
 
   // SSE connection - real-time updates for activeRequests + recentRequests only
   useEffect(() => {
@@ -253,14 +287,17 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       try {
         const data = JSON.parse(e.data);
         // Always merge only real-time fields, never overwrite full stats from REST
-        setStats((prev) => ({
-          ...(prev || {}),
-          activeRequests: data.activeRequests,
-          recentRequests: data.recentRequests,
-          errorProvider: data.errorProvider,
-          pending: data.pending,
-        }));
-        setLoading(false);
+        setStats((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            activeRequests: data.activeRequests,
+            recentRequests: data.recentRequests,
+            errorProvider: data.errorProvider,
+            pending: data.pending,
+          };
+        });
+        if (hasLoadedStats.current) setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
@@ -412,7 +449,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {/* Period selector (hidden when controlled by parent) */}
       {!hidePeriodSelector && (
         <div className="flex w-full items-center gap-2 sm:w-auto sm:self-end">
-          <div className="grid flex-1 grid-cols-4 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex sm:flex-none">
+          <div className="grid flex-1 grid-cols-6 items-center gap-1 rounded-lg border border-border bg-bg-subtle p-1 sm:flex sm:flex-none">
             {PERIODS.map((p) => (
               <button
                 key={p.value}
@@ -448,6 +485,14 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
       {/* Token / Cost chart - sync period */}
       {loading ? spinner : <UsageChart period={period} />}
+
+      {/* Provider and model breakdown charts */}
+      {!loading && (stats.byProvider || stats.byModel) && (
+        <div className="grid min-w-0 grid-cols-1 gap-2 lg:grid-cols-2">
+          <ProviderBarChart byProvider={stats.byProvider} />
+          <TopModelsChart byModel={stats.byModel} />
+        </div>
+      )}
 
       {/* Table with dropdown selector */}
       <div className="flex flex-col gap-3">

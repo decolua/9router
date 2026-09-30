@@ -6,13 +6,50 @@ import { promisify } from "util";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
 
 const execAsync = promisify(exec);
+
+// Exa MCP def — reuse from coworkPlugins (DRY).
+const EXA_PLUGIN = DEFAULT_PLUGINS.find((p) => p.name === "exa");
+const buildExaMcpEntry = () => ({
+  type: EXA_PLUGIN.transport,
+  url: EXA_PLUGIN.url,
+});
 
 // Get claude settings path based on OS
 const getClaudeSettingsPath = () => {
   const homeDir = os.homedir();
   return path.join(homeDir, ".claude", "settings.json");
+};
+
+// Claude Code CLI reads mcpServers from ~/.claude.json (NOT settings.json).
+const getClaudeJsonPath = () => path.join(os.homedir(), ".claude.json");
+
+const readClaudeJson = async () => {
+  try {
+    const content = await fs.readFile(getClaudeJsonPath(), "utf-8");
+    return JSON.parse(content.replace(/,(\s*[}\]])/g, "$1"));
+  } catch {
+    return null;
+  }
+};
+
+const writeClaudeJsonMcp = async (mcpServers) => {
+  const filePath = getClaudeJsonPath();
+  let data = {};
+  try {
+    data = JSON.parse(await fs.readFile(filePath, "utf-8"));
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  if (mcpServers && Object.keys(mcpServers).length > 0) {
+    data.mcpServers = { ...(data.mcpServers || {}), ...mcpServers };
+  } else if (data.mcpServers) {
+    delete data.mcpServers.exa;
+    if (Object.keys(data.mcpServers).length === 0) delete data.mcpServers;
+  }
+  await fs.writeFile(filePath, JSON.stringify(data, null, 2));
 };
 
 
@@ -41,12 +78,12 @@ const readSettings = async () => {
   try {
     const settingsPath = getClaudeSettingsPath();
     const content = await fs.readFile(settingsPath, "utf-8");
-    return JSON.parse(content);
+    // Tolerate JSONC (trailing commas) and treat unparseable files as "no config"
+    // rather than throwing a 500 that the UI misreads as "tool not installed".
+    const stripped = content.replace(/,(\s*[}\]])/g, "$1");
+    return JSON.parse(stripped);
   } catch (error) {
-    if (error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
+    return null;
   }
 };
 
@@ -65,11 +102,13 @@ export async function GET() {
 
     const settings = await readSettings();
     const has9Router = !!(settings?.env?.ANTHROPIC_BASE_URL);
+    const claudeJson = await readClaudeJson();
 
     return NextResponse.json({
       installed: true,
       settings: settings,
       has9Router: has9Router,
+      exaMcpEnabled: !!claudeJson?.mcpServers?.exa,
       settingsPath: getClaudeSettingsPath(),
     });
   } catch (error) {
@@ -84,7 +123,7 @@ export async function GET() {
 // POST - Backup old fields and write new settings
 export async function POST(request) {
   try {
-    const { env } = await request.json();
+    const { env, exaMcpEnabled, autoCompactWindow } = await request.json();
     
     if (!env || typeof env !== "object") {
       return NextResponse.json(
@@ -112,9 +151,14 @@ export async function POST(request) {
 
     // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
     if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1") 
-        ? env.ANTHROPIC_BASE_URL 
+      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1")
+        ? env.ANTHROPIC_BASE_URL
         : `${env.ANTHROPIC_BASE_URL}/v1`;
+    }
+
+    // Keep an existing token (real key or earlier config); only add when absent — Reset clears it.
+    if (currentSettings.env?.ANTHROPIC_AUTH_TOKEN) {
+      delete env.ANTHROPIC_AUTH_TOKEN;
     }
 
     // Merge new env with existing settings
@@ -127,8 +171,22 @@ export async function POST(request) {
       },
     };
 
+    // CLAUDE_CODE_AUTO_COMPACT_WINDOW — the token threshold that triggers
+    // auto-compact. Only set when a concrete value is chosen; "Default" removes
+    // the key so Claude Code derives the window from the model.
+    if (autoCompactWindow) {
+      newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW = String(autoCompactWindow);
+    } else {
+      delete newSettings.env.CLAUDE_CODE_AUTO_COMPACT_WINDOW;
+    }
+
     // Write new settings
     await fs.writeFile(settingsPath, JSON.stringify(newSettings, null, 2));
+
+    // Exa MCP toggle — write to ~/.claude.json (CLI reads mcpServers from here).
+    if (EXA_PLUGIN) {
+      await writeClaudeJsonMcp(exaMcpEnabled ? { exa: buildExaMcpEntry() } : null);
+    }
 
     return NextResponse.json({
       success: true,
@@ -151,6 +209,7 @@ const RESET_ENV_KEYS = [
   "ANTHROPIC_DEFAULT_SONNET_MODEL",
   "ANTHROPIC_DEFAULT_HAIKU_MODEL",
   "API_TIMEOUT_MS",
+  "CLAUDE_CODE_AUTO_COMPACT_WINDOW",
 ];
 
 // DELETE - Reset settings (remove env fields)
@@ -185,6 +244,9 @@ export async function DELETE() {
       }
     }
 
+    // Remove injected MCP servers (Exa) from ~/.claude.json
+    await writeClaudeJsonMcp(null);
+
     // Write updated settings
     await fs.writeFile(settingsPath, JSON.stringify(currentSettings, null, 2));
 
@@ -200,4 +262,3 @@ export async function DELETE() {
     );
   }
 }
-

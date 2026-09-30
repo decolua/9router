@@ -45,6 +45,20 @@ export function checkFallbackError(status, errorText, backoffLevel = 0) {
     }
   }
 
+  // Request-scoped client errors that matched no rule above: a 400 caused by the
+  // request itself (context overflow, malformed body, unsupported parameter) says
+  // nothing about the credential, so cooling the account down only removes a
+  // healthy connection from rotation. With a single connection it is worse: every
+  // later request in the window fails with a copy of this very error
+  // ("all 1 accounts locked for <model> | lastError=[400]: ..."), which hides the
+  // real cause from the caller and makes unrelated sessions look like they hit the
+  // same limit. Hand the upstream error back for this request instead.
+  // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
+  // text rules still win for rate-limit / quota / capacity wording.
+  if (status >= 400 && status < 500 && status !== 401 && status !== 402 && status !== 403 && status !== 429) {
+    return { shouldFallback: false, cooldownMs: 0 };
+  }
+
   // Default: transient cooldown for any unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }

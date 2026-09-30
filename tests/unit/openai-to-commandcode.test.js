@@ -9,13 +9,13 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { openaiToCommandCode } from "../../open-sse/translator/request/openai-to-commandcode.js";
+import { openaiToCommandCodeRequest } from "../../open-sse/translator/request/openai-to-commandcode.js";
 
 const MODEL = "moonshotai/Kimi-K2.6";
 
-describe("openaiToCommandCode — basic envelope", () => {
+describe("openaiToCommandCodeRequest — basic envelope", () => {
   it("returns the expected top-level envelope shape", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
 
@@ -28,9 +28,9 @@ describe("openaiToCommandCode — basic envelope", () => {
   });
 });
 
-describe("openaiToCommandCode — system handling", () => {
+describe("openaiToCommandCodeRequest — system handling", () => {
   it("hoists system messages to params.system (string), not messages[]", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "system", content: "You are concise." },
         { role: "user", content: "hi" },
@@ -44,7 +44,7 @@ describe("openaiToCommandCode — system handling", () => {
   });
 
   it("joins multiple system messages with blank line", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "system", content: "A" },
         { role: "system", content: "B" },
@@ -56,16 +56,16 @@ describe("openaiToCommandCode — system handling", () => {
   });
 
   it("omits params.system when no system messages", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
     expect(out.params.system).toBeUndefined();
   });
 });
 
-describe("openaiToCommandCode — content shape", () => {
+describe("openaiToCommandCodeRequest — content shape", () => {
   it("MUST always emit content as Array (never string) for user", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hello" }],
     }, true);
 
@@ -75,7 +75,7 @@ describe("openaiToCommandCode — content shape", () => {
   });
 
   it("MUST always emit content as Array for assistant", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "user", content: "a" },
         { role: "assistant", content: "b" },
@@ -87,9 +87,9 @@ describe("openaiToCommandCode — content shape", () => {
   });
 });
 
-describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {
+describe("openaiToCommandCodeRequest — tool role / tool-result (AI SDK)", () => {
   it("converts role:\"tool\" to role:\"tool\" with tool-result block; output is {type:\"text\",value}", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "user", content: "run X" },
         {
@@ -113,9 +113,9 @@ describe("openaiToCommandCode — tool role / tool-result (AI SDK)", () => {
   });
 });
 
-describe("openaiToCommandCode — assistant tool_calls / tool-call", () => {
+describe("openaiToCommandCodeRequest — assistant tool_calls / tool-call", () => {
   it("converts assistant.tool_calls[] into content blocks of type tool-call", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [
         { role: "user", content: "go" },
         {
@@ -138,9 +138,9 @@ describe("openaiToCommandCode — assistant tool_calls / tool-call", () => {
   });
 });
 
-describe("openaiToCommandCode — tools schema conversion", () => {
+describe("openaiToCommandCodeRequest — tools schema conversion", () => {
   it("converts OpenAI {type:\"function\", function:{...}} to Anthropic plain {name, input_schema}", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
       tools: [
         {
@@ -163,7 +163,7 @@ describe("openaiToCommandCode — tools schema conversion", () => {
   });
 
   it("preserves description on converted tool", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
       tools: [
         { type: "function", function: { name: "ping", description: "Ping the server", parameters: { type: "object" } } },
@@ -173,9 +173,63 @@ describe("openaiToCommandCode — tools schema conversion", () => {
   });
 
   it("does not include tools field when input has none", () => {
-    const out = openaiToCommandCode(MODEL, {
+    const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{ role: "user", content: "hi" }],
     }, true);
     expect(out.params.tools).toBeUndefined();
+  });
+});
+
+describe("openaiToCommandCodeRequest — native image blocks", () => {
+  const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+  const DATA_URI = `data:image/png;base64,${PNG_B64}`;
+
+  it("maps OpenAI image_url data URI to CommandCode {type:image,image,mimeType}", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "what color?" },
+          { type: "image_url", image_url: { url: DATA_URI } },
+        ],
+      }],
+    }, true);
+
+    expect(out.params.messages[0].content).toEqual([
+      { type: "text", text: "what color?" },
+      { type: "image", image: DATA_URI, mimeType: "image/png" },
+    ]);
+  });
+
+  it("maps Claude/OpenAI base64 image source to a data-URI image block", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: PNG_B64 } },
+        ],
+      }],
+    }, true);
+
+    expect(out.params.messages[0].content).toEqual([
+      { type: "image", image: DATA_URI, mimeType: "image/png" },
+    ]);
+  });
+
+  it("does not stub dropped images as [image omitted]", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image_url", image_url: { url: DATA_URI } },
+        ],
+      }],
+    }, true);
+
+    const texts = out.params.messages[0].content
+      .filter((b) => b.type === "text")
+      .map((b) => b.text);
+    expect(texts).not.toContain("[image omitted]");
   });
 });

@@ -1,9 +1,20 @@
 // Gemini TTS — generateContent with AUDIO modality returns PCM L16, wrap as WAV
 import { Buffer } from "node:buffer";
+import { PROVIDER_MEDIA, PROVIDER_MODELS } from "../../providers/index.js";
 
-const DEFAULT_MODEL = "gemini-2.5-flash-preview-tts";
+const TTS_CFG = PROVIDER_MEDIA["gemini"]?.ttsConfig || {};
+const TTS_BASE = TTS_CFG.baseUrl;
+const FALLBACK_MODEL = "gemini-3.1-flash-tts-preview";
+const KNOWN_MODELS = [
+  ...(TTS_CFG.models || []),
+  ...(PROVIDER_MODELS["gemini-tts-models"] || []),
+  ...(PROVIDER_MODELS.gemini || []).filter((m) => (m.kind || m.type) === "tts"),
+]
+  .map((m) => m?.id)
+  .filter(Boolean)
+  .filter((id, index, list) => list.indexOf(id) === index);
+const DEFAULT_MODEL = KNOWN_MODELS[0] || FALLBACK_MODEL;
 const DEFAULT_VOICE = "Kore";
-const KNOWN_MODELS = ["gemini-2.5-flash-preview-tts", "gemini-2.5-pro-preview-tts"];
 
 // Parse "model/voice" — if input doesn't match a known TTS model, treat it as voice with default model
 function parseGeminiModelVoice(input) {
@@ -51,7 +62,7 @@ export default {
   async synthesize(text, model, credentials, _responseFormat, opts = {}) {
     if (!credentials?.apiKey) throw new Error("No Gemini API key configured");
     const { modelId, voiceId } = parseGeminiModelVoice(model);
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelId}:generateContent?key=${credentials.apiKey}`;
+    const url = `${TTS_BASE}/${modelId}:generateContent?key=${credentials.apiKey}`;
     const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

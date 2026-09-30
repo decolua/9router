@@ -36,3 +36,32 @@ export function isValidModel(aliasOrId, modelId) {
 export const AI_MODELS = Object.entries(MODELS).flatMap(([alias, models]) =>
   models.map(m => ({ provider: alias, model: m.id, name: m.name }))
 );
+
+export const getModelKind = (m, fallback = null) => m?.kind || m?.type || fallback;
+
+// Capacity metadata for UI badges — icon + label + color per capability.
+export const CAPACITY_META = {
+  vision: { icon: "visibility", label: "Vision", desc: "Supports image input", color: "text-blue-500" },
+  // search: temporarily hidden (feature not wired yet)
+  reasoning: { icon: "neurology", label: "Reasoning", desc: "Supports reasoning / thinking", color: "text-amber-500" },
+};
+
+// Realtime STT transport markers accepted on custom models — single source of
+// truth across layers: the API whitelist (src/app/api/models/custom/route.js
+// sanitizeTransport) and the dashboard transport select
+// (providers/[id]/AddCustomModelModal) both import this map, so one new row
+// here makes a realtime engine dispatch case (open-sse/handlers/sttCore.js)
+// selectable and validated end-to-end. Keys must mirror a sttCore case.
+export const STT_TRANSPORT_META = {
+  "gemini-live": {
+    label: "Gemini Live (realtime WebSocket)",
+    desc: "Streams audio over bidiGenerateContent and returns incremental transcription segments",
+  },
+};
+
+export const STT_TRANSPORTS = Object.freeze(Object.keys(STT_TRANSPORT_META));
+
+export function isSttTransport(transport) {
+  if (typeof transport !== "string") return false;
+  return Object.prototype.hasOwnProperty.call(STT_TRANSPORT_META, transport.trim());
+}

@@ -7,8 +7,30 @@ const OPTIONAL_FIELDS = [
   "accessToken", "refreshToken", "expiresAt", "tokenType",
   "scope", "projectId", "apiKey", "testStatus",
   "lastTested", "lastError", "lastErrorAt", "rateLimitedUntil", "expiresIn", "errorCode",
-  "consecutiveUseCount",
+  "consecutiveUseCount", "idToken", "lastRefreshAt",
 ];
+
+const MODEL_LOCK_PREFIX = "modelLock_";
+
+function resetHealthStateOnActivation(existing, patch) {
+  if (patch?.testStatus !== "active") return patch;
+
+  const normalized = {
+    ...patch,
+    testStatus: "active",
+    lastError: Object.hasOwn(patch, "lastError") ? patch.lastError : null,
+    lastErrorAt: Object.hasOwn(patch, "lastErrorAt") ? patch.lastErrorAt : null,
+    errorCode: null,
+    rateLimitedUntil: null,
+    backoffLevel: 0,
+  };
+
+  for (const key of Object.keys(existing || {})) {
+    if (key.startsWith(MODEL_LOCK_PREFIX)) normalized[key] = null;
+  }
+
+  return normalized;
+}
 
 function rowToConn(row) {
   if (!row) return null;
@@ -56,6 +78,17 @@ function upsert(db, c) {
   );
 }
 
+function deriveConnectionName(data, fallbackName) {
+  if (data.provider === "github") {
+    return data.providerSpecificData?.githubLogin
+      || data.providerSpecificData?.githubEmail
+      || data.email
+      || data.providerSpecificData?.githubName
+      || fallbackName;
+  }
+  return fallbackName;
+}
+
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
   const where = [];
@@ -75,7 +108,15 @@ export async function getProviderConnectionById(id) {
   return rowToConn(row);
 }
 
-// Internal sync reorder — must be called INSIDE a transaction
+// Internal sync reorder — must be called INSIDE a transaction.
+//
+// Normalizes priorities to a contiguous 1..N after a DELETE or an explicit
+// reorder, so gaps don't accumulate over time.
+//
+// Deliberately NOT called on insert: a new connection already gets
+// MAX(priority)+1, which sorts after every existing row, so the order is
+// identical with or without the rewrite. Skipping it there is what makes
+// import O(1) per key instead of O(pool) — see createProviderConnection.
 function reorderInTx(db, providerId) {
   const list = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [providerId]).map(rowToConn);
   list.sort((a, b) => {
@@ -84,7 +125,10 @@ function reorderInTx(db, providerId) {
     return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
   });
   list.forEach((c, i) => {
-    db.run(`UPDATE providerConnections SET priority = ? WHERE id = ?`, [i + 1, c.id]);
+    const want = i + 1;
+    if ((c.priority || 0) !== want) {
+      db.run(`UPDATE providerConnections SET priority = ? WHERE id = ?`, [want, c.id]);
+    }
   });
 }
 
@@ -94,29 +138,95 @@ export async function createProviderConnection(data) {
   let result;
 
   db.transaction(() => {
-    const all = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+    // apikey connections are deduped by name and need only the current max
+    // priority, so query for those directly instead of loading the whole pool
+    // (O(pool) per key — the other half of the import cost in #4311). The oauth
+    // branch below still scans, because its identity rules compare fields
+    // inside providerSpecificData and have no single-column equivalent.
+    const isApikey = data.authType === "apikey" && !!data.name;
+    const all = isApikey
+      ? db.all(
+          `SELECT * FROM providerConnections WHERE provider = ? AND authType = ? AND name = ?`,
+          [data.provider, "apikey", data.name]
+        ).map(rowToConn)
+      : db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+    const poolSize = isApikey
+      ? db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [data.provider])?.n ?? all.length
+      : all.length;
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
-      existing = all.find(c => c.authType === "oauth" && c.email === data.email);
+      const incomingUsername = data.providerSpecificData?.username;
+      const incomingWs = data.providerSpecificData?.chatgptAccountId;
+      existing = all.find(c => {
+        if (c.authType !== "oauth" || c.email !== data.email) return false;
+
+        // Codex/OpenAI can issue multiple OAuth grants for the same email.
+        // Refresh tokens are rotated single-use; collapsing a new login onto an
+        // existing bare-email row overwrites the first account's token pair and
+        // makes it look "invalid" after adding a second account. Only update an
+        // existing Codex row when both rows expose the same ChatGPT account ID.
+        if (data.provider === "codex") {
+          const existingWs = c.providerSpecificData?.chatgptAccountId;
+          return !!incomingWs && !!existingWs && incomingWs === existingWs;
+        }
+
+        // Workspace providers use workspace ID when both sides have it
+        const existingWs = c.providerSpecificData?.chatgptAccountId;
+        if (incomingWs && existingWs) return incomingWs === existingWs;
+        if (incomingWs && !existingWs) return false;
+        if (!incomingWs && existingWs) return false;
+        // Non-workspace providers: match on (email + username) so cross-IdP
+        // accounts don't overwrite each other. Require username on both sides
+        // — if only one side has it, treat as a distinct identity rather than
+        // collapsing onto the bare-email fallback (which would re-introduce
+        // the cross-IdP overwrite).
+        const existingUsername = c.providerSpecificData?.username;
+        if (incomingUsername && existingUsername) {
+          return incomingUsername === existingUsername;
+        }
+        if (incomingUsername || existingUsername) return false;
+        return true;
+      });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);
     }
+    // access_token: never dedup — user manages duplicates manually
 
     if (existing) {
-      const merged = { ...existing, ...data, updatedAt: now };
+      // Name collision on an apikey connection used to silently replace the
+      // stored apiKey, so a script that reused names ("Key 1", "Key 2", …)
+      // destroyed existing pool entries with no 409 and no warning. Callers that
+      // genuinely mean "update this one" pass allowOverwrite; everyone else gets
+      // a typed error naming the row that would have been replaced. #4311
+      if (data.allowOverwrite === false) {
+        const err = new Error(
+          `A connection named "${existing.name}" already exists for provider "${data.provider}". ` +
+          `Pass allowOverwrite: true to replace it.`
+        );
+        err.code = "PROVIDER_NAME_CONFLICT";
+        err.existingId = existing.id;
+        err.existingName = existing.name;
+        throw err;
+      }
+      const normalized = resetHealthStateOnActivation(existing, data);
+      const merged = { ...existing, ...normalized, updatedAt: now };
       upsert(db, merged);
       result = merged;
       return;
     }
 
     let connectionName = data.name || null;
-    if (!connectionName && data.authType === "oauth") {
-      connectionName = data.email || `Account ${all.length + 1}`;
+    if (!connectionName && (data.authType === "oauth" || data.authType === "access_token")) {
+      connectionName = deriveConnectionName(data, data.email || `Account ${poolSize + 1}`);
     }
     let connectionPriority = data.priority;
     if (!connectionPriority) {
-      connectionPriority = all.reduce((m, c) => Math.max(m, c.priority || 0), 0) + 1;
+      // MAX(priority)+1 in SQL rather than a reduce over the loaded pool: the
+      // apikey path no longer has the whole pool in memory, and the aggregate
+      // is served by the index instead of a row scan. #4311
+      const maxRow = db.get(`SELECT MAX(priority) AS m FROM providerConnections WHERE provider = ?`, [data.provider]);
+      connectionPriority = (maxRow?.m || 0) + 1;
     }
 
     const conn = {
@@ -138,7 +248,11 @@ export async function createProviderConnection(data) {
     if (data.email !== undefined) conn.email = data.email;
 
     upsert(db, conn);
-    reorderInTx(db, data.provider);
+    // No reorderInTx here. `conn.priority` is already MAX(priority)+1, so the
+    // row sorts last and the resulting order is what reorderInTx would have
+    // produced anyway. The rewrite cost ~2N statements per insert — O(pool) —
+    // which made a 5k-key import O(n*m): ~25M statements at a 5k pool, and it
+    // serialized every parallel writer on the same transaction. #4311
     result = conn;
   });
 
@@ -153,7 +267,8 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const merged = { ...existing, ...data, updatedAt: new Date().toISOString() };
+    const normalized = resetHealthStateOnActivation(existing, data);
+    const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);
     result = merged;

@@ -1,11 +1,14 @@
 // OpenAI TTS — model format: "tts-model/voice"
 import { Buffer } from "node:buffer";
+import { PROVIDER_MEDIA } from "../../providers/index.js";
+
+const DEFAULT_TTS_MODEL = PROVIDER_MEDIA["openai"]?.ttsConfig?.defaultModel;
 
 export default {
   async synthesize(text, model, credentials) {
     if (!credentials?.apiKey) throw new Error("No OpenAI API key configured");
 
-    let ttsModel = "gpt-4o-mini-tts";
+    let ttsModel = DEFAULT_TTS_MODEL;
     let voice = "alloy";
     if (model && model.includes("/")) {
       const parts = model.split("/");

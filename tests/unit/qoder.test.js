@@ -1,0 +1,747 @@
+/**
+ * Unit tests for Qoder encoding + COSY signing primitives.
+ *
+ * These cover the parts that would silently produce wrong-but-plausible
+ * output if logic regressed:
+ *   - body encoder boundary cases (empty input, lengths not divisible by 3)
+ *   - COSY header production (signature deterministic given fixed inputs,
+ *     all required headers present, sigPath correctly stripped)
+ *   - device flow URL construction
+ */
+
+import { describe, it, expect, beforeEach } from "vitest";
+import crypto from "crypto";
+
+import { qoderEncodeBody } from "../../src/lib/qoder/encoding.js";
+import { buildCosyHeaders } from "../../src/lib/qoder/cosy.js";
+import { QoderService } from "../../src/lib/oauth/services/qoder.js";
+import {
+  QODER_CHAT_URL_ENCODED,
+  QODER_MODEL_LIST_URL,
+  QODER_MODEL_MAP,
+} from "../../src/lib/qoder/constants.js";
+import { PROVIDER_MODELS } from "../../open-sse/config/providerModels.js";
+import { __test__ as qoderExecutorInternals } from "../../open-sse/executors/qoder.js";
+import { canonicalizeQoderUsage } from "../../open-sse/shared/qoder/sse.js";
+import {
+  rewriteQoderMessageAttachments,
+  clearQoderUploadCache,
+  buildMultipartFile,
+} from "../../open-sse/shared/qoder/attachments.js";
+import { qoderInferenceBase } from "../../open-sse/shared/qoder/constants.js";
+
+// Convenience aliases — tests were originally written against module-level
+// helpers; the QoderService class wraps them so each test creates its own
+// instance to avoid hidden state.
+const generatePkcePair = () => new QoderService().generatePkcePair();
+const initiateDeviceFlow = () => new QoderService().initiateDeviceFlow();
+const parseExpiry = QoderService.parseExpiry;
+
+describe("QODER_MODEL_MAP", () => {
+  it("allows Qoder's latest model key", () => {
+    expect(QODER_MODEL_MAP.qmodel_latest).toBe("qmodel_latest");
+  });
+
+  it("exposes Qoder's latest model in the static provider catalog", () => {
+    expect(PROVIDER_MODELS.qd.some((model) => model.id === "qmodel_latest")).toBe(true);
+  });
+});
+
+describe("qoderEncodeBody", () => {
+  it("preserves base64 length (input length divisible by 3)", () => {
+    const input = Buffer.from("abcdef", "utf8"); // 6 bytes → 8 base64 chars
+    const encoded = qoderEncodeBody(input);
+    expect(encoded.length).toBe(8);
+  });
+
+  it("preserves base64 length (input length not divisible by 3)", () => {
+    const input = Buffer.from("hello", "utf8"); // 5 bytes → 8 base64 chars (with padding)
+    const encoded = qoderEncodeBody(input);
+    expect(encoded.length).toBe(8);
+  });
+
+  it("handles empty input without throwing", () => {
+    const encoded = qoderEncodeBody(Buffer.alloc(0));
+    expect(encoded).toBe("");
+  });
+
+  it("accepts string and Buffer inputs equivalently", () => {
+    const a = qoderEncodeBody("hello");
+    const b = qoderEncodeBody(Buffer.from("hello", "utf8"));
+    expect(a).toBe(b);
+  });
+
+  it("only emits characters from the custom alphabet", () => {
+    // The custom alphabet is "_doRTgHZBKcGVjlvpC,@aFSx#DPuNJme&i*MzLOEn)sUrthbf%Y^w.(kIQyXqWA!"
+    // plus "$" for the padding char. If the substitution step regresses,
+    // characters outside that set would leak into the output.
+    const allowed = new Set(
+      "_doRTgHZBKcGVjlvpC,@aFSx#DPuNJme&i*MzLOEn)sUrthbf%Y^w.(kIQyXqWA!$",
+    );
+    const encoded = qoderEncodeBody(
+      "hello world this is a longer string for testing 0123456789",
+    );
+    for (const ch of encoded) {
+      expect(allowed.has(ch), `unexpected char in output: ${JSON.stringify(ch)}`).toBe(true);
+    }
+  });
+
+  it("is deterministic for identical input", () => {
+    const a = qoderEncodeBody("abc");
+    const b = qoderEncodeBody("abc");
+    expect(a).toBe(b);
+  });
+
+  it("produces different output for different input", () => {
+    const a = qoderEncodeBody("abc");
+    const b = qoderEncodeBody("xyz");
+    expect(a).not.toBe(b);
+  });
+});
+
+describe("generatePkcePair", () => {
+  it("produces base64url-safe verifier and challenge of the right length", () => {
+    const { verifier, challenge } = generatePkcePair();
+    // 32 bytes → 43 base64url chars (no padding)
+    expect(verifier.length).toBe(43);
+    expect(challenge.length).toBe(43);
+    expect(verifier).toMatch(/^[A-Za-z0-9_-]+$/);
+    expect(challenge).toMatch(/^[A-Za-z0-9_-]+$/);
+  });
+
+  it("verifier and challenge are different (challenge is sha256 of verifier)", () => {
+    const { verifier, challenge } = generatePkcePair();
+    expect(verifier).not.toBe(challenge);
+    // S256: challenge should be base64url(sha256(verifier))
+    const expected = crypto
+      .createHash("sha256")
+      .update(verifier)
+      .digest("base64")
+      .replace(/=/g, "")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_");
+    expect(challenge).toBe(expected);
+  });
+
+  it("returns codeVerifier (not verifier) on the higher-level helper", () => {
+    // Regression: the providers.js qoder entry once read flow.verifier (undefined)
+    // because initiateDeviceFlow returns the field as `codeVerifier`.
+    const flow = initiateDeviceFlow();
+    expect(typeof flow.codeVerifier).toBe("string");
+    expect(flow.codeVerifier.length).toBe(43);
+    expect(flow.verifier).toBeUndefined();
+  });
+});
+
+describe("initiateDeviceFlow", () => {
+  it("produces a verification URL pointing at qoder.com/device/selectAccounts", () => {
+    const flow = initiateDeviceFlow();
+    expect(flow.verificationUriComplete).toMatch(
+      /^https:\/\/qoder\.com\/device\/selectAccounts\?/,
+    );
+    expect(flow.verificationUriComplete).toContain("challenge_method=S256");
+    expect(flow.verificationUriComplete).toContain(`nonce=${flow.nonce}`);
+    expect(flow.verificationUriComplete).toContain(`machine_id=${flow.machineId}`);
+  });
+
+  it("returns nonce and machineId as UUIDs", () => {
+    const flow = initiateDeviceFlow();
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+    expect(flow.nonce).toMatch(uuidRe);
+    expect(flow.machineId).toMatch(uuidRe);
+  });
+});
+
+describe("buildCosyHeaders", () => {
+  const creds = {
+    userId: "test-user-id",
+    authToken: "dt-test-token",
+    name: "Test",
+    email: "test@example.com",
+    machineId: "fixed-machine-id",
+  };
+
+  it("produces all required Cosy-* headers", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds);
+    const required = [
+      "Authorization",
+      "Cosy-Key",
+      "Cosy-User",
+      "Cosy-Date",
+      "Cosy-Version",
+      "Cosy-Machineid",
+      "Cosy-Machinetoken",
+      "Cosy-Machinetype",
+      "Cosy-Machineos",
+      "Cosy-Clienttype",
+      "Cosy-Clientip",
+      "Cosy-Bodyhash",
+      "Cosy-Bodylength",
+      "Cosy-Sigpath",
+      "Cosy-Data-Policy",
+      "Login-Version",
+      "X-Request-Id",
+    ];
+    for (const key of required) {
+      expect(headers[key], `missing header ${key}`).toBeDefined();
+    }
+  });
+
+  it("Authorization is a Bearer COSY token with payload+sig", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds);
+    expect(headers.Authorization).toMatch(/^Bearer COSY\.[A-Za-z0-9+/=]+\.[a-f0-9]{32}$/);
+  });
+
+  it("Cosy-Sigpath strips the leading /algo prefix", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds);
+    expect(headers["Cosy-Sigpath"]).toBe("/api/v2/model/list");
+  });
+
+  it("Cosy-Sigpath also handles the encoded chat URL", () => {
+    const headers = buildCosyHeaders(Buffer.from("body", "utf8"), QODER_CHAT_URL_ENCODED, creds);
+    expect(headers["Cosy-Sigpath"]).toBe(
+      "/api/v2/service/pro/sse/agent_chat_generation",
+    );
+  });
+
+  it("Cosy-Bodyhash is the MD5 of the request body, Cosy-Bodylength is the length", () => {
+    const body = Buffer.from("hello qoder", "utf8");
+    const headers = buildCosyHeaders(body, QODER_MODEL_LIST_URL, creds);
+    const expectedHash = crypto.createHash("md5").update(body).digest("hex");
+    expect(headers["Cosy-Bodyhash"]).toBe(expectedHash);
+    expect(headers["Cosy-Bodylength"]).toBe(String(body.length));
+  });
+
+  it("empty body produces the canonical empty-MD5 hash", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds);
+    expect(headers["Cosy-Bodyhash"]).toBe("d41d8cd98f00b204e9800998ecf8427e");
+    expect(headers["Cosy-Bodylength"]).toBe("0");
+  });
+
+  it("Cosy-Machineid + Cosy-Machinetoken match the supplied machineId", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds);
+    expect(headers["Cosy-Machineid"]).toBe("fixed-machine-id");
+    expect(headers["Cosy-Machinetoken"]).toBe("fixed-machine-id");
+  });
+
+  it("auto-generates a machineId when none is supplied", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, {
+      ...creds,
+      machineId: "",
+    });
+    expect(headers["Cosy-Machineid"]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+    );
+  });
+
+  it("throws when userId is missing", () => {
+    expect(() =>
+      buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, { ...creds, userId: "" }),
+    ).toThrow(/user id is empty/);
+  });
+
+  it("throws when authToken is missing", () => {
+    expect(() =>
+      buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, { ...creds, authToken: "" }),
+    ).toThrow(/auth token is empty/);
+  });
+
+  it("Cosy-User reflects the supplied userId verbatim", () => {
+    const headers = buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds);
+    expect(headers["Cosy-User"]).toBe("test-user-id");
+  });
+
+  it("two calls with identical inputs differ only in fields that include fresh randomness", () => {
+    // The signature fingerprints a fresh AES key + UUID per call, so the
+    // signature, Cosy-Key, X-Request-Id, and Cosy-Date (1s resolution)
+    // can differ — but Cosy-User, Cosy-Bodyhash, Cosy-Bodylength,
+    // Cosy-Sigpath, and the machineId-derived headers must be stable.
+    const a = buildCosyHeaders(Buffer.from("payload", "utf8"), QODER_CHAT_URL_ENCODED, creds);
+    const b = buildCosyHeaders(Buffer.from("payload", "utf8"), QODER_CHAT_URL_ENCODED, creds);
+    expect(a["Cosy-User"]).toBe(b["Cosy-User"]);
+    expect(a["Cosy-Bodyhash"]).toBe(b["Cosy-Bodyhash"]);
+    expect(a["Cosy-Bodylength"]).toBe(b["Cosy-Bodylength"]);
+    expect(a["Cosy-Sigpath"]).toBe(b["Cosy-Sigpath"]);
+    expect(a["Cosy-Machineid"]).toBe(b["Cosy-Machineid"]);
+    expect(a["X-Request-Id"]).not.toBe(b["X-Request-Id"]);
+  });
+});
+
+describe("parseExpiry", () => {
+  // Regression for review finding #2: numeric expires_at was silently
+  // dropped because the function only inspected strings.
+  it("accepts ms-epoch as a JSON number", () => {
+    const future = Date.now() + 60_000;
+    expect(parseExpiry(future, undefined)).toBe(future);
+  });
+
+  it("accepts ms-epoch as a numeric string", () => {
+    const future = Date.now() + 60_000;
+    expect(parseExpiry(String(future), undefined)).toBe(future);
+  });
+
+  it("accepts RFC3339 strings", () => {
+    const iso = "2030-01-02T03:04:05Z";
+    expect(parseExpiry(iso, undefined)).toBe(Date.parse(iso));
+  });
+
+  // Regression for review finding #5: Date.parse("2026") returns Jan 1 2026,
+  // so a short numeric string like "2026" used to be interpreted as a year
+  // instead of falling through to the integer-ms branch. We now try the
+  // pure-numeric path first so this can't happen again.
+  it("does not interpret short numeric strings as a year", () => {
+    // "1700000000" (Unix seconds) should NOT come out as Date.parse("1700000000")
+    const result = parseExpiry("1700000000", undefined);
+    // 1.7e9 ms = 1970-01-20 — the function's contract is ms, so we expect
+    // exactly that value, not a year interpretation.
+    expect(result).toBe(1_700_000_000);
+  });
+
+  it("falls back to expiresInSeconds when expiresAt is missing", () => {
+    const before = Date.now();
+    const result = parseExpiry(undefined, 60);
+    const after = Date.now();
+    expect(result).toBeGreaterThanOrEqual(before + 60_000);
+    expect(result).toBeLessThanOrEqual(after + 60_000);
+  });
+
+  // Regression for review finding #7: expiresInSeconds=0 used to be treated
+  // as missing and silently fabricated 30-day default. We now honor 0 as
+  // "already expired".
+  it("treats expires_in: 0 as already expired (now), not 30-day fallback", () => {
+    const before = Date.now();
+    const result = parseExpiry(undefined, 0);
+    const after = Date.now();
+    expect(result).toBeGreaterThanOrEqual(before);
+    expect(result).toBeLessThanOrEqual(after);
+  });
+
+  it("falls back to ~30 days when both inputs are missing", () => {
+    const before = Date.now();
+    const result = parseExpiry(undefined, undefined);
+    const expected = before + 30 * 24 * 60 * 60 * 1000;
+    // Allow a small skew to absorb test runtime.
+    expect(result).toBeGreaterThanOrEqual(expected - 5_000);
+    expect(result).toBeLessThanOrEqual(expected + 5_000);
+  });
+
+  it("falls back to ~30 days when both inputs are unparseable", () => {
+    const before = Date.now();
+    const result = parseExpiry("not-a-date", -5);
+    const expected = before + 30 * 24 * 60 * 60 * 1000;
+    expect(result).toBeGreaterThanOrEqual(expected - 5_000);
+    expect(result).toBeLessThanOrEqual(expected + 5_000);
+  });
+});
+
+describe("normalizeMessages", () => {
+  const { normalizeMessages } = qoderExecutorInternals;
+
+  it("hoists role:system out of messages into systemText", () => {
+    const result = normalizeMessages([
+      { role: "system", content: "you are helpful" },
+      { role: "user", content: "hi" },
+    ]);
+    expect(result.systemText).toBe("you are helpful");
+    expect(result.messages).toHaveLength(1);
+    expect(result.messages[0].role).toBe("user");
+  });
+
+  it("flattens multipart text content into a string", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "part1" },
+          { type: "text", text: "part2" },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toBe("part1\npart2");
+  });
+
+  it("joins multiple system messages with a blank line", () => {
+    const result = normalizeMessages([
+      { role: "system", content: "rule 1" },
+      { role: "system", content: "rule 2" },
+      { role: "user", content: "hi" },
+    ]);
+    expect(result.systemText).toBe("rule 1\n\nrule 2");
+  });
+
+  it("returns empty results for empty input", () => {
+    const result = normalizeMessages([]);
+    expect(result.messages).toEqual([]);
+    expect(result.systemText).toBe("");
+  });
+
+  it("preserves image_url blocks (http URL) instead of dropping them", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "describe" },
+          { type: "image_url", image_url: { url: "https://example.com/a.png" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content).toContainEqual({ type: "text", text: "describe" });
+    expect(content).toContainEqual({ type: "image_url", image_url: { url: "https://example.com/a.png" } });
+  });
+
+  it("preserves base64 data: URI images (no OSS upload needed)", () => {
+    const dataUri = "data:image/png;base64,iVBORw0KGgo=";
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "image_url", image_url: { url: dataUri } },
+          { type: "text", text: "what color?" },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(Array.isArray(content)).toBe(true);
+    expect(content[0]).toEqual({ type: "image_url", image_url: { url: dataUri } });
+    expect(content.some((b) => b.type === "text" && b.text === "what color?")).toBe(true);
+  });
+
+  it("converts claude-style base64 image blocks to image_url data URIs", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "see this" },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "AAAA" } },
+        ],
+      },
+    ]);
+    const content = result.messages[0].content;
+    expect(content).toContainEqual({
+      type: "image_url",
+      image_url: { url: "data:image/jpeg;base64,AAAA" },
+    });
+  });
+
+  it("drops image blocks with no usable url but keeps the text", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image_url", image_url: {} },
+          { type: "image", source: { type: "base64" } },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toBe("hi");
+  });
+
+  it("turns leftover file/document blocks into short stubs instead of dropping them", () => {
+    const result = normalizeMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "see" },
+          { type: "file", file: { filename: "big.pdf", file_data: "data:application/pdf;base64,AAA" } },
+        ],
+      },
+    ]);
+    expect(result.messages[0].content).toContain("see");
+    expect(result.messages[0].content).toContain("big.pdf");
+    expect(result.messages[0].content).not.toContain("AAA");
+  });
+});
+
+describe("wrapQoderSSE", () => {
+  const { wrapQoderSSE } = qoderExecutorInternals;
+
+  // Helper: build a fake Response carrying the given lines as the body.
+  function makeResponse(lines, { status = 200 } = {}) {
+    const body = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const line of lines) controller.enqueue(encoder.encode(line));
+        controller.close();
+      },
+    });
+    return new Response(body, { status });
+  }
+
+  // Helper: drain a wrapped response into an array of decoded SSE events.
+  async function drain(response) {
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+    }
+    buf += decoder.decode();
+    return buf;
+  }
+
+  it("forwards an OpenAI envelope chunk and emits [DONE] in flush", async () => {
+    const inner = JSON.stringify({ choices: [{ delta: { content: "hi" } }] });
+    const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}\n\n`;
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const out = await drain(wrapped);
+    expect(out).toContain(`data: ${inner}\n\n`);
+    expect(out).toContain("data: [DONE]\n\n");
+  });
+
+  // Regression for review finding #4: a final data: line without a trailing
+  // newline used to be silently dropped from `buffer` in flush().
+  it("drains a trailing partial line without a newline in flush()", async () => {
+    const inner = JSON.stringify({ choices: [{ delta: { content: "tail" } }], finish_reason: "stop" });
+    // Note: NO trailing \n on the final line.
+    const upstream = `data: ${JSON.stringify({ statusCodeValue: 200, body: inner })}`;
+    const wrapped = await wrapQoderSSE(makeResponse([upstream]), "qoder/auto");
+    const out = await drain(wrapped);
+    expect(out).toContain(`data: ${inner}\n\n`);
+  });
+
+  // Regression for review finding #3: chunks could leak past [DONE] when
+  // the success branch had no doneEmitted guard. We synthesize an error
+  // envelope after content (which sets doneEmitted=true), followed by a valid envelope
+  // and assert the second envelope is NOT forwarded.
+  it("does not forward chunks after [DONE] has been emitted", async () => {
+    const errorEnv = JSON.stringify({ statusCodeValue: 500, body: "boom" });
+    const validInner = JSON.stringify({ choices: [{ delta: { content: "leak" } }] });
+    const validEnv = JSON.stringify({ statusCodeValue: 200, body: validInner });
+    const wrapped = await wrapQoderSSE(
+      makeResponse([envelope(JSON.stringify({ choices: [{ delta: { content: "hi" } }] })) + `data: ${errorEnv}\n\ndata: ${validEnv}\n\n`]),
+      "qoder/auto",
+    );
+    const out = await drain(wrapped);
+    expect(out).not.toContain("leak");
+    // Should still have a single [DONE].
+    const doneCount = (out.match(/data: \[DONE\]/g) || []).length;
+    expect(doneCount).toBe(1);
+  });
+
+  // Regression for review finding #6: literal newlines inside the inner
+  // OpenAI body would split the SSE frame across multiple data: lines.
+  // We now strip them so the frame stays a single event.
+  it("strips embedded newlines from inner body before forwarding", async () => {
+    const innerWithNewlines = '{"choices":[{"delta":{"content":"a\nb"}}]}';
+    const env = JSON.stringify({ statusCodeValue: 200, body: innerWithNewlines });
+    const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/auto");
+    const out = await drain(wrapped);
+    // The forwarded data: line should be a single event terminated by \n\n
+    // and contain no internal \n other than the trailing pair.
+    const dataLine = out.split("\n\n").find((l) => l.startsWith("data: ") && !l.includes("[DONE]"));
+    expect(dataLine).toBeDefined();
+    // Body sans "data: " prefix should be valid JSON.
+    expect(() => JSON.parse(dataLine.slice("data: ".length))).not.toThrow();
+  });
+
+  it("upstream first-frame error envelope produces an HTTP error", async () => {
+    const env = JSON.stringify({ statusCodeValue: 503, body: "service unavailable" });
+    const wrapped = await wrapQoderSSE(makeResponse([`data: ${env}\n\n`]), "qoder/lite");
+    expect(wrapped.status).toBe(503);
+    expect(await wrapped.json()).toEqual({
+      error: { message: "service unavailable", code: 503 },
+    });
+  });
+
+  it("non-ok responses are returned unchanged (no transform)", async () => {
+    const r = new Response("not ok", { status: 500 });
+    const wrapped = await wrapQoderSSE(r, "qoder/auto");
+    expect(wrapped).toBe(r);
+  });
+
+  function envelope(body) {
+    return `data: ${JSON.stringify({ statusCodeValue: 200, body })}\n\n`;
+  }
+
+  function parseForwardedChunks(out) {
+    return out
+      .split("\n\n")
+      .map((block) => block.trim())
+      .filter((block) => block.startsWith("data:") && !block.includes("[DONE]"))
+      .map((block) => JSON.parse(block.slice("data:".length).trim()));
+  }
+
+  it("coalesces empty finish-in-delta + usage-only into one OpenAI usage chunk", async () => {
+    const content = JSON.stringify({
+      id: "chatcmpl-qoder-1",
+      created: 1700000000,
+      model: "auto",
+      choices: [{ index: 0, delta: { content: "hi" } }],
+    });
+    const finish = JSON.stringify({
+      id: "chatcmpl-qoder-1",
+      choices: [{ index: 0, delta: { content: "", finish_reason: "stop" } }],
+    });
+    const usage = JSON.stringify({
+      id: "chatcmpl-qoder-1",
+      choices: [],
+      usage: {
+        prompt_tokens: 100,
+        completion_tokens: 20,
+        total_tokens: 120,
+        prompt_tokens_details: { cached_tokens: 40 },
+      },
+    });
+    const wrapped = await wrapQoderSSE(
+      makeResponse([envelope(content) + envelope(finish) + envelope(usage) + envelope("[DONE]")]),
+      "qoder/auto",
+    );
+    const out = await drain(wrapped);
+    expect(out).toContain(`data: ${content}\n\n`);
+    const chunks = parseForwardedChunks(out);
+    const usageChunk = chunks.find((c) => c.usage);
+    expect(usageChunk).toBeDefined();
+    expect(usageChunk.choices[0].finish_reason).toBe("stop");
+    expect(usageChunk.usage.prompt_tokens).toBe(100);
+    expect(usageChunk.usage.completion_tokens).toBe(20);
+    expect(usageChunk.usage.prompt_tokens_details.cached_tokens).toBe(40);
+    expect(chunks.some((c) => Array.isArray(c.choices) && c.choices.length === 0)).toBe(false);
+    expect((out.match(/data: \[DONE\]/g) || []).length).toBe(1);
+  });
+
+  it("maps Qoder input_tokens aliases onto prompt_tokens in the coalesced usage chunk", async () => {
+    const finish = JSON.stringify({
+      choices: [{ index: 0, delta: { finish_reason: "stop" } }],
+    });
+    const usage = JSON.stringify({
+      choices: [],
+      usage: {
+        input_tokens: 80,
+        output_tokens: 10,
+        cache_read_input_tokens: 25,
+      },
+    });
+    const wrapped = await wrapQoderSSE(
+      makeResponse([envelope(finish) + envelope(usage)]),
+      "qoder/lite",
+    );
+    const chunks = parseForwardedChunks(await drain(wrapped));
+    const usageChunk = chunks.find((c) => c.usage);
+    expect(usageChunk.usage.prompt_tokens).toBe(80);
+    expect(usageChunk.usage.completion_tokens).toBe(10);
+    expect(usageChunk.usage.prompt_tokens_details.cached_tokens).toBe(25);
+  });
+});
+
+describe("canonicalizeQoderUsage", () => {
+  it("returns null for missing or empty usage", () => {
+    expect(canonicalizeQoderUsage(null)).toBeNull();
+    expect(canonicalizeQoderUsage({})).toBeNull();
+  });
+
+  it("copies prompt_tokens_details.cached_tokens through", () => {
+    const out = canonicalizeQoderUsage({
+      prompt_tokens: 50,
+      completion_tokens: 5,
+      prompt_tokens_details: { cached_tokens: 12 },
+    });
+    expect(out.prompt_tokens).toBe(50);
+    expect(out.cached_tokens).toBe(12);
+    expect(out.prompt_tokens_details.cached_tokens).toBe(12);
+    expect(out.total_tokens).toBe(55);
+  });
+});
+
+describe("qoderInferenceBase", () => {
+  it("sends job tokens to api2 and device tokens to api3", () => {
+    expect(qoderInferenceBase({ accessToken: "jt-abc" })).toContain("api2.qoder.sh");
+    expect(qoderInferenceBase({ accessToken: "dt-abc" })).toContain("api3.qoder.sh");
+  });
+
+  it("serves every token kind from the CN gateway for the qoder-cn region", () => {
+    expect(qoderInferenceBase({ accessToken: "jt-abc" }, "cn")).toContain("gateway.qoder.com.cn");
+    expect(qoderInferenceBase({ accessToken: "dt-abc" }, "cn")).toContain("gateway.qoder.com.cn");
+  });
+});
+
+describe("rewriteQoderMessageAttachments", () => {
+  beforeEach(() => clearQoderUploadCache());
+
+  it("uploads data-URI images and keeps only the OSS URL in the message", async () => {
+    const messages = [{
+      role: "user",
+      content: [
+        { type: "text", text: "see this" },
+        { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+      ],
+    }];
+    const stats = await rewriteQoderMessageAttachments(messages, {
+      uploadFn: async ({ buffer, mediaType }) => {
+        expect(Buffer.isBuffer(buffer)).toBe(true);
+        expect(mediaType).toBe("image/png");
+        return "https://cdn.qoder.example/img.png";
+      },
+    });
+    expect(messages[0].content).toEqual([
+      { type: "text", text: "see this" },
+      { type: "image_url", image_url: { url: "https://cdn.qoder.example/img.png" } },
+    ]);
+    expect(JSON.stringify(messages)).not.toContain("AAAA");
+    expect(stats.imageUrls).toEqual(["https://cdn.qoder.example/img.png"]);
+  });
+
+  it("does not re-upload already-hosted http(s) image URLs", async () => {
+    const messages = [{
+      role: "user",
+      content: [{ type: "image_url", image_url: { url: "https://example.com/a.png" } }],
+    }];
+    await rewriteQoderMessageAttachments(messages, {
+      uploadFn: async () => {
+        throw new Error("should not upload remote URLs");
+      },
+    });
+    expect(messages[0].content[0].image_url.url).toBe("https://example.com/a.png");
+  });
+
+  it("stubs non-image file blocks instead of inlining bytes", async () => {
+    const pdfB64 = "A".repeat(200);
+    const messages = [{
+      role: "user",
+      content: [
+        { type: "text", text: "read this" },
+        { type: "file", file: { filename: "big.pdf", file_data: `data:application/pdf;base64,${pdfB64}` } },
+      ],
+    }];
+    await rewriteQoderMessageAttachments(messages, {
+      uploadFn: async () => {
+        throw new Error("should not upload PDFs as images");
+      },
+    });
+    const wire = JSON.stringify(messages);
+    expect(wire).not.toContain(pdfB64);
+    expect(wire).toContain("[file omitted: big.pdf");
+  });
+
+  it("stubs oversized images when OSS upload fails instead of keeping a huge data URI", async () => {
+    const big = "A".repeat(700_000);
+    const messages = [{
+      role: "user",
+      content: [{ type: "image_url", image_url: { url: `data:image/png;base64,${big}` } }],
+    }];
+    await rewriteQoderMessageAttachments(messages, {
+      uploadFn: async () => {
+        throw new Error("upstream 413");
+      },
+    });
+    const wire = JSON.stringify(messages);
+    expect(wire).not.toContain(big);
+    expect(wire).toContain("[file omitted:");
+    expect(Buffer.byteLength(wire, "utf8")).toBeLessThan(4096);
+  });
+
+  it("buildMultipartFile uses the file field name qodercli sends", () => {
+    const { boundary, body } = buildMultipartFile(Buffer.from("hi"), {
+      fileName: "image.png",
+      mediaType: "image/png",
+    });
+    const text = body.toString("latin1");
+    expect(text).toContain(`name="file"`);
+    expect(text).toContain("filename=\"image.png\"");
+    expect(text).toContain(`--${boundary}`);
+  });
+});

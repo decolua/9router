@@ -4,6 +4,12 @@ import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
 import { isOidcConfigured } from "@/lib/auth/oidc";
+import { isSamlConfigured } from "@/lib/auth/saml.js";
+import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
+import { isLocalRequest } from "@/dashboardGuard";
+
+const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
+const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
 
 function isTunnelRequest(request, settings) {
   const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
@@ -14,6 +20,15 @@ function isTunnelRequest(request, settings) {
 
 export async function POST(request) {
   try {
+    const ip = getClientIp(request);
+    const lock = checkLock(ip);
+    if (lock.locked) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${lock.retryAfter}s. ${RESET_HINT}`, retryAfter: lock.retryAfter, resetHint: RESET_HINT },
+        { status: 429, headers: { "Retry-After": String(lock.retryAfter) } }
+      );
+    }
+
     const { password } = await request.json();
     const settings = await getSettings();
 
@@ -25,8 +40,14 @@ export async function POST(request) {
     // Default password is '123456' if not set
     const storedHash = settings.password;
 
-    if (settings.authMode === "oidc" && isOidcConfigured(settings)) {
-      return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+    if (settings.authMode === "sso" || settings.authMode === "saml" || settings.authMode === "oidc") {
+      const ssoType = settings.ssoType || (settings.authMode === "saml" ? "saml" : "oidc");
+      if (ssoType === "saml" && isSamlConfigured(settings)) {
+        return NextResponse.json({ error: "Password login is disabled. Use SAML SSO sign in." }, { status: 403 });
+      }
+      if (ssoType === "oidc" && isOidcConfigured(settings)) {
+        return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
+      }
     }
 
     let isValid = false;
@@ -39,13 +60,51 @@ export async function POST(request) {
     }
 
     if (isValid) {
+      recordSuccess(ip);
+
+      // Default password still in use on a remote client → force a password
+      // change before the dashboard is exposed remotely (keeps local UX intact).
+      const mustChangePassword =
+        !storedHash && !process.env.INITIAL_PASSWORD && !isLocalRequest(request);
+
+      if (mustChangePassword) {
+        // Do NOT issue a session token: a fresh install's default password is
+        // public knowledge ("123456"), so handing out a valid JWT would let any
+        // remote attacker authenticate and (e.g.) PATCH /api/settings to disable
+        // authentication entirely (CVE-2026-56679 class). Require the password
+        // to be changed first.
+        //
+        // NOTE: this intentionally leaves no remote self-service password-change
+        // path — the change-password flow (PATCH /api/settings) requires a JWT,
+        // which we deliberately withhold. A remote fresh-install user must either
+        // change the password from the local machine or set INITIAL_PASSWORD
+        // before first launch. This is a deliberate security trade-off, not an
+        // oversight: issuing any credential before the default password is
+        // rotated re-opens the exact attack chain this branch closes.
+        return NextResponse.json(
+          { success: false, error: "Default password must be changed before remote access. Change it from the local machine (or set INITIAL_PASSWORD).", mustChangePassword },
+          { status: 403, headers: NO_STORE_HEADERS }
+        );
+      }
+
       const cookieStore = await cookies();
       await setDashboardAuthCookie(cookieStore, request);
 
-      return NextResponse.json({ success: true });
+      return NextResponse.json({ success: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
     }
 
-    return NextResponse.json({ error: "Invalid password" }, { status: 401 });
+    const { remainingBeforeLock } = recordFail(ip);
+    const postLock = checkLock(ip);
+    if (postLock.locked) {
+      return NextResponse.json(
+        { error: `Too many failed attempts. Try again in ${postLock.retryAfter}s. ${RESET_HINT}`, retryAfter: postLock.retryAfter, resetHint: RESET_HINT },
+        { status: 429, headers: { "Retry-After": String(postLock.retryAfter) } }
+      );
+    }
+    return NextResponse.json(
+      { error: `Invalid password. ${remainingBeforeLock} attempt(s) left before lockout.`, remainingBeforeLock },
+      { status: 401 }
+    );
   } catch (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
