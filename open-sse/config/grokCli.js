@@ -1,4 +1,4 @@
-export const GROK_CLI_VERSION = "0.2.99";
+export const GROK_CLI_VERSION = "1.0.44";
 export const GROK_CLI_MODEL = "grok-build";
 export const GROK_CLI_BASE_URL = "https://cli-chat-proxy.grok.com/v1";
 export const GROK_CLI_CLIENT_IDENTIFIER = "grok-shell";
