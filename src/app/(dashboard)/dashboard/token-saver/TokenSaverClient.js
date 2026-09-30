@@ -7,6 +7,7 @@ import { getCurrentLocale, onLocaleChange } from "@/i18n/runtime";
 import {
   WENYAN_LOCALES,
   CAVEMAN_LEVELS,
+  ANTISLOP_SCOPES,
   PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
 
@@ -43,6 +44,8 @@ export default function TokenSaverClient() {
   const logPollRef = useRef(null);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [antislopEnabled, setAntislopEnabled] = useState(false);
+  const [antislopScope, setAntislopScope] = useState("balanced");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
@@ -344,6 +347,16 @@ export default function TokenSaverClient() {
     patchSetting({ cavemanLevel: level });
   };
 
+  const handleAntislopEnabled = (value) => {
+    setAntislopEnabled(value);
+    patchSetting({ antislopEnabled: value });
+  };
+
+  const handleAntislopScope = (scope) => {
+    setAntislopScope(scope);
+    patchSetting({ antislopScope: scope });
+  };
+
   const handlePonytailEnabled = (value) => {
     setPonytailEnabled(value);
     patchSetting({ ponytailEnabled: value });
@@ -428,6 +441,8 @@ export default function TokenSaverClient() {
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
           setCavemanLevel(data.cavemanLevel || "full");
+          setAntislopEnabled(!!data.antislopEnabled);
+          setAntislopScope(data.antislopScope || "balanced");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
           setPxpipeEnabled(!!data.pxpipeEnabled);
@@ -738,6 +753,52 @@ export default function TokenSaverClient() {
             <Toggle
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Anti-slop UI filter{" "}
+              <span className="text-xs font-normal text-primary">
+                (Antislop)
+              </span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Purpose-tested visuals plus honest copy: no generic gradients,
+              dead controls, or fabricated claims
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            {antislopEnabled && (
+              <div className="flex flex-col items-end gap-1">
+                <div className="flex items-center gap-1.5">
+                  {ANTISLOP_SCOPES.map((scope) => (
+                    <button
+                      key={scope.id}
+                      onClick={() => handleAntislopScope(scope.id)}
+                      className={`px-3 py-1.5 rounded text-xs font-medium border transition-colors ${
+                        antislopScope === scope.id
+                          ? "bg-primary text-white border-primary"
+                          : "bg-transparent border-border text-text-muted hover:bg-surface-2"
+                      }`}
+                      title={scope.desc}
+                    >
+                      {scope.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-xs text-primary">
+                  {
+                    ANTISLOP_SCOPES.find((scope) => scope.id === antislopScope)
+                      ?.desc
+                  }
+                </p>
+              </div>
+            )}
+            <Toggle
+              checked={antislopEnabled}
+              onChange={() => handleAntislopEnabled(!antislopEnabled)}
             />
           </div>
         </div>
