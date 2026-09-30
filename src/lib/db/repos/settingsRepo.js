@@ -56,6 +56,8 @@ const DEFAULT_SETTINGS = {
   headroomTimeoutMs: 3000,
   cavemanEnabled: false,
   cavemanLevel: "full",
+  antislopEnabled: false,
+  antislopScope: "balanced",
   ponytailEnabled: false,
   ponytailLevel: "full",
   pxpipeEnabled: false,
