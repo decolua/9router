@@ -6,6 +6,7 @@ import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
+import { responsesIncompleteToOpenAIFinish } from "../concerns/finishReason.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
@@ -99,7 +100,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   // Handle reasoning across vendor shapes (reasoning_content / reasoning / reasoning_details)
   const reasoningText = extractReasoningText(delta);
   if (reasoningText) {
-    startReasoning(state, emit, idx);
+    startReasoning(state, emit);
     emitReasoningDelta(state, emit, reasoningText);
   }
 
@@ -110,7 +111,7 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
     if (content.includes("<think>")) {
       state.inThinking = true;
       content = content.replace("<think>", "");
-      startReasoning(state, emit, idx);
+      startReasoning(state, emit);
     }
 
     if (content.includes("</think>")) {
@@ -125,15 +126,20 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
 
     if (state.inThinking && content) {
       emitReasoningDelta(state, emit, content);
-      return events;
+      content = "";
     }
 
     if (content) {
       // The answer starts, so thinking is over. Upstreams that send reasoning via
       // reasoning_content never emit "</think>", so close it here rather than at finish.
       closeReasoning(state, emit);
-      emitTextContent(state, emit, idx, content);
+      emitMessageContent(state, emit, idx, content, RESPONSES_ITEM.OUTPUT_TEXT);
     }
+  }
+
+  if (isNonEmptyString(delta.refusal)) {
+    closeReasoning(state, emit);
+    emitMessageContent(state, emit, idx, delta.refusal, RESPONSES_ITEM.REFUSAL);
   }
 
   // Handle tool_calls (empty array is truthy; require a real call)
@@ -149,41 +155,81 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (choice.finish_reason) {
     for (const i in state.msgItemAdded) closeMessage(state, emit, i);
     closeReasoning(state, emit);
-    for (const i in state.funcCallIds) closeToolCall(state, emit, i);
+    closeToolCalls(state, emit);
+    state.chatFinishReason = choice.finish_reason;
     // Upstreams report usage either on the finish chunk itself or on a trailing chunk
     // whose `choices` array is empty (OpenAI does the latter). Emitting
-    // response.completed here would freeze the payload before that trailing chunk is
-    // parsed, so when usage is not known yet we leave completion to flushEvents(),
-    // which runs once the upstream stream ends and by then has seen every chunk.
+    // the terminal event here would freeze the payload before that trailing chunk
+    // is parsed. When usage is not known yet we leave completion to flushEvents().
     //
     // That only holds on the direct openai:openai-responses route. When this converter
     // runs as the second hop of a pivot (Claude/Gemini/Kiro upstream), translateResponse()
     // drops the terminal null chunk before reaching us — the first hop returns null for
     // it, leaving nothing to iterate — so flushEvents() is never called and deferring
-    // would swallow the terminal event entirely. Keep the old behaviour there.
+    // would swallow the terminal event entirely.
     const flushReachesUs = state.targetFormat === FORMATS.OPENAI;
-    if (state.responsesUsage || !flushReachesUs) sendCompleted(state, emit);
+    if (state.responsesUsage || !flushReachesUs) sendChatFinish(state, emit);
   }
 
   return events;
 }
 
 // Helper functions
-function startReasoning(state, emit, idx) {
-  if (!state.reasoningId) {
-    state.reasoningId = `rs_${state.responseId}_${idx}`;
-    state.reasoningIndex = idx;
+function nextOutputIndex(state) {
+  const index = state.nextOutputIndex ?? 0;
+  state.nextOutputIndex = index + 1;
+  return index;
+}
+
+function messageOutputIndex(state, idx) {
+  state.msgOutputIndices ??= {};
+  return state.msgOutputIndices[idx] ??= nextOutputIndex(state);
+}
+
+function toolOutputIndex(state, idx) {
+  state.funcOutputIndices ??= {};
+  return state.funcOutputIndices[idx] ??= nextOutputIndex(state);
+}
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function hasCompletedToolCall(state) {
+  return Object.keys(state.funcItemAdded || {}).some(idx =>
+    state.funcItemAdded[idx] &&
+    state.funcItemDone?.[idx] &&
+    isNonEmptyString(state.funcCallIds?.[idx]) &&
+    isNonEmptyString(state.funcNames?.[idx])
+  );
+}
+
+function hasAssistantOutput(state) {
+  const hasText = state.assistantTextSeen || Object.values(state.msgTextBuf || {}).some(text =>
+    isNonEmptyString(text)
+  );
+  return hasText || hasCompletedToolCall(state);
+}
+
+function startReasoning(state, emit) {
+  if (!state.reasoningId || state.reasoningDone) {
+    for (const i in state.msgItemAdded) closeMessage(state, emit, i);
+    state.reasoningIndex = nextOutputIndex(state);
+    state.reasoningId = `rs_${state.responseId}_${state.reasoningIndex}`;
+    state.reasoningBuf = "";
+    state.reasoningDone = false;
+    state.reasoningPartAdded = false;
     
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: idx,
+      output_index: state.reasoningIndex,
       item: { id: state.reasoningId, type: RESPONSES_ITEM.REASONING, summary: [] }
     });
 
     emit("response.reasoning_summary_part.added", {
       type: "response.reasoning_summary_part.added",
       item_id: state.reasoningId,
-      output_index: idx,
+      output_index: state.reasoningIndex,
       summary_index: 0,
       part: { type: RESPONSES_ITEM.SUMMARY_TEXT, text: "" }
     });
@@ -239,14 +285,34 @@ function closeReasoning(state, emit) {
   }
 }
 
-function emitTextContent(state, emit, idx, content) {
+function messageContentPart(kind, value) {
+  return kind === RESPONSES_ITEM.REFUSAL
+    ? { type: RESPONSES_ITEM.REFUSAL, refusal: value }
+    : { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: value };
+}
+
+function emitMessageContent(state, emit, idx, content, kind) {
+  if (state.msgItemAdded[idx] && !state.msgItemDone[idx]
+    && state.msgContentKind?.[idx] !== kind) {
+    closeMessage(state, emit, idx);
+  }
+  if (state.msgItemDone[idx]) {
+    state.msgItemAdded[idx] = false;
+    state.msgContentAdded[idx] = false;
+    state.msgItemDone[idx] = false;
+    state.msgTextBuf[idx] = "";
+    delete state.msgOutputIndices[idx];
+  }
+  state.msgContentKind ??= {};
+  state.msgContentKind[idx] = kind;
+  const outputIndex = messageOutputIndex(state, idx);
+  const msgId = `msg_${state.responseId}_${outputIndex}`;
   if (!state.msgItemAdded[idx]) {
     state.msgItemAdded[idx] = true;
-    const msgId = `msg_${state.responseId}_${idx}`;
     
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: idx,
+      output_index: outputIndex,
       item: { id: msgId, type: RESPONSES_ITEM.MESSAGE, content: [], role: ROLE.ASSISTANT }
     });
   }
@@ -256,63 +322,70 @@ function emitTextContent(state, emit, idx, content) {
     
     emit("response.content_part.added", {
       type: "response.content_part.added",
-      item_id: `msg_${state.responseId}_${idx}`,
-      output_index: idx,
+      item_id: msgId,
+      output_index: outputIndex,
       content_index: 0,
-      part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: "" }
+      part: messageContentPart(kind, "")
     });
   }
 
-  emit("response.output_text.delta", {
-    type: "response.output_text.delta",
-    item_id: `msg_${state.responseId}_${idx}`,
-    output_index: idx,
+  const deltaEvent = kind === RESPONSES_ITEM.REFUSAL ? "response.refusal.delta" : "response.output_text.delta";
+  emit(deltaEvent, {
+    type: deltaEvent,
+    item_id: msgId,
+    output_index: outputIndex,
     content_index: 0,
     delta: content,
-    logprobs: []
+    ...(kind === RESPONSES_ITEM.OUTPUT_TEXT ? { logprobs: [] } : {})
   });
 
   if (!state.msgTextBuf[idx]) state.msgTextBuf[idx] = "";
   state.msgTextBuf[idx] += content;
+  if (isNonEmptyString(content)) state.assistantTextSeen = true;
 }
 
 function closeMessage(state, emit, idx) {
   if (state.msgItemAdded[idx] && !state.msgItemDone[idx]) {
     state.msgItemDone[idx] = true;
     const fullText = state.msgTextBuf[idx] || "";
-    const msgId = `msg_${state.responseId}_${idx}`;
+    const outputIndex = messageOutputIndex(state, idx);
+    const msgId = `msg_${state.responseId}_${outputIndex}`;
+    const kind = state.msgContentKind?.[idx] || RESPONSES_ITEM.OUTPUT_TEXT;
+    const part = messageContentPart(kind, fullText);
 
-    emit("response.output_text.done", {
-      type: "response.output_text.done",
+    const doneEvent = kind === RESPONSES_ITEM.REFUSAL ? "response.refusal.done" : "response.output_text.done";
+    emit(doneEvent, {
+      type: doneEvent,
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       content_index: 0,
-      text: fullText,
-      logprobs: []
+      ...(kind === RESPONSES_ITEM.REFUSAL
+        ? { refusal: fullText }
+        : { text: fullText, logprobs: [] })
     });
 
     emit("response.content_part.done", {
       type: "response.content_part.done",
       item_id: msgId,
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       content_index: 0,
-      part: { type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }
+      part
     });
 
     const item = {
       id: msgId,
       type: RESPONSES_ITEM.MESSAGE,
-      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, annotations: [], logprobs: [], text: fullText }],
+      content: [part],
       role: ROLE.ASSISTANT
     };
 
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       item
     });
 
-    recordCompletedOutputItem(state, parseInt(idx), item);
+    recordCompletedOutputItem(state, outputIndex, item);
   }
 }
 
@@ -334,20 +407,21 @@ function emitToolCall(state, emit, tc) {
   const newCallId = tc.id;
   const funcName = tc.function?.name;
 
-  if (funcName) state.funcNames[tcIdx] = funcName;
-  if (newCallId) state.funcCallIds[tcIdx] = newCallId;
+  if (isNonEmptyString(funcName)) state.funcNames[tcIdx] = funcName;
+  if (isNonEmptyString(newCallId)) state.funcCallIds[tcIdx] = newCallId;
 
   // Some compatible providers split the call id and function name across
   // chunks. Wait for both before deciding whether this is a custom tool;
   // otherwise an `exec` call can be irreversibly announced as function_call.
   const callId = state.funcCallIds[tcIdx];
-  if (!state.funcItemAdded[tcIdx] && callId && state.funcNames[tcIdx]) {
+  if (!state.funcItemAdded[tcIdx] && isNonEmptyString(callId) && isNonEmptyString(state.funcNames[tcIdx])) {
     state.funcItemAdded[tcIdx] = true;
     const custom = isCustomTool(state, state.funcNames[tcIdx]);
+    const outputIndex = toolOutputIndex(state, tcIdx);
 
     emit("response.output_item.added", {
       type: "response.output_item.added",
-      output_index: tcIdx,
+      output_index: outputIndex,
       item: {
         id: `${custom ? "ctc" : "fc"}_${callId}`,
         type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
@@ -366,7 +440,7 @@ function emitToolCall(state, emit, tc) {
       emit("response.function_call_arguments.delta", {
         type: "response.function_call_arguments.delta",
         item_id: `fc_${refCallId}`,
-        output_index: tcIdx,
+        output_index: toolOutputIndex(state, tcIdx),
         delta: tc.function.arguments
       });
     }
@@ -379,29 +453,30 @@ function emitToolCall(state, emit, tc) {
 
 function closeToolCall(state, emit, idx) {
   const callId = state.funcCallIds[idx];
-  if (callId && !state.funcItemDone[idx]) {
+  if (callId && state.funcItemAdded?.[idx] && !state.funcItemDone[idx]) {
     const args = state.funcArgsBuf[idx] || "{}";
     const custom = isCustomTool(state, state.funcNames[idx]);
+    const outputIndex = toolOutputIndex(state, idx);
 
     if (custom) {
       const input = extractCustomToolInput(args);
       emit("response.custom_tool_call_input.delta", {
         type: "response.custom_tool_call_input.delta",
         item_id: `ctc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: outputIndex,
         delta: input
       });
       emit("response.custom_tool_call_input.done", {
         type: "response.custom_tool_call_input.done",
         item_id: `ctc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: outputIndex,
         input
       });
     } else {
       emit("response.function_call_arguments.done", {
         type: "response.function_call_arguments.done",
         item_id: `fc_${callId}`,
-        output_index: parseInt(idx),
+        output_index: outputIndex,
         arguments: args
       });
     }
@@ -416,11 +491,11 @@ function closeToolCall(state, emit, idx) {
 
     emit("response.output_item.done", {
       type: "response.output_item.done",
-      output_index: parseInt(idx),
+      output_index: outputIndex,
       item
     });
 
-    recordCompletedOutputItem(state, parseInt(idx), item);
+    recordCompletedOutputItem(state, outputIndex, item);
 
     state.funcItemDone[idx] = true;
     state.funcArgsDone[idx] = true;
@@ -451,22 +526,77 @@ function collectCompletedOutputItems(state) {
     .map(([, item]) => item);
 }
 
-function sendCompleted(state, emit) {
+function closeToolCalls(state, emit) {
+  const indices = Object.keys(state.funcCallIds).sort((a, b) =>
+    (state.funcOutputIndices?.[a] ?? Number.MAX_SAFE_INTEGER) -
+    (state.funcOutputIndices?.[b] ?? Number.MAX_SAFE_INTEGER)
+  );
+  for (const idx of indices) closeToolCall(state, emit, idx);
+}
+
+function sendTerminal(state, emit, status, responseFields = {}) {
   if (!state.completedSent) {
     state.completedSent = true;
-    emit("response.completed", {
-      type: "response.completed",
+    const eventType = `response.${status}`;
+    emit(eventType, {
+      type: eventType,
       response: {
         id: state.responseId,
         object: "response",
         created_at: state.created,
-        status: "completed",
+        status,
         background: false,
         error: null,
         output: collectCompletedOutputItems(state),
-        ...(state.responsesUsage ? { usage: state.responsesUsage } : {})
+        ...(state.responsesUsage ? { usage: state.responsesUsage } : {}),
+        ...responseFields
       }
     });
+  }
+}
+
+function sendCompleted(state, emit) {
+  sendTerminal(state, emit, "completed");
+}
+
+function sendIncomplete(state, emit, reason) {
+  sendTerminal(state, emit, "incomplete", {
+    incomplete_details: { reason }
+  });
+}
+
+function sendFailed(state, emit, error = {
+  type: "stream_error",
+  code: "stream_disconnected",
+  message: "stream closed before finish_reason"
+}) {
+  sendTerminal(state, emit, "failed", {
+    error
+  });
+}
+
+function sendChatFinish(state, emit) {
+  const finishReason = state.chatFinishReason === "other" && hasCompletedToolCall(state)
+    ? OPENAI_FINISH.TOOL_CALLS
+    : state.chatFinishReason;
+  if (finishReason === OPENAI_FINISH.LENGTH) {
+    sendIncomplete(state, emit, "max_output_tokens");
+  } else if (finishReason === OPENAI_FINISH.CONTENT_FILTER) {
+    sendIncomplete(state, emit, "content_filter");
+  } else if (finishReason !== OPENAI_FINISH.STOP && finishReason !== OPENAI_FINISH.TOOL_CALLS) {
+    sendFailed(state, emit, {
+      type: "upstream_error",
+      code: "invalid_finish_reason",
+      message: "upstream returned an unsupported finish_reason"
+    });
+  } else if (!hasAssistantOutput(state)) {
+    sendFailed(state, emit, {
+      type: "upstream_error",
+      code: "empty_output",
+      message: "upstream finished without assistant text or a tool call"
+    });
+  } else {
+    sendCompleted(state, emit);
   }
 }
 
@@ -482,8 +612,9 @@ function flushEvents(state) {
 
   for (const i in state.msgItemAdded) closeMessage(state, emit, i);
   closeReasoning(state, emit);
-  for (const i in state.funcCallIds) closeToolCall(state, emit, i);
-  sendCompleted(state, emit);
+  closeToolCalls(state, emit);
+  if (state.chatFinishReason) sendChatFinish(state, emit);
+  else sendFailed(state, emit);
   
   return events;
 }
@@ -551,6 +682,15 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
       { content: delta }
+    );
+  }
+
+  if (eventType === "response.refusal.delta") {
+    const delta = data.delta || "";
+    if (!delta) return null;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      { refusal: delta }
     );
   }
 
@@ -626,8 +766,33 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
+  // A response.done event can carry a failed status. Handle it with the
+  // explicit failure events before the completion branch computes a finish reason.
+  if (eventType === "error" || eventType === "response.failed"
+    || (eventType === "response.done" && data.response?.status === "failed")) {
+    // Avoid emitting duplicate errors (error + response.failed arrive back-to-back)
+    if (state.finishReasonSent) return null;
+
+    const error = data.error || data.response?.error || {
+      type: "stream_error",
+      message: "upstream Responses stream failed"
+    };
+    state.error = error;
+    state.finishReasonSent = true;
+
+    // Preserve the Chat chunk for pivot translations while giving OpenAI SSE
+    // clients a top-level error they can treat as a failed request.
+    const errorChunk = buildChunk(
+      { id: state.chatId || `chatcmpl-${Date.now()}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model || MODEL_FALLBACK },
+      { content: `[Error] ${error.message || JSON.stringify(error)}` },
+      OPENAI_FINISH.STOP
+    );
+    errorChunk.error = error;
+    return errorChunk;
+  }
+
   // Response completed
-  if (eventType === "response.completed" || eventType === "response.done") {
+  if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
     // Extract usage from response.completed event
     const responseUsage = data.response?.usage;
     if (responseUsage && typeof responseUsage === "object") {
@@ -641,7 +806,10 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     }
     
     if (!state.finishReasonSent) {
-      const finishReason = computeFinishReason(state);
+      const incomplete = eventType === "response.incomplete" || data.response?.status === "incomplete";
+      const finishReason = incomplete
+        ? responsesIncompleteToOpenAIFinish(data.response?.incomplete_details?.reason)
+        : computeFinishReason(state);
 
       state.finishReasonSent = true;
       state.finishReason = finishReason; // Mark for usage injection in stream.js
@@ -658,26 +826,6 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       }
       
       return finalChunk;
-    }
-    return null;
-  }
-
-  // Error events from Responses API (e.g. model_not_found)
-  if (eventType === "error" || eventType === "response.failed") {
-    // Avoid emitting duplicate errors (error + response.failed arrive back-to-back)
-    if (state.finishReasonSent) return null;
-
-    const error = data.error || data.response?.error;
-    if (error) {
-      state.error = error;
-      state.finishReasonSent = true;
-
-      // Surface the error as an OpenAI-compatible error chunk
-      return buildChunk(
-        { id: state.chatId || `chatcmpl-${Date.now()}`, created: state.created || Math.floor(Date.now() / 1000), model: state.model || MODEL_FALLBACK },
-        { content: `[Error] ${error.message || JSON.stringify(error)}` },
-        OPENAI_FINISH.STOP
-      );
     }
     return null;
   }

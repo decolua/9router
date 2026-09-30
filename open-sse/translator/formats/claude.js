@@ -5,6 +5,7 @@ import { adjustMaxTokens } from "./maxTokens.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
 import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
+import { normalizeClaudeToolInputSchema } from "../concerns/toolSchema.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
@@ -617,10 +618,15 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;
+      const normalized = rest.input_schema !== undefined
+        ? { ...rest, input_schema: normalizeClaudeToolInputSchema(rest.input_schema) }
+        : rest.custom?.input_schema !== undefined
+          ? { ...rest, custom: { ...rest.custom, input_schema: normalizeClaudeToolInputSchema(rest.custom.input_schema) } }
+          : rest;
       if (i === lastCacheable) {
-        return { ...rest, cache_control: { type: "ephemeral", ttl: "1h" } };
+        return { ...normalized, cache_control: { type: "ephemeral", ttl: "1h" } };
       }
-      return rest;
+      return normalized;
     });
 
     // Remove tools array and tool_choice if empty after filtering

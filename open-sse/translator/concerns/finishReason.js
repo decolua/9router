@@ -66,3 +66,8 @@ export function fromOpenAIFinish(reason, format) {
       return reason;
   }
 }
+
+// Responses has a single "incomplete" status; Chat Completions needs a finish reason.
+export function responsesIncompleteToOpenAIFinish(reason) {
+  return reason === "content_filter" ? OPENAI_FINISH.CONTENT_FILTER : OPENAI_FINISH.LENGTH;
+}

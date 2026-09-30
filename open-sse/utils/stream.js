@@ -3,7 +3,7 @@ import { FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
-import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
+import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, hasActionableResponsesOutput, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
@@ -80,9 +80,44 @@ export function createSSEStream(options = {}) {
   // Track Responses API event framing for same-format passthrough (codex)
   let currentOpenAIResponsesEvent = null;
   let openAIResponsesTerminalSeen = false;
+  let openAIResponsesHasOutput = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
+
+  const formatNativeResponsesEvent = (eventName, chunk) => {
+    if ((eventName === "response.output_text.delta" || eventName === "response.refusal.delta")
+      && typeof chunk.delta === "string" && chunk.delta.trim()) {
+      openAIResponsesHasOutput = true;
+    }
+    if (eventName === "response.output_item.done"
+      && hasActionableResponsesOutput([chunk.item])) {
+      openAIResponsesHasOutput = true;
+    }
+
+    const emptyCompletion = (
+      eventName === "response.completed"
+      || (eventName === "response.done" && chunk.response?.status === "completed")
+    ) && !openAIResponsesHasOutput && !hasActionableResponsesOutput(chunk.response?.output);
+    if (!emptyCompletion) {
+      return formatSSE({ event: eventName, data: chunk }, FORMATS.OPENAI_RESPONSES);
+    }
+    return formatSSE({
+      event: "response.failed",
+      data: {
+        type: "response.failed",
+        response: {
+          ...chunk.response,
+          status: "failed",
+          error: {
+            type: "upstream_error",
+            code: "empty_output",
+            message: "upstream finished without assistant text or a tool call"
+          }
+        }
+      }
+    }, FORMATS.OPENAI_RESPONSES);
+  };
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
@@ -328,7 +363,7 @@ export function createSSEStream(options = {}) {
 
         // Responses same-format passthrough: re-emit with original event framing
         if (keepsOpenAIResponsesFormat && openAIResponsesEventName) {
-          const output = formatSSE({ event: openAIResponsesEventName, data: parsed }, sourceFormat);
+          const output = formatNativeResponsesEvent(openAIResponsesEventName, parsed);
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           currentOpenAIResponsesEvent = null;
@@ -412,6 +447,19 @@ export function createSSEStream(options = {}) {
 
           finalizeStream();
           return;
+        }
+
+        if (buffer.trim() && targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES) {
+          const parsed = parseSSELine(buffer.trim(), targetFormat);
+          const eventName = getOpenAIResponsesEventName(currentOpenAIResponsesEvent, parsed);
+          if (parsed && !parsed.done && eventName) {
+            if (isOpenAIResponsesTerminalEvent(eventName, parsed)) openAIResponsesTerminalSeen = true;
+            const output = formatNativeResponsesEvent(eventName, parsed);
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(sharedEncoder.encode(output));
+            buffer = "";
+            currentOpenAIResponsesEvent = null;
+          }
         }
 
         if (buffer.trim()) {

@@ -164,6 +164,16 @@ export function takeRenamedToolNames(body) {
 
 // Response side -------------------------------------------------------------
 
+/** Compose successive sent-name → prior-name maps into sent-name → caller-name. */
+export function composeToolNameMaps(previous, next) {
+  if (!previous?.size && !next?.size) return null;
+  const combined = new Map(previous || []);
+  for (const [sent, prior] of next || []) {
+    combined.set(sent, previous?.get(prior) ?? prior);
+  }
+  return combined;
+}
+
 /** Restore caller tool spellings in supported response/event shapes. */
 export function restoreToolNames(payload, map) {
   if (!map?.size || !payload) return payload;
@@ -175,6 +185,22 @@ export function restoreToolNames(payload, map) {
     if (out === payload) out = { ...payload };
     out[key] = value;
   };
+  const restoreOutputItem = (item) =>
+    (item?.type === "function_call" || item?.type === "custom_tool_call") &&
+    typeof item.name === "string" && map.has(item.name)
+      ? { ...item, name: map.get(item.name) }
+      : item;
+
+  // Responses SSE events wrap their payload in `data`; terminal events then
+  // nest completed output under `response.output`.
+  if (payload.data && typeof payload.data === "object") {
+    const restored = restoreToolNames(payload.data, map);
+    if (restored !== payload.data) put("data", restored);
+  }
+  if (payload.response && typeof payload.response === "object") {
+    const restored = restoreToolNames(payload.response, map);
+    if (restored !== payload.response) put("response", restored);
+  }
 
   // Claude streaming content_block_start event.
   if (payload.type === "content_block_start") {
@@ -216,17 +242,13 @@ export function restoreToolNames(payload, map) {
 
   // OpenAI Responses final JSON body.
   if (Array.isArray(payload.output)) {
-    put("output", payload.output.map((item) =>
-      item?.type === "function_call" && typeof item.name === "string" && map.has(item.name)
-        ? { ...item, name: map.get(item.name) }
-        : item));
+    put("output", payload.output.map(restoreOutputItem));
   }
 
   // OpenAI Responses SSE events such as response.output_item.added/done.
   const item = payload.item;
-  if (item?.type === "function_call" && typeof item.name === "string" && map.has(item.name)) {
-    put("item", { ...item, name: map.get(item.name) });
-  }
+  const restoredItem = restoreOutputItem(item);
+  if (restoredItem !== item) put("item", restoredItem);
 
   return out;
 }

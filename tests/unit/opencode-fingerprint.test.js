@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyFingerprintTools,
+  composeToolNameMaps,
   concealFingerprintToolNames,
   appendMissingFingerprintTools,
   fingerprintToolKey,
@@ -116,6 +117,12 @@ describe("opencodeFingerprint — request side", () => {
 describe("opencodeFingerprint — response side", () => {
   const map = new Map([["bash", "Bash"], ["grep", "Grep"], ["read", "Read"]]);
 
+  it("composes namespace and provider renames back to the caller's tool name", () => {
+    const namespaceMap = new Map([["mcp__cua_repl__js", "mcp__cua_repl.js"]]);
+    const providerMap = new Map([["provider_js", "mcp__cua_repl__js"]]);
+    expect(composeToolNameMaps(namespaceMap, providerMap).get("provider_js")).toBe("mcp__cua_repl.js");
+  });
+
   it("restores names in Claude content_block_start chunks", () => {
     const chunk = {
       type: "content_block_start",
@@ -164,6 +171,31 @@ describe("opencodeFingerprint — response side", () => {
       item: { type: "function_call", name: "read", call_id: "c1" },
     };
     expect(restoreToolNames(event, map).item.name).toBe("Read");
+  });
+
+  it("restores names inside wrapped Responses events and terminal output", () => {
+    const names = new Map([
+      ["mcp__cua_repl__js", "mcp__cua_repl.js"],
+      ["mcp__tools__exec", "mcp__tools.exec"],
+    ]);
+    const event = {
+      event: "response.completed",
+      data: {
+        type: "response.completed",
+        response: {
+          output: [
+            { type: "function_call", name: "mcp__cua_repl__js" },
+            { type: "custom_tool_call", name: "mcp__tools__exec" },
+          ],
+        },
+      },
+    };
+    const restored = restoreToolNames(event, names);
+    expect(restored.data.response.output.map((item) => item.name)).toEqual([
+      "mcp__cua_repl.js",
+      "mcp__tools.exec",
+    ]);
+    expect(event.data.response.output[0].name).toBe("mcp__cua_repl__js");
   });
 
   it("is a no-op without a map or with an empty map", () => {

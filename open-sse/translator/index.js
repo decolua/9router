@@ -2,7 +2,7 @@ import { FORMATS } from "./formats.js";
 import { ensureToolCallIds, fixMissingToolResponses } from "./concerns/toolCall.js";
 import { prepareClaudeRequest } from "./formats/claude.js";
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
-import { restoreToolNames } from "../utils/opencodeFingerprint.js";
+import { composeToolNameMaps, restoreToolNames } from "../utils/opencodeFingerprint.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
@@ -89,11 +89,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     if (directFn) {
       result = directFn(model, result, stream, credentials);
     } else {
+      let intermediateToolNameMap = null;
       // Step 1: source -> openai (if source is not openai)
       if (sourceFormat !== FORMATS.OPENAI) {
         const toOpenAI = requestRegistry.get(`${sourceFormat}:${FORMATS.OPENAI}`);
         if (toOpenAI) {
           result = toOpenAI(model, result, stream, credentials);
+          intermediateToolNameMap = result?._toolNameMap;
           // Log OpenAI intermediate format
           reqLogger?.logOpenAIRequest?.(result);
         }
@@ -104,6 +106,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
           result = fromOpenAI(model, result, stream, credentials);
+          if (intermediateToolNameMap?.size && result) {
+            result._toolNameMap = composeToolNameMaps(intermediateToolNameMap, result._toolNameMap);
+          }
         }
       }
     }
@@ -139,11 +144,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
     if (apiKey?.includes("sk-ant-oat")) {
+      const previousToolNameMap = result?._toolNameMap;
       const { body: cloakedBody, toolNameMap } = cloakClaudeTools(result);
       result = cloakedBody;
-      if (toolNameMap?.size > 0) {
-        result._toolNameMap = toolNameMap;
-      }
+      const combinedToolNameMap = composeToolNameMaps(previousToolNameMap, toolNameMap);
+      if (combinedToolNameMap?.size > 0) result._toolNameMap = combinedToolNameMap;
     }
   }
 
