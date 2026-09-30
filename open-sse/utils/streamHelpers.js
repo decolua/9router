@@ -1,6 +1,7 @@
 import { FORMATS } from "../translator/formats.js";
 import { buildErrorBody } from "./error.js";
 import { SSE_DONE } from "./sseConstants.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 const sharedEncoder = new TextEncoder();
 
@@ -136,12 +137,31 @@ export function formatSSE(data, sourceFormat) {
 //
 // NOTE: non-SSE client formats (Ollama NDJSON) get an SSE frame here — dead in
 // practice because detectFormatByEndpoint never resolves to OLLAMA.
-export function buildStreamErrorBytes(statusCode, message, clientFormat) {
+export function buildStreamErrorBytes(statusCode, message, clientFormat, errorCode = null) {
   const { error } = buildErrorBody(statusCode, message);
+  if (errorCode) error.code = errorCode;
 
-  const sse = clientFormat === FORMATS.CLAUDE
-    ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
-    : formatSSE({ error }, clientFormat) + SSE_DONE;
-
+  let sse;
+  if (clientFormat === FORMATS.CLAUDE) {
+    // Anthropic's SDK expects api_error, not OpenAI's server_error.
+    const types = {
+      [HTTP_STATUS.BAD_REQUEST]: "invalid_request_error",
+      [HTTP_STATUS.UNAUTHORIZED]: "authentication_error",
+      [HTTP_STATUS.FORBIDDEN]: "permission_error",
+      [HTTP_STATUS.NOT_FOUND]: "not_found_error",
+      [HTTP_STATUS.RATE_LIMITED]: "rate_limit_error"
+    };
+    sse = formatSSE({ type: "error", error: { ...error, type: types[statusCode] || "api_error" } }, clientFormat);
+  } else if (clientFormat === FORMATS.OPENAI_RESPONSES) {
+    sse = formatSSE({
+      event: "response.failed",
+      data: {
+        type: "response.failed",
+        response: { id: `resp_${Date.now()}`, status: "failed", error }
+      }
+    }, clientFormat) + SSE_DONE;
+  } else {
+    sse = formatSSE({ error }, clientFormat) + SSE_DONE;
+  }
   return sharedEncoder.encode(sse);
 }
