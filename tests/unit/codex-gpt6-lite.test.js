@@ -10,7 +10,7 @@ const credentials = { connectionId: "fixture", accessToken: "fixture-token" };
 afterEach(() => vi.restoreAllMocks());
 
 describe("Codex GPT-6 Sol/Luna transport", () => {
-  it.each(["gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
+  it.each(["gpt-6.1-sol", "gpt-6-sol", "gpt-6-luna"])("lists %s with Codex capabilities", (model) => {
     const entry = getModelsByProviderId("codex").find((item) => item.id === model);
     expect(entry?.responsesLite).toBe(true);
     expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
@@ -67,6 +67,14 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
 
     expect(body.reasoning.effort).toBe("low");
     expect(body.reasoning.context).toBe("all_turns");
+  });
+
+  it("maps GPT-6.1 Sol's Codex-only ultra effort to max", () => {
+    const body = new CodexExecutor().transformRequest("gpt-6.1-sol", {
+      model: "gpt-6.1-sol", input: "hello", reasoning: { effort: "ultra" },
+    }, true, credentials);
+
+    expect(body.reasoning).toEqual({ effort: "max", context: "all_turns" });
   });
 
   it("sends the Lite shape and header in the actual outbound request", async () => {
