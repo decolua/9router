@@ -5,6 +5,7 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
+import { GROK_CLI_PAGER_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -120,10 +121,10 @@ const OAUTH_TEST_CONFIG = {
     extraHeaders: {
       Accept: "application/json",
       ...(PROVIDERS["grok-cli"]?.headers || {
-        "User-Agent": "grok-pager/0.2.93 grok-shell/0.2.93 (linux; x86_64)",
+        "User-Agent": GROK_CLI_PAGER_USER_AGENT,
         "x-xai-token-auth": "xai-grok-cli",
         "x-grok-client-identifier": "grok-pager",
-        "x-grok-client-version": "0.2.93",
+        "x-grok-client-version": GROK_CLI_VERSION,
       }),
     },
     refreshable: true,
