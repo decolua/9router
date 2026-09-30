@@ -82,10 +82,15 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     if (testingModelId) return;
     setTestingModelId(modelId);
     try {
+      const connectionId = connections.find((connection) => connection.isActive !== false)?.id;
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerStorageAlias}/${modelId}` }),
+        body: JSON.stringify({
+          model: `${providerStorageAlias}/${modelId}`,
+          kind: "llm",
+          ...(connectionId ? { connectionId } : {}),
+        }),
       });
       const data = await res.json();
       setModelTestResults((prev) => ({ ...prev, [modelId]: data.ok ? "ok" : "error" }));

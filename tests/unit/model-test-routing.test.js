@@ -72,6 +72,66 @@ describe("model test route kind routing", () => {
     );
   });
 
+  it("forwards a requested connection id to the internal model probe", async () => {
+    const { POST } = await import("../../src/app/api/models/test/route.js");
+
+    const req = new Request("http://localhost/api/models/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "openai/gpt-4o",
+        kind: "llm",
+        connectionId: "connection-2",
+      }),
+    });
+
+    await POST(req);
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining("/api/v1/chat/completions"),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: "Bearer sk-internal",
+          "x-9r-cli-token": "cli-token",
+          "x-connection-id": "connection-2",
+        }),
+      })
+    );
+  });
+
+  it("does not add x-connection-id when no connection id is requested", async () => {
+    const { POST } = await import("../../src/app/api/models/test/route.js");
+
+    const req = new Request("http://localhost/api/models/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "openai/gpt-4o", kind: "llm" }),
+    });
+
+    await POST(req);
+
+    const headers = global.fetch.mock.calls[0][1].headers;
+    expect(headers.Authorization).toBe("Bearer sk-internal");
+    expect(headers["x-9r-cli-token"]).toBe("cli-token");
+    expect(headers["x-connection-id"]).toBeUndefined();
+  });
+
+  it.each(["", "   ", 42, null])("rejects invalid connection id %j", async (connectionId) => {
+    const { POST } = await import("../../src/app/api/models/test/route.js");
+
+    const req = new Request("http://localhost/api/models/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "openai/gpt-4o", connectionId }),
+    });
+
+    const res = await POST(req);
+
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({ error: "connectionId must be a non-empty string" });
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it("routes embedding model tests to /api/v1/embeddings", async () => {
     global.fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       data: [{ embedding: [0.1, 0.2] }],
