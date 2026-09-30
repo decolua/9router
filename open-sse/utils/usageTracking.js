@@ -108,7 +108,24 @@ export function filterUsageForFormat(usage, targetFormat) {
     fields = formatFields.default;
   }
 
-  return pickFields(fields);
+  const filtered = pickFields(fields);
+
+  // #2873: a Claude upstream leaves its cache split as cache_read_input_tokens /
+  // cache_creation_input_tokens, which the OpenAI allow-list above drops. Carry it
+  // over in the prompt_tokens_details shape buildUsage() emits, so OpenAI clients
+  // (and anything metering them) see cache reads instead of a full-price prompt.
+  if (fields === formatFields.default) {
+    const cacheRead = usage.cache_read_input_tokens;
+    const cacheCreation = usage.cache_creation_input_tokens;
+    if (cacheRead > 0 || cacheCreation > 0) {
+      const details = { ...(filtered.prompt_tokens_details || {}) };
+      if (cacheRead > 0 && details.cached_tokens === undefined) details.cached_tokens = cacheRead;
+      if (cacheCreation > 0 && details.cache_creation_tokens === undefined) details.cache_creation_tokens = cacheCreation;
+      filtered.prompt_tokens_details = details;
+    }
+  }
+
+  return filtered;
 }
 
 /**
