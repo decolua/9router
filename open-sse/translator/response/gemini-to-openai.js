@@ -1,12 +1,20 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, OPENAI_BLOCK, OPENAI_FINISH, DEFAULT_IMAGE_MIME } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, OPENAI_FINISH, GEMINI_FINISH, GEMINI_BLOCK_REASON, DEFAULT_IMAGE_MIME } from "../schema/index.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
 import { storeGeminiThoughtSignature } from "../../services/thoughtSignatureStore.js";
+import { HTTP_STATUS } from "../../config/runtimeConfig.js";
+
+// The stream boundary serializes failures in the client's protocol. Never invent
+// a successful finish to flush a truncated response (especially buffered tools).
+function failGeminiStream(state, statusCode, code, message) {
+  state.geminiStreamOutcome = { status: "error", statusCode, code, message };
+  return null;
+}
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -39,15 +47,43 @@ function emitFunctionCall(functionCall, state, signature = null) {
 
 // Convert Gemini response chunk to OpenAI format
 export function geminiToOpenAIResponse(chunk, state) {
-  if (!chunk) return null;
-  
-  // Handle Antigravity wrapper
-  const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+  if (!chunk) {
+    if (state.geminiStreamOutcome) return null;
+    return failGeminiStream(state, HTTP_STATUS.BAD_GATEWAY, "incomplete_upstream_stream",
+      "Gemini stream ended before a finish reason or an explicit prompt block.");
+  }
+
+  // Antigravity wraps Gemini frames; errors/feedback can live on either level.
+  const response = chunk.response && typeof chunk.response === "object" ? chunk.response : chunk;
+  const usageMeta = response.usageMetadata || chunk.usageMetadata;
+  const geminiUsage = toOpenAIUsage(usageMeta, FORMATS.GEMINI);
+  if (geminiUsage) state.usage = geminiUsage;
+
+  // Usage-only trailers are useful, but must not reopen a finished message.
+  if (state.geminiStreamOutcome) return null;
+  const upstreamError = chunk.error || response.error;
+  if (upstreamError) {
+    const statusCode = Object.values(HTTP_STATUS).includes(upstreamError.code)
+      ? upstreamError.code : HTTP_STATUS.BAD_GATEWAY;
+    // Do not echo arbitrary upstream messages/details: they can contain prompts,
+    // credentials, or HTML. Preserve the structured status without exposing them.
+    return failGeminiStream(state, statusCode, "upstream_stream_error",
+      `Gemini upstream returned an in-stream error (HTTP ${statusCode}).`);
+  }
+
+  const feedback = response.promptFeedback || chunk.promptFeedback;
+  const blockReason = feedback?.blockReason;
+  const blocked = typeof blockReason === "string" && blockReason.trim() !== "" &&
+    blockReason !== GEMINI_BLOCK_REASON.UNSPECIFIED;
+  const candidates = Array.isArray(response.candidates) ? response.candidates : [];
+  // The bridge supports one choice. An explicitly indexed secondary candidate
+  // must never finish the still-incomplete primary candidate.
+  const candidate = candidates.find(item => item?.index === 0) ||
+    (candidates[0]?.index == null ? candidates[0] : null);
+  if (!candidate && !blocked) return null;
 
   const results = [];
-  const candidate = response.candidates[0];
-  const content = candidate.content;
+  const content = blocked ? null : candidate?.content;
 
   // Initialize state
   if (!state.messageId) {
@@ -129,14 +165,11 @@ export function geminiToOpenAIResponse(chunk, state) {
     }
   }
 
-  // Usage metadata - extract before finish reason so we can include it
-  const usageMeta = response.usageMetadata || chunk.usageMetadata;
-  const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
-  if (geminiUsage) state.usage = geminiUsage;
-
-  // Finish reason - include usage in final chunk
-  if (candidate.finishReason) {
-    let finishReason = toOpenAIFinish(candidate.finishReason, "gemini");
+  // A prompt-level block is terminal even when Google supplies no candidates.
+  // Ordinary text (including a quoted refusal sentence) is never a terminal signal.
+  if (blocked || (candidate?.finishReason && candidate.finishReason !== GEMINI_FINISH.UNSPECIFIED)) {
+    let finishReason = blocked ? OPENAI_FINISH.CONTENT_FILTER
+      : toOpenAIFinish(candidate.finishReason, FORMATS.GEMINI);
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
     }
@@ -150,6 +183,9 @@ export function geminiToOpenAIResponse(chunk, state) {
     
     results.push(finalChunk);
     state.finishReason = finishReason;
+    state.geminiStreamOutcome = finishReason === OPENAI_FINISH.CONTENT_FILTER
+      ? { status: "error", statusCode: HTTP_STATUS.FORBIDDEN, code: "content_filter", message: "Gemini blocked the response with a content filter." }
+      : { status: "success" };
   }
 
   return results.length > 0 ? results : null;

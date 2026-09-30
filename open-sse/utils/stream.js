@@ -1,10 +1,11 @@
 import { translateResponse, initState } from "../translator/index.js";
-import { FORMATS } from "../translator/formats.js";
+import { FORMATS, GEMINI_STREAM_FORMATS } from "../translator/formats.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, buildStreamErrorBytes } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
 
@@ -50,7 +51,8 @@ export function createSSEStream(options = {}) {
     body = null,
     onStreamComplete = null,
     apiKey = null,
-    credentials = null
+    credentials = null,
+    streamLifecycle = null
   } = options;
 
   let buffer = "";
@@ -89,6 +91,9 @@ export function createSSEStream(options = {}) {
   const finalizeStream = () => {
     if (finalized) return;
     finalized = true;
+    const outcome = state?.geminiStreamOutcome;
+    const failed = outcome?.status === "error";
+    trackPendingRequest(model, provider, connectionId, false, failed);
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
@@ -98,7 +103,9 @@ export function createSSEStream(options = {}) {
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
 
-    if (hasValidUsage(finalUsage)) {
+    if (failed) {
+      appendRequestLog({ model, provider, connectionId, tokens: finalUsage, status: `${outcome.statusCode} ${outcome.code}` }).catch(() => {});
+    } else if (hasValidUsage(finalUsage)) {
       logUsage(isPassthrough ? provider : (state?.provider || targetFormat), finalUsage, model, connectionId, apiKey);
     } else {
       appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
@@ -108,8 +115,56 @@ export function createSSEStream(options = {}) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
+      }, finalUsage, ttftAt, outcome);
     }
+  };
+
+  // Share terminal knowledge with the transport wrapper. A reset after a valid
+  // terminal must not append a second error, while pre-terminal resets stay errors.
+  if (streamLifecycle) {
+    streamLifecycle.onAbort = (message) => {
+      const hadTerminal = Boolean(state?.geminiStreamOutcome);
+      if (!hadTerminal && state) {
+        state.geminiStreamOutcome = {
+          status: "error", statusCode: HTTP_STATUS.GATEWAY_TIMEOUT,
+          code: "upstream_stream_error", message
+        };
+        state.toolArgBuffers?.clear();
+      }
+      finalizeStream();
+      return hadTerminal;
+    };
+  }
+
+  const translateChunk = (chunk) => {
+    try {
+      return translateResponse(targetFormat, sourceFormat, chunk, state);
+    } catch (error) {
+      if (!GEMINI_STREAM_FORMATS.has(targetFormat)) throw error;
+      state.geminiStreamOutcome = {
+        status: "error", statusCode: HTTP_STATUS.BAD_GATEWAY,
+        code: "invalid_upstream_stream", message: "Gemini returned an invalid streaming response."
+      };
+      return null;
+    }
+  };
+
+  let geminiErrorSent = false;
+  const emitGeminiFailure = (controller) => {
+    const outcome = state?.geminiStreamOutcome;
+    if (outcome?.status !== "error") return false;
+    // A prompt-level block already produced a valid refusal terminal for every
+    // client except Responses, which has no refusal event and needs one.
+    if (outcome.code === "content_filter" && sourceFormat !== FORMATS.OPENAI_RESPONSES) return false;
+    if (!geminiErrorSent) {
+      geminiErrorSent = true;
+      state.toolArgBuffers?.clear();
+      const bytes = buildStreamErrorBytes(outcome.statusCode, outcome.message, sourceFormat, outcome.code);
+      reqLogger?.appendConvertedChunk?.(new TextDecoder().decode(bytes));
+      controller.enqueue(bytes);
+      finalizeStream();
+    }
+    return true;
   };
 
   return new TransformStream({
@@ -307,9 +362,10 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
-        // Gemini format
-        if (parsed.candidates?.[0]?.content?.parts) {
-          for (const part of parsed.candidates[0].content.parts) {
+        // Gemini/Antigravity content uses the same bare/wrapped envelope as the decoder.
+        const geminiResponse = parsed.response || parsed;
+        if (geminiResponse.candidates?.[0]?.content?.parts) {
+          for (const part of geminiResponse.candidates[0].content.parts) {
             if (part.text && typeof part.text === "string") {
               totalContentLength += part.text.length;
               // Check if this is thinking content
@@ -341,7 +397,8 @@ export function createSSEStream(options = {}) {
         currentOpenAIResponsesEvent = null;
 
         // Translate: targetFormat -> openai -> sourceFormat
-        const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+        const translated = translateChunk(parsed);
+        if (emitGeminiFailure(controller)) continue;
 
         // Log OpenAI intermediate chunks (if available)
         if (translated?._openaiIntermediate) {
@@ -383,7 +440,6 @@ export function createSSEStream(options = {}) {
     flush(controller) {
       const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
       dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
-      trackPendingRequest(model, provider, connectionId, false);
       try {
         const remaining = decoder.decode();
         if (remaining) buffer += remaining;
@@ -430,7 +486,8 @@ export function createSSEStream(options = {}) {
             const extracted = extractUsage(parsed);
             if (extracted) state.usage = mergeUsage(state.usage, extracted);
 
-            const translated = translateResponse(targetFormat, sourceFormat, parsed, state);
+            const translated = translateChunk(parsed);
+            if (emitGeminiFailure(controller)) return;
 
             if (translated?._openaiIntermediate) {
               for (const item of translated._openaiIntermediate) {
@@ -450,7 +507,8 @@ export function createSSEStream(options = {}) {
           }
         }
 
-        const flushed = translateResponse(targetFormat, sourceFormat, null, state);
+        const flushed = translateChunk(null);
+        if (emitGeminiFailure(controller)) return;
 
         if (flushed?._openaiIntermediate) {
           for (const item of flushed._openaiIntermediate) {
@@ -494,7 +552,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, streamLifecycle = null) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -508,7 +566,8 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    credentials
+    credentials,
+    streamLifecycle
   });
 }
 

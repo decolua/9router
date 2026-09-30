@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, CLAUDE_BLOCK, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 
@@ -229,7 +229,7 @@ export function openaiToClaudeResponse(chunk, state) {
     for (const [idx, toolInfo] of state.toolCalls) {
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
+      if (buffered && choice.finish_reason !== OPENAI_FINISH.CONTENT_FILTER) {
         const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
         results.push({
           type: "content_block_delta",
@@ -242,6 +242,9 @@ export function openaiToClaudeResponse(chunk, state) {
         index: toolInfo.blockIndex
       });
     }
+
+    // A refusal must not release buffered tool arguments to the client.
+    if (choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER) state.toolArgBuffers?.clear();
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;

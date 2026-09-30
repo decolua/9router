@@ -15,6 +15,11 @@ export const FORMATS = {
   COMMANDCODE: "commandcode"
 };
 
+// These upstreams share the Gemini candidate/finishReason response decoder.
+export const GEMINI_STREAM_FORMATS = new Set([
+  FORMATS.GEMINI, FORMATS.GEMINI_CLI, FORMATS.ANTIGRAVITY, FORMATS.VERTEX
+]);
+
 /**
  * Detect source format from request URL pathname + body.
  * Returns null to fall back to body-based detection.
