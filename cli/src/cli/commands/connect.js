@@ -79,10 +79,14 @@ function maskKey(key) {
   return `${key.slice(0, 6)}…${key.slice(-4)}`;
 }
 
+// Enquirer rejects with an empty value on Ctrl+C / Esc.
+class Cancelled extends Error {}
+const prompt = (p) => p.run().catch((err) => { throw err || new Cancelled("Cancelled"); });
+
 async function promptPassword() {
   if (!process.stdin.isTTY) throw new Error("Password required: pass --password or set NINE_ROUTER_PASSWORD");
   const { Password } = require("enquirer");
-  return new Password({ message: "9router dashboard password" }).run();
+  return prompt(new Password({ message: "9router dashboard password" }));
 }
 
 async function request(url, { method = "GET", body, cookie, apiKey } = {}) {
@@ -145,12 +149,11 @@ async function listModels(server, apiKey) {
 async function promptTools() {
   const { MultiSelect } = require("enquirer");
   const { TOOLS } = require("./connectTools");
-  const picked = await new MultiSelect({
+  return prompt(new MultiSelect({
     message: "Select CLI tools to configure (space to toggle, enter to confirm)",
     choices: TOOLS.map((t) => ({ name: t.id, message: t.name, hint: t.paths()[0], enabled: t.id === "claude" })),
     validate: (v) => v.length > 0 || "Select at least one tool",
-  }).run();
-  return picked;
+  }));
 }
 
 async function selectTools(opts) {
@@ -160,23 +163,44 @@ async function selectTools(opts) {
 }
 
 async function run(argv) {
+  try {
+    return await runConnect(argv);
+  } catch (err) {
+    if (err instanceof Cancelled) {
+      console.log("Cancelled.");
+      return 130;
+    }
+    throw err;
+  }
+}
+
+async function runConnect(argv) {
   const opts = parseArgs(argv);
   if (opts.help) {
     console.log(HELP);
     return 0;
   }
-  if (opts.tools) resolveTools(opts.tools); // fail fast on unknown tool names
-  if (opts.reset) {
-    const tools = await selectTools(opts);
-    for (const t of tools) {
-      const files = await t.reset();
-      console.log(files.length ? `✅ ${t.name}: removed 9router settings (${files.join(", ")})` : `• ${t.name}: nothing to reset`);
-    }
-    return 0;
-  }
-  if (!opts.url) {
+  if (!opts.reset && !opts.url) {
     console.log(HELP);
     return 1;
+  }
+
+  // Pick tools before any network call: bad names fail fast, and cancelling
+  // the picker never leaves a freshly created key on the server.
+  const tools = await selectTools(opts);
+
+  if (opts.reset) {
+    let failed = 0;
+    for (const t of tools) {
+      try {
+        const files = await t.reset();
+        console.log(files.length ? `✅ ${t.name}: removed 9router settings (${files.join(", ")})` : `• ${t.name}: nothing to reset`);
+      } catch (err) {
+        failed++;
+        console.log(`❌ ${t.name}: ${err.message}`);
+      }
+    }
+    return failed ? 1 : 0;
   }
 
   const server = normalizeServerUrl(opts.url);
@@ -197,11 +221,10 @@ async function run(argv) {
     console.log(`• ${result.created ? "Created" : "Reusing"} API key "${opts.keyName}" (${maskKey(apiKey)})`);
   }
 
-  const tools = await selectTools(opts);
   const available = await listModels(server, apiKey);
   const warnMissing = (label, model, flag) => {
     if (available && !available.has(model)) {
-      console.log(`[33m⚠ ${label}: "${model}" not listed by server — override with ${flag} <model>[0m`);
+      console.log(`\x1b[33m⚠ ${label}: "${model}" not listed by server — override with ${flag} <model>\x1b[0m`);
     }
   };
 
@@ -241,4 +264,4 @@ async function run(argv) {
   return failed ? 1 : 0;
 }
 
-module.exports = { run, __test__: { parseArgs, normalizeServerUrl, extractAuthCookie, maskKey } };
+module.exports = { run, __test__: { parseArgs, normalizeServerUrl, extractAuthCookie, maskKey, Cancelled } };

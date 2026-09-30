@@ -14,21 +14,38 @@ const os = require("os");
 const home = () => os.homedir();
 const v1 = (baseUrl) => (baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`);
 
+// Drop trailing commas (JSONC) outside string literals, so values like "a,}" survive.
+function stripTrailingCommas(text) {
+  return text.replace(/("(?:\\.|[^"\\])*")|,(\s*[}\]])/g, (m, str, tail) => str ?? tail);
+}
+
 function readJson(file) {
   try {
-    return JSON.parse(fs.readFileSync(file, "utf8").replace(/,(\s*[}\]])/g, "$1"));
+    return JSON.parse(stripTrailingCommas(fs.readFileSync(file, "utf8")));
   } catch (err) {
     if (err.code === "ENOENT") return null;
     throw new Error(`Cannot parse ${file}: ${err.message}`);
   }
 }
 
+// Files hold the API key → owner-only (0600) on POSIX; no-op on Windows.
+const SECRET_MODE = 0o600;
+
+// Rewrite an existing file on reset (no backup, existing mode kept).
+function rewriteFile(file, content) {
+  fs.writeFileSync(file, content, { mode: SECRET_MODE });
+}
+
 // One-time backup of the user's pre-9router file, then write.
 function writeFile(file, content) {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   const backup = `${file}.bak-9router`;
-  if (fs.existsSync(file) && !fs.existsSync(backup)) fs.copyFileSync(file, backup);
-  fs.writeFileSync(file, content);
+  if (fs.existsSync(file) && !fs.existsSync(backup)) {
+    fs.copyFileSync(file, backup);
+    fs.chmodSync(backup, SECRET_MODE);
+  }
+  fs.writeFileSync(file, content, { mode: SECRET_MODE });
+  fs.chmodSync(file, SECRET_MODE); // mode above only applies when creating
 }
 
 const writeJson = (file, data) => writeFile(file, JSON.stringify(data, null, 2));
@@ -68,7 +85,7 @@ const claude = {
       CLAUDE_RESET_KEYS.forEach((k) => delete cur.env[k]);
       if (Object.keys(cur.env).length === 0) delete cur.env;
     }
-    fs.writeFileSync(file, JSON.stringify(cur, null, 2));
+    rewriteFile(file, JSON.stringify(cur, null, 2));
     return [file];
   },
 };
@@ -112,7 +129,7 @@ const codex = {
     for (const k of ["model_providers", "agents"]) {
       if (cfg[k] && Object.keys(cfg[k]).length === 0) delete cfg[k];
     }
-    fs.writeFileSync(file, stringifyTOML(cfg));
+    rewriteFile(file, stringifyTOML(cfg));
     return [file];
   },
 };
@@ -153,7 +170,7 @@ const opencode = {
       delete cfg.agent.explorer;
       if (Object.keys(cfg.agent).length === 0) delete cfg.agent;
     }
-    fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+    rewriteFile(file, JSON.stringify(cfg, null, 2));
     return [file];
   },
 };
@@ -196,7 +213,7 @@ const droid = {
       cfg.customModels = cfg.customModels.filter((m) => !isDroid9r(m));
       if (cfg.customModels.length === 0) delete cfg.customModels;
     }
-    fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+    rewriteFile(file, JSON.stringify(cfg, null, 2));
     return [file];
   },
 };
@@ -227,7 +244,7 @@ const crush = {
     if (!cfg?.providers?.["9router"]) return [];
     delete cfg.providers["9router"];
     if (Object.keys(cfg.providers).length === 0) delete cfg.providers;
-    fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
+    rewriteFile(file, JSON.stringify(cfg, null, 2));
     return [file];
   },
 };
@@ -252,7 +269,7 @@ const kilo = {
     if (!auth) return [];
     delete auth["openai-compatible"];
     delete auth["9router"];
-    fs.writeFileSync(file, JSON.stringify(auth, null, 2));
+    rewriteFile(file, JSON.stringify(auth, null, 2));
     return [file];
   },
 };
@@ -289,13 +306,15 @@ const cline = {
       state.actModeApiProvider = "cline";
       state.planModeApiProvider = "cline";
     }
-    fs.writeFileSync(clineState(), JSON.stringify(state, null, 2));
+    rewriteFile(clineState(), JSON.stringify(state, null, 2));
+    const touched = [clineState()];
     const secrets = readJson(clineSecrets());
     if (secrets) {
       delete secrets.openAiApiKey;
-      fs.writeFileSync(clineSecrets(), JSON.stringify(secrets, null, 2));
+      rewriteFile(clineSecrets(), JSON.stringify(secrets, null, 2));
+      touched.push(clineSecrets());
     }
-    return [clineState()];
+    return touched;
   },
 };
 
@@ -316,4 +335,4 @@ function resolveTools(list) {
   return TOOLS.filter((t) => ids.has(t.id));
 }
 
-module.exports = { TOOLS, TOOL_IDS, CLAUDE_MODELS, resolveTools };
+module.exports = { TOOLS, TOOL_IDS, CLAUDE_MODELS, resolveTools, __test__: { stripTrailingCommas } };
