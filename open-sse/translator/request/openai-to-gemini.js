@@ -91,10 +91,20 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       const content = msg.content;
 
       if (role === ROLE.SYSTEM && body.messages.length > 1) {
-        result.systemInstruction = {
-          role: GEMINI_ROLE.USER,
-          parts: [{ text: typeof content === "string" ? content : extractTextContent(content) }]
-        };
+        // Append rather than replace. Gemini takes ONE systemInstruction, but a
+        // request may legally carry several system messages (agents commonly
+        // stack a base prompt with per-session or per-tool instructions), and
+        // overwriting dropped every earlier one on the floor. #3972
+        const text = typeof content === "string" ? content : extractTextContent(content);
+        const existing = result.systemInstruction;
+        if (existing) {
+          existing.parts.push({ text });
+        } else {
+          result.systemInstruction = {
+            role: GEMINI_ROLE.USER,
+            parts: [{ text }]
+          };
+        }
       } else if (role === ROLE.USER || (role === ROLE.SYSTEM && body.messages.length === 1)) {
         const parts = convertOpenAIContentToParts(content);
         if (parts.length > 0) {
