@@ -648,7 +648,9 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid, error: valid ? null : "Invalid API key" };
       }
       case "volcengine-ark":
-      case "byteplus": {
+      case "byteplus":
+      // /v1/models is public (200 for any key), so only a chat probe can reject a bad key.
+      case "inceptionlabs": {
         const res = await fetchWithConnectionProxy(PROVIDERS[connection.provider]?.baseUrl, {
           method: "POST",
           headers: { "Authorization": `Bearer ${connection.apiKey}`, "content-type": "application/json" },

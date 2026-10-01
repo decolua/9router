@@ -410,6 +410,24 @@ export async function POST(request) {
           break;
         }
 
+        case "inceptionlabs": {
+          // /v1/models is public (200 for any key), so the generic models probe
+          // would accept any key. A 1-token chat probe returns 401 for a bad key.
+          const res = await fetch(PROVIDERS.inceptionlabs.baseUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+            body: JSON.stringify({
+              model: getDefaultModel("inceptionlabs"),
+              messages: [{ role: "user", content: "ping" }],
+              max_tokens: 1,
+              stream: false,
+            }),
+            signal: AbortSignal.timeout(10000),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+
         case "commandcode": {
           const cfg = PROVIDERS.commandcode;
           const model = getDefaultModel("commandcode");
