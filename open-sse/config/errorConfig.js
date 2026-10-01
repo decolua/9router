@@ -28,12 +28,39 @@ export const DEFAULT_ERROR_MESSAGES = {
   504: "Gateway timeout"
 };
 
-// Exponential backoff config for rate limits
-export const BACKOFF_CONFIG = {
+// Exponential backoff config for rate limits. The defaults preserve the
+// historical 2s -> 5m schedule when no environment variables are supplied.
+const DEFAULT_BACKOFF_CONFIG = Object.freeze({
   base: 2000,
   max: 5 * 60 * 1000,
   maxLevel: 15
-};
+});
+
+function parsePositiveInteger(value) {
+  if (typeof value !== "string" || !/^\d+$/.test(value.trim())) return null;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function resolveBackoffConfig(env = process.env) {
+  const base = parsePositiveInteger(env.BACKOFF_BASE_MS);
+  const max = parsePositiveInteger(env.BACKOFF_MAX_MS);
+  const maxLevel = parsePositiveInteger(env.BACKOFF_MAX_LEVEL);
+
+  const config = {
+    base: base ?? DEFAULT_BACKOFF_CONFIG.base,
+    max: max ?? DEFAULT_BACKOFF_CONFIG.max,
+    maxLevel: maxLevel ?? DEFAULT_BACKOFF_CONFIG.maxLevel
+  };
+
+  // Each knob can be tuned independently, but a cap below the initial delay
+  // is contradictory and would make the schedule hard to reason about.
+  if (config.max < config.base) return DEFAULT_BACKOFF_CONFIG;
+
+  return Object.freeze(config);
+}
+
+export const BACKOFF_CONFIG = resolveBackoffConfig();
 
 // Default cooldown for transient/unknown errors
 export const TRANSIENT_COOLDOWN_MS = 30 * 1000;
