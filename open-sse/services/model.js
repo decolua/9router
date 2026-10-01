@@ -17,6 +17,15 @@ for (const entry of REGISTRY) {
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
 }
 
+const OPENAI_CATALOG_IDS = new Set(
+  (REGISTRY.find((entry) => entry.id === "openai")?.models || [])
+    .map((model) => model.id.toLowerCase()),
+);
+
+// Codex Guardian has sent this bare id through a Copilot-only connection. Do not infer
+// other GPT ids from version numbers: the OpenAI registry can omit valid OpenAI models.
+const COPILOT_BARE_MODEL_IDS = new Set(["gpt-5.6-luna"]);
+
 const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
@@ -151,5 +160,8 @@ const MODEL_PREFIX_PROVIDERS = [
 function inferProviderFromModelName(modelName) {
   if (!modelName) return "openai";
   const m = modelName.toLowerCase();
+  const baseModel = m.replace(/\([^()]+\)\s*$/, "").trim();
+  if (OPENAI_CATALOG_IDS.has(baseModel)) return "openai";
+  if (COPILOT_BARE_MODEL_IDS.has(baseModel)) return "github";
   return MODEL_PREFIX_PROVIDERS.find(([re]) => re.test(m))?.[1] || "openai";
 }
