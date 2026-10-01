@@ -17,6 +17,19 @@ function headers(config, token) {
 }
 
 export default {
+  // GET /videos/{id}/content?index=N — the finished bytes. OpenRouter's
+  // `unsigned_urls` still require the account key, so the proxy fetches them
+  // on the client's behalf rather than handing the upstream key out.
+  buildContentRequest({ config, requestId, index, token }) {
+    const base = config.baseUrl.replace(/\/$/, "");
+    const query = Number.isInteger(index) && index > 0 ? `?index=${index}` : "";
+    return {
+      method: "GET",
+      url: `${base}/${encodeURIComponent(requestId)}/content${query}`,
+      headers: { ...(config.headers || {}), ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    };
+  },
+
   buildRequest({ config, action, requestId, rawBody, contentType, token }) {
     const base = config.baseUrl.replace(/\/$/, "");
 
