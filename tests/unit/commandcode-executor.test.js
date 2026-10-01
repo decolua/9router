@@ -127,10 +127,30 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     const result = await inspectAndWrapCommandCodeResponse(fakeResponse, "poolside/laguna-s-2.1-free");
     expect(result.ok).toBe(true);
     expect(result.status).toBe(200);
+    expect(result.headers.get("x-9router-wire-format")).toBe("openai");
 
     const text = await result.text();
     expect(text).toContain("Hello from Laguna");
     expect(text).toContain("data: [DONE]");
+  });
+
+  it("reports OpenAI responseFormat after wrapping a successful stream", async () => {
+    const executor = new CommandCodeExecutor();
+    const baseExecute = vi.spyOn(Object.getPrototypeOf(CommandCodeExecutor.prototype), "execute").mockResolvedValue({
+      response: new Response(createNdjsonStream([
+        JSON.stringify({ type: "text-delta", text: "ok" }) + "\n",
+        JSON.stringify({ type: "finish", finishReason: "stop" }) + "\n",
+      ]), { status: 200, headers: { "Content-Type": "application/x-ndjson" } }),
+    });
+    try {
+      const res = await executor.execute({ model: "deepseek/deepseek-v4.1-flash" });
+      expect(res.responseFormat).toBe("openai");
+      const text = await res.response.text();
+      expect(text).toContain("ok");
+      expect(text).toContain("data: [DONE]");
+    } finally {
+      baseExecute.mockRestore();
+    }
   });
 
   it("preserves all lines in a multi-line packet when inspecting tool-input-start", async () => {
