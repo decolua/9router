@@ -92,6 +92,16 @@ In the dashboard, open `Endpoint` → `Token Saver` → `Headroom`, confirm the 
 
 If Headroom runs on the Docker host instead of as a sidecar, use `http://host.docker.internal:8787` on macOS/Windows. On Linux, add `--add-host=host.docker.internal:host-gateway` or the equivalent compose `extra_hosts` entry.
 
+## Optional auto-update with Watchtower
+
+`docker-compose.yml` at the repo root includes a [Watchtower](https://containrrr.dev/watchtower/) service that polls Docker Hub hourly and recreates `9router`/`headroom` in place whenever a newer `decolua/9router:latest` (or `headroom`) image is published:
+
+```bash
+docker compose up -d
+```
+
+Watchtower can only detect updates for images pulled from a registry — it has nothing to compare against for a locally built, unpushed image. Don't repoint the `9router` service's `image:` at a local tag (e.g. `9router:latest`) if you want auto-update to keep working; build-from-source users should update manually instead (`docker build` + `docker compose up -d --no-deps 9router`).
+
 ## Update to latest
 
 ```bash
