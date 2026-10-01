@@ -58,3 +58,26 @@ export const FILTERS = {
   SEARCH_LIST: "search-list",
   BUILD_OUTPUT: "build-output"
 };
+
+// Machine-detectable truncation sentinel. Any filter that drops entries must
+// append this so a downstream agent can tell data is missing — a bare "+N"
+// reads like a harmless summary. Single source of truth for the format.
+export function truncationSentinel(filter, omitted, total) {
+  return `[RTK-TRUNCATED filter=${filter} omitted=${omitted} total=${total}]`;
+}
+
+// True when text already carries a sentinel — used to make the filters
+// idempotent (re-compressing an already-compressed body must not re-truncate or
+// stack markers).
+export const TRUNCATION_SENTINEL_RE = /\[RTK-TRUNCATED /;
+
+export function hasTruncationSentinel(text) {
+  return typeof text === "string" && TRUNCATION_SENTINEL_RE.test(text);
+}
+
+// Remove any sentinel literal a tool result might carry as DATA, so untrusted
+// content cannot forge truncation metadata that a downstream reader trusts.
+export function stripTruncationSentinels(text) {
+  if (typeof text !== "string") return text;
+  return text.replace(/\[RTK-TRUNCATED [^\]]*\]/g, "");
+}

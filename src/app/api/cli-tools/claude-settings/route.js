@@ -7,8 +7,41 @@ import fs from "fs/promises";
 import path from "path";
 import os from "os";
 import { DEFAULT_PLUGINS } from "@/shared/constants/coworkPlugins";
+import { PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
+import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { shouldMarkOneMContext } from "open-sse/utils/modelMarkers.js";
 
 const execAsync = promisify(exec);
+
+// Env keys that hold a model id Claude Code will resolve through 9Router.
+const MODEL_ENV_KEYS = [
+  "ANTHROPIC_DEFAULT_OPUS_MODEL",
+  "ANTHROPIC_DEFAULT_SONNET_MODEL",
+  "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+  "ANTHROPIC_DEFAULT_FABLE_MODEL",
+];
+
+// Reverse-map a short alias ("cbai") back to the provider id ("codebuddy-intl")
+// so provider-scoped capabilities resolve.
+const ALIAS_TO_PROVIDER_ID = Object.fromEntries(
+  Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id]),
+);
+
+// Default the `[1m]` marker from each mapped model's real context window.
+// Claude Code assumes a 200K window unless the model name carries `[1m]`, so a
+// 1M model is silently treated as 200K. Idempotent; a user's explicit marker is
+// left untouched.
+function autoMarkOneMContext(env) {
+  for (const key of MODEL_ENV_KEYS) {
+    const value = env?.[key];
+    if (typeof value !== "string") continue;
+    const resolve = (prefix, model) =>
+      getCapabilitiesForModel(prefix ? (ALIAS_TO_PROVIDER_ID[prefix] || prefix) : null, model)?.contextWindow;
+    if (shouldMarkOneMContext(value, resolve)) {
+      env[key] = `${value.trim()}[1m]`;
+    }
+  }
+}
 
 // Exa MCP def — reuse from coworkPlugins (DRY).
 const EXA_PLUGIN = DEFAULT_PLUGINS.find((p) => p.name === "exa");
@@ -170,6 +203,11 @@ export async function POST(request) {
         ...env,
       },
     };
+
+    // Default the `[1m]` marker from each mapped model's real context window
+    // (see autoMarkOneMContext). Runs before the write so the file on disk
+    // matches what Claude Code will use.
+    autoMarkOneMContext(newSettings.env);
 
     // CLAUDE_CODE_AUTO_COMPACT_WINDOW — the token threshold that triggers
     // auto-compact. Only set when a concrete value is chosen; "Default" removes

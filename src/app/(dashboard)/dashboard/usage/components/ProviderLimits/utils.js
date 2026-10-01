@@ -624,6 +624,9 @@ export function parseQuotaData(provider, data) {
         // with one-shot bonus packs ("Bonus Pack N"). Forward `recurring`
         // so the UI can show "Expires in" for bonus packs (whose resetAt is
         // a hard expiry, not a refresh) instead of "Reset in".
+        // Both providers share one usage handler and envelope shape, so they
+        // must share this case too — otherwise Intl falls to `default` and
+        // loses `recurring`, mislabelling every bonus pack as refillable.
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({

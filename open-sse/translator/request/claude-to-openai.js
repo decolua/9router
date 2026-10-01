@@ -1,6 +1,7 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
+import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
@@ -11,16 +12,24 @@ function stripAnthropicBillingHeader(text) {
 }
 
 // Convert Claude request to OpenAI format
-export function claudeToOpenAIRequest(model, body, stream) {
+export function claudeToOpenAIRequest(model, body, stream, credentials) {
   const result = {
     model: model,
     messages: [],
     stream: stream
   };
 
-  // Max tokens
+  // Max tokens — resolve against the MODEL's real output ceiling, not the
+  // conservative 64000 default. Mirrors openai-to-claude.js: a high-output
+  // model (e.g. CodeBuddy deepseek-v4.1-flash / MiniMax-M3, maxOutput up to
+  // 128000) was otherwise pre-clamped here, truncating long autonomous output.
+  // The provider is required so provider-scoped capability overrides win over
+  // a canonical model entry with a different limit; fall back to the model-only
+  // lookup when the provider id is unavailable (older callers / direct use).
+  const provider = credentials?._provider || null;
   if (body.max_tokens) {
-    result.max_tokens = adjustMaxTokens(body);
+    const caps = getCapabilitiesForModel(provider, model);
+    result.max_tokens = adjustMaxTokens(body, caps?.maxOutput || undefined);
   }
 
   // Temperature
@@ -215,6 +224,16 @@ function convertClaudeMessage(msg) {
               || (resultImages.length ? "" : JSON.stringify(block.content));
           } else if (block.content) {
             resultContent = JSON.stringify(block.content);
+          }
+
+          // The OpenAI tool role has no native is_error field, and CodeBuddy
+          // rejects unknown fields on the message. Preserve the error signal —
+          // RTK's compression skips error results, and the model needs to know a
+          // tool failed — by prefixing a marker the downstream can detect.
+          if (block.is_error === true) {
+            resultContent = resultContent
+              ? `[tool_error: true]\n${resultContent}`
+              : "[tool_error: true]";
           }
 
           toolResults.push({

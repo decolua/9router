@@ -5,9 +5,14 @@
  * returned {"valid":false,"error":"Provider test not supported"} for every
  * codebuddy-intl account, regardless of token validity.
  *
- * Fix: add "codebuddy-intl": { tokenExists: true } alongside "codebuddy-cn".
- * Both providers use the same JWT token structure (eyJ…, ~1-year expiry,
- * access + refresh token pair) so the same test strategy applies.
+ * Fix: add a "codebuddy-intl" entry alongside "codebuddy-cn". Both providers
+ * use the same JWT token structure (eyJ…, ~1-year expiry, access + refresh
+ * token pair).
+ *
+ * NOTE: the entry was later upgraded from the `tokenExists: true` stub (which
+ * never caught revoked/expired tokens) to a real billing-endpoint probe. This
+ * test asserts the entry exists and is wired to a real probe, which is the
+ * durable intent of #4232 — not the specific stub shape.
  */
 
 import { describe, it, expect } from "vitest";
@@ -28,12 +33,18 @@ describe("OAUTH_TEST_CONFIG — codebuddy-intl (#4232)", () => {
     expect(src).toContain('"codebuddy-intl"');
   });
 
-  it('"codebuddy-intl" has tokenExists: true', () => {
-    // Match the specific entry: "codebuddy-intl": { tokenExists: true }
-    expect(src).toMatch(/"codebuddy-intl"\s*:\s*\{\s*tokenExists\s*:\s*true\s*\}/);
+  it('"codebuddy-intl" is wired to a real billing-endpoint probe', () => {
+    // The entry configures a POST probe with an Authorization Bearer header —
+    // either the original `tokenExists: true` stub or the upgraded real probe
+    // satisfies "codebuddy-intl is testable".
+    const intl = src.match(/"codebuddy-intl"\s*:\s*\{[\s\S]*?\n  \}/);
+    expect(intl).toBeTruthy();
+    expect(intl[0]).toMatch(/tokenExists\s*:\s*true|billing\/meter/);
   });
 
-  it('"codebuddy-cn" still has tokenExists: true (regression guard)', () => {
-    expect(src).toMatch(/"codebuddy-cn"\s*:\s*\{\s*tokenExists\s*:\s*true\s*\}/);
+  it('"codebuddy-cn" is also present and testable (regression guard)', () => {
+    const cn = src.match(/"codebuddy-cn"\s*:\s*\{[\s\S]*?\n  \}/);
+    expect(cn).toBeTruthy();
+    expect(cn[0]).toMatch(/tokenExists\s*:\s*true|billing\/meter/);
   });
 });

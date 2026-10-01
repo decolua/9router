@@ -133,6 +133,14 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   const contentParts = [];
   const reasoningParts = [];
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
+  const toolIndexById = new Map(); // tool_call id -> assigned index (when provider omits index)
+  // Synthetic slots for calls the provider streamed without an index or id are
+  // allocated from a high base so they can never collide with a real provider
+  // index (0,1,2,...). Order is preserved: synthetics sort after real indices,
+  // which matches the streaming position in which they arrived.
+  const SYNTHETIC_INDEX_BASE = 100000;
+  let nextSyntheticToolIndex = SYNTHETIC_INDEX_BASE;
+  let lastToolIndex = 0;
   let finishReason = "stop";
   let usage = null;
 
@@ -147,13 +155,41 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     // Accumulate tool_calls from streaming deltas
     if (Array.isArray(delta.tool_calls)) {
       for (const tc of delta.tool_calls) {
-        const idx = tc.index ?? 0;
+        // `index` is optional in the OpenAI streaming schema; defaulting every
+        // call to 0 collapses distinct parallel tool calls into one. Prefer the
+        // provider index, else key by id, else fall back to the last slot.
+        let idx;
+        if (typeof tc.index === "number") {
+          idx = tc.index;
+          if (tc.id) toolIndexById.set(tc.id, idx);
+        } else if (tc.id && toolIndexById.has(tc.id)) {
+          idx = toolIndexById.get(tc.id);
+        } else if (tc.id) {
+          idx = nextSyntheticToolIndex++;
+          toolIndexById.set(tc.id, idx);
+        } else {
+          // No index and no id: a fragment that carries a NEW function name is a
+          // distinct call (parallel calls streamed positionally) — allocate a
+          // fresh slot rather than merging it into the previous one. A fragment
+          // with only arguments continues the current slot.
+          const lastSlot = toolCallMap.get(lastToolIndex);
+          const isNewCall = tc.function?.name && lastSlot && lastSlot.function.name && lastSlot.function.name !== tc.function.name;
+          if (isNewCall) {
+            idx = nextSyntheticToolIndex++;
+          } else {
+            idx = lastToolIndex;
+          }
+        }
+        lastToolIndex = idx;
+
         if (!toolCallMap.has(idx)) {
           toolCallMap.set(idx, { id: tc.id || "", type: "function", function: { name: "", arguments: "" } });
         }
         const existing = toolCallMap.get(idx);
         if (tc.id) existing.id = tc.id;
-        if (tc.function?.name) existing.function.name += tc.function.name;
+        // Assign the name once; some providers repeat it on every arg chunk, and
+        // concatenating would produce "BashBashBash". (Arguments accumulate.)
+        if (tc.function?.name && !existing.function.name) existing.function.name = tc.function.name;
         if (tc.function?.arguments) existing.function.arguments += tc.function.arguments;
       }
     }
@@ -163,6 +199,14 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
   if (toolCallMap.size > 0) {
     message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
+  }
+
+  // Tool calls are present but the upstream reported a non-tool finish reason
+  // (e.g. "stop" or ""): normalize to "tool_calls", matching the streaming
+  // (nonStreamingHandler) path, so clients still enter their tool-execution
+  // branch instead of treating the turn as a plain text answer.
+  if (toolCallMap.size > 0 && finishReason !== "tool_calls" && finishReason !== "function_call") {
+    finishReason = "tool_calls";
   }
 
   const result = {

@@ -66,8 +66,20 @@ const PATTERN_THINKING = [
   { provider: "codebuddy-cn", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
   { provider: "codebuddy-cn", pattern: "hy3*",         levels: ["low", "high"] },
   { provider: "codebuddy-cn", pattern: "hy4*",         levels: ["high"] },
-  // codebuddy-intl rides the same gateway catalog, so its deepseek levels match.
+  // codebuddy-intl rides the same gateway catalog, so the models it shares with
+  // CN carry the same supportedEfforts. Mirror CN's sets for the shared ids;
+  // Intl-only models (gpt-5.x / gpt-6-astra / gemini-3.5-flash / kimi-k3) have
+  // no published supportedEfforts here and fall through to the format default.
+  { provider: "codebuddy-intl", pattern: "glm-5.3*",     levels: ["low", "high", "max"] },
+  { provider: "codebuddy-intl", pattern: "glm-5.2",      levels: ["high", "xhigh"] },
   { provider: "codebuddy-intl", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
+  { provider: "codebuddy-intl", pattern: "hy3*",         levels: ["low", "high"] },
+  { provider: "codebuddy-intl", pattern: "hy4*",         levels: ["high"] },
+  // Intl-only ids that speak the gateway's OpenAI reasoning_effort shape.
+  // kimi-k3 honors "max"; gemini-3.5-flash is an openai-effort model too (the
+  // old "kimi"/"gemini-level" caps routed it to the wrong wire format).
+  { provider: "codebuddy-intl", pattern: "kimi-k3",          levels: ["low", "medium", "high", "max"] },
+  { provider: "codebuddy-intl", pattern: "gemini-3.5-flash", levels: ["low", "medium", "high"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
@@ -79,9 +91,15 @@ export function getThinkingLevels(provider, model) {
   const modelLevels = provider === "codex"
     ? getProviderModels("cx").find((entry) => entry.id === baseId)?.thinkingLevels
     : null;
-  const hit = PATTERN_THINKING.find((entry) =>
-    (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
-  );
+  // Specificity wins over array order: a provider-scoped entry always beats a
+  // provider-agnostic one, even if the generic entry appears first. Without
+  // this, a broad rule like `*deepseek-v4.*` above a later
+  // `{provider:"codebuddy-intl", pattern:"deepseek-v4*"}` makes the narrow
+  // entry dead code (find() short-circuits on the first hit).
+  const matches = (entry) =>
+    (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model);
+  const hit = PATTERN_THINKING.find((e) => e.provider === provider && matches(e))
+    || PATTERN_THINKING.find(matches);
   let levels = modelLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;

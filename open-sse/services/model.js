@@ -16,16 +16,27 @@ for (const entry of REGISTRY) {
   if (entry.alias) ALIAS_TO_PROVIDER_ID[entry.alias] = entry.id;
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
 }
+// Case-insensitive lookup index. Provider ids/aliases are lowercase, but clients
+// and configs can send "cbai", "CBAI" or "CodeBuddy-INTL"; an unmatched alias
+// previously failed OPEN to the generic OpenAI lane (getProviderConfig returns
+// PROVIDERS[provider] || PROVIDERS.openai), silently routing the request to the
+// wrong protocol. Matching case-insensitively avoids that.
+const ALIAS_TO_PROVIDER_ID_LOWER = Object.fromEntries(
+  Object.entries(ALIAS_TO_PROVIDER_ID).map(([k, v]) => [k.toLowerCase(), v]),
+);
 
 const BUILTIN_MODEL_ALIASES = {
   "grok-build": "gcli/grok-build",
 };
 
 /**
- * Resolve provider alias to provider ID
+ * Resolve provider alias to provider ID (case-insensitive).
  */
 export function resolveProviderAlias(aliasOrId) {
-  return ALIAS_TO_PROVIDER_ID[aliasOrId] || aliasOrId;
+  if (typeof aliasOrId !== "string") return aliasOrId;
+  return ALIAS_TO_PROVIDER_ID[aliasOrId]
+    || ALIAS_TO_PROVIDER_ID_LOWER[aliasOrId.toLowerCase()]
+    || aliasOrId;
 }
 
 /**

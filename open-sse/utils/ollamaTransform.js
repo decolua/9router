@@ -32,7 +32,8 @@ export function transformToOllama(response, model) {
               if (!pendingToolCalls[idx]) {
                 pendingToolCalls[idx] = { id: tc.id, function: { name: "", arguments: "" } };
               }
-              if (tc.function?.name) pendingToolCalls[idx].function.name += tc.function.name;
+              // Assign once; repeated name chunks would otherwise concatenate.
+              if (tc.function?.name && !pendingToolCalls[idx].function.name) pendingToolCalls[idx].function.name = tc.function.name;
               if (tc.function?.arguments) pendingToolCalls[idx].function.arguments += tc.function.arguments;
             }
           }

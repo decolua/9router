@@ -220,7 +220,12 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
     const fromOpenAI = responseRegistry.get(`${FORMATS.OPENAI}:${sourceFormat}`);
     if (fromOpenAI) {
       const finalResults = [];
-      for (const r of results) {
+      // On the flush (null) chunk the intermediate translator may yield nothing,
+      // but the final translator still needs its own flush contract run so a
+      // truncated pivot stream (e.g. Antigravity -> Claude) gets a synthesized
+      // terminal instead of ending unterminated. Feed it the null directly.
+      const inputs = (chunk === null && results.length === 0) ? [null] : results;
+      for (const r of inputs) {
         const converted = fromOpenAI(r, state);
         if (converted) {
           finalResults.push(...(Array.isArray(converted) ? converted : [converted]));

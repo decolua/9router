@@ -1,6 +1,6 @@
 // Port of filter_tree_output (rtk/src/cmds/system/tree.rs:65-94)
 // Removes summary line (e.g. "5 directories, 23 files") and trailing blanks.
-import { TREE_MAX_LINES } from "../constants.js";
+import { TREE_MAX_LINES, truncationSentinel } from "../constants.js";
 
 export function tree(input) {
   const lines = input.split("\n");
@@ -23,7 +23,10 @@ export function tree(input) {
   // Cap overly long trees (JS-only safeguard; Rust has no cap)
   if (filtered.length > TREE_MAX_LINES) {
     const cut = filtered.length - TREE_MAX_LINES;
-    return filtered.slice(0, TREE_MAX_LINES).join("\n") + `\n... +${cut} more lines`;
+    return (
+      filtered.slice(0, TREE_MAX_LINES).join("\n") +
+      `\n... +${cut} more lines\n${truncationSentinel("tree", cut, filtered.length)}`
+    );
   }
 
   return filtered.join("\n");

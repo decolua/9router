@@ -68,3 +68,36 @@ export async function fetchWithTimeout(url, opts, ms = 10000, proxyOptions = nul
     clearTimeout(timeoutId);
   }
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Fetch with timeout and bounded retry for TRANSIENT failures only.
+ *
+ * Usage/quota endpoints are secondary services that intermittently return 5xx
+ * (e.g. CodeBuddy's billing gateway) or drop the connection. Without a retry a
+ * single hiccup surfaces to the operator as a hard "quota API error (500)" even
+ * though the credential and request are fine. Retry 5xx and network errors a
+ * few times with a short backoff; NEVER retry 4xx (a 401/403/404 is a real,
+ * deterministic answer — retrying only wastes the provider's rate budget).
+ *
+ * @returns {Promise<Response>} the last response (caller still checks .ok)
+ */
+export async function fetchWithRetry(url, opts, { attempts = 3, timeoutMs = 10000, proxyOptions = null, backoffMs = 400 } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      const res = await fetchWithTimeout(url, opts, timeoutMs, proxyOptions);
+      if (res.status < 500) return res; // success or a deterministic client error
+      lastError = new Error(`HTTP ${res.status}`);
+      // Last attempt: hand the 5xx response back so the caller can report the code.
+      if (attempt === attempts) return res;
+    } catch (err) {
+      lastError = err; // timeout / network error — retryable
+      if (attempt === attempts) throw lastError;
+    }
+    await sleep(backoffMs * attempt);
+  }
+  throw lastError;
+}
+

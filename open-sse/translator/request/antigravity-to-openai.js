@@ -129,6 +129,18 @@ function convertContent(content) {
   const toolResults = [];
   let reasoningContent = "";
 
+  // Gemini functionCalls/Responses carry no id; derive a DETERMINISTIC one from
+  // the name AND its occurrence, so parallel calls to the same tool do not
+  // collapse onto one id (`call_Foo` twice) and each response still pairs.
+  const callNameCount = new Map();
+  const respNameCount = new Map();
+  const deriveId = (name, counters) => {
+    const n = name || "_unknown";
+    const seen = counters.get(n) || 0;
+    counters.set(n, seen + 1);
+    return seen === 0 ? `call_${n}` : `call_${n}_${seen}`;
+  };
+
   for (const part of content.parts) {
     // Thinking content (thought: true)
     if (part.thought === true && part.text) {
@@ -162,8 +174,9 @@ function convertContent(content) {
     // Function call
     if (part.functionCall) {
       toolCalls.push({
-        // Deterministic id from name so the matching functionResponse pairs correctly.
-        id: part.functionCall.id || `call_${part.functionCall.name}`,
+        // Deterministic id so the matching functionResponse pairs correctly;
+        // occurrence-suffixed so parallel calls to the same tool stay distinct.
+        id: part.functionCall.id || deriveId(part.functionCall.name, callNameCount),
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: part.functionCall.name,
@@ -176,14 +189,16 @@ function convertContent(content) {
     if (part.functionResponse) {
       toolResults.push({
         role: ROLE.TOOL,
-        tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
+        tool_call_id: part.functionResponse.id || deriveId(part.functionResponse.name, respNameCount),
         content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
       });
     }
   }
 
-  // Content with functionResponses — return array of tool result messages,
-  // plus an assistant message for any co-located tool calls / text.
+  // Content with functionResponses — the OpenAI shape requires the assistant
+  // message (tool_calls) to PRECEDE the role:tool results. Emit the assistant
+  // turn first when this content also carries tool calls / text / reasoning;
+  // otherwise a lone "here is the tool output" user turn is just the results.
   if (toolResults.length > 0) {
     if (toolCalls.length > 0 || textParts.length > 0 || reasoningContent) {
       const assistantMsg = { role: ROLE.ASSISTANT };
@@ -196,7 +211,7 @@ function convertContent(content) {
       if (toolCalls.length > 0) {
         assistantMsg.tool_calls = toolCalls;
       }
-      return [...toolResults, assistantMsg];
+      return [assistantMsg, ...toolResults];
     }
     return toolResults;
   }

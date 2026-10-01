@@ -226,7 +226,17 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // Extract userAgent from request
   const userAgent = request?.headers?.get("user-agent") || "";
 
-  // Try with available accounts (fallback on errors)
+  // Try with available accounts (fallback on errors).
+  //
+  // SAFETY INVARIANT: account/model fallback happens ONLY on a pre-response
+  // failure. handleChatCore returns { success: false } for errors raised before
+  // the provider stream is committed (non-OK upstream, translation failure,
+  // pre-stream timeout), and { success: true } with the SSE Response once
+  // streaming has begun. A failure AFTER the first byte goes through
+  // streamController.handleError and the abort-terminal path — it never returns
+  // false here, so a retry can never re-emit text, reasoning, or a tool_call
+  // the client has already seen. Preserve this ordering: do not add a fallback
+  // trigger that can observe a mid-stream error.
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;

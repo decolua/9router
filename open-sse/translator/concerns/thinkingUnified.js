@@ -161,10 +161,20 @@ function toLevel(cfg) {
   return null;
 }
 
+// Highest-to-lowest so we can clamp to the nearest level the model DECLARES.
+// "xhigh" is NOT a universal OpenAI ceiling: a provider whose declared set is
+// e.g. ["low","high","max"] or ["high"] has no xhigh, and emitting it there is
+// silently server-clamped (or rejected). Clamp to the model's real top instead.
+const OPENAI_LEVEL_ORDER = ["max", "ultra", "xhigh", "high", "medium", "low", "minimal"];
+
 function normalizeOpenAILevel(level, supportedLevels) {
   if (level !== "max" && level !== "ultra") return level;
   if (supportedLevels?.includes(level)) return level;
+  // ultra is a superset of max; prefer max when only max is declared.
   if (level === "ultra" && supportedLevels?.includes("max")) return "max";
+  for (const candidate of OPENAI_LEVEL_ORDER) {
+    if (supportedLevels?.includes(candidate)) return candidate;
+  }
   return "xhigh";
 }
 

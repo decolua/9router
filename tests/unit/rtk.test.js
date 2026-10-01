@@ -211,8 +211,10 @@ describe("gitLog filter", () => {
     const input = lines.join("\n");
     const out = gitLog(input, 20);
     const outLines = out.split("\n").filter(l => l.length > 0);
-    expect(outLines.length).toBeLessThanOrEqual(21); // 20 commits + optional skipped note
+    // 20 commits + optional skipped note + the RTK-TRUNCATED sentinel line.
+    expect(outLines.length).toBeLessThanOrEqual(22);
     expect(out).toContain("more lines");
+    expect(out).toContain("[RTK-TRUNCATED filter=git-log");
   });
 
   it("preserves input when compressed output inflates", () => {

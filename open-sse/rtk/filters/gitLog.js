@@ -1,7 +1,7 @@
 // JS-native git-log filter
 // Compresses `git log` output: keeps commit headers, subjects, Author/Date;
 // drops body padding, decoration, embedded diff lines.
-import { GIT_LOG_MAX_LINES } from "../constants.js";
+import { GIT_LOG_MAX_LINES, truncationSentinel } from "../constants.js";
 
 export function gitLog(text, maxLines = GIT_LOG_MAX_LINES) {
   if (!text) return "";
@@ -88,7 +88,10 @@ export function gitLog(text, maxLines = GIT_LOG_MAX_LINES) {
     pushLine(trimmed);
   }
 
-  if (skipped > 0) out.push(`... (${skipped} more lines)`);
+  if (skipped > 0) {
+    out.push(`... (${skipped} more lines)`);
+    out.push(truncationSentinel("git-log", skipped, skipped + out.length));
+  }
 
   const result = out.join("\n");
   if (!result && input) return input;

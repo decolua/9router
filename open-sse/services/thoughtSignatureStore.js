@@ -93,9 +93,15 @@ export function storeGeminiThoughtSignature(toolCallId, signature, sessionId = n
 
   const keys = [];
   if (sessionId && typeof sessionId === "string") {
+    // Session-scoped key only. We deliberately do NOT also write the bare
+    // toolCallId here: ids are frequently deterministic (e.g. `call_Read`), so a
+    // bare write from one session would collide with another session's read.
     keys.push(`${sessionId}:${toolCallId}`);
+  } else {
+    // No session to scope by — the bare key is the only option, and its
+    // collision risk is unavoidable for callers that provide no session.
+    keys.push(toolCallId);
   }
-  keys.push(toolCallId);
 
   for (const k of keys) {
     memorySignatures.set(k, {
@@ -126,7 +132,9 @@ export async function getGeminiThoughtSignature(toolCallId, sessionId = null, mo
   const family = signatureFamily(model);
   pruneMemoryExpired();
 
-  if (sessionId && typeof sessionId === "string") {
+  const hasSession = sessionId && typeof sessionId === "string";
+
+  if (hasSession) {
     const sessionKey = `${sessionId}:${toolCallId}`;
     const sessionEntry = memorySignatures.get(sessionKey);
     if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
@@ -134,13 +142,18 @@ export async function getGeminiThoughtSignature(toolCallId, sessionId = null, mo
     }
   }
 
-  const entry = memorySignatures.get(toolCallId);
-  if (entry && entry.expiresAt > Date.now() && isCompatible(entry, family)) {
-    return entry.signature;
+  // Fall back to the bare key ONLY when the caller has no session to scope by —
+  // otherwise we would return another session's signature for a tool_call_id
+  // that happens to coincide (ids are frequently deterministic).
+  if (!hasSession) {
+    const entry = memorySignatures.get(toolCallId);
+    if (entry && entry.expiresAt > Date.now() && isCompatible(entry, family)) {
+      return entry.signature;
+    }
   }
 
   try {
-    if (sessionId && typeof sessionId === "string") {
+    if (hasSession) {
       const sessionKey = `${sessionId}:${toolCallId}`;
       const sessionRow = await signatureKv.get(sessionKey);
       if (sessionRow && typeof sessionRow.signature === "string" && (!sessionRow.expiresAt || sessionRow.expiresAt > Date.now()) && isCompatible(sessionRow, family)) {
@@ -153,19 +166,21 @@ export async function getGeminiThoughtSignature(toolCallId, sessionId = null, mo
       }
     }
 
-    const row = await signatureKv.get(toolCallId);
-    if (row && typeof row.signature === "string") {
-      if (row.expiresAt && row.expiresAt <= Date.now()) {
-        signatureKv.remove(toolCallId).catch(() => {});
-        return null;
+    if (!hasSession) {
+      const row = await signatureKv.get(toolCallId);
+      if (row && typeof row.signature === "string") {
+        if (row.expiresAt && row.expiresAt <= Date.now()) {
+          signatureKv.remove(toolCallId).catch(() => {});
+          return null;
+        }
+        if (!isCompatible(row, family)) return null;
+        memorySignatures.set(toolCallId, {
+          signature: row.signature,
+          family: row.family || null,
+          expiresAt: Date.now() + MEMORY_TTL_MS,
+        });
+        return row.signature;
       }
-      if (!isCompatible(row, family)) return null;
-      memorySignatures.set(toolCallId, {
-        signature: row.signature,
-        family: row.family || null,
-        expiresAt: Date.now() + MEMORY_TTL_MS,
-      });
-      return row.signature;
     }
   } catch {
     // Fail-open
@@ -183,12 +198,16 @@ export function getGeminiThoughtSignatureSync(toolCallId, sessionId = null, mode
   const family = signatureFamily(model);
   pruneMemoryExpired();
 
-  if (sessionId && typeof sessionId === "string") {
+  const hasSession = sessionId && typeof sessionId === "string";
+
+  if (hasSession) {
     const sessionKey = `${sessionId}:${toolCallId}`;
     const sessionEntry = memorySignatures.get(sessionKey);
     if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
       return sessionEntry.signature;
     }
+    // With a session, do NOT fall back to the bare key (cross-session collision).
+    return null;
   }
 
   const entry = memorySignatures.get(toolCallId);

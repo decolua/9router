@@ -1,10 +1,13 @@
 /**
- * CodeBuddy CN usage handler
+ * CodeBuddy usage handler (CN and Intl)
  *
- * Scoped to the "codebuddy-cn" provider specifically — a future "codebuddy-intl"
- * variant would get its own handler/endpoint, so keep this CN-only.
+ * Shared by "codebuddy-cn" and "codebuddy-intl": both gateways return the same
+ * envelope (verified live against the Intl endpoint — code:0 with
+ * data.Response.Data.Accounts[]), and the endpoint URL is resolved per-provider
+ * from PROVIDERS[id].usage via U(providerId). The only per-provider differences
+ * are the URL and the human-facing label.
  *
- * Quota lives behind a Tencent billing endpoint (POST, payload wrapped twice
+ * Quota lives behind a billing endpoint (POST, payload wrapped twice
  * under data.Response.Data). It mixes two credit types that must NOT be merged:
  *
  *  - Refill / base ("基础体验包"): a recurring allowance whose cycle resets long
@@ -19,9 +22,8 @@
  * for refill packs, "Bonus Pack N" for bonus packs (soonest-expiring first).
  */
 
-import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { PROVIDERS } from "../../providers/index.js";
-import { U, parseResetTime } from "./shared.js";
+import { U, parseResetTime, fetchWithRetry } from "./shared.js";
 
 const PROVIDER_ID = "codebuddy-cn";
 
@@ -44,13 +46,18 @@ function refillCadence(acc) {
 }
 
 async function getCodeBuddyUsage(providerId, accessToken, apiKey, providerSpecificData, proxyOptions = null) {
+  // Human-facing label so an Intl connection is not reported as "CodeBuddy CN".
+  const label = providerId === "codebuddy-intl" ? "CodeBuddy Intl" : "CodeBuddy CN";
   const token = accessToken || apiKey;
   if (!token) {
-    return { message: `CodeBuddy (${providerId}) credential not available.` };
+    return { message: `${label} credential not available.` };
   }
 
   try {
-    const response = await proxyAwareFetch(U(providerId).url, {
+    // Retry transient 5xx / network errors: the billing gateway intermittently
+    // 500s, and without a retry a single hiccup surfaces as a hard quota error
+    // even though the credential and request are fine. 4xx is not retried.
+    const response = await fetchWithRetry(U(providerId).url, {
       method: "POST",
       headers: {
         ...(PROVIDERS[providerId]?.headers || {}),
@@ -59,24 +66,24 @@ async function getCodeBuddyUsage(providerId, accessToken, apiKey, providerSpecif
         Accept: "application/json",
       },
       body: "{}",
-    }, proxyOptions);
+    }, { attempts: 3, timeoutMs: 10000, proxyOptions });
 
     if (response.status === 401 || response.status === 403) {
-      return { message: "CodeBuddy CN credential invalid or expired." };
+      return { message: `${label} credential invalid or expired.` };
     }
     if (!response.ok) {
-      return { message: `CodeBuddy CN quota API error (${response.status}).` };
+      return { message: `${label} quota API error (${response.status}).` };
     }
 
     const json = await response.json();
     if (json?.code !== 0) {
-      return { message: `CodeBuddy CN quota error: ${json?.msg || "unknown"}` };
+      return { message: `${label} quota error: ${json?.msg || "unknown"}` };
     }
 
     const data = json?.data?.Response?.Data || {};
     const accounts = Array.isArray(data.Accounts) ? data.Accounts : [];
     if (accounts.length === 0) {
-      return { message: "CodeBuddy CN connected. No credit package found." };
+      return { message: `${label} connected. No credit package found.` };
     }
 
     const cycleEndMs = (acc) => {
@@ -133,7 +140,7 @@ async function getCodeBuddyUsage(providerId, accessToken, apiKey, providerSpecif
 
     return { plan, quotas };
   } catch (error) {
-    return { message: `CodeBuddy (${providerId}) error: ${error.message}` };
+    return { message: `${label} error: ${error.message}` };
   }
 }
 

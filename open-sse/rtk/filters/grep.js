@@ -28,6 +28,9 @@ export function grep(input) {
   const files = Array.from(byFile.keys()).sort();
   let out = `${total} matches in ${files.length}F:\n\n`;
 
+  // Track dropped matches so truncation is DETECTABLE (a bare "+N" is not).
+  let omitted = 0;
+
   for (const file of files) {
     const matches = byFile.get(file);
     out += `[file] ${file} (${matches.length}):\n`;
@@ -37,9 +40,13 @@ export function grep(input) {
       out += `  ${lineNum.padStart(4)}: ${content.trim()}\n`;
     }
     if (matches.length > GREP_PER_FILE_MAX) {
-      out += `  +${matches.length - GREP_PER_FILE_MAX}\n`;
+      omitted += matches.length - GREP_PER_FILE_MAX;
+      out += `  +${matches.length - GREP_PER_FILE_MAX} more matches in this file\n`;
     }
     out += "\n";
+  }
+  if (omitted > 0) {
+    out += `\n[RTK-TRUNCATED filter=grep omitted=${omitted} total=${total}]\n`;
   }
 
   return out;

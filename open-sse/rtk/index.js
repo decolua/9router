@@ -1,6 +1,6 @@
 // RTK port: compress tool_result content in LLM request bodies
 // Applied in chatCore on the source-format body, before translateRequest.
-import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
+import { RAW_CAP, MIN_COMPRESS_SIZE, hasTruncationSentinel, stripTruncationSentinels } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
 
@@ -21,6 +21,29 @@ export function compressMessages(body, enabled) {
   if (!items) return null;
 
   const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+  // Strip any sentinel literal an untrusted tool result carries as DATA, before
+  // the per-shape walk (which may return early for small content). Otherwise a
+  // forged marker in tool output would survive to the model as trusted metadata.
+  // EXCEPTION: content that already carries our sentinel on its own final line
+  // is a previously compressed result (idempotency) — leave it exactly as-is.
+  // A sentinel EMBEDDED mid-content is untrusted data and gets stripped.
+  const TAIL_SENTINEL = /\n?\[RTK-TRUNCATED [^\]]*\]\s*$/;
+  const cleanField = (s) => {
+    if (typeof s !== "string") return s;
+    if (TAIL_SENTINEL.test(s)) return s; // genuine, already-compressed result
+    return stripTruncationSentinels(s);
+  };
+  for (const msg of items) {
+    if (!msg || typeof msg !== "object") continue;
+    if (typeof msg.content === "string") msg.content = cleanField(msg.content);
+    if (typeof msg.output === "string") msg.output = cleanField(msg.output);
+    if (Array.isArray(msg.content)) {
+      for (const part of msg.content) {
+        if (part && typeof part.text === "string") part.text = cleanField(part.text);
+        if (part && typeof part.content === "string") part.content = cleanField(part.content);
+      }
+    }
+  }
   try {
     for (let i = 0; i < items.length; i++) {
       const msg = items[i];
@@ -42,7 +65,11 @@ export function compressMessages(body, enabled) {
       }
 
       // Shape 1: OpenAI tool message — { role:"tool", content: "string" }
+      // This is the shape the Claude->OpenAI translator emits (string content),
+      // so the [tool_error: true] marker check MUST live here too — otherwise a
+      // failed tool result gets compressed and its error trace is lost.
       if (msg.role === "tool" && typeof msg.content === "string") {
+        if (msg.content.startsWith("[tool_error: true]")) continue;
         msg.content = compressText(msg.content, stats, "openai-tool");
         continue;
       }
@@ -54,6 +81,9 @@ export function compressMessages(body, enabled) {
         for (let k = 0; k < msg.content.length; k++) {
           const part = msg.content[k];
           if (part && part.type === "text" && typeof part.text === "string") {
+            // An error result carries the [tool_error: true] marker the Claude->
+            // OpenAI translator prepends; never compress error traces.
+            if (part.text.startsWith("[tool_error: true]")) continue;
             part.text = compressText(part.text, stats, "openai-tool-array");
           }
         }
@@ -126,13 +156,23 @@ function compressText(text, stats, shape) {
     return text;
   }
 
-  const fn = autoDetectFilter(text);
-  if (!fn) {
+  // Idempotency: an already-compressed result carries a sentinel; do not run a
+  // filter over it again (which could re-truncate or stack markers).
+  if (hasTruncationSentinel(text)) {
     stats.bytesAfter += bytesIn;
     return text;
   }
 
-  const out = safeApply(fn, text);
+  // Untrusted tool output may contain a forged sentinel literal; strip it before
+  // any filter runs so only the real, computed marker reaches the model.
+  const sanitized = stripTruncationSentinels(text);
+  const fn = autoDetectFilter(sanitized);
+  if (!fn) {
+    stats.bytesAfter += sanitized.length;
+    return sanitized;
+  }
+
+  const out = safeApply(fn, sanitized);
 
   // Safety: never return empty, never grow the input
   if (!out || out.length === 0 || out.length >= bytesIn) {

@@ -32,17 +32,25 @@ export function searchList(input) {
   const dirs = Array.from(byDir.keys()).sort();
   let out = `${header}\n${paths.length} files in ${dirs.length} dirs:\n\n`;
 
+  // Track dropped paths so truncation is DETECTABLE (a bare "+N" is not).
+  let omitted = 0;
+
   for (const dir of dirs.slice(0, SEARCH_LIST_TOTAL_DIR_MAX)) {
     const names = byDir.get(dir);
     out += `${dir}/ (${names.length}):\n`;
     for (const n of names.slice(0, SEARCH_LIST_PER_DIR_MAX)) out += `  ${n}\n`;
     if (names.length > SEARCH_LIST_PER_DIR_MAX) {
-      out += `  +${names.length - SEARCH_LIST_PER_DIR_MAX}\n`;
+      omitted += names.length - SEARCH_LIST_PER_DIR_MAX;
+      out += `  +${names.length - SEARCH_LIST_PER_DIR_MAX} more in this dir\n`;
     }
     out += "\n";
   }
   if (dirs.length > SEARCH_LIST_TOTAL_DIR_MAX) {
+    for (const d of dirs.slice(SEARCH_LIST_TOTAL_DIR_MAX)) omitted += byDir.get(d).length;
     out += `+${dirs.length - SEARCH_LIST_TOTAL_DIR_MAX} more dirs\n`;
+  }
+  if (omitted > 0) {
+    out += `\n[RTK-TRUNCATED filter=search-list omitted=${omitted} total=${paths.length}]\n`;
   }
 
   return out.replace(/\n+$/, "");

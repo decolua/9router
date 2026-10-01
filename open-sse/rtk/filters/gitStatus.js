@@ -8,7 +8,7 @@
 //   ? Untracked: N files
 //   conflicts: N files
 //   clean — nothing to commit
-import { STATUS_MAX_FILES, STATUS_MAX_UNTRACKED } from "../constants.js";
+import { STATUS_MAX_FILES, STATUS_MAX_UNTRACKED, truncationSentinel } from "../constants.js";
 
 export function gitStatus(input) {
   const lines = input.split("\n");
@@ -109,6 +109,15 @@ export function gitStatus(input) {
 
   if (staged === 0 && modified === 0 && untracked === 0 && conflicts === 0) {
     out += "clean — nothing to commit\n";
+  }
+
+  // Detectable truncation: count every path dropped by the per-section caps.
+  const omitted =
+    Math.max(0, stagedFiles.length - STATUS_MAX_FILES) +
+    Math.max(0, modifiedFiles.length - STATUS_MAX_FILES) +
+    Math.max(0, untrackedFiles.length - STATUS_MAX_UNTRACKED);
+  if (omitted > 0) {
+    out += `\n${truncationSentinel("git-status", omitted, stagedFiles.length + modifiedFiles.length + untrackedFiles.length)}\n`;
   }
 
   return out.replace(/\n+$/, "");

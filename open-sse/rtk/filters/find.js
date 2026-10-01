@@ -29,6 +29,11 @@ export function find(input) {
   const dirs = Array.from(byDir.keys()).sort();
   let out = `${lines.length} files in ${dirs.length} dirs:\n\n`;
 
+  // Count paths dropped by the per-dir / per-total caps so truncation is
+  // DETECTABLE. A bare "+N" reads as a harmless summary; an agent that needs
+  // the full set must be able to tell that entries are missing.
+  let omitted = 0;
+
   const showDirs = dirs.slice(0, FIND_TOTAL_DIR_MAX);
   for (const dir of showDirs) {
     const files = byDir.get(dir);
@@ -37,11 +42,16 @@ export function find(input) {
     const showFiles = files.slice(0, FIND_PER_DIR_MAX);
     for (const f of showFiles) out += `  ${f}\n`;
     if (files.length > FIND_PER_DIR_MAX) {
-      out += `  +${files.length - FIND_PER_DIR_MAX}\n`;
+      omitted += files.length - FIND_PER_DIR_MAX;
+      out += `  +${files.length - FIND_PER_DIR_MAX} more in this dir\n`;
     }
   }
   if (dirs.length > FIND_TOTAL_DIR_MAX) {
+    for (const d of dirs.slice(FIND_TOTAL_DIR_MAX)) omitted += byDir.get(d).length;
     out += `\n+${dirs.length - FIND_TOTAL_DIR_MAX} more dirs\n`;
+  }
+  if (omitted > 0) {
+    out += `\n[RTK-TRUNCATED filter=find omitted=${omitted} total=${lines.length}]\n`;
   }
 
   return out;

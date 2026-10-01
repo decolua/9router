@@ -100,6 +100,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // back to its declared Claude target).
   const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
+  // Expose the provider id to request translators (they receive `credentials`,
+  // not the provider) so a translator can resolve provider-scoped capabilities
+  // — e.g. the model-aware max_tokens ceiling in claude-to-openai.js.
+  if (credentials) credentials._provider = provider;
   const stripList = getModelStrip(alias, model);
   const upstreamModel = getModelUpstreamId(alias, model);
 
@@ -485,6 +489,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     })).catch(() => { });
 
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
+    const overflow = detectContextOverflow(statusCode, message, provider, model);
+    if (overflow) {
+      log?.errorLine?.(reqTag, "✗",
+        `CONTEXT_OVERFLOW ${provider}/${model} · contextWindow=${overflow.contextWindow} · maxOutput=${overflow.maxOutput} · the request exceeded the model's window (no trim/compaction is applied by the gateway)`);
+    }
     if (log?.errorLine) {
       const urlStr = providerUrl ? `\n    URL: ${providerUrl}` : "";
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
@@ -518,4 +527,28 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {
   if (!expiresAt) return false;
   return new Date(expiresAt).getTime() - Date.now() < bufferMs;
+}
+
+// Context-overflow detection. A 400 whose text names a length/context/token
+// limit is not a credential problem, and the operator needs to see WHICH window
+// was exceeded — the resolved contextWindow for that provider/model — to tell a
+// genuinely-oversized request from a mis-advertised model capability.
+const CONTEXT_OVERFLOW_RE =
+  /context.{0,20}(length|window|limit|exceed)|maximum context|too many tokens|token.{0,10}(limit|exceed)|exceeds? the maximum|prompt.{0,12}too long|request.{0,12}too (large|long)|(?:request|payload|input|body).{0,8}too (large|long)|input.{0,10}too long|上下文.{0,8}(超过|超限|太长)|(?:长度|token).{0,8}(超过|超限)/i;
+
+export function detectContextOverflow(status, errorText, provider, model) {
+  if (status !== 400 && status !== 413 && status !== 422) return null;
+  const text = typeof errorText === "string" ? errorText : JSON.stringify(errorText || "");
+  // 413 Payload Too Large is overflow by definition; a 400/422 must carry a
+  // matching message (an unrecognized 400 is a different client error).
+  const isOverflow = status === 413 || CONTEXT_OVERFLOW_RE.test(text);
+  if (!isOverflow) return null;
+  const caps = getCapabilitiesForModel(provider, model);
+  return {
+    isContextOverflow: true,
+    provider,
+    model,
+    contextWindow: caps?.contextWindow ?? null,
+    maxOutput: caps?.maxOutput ?? null,
+  };
 }
