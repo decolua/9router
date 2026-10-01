@@ -152,7 +152,7 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     if (Array.isArray(result?.messages)) result.messages = ensureTrailingUserTurn(result.messages, clientLastRole);
   }
 
-  // Claude cloaking: rename client tools with CLAUDE_TOOL_SUFFIX (anti-ban)
+  // Claude cloaking: TitleCase / CC tool names (anti third-party fingerprint)
   // quirk: only providers flagged cloakToolsOnOAuth, and only with an OAuth token
   if (PROVIDERS[provider]?.quirks?.cloakToolsOnOAuth) {
     const apiKey = credentials?.accessToken || credentials?.apiKey || null;
@@ -181,9 +181,9 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
 export function translateResponse(targetFormat, sourceFormat, chunk, state) {
   ensureInitialized();
   // If same format, return as-is — except the tool name may still be cloaked:
-  // translateRequest() suffixes client tools for OAuth-cloaked Claude providers
-  // even when no format conversion is needed, so streamed tool_use blocks must
-  // be decloaked here or the client sees an unknown ("_ide"-suffixed) tool.
+  // translateRequest() remaps client tools to TitleCase for OAuth-cloaked Claude
+  // providers even when no format conversion is needed, so streamed tool_use
+  // blocks must be decloaked here or the client sees an unknown TitleCase name.
   if (sourceFormat === targetFormat) {
     return [restoreToolNames(decloakStreamChunk(chunk, state?.toolNameMap), state?.toolNameMap)];
   }

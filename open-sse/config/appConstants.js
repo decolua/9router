@@ -79,11 +79,13 @@ export const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local
 // Suffix added to client tools when forwarding to Antigravity provider (anti-ban cloaking)
 export const AG_TOOL_SUFFIX = "_ide";
 
-// Suffix added to client tools when forwarding to Claude provider (anti-ban cloaking)
+// Legacy suffix formerly used for Claude OAuth tool cloaking. OAuth cloaking now
+// remaps to TitleCase / Claude Code names (see open-sse/utils/claudeCloaking.js);
+// kept for tests/compat that still reference the old fingerprint.
 export const CLAUDE_TOOL_SUFFIX = "_ide";
 
-// CC native default tools — these are Claude Code's own tools, kept as decoys
-// Client tools matching these names are skipped (not renamed), others get _cc suffix
+// CC native default tools — Claude Code's own tools, used as OAuth decoys and
+// as the preferred TitleCase remap targets for matching client tool names.
 export const CC_DEFAULT_TOOLS = new Set([
   "Task",
   "TaskOutput",

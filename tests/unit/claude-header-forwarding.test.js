@@ -9,6 +9,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { CLAUDE_CLI_VERSION } from "open-sse/providers/shared.js";
 
 // ─── DefaultExecutor.buildHeaders() ──────────────────────────────────────────
 
@@ -29,7 +30,7 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
       headers["Anthropic-Version"] === "2023-06-01" ||
       headers["anthropic-version"] === "2023-06-01";
     expect(hasVersion).toBe(true);
-    expect(headers["User-Agent"]).toBe("claude-cli/2.1.280 (external, sdk-cli)");
+    expect(headers["User-Agent"]).toBe(`claude-cli/${CLAUDE_CLI_VERSION} (external, sdk-cli)`);
   });
 
   it("includes heavy-agent beta flags for claude-opus-5", () => {
@@ -79,23 +80,6 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
     expect(headers["x-api-key"]).toBeUndefined();
   });
 
-  it("includes Accept: text/event-stream when stream=true", () => {
-    const executor = new DefaultExecutor("claude");
-    const headers = executor.buildHeaders({ apiKey: "k" }, true);
-    expect(headers["Accept"]).toBe("text/event-stream");
-  });
-
-  it("omits Accept: text/event-stream when stream=false", () => {
-    const executor = new DefaultExecutor("claude");
-    const headers = executor.buildHeaders({ apiKey: "k" }, false);
-    expect(headers["Accept"]).toBeUndefined();
-  });
-
-  it("does not throw when no model is given", () => {
-    const executor = new DefaultExecutor("claude");
-    expect(() => executor.buildHeaders({ apiKey: "sk" }, false)).not.toThrow();
-  });
-
   it("sets x-claude-code-session-id from metadata.user_id on Claude OAuth", () => {
     const executor = new DefaultExecutor("claude");
     const headers = executor.buildHeaders(
@@ -126,6 +110,23 @@ describe("DefaultExecutor.buildHeaders() — claude provider", () => {
       }
     );
     expect(headers["x-claude-code-session-id"]).toBeUndefined();
+  });
+
+  it("includes Accept: text/event-stream when stream=true", () => {
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders({ apiKey: "k" }, true);
+    expect(headers["Accept"]).toBe("text/event-stream");
+  });
+
+  it("omits Accept: text/event-stream when stream=false", () => {
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders({ apiKey: "k" }, false);
+    expect(headers["Accept"]).toBeUndefined();
+  });
+
+  it("does not throw when no model is given", () => {
+    const executor = new DefaultExecutor("claude");
+    expect(() => executor.buildHeaders({ apiKey: "sk" }, false)).not.toThrow();
   });
 });
 

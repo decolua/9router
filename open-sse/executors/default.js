@@ -177,6 +177,7 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     // Claude OAuth: align x-claude-code-session-id with metadata.user_id.session_id if missing
+    // (applyCloaking injects the JSON user_id; Anthropic fingerprints a mismatch).
     if (this.provider === "claude" && !headers["x-claude-code-session-id"]) {
       const token = credentials?.accessToken || credentials?.apiKey || "";
       if (token.includes("sk-ant-oat")) {
