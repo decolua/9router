@@ -1,0 +1,176 @@
+name: Build macOS tray binary (arm64)
+
+# systray2 ships only an x86_64 tray_darwin_release, so Apple Silicon users need
+# Rosetta 2 for the menubar icon. This builds the native arm64 overlay that
+# cli/hooks/trayRuntime.js downloads from the `tray-binaries` release.
+#
+# Manual-only: the artifact's sha256 is pinned in cli/hooks/trayRuntime.js and
+# verified on every download, so a new build is only publishable together with a
+# matching pin. Running this with publish=true against a mismatched pin fails
+# rather than silently bricking every Apple Silicon client.
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: "Upload to the tray-binaries release (requires sha to match ARM64_TRAY_SHA256)"
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: tray-binaries-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Pinned because -trimpath only makes the build reproducible for a given Go
+  # version and macOS SDK. Bumping this changes the sha256.
+  GO_VERSION: "1.27.1"
+
+jobs:
+  build:
+    name: Build darwin/arm64
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          # The Go module lives in a temp clone of the upstream repo, so there is
+          # no go.sum at the workspace root for setup-go's cache to key on.
+          cache: false
+
+      - name: Record SDK provenance
+        run: |
+          {
+            echo "runner macOS: $(sw_vers -productVersion)"
+            echo "Xcode:        $(xcodebuild -version | head -1)"
+            echo "clang:        $(clang --version | head -1)"
+            echo "Go:           $(go version)"
+          } | tee sdk-provenance.txt
+
+      - name: Build
+        run: node cli/scripts/buildTrayArm64.js
+
+      - name: Compare against pinned checksum
+        id: sha
+        run: |
+          BUILT=$(shasum -a 256 cli/.tray-build/tray_darwin_arm64 | cut -d' ' -f1)
+          # Whitespace-tolerant, and a missing constant must fail loudly: a null
+          # match would otherwise surface as an opaque TypeError from [1].
+          PINNED=$(node -e '
+            const m = require("fs").readFileSync("cli/hooks/trayRuntime.js", "utf8")
+              .match(/ARM64_TRAY_SHA256\s*=\s*"([0-9a-f]{64})"/);
+            if (!m) { console.error("::error::ARM64_TRAY_SHA256 not found in cli/hooks/trayRuntime.js"); process.exit(1); }
+            process.stdout.write(m[1]);
+          ')
+          {
+            echo "built=$BUILT"
+            echo "pinned=$PINNED"
+            if [ "$BUILT" = "$PINNED" ]; then echo "match=true"; else echo "match=false"; fi
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Write job summary
+        run: |
+          {
+            echo "### tray_darwin_arm64"
+            echo ""
+            echo "| | |"
+            echo "|---|---|"
+            echo "| built sha256  | \`${{ steps.sha.outputs.built }}\` |"
+            echo "| pinned sha256 | \`${{ steps.sha.outputs.pinned }}\` |"
+            echo "| match         | ${{ steps.sha.outputs.match }} |"
+            echo ""
+            echo '```'
+            cat sdk-provenance.txt
+            echo '```'
+            echo ""
+            if [ "${{ steps.sha.outputs.match }}" = "true" ]; then
+              echo "Pin already matches — safe to re-run with \`publish=true\`."
+            else
+              echo "⚠️ Pin does **not** match. To publish this build, set \`ARM64_TRAY_SHA256\`"
+              echo "in \`cli/hooks/trayRuntime.js\` to the built sha256 above and land that"
+              echo "change first. Publishing without it makes every Apple Silicon client fail"
+              echo "checksum verification and fall back to the Rosetta binary."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Uploaded before the mismatch gate below, so a publish run that fails on a
+      # checksum mismatch still leaves the bytes downloadable — that is exactly
+      # the run where a maintainer needs them to verify the new sha256.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tray_darwin_arm64
+          path: |
+            cli/.tray-build/tray_darwin_arm64
+            sdk-provenance.txt
+
+      - name: Refuse to publish on checksum mismatch
+        if: ${{ inputs.publish && steps.sha.outputs.match != 'true' }}
+        run: |
+          echo "::error::publish requested but built sha256 != ARM64_TRAY_SHA256"
+          echo "  built:  ${{ steps.sha.outputs.built }}"
+          echo "  pinned: ${{ steps.sha.outputs.pinned }}"
+          echo "Update cli/hooks/trayRuntime.js and land it before publishing."
+          exit 1
+
+      - name: Publish to tray-binaries release
+        if: ${{ inputs.publish && steps.sha.outputs.match == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Clients fetch from the hardcoded ARM64_TRAY_URL, so publishing from a
+          # different repo would gate an asset stream nobody downloads and silently
+          # decouple the sha pin from the bytes Apple Silicon users execute.
+          URL_REPO=$(node -e '
+            const m = require("fs").readFileSync("cli/hooks/trayRuntime.js", "utf8")
+              .match(/"https:\/\/github\.com\/([^\/"]+\/[^\/"]+)\/releases\/download\/tray-binaries\/tray_darwin_arm64"/);
+            if (!m) { console.error("::error::ARM64_TRAY_URL not found in cli/hooks/trayRuntime.js"); process.exit(1); }
+            process.stdout.write(m[1]);
+          ')
+          if [ "${{ github.repository }}" != "$URL_REPO" ]; then
+            echo "::error::publishing to ${{ github.repository }}, but ARM64_TRAY_URL points clients at $URL_REPO"
+            echo "Repoint ARM64_TRAY_URL in cli/hooks/trayRuntime.js at this repo, or run the publish from $URL_REPO."
+            exit 1
+          fi
+
+          # gh release upload does not create the release, so bootstrap it on the
+          # first publish run rather than failing with "release not found".
+          if ! gh release view tray-binaries >/dev/null 2>&1; then
+            echo "Release 'tray-binaries' does not exist yet — creating it"
+            gh release create tray-binaries --latest=false \
+              --title "Native macOS tray binaries" \
+              --notes "Built by .github/workflows/tray-binaries.yml. Provenance and the pinned sha256 live in that workflow and in cli/hooks/trayRuntime.js (ARM64_TRAY_SHA256)."
+          fi
+
+          gh release upload tray-binaries cli/.tray-build/tray_darwin_arm64 --clobber
+
+          echo "Uploaded. Verifying public download URL..."
+          URL="https://github.com/${{ github.repository }}/releases/download/tray-binaries/tray_darwin_arm64"
+          GOT=""
+          for attempt in 1 2 3; do
+            if curl -fsSL --max-time 60 -o /tmp/verify "$URL"; then
+              GOT=$(shasum -a 256 /tmp/verify | cut -d' ' -f1)
+              if [ "$GOT" = "${{ steps.sha.outputs.built }}" ]; then break; fi
+            fi
+            # A just-uploaded asset can 404 or serve stale bytes until the CDN catches up.
+            echo "attempt $attempt: got '${GOT:-<download failed>}' — retrying in 15s"
+            sleep 15
+          done
+          if [ "$GOT" != "${{ steps.sha.outputs.built }}" ]; then
+            echo "::error::downloaded asset sha256 '${GOT:-<none>}' != built ${{ steps.sha.outputs.built }} after 3 attempts"
+            exit 1
+          fi
+          echo "✅ $URL serves the expected bytes"
+

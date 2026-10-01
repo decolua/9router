@@ -1,0 +1,103 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/.next-cli-build/
+/out/
+cli/.build-home/
+product
+# production
+/build
+.idea/
+
+# misc
+.DS_Store
+*.pem
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+.bin/*
+data/
+logs/*
+source/*
+.cursor/*
+docs/*
+!docs/ARCHITECTURE.md
+test/*
+open-sse/test/*
+RM.vn.md
+RM.md
+cursor/*
+PUBLIC.md
+Thanks.md
+PUBLIC.en.md
+PR/*
+package-lock.json
+
+
+#Ignore vscode AI rules
+.github/instructions/codacy.instructions.md
+README1.md
+deploy*.sh
+ecosystem.config.*
+
+scripts/agSniffer/*
+gitbooks/*
+gitbook/README.md
+
+# Refactor backup reference (do not bundle/lint)
+open-sse.old/
+.graphifyignore
+graphify-out/*
+
+# Local-only working dirs (notes, vendored repos, scripts, skills)
+.claude/
+.docs/
+.repo/
+.script/
+.codegraph/
+.PR/
+.next-analyze/*
+
+# Kiro local workspace state
+.kiro/
+9router-*
+
+# Local sensitive / temp files
+.engine-token.txt
+.tmp-prov.json
+.tmp-providers.json
+.oauth-session.json
+.dev-server.log
+.dev-server-err.log
+.start-dev.ps1
+start-dev-silent.cjs
+debug.log
