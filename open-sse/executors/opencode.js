@@ -433,6 +433,22 @@ export class OpenCodeExecutor extends BaseExecutor {
       }
       delete body.max_tokens;
       delete body.max_completion_tokens;
+
+      // muse-spark models spend most of their token budget on internal reasoning
+      // before emitting any text. Below ~8k tokens the model exhausts the cap while
+      // still reasoning and returns status:"incomplete" with output:[] — the caller
+      // receives a silent empty turn (#4254). Clamp to the safe window.
+      // The upstream ceiling is 1 000 000 (requests above that return 400).
+      if (isMuseSparkModel(baseModelId(model || body?.model))) {
+        const MUSE_MIN = 8000;
+        const MUSE_MAX = 1000000;
+        const cap = Number(body.max_output_tokens);
+        if (!Number.isFinite(cap) || cap < MUSE_MIN) {
+          body.max_output_tokens = MUSE_MIN;
+        } else if (cap > MUSE_MAX) {
+          body.max_output_tokens = MUSE_MAX;
+        }
+      }
       normalizeOpencodeReasoning(model, body);
       body.stream = true;
       body.store = false;
