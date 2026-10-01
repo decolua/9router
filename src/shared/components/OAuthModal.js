@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Modal, Button, Input } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { buildOAuthRedirectUri } from "@/lib/oauth/redirectUri";
 
 // Providers using the dynamic-port local callback proxy.
 // Browser OAuth: popup → auto callback → auto exchange → poll-status.
@@ -354,14 +355,10 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
 
       // Authorization code flow - build redirect URI (some providers require fixed ports)
       const appPort = window.location.port || (window.location.protocol === "https:" ? "443" : "80");
-      let redirectUri;
-      if (provider === "codex") {
-        redirectUri = "http://localhost:1455/auth/callback";
-      } else if (provider === "xai") {
-        redirectUri = "http://127.0.0.1:56121/callback";
-      } else {
-        redirectUri = `http://localhost:${appPort}/callback`;
-      }
+      // Loopback installs keep the loopback callback. A hosted or reverse-proxied
+      // install must redirect back to the public base URL instead, otherwise the
+      // consent flow lands on http://localhost:<port> on the user machine (#4054).
+      const redirectUri = buildOAuthRedirectUri(window.location, provider);
 
       // Build authorize URL first to get codeVerifier/state for codex server-side mode
       const authorizeUrl = new URL(`/api/oauth/${provider}/authorize`, window.location.origin);
