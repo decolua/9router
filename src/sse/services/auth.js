@@ -11,6 +11,12 @@ let selectionMutex = Promise.resolve();
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
+// Missing, null, and empty allowlists preserve existing all-model behavior.
+export function isConnectionAllowedForModel(connection, model) {
+  const allowedModels = connection?.allowedModels;
+  return !Array.isArray(allowedModels) || allowedModels.length === 0 || !model || allowedModels.includes(model);
+}
+
 function githubMonthlyResetMs(status, errorText, provider) {
   if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
   if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
@@ -82,8 +88,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const isAntigravity = providerId === "antigravity";
     const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
 
-    // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
+    // Filter before account strategy so round-robin only sees eligible accounts.
     const availableConnections = connections.filter(c => {
+      if (!isConnectionAllowedForModel(c, model)) return false;
       if (excludeSet.has(c.id)) return false;
       if (isModelLockActive(c, model)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
@@ -111,8 +118,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     });
 
     if (availableConnections.length === 0) {
+      const eligibleConnections = connections.filter((connection) => isConnectionAllowedForModel(connection, model));
+      if (eligibleConnections.length === 0) {
+        log.warn("AUTH", `${provider} | no eligible account configured for ${model || "requested model"}`);
+        return { noEligibleAccount: true, model };
+      }
       // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
+      const lockedConns = eligibleConnections.filter(c => isModelLockActive(c, model));
       const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
       if (isAntigravity && model && antigravityQuotaCache) {
         connections.forEach((c) => {

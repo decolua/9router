@@ -181,6 +181,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {connection.lastError}
               </span>
             )}
+            {connection.provider === "codex" && <Badge variant="default" size="sm">Models: {Array.isArray(connection.allowedModels) && connection.allowedModels.length ? connection.allowedModels.length : "All"}</Badge>}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>

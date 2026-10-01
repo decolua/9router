@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/models";
+import { getCustomModels, getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
@@ -19,6 +19,17 @@ const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fe
 
 // Model discovery must identify as the same Codex CLI version as inference.
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
+
+export function mergeCodexCustomModels(models, customModels) {
+  const merged = [...models];
+  const seen = new Set(merged.map((model) => model.id));
+  for (const model of customModels) {
+    if (!["codex", "cx"].includes(model?.providerAlias) || (model.kind || model.type || "llm") !== "llm" || !model.id || seen.has(model.id)) continue;
+    merged.push({ id: model.id, name: model.name || model.id });
+    seen.add(model.id);
+  }
+  return merged;
+}
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -627,10 +638,13 @@ export async function GET(request, { params }) {
       if (result.error) {
         return NextResponse.json({ error: result.error }, { status: result.status || 500 });
       }
+      const models = connection.provider === "codex"
+        ? mergeCodexCustomModels(result.models, await getCustomModels())
+        : result.models;
       return NextResponse.json({
         provider: connection.provider,
         connectionId: connection.id,
-        models: result.models,
+        models,
         ...(result.warning ? { warning: result.warning } : {})
       });
     }

@@ -62,6 +62,9 @@ export const ERROR_RULES = [
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },
+  // Codex returns HTTP 400 when a ChatGPT account cannot use this model.
+  // This is account/model scoped, so continue the combo rather than fail client request.
+  { text: "model is not supported when using codex with a chatgpt account", cooldownMs: COOLDOWN.long },
   { text: "rate limit",               backoff: true },
   { text: "too many requests",        backoff: true },
   { text: "quota exceeded",           backoff: true },

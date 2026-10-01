@@ -28,6 +28,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [allowedModels, setAllowedModels] = useState(null);
+  const [codexModels, setCodexModels] = useState([]);
 
   useEffect(() => {
     if (connection) {
@@ -56,6 +58,20 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       setTestResult(null);
       setValidationResult(null);
+      setAllowedModels(Array.isArray(connection.allowedModels) && connection.allowedModels.length ? connection.allowedModels : null);
+      if (connection.provider !== "codex") {
+        setCodexModels([]);
+        return;
+      }
+
+      const controller = new AbortController();
+      fetch(`/api/providers/${connection.id}/models`, { signal: controller.signal })
+        .then((res) => res.ok ? res.json() : { models: [] })
+        .then((data) => setCodexModels(data.models || []))
+        .catch((error) => {
+          if (error.name !== "AbortError") setCodexModels([]);
+        });
+      return () => controller.abort();
     }
   }, [connection]);
 
@@ -66,6 +82,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+  const displayedCodexModels = [...codexModels];
+  for (const id of allowedModels || []) {
+    if (!displayedCodexModels.some((model) => (model.id || model) === id)) displayedCodexModels.push(id);
+  }
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -114,13 +134,15 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   };
 
   const handleSubmit = async () => {
-    if (!connection) return;
+    if (!connection || (connection.provider === "codex" && Array.isArray(allowedModels) && allowedModels.length === 0)) return;
     setSaving(true);
     try {
       const updates = {
         name: formData.name,
         priority: formData.priority,
       };
+      if (connection.provider === "codex") updates.allowedModels = allowedModels;
+
       if (!isOAuth && formData.apiKey) {
         updates.apiKey = formData.apiKey;
         let isValid = validationResult === "success";
@@ -201,6 +223,29 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        {connection.provider === "codex" && (
+          <div className="rounded-lg border border-border p-3">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={allowedModels === null} onChange={(e) => setAllowedModels(e.target.checked ? null : [])} />
+              All models
+            </label>
+            <p className="mt-1 text-xs text-text-muted">Leave enabled for legacy behavior. Disable to route this account only selected models.</p>
+            {allowedModels !== null && (
+              <div className="mt-3 max-h-48 space-y-2 overflow-y-auto">
+                {displayedCodexModels.map((model) => {
+                  const id = model.id || model;
+                  const checked = allowedModels.includes(id);
+                  return <label key={id} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={checked} onChange={() => setAllowedModels(checked ? allowedModels.filter((value) => value !== id) : [...allowedModels, id])} />
+                    {model.name || id}
+                  </label>;
+                })}
+                {!displayedCodexModels.length && <p className="text-xs text-error">Select at least one model.</p>}
+              </div>
+            )}
+          </div>
+        )}
 
         {!isOAuth && (
           <>

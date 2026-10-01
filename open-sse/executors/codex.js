@@ -16,13 +16,15 @@ import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
-const CODEX_SSE_USER_OUTPUT_PATTERNS = [
-  "event: response.output_text.delta",
-  "event: response.function_call_arguments.delta",
-  '"type":"response.output_text.delta"',
-  '"type":"response.function_call_arguments.delta"',
+const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = [
+  "selected model is at capacity",
+  "model_at_capacity",
+  "configured model is unavailable from the provider",
+  "not offered on this account",
 ];
+// Do not stop the preflight peek on an empty delta frame. Codex can emit one before
+// response.failed; only real text/tool arguments make a fallback unsafe.
+const CODEX_SSE_USER_OUTPUT_PATTERN = /"type"\s*:\s*"response\.(?:output_text|function_call_arguments)\.delta"[\s\S]*?"delta"\s*:\s*"(?:\\.|[^"\\])+"/;
 const CODEX_SSE_PEEK_BYTES = 256 * 1024;
 const CODEX_MODEL_CAPACITY_MESSAGE = "Selected model is at capacity. Please try a different model.";
 function isCodexResponsesLiteModel(model) {
@@ -344,7 +346,7 @@ export class CodexExecutor extends BaseExecutor {
         if (accountHit) { matched = accountHit; accountFallback = true; break; }
         const retryHit = CODEX_SSE_RETRY_PATTERNS.find(p => lowerText.includes(p));
         if (retryHit) { matched = retryHit; break; }
-        if (CODEX_SSE_USER_OUTPUT_PATTERNS.some(p => lowerText.includes(p))) break;
+        if (CODEX_SSE_USER_OUTPUT_PATTERN.test(text)) break;
       }
     } catch (e) {
       dbg("CODEX", `peek read error: ${e.message}`);
