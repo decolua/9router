@@ -101,7 +101,11 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    // Only enforce strict public IP check if client provided a baseUrl override.
+    // Admin-configured endpoints (e.g. SEARXNG_URL=http://searxng:8080/search in Docker) are trusted (#3756).
+    const hasClientUrlOverride = Boolean(params.providerOptions?.baseUrl || params.providerOptions?.base_url);
+    const fetchFn = hasClientUrlOverride ? fetchPublic : fetch;
+    const resp = await fetchFn(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");

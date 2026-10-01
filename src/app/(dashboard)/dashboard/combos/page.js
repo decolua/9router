@@ -163,8 +163,7 @@ export default function CombosPage() {
       const combosData = await combosRes.json();
       const providersData = await providersRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
-
-      // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web
+      // Only LLM combos here - webSearch/webFetch combos belong to media-providers/web (#3787)
       if (combosRes.ok) setCombos((combosData.combos || []).filter(c => !c.kind || c.kind === "llm"));
       if (providersRes.ok) {
         setActiveProviders(providersData.connections || []);
