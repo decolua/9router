@@ -185,6 +185,17 @@ describe("MimoFreeExecutor", () => {
     expect(h["Accept"]).toBe("text/event-stream");
   });
 
+  it("uses connectionId when present and does not leak session affinity between credentials", () => {
+    const h1 = exec.buildHeaders({ connectionId: "conn-123" }, true);
+    const h2 = exec.buildHeaders({ connectionId: "conn-456" }, true);
+    expect(h1["x-session-affinity"]).toBe("conn-123");
+    expect(h2["x-session-affinity"]).toBe("conn-456");
+
+    const h3 = exec.buildHeaders({}, true);
+    const h4 = exec.buildHeaders({}, true);
+    expect(h3["x-session-affinity"]).not.toBe(h4["x-session-affinity"]);
+  });
+
   it("transformRequest injects the system marker", () => {
     const out = exec.transformRequest("mimo-auto", { messages: [{ role: "user", content: "hi" }] });
     expect(out.messages[0].content).toContain(MIMO_SYSTEM_MARKER);
