@@ -27,4 +27,16 @@ export const GEMINI_FINISH = {
   RECITATION: "RECITATION",
   BLOCKLIST: "BLOCKLIST",
   PROHIBITED_CONTENT: "PROHIBITED_CONTENT",
+  // Abort reasons that Google returns with HTTP 200 and empty/partial content. These are
+  // NOT mapped to a distinct client finish_reason (that would break OpenAI-format clients);
+  // the empty-content failover keys on absence of content, not on these names. Listed so the
+  // set below can classify them and so logs can name them.
+  MALFORMED_FUNCTION_CALL: "MALFORMED_FUNCTION_CALL",
+  UNEXPECTED_TOOL_CALL: "UNEXPECTED_TOOL_CALL",
+  OTHER: "OTHER",
 };
+
+// Client-format (post-translation) finish_reasons whose empty output is LEGITIMATE and would
+// recur on every candidate — so an empty stream ending in one of these must NOT be retried.
+// The empty-content failover retries every other content-less finish by default (fail-open).
+export const NO_RETRY_EMPTY_FINISH = new Set([OPENAI_FINISH.CONTENT_FILTER]);
