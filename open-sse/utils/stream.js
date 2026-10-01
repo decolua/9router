@@ -87,6 +87,13 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  // Which client formats terminate on the OpenAI `data: [DONE]` sentinel.
+  // Chat Completions clients (Cline's AI SDK, OpenClaw, …) wait for it and
+  // treat a socket close without it as a stream error (#4356). Claude uses
+  // `event:` frames and the Gemini family rejects the sentinel with a 400,
+  // so neither may receive it.
+  const clientWantsDoneSentinel = sourceFormat === FORMATS.OPENAI
+    || (targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES);
   let finalized = false;
   let completionFlushTimer = null;
 
@@ -304,7 +311,7 @@ export function createSSEStream(options = {}) {
             sseEmittedCount++;
           }
 
-          if (keepsOpenAIResponsesFormat && !streamDoneSent) {
+          if (clientWantsDoneSentinel && !streamDoneSent) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
@@ -518,7 +525,7 @@ export function createSSEStream(options = {}) {
           openAIResponsesTerminalSeen = true;
         }
 
-        if (keepsOpenAIResponsesFormat && !openAIResponsesDoneSent && !streamDoneSent) {
+        if (clientWantsDoneSentinel && !openAIResponsesDoneSent && !streamDoneSent) {
           const doneOutput = "data: [DONE]\n\n";
           reqLogger?.appendConvertedChunk?.(doneOutput);
           controller.enqueue(sharedEncoder.encode(doneOutput));
