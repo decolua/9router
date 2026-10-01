@@ -129,8 +129,8 @@ export function normalizeUsage(usage) {
   assignNumber("total_tokens", usage?.total_tokens);
   assignNumber("cache_read_input_tokens", usage?.cache_read_input_tokens);
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
-  assignNumber("cached_tokens", usage?.cached_tokens);
-  assignNumber("reasoning_tokens", usage?.reasoning_tokens);
+  assignNumber("cached_tokens", usage?.cached_tokens ?? usage?.input_tokens_details?.cached_tokens ?? usage?.prompt_tokens_details?.cached_tokens);
+  assignNumber("reasoning_tokens", usage?.reasoning_tokens ?? usage?.output_tokens_details?.reasoning_tokens ?? usage?.completion_tokens_details?.reasoning_tokens);
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -190,10 +190,10 @@ export function canonicalizeUsage(usage) {
     prompt = prompt + cached + cacheCreation;
   } else {
     // OpenAI/Gemini path (or already-canonical input): prompt already includes cached_tokens.
-    // Mirror the cacheCreation fallback above: buildUsage() only ever emits the
-    // nested prompt_tokens_details.cached_tokens shape, so without this the
-    // cache-read count is silently dropped on every buildUsage()-derived usage.
-    cached = num(usage.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
+    // Mirror the cacheCreation fallback above: buildUsage() and responses usage only ever emit the
+    // nested input_tokens_details.cached_tokens / prompt_tokens_details.cached_tokens shape,
+    // so without this the cache-read count is silently dropped on every buildUsage()-derived usage.
+    cached = num(usage.cached_tokens ?? usage.input_tokens_details?.cached_tokens ?? usage.prompt_tokens_details?.cached_tokens);
   }
 
   const result = {
@@ -205,7 +205,8 @@ export function canonicalizeUsage(usage) {
     cached_tokens: cached,
     cache_creation_input_tokens: cacheCreation,
   };
-  if (reasoning > 0) result.reasoning_tokens = reasoning;
+  const resolvedReasoning = reasoning || num(usage.output_tokens_details?.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens);
+  if (resolvedReasoning > 0) result.reasoning_tokens = resolvedReasoning;
   return result;
 }
 
