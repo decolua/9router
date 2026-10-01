@@ -45,6 +45,10 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  // Transient server-side faults (500/502/503/504): typically recovers in
+  // seconds. Using the same 30 s default kills all retries from fast clients
+  // like codex (5× retries in ~10 s) for what is usually a one-off (#4277).
+  transientServer: 5 * 1000,
 };
 
 /**
@@ -74,6 +78,14 @@ export const ERROR_RULES = [
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
   { status: 429, backoff: true },
+  // Transient server faults: 5 s cooldown so fast clients (codex 5× retries
+  // in ~10 s) can retry after the window instead of exhausting all attempts
+  // inside a 30 s blackout caused by a single sporadic upstream hiccup (#4277).
+  // 502/503/504 are gateway-level and also typically transient.
+  { status: 500, cooldownMs: COOLDOWN.transientServer },
+  { status: 502, cooldownMs: COOLDOWN.transientServer },
+  { status: 503, cooldownMs: COOLDOWN.transientServer },
+  { status: 504, cooldownMs: COOLDOWN.transientServer },
 ];
 
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
