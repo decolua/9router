@@ -29,6 +29,24 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     expect(checkFallbackError(422, "quota exceeded").shouldFallback).toBe(true);
   });
 
+  // Credit exhaustion on a POOLED credential is account-scoped: the account
+  // cannot fund the request, but a sibling account in the pool can. Providers
+  // that surface it as HTTP 400 (b.ai, new-api family) must rotate, not abort.
+  it("falls back for per-key credit exhaustion on 400", () => {
+    expect(checkFallbackError(400, JSON.stringify({
+      error: {
+        message: "credit insufficient balance: balance=70953 required=433802",
+        type: "api_error",
+        code: "insufficient_user_quota",
+      },
+    })).shouldFallback).toBe(true);
+
+    expect(checkFallbackError(400, "insufficient_user_quota").shouldFallback).toBe(true);
+    expect(checkFallbackError(400, "run out of funds").shouldFallback).toBe(true);
+    // Anthropic OAuth Pro/Max overage bucket depleted arrives as HTTP 400 too.
+    expect(checkFallbackError(400, "You are out of extra usage").shouldFallback).toBe(true);
+  });
+
   it("keeps the transient cooldown for unmatched server errors", () => {
     const result = checkFallbackError(503, "upstream exploded");
 
