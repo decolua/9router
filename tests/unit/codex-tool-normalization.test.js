@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+import "../translator/registerAll.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
 
 function normalizeTools(tools) {
   const executor = new CodexExecutor();
@@ -20,6 +22,49 @@ function normalizeTools(tools) {
 }
 
 describe("CodexExecutor tool normalization", () => {
+  it.each([true, false])("preserves explicit strict=%s for flat and nested function tools", (strict) => {
+    const parameters = { type: "object", properties: { command: { type: "string" } }, required: ["command"], additionalProperties: false };
+    for (const tool of [
+      { type: "function", name: "Monitor", parameters, strict },
+      { type: "function", function: { name: "Monitor", parameters, strict } },
+    ]) {
+      expect(normalizeTools([structuredClone(tool)])[0]).toMatchObject({ strict, parameters });
+    }
+  });
+
+  it("leaves unspecified strict unchanged on native Responses tools", () => {
+    expect(normalizeTools([{ type: "function", name: "native", parameters: { type: "object", properties: {} } }])[0]).not.toHaveProperty("strict");
+  });
+
+  it.each([undefined, false, true])("keeps Monitor optional inputs across Claude to Codex with strict=%s", (strict) => {
+    const schema = {
+      type: "object",
+      properties: {
+        description: { type: "string" },
+        command: { type: "string" },
+        ws: { type: "object", properties: { url: { type: "string" }, protocols: { type: "array", items: { type: "string" } } }, required: ["url"] },
+      },
+      required: ["description"],
+    };
+    const tool = { name: "Monitor", description: "Use exactly one of command or ws", input_schema: schema };
+    if (strict !== undefined) tool.strict = strict;
+    const request = translateRequest("claude", "openai-responses", "gpt-5.5", {
+      messages: [{ role: "user", content: "Monitor using a command only" }],
+      tools: [tool],
+    }, true, {}, "codex");
+    const [out] = normalizeTools(request.tools);
+    expect(out.strict).toBe(strict ?? false);
+    expect(out.parameters).toEqual(schema);
+    expect(out.parameters.required).not.toContain("ws");
+  });
+
+  it("preserves non-strict Chat Completions defaults when translating to Responses", () => {
+    const request = translateRequest("openai", "openai-responses", "gpt-5.5", {
+      messages: [{ role: "user", content: "hello" }],
+      tools: [{ type: "function", function: { name: "optional", parameters: { type: "object", properties: { value: { type: "string" } } } } }],
+    }, true, {}, "codex");
+    expect(normalizeTools(request.tools)[0].strict).toBe(false);
+  });
   it("preserves Responses text.format for structured outputs", () => {
     const executor = new CodexExecutor();
     const schema = {
