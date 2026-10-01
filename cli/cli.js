@@ -702,6 +702,60 @@ function startServer(updatePromise) {
     setTimeout(() => process.exit(0), 100);
   });
 
+  function attachServerEvents() {
+    server.on("error", (err) => {
+      console.error("Failed to start server:", err.message);
+      if (!isShuttingDown) tryRestart();
+      else { cleanup(); process.exit(1); }
+    });
+
+    server.on("close", (code) => {
+      if (isShuttingDown || code === 0) {
+        process.exit(code || 0);
+        return;
+      }
+      tryRestart(code);
+    });
+  }
+
+  function tryRestart(code) {
+    const aliveMs = Date.now() - serverStartTime;
+    // Reset counter if last run was stable
+    if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
+
+    if (restartCount >= MAX_RESTARTS) {
+      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
+      try {
+        const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
+        if (fs.existsSync(dbPath)) {
+          const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
+          if (db.settings) db.settings.mitmEnabled = false;
+          fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
+        }
+      } catch { /* best effort */ }
+      restartCount = 0;
+      server = spawnServer();
+      attachServerEvents();
+      return;
+    }
+
+    restartCount++;
+    const delay = Math.min(1000 * restartCount, 10000);
+    console.error(`\n⚠️  Server exited (code=${code ?? "unknown"}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
+    if (crashLog.length) {
+      console.error("\n--- Server crash log ---");
+      crashLog.forEach(l => console.error(l));
+      console.error("--- End crash log ---\n");
+    }
+
+    setTimeout(() => {
+      server = spawnServer();
+      attachServerEvents();
+    }, delay);
+  }
+
+  attachServerEvents();
+
   // Initialize tray icon (runs alongside TUI)
   const initTrayIcon = () => {
     try {
@@ -828,58 +882,4 @@ function startServer(updatePromise) {
       process.exit(1);
     }
   });
-
-  function attachServerEvents() {
-    server.on("error", (err) => {
-      console.error("Failed to start server:", err.message);
-      if (!isShuttingDown) tryRestart();
-      else { cleanup(); process.exit(1); }
-    });
-
-    server.on("close", (code) => {
-      if (isShuttingDown || code === 0) {
-        process.exit(code || 0);
-        return;
-      }
-      tryRestart(code);
-    });
-  }
-
-  function tryRestart(code) {
-    const aliveMs = Date.now() - serverStartTime;
-    // Reset counter if last run was stable
-    if (aliveMs >= RESTART_RESET_MS) restartCount = 0;
-
-    if (restartCount >= MAX_RESTARTS) {
-      console.error(`\n⚠️  Server crashed ${MAX_RESTARTS} times. Disabling MIT and restarting...`);
-      try {
-        const dbPath = path.join(os.homedir(), process.platform === "win32" ? path.join("AppData", "Roaming", "9router", "db.json") : path.join(".9router", "db.json"));
-        if (fs.existsSync(dbPath)) {
-          const db = JSON.parse(fs.readFileSync(dbPath, "utf-8"));
-          if (db.settings) db.settings.mitmEnabled = false;
-          fs.writeFileSync(dbPath, JSON.stringify(db, null, 2));
-        }
-      } catch { /* best effort */ }
-      restartCount = 0;
-      server = spawnServer();
-      attachServerEvents();
-      return;
-    }
-
-    restartCount++;
-    const delay = Math.min(1000 * restartCount, 10000);
-    console.error(`\n⚠️  Server exited (code=${code ?? "unknown"}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
-    if (crashLog.length) {
-      console.error("\n--- Server crash log ---");
-      crashLog.forEach(l => console.error(l));
-      console.error("--- End crash log ---\n");
-    }
-
-    setTimeout(() => {
-      server = spawnServer();
-      attachServerEvents();
-    }, delay);
-  }
-
-  attachServerEvents();
 }
