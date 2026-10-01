@@ -73,15 +73,31 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
-  // Build tool responses cache
+  // Build tool responses cache, keyed by OCCURRENCE rather than by id.
+  //
+  // tool_call_id is only unique within a single assistant turn. A long session
+  // can reuse one id for two different tools (call_81334 for `edit` at turn 30,
+  // then for `bash` at turn 70), which a plain id-keyed map cannot represent: the
+  // later entry overwrites the earlier, and Gemini then sees functionCall "edit"
+  // answered by functionResponse "bash" and rejects the WHOLE request with
+  // 400 INVALID_ARGUMENT — permanently, since the client re-sends the same
+  // history every turn. #4273
+  //
+  // So responses are queued per id in arrival order, and each function call
+  // consumes the oldest unconsumed response for its id. A call and its own
+  // result are then always paired, whatever the ids look like.
   const toolResponses = {};
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        toolResponses[msg.tool_call_id] = msg.content;
+        (toolResponses[msg.tool_call_id] ||= []).push(msg.content);
       }
     }
   }
+
+  // Per-id cursor into the queue above, so a second call with the same id gets
+  // the SECOND response rather than the first one twice.
+  const toolResponseCursor = {};
 
   // Convert messages
   if (body.messages && Array.isArray(body.messages)) {
@@ -123,7 +139,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         }
 
         if (msg.tool_calls && Array.isArray(msg.tool_calls)) {
+          // id + name per call, captured HERE where the id is unambiguous.
+          // Resolved later against the per-id response queue (#4273).
           const toolCallIds = [];
+          const toolCallNames = [];
           let firstFunctionCallSeen = false;
           for (const tc of msg.tool_calls) {
             if (tc.type !== OPENAI_BLOCK.FUNCTION) continue;
@@ -146,6 +165,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             }
             parts.push(part);
             toolCallIds.push(tc.id);
+            toolCallNames.push(tc.function.name);
           }
 
           if (parts.length > 0) {
@@ -154,17 +174,31 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
           // Check if there are actual tool responses in the next messages
           const isIntermediate = i < body.messages.length - 1;
-          const hasActualResponses = toolCallIds.some(fid => toolResponses[fid] !== undefined);
+          const hasActualResponses = toolCallIds.some(
+            fid => (toolResponseCursor[fid] || 0) < (toolResponses[fid]?.length ?? 0)
+          );
 
           if (hasActualResponses || isIntermediate) {
             const toolParts = [];
-            for (const fid of toolCallIds) {
-              let resp = toolResponses[fid];
-              if (resp === undefined) resp = "";
+            for (let k = 0; k < toolCallIds.length; k++) {
+              const fid = toolCallIds[k];
+              // Consume the oldest unconsumed response for this id, so a
+              // repeated id gets its own result rather than an earlier one.
+              const queue = toolResponses[fid];
+              const cursor = toolResponseCursor[fid] || 0;
+              let resp;
+              if (queue && cursor < queue.length) {
+                resp = queue[cursor];
+                toolResponseCursor[fid] = cursor + 1;
+              } else {
+                resp = "";
+              }
 
-              let name = tcID2Name[fid];
+              // Name comes from THIS call, not from a conversation-wide id map,
+              // so a colliding id can never rename an earlier turn's response.
+              let name = toolCallNames[k] || tcID2Name[fid];
               if (!name) {
-                const idParts = fid.split("-");
+                const idParts = String(fid).split("-");
                 if (idParts.length > 2) {
                   name = idParts.slice(0, -2).join("-");
                 } else {
@@ -334,6 +368,21 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
 
   // Convert Claude messages to Gemini contents
   if (claudeRequest.messages && Array.isArray(claudeRequest.messages)) {
+    // Names of tool_use blocks seen SO FAR in this walk, in order, per id. A
+    // tool_result is answered by the oldest unconsumed tool_use with the same
+    // id, rather than by a conversation-wide id->name map that a later
+    // collision would overwrite. Same failure as #4273, on the Claude path.
+    const pendingCalls = new Map(); // id -> string[] of names, in arrival order
+    const callCursor = new Map();   // id -> how many have been consumed
+    const consumeCall = (id) => {
+      const queue = pendingCalls.get(id);
+      if (!queue) return undefined;
+      const at = callCursor.get(id) || 0;
+      if (at >= queue.length) return undefined;
+      callCursor.set(id, at + 1);
+      return queue[at];
+    };
+
     for (const msg of claudeRequest.messages) {
       const parts = [];
 
@@ -358,19 +407,23 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
               part.thoughtSignature = callSig;
             }
             parts.push(part);
+            if (block.id) {
+              if (!pendingCalls.has(block.id)) pendingCalls.set(block.id, []);
+              pendingCalls.get(block.id).push(block.name);
+            }
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             let content = block.content;
             if (Array.isArray(content)) {
               content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c)).join("\n");
             }
-            // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
-            const resolvedName = toolUseIdToName[block.tool_use_id]
-              ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
-              : "tool";
+            // Prefer the matching call in this walk; fall back to the
+            // conversation-wide map only when no such call was seen.
+            const pendingName = consumeCall(block.tool_use_id);
+            const resolvedName = pendingName || toolUseIdToName[block.tool_use_id];
             parts.push({
               functionResponse: {
                 id: block.tool_use_id,
-                name: resolvedName,
+                name: resolvedName ? sanitizeGeminiFunctionName(resolvedName) : "tool",
                 response: { result: tryParseJSON(content) || content }
               }
             });
