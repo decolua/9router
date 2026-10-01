@@ -21,7 +21,7 @@ const PROVIDER_ALIAS_NAMES = {
   oc: "OpenCode Free",
   opencode: "OpenCode Free",
   openrouter: "OpenRouter",
-  glm: "GLM Coding",
+  glm: "Zai GLM Coding",
   kimi: "Kimi Coding",
   minimax: "Minimax Coding",
   openai: "OpenAI",

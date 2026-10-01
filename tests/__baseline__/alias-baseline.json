@@ -116,7 +116,12 @@
     "devin": "devin",
     "devin-cli": "devin-cli",
     "morph": "morph",
-    "morphllm": "morph"
+    "morphllm": "morph",
+    "muse": "muse",
+    "muse-ai": "muse",
+    "meta-model-api": "muse",
+    "muse-code": "muse",
+    "muse-subscription": "muse"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -176,6 +181,7 @@
     "mistral": "mistral",
     "mmf": "mmf",
     "morph": "morph",
+    "muse": "muse",
     "nanobanana": "nanobanana",
     "nebius": "nebius",
     "nvidia": "nvidia",
@@ -211,6 +217,7 @@
   "modelKeys": [
     "af",
     "ag",
+    "agnes",
     "alicode",
     "alicode-intl",
     "alims-intl",
@@ -270,6 +277,7 @@
     "mistral",
     "mmf",
     "morph",
+    "muse",
     "nanobanana",
     "nebius",
     "nvidia",
@@ -302,6 +310,7 @@
     "together",
     "tokenharbor",
     "tokenrouter",
+    "v1m",
     "venice",
     "vertex",
     "vertex-partner",
