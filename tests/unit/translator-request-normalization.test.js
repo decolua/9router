@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { claudeToOpenAIRequest } from "../../open-sse/translator/request/claude-to-openai.js";
+import { openaiToOpenAIResponsesRequest } from "../../open-sse/translator/request/openai-responses.js";
 import { filterToOpenAIFormat } from "../../open-sse/translator/formats/openai.js";
 import { parseSSELine } from "../../open-sse/utils/streamHelpers.js";
 
@@ -162,6 +163,21 @@ describe("request normalization", () => {
     );
 
     expect(result.output_config).toEqual(body.output_config);
+  });
+
+  it("openaiToOpenAIResponsesRequest maps max_tokens to max_output_tokens", () => {
+    const result = openaiToOpenAIResponsesRequest(
+      "gpt-5.5",
+      {
+        messages: [{ role: "user", content: "ping" }],
+        max_tokens: 1024,
+        stream: false,
+      },
+      false,
+    );
+
+    expect(result.max_output_tokens).toBe(1024);
+    expect(result.max_tokens).toBeUndefined();
   });
 
   it("parseSSELine supports provider raw NDJSON stream lines", () => {
