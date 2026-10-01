@@ -1237,8 +1237,8 @@ npm install
 npm run build
 
 # Configure
-export JWT_SECRET="your-secure-secret-change-this"
-export INITIAL_PASSWORD="your-password"
+export JWT_SECRET="$(openssl rand -hex 32)"     # or leave unset to auto-generate
+export INITIAL_PASSWORD="<choose a strong password>"
 export DATA_DIR="/var/lib/9router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
