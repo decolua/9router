@@ -259,8 +259,8 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
           )}
           {fastMode && (
             <Tooltip text={fastMode.on
-              ? "Fast mode ON — Sol requests on this account use the priority tier. Click to disable."
-              : "Force fast mode — Sol requests on this account use the priority tier."}>
+              ? "Fast mode ON — Codex requests on this account use the priority tier. Click to disable."
+              : "Force fast mode — Codex requests on this account use the priority tier."}>
               <button
                 onClick={() => fastMode.onToggle(!fastMode.on)}
                 className={`flex w-full flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${fastMode.on ? "text-primary" : "text-text-muted hover:text-primary"}`}

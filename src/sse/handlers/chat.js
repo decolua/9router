@@ -26,12 +26,9 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
-const CODEX_FAST_MODE_MODEL = /^gpt-[\d.]+-sol/;
-
 export function applyCodexFastMode(body, provider, model, settings, credentials = null) {
   if (
     provider !== "codex" ||
-    !CODEX_FAST_MODE_MODEL.test(model) ||
     (settings?.codexFastMode !== true && credentials?.providerSpecificData?.codexFastMode !== true) ||
     body.service_tier
   ) return body;

@@ -119,17 +119,15 @@ describe("applyCodexFastMode", () => {
     expect(applyCodexFastMode(body, "codex", "gpt-6.1-sol", {}, connOn).service_tier).toBe("priority");
   });
 
-  it("covers sol-family variants and review models", () => {
+  it("covers all codex models (sol, luna, terra, review variants)", () => {
     const on = { codexFastMode: true };
-    for (const m of ["gpt-5.6-sol", "gpt-5.6-sol-review", "gpt-6.1-sol", "gpt-6.1-sol(xhigh)"]) {
+    for (const m of ["gpt-5.6-sol", "gpt-5.6-sol-review", "gpt-6.1-sol", "gpt-6.1-sol(xhigh)", "gpt-6-luna", "gpt-6-terra"]) {
       expect(applyCodexFastMode({ ...body, model: m }, "codex", m, on).service_tier).toBe("priority");
     }
   });
 
-  it("ignores non-sol codex models and other providers", () => {
-    const on = { codexFastMode: true };
-    expect(applyCodexFastMode({ ...body, model: "gpt-6-luna" }, "codex", "gpt-6-luna", on, connOn).service_tier).toBeUndefined();
-    expect(applyCodexFastMode(body, "openai", "gpt-6.1-sol", on, connOn).service_tier).toBeUndefined();
+  it("ignores other providers even when the flag is on", () => {
+    expect(applyCodexFastMode(body, "openai", "gpt-6.1-sol", { codexFastMode: true }, connOn).service_tier).toBeUndefined();
   });
 
   it("preserves a client-supplied service_tier", () => {

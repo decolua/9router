@@ -1637,7 +1637,7 @@ export default function ProviderDetailPage() {
                   onChange={handleCodexFastModeChange}
                   disabled={savingCodexFastMode}
                   label="Fast inference"
-                  description="Use the priority tier for Sol models (all accounts). Per-account override lives on each connection row and quota card."
+                  description="Use the priority tier for Codex models (all accounts). Per-account override lives on each connection row and quota card."
                 />
               )}
               {providerId === "codex" && codexFastModeError && (

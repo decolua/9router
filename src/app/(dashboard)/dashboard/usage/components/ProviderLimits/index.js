@@ -1288,8 +1288,8 @@ export default function ProviderLimits() {
                       <Tooltip
                         text={
                           conn.providerSpecificData?.codexFastMode === true
-                            ? "Fast mode ON — Sol requests on this account use the priority tier. Click to disable."
-                            : "Force fast mode — Sol requests on this account use the priority tier."
+                            ? "Fast mode ON — Codex requests on this account use the priority tier. Click to disable."
+                            : "Force fast mode — Codex requests on this account use the priority tier."
                         }
                       >
                         <button
