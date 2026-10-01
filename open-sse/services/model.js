@@ -124,6 +124,19 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
 const MODEL_PREFIX_PROVIDERS = [
+  // Codex CLI sends this bare virtual model for auto-review - keep it on OAuth Codex (#1398).
+  [/^codex-auto-review$/, "codex"],
+  // Codex-only GPT model slugs: present in backend-api/codex/models but not on the
+  // OpenAI API.  Without these rules a bare model id (e.g. "gpt-5.6-terra" from the
+  // Codex CLI /model picker) resolves to provider "openai", which 404s for users that
+  // only have a Codex OAuth account and no OpenAI API key (#4405).
+  // Ranges covered: gpt-5.x, gpt-6.x, gpt-daybreak-*, gpt-reserve* — all are
+  // Codex-backend models.  Plain "gpt-4*" / "gpt-3.5*" / "gpt-4o*" fall through to
+  // the generic gpt-* → openai rule below.
+  [/^gpt-[56]\./, "codex"],
+  [/^gpt-6-/, "codex"],
+  [/^gpt-daybreak-/, "codex"],
+  [/^gpt-reserve/, "codex"],
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],
   [/^gpt-/, "openai"],

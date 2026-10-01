@@ -29,11 +29,18 @@ import {
   zedLlmFetch,
 } from "../shared/zedAuth.js";
 
+// Wire values for the `provider` field of POST /completions. These are NOT
+// display names: cloud.zed.dev matches them exactly, and an unrecognized value
+// fails the whole request with `500 {"message":"An internal server error
+// occurred."}` before the model is ever looked at. Spellings come from Zed's
+// own GET /models catalog: `anthropic`, `open_ai`, `google` (note underscore),
+// `x_ai` follows the same convention — so feeding a catalog value back through
+// normalizeZedProvider is identity.
 const ZED_PROVIDER = {
-  anthropic: "Anthropic",
-  openai: "OpenAi",
-  google: "Google",
-  xai: "XAi",
+  anthropic: "anthropic",
+  openai: "open_ai",
+  google: "google",
+  xai: "x_ai",
 };
 
 function normalizeZedProvider(value, model) {
@@ -55,7 +62,14 @@ function buildProviderRequest(provider, model, body, stream, credentials) {
     return openaiToClaudeRequest(model, body, true);
   }
   if (provider === ZED_PROVIDER.google) {
-    return openaiToGeminiRequest(model, body, true);
+    const geminiRequest = openaiToGeminiRequest(model, body, true);
+    // Zed's hosted Gemini backend speaks the Vertex safety vocabulary, not the
+    // public Gemini API enum the shared translator emits (`OFF`, `CIVIC_INTEGRITY`,
+    // `DANGEROUS_CONTENT`). Drop client-side safetySettings for the Zed Google
+    // path so Zed applies its own defaults — scoped here so native Gemini/
+    // Antigravity is untouched.
+    delete geminiRequest.safetySettings;
+    return geminiRequest;
   }
   if (provider === ZED_PROVIDER.openai) {
     return openaiToOpenAIResponsesRequest(model, body, true, credentials);

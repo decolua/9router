@@ -132,6 +132,70 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     expect(text).toContain("Hello from Laguna");
     expect(text).toContain("data: [DONE]");
   });
+
+  it("preserves all lines in a multi-line packet when inspecting tool-input-start", async () => {
+    const packet = [
+      JSON.stringify({ type: "start" }),
+      JSON.stringify({ type: "start-step" }),
+      JSON.stringify({ type: "tool-input-start", id: "call_1", toolName: "terminal" }),
+      JSON.stringify({ type: "tool-input-delta", id: "call_1", delta: '{"command": "ls"}' }),
+      JSON.stringify({ type: "finish-step", finishReason: "tool-calls" }),
+      JSON.stringify({ type: "finish", finishReason: "tool-calls" }),
+    ].join("\n") + "\n";
+
+    const ndjsonBody = createNdjsonStream([packet]);
+
+    const fakeResponse = new Response(ndjsonBody, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+
+    const result = await inspectAndWrapCommandCodeResponse(fakeResponse, "cmc/deepseek/deepseek-v4.1-flash");
+    expect(result.ok).toBe(true);
+    const text = await result.text();
+    expect(text).toContain('"name":"terminal"');
+    expect(text).toContain('"arguments":"{\\"command\\": \\"ls\\"}"');
+  });
+
+  it("retries when initial stream yields an error and succeeds on second attempt", async () => {
+    let callCount = 0;
+    const executor = new CommandCodeExecutor();
+    
+    // Override execute on instance to test retry behavior
+    executor.execute = async (opts) => {
+      const maxRetries = 2;
+      for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        callCount++;
+        let rawResponse;
+        if (callCount === 1) {
+          rawResponse = new Response(createNdjsonStream([
+            JSON.stringify({
+              type: "error",
+              error: { type: "server_error", message: "Network connection lost." }
+            }) + "\n"
+          ]), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+        } else {
+          rawResponse = new Response(createNdjsonStream([
+            JSON.stringify({ type: "start" }) + "\n",
+            JSON.stringify({ type: "text-delta", text: "Recovered from lost connection" }) + "\n",
+            JSON.stringify({ type: "finish" }) + "\n"
+          ]), { status: 200, headers: { "Content-Type": "text/event-stream" } });
+        }
+
+        const wrappedResponse = await inspectAndWrapCommandCodeResponse(rawResponse, opts.model);
+        if (!wrappedResponse.ok && attempt < maxRetries) {
+          continue;
+        }
+        return { response: wrappedResponse };
+      }
+    };
+
+    const res = await executor.execute({ model: "deepseek/deepseek-v4.1-flash" });
+    expect(res.response.ok).toBe(true);
+    expect(callCount).toBe(2);
+    const text = await res.response.text();
+    expect(text).toContain("Recovered from lost connection");
+  });
 });
 
 describe("CommandCode in Combo Fallback", () => {

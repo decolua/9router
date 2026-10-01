@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
-import { GEMINI_CONFIG } from "@/lib/oauth/constants/oauth";
+import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
 import { getModelsByProviderId } from "open-sse/config/providerModels.js";
@@ -11,16 +11,14 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import codexProvider from "open-sse/providers/registry/codex.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
-// The /codex/models endpoint gates each entry by minimal_client_version against this
-// value, and codex CLI's own manifest (openai/codex codex-rs/models-manager/models.json)
-// already requires 0.144.0 for its newest models, so a stale client_version here comes
-// back 200 with those entries quietly missing instead of erroring.
-const CODEX_CLIENT_VERSION = "0.144.6";
-const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
+// Model discovery must identify as the same Codex CLI version as inference.
+const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -126,8 +124,59 @@ const buildOAuthResolver = ({ refreshFn, fetchFn, parseFn, errorLabel }) => asyn
   return { models: [], warning };
 };
 
+// Qoder shares one resolver across intl (qoder) and CN (qoder-cn); the
+// credentials carry the connection's provider so qoderModels picks the right
+// region's catalog endpoint, and the ids keep the provider prefix.
+function buildQoderModelsResolver(providerId) {
+  return {
+    customResolver: async (connection) => {
+      const credentials = {
+        provider: providerId,
+        accessToken: connection.accessToken,
+        apiKey: connection.apiKey,
+        refreshToken: connection.refreshToken,
+        email: connection.email,
+        displayName: connection.displayName,
+        providerSpecificData: connection.providerSpecificData || {},
+      };
+      let warning;
+      try {
+        const result = await resolveQoderModels(credentials, { forceRefresh: true });
+        if (result?.models?.length) {
+          return {
+            models: result.models.map((m) => ({
+              // Use the canonical "<providerId>/<key>" id so the dashboard
+              // surfaces the same identifier the chat router expects.
+              id: `${providerId}/${m.id}`,
+              name: m.name,
+              contextLength: m.contextLength,
+              isVL: m.isVL,
+              isReasoning: m.isReasoning,
+              maxOutputTokens: m.maxOutputTokens,
+              description: m.description,
+            })),
+          };
+        }
+        warning = "Qoder returned no models; falling back to static catalog.";
+      } catch (error) {
+        warning = `Failed to fetch Qoder models: ${error.message}`;
+        console.log("Failed to fetch Qoder models dynamically, falling back to static:", error.message);
+      }
+      return { models: [], warning };
+    },
+  };
+}
+
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
+  "muse": {
+    url: "https://api.meta.ai/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json", "x-api-version": "1.0.0" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || [],
+  },
   claude: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
@@ -258,6 +307,12 @@ const PROVIDER_MODELS_CONFIG = {
   nvidia: createOpenAIModelsConfig("https://integrate.api.nvidia.com/v1/models"),
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
+  // OpenAI-compatible aggregators.
+  tokenharbor: createOpenAIModelsConfig("https://tokenharbor.ai/v1/models"),
+  dahl: createOpenAIModelsConfig("https://inference.dahl.global/v1/models"),
+  atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
+  agnes: createOpenAIModelsConfig("https://apihub.agnes-ai.com/v1/models"),
+  bai: createOpenAIModelsConfig("https://api.b.ai/v1/models"),
   kimchi: {
     customResolver: async (connection) => {
       const result = await resolveKimchiModels({
@@ -285,6 +340,44 @@ const PROVIDER_MODELS_CONFIG = {
         models: getStaticProviderModels("cursor"),
         warning: "Cursor returned no live models; falling back to static catalog.",
       };
+    },
+  },
+  // Zed has no static catalog by design (live /models only) — same cursor
+  // direct pattern: resolve with the connection's own credentials (never
+  // exposed to the browser), return rich metadata, drop disabled entries.
+  // Empty/failure yields an explicit warning, never a silent zero list.
+  zed: {
+    customResolver: async (connection) => {
+      try {
+        const result = await resolveZedModels({
+          accessToken: connection.accessToken,
+          providerSpecificData: connection.providerSpecificData || {},
+        }, { config: ZED_HOSTED_CONFIG, forceRefresh: true });
+        const models = (result?.models || [])
+          .filter((m) => m && !m.isDisabled)
+          .map((m) => ({
+            id: m.id,
+            name: m.name || m.id,
+            provider: m.provider,
+            contextLength: m.contextLength,
+            contextLengthInMaxMode: m.contextLengthInMaxMode,
+            maxOutputTokens: m.maxOutputTokens,
+            supportsTools: m.supportsTools,
+            supportsImages: m.supportsImages,
+            supportsThinking: m.supportsThinking,
+            supportsDisablingThinking: m.supportsDisablingThinking,
+            supportsFastMode: m.supportsFastMode,
+            supportsServerSideCompaction: m.supportsServerSideCompaction,
+            supportedEffortLevels: m.supportedEffortLevels || [],
+            supportsStreamingTools: m.supportsStreamingTools,
+            supportsParallelToolCalls: m.supportsParallelToolCalls,
+          }));
+        if (models.length > 0) return { models };
+        return { models: [], warning: "Zed returned no live models." };
+      } catch (error) {
+        console.log("Failed to fetch Zed models dynamically:", error.message);
+        return { models: [], warning: `Failed to fetch Zed models: ${error.message}` };
+      }
     },
   },
 
@@ -364,42 +457,8 @@ const PROVIDER_MODELS_CONFIG = {
       return { models: [], warning };
     }
   },
-  qoder: {
-    customResolver: async (connection) => {
-      const credentials = {
-        accessToken: connection.accessToken,
-        apiKey: connection.apiKey,
-        refreshToken: connection.refreshToken,
-        email: connection.email,
-        displayName: connection.displayName,
-        providerSpecificData: connection.providerSpecificData || {},
-      };
-      let warning;
-      try {
-        const result = await resolveQoderModels(credentials, { forceRefresh: true });
-        if (result?.models?.length) {
-          return {
-            models: result.models.map((m) => ({
-              // Use the canonical "qoder/<key>" id so the dashboard
-              // surfaces the same identifier the chat router expects.
-              id: `qoder/${m.id}`,
-              name: m.name,
-              contextLength: m.contextLength,
-              isVL: m.isVL,
-              isReasoning: m.isReasoning,
-              maxOutputTokens: m.maxOutputTokens,
-              description: m.description,
-            })),
-          };
-        }
-        warning = "Qoder returned no models; falling back to static catalog.";
-      } catch (error) {
-        warning = `Failed to fetch Qoder models: ${error.message}`;
-        console.log("Failed to fetch Qoder models dynamically, falling back to static:", error.message);
-      }
-      return { models: [], warning };
-    },
-  },
+  qoder: buildQoderModelsResolver("qoder"),
+  "qoder-cn": buildQoderModelsResolver("qoder-cn"),
   "gemini-cli": {
     customResolver: buildOAuthResolver({
       refreshFn: (conn) => refreshGoogleToken(conn.refreshToken, GEMINI_CONFIG.clientId, GEMINI_CONFIG.clientSecret),

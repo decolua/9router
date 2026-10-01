@@ -110,7 +110,22 @@ PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
 Production mode:
 
 ```bash
+# Create Temporary Memory For Build
+sudo fallocate -l 2G /swapfile_temp
+sudo chmod 600 /swapfile_temp
+sudo mkswap /swapfile_temp
+sudo swapon /swapfile_temp
+
+export MAKEFLAGS="-j1"
+export DLIB_NO_GUI_SUPPORT=1
+export CFLAGS="-mno-avx"
+
 npm run build
+
+# Clear temporary swap
+sudo swapoff /swapfile_temp
+sudo rm /swapfile_temp
+
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
@@ -215,7 +230,14 @@ Default URLs:
       <b>🇻🇳 Tiếng Việt</b><br/>
       <sub>Hướng Dẫn Setup OpenClaw + 9Router: Tạo Bot Zalo AI Tự Động Từ A-Z<br/>by <a href="https://github.com/tuanminhhole">tuanminhhole</a></sub>
     </td>
-    <td align="center" width="320"></td>
+    <td align="center" width="320">
+      <a href="https://www.youtube.com/watch?v=hgnE7MKi3Y4">
+        <img src="https://img.youtube.com/vi/hgnE7MKi3Y4/maxresdefault.jpg" alt="Bye Limit! Cara Bikin Sistem 'AI Unlimited' 100% Gratis Dengan 9Router!
+" width="300"/>
+      </a><br/>
+      <b>🇮🇩 Indonesia</b><br/>
+      <sub>Bye Limit! Cara Bikin Sistem "AI Unlimited" 100% Gratis Dengan 9Router!<br/>by <a href="https://www.youtube.com/@neptiver">neptiver</a></sub>
+    </td>
     <td align="center" width="320"></td>
     <td align="center" width="320"></td>
   </tr>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePathname } from "next/navigation";
 import { useNotificationStore } from "@/store/notificationStore";
 import Sidebar from "../Sidebar";
@@ -36,6 +36,24 @@ export default function DashboardLayout({ children }) {
   const pathname = usePathname();
   const notifications = useNotificationStore((state) => state.notifications);
   const removeNotification = useNotificationStore((state) => state.removeNotification);
+
+  // Preload heavy usage charts in background when browser is idle
+  useEffect(() => {
+    const preload = () => {
+      import("@/shared/components/UsageStats").catch(() => {});
+      import("@/app/(dashboard)/dashboard/usage/components/UsageChart").catch(() => {});
+      import("@/app/(dashboard)/dashboard/usage/components/ProviderBarChart").catch(() => {});
+      import("@/app/(dashboard)/dashboard/usage/components/TopModelsChart").catch(() => {});
+    };
+    if (typeof window !== "undefined") {
+      if ("requestIdleCallback" in window) {
+        const id = window.requestIdleCallback(preload, { timeout: 4000 });
+        return () => window.cancelIdleCallback(id);
+      }
+      const timer = setTimeout(preload, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, []);
 
   return (
     <div className="flex h-screen w-full overflow-hidden bg-bg">

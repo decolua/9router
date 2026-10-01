@@ -73,4 +73,19 @@ export const KIND_EXAMPLE_CONFIG = {
     bodyKey: "prompt",
     defaultResponse: `{\n  "data": [\n    { "url": "...", "format": "mp3" }\n  ]\n}`,
   },
+  systemone: {
+    inputLabel: "State",
+    inputPlaceholder: "Situation, support ticket, or text to evaluate",
+    defaultInput: "My payments have failed for three days and I am losing sales. Please help now.",
+    bodyKey: "state",
+    extraBody: {
+      questions: {
+        is_urgent: {
+          type: "noul",
+          instructions: "Does this request require urgent attention?",
+        },
+      },
+    },
+    defaultResponse: `{\n  "model": "jev-1.13",\n  "answers": {\n    "is_urgent": { "type": "noul", "noul": 0.99 }\n  },\n  "usage": { "input_tokens": 312, "output_tokens": 48 }\n}`,
+  },
 };

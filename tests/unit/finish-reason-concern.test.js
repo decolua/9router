@@ -40,6 +40,9 @@ describe("toOpenAIFinish - claude", () => {
     ["end_turn", "stop"],
     ["max_tokens", "length"],
     ["tool_use", "tool_calls"],
+    ["stop_sequence", "stop"],
+    ["refusal", "content_filter"],
+    ["unknown_xyz", "stop"],
   ])("%s -> %s", (input, expected) => {
     expect(toOpenAIFinish(input, "claude")).toBe(expected);
   });
@@ -57,6 +60,9 @@ describe("toOpenAIFinish - commandcode", () => {
 describe("fromOpenAIFinish round-trip - claude", () => {
   it("tool_calls -> tool_use", () => {
     expect(fromOpenAIFinish("tool_calls", "claude")).toBe("tool_use");
+  });
+  it("content_filter -> refusal", () => {
+    expect(fromOpenAIFinish("content_filter", "claude")).toBe("refusal");
   });
   it("length -> max_tokens", () => {
     expect(fromOpenAIFinish("length", "claude")).toBe("max_tokens");

@@ -40,6 +40,9 @@ exports[`GOLDEN request: OpenAI → Claude > full body (system/image/tool/tool_r
     {
       "content": [
         {
+          "cache_control": {
+            "type": "ephemeral",
+          },
           "content": "sunny",
           "tool_use_id": "call_1",
           "type": "tool_result",
@@ -119,6 +122,7 @@ exports[`GOLDEN request: OpenAI → Claude > reasoning_effort → adaptive outpu
     },
   ],
   "thinking": {
+    "display": "summarized",
     "type": "adaptive",
   },
 }
@@ -239,7 +243,7 @@ exports[`GOLDEN request: OpenAI → Kiro > full body (image base64 + tool_result
       "userInputMessage": {
         "content": "[Context: Current time is <TS>
 
-continue",
+Tool results provided.",
         "modelId": "claude-sonnet-4.5",
         "origin": "AI_EDITOR",
         "userInputMessageContext": {
@@ -281,7 +285,11 @@ continue",
     "history": [
       {
         "userInputMessage": {
-          "content": "You are helpful.
+          "content": "[Context: Current time is <TS>
+
+<instructions>
+You are helpful.
+</instructions>
 
 What's in this image?",
           "images": [

@@ -107,6 +107,19 @@ function normalizeTavily(data, _query, _searchType) {
   return { results, totalResults: results.length };
 }
 
+function normalizeTinyfish(data) {
+  const now = new Date().toISOString();
+  const items = Array.isArray(data?.results) ? data.results : [];
+  return {
+    results: items.map((item, idx) => makeResult("tinyfish", {
+      title: item.title, url: item.url, snippet: item.snippet,
+      published_at: item.date, source_type: item.publisher || null,
+      author: Array.isArray(item.authors) ? item.authors.join(", ") : null,
+    }, idx, now)),
+    totalResults: data?.total_results ?? null,
+  };
+}
+
 function normalizeGooglePse(data, _query, _searchType) {
   const now = new Date().toISOString();
   const items = Array.isArray(data.items) ? data.items : [];
@@ -294,6 +307,7 @@ const NORMALIZERS = {
   "youcom": normalizeYouCom,
   "searxng": normalizeSearxng,
   "xquik": normalizeXquik,
+  "tinyfish": normalizeTinyfish,
   "ollama-search": normalizeOllamaSearch,
   "glm": normalizeGlmSearch,
 };

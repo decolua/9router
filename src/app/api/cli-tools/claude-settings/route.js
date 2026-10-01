@@ -151,9 +151,14 @@ export async function POST(request) {
 
     // Normalize ANTHROPIC_BASE_URL to ensure /v1 suffix
     if (env.ANTHROPIC_BASE_URL) {
-      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1") 
-        ? env.ANTHROPIC_BASE_URL 
+      env.ANTHROPIC_BASE_URL = env.ANTHROPIC_BASE_URL.endsWith("/v1")
+        ? env.ANTHROPIC_BASE_URL
         : `${env.ANTHROPIC_BASE_URL}/v1`;
+    }
+
+    // Keep an existing token (real key or earlier config); only add when absent — Reset clears it.
+    if (currentSettings.env?.ANTHROPIC_AUTH_TOKEN) {
+      delete env.ANTHROPIC_AUTH_TOKEN;
     }
 
     // Merge new env with existing settings

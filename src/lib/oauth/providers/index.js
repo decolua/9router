@@ -8,10 +8,12 @@ import claude from "./claude.js";
 import codex from "./codex.js";
 import xai from "./xai.js";
 import grokCli from "./grok-cli.js";
+import muse from "./muse.js";
 import geminiCli from "./gemini-cli.js";
 import antigravity from "./antigravity.js";
 import iflow from "./iflow.js";
 import qoder from "./qoder.js";
+import qoderCn from "./qoder-cn.js";
 import github from "./github.js";
 import kiro from "./kiro.js";
 import cursor from "./cursor.js";
@@ -26,6 +28,7 @@ import kimchi from "./kimchi.js";
 import trae from "./trae.js";
 import windsurf from "./windsurf.js";
 import zed from "./zed.js";
+import glm from "./glm.js";
 
 // Provider configurations
 const PROVIDERS = {
@@ -33,10 +36,12 @@ const PROVIDERS = {
   codex,
   xai,
   "grok-cli": grokCli,
+  muse,
   "gemini-cli": geminiCli,
   antigravity,
   iflow,
   qoder,
+  "qoder-cn": qoderCn,
   github,
   kiro,
   cursor,
@@ -51,6 +56,7 @@ const PROVIDERS = {
   trae,
   windsurf,
   zed,
+  glm,
 };
 
 export { PROVIDERS };
@@ -112,6 +118,11 @@ export async function generateAuthData(providerName, redirectUri, meta) {
     flowType: provider.flowType,
     fixedPort: provider.fixedPort,
     callbackPath: provider.callbackPath || "/callback",
+    // Zed: surface the system_id embedded in the sign-in URL so the frontend
+    // can thread it through register-session → exchange → stored connection
+    // (exchangeTokens re-runs prepareConfig, which would otherwise mint a
+    // different one). Absent for every other provider — purely additive.
+    ...(config.systemId ? { systemId: config.systemId } : {}),
   };
 }
 
@@ -167,7 +178,15 @@ export async function pollForToken(providerName, deviceCode, codeVerifier, extra
       // Call postExchange to get additional data (copilotToken, userInfo, etc.)
       let extra = null;
       if (provider.postExchange) {
-        extra = await provider.postExchange(result.data);
+        try {
+          extra = await provider.postExchange(result.data);
+        } catch (err) {
+          // The grant succeeded but post-login exchange failed (e.g. Muse key
+          // mint). The device code is one-shot, so re-polling can never
+          // recover — surface as fatal so the client stops and shows the error.
+          console.warn(`[oauth] ${providerName} postExchange failed:`, err?.message || err);
+          return { success: false, error: "exchange_failed", errorDescription: err.message, fatal: true };
+        }
       }
       const tokens = provider.mapTokens(result.data, extra);
       // Kiro IDC/Builder-ID tokens lack profileArn; resolve it to avoid 403

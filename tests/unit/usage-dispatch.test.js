@@ -14,9 +14,9 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 const load = () => import("../../open-sse/services/usage.js");
 const SUPPORTED = [
   "github", "gemini-cli", "antigravity", "claude", "codex", "kiro",
-  "qoder", "iflow", "ollama", "glm", "glm-cn",
+  "qoder", "qoder-cn", "iflow", "ollama", "glm", "glm-cn",
   "minimax", "minimax-cn", "vercel-ai-gateway", "grok-cli", "kimi",
-  "deepseek", "opencode-go", "zed",
+  "deepseek", "opencode-go", "zed", "commandcode",
 ];
 
 describe("usage dispatch", () => {
