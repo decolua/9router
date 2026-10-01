@@ -55,11 +55,14 @@ describe("toOpenAIUsage", () => {
     expect(u.total_tokens).toBe(11);
   });
 
-  it("commandcode: keeps totalTokens fallback", () => {
+  it("commandcode: recomputes total from input+output and ignores raw totalTokens", () => {
+    // inputTokens is the cache-inclusive prompt; total is always input+output,
+    // so a provider total_tokens that disagrees is not trusted.
     const u = toOpenAIUsage({ inputTokens: 8, outputTokens: 2, totalTokens: 99 }, "commandcode");
     expect(u.prompt_tokens).toBe(8);
     expect(u.completion_tokens).toBe(2);
-    expect(u.total_tokens).toBe(99);
+    expect(u.total_tokens).toBe(10);
+    expect(u.prompt_tokens_details).toBeUndefined();
   });
 
   it("unknown kind / null raw -> null", () => {
