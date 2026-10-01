@@ -20,6 +20,10 @@ export default {
   transport: {
     baseUrl: "https://qianfan.baidubce.com/v2/chat/completions",
     validateUrl: "https://qianfan.baidubce.com/v2/models",
+    // Qianfan re-hosts third-party models (DeepSeek/GLM/Kimi/Qwen) behind an
+    // OpenAI-compatible API that rejects vendor-native thinking shapes. Force
+    // the OpenAI `reasoning_effort` shape for every model routed here.
+    thinkingFormat: "openai",
   },
   models: [
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", contextLength: 1048576 },

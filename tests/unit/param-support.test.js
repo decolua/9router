@@ -45,6 +45,37 @@ describe("stripUnsupportedParams", () => {
     });
   });
 
+  it("strips replayed reasoning fields from messages for Mistral (422 extra_forbidden)", () => {
+    const body = {
+      reasoning_effort: "low",
+      thinking: { type: "enabled" },
+      messages: [
+        { role: "user", content: "hi" },
+        { role: "assistant", content: "hello", reasoning_content: "thought process" },
+        { role: "assistant", content: "again", reasoning: "other vendor shape" },
+      ],
+    };
+
+    stripUnsupportedParams("mistral", "zai-glm-5-3", body);
+
+    expect(body.reasoning_effort).toBe("low");
+    expect(body.thinking).toBeUndefined();
+    expect(body.messages[1]).toEqual({ role: "assistant", content: "hello" });
+    expect(body.messages[2]).toEqual({ role: "assistant", content: "again" });
+  });
+
+  it("keeps reasoning_content in history for providers that accept it (deepseek)", () => {
+    const body = {
+      messages: [
+        { role: "assistant", content: "hello", reasoning_content: "thoughts" },
+      ],
+    };
+
+    stripUnsupportedParams("deepseek", "deepseek-v4", body);
+
+    expect(body.messages[0].reasoning_content).toBe("thoughts");
+  });
+
   it("keeps VolcEngine Ark GLM max tokens when already under the ceiling", () => {
     const body = { max_tokens: 64000 };
 

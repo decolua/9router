@@ -12,6 +12,13 @@ const STRIP_RULES = [
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
+  // Mistral's OpenAI-compatible API validates the body strictly and rejects the
+  // Anthropic/Z.ai-native `thinking` object with 422 extra_forbidden. It only
+  // accepts `reasoning_effort`, so drop any stray native thinking field.
+  // Clients replay the previous assistant turn in conversation history; Mistral
+  // rejects replayed reasoning fields on input messages with the same 422
+  // extra_forbidden, so strip them per-message too.
+  { provider: "mistral", drop: ["thinking"], dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
   { provider: "cloudflare-ai", flattenContent: true },
   { provider: "volcengine-ark", match: /glm-5/i, clampToModelMaxOutput: true },
@@ -28,7 +35,6 @@ const STRIP_RULES = [
   // multi-turn combo. Providers that *require* the field (DeepSeek, Kimi) are
   // handled by reasoningContentInjector and are not listed here.
   { provider: "groq", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
-  { provider: "mistral", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
   { provider: "cerebras", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
 ];
 
