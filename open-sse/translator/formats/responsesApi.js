@@ -56,6 +56,22 @@ export function coerceResponsesArguments(value) {
   }
 }
 
+// Responses tool output may be a content array carrying input_image parts (Codex
+// view_image / screenshots). The Chat tool role is text-only, so stringifying it
+// bills base64 as text (multi-MB -> millions of tokens). Split images out so
+// callers can forward them as real image blocks in the following user turn.
+export function splitResponsesToolOutput(output) {
+  if (!Array.isArray(output)) {
+    return { text: typeof output === "string" ? output : JSON.stringify(output), images: [] };
+  }
+  const isImage = (c) => c?.type === RESPONSES_ITEM.INPUT_IMAGE;
+  const images = output
+    .filter((c) => isImage(c) && typeof c.image_url === "string" && c.image_url)
+    .map((c) => ({ type: OPENAI_BLOCK.IMAGE_URL, image_url: { url: c.image_url, detail: c.detail || "auto" } }));
+  const text = output.filter((c) => !isImage(c)).map((c) => c?.text ?? JSON.stringify(c)).join("");
+  return { text, images };
+}
+
 // function_call_output.output must be a string — never null/object.
 export function coerceResponsesOutput(value) {
   if (typeof value === "string") return value;
@@ -96,6 +112,7 @@ export function convertResponsesApiFormat(body) {
   let currentAssistantMsg = null;
   let pendingToolCalls = [];
   let pendingToolResults = [];
+  let pendingToolImages = [];
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -104,6 +121,13 @@ export function convertResponsesApiFormat(body) {
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
+
+    if (itemType !== RESPONSES_ITEM.FUNCTION_CALL_OUTPUT && pendingToolImages.length > 0) {
+      for (const tr of pendingToolResults) result.messages.push(tr);
+      pendingToolResults = [];
+      result.messages.push({ role: ROLE.USER, content: pendingToolImages });
+      pendingToolImages = [];
+    }
 
     if (itemType === RESPONSES_ITEM.MESSAGE) {
       // Flush any pending assistant message with tool calls
@@ -160,11 +184,15 @@ export function convertResponsesApiFormat(body) {
         currentAssistantMsg = null;
       }
       // Add tool result
+      const { text, images } = splitResponsesToolOutput(item.output);
       pendingToolResults.push({
         role: ROLE.TOOL,
         tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
+        content: text
       });
+      if (images.length > 0) {
+        pendingToolImages.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${item.call_id}]` }, ...images);
+      }
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Skip reasoning items - they are for display only
@@ -180,6 +208,9 @@ export function convertResponsesApiFormat(body) {
     for (const tr of pendingToolResults) {
       result.messages.push(tr);
     }
+  }
+  if (pendingToolImages.length > 0) {
+    result.messages.push({ role: ROLE.USER, content: pendingToolImages });
   }
 
   // Cleanup Responses API specific fields
