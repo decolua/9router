@@ -62,6 +62,8 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
         clearTimeout(abortTimeout);
         abortTimeout = null;
       }
+
+      onDisconnect?.({ reason: "complete", duration: Date.now() - startTime });
     },
 
     // Call on error

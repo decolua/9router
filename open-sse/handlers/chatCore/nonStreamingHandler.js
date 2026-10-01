@@ -9,7 +9,7 @@ import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { appendRequestLog, saveRequestDetail, trackPendingRequest } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
@@ -396,6 +396,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }, { endpoint: clientRawRequest?.endpoint || null })).catch(err => {
     console.error("[RequestDetail] Failed to save:", err.message);
   });
+
+  trackPendingRequest(model, provider, connectionId, false);
 
   return {
     success: true,

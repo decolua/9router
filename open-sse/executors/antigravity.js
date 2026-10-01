@@ -102,7 +102,7 @@ function buildIdeRequestId({ body, request, credentials, model, requestType }) {
     return body.requestId;
   }
 
-  const sessionId = request?.sessionId || body?.request?.sessionId || credentials?._clientSessionId || credentials?.connectionId || credentials?.email || "anonymous";
+  const sessionId = credentials?.clientSessionId || credentials?._clientSessionId || request?.sessionId || body?.request?.sessionId || credentials?.connectionId || credentials?.email || "anonymous";
   const conversationId = uuidFromSeed(`antigravity:conversation:${sessionId}`);
   const trajectoryId = uuidFromSeed(`antigravity:trajectory:${sessionId}:${model}:${requestType}`);
   const contentCount = Array.isArray(request?.contents) ? request.contents.length : 1;
@@ -157,7 +157,7 @@ export class AntigravityExecutor extends BaseExecutor {
         }
       }
 
-      const sessionId = resolveSessionId({
+      const sessionId = credentials?.clientSessionId || resolveSessionId({
         headers: credentials?.rawHeaders,
         body,
         connectionId: credentials?.email || credentials?.connectionId,
@@ -188,7 +188,7 @@ export class AntigravityExecutor extends BaseExecutor {
       };
     }
 
-    const rawSessionId = body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" });
+    const rawSessionId = body.request?.sessionId || credentials?.clientSessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" });
     const sessionId = toNumericSessionId(rawSessionId) || rawSessionId;
 
     // ─── Standard (non-image) request ───

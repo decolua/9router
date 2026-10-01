@@ -138,6 +138,17 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
+    // Concurrency / In-Flight Awareness:
+    // If an account is currently streaming or processing a request, prefer idle accounts
+    // so multiple tabs / parallel clients each get a dedicated account instead of colliding.
+    const getInFlight = (connId) => {
+      const byAccount = global._pendingRequests?.byAccount?.[connId];
+      const pending = byAccount ? Object.values(byAccount).reduce((sum, count) => sum + (count || 0), 0) : 0;
+      const selTime = global._pendingSelections?.get(connId);
+      const isRecentlySelected = selTime && (Date.now() - selTime < 5000);
+      return pending + (isRecentlySelected && pending === 0 ? 1 : 0);
+    };
+
     let connection;
     // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
@@ -148,49 +159,59 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
     if (connection) {
       // skip strategy
-    } else if (strategy === "round-robin") {
-      const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
-
-      // Sort by lastUsed (most recent first) to find current candidate
-      const byRecency = [...availableConnections].sort((a, b) => {
-        if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-        if (!a.lastUsedAt) return 1;
-        if (!b.lastUsedAt) return -1;
-        return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
-      });
-
-      const current = byRecency[0];
-      const currentCount = current?.consecutiveUseCount || 0;
-
-      if (current && current.lastUsedAt && currentCount < stickyLimit) {
-        // Stay with current account
-        connection = current;
-        // Update lastUsedAt and increment count (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
-        });
-      } else {
-        // Pick the least recently used (excluding current if possible)
-        const sortedByOldest = [...availableConnections].sort((a, b) => {
-          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
-          if (!a.lastUsedAt) return -1;
-          if (!b.lastUsedAt) return 1;
-          return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
-        });
-
-        connection = sortedByOldest[0];
-
-        // Update lastUsedAt and reset count to 1 (await to ensure persistence)
-        await updateProviderConnection(connection.id, {
-          lastUsedAt: new Date().toISOString(),
-          consecutiveUseCount: 1
-        });
-      }
     } else {
-      // Default: fill-first (already sorted by priority in getProviderConnections)
-      connection = availableConnections[0];
+      // Find connections with 0 in-flight requests
+      const idleConnections = availableConnections.filter((c) => getInFlight(c.id) === 0);
+      const candidateConnections = idleConnections.length > 0 ? idleConnections : availableConnections;
+
+      if (strategy === "round-robin") {
+        const stickyLimit = providerOverride.stickyRoundRobinLimit || settings.stickyRoundRobinLimit || 3;
+
+        // Sort by lastUsed (most recent first) to find current candidate
+        const byRecency = [...candidateConnections].sort((a, b) => {
+          if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+          if (!a.lastUsedAt) return 1;
+          if (!b.lastUsedAt) return -1;
+          return new Date(b.lastUsedAt) - new Date(a.lastUsedAt);
+        });
+
+        const current = byRecency[0];
+        const currentCount = current?.consecutiveUseCount || 0;
+
+        // Only stick to current account if it is not currently in-flight
+        if (current && current.lastUsedAt && currentCount < stickyLimit && getInFlight(current.id) === 0) {
+          // Stay with current account
+          connection = current;
+          // Update lastUsedAt and increment count (await to ensure persistence)
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: (connection.consecutiveUseCount || 0) + 1
+          });
+        } else {
+          // Pick the least recently used candidate
+          const sortedByOldest = [...candidateConnections].sort((a, b) => {
+            if (!a.lastUsedAt && !b.lastUsedAt) return (a.priority || 999) - (b.priority || 999);
+            if (!a.lastUsedAt) return -1;
+            if (!b.lastUsedAt) return 1;
+            return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
+          });
+
+          connection = sortedByOldest[0];
+
+          // Update lastUsedAt and reset count to 1 (await to ensure persistence)
+          await updateProviderConnection(connection.id, {
+            lastUsedAt: new Date().toISOString(),
+            consecutiveUseCount: 1
+          });
+        }
+      } else {
+        // Default: fill-first (use idle candidates first, sorted by priority)
+        connection = candidateConnections[0];
+      }
     }
+
+    if (!global._pendingSelections) global._pendingSelections = new Map();
+    global._pendingSelections.set(connection.id, Date.now());
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
 
