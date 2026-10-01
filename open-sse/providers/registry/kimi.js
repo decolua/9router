@@ -27,6 +27,10 @@ export default {
     baseUrl: "https://api.kimi.com/coding/v1/messages",
     format: "claude",
     urlSuffix: "?beta=true",
+    // K3/K3-256k non-streaming waits for full inference (~20s+); streaming
+    // returns first token in 2-4s. Non-streaming clients still receive JSON —
+    // chatCore converts SSE back to JSON (handleForcedSSEToJson).
+    forceStream: true,
     headers: { ...CLAUDE_API_HEADERS },
     clientId: "17e5f671-d194-4dfb-9706-5516cb48c098",
     tokenUrl: "https://auth.kimi.com/api/oauth/token",
