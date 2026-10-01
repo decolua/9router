@@ -17,5 +17,6 @@ export default {
   transport: {
     baseUrl: "",
     headers: {},
+    quirks: { preservePromptCacheKey: true },
   },
 };

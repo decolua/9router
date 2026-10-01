@@ -4,6 +4,7 @@ import { prepareClaudeRequest, ensureTrailingUserTurn } from "./formats/claude.j
 import { cloakClaudeTools, decloakStreamChunk } from "../utils/claudeCloaking.js";
 import { restoreToolNames } from "../utils/opencodeFingerprint.js";
 import { filterToOpenAIFormat } from "./formats/openai.js";
+import { stripUnsupportedChatExtensions } from "./concerns/paramSupport.js";
 import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
@@ -143,6 +144,13 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
     result = filterToOpenAIFormat(result, {
       preserveCacheControl: !!PROVIDERS[provider]?.quirks?.preserveCacheControl,
     });
+    // Chat Completions clients have always had prompt_cache_key forwarded
+    // verbatim. Only the Responses→Chat hop newly exposes the field, so
+    // scope the strict-endpoint guard to that direction; providers opt in
+    // via the preservePromptCacheKey quirk.
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) {
+      stripUnsupportedChatExtensions(provider, result);
+    }
   }
 
   // Final step: prepare request for Claude format endpoints
