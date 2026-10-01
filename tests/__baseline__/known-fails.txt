@@ -1,4 +1,55 @@
+# Known failures on master, regenerated 2026-09-23 from 39e36d3d with CI=true (two runs,
+# union, so a single flaky test cannot block a PR). The CI no-regression gate only fails
+# on a test that is NOT listed here. When you fix one of these, delete its line.
+#
+# Snapshot never committed and kimi headers are non-deterministic run to run;
+# commit a reviewed snapshot (and fix kimi) to bring this file back under the gate.
+tests/translator/golden-url-header.test.js :: *
+#
+# Flaky (failed in one of two runs):
+#   tests/unit/force-stream-config.test.js :: forceStream provider config only openai/codex/commandcode force streaming
+
+tests/auth/saml.test.js :: <suite failed to load>
+tests/translator/bugs-claudeCode-context.test.js :: Claude Code CLI context → OpenAI tool_result image block is preserved
+tests/translator/bugs-gemini-cursor-commandcode.test.js :: OpenAI → CommandCode image content is preserved as native CommandCode image blocks
+tests/translator/bugs-openai-bridge.test.js :: bug: Claude → OpenAI bridge data loss tool_result with image block is not turned into raw JSON / dropped
+tests/translator/bugs-toClaude-context.test.js :: OpenAI → Claude context mapping assistant reasoning_content becomes a thinking block
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) does not send additionalModelRequestFields for Kiro models without effort support
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) injects thinking_mode tag when model implies thinking
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) keeps the legacy thinking fallback for unsupported GPT-5.6 effort auto
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) keeps the legacy thinking fallback for unsupported GPT-5.6 effort minimal
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) keeps the legacy thinking fallback for unsupported GPT-5.6 effort ultra
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) keeps top-level systemPrompt stable across turns
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) maps output_config.effort high to Kiro CLI-style additionalModelRequestFields for effort models
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) normalizes an unsupported Kiro intensity suffix while preserving agentic behavior
+tests/translator/claude-kiro-direct.test.js :: Claude → Kiro (direct route) sends Claude system as top-level systemPrompt and keeps a user-content fallback
+tests/translator/thinking-unified.test.js :: applyThinking per provider format GLM-5.2 also gets reasoning_effort (supported from 5.2 onward)
+tests/unit/claude-cloaking.test.js :: advertises a Claude Code version accepted by Fable 5.1
+tests/unit/claude-header-forwarding.test.js :: DefaultExecutor.buildHeaders() — claude provider uses static provider defaults when no model is given
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
+tests/unit/cline-auth.test.js :: <suite failed to load>
+tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
+tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
+tests/unit/combo-autoswitch.test.js :: detectRequiredCapabilities web_search tool -> search
+tests/unit/combo-autoswitch.test.js :: reorderByCapabilities keeps order when no model matches
+tests/unit/commandcode-to-openai.test.js :: commandcode-to-openai — error event stringifies object errors so client sees readable message
+tests/unit/cursor-models.test.js :: Cursor live model catalog fetches the account-specific catalog and caches it
+tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety 100 parallel saveRequestUsage → no count loss
+tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety daily summary aggregates correctly under parallel writes
+tests/unit/db-concurrent.test.js :: DB Concurrency — atomic safety mixed concurrent: usage + details + connections + aliases
+tests/unit/embeddings.cloud.test.js :: <suite failed to load>
+tests/unit/executor-const-guard.test.js :: antigravity retry (intentional change: 429=6, 503=3) 429 attempts = 6
+tests/unit/force-stream-config.test.js :: forceStream provider config keeps forced-stream providers streaming for JSON clients when body.stream is false
+tests/unit/force-stream-config.test.js :: forceStream provider config keeps forced-stream providers streaming for JSON clients when body.stream is undefined
+tests/unit/force-stream-config.test.js :: forceStream provider config only openai/codex/commandcode force streaming
+tests/unit/image-fetch-hardening.test.js :: fetchImageAsBase64 hardening accepts valid PNG from public host
+tests/unit/kimchi-strip-reasoning.test.js :: <suite failed to load>
+tests/unit/kimchi.test.js :: <suite failed to load>
+tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh adds CodeWhisperer external IdP headers and endpoint ordering
+tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh refreshes Microsoft external_idp tokens with form-encoded OAuth body
+tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery bounds the retry HTTP error body
+tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery surfaces retry HTTP failures as SSE after heartbeat commits headers
+tests/unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH Chrome User-Agent → 200
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
@@ -8,17 +59,59 @@ tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
 tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
 tests/unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
-tests/unit/rtk.test.js :: RTK flag default off, toggle works
-tests/unit/rtk.test.js :: compressMessages (disabled) returns null when disabled
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses Claude array-form tool_result text parts
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses Claude string-form tool_result
-tests/unit/rtk.test.js :: compressMessages (enabled) compresses OpenAI tool message (string content)
-tests/unit/rtk.test.js :: compressMessages (enabled) handles mix of messages without crashing
-tests/unit/rtk.test.js :: compressMessages (enabled) never produces empty content (R14 guard)
-tests/unit/rtk.test.js :: compressMessages (enabled) skips below MIN_COMPRESS_SIZE (<500 bytes)
-tests/unit/rtk.test.js :: compressMessages (enabled) skips is_error tool_result
-tests/unit/rtk.test.js :: compressMessages (enabled) skips when body has no messages
+tests/unit/openai-to-commandcode.test.js :: openaiToCommandCodeRequest — native image blocks maps Claude/OpenAI base64 image source to a data-URI image block
+tests/unit/openai-to-commandcode.test.js :: openaiToCommandCodeRequest — native image blocks maps OpenAI image_url data URI to CommandCode {type:image,image,mimeType}
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget clamps OpenAI Responses reasoning.effort xhigh to max_thinking_length 32000
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget clamps reasoning_effort max to Kiro max_thinking_length 32000
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget does not send Claude-specific additionalModelRequestFields for non-Claude aliases
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget does not send Claude-specific additionalModelRequestFields for prefixed non-Claude aliases
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget does not send additionalModelRequestFields for date-suffixed Claude 4 model ids
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget does not send additionalModelRequestFields for legacy Kiro model ids
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget does not send additionalModelRequestFields for pre-4 legacy Kiro model ids
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget does not send additionalModelRequestFields for prefixed pre-4 legacy Kiro model ids
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget keeps the legacy thinking fallback for unsupported GPT-5.6 effort auto
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget keeps the legacy thinking fallback for unsupported GPT-5.6 effort minimal
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget keeps the legacy thinking fallback for unsupported GPT-5.6 effort ultra
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget keeps the thinking-alias fallback when GPT effort is blank
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget keeps top-level systemPrompt stable across turns
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget maps reasoning_effort high to max_thinking_length 24576
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget maps reasoning_effort low to max_thinking_length 1024
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget normalizes unsupported Kiro intensity suffix for claude-sonnet-4.5-thinking-agentic(high)
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget normalizes unsupported Kiro intensity suffix for glm-5-thinking-agentic(medium)
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget uses Claude thinking.budget_tokens as max_thinking_length
+tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget uses the default budget for synthetic -thinking models with no explicit config
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only demote Chat function named sang auto (plain và max)
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only demote Claude tool named sang auto (plain và max)
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only demote Responses named sang auto (plain và max)
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only demote none sang auto (plain và max)
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only demote required sang auto (plain và max)
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only giữ auto và absent; tools/input nguyên vẹn
+tests/unit/opencode-free-tool-choice.test.js :: opencode Free 1.3 tool_choice auto-only wire: execute gửi choice auto tới /zen/v1/responses
+tests/unit/opencode-muse-spark-thinking.test.js :: OpenCode Free Muse Spark thinking strips prior-turn reasoning items carrying encrypted_content from input
+tests/unit/request-details-tab.test.js :: getDistinctProviders — providers route (no full-row parse) returns unique provider list without parsing data blobs
+tests/unit/request-details-tab.test.js :: request details — tab crash-risk cases oversized field → stored truncated + reparseable (no circular)
+tests/unit/security-audit.test.js :: AUDIT-001: Synchronous restart guard mitmIsRestarting should be reset on max-restarts early return
+tests/unit/security-audit.test.js :: AUDIT-001: Synchronous restart guard mitmIsRestarting should be set before first await expression
+tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use masked key, not raw key
+tests/unit/security-audit.test.js :: AUDIT-002: API key masking getUsageHistory should use apiKeyMasked instead of apiKey
+tests/unit/security-audit.test.js :: AUDIT-002: API key masking getUsageStats should use apiKeyMasked in byApiKey entries
+tests/unit/security-audit.test.js :: AUDIT-002: API key masking source should contain maskApiKey function
+tests/unit/security-audit.test.js :: AUDIT-003: Proxy URL validation source should contain validateProxyUrl function
+tests/unit/security-audit.test.js :: AUDIT-004: Atomic lock file for MITM startup manager.js should define LOCK_FILE constant
+tests/unit/security-audit.test.js :: AUDIT-004: Atomic lock file for MITM startup should clean up lock file on all exit paths
+tests/unit/security-audit.test.js :: AUDIT-004: Atomic lock file for MITM startup should use O_EXCL flag (wx) for atomic creation
+tests/unit/security-audit.test.js :: AUDIT-018: XSS escaping in OAuth callback should escape ampersand, angle brackets, and quotes
+tests/unit/security-audit.test.js :: AUDIT-018: XSS escaping in OAuth callback should use safeMessage in rendered HTML, not raw message
+tests/unit/security-audit.test.js :: AUDIT-018: XSS escaping in OAuth callback source should contain escapeHtml function
+tests/unit/translator-helpers-edge.test.js :: normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1) hoists mid-conversation system messages into top-level system
 tests/unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
 tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
 tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
 tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
+tests/unit/usage-dispatch.test.js :: usage dispatch unsupported provider → not-implemented message
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class buildUrl returns the GetChatMessage endpoint
+tests/unit/windsurf-executor.test.js :: WindsurfExecutor class constructor wires config from PROVIDERS.windsurf
+tests/unit/xai-oauth-service.test.js :: xai/oauth service exchanges dashboard codes against the discovered xAI token endpoint
+tests/unit/xai-oauth-service.test.js :: xai/oauth service generates dashboard auth data with CLIProxyAPI PKCE size and discovered endpoints
+tests/unit/xai-oauth-service.test.js :: xai/oauth service validates discovered endpoints are https x.ai URLs

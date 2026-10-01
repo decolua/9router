@@ -1,0 +1,21 @@
+# Security regression tests. CI runs these as a hard gate: any failure blocks the PR.
+# Paths are relative to tests/. Add a regression test here when you fix a vulnerability,
+# and keep only tests that are deterministic (no live network, no timing).
+unit/dashboard-guard.test.js
+unit/custom-server-peer-headers.test.js
+unit/local-request-peer-trust-3294.test.js
+unit/ssrf-guard-hardening.test.js
+unit/search-ssrf-guard.test.js
+unit/cowork-mcp-ssrf-guard.test.js
+unit/request-details-redaction.test.js
+unit/xiaomi-mimo-login-session-security.test.js
+# From #4286 (security reconciliation) — active once merged
+unit/settings-database-reauth.test.js
+unit/jwt-secret-placeholder.test.js
+unit/kiro-region-sink-guard.test.js
+unit/remote-ssrf-route-guards.test.js
+unit/usage-stats-apikey-redaction.test.js
+# From #4289 (example credentials) — active once merged
+unit/login-placeholder-initial-password.test.js
+# From #3499 (settings re-auth) — active once merged
+unit/settings-reauth.test.js

@@ -1,2 +1,45 @@
 version: 2
-updates: []
+# Low-noise setup: one grouped PR per ecosystem per interval instead of one PR per
+# package. Security updates (enabled in Settings → Code security) are not grouped
+# or delayed by this schedule — they open as soon as an advisory lands.
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: npm
+    directory: "/cli"
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 2
+    groups:
+      cli-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps-cli)"
+
+  # Keeps pinned action SHAs current; would have caught the Node 20 action
+  # deprecation that stopped Docker publishing (#4161).
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "ci"
+
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "chore(docker)"
