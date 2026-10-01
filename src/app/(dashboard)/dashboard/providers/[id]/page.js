@@ -36,6 +36,43 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Model kimliğinden satıcı ailesi. Jetonlar çakışmaz (kimi ve moonshot
+// ikisi de Kimi'ye çıkar). Bilinmeyen satıcı "Other" sepetine düşer.
+const AILE_JETONLARI = [
+  ["muse", "Muse Spark"],
+  ["claude", "Claude"],
+  ["gpt", "GPT"],
+  ["codex", "GPT"],
+  ["glm", "GLM"],
+  ["kimi", "Kimi"],
+  ["moonshot", "Kimi"],
+  ["qwen", "Qwen"],
+  ["gemini", "Gemini"],
+  ["deepseek", "DeepSeek"],
+  ["minimax", "MiniMax"],
+  ["mimo", "MiMo"],
+  ["grok", "Grok"],
+  ["z-ai", "Z-AI"],
+  ["meta", "Meta"],
+  ["mistral", "Mistral"],
+  ["llama", "Llama"],
+];
+
+const AILE_SIRASI = ["Muse Spark", "Claude", "GPT", "GLM", "Kimi", "Qwen", "Gemini", "DeepSeek", "MiniMax", "MiMo", "Grok", "Z-AI", "Meta", "Mistral", "Llama", "Other"];
+
+function aileBul(modelId) {
+  const s = String(modelId || "").toLowerCase();
+  for (const [jeton, ad] of AILE_JETONLARI) {
+    if (s.includes(jeton)) return ad;
+  }
+  return "Other";
+}
+
+function aileSira(ad) {
+  const i = AILE_SIRASI.indexOf(ad);
+  return i < 0 ? AILE_SIRASI.length : i;
+}
+
 export default function ProviderDetailPage() {
   const params = useParams();
   const router = useRouter();
@@ -72,6 +109,24 @@ export default function ProviderDetailPage() {
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
+  // Aile gruplama: katlama durumu + arama. Katlama tercihi sağlayıcı
+  // başına saklanır.
+  const [kapaliAile, setKapaliAile] = useState(() => {
+    try {
+      const ham = typeof window !== "undefined"
+        ? window.localStorage.getItem(`nr-aile-kapali`) || "[]"
+        : "[]";
+      return new Set(JSON.parse(ham));
+    } catch {
+      return new Set();
+    }
+  });
+  const [modelArama, setModelArama] = useState("");
+  // Sağlayıcı değişince katlama/arama sıfırlanır (sayfa aynı bileşeni kullanır).
+  useEffect(() => {
+    setKapaliAile(new Set());
+    setModelArama("");
+  }, [providerId]);
   // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
   const [liveModelsError, setLiveModelsError] = useState(null);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
@@ -156,7 +211,11 @@ export default function ProviderDetailPage() {
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
   const staticModels = getModelsByProviderId(providerId);
-  const models = (providerId === "cursor" || providerId === "zed") && liveModels.length > 0
+  // Live catalogs (cursor/zed have no usable static list); subscription
+  // gateways (opencode-go/commandcode) drift, so the refresh button in the
+  // header re-fetches through the connection endpoint for these too.
+  const CANLI_KESIF = ["cursor", "zed", "opencode-go", "commandcode"];
+  const models = CANLI_KESIF.includes(providerId) && liveModels.length > 0
     ? liveModels
     : staticModels;
   const providerAlias = getProviderAlias(providerId);
@@ -266,6 +325,31 @@ export default function ProviderDetailPage() {
     } catch (error) {
       console.log("Error enabling all models:", error);
     }
+  };
+
+  // Aile boyu toplu açma: tek tek uçları çağırıp listeyi bir kez tazele.
+  const handleEnableAile = async (ids) => {
+    if (!ids.length) return;
+    try {
+      await Promise.all(ids.map((id) =>
+        fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}&id=${encodeURIComponent(id)}`, { method: "DELETE" })
+      ));
+      await fetchDisabledModels();
+    } catch (error) {
+      console.log("Error enabling family models:", error);
+    }
+  };
+
+  const aileKatla = (ad) => {
+    setKapaliAile((once) => {
+      const yeni = new Set(once);
+      if (yeni.has(ad)) yeni.delete(ad);
+      else yeni.add(ad);
+      try {
+        if (typeof window !== "undefined") window.localStorage.setItem(`nr-aile-kapali`, JSON.stringify([...yeni]));
+      } catch { /* yok say */ }
+      return yeni;
+    });
   };
 
   // Define callbacks BEFORE the useEffect that uses them
@@ -475,7 +559,7 @@ export default function ProviderDetailPage() {
   // the provider id or connection list changes — no polling, no loop.
   // Cursor path is statement-identical to before; zed adds error surfacing.
   useEffect(() => {
-    const isLiveCatalog = providerId === "cursor" || providerId === "zed";
+    const isLiveCatalog = CANLI_KESIF.includes(providerId);
     if (!isLiveCatalog) {
       setLiveModels([]);
       return;
@@ -513,6 +597,27 @@ export default function ProviderDetailPage() {
 
     return () => { cancelled = true; };
   }, [providerId, connections]);
+
+  // Subscription gateways drift: header refresh button re-fires the same
+  // live fetch on demand. Separated from the auto effect above (which runs
+  // only on provider/connection change) so the button has a stable target.
+  const [canliYukleniyor, setCanliYukleniyor] = useState(false);
+  const canliYenile = useCallback(async () => {
+    const connection = connections.find((item) => item.isActive !== false);
+    if (!connection?.id) return;
+    setCanliYukleniyor(true);
+    try {
+      const res = await fetch(`/api/providers/${connection.id}/models`, { cache: "no-store" });
+      const data = await res.json().catch(() => null);
+      if (res.ok && Array.isArray(data?.models) && data.models.length > 0) {
+        setLiveModels(data.models);
+      }
+    } catch {
+      /* sessiz: statik liste durur */
+    } finally {
+      setCanliYukleniyor(false);
+    }
+  }, [connections]);
 
   // Fetch suggested models from provider's public API (if configured)
   useEffect(() => {
@@ -1184,10 +1289,144 @@ export default function ProviderDetailPage() {
       type: "llm",
     });
 
+    // Aile gruplama: özel + yerleşik satırlar ailelerine dağılır, aile
+    // sırasına göre dizilir. Arama süzgeci ikisine de uygulanır.
+    const aramaKucuk = modelArama.trim().toLowerCase();
+    const aramayaUyar = (id) => !aramaKucuk || String(id || "").toLowerCase().includes(aramaKucuk);
+    const ozelFiltreli = customModelRows.filter((m) => aramayaUyar(m.id) && !disabledSet.has(m.id));
+    // Kapatılmış özel modeller ailede değil, alttaki geri yükleme
+    // bölümünde görünür (yoksa bir daha açılamazlar).
+    const yerlesikFiltreli = displayModels.filter((m) => aramayaUyar(m.id));
+    const aileHarita = new Map();
+    const aileyeEkle = (tur, model) => {
+      const ad = aileBul(model.id);
+      if (!aileHarita.has(ad)) aileHarita.set(ad, { ad, ozel: [], yerlesik: [] });
+      aileHarita.get(ad)[tur].push(model);
+    };
+    for (const m of ozelFiltreli) aileyeEkle("ozel", m);
+    for (const m of yerlesikFiltreli) aileyeEkle("yerlesik", m);
+    const aileler = [...aileHarita.values()].sort((a, b) => aileSira(a.ad) - aileSira(b.ad));
+
+    const satirOzel = (model) => (
+      <ModelRow
+        key={`${model.source}-${model.fullModel}`}
+        model={{ id: model.id, name: model.name }}
+        fullModel={`${providerDisplayAlias}/${model.id}`}
+        alias={model.alias}
+        copied={copied}
+        onCopy={copy}
+        onSetAlias={() => {}}
+        onDeleteAlias={() => {
+          if (model.source === "custom") {
+            handleDeleteCustomModel(model.id, "llm", providerStorageAlias);
+          } else {
+            handleDeleteAlias(model.alias);
+          }
+        }}
+        testStatus={modelTestResults[model.id]}
+        onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
+        isTesting={testingModelIds.has(model.id)}
+        isCustom
+        isFree={false}
+        caps={getCaps(`${providerId}/${model.id}`)}
+        thinkingSuffix={resolveThinkingSuffix(model.id)}
+        showContext
+      />
+    );
+
+    const satirYerlesik = (model) => {
+      const fullModel = `${providerStorageAlias}/${model.id}`;
+      const oldFormatModel = `${providerId}/${model.id}`;
+      const existingAlias = Object.entries(modelAliases).find(
+        ([, m]) => m === fullModel || m === oldFormatModel
+      )?.[0];
+      return (
+        <ModelRow
+          key={model.id}
+          model={model}
+          fullModel={`${providerDisplayAlias}/${model.id}`}
+          alias={existingAlias}
+          copied={copied}
+          onCopy={copy}
+          onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
+          onDeleteAlias={() => handleDeleteAlias(existingAlias)}
+          testStatus={modelTestResults[model.id]}
+          onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
+          isTesting={testingModelIds.has(model.id)}
+          isFree={model.isFree}
+          onDisable={() => handleDisableModel(model.id)}
+          caps={getCaps(`${providerId}/${model.id}`)}
+          thinkingSuffix={resolveThinkingSuffix(model.id)}
+          showContext
+        />
+      );
+    };
+
     return (
-      <div className="flex flex-wrap gap-3">
-        {/* Custom models first */}
-        {customModelRows.map((model) => (
+      <div className="flex flex-col gap-2">
+        {allModels.length > 10 && (
+          <input
+            value={modelArama}
+            onChange={(e) => setModelArama(e.target.value)}
+            placeholder={translate("Search models…")}
+            className="w-full rounded-lg border border-border bg-sidebar px-3 py-2 text-xs outline-none placeholder:text-text-muted/60 focus:border-primary"
+          />
+        )}
+        {aileler.length === 0 && aramaKucuk ? (
+          <p className="py-6 text-center text-xs text-text-muted">{translate("No matching models.")}</p>
+        ) : null}
+        {aileler.map((f) => {
+          const tumIdler = [...f.ozel.map((m) => m.id), ...f.yerlesik.map((m) => m.id)];
+          const kapaliIdler = tumIdler.filter((id) => disabledSet.has(id));
+          const acikIdler = tumIdler.filter((id) => !disabledSet.has(id));
+          const kapaliMi = kapaliAile.has(`${providerId}:${f.ad}`);
+          return (
+            <div key={f.ad} className="w-full overflow-hidden rounded-lg border border-border">
+              <div
+                className="flex cursor-pointer items-center gap-2 bg-sidebar/60 px-3 py-2 hover:bg-sidebar"
+                onClick={() => aileKatla(`${providerId}:${f.ad}`)}
+              >
+                <span className="material-symbols-outlined text-sm text-text-muted">
+                  {kapaliMi ? "chevron_right" : "expand_more"}
+                </span>
+                <b className="text-[13px]">{f.ad === "Other" ? translate("Other") : f.ad}</b>
+                <span className="font-mono text-[11px] text-text-muted">
+                  {acikIdler.length}/{tumIdler.length} {translate("on")}
+                </span>
+                <span className="ml-auto flex gap-1" onClick={(e) => e.stopPropagation()}>
+                  {kapaliIdler.length > 0 && (
+                    <button
+                      className="rounded px-2 py-0.5 text-[11px] text-text-muted hover:bg-sidebar hover:text-primary"
+                      onClick={() => handleEnableAile(kapaliIdler)}
+                    >
+                      {translate("Enable All")}
+                    </button>
+                  )}
+                  {acikIdler.length > 0 && (
+                    <button
+                      className="rounded px-2 py-0.5 text-[11px] text-text-muted hover:bg-sidebar hover:text-primary"
+                      onClick={() => handleDisableAll(acikIdler)}
+                    >
+                      {translate("Turn Off")}
+                    </button>
+                  )}
+                </span>
+              </div>
+              {!kapaliMi && (
+                <div className="flex flex-wrap gap-3 p-3">
+                  {f.ozel.map(satirOzel)}
+                  {f.yerlesik.map(satirYerlesik)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Custom models first (hidden while disabled — they live in the
+            restorable Disabled section below).
+            NOTE: rows already shown inside family groups above (satirOzel);
+            this legacy flat list is kept for providers with few models. */}
+        {aileler.length === 0 && customModelRows.filter((model) => !disabledSet.has(model.id)).map((model) => (
           <ModelRow
             key={`${model.source}-${model.fullModel}`}
             model={{ id: model.id, name: model.name }}
@@ -1213,7 +1452,7 @@ export default function ProviderDetailPage() {
           />
         ))}
 
-        {displayModels.map((model) => {
+        {aileler.length === 0 && displayModels.map((model) => {
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(
@@ -1278,6 +1517,36 @@ export default function ProviderDetailPage() {
         )}
 
         {/* Suggested models from provider API — show only models not yet added */}
+        {/* Live-connection catalogs (opencode-go/commandcode): account models
+            not yet registered get a one-click add row. */}
+        {(providerId === "opencode-go" || providerId === "commandcode") && (() => {
+          const kayitli = new Set([
+            ...models.map((m) => m.id),
+            ...customModelRows.map((m) => m.id),
+          ]);
+          const yeni = liveModels.filter((m) => m?.id && !kayitli.has(m.id));
+          if (!yeni.length) return null;
+          return (
+            <div className="mb-3 w-full rounded-lg border border-dashed border-text-muted/40 px-3 py-2">
+              <div className="mb-2 text-xs text-text-muted">
+                {translate("New models on your account:")} <b>{yeni.length}</b>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {yeni.slice(0, 30).map((m) => (
+                  <span key={m.id} className="flex items-center gap-2 rounded-lg border px-2 py-1 font-mono text-xs">
+                    {m.id}
+                    <button
+                      className="rounded px-1.5 py-0.5 text-[11px] text-primary hover:bg-sidebar"
+                      onClick={() => handleAddCustomModel(m.id, "llm", providerStorageAlias)}
+                    >
+                      {translate("Add")}
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set([
             ...Object.values(modelAliases),
@@ -1310,12 +1579,18 @@ export default function ProviderDetailPage() {
           );
         })()}
 
-        {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
+        {/* Disabled models — restorable (built-in + custom).
+            Disabled custom models must appear here too: otherwise they stay
+            visible above with no way back. */}
+        {(() => {
+          const ozelKapali = customModelRows.filter((m) => disabledSet.has(m.id));
+          const hepsi = [...disabledDisplayModels, ...ozelKapali.filter((m) => !disabledDisplayModels.some((d) => d.id === m.id))];
+          if (!hepsi.length) return null;
+          return (
           <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
+            <p className="text-xs text-text-muted mb-2">Disabled models ({hepsi.length}):</p>
             <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
+              {hepsi.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => handleEnableModel(m.id)}
@@ -1328,7 +1603,8 @@ export default function ProviderDetailPage() {
               ))}
             </div>
           </div>
-        )}
+          );
+        })()}
       </div>
     );
   };
@@ -1775,6 +2051,11 @@ export default function ProviderDetailPage() {
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
             return (
               <div className="flex gap-2">
+                {(providerId === "opencode-go" || providerId === "commandcode") && (
+                  <Button size="sm" variant="secondary" icon="refresh" onClick={canliYenile} disabled={canliYukleniyor}>
+                    {canliYukleniyor ? translate("Fetching…") : translate("Fetch Models")}
+                  </Button>
+                )}
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All

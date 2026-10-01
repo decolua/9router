@@ -13,12 +13,15 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
-import codexProvider from "open-sse/providers/registry/codex.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
-// Model discovery must identify as the same Codex CLI version as inference.
-const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
+// The /codex/models endpoint gates each entry by minimal_client_version against this
+// value, and codex CLI's own manifest (openai/codex codex-rs/models-manager/models.json)
+// already requires 0.144.0 for its newest models, so a stale client_version here comes
+// back 200 with those entries quietly missing instead of erroring.
+const CODEX_CLIENT_VERSION = "0.144.6";
+const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -286,6 +289,9 @@ const PROVIDER_MODELS_CONFIG = {
   "volcengine-ark": createOpenAIModelsConfig("https://ark.cn-beijing.volces.com/api/coding/v3/models"),
   byteplus: createOpenAIModelsConfig("https://ark.ap-southeast.bytepluses.com/api/coding/v3/models"),
 
+  // Subscription gateways with OpenAI-shaped /models (Bearer key)
+  "opencode-go": createOpenAIModelsConfig("https://opencode.ai/zen/go/v1/models"),
+  commandcode: createOpenAIModelsConfig("https://api.commandcode.ai/provider/v1/models"),
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),

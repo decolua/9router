@@ -15,11 +15,23 @@ function getTimeString() {
  * @param {string} options.provider - Provider name
  * @param {string} options.model - Model name
  */
-export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "" } = {}) {
+export function createStreamController({ onDisconnect, onError, log, provider, model, reqTag = "", maxDurationMs = 10 * 60 * 1000 } = {}) {
   const abortController = new AbortController();
   const startTime = Date.now();
   let disconnected = false;
   let abortTimeout = null;
+  // Absolute safety net: no request may dangle forever. A hung upstream
+  // without client abort would otherwise leak the handler indefinitely.
+  const hardTimer = setTimeout(() => {
+    if (disconnected) return;
+    disconnected = true;
+    if (abortTimeout) { clearTimeout(abortTimeout); abortTimeout = null; }
+    try { abortController.abort(new Error("max duration exceeded")); } catch {}
+    if (log?.errorLine) log.errorLine(reqTag, "⏱", `TIMEOUT · ${provider}/${model} · ${Date.now() - startTime}ms`);
+    else console.log(`TIMEOUT ${provider}/${model} · ${Date.now() - startTime}ms`);
+    onDisconnect?.({ reason: "timeout", duration: Date.now() - startTime });
+  }, maxDurationMs);
+  if (hardTimer?.unref) hardTimer.unref();
 
   // Only abnormal terminations are logged; normal completion is covered by "📊 done".
   // isError uses errorLine (always shown, ignores LOG_LEVEL) so failures survive quiet levels.
@@ -41,6 +53,8 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       if (disconnected) return;
       disconnected = true;
 
+      clearTimeout(hardTimer);
+
       // Debug-only: Responses API has no [DONE] sentinel, so codex/droid close the
       // socket on every completed request. "📊 done" is the authoritative outcome line.
       dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
@@ -58,6 +72,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       if (disconnected) return;
       disconnected = true;
 
+      clearTimeout(hardTimer);
       if (abortTimeout) {
         clearTimeout(abortTimeout);
         abortTimeout = null;
@@ -69,6 +84,7 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       if (disconnected) return;
       disconnected = true;
 
+      clearTimeout(hardTimer);
       if (abortTimeout) {
         clearTimeout(abortTimeout);
         abortTimeout = null;
