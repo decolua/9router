@@ -86,12 +86,16 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 
   const message = choice.message || {};
   const output = [];
+  // Output items carry ids in the Responses API (rs_..., msg_...); strict clients such
+  // as the Vercel AI SDK reject items without one.
+  const baseId = String(responseBody.id || Date.now()).replace(/^chatcmpl-/, "");
 
   // Reasoning → a reasoning item (summary text), mirroring the streaming path.
   const reasoning = message.reasoning_content || message.reasoning;
   if (typeof reasoning === "string" && reasoning.length > 0) {
     output.push({
       type: RESPONSES_ITEM.REASONING,
+      id: `rs_${baseId}`,
       summary: [{ type: RESPONSES_ITEM.SUMMARY_TEXT, text: reasoning }],
     });
   }
@@ -101,6 +105,8 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   if (text.length > 0) {
     output.push({
       type: RESPONSES_ITEM.MESSAGE,
+      id: `msg_${baseId}`,
+      status: "completed",
       role: ROLE.ASSISTANT,
       content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] }],
     });
@@ -142,19 +148,29 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate a non-streaming response body from the provider format to the client
+ * format: first to OpenAI Chat Completions, then to the Responses or Anthropic
+ * Messages shape when that is what the client speaks. Before, only a provider that
+ * already answered in Chat Completions shape got the second step, so a Responses
+ * API client in front of Gemini/Antigravity received a chat.completion body.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
-  // Provider responded in OpenAI Chat Completions shape but the client speaks
-  // Responses API — convert so tool_calls/text surface as Responses `output`.
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
-    return openAICompletionToResponses(responseBody, customToolNames);
+  const openai = targetFormat === FORMATS.OPENAI ? responseBody : providerBodyToOpenAI(responseBody, targetFormat);
+  if (sourceFormat === FORMATS.OPENAI_RESPONSES && openai?.choices) {
+    return openAICompletionToResponses(openai, customToolNames);
   }
-  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
+  if (sourceFormat === FORMATS.CLAUDE && openai?.choices) {
+    return openAICompletionToClaudeMessage(openai);
   }
-  if (targetFormat === FORMATS.OPENAI) return responseBody;
+  return openai;
+}
+
+/**
+ * Translate a non-streaming response body from a non-OpenAI provider format to
+ * OpenAI Chat Completions.
+ */
+function providerBodyToOpenAI(responseBody, targetFormat) {
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {

@@ -156,6 +156,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stream = false;
   }
 
+  // OpenAI Chat Completions, OpenAI Responses and Anthropic Messages all define an
+  // omitted `stream` as a non-streaming request. Clients that follow the spec (the
+  // Vercel AI SDK's generateText/generateObject, plain fetch with Accept: */*) omit
+  // it and then fail to parse the SSE body. Keep SSE only when the client asks for
+  // it via `stream: true` or `Accept: text/event-stream`.
+  const specDefaultsToJson = sourceFormat === FORMATS.OPENAI
+    || sourceFormat === FORMATS.OPENAI_RESPONSES
+    || sourceFormat === FORMATS.CLAUDE;
+  if (specDefaultsToJson && body.stream === undefined && !clientPrefersSSE && !providerRequiresStreaming) {
+    stream = false;
+  }
+
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
   if (clientRawRequest) reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
   reqLogger.logRawRequest(body);
