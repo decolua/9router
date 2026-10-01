@@ -1356,6 +1356,15 @@ export default function ProviderLimits() {
                     {quota.message}
                   </p>
                 )}
+                {quota?.raw?.speed && (
+                  <div className="mt-1 px-1 text-[10px] leading-relaxed text-text-muted tabular-nums">
+                    {(quota.raw.speed.byModel?.length ? quota.raw.speed.byModel : [{ model: "Speed", ...quota.raw.speed }]).slice(0, 3).map((m) => (
+                      <p key={m.model}>
+                        {m.model}: {Math.round(m.avgTps).toLocaleString()} tok/s avg · last {Math.round(m.lastTps).toLocaleString()} · TTFT {(m.avgTtftMs / 1000).toFixed(1)}s (n={m.samples})
+                      </p>
+                    ))}
+                  </div>
+                )}
                 {hiddenQuotaRows.length > 0 && (
                   <div className="mt-2 flex min-w-0 items-center gap-1 border-t border-black/5 pt-2 text-[10px] text-text-muted dark:border-white/5">
                     <span className="material-symbols-outlined shrink-0 text-[14px]">

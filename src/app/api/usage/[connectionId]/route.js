@@ -2,6 +2,7 @@
 import "open-sse/index.js";
 
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
+import { getConnectionSpeedStats } from "@/lib/db/index.js";
 import { getUsageForProvider } from "open-sse/services/usage.js";
 import { isUnrecoverableRefreshError } from "open-sse/services/tokenRefresh.js";
 import { getExecutor } from "open-sse/executors/index.js";
@@ -193,6 +194,12 @@ export async function GET(request, { params }) {
         console.warn(`[Usage] ${connection.provider}: force refresh failed: ${retryError.message}`);
       }
     }
+
+    // Attach recent decode-speed stats (requestDetails-derived, fail-open)
+    try {
+      const speed = await getConnectionSpeedStats(connectionId);
+      if (speed) usage = { ...usage, speed };
+    } catch { /* speed stats are best-effort */ }
 
     return Response.json(usage);
   } catch (error) {
