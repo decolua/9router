@@ -1,4 +1,4 @@
-import { ERROR_RULES, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
+import { ERROR_RULES, MODEL_SCOPED_ERROR_TEXTS, BACKOFF_CONFIG, TRANSIENT_COOLDOWN_MS } from "../config/errorConfig.js";
 
 /**
  * Calculate exponential backoff cooldown for rate limits (429)
@@ -62,6 +62,37 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
 
   // Default: transient cooldown for any unmatched error
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
+}
+
+/**
+ * Whether a failed request is scoped to the MODEL rather than the credential.
+ *
+ * A combo exists to try several models in turn, so a member that this account
+ * cannot serve (unentitled slug, retired model) should not end the whole combo.
+ * checkFallbackError() deliberately returns shouldFallback:false for generic
+ * 4xx so a request-scoped fault does not cool down a healthy *account* — that
+ * reasoning is right for account rotation but wrong for model rotation, so
+ * combo rotation checks this first. #4271
+ *
+ * @param {number} status - HTTP status code
+ * @param {string} errorText - Error message text
+ * @returns {boolean} true when the failure says "this model can't serve it"
+ */
+export function isModelScopedError(status, errorText) {
+  // Only 4xx: a 5xx is a server fault and already falls back everywhere.
+  if (!(status >= 400 && status < 500)) return false;
+
+  // Explicit account-scoped statuses stay account-scoped even if the wording
+  // happens to mention a model (e.g. a 403 on a specific slug is a permission
+  // problem, and cooling/rotating the account is the right response).
+  if (status === 401 || status === 402 || status === 403 || status === 429) return false;
+
+  const lower = errorText
+    ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
+    : "";
+  if (!lower) return false;
+
+  return MODEL_SCOPED_ERROR_TEXTS.some((text) => lower.includes(text));
 }
 
 /**

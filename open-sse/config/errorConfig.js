@@ -76,6 +76,53 @@ export const ERROR_RULES = [
   { status: 429, backoff: true },
 ];
 
+/**
+ * Text rules for failures that are scoped to ONE MODEL rather than to the
+ * credential. Matched before ERROR_RULES when deciding whether a COMBO should
+ * advance to its next member (#4271).
+ *
+ * Without these, a combo whose first member is unusable for the current account
+ * — an unentitled slug, or a retired model — returns that member's 4xx verbatim
+ * and never reaches the healthy members behind it. A genuine request-scoped
+ * fault (context overflow, malformed body) stays non-fallback: no other model
+ * can fix a bad request, and burning the whole combo on it helps nobody.
+ *
+ * Phrases are deliberately anchored on the word "model" where the upstream
+ * wording allows it. A bare "is not available" also matches "region is not
+ * available" / "prompt is not available", which are not model-scoped, and
+ * misclassifying those would let a combo skip a member for the wrong reason.
+ */
+export const MODEL_SCOPED_ERROR_TEXTS = [
+  // Entitled / permission wording, as emitted by Codex and friends
+  "not supported when using",
+  "is not supported for",
+  "no access to",
+  "does not have access",
+  "do not have access",
+  "don't have access",
+  "not have access to",
+  "not entitled",
+
+  // Unknown / retired model wording
+  "model_not_found",
+  "model not found",
+  "model does not exist",
+  "model doesn't exist",
+  "unknown model",
+  "unsupported model",
+  "model is deprecated",
+  "has been deprecated",
+  "reached its end of life",
+
+  // "the model X is not available" / "model ... no longer available" — the
+  // leading "model" keeps these off unrelated availability messages.
+  "model is not available",
+  "model is no longer available",
+  "model no longer available",
+  "model is unavailable",
+  "model unavailable",
+];
+
 // Backward compat: COOLDOWN_MS object (used by index.js re-export)
 export const COOLDOWN_MS = {
   unauthorized: COOLDOWN.long,
