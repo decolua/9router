@@ -122,7 +122,12 @@ export async function PUT(request, { params }) {
     if (globalPriority !== undefined) updateData.globalPriority = globalPriority;
     if (defaultModel !== undefined) updateData.defaultModel = defaultModel;
     if (isActive !== undefined) updateData.isActive = isActive;
-    if (apiKey && existing.authType === "apikey") updateData.apiKey = apiKey;
+    // Key-based connections ("apikey" and the "auth_token" bearer variant) both
+    // store their credential in apiKey, so an edit must be able to replace it.
+    // OAuth connections get their token from the OAuth flow, never this field.
+    if (apiKey && (existing.authType === "apikey" || existing.authType === "auth_token")) {
+      updateData.apiKey = apiKey;
+    }
     if (testStatus !== undefined) updateData.testStatus = testStatus;
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;

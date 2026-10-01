@@ -44,9 +44,13 @@ function sanitize(c) {
 }
 
 function isUsageEligible(connection) {
-  return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
-  );
+  if (!USAGE_SUPPORTED_PROVIDERS.includes(connection.provider)) return false;
+  // OAuth connections fetch quota from their own account endpoints; key-based
+  // auth ("apikey", "api_key", "auth_token") uses the provider's key usage API.
+  // "auth_token" stores its bearer in apiKey and shares that same endpoint, so
+  // it qualifies exactly like an API-key connection.
+  if (connection.authType === "oauth") return true;
+  return USAGE_APIKEY_PROVIDERS.includes(connection.provider);
 }
 
 function parsePositiveInt(value, fallback) {

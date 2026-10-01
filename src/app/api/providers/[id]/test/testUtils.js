@@ -100,10 +100,46 @@ const OAUTH_TEST_CONFIG = {
     authHeader: "Authorization",
     authPrefix: "Bearer ",
   },
-  "codebuddy-cn": { tokenExists: true },
+  // Real probe: billing endpoint answers code:0 for a valid token, 401/403 otherwise.
+  // tokenExists was a no-op that never caught revoked/expired tokens.
   // codebuddy-intl uses the same JWT token structure as codebuddy-cn
-  // (access + refresh token pair, ~1-year expiry) — same test strategy (#4232).
-  "codebuddy-intl": { tokenExists: true },
+  // (access + refresh token pair, ~1-year expiry) — same test strategy.
+  "codebuddy-cn": {
+    url: "https://copilot.tencent.com/v2/billing/meter/get-user-resource",
+    method: "POST",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "CLI/2.108.1 CodeBuddy/2.108.1",
+      "X-Product": "SaaS",
+      "X-IDE-Type": "CLI",
+      "X-IDE-Name": "CLI",
+      "x-requested-with": "XMLHttpRequest",
+      "x-codebuddy-request": "1",
+    },
+    body: "{}",
+    refreshable: true,
+  },
+  "codebuddy-intl": {
+    url: "https://www.codebuddy.ai/v2/billing/meter/get-user-resource",
+    method: "POST",
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    extraHeaders: {
+      "Content-Type": "application/json",
+      Accept: "application/json",
+      "User-Agent": "IDE/2.108.1 CodeBuddy/2.108.1",
+      "X-Product": "SaaS",
+      "X-IDE-Type": "IDE",
+      "X-IDE-Name": "IDE",
+      "x-requested-with": "XMLHttpRequest",
+      "x-codebuddy-request": "1",
+    },
+    body: "{}",
+    refreshable: true,
+  },
   kimchi: {
     url: KIMCHI_CONFIG.validationUrl || "https://api.cast.ai/v1/llm/openai/supported-providers",
     method: "GET",
@@ -857,6 +893,49 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
+      case "codebuddy-cn":
+      case "codebuddy-intl": {
+        // API key and auth_token connections both carry the bearer token in apiKey.
+        // Probe the billing endpoint — code:0 means valid, 401/403 means revoked/invalid.
+        const billingUrl = connection.provider === "codebuddy-cn"
+          ? "https://copilot.tencent.com/v2/billing/meter/get-user-resource"
+          : "https://www.codebuddy.ai/v2/billing/meter/get-user-resource";
+        const ideType = connection.provider === "codebuddy-cn" ? "CLI" : "IDE";
+        const userAgent = connection.provider === "codebuddy-cn"
+          ? "CLI/2.108.1 CodeBuddy/2.108.1"
+          : "IDE/2.108.1 CodeBuddy/2.108.1";
+        const res = await fetchWithConnectionProxy(billingUrl, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${connection.apiKey}`,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": userAgent,
+            "X-Product": "SaaS",
+            "X-IDE-Type": ideType,
+            "X-IDE-Name": ideType,
+            "x-requested-with": "XMLHttpRequest",
+            "x-codebuddy-request": "1",
+          },
+          body: "{}",
+        }, effectiveProxy);
+        if (res.status === 401 || res.status === 403) {
+          return { valid: false, error: "Token invalid or revoked" };
+        }
+        if (!res.ok) {
+          // Non-auth errors (5xx, etc.) still mean the token was accepted
+          const bodyText = await res.text().catch(() => "");
+          let parsed = null;
+          try { parsed = JSON.parse(bodyText); } catch { /* ignore */ }
+          if (parsed?.code === 0 || res.status < 500) {
+            return { valid: true, error: null };
+          }
+          return { valid: false, error: `API returned ${res.status}` };
+        }
+        const data = await res.json().catch(() => null);
+        const valid = data?.code === 0 || res.ok;
+        return { valid, error: valid ? null : "Token rejected by CodeBuddy" };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }
@@ -890,7 +969,7 @@ export async function testSingleConnection(id) {
   const start = Date.now();
   let result;
 
-  if (connection.authType === "apikey" || connection.authType === "cookie") {
+  if (connection.authType === "apikey" || connection.authType === "cookie" || connection.authType === "auth_token") {
     result = await testApiKeyConnection(connection, effectiveProxy);
   } else {
     result = await testOAuthConnection(connection, effectiveProxy);

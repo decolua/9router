@@ -17,7 +17,7 @@ export default {
     },
   },
   category: "oauth",
-  authModes: ["oauth", "apikey"],
+  authModes: ["oauth", "apikey", "auth_token"],
   hasOAuth: true,
   transport: {
     // Chat gateway is OpenAI-compatible SSE (same /v2/chat/completions path as CN).

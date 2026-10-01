@@ -8,12 +8,13 @@ import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
+export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, pendingAuthType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
+  const isAuthToken = pendingAuthType === "auth_token";
   const isXaiApiKey = provider === "xai" && !isCookie;
-  const credentialLabel = isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
+  const credentialLabel = isCookie ? "Cookie Value" : isAuthToken ? "Auth Token" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
@@ -46,7 +47,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
     : provider === "qoder" || provider === "qoder-cn"
       ? `name1|pt-xxxxx\nname2|pt-yyyyy\npt-only-auto-named`
-      : BULK_PLACEHOLDER;
+      : isAuthToken
+        ? `name1|eyJhbGciOi...\nname2|eyJhbGciOi...\neyJhbGciOi...-only-auto-named`
+        : BULK_PLACEHOLDER;
 
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
@@ -122,6 +125,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       await onSave({
         name: formData.name || (isOllamaLocal ? "Ollama Local" : ""),
         apiKey: formData.apiKey,
+        authType: pendingAuthType || undefined,
         defaultModel: isCompatible ? formData.defaultModel.trim() : undefined,
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
@@ -169,6 +173,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             provider,
             apiKey: entry.apiKey,
             name: entry.name,
+            // Preserve the auth method this modal was opened with; the backend
+            // defaults to "apikey", so bulk rows added via the "Auth Token" flow
+            // would otherwise be mislabeled as API keys.
+            authType: pendingAuthType || undefined,
             priority: 1,
             testStatus: isValid ? "active" : "unknown",
             ...(entry.providerSpecificData ? { providerSpecificData: entry.providerSpecificData } : {}),
@@ -203,7 +211,11 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
                 ? <>One key per line. Format: <code>name|apiKey|accountId</code> or just <code>apiKey</code> (auto-named by index).</>
                 : provider === "qoder" || provider === "qoder-cn"
                   ? <>One PAT per line. Format: <code>name|pt-...</code> or just <code>pt-...</code> (auto-named by index).</>
-                  : <>One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</>
+                  : isCookie
+                    ? <>One cookie per line. Format: <code>name|cookieValue</code> or just <code>cookieValue</code> (auto-named by index).</>
+                    : isAuthToken
+                      ? <>One token per line. Format: <code>name|authToken</code> or just <code>authToken</code> (auto-named by index).</>
+                      : <>One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</>
               }
             </p>
             <textarea
@@ -413,6 +425,7 @@ AddApiKeyModal.propTypes = {
   isCompatible: PropTypes.bool,
   isAnthropic: PropTypes.bool,
   authType: PropTypes.string,
+  pendingAuthType: PropTypes.string,
   authHint: PropTypes.string,
   website: PropTypes.string,
   proxyPools: PropTypes.arrayOf(PropTypes.shape({
