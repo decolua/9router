@@ -134,7 +134,8 @@ let host = DEFAULT_HOST;
 let noBrowser = false;
 let skipUpdate = false;
 let showLog = false;
-let trayMode = false;
+let trayMode = process.env.TRAY_MODE === "1";
+let foregroundMode = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--port" || args[i] === "-p") {
@@ -149,6 +150,8 @@ for (let i = 0; i < args.length; i++) {
     showLog = true;
   } else if (args[i] === "--skip-update") {
     skipUpdate = true;
+  } else if (args[i] === "--foreground" || args[i] === "--supervised") {
+    foregroundMode = true;
   } else if (args[i] === "--tray" || args[i] === "-t") {
     trayMode = true;
     process.env.TRAY_MODE = "1";
@@ -162,6 +165,7 @@ Options:
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
+  --foreground        Run strictly in foreground (supervisor/docker/systemd safe)
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
@@ -180,8 +184,9 @@ Commands:
   }
 }
 
-// Auto-relaunch after update: detached process has no TTY → fallback to tray
-if (skipUpdate && !trayMode && !process.stdin.isTTY) {
+// Auto-relaunch after update: detached process has no TTY → fallback to tray,
+// unless explicit foreground mode or TRAY_MODE is disabled.
+if (skipUpdate && !trayMode && !foregroundMode && !process.stdin.isTTY && process.env.TRAY_MODE !== "0") {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
