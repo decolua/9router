@@ -57,6 +57,7 @@
   "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "postcss": "^8.5.6",
