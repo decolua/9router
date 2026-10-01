@@ -19,11 +19,19 @@ function isAnthropicCompatible(provider) {
   return typeof provider === "string" && provider.startsWith(ANTHROPIC_COMPATIBLE_PREFIX);
 }
 
-// Resolve the API type (chat vs responses) for an openai-compatible node.
+// Which providers let the connection choose between /chat/completions and /responses.
+// openai-compatible nodes always do; registered providers opt in via
+// transport.supportsApiType (azure — one resource exposes both surfaces).
+function supportsApiTypeSelection(provider) {
+  return isOpenAICompatible(provider) || PROVIDERS[provider]?.supportsApiType === true;
+}
+
+// Resolve the API type (chat vs responses) for a provider that supports both.
 // The stored apiType on the connection's providerSpecificData (kept in sync with
 // the node on create/update) is authoritative. Falls back to the node ID
 // substring for legacy nodes created before apiType was persisted — their IDs
-// embed the type: openai-compatible-<chat|responses>-<uuid>.
+// embed the type: openai-compatible-<chat|responses>-<uuid>. A registered
+// provider id (azure) never contains "responses", so it defaults to chat.
 export function resolveOpenAICompatibleApiType(provider, credentials = null) {
   const stored = credentials?.providerSpecificData?.apiType;
   if (stored === "chat" || stored === "responses") return stored;
@@ -132,7 +140,7 @@ function getProviderConfig(provider, credentials = null) {
 
 // Get target format for provider
 export function getTargetFormat(provider, credentials = null) {
-  if (isOpenAICompatible(provider)) {
+  if (supportsApiTypeSelection(provider)) {
     return resolveOpenAICompatibleApiType(provider, credentials) === "responses" ? "openai-responses" : "openai";
   }
   if (isAnthropicCompatible(provider)) {

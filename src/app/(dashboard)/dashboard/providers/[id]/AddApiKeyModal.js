@@ -8,6 +8,12 @@ import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
+// One Azure resource exposes both surfaces: per-deployment /chat/completions and v1 /responses.
+const AZURE_API_TYPE_OPTIONS = [
+  { value: "chat", label: "Chat Completions" },
+  { value: "responses", label: "Responses API" },
+];
+
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
@@ -36,6 +42,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     apiVersion: "2024-10-01-preview",
     deployment: "",
     organization: "",
+    apiType: "chat",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [region, setRegion] = useState(defaultRegion);
@@ -62,6 +69,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         apiVersion: azureData.apiVersion,
         deployment: azureData.deployment,
         organization: azureData.organization,
+        apiType: azureData.apiType,
       };
     }
     if (isCloudflareAi) {
@@ -336,6 +344,13 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
             <div className="flex flex-col gap-3">
+              <Select
+                label="API Type"
+                options={AZURE_API_TYPE_OPTIONS}
+                value={azureData.apiType}
+                onChange={(e) => setAzureData({ ...azureData, apiType: e.target.value })}
+                hint="Responses API is required for function tools with reasoning effort. Needs a resource that exposes /openai/v1."
+              />
               <Input
                 label="Azure Endpoint"
                 value={azureData.azureEndpoint}

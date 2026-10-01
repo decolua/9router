@@ -191,11 +191,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (provider === "codex") {
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
-      if (suffixThinking.reasoning_effort) {
+      // applyThinking emits the field the wire uses: reasoning.effort on the Responses
+      // wire, reasoning_effort on chat. Codex takes the nested form either way.
+      const suffixEffort = suffixThinking.reasoning_effort || suffixThinking.reasoning?.effort;
+      if (suffixEffort) {
         const reasoning = translatedBody.reasoning;
         translatedBody.reasoning = {
           ...(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) ? reasoning : {}),
-          effort: suffixThinking.reasoning_effort,
+          effort: suffixEffort,
         };
         delete translatedBody.reasoning_effort;
       }

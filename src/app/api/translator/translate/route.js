@@ -6,6 +6,28 @@ import { getModelInfo } from "@/sse/services/model.js";
 import { getProviderConnections } from "@/lib/localDb.js";
 import { getExecutor } from "open-sse/executors/index.js";
 
+/**
+ * The wire format is connection-dependent (azure / openai-compatible `apiType`), so the preview
+ * has to resolve the same connection the router would pick. Without it step 3 translated the body
+ * as Chat Completions and then built a `/openai/v1/responses` URL for it.
+ */
+async function resolveActiveConnection(provider) {
+  const connections = await getProviderConnections({ provider });
+  const connection = connections.find(c => c.isActive !== false);
+  if (!connection) return { connection: null, credentials: null };
+  return {
+    connection,
+    credentials: {
+      apiKey: connection.apiKey,
+      accessToken: connection.accessToken,
+      refreshToken: connection.refreshToken,
+      copilotToken: connection.copilotToken,
+      projectId: connection.projectId,
+      providerSpecificData: connection.providerSpecificData,
+    },
+  };
+}
+
 export async function POST(request) {
   try {
     const { step, body } = await request.json();
@@ -20,7 +42,9 @@ export async function POST(request) {
         const clientBody = body.body || body;
         const { provider, model } = await getModelInfo(clientBody.model);
         const sourceFormat = detectFormat(clientBody);
-        const targetFormat = getTargetFormat(provider);
+        // Best-effort: step 1 still reports a format when no connection exists yet.
+        const { credentials } = await resolveActiveConnection(provider);
+        const targetFormat = getTargetFormat(provider, credentials);
         return NextResponse.json({ success: true, result: { provider, model, sourceFormat, targetFormat } });
       }
 
@@ -49,7 +73,13 @@ export async function POST(request) {
           return NextResponse.json({ success: false, error: "provider and model required" }, { status: 400 });
         }
 
-        const targetFormat = getTargetFormat(provider);
+        // Resolve the connection first: it decides the wire format, not just the URL.
+        const { connection, credentials } = await resolveActiveConnection(provider);
+        if (!connection) {
+          return NextResponse.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });
+        }
+
+        const targetFormat = getTargetFormat(provider, credentials);
         const stream = openaiBody.stream !== false;
 
         // translateRequest(OPENAI, target) = second half of pipeline
@@ -57,21 +87,6 @@ export async function POST(request) {
         delete translated._toolNameMap;
 
         // Build URL + headers via executor (same as chatCore → executor.execute)
-        const connections = await getProviderConnections({ provider });
-        const connection = connections.find(c => c.isActive !== false);
-        if (!connection) {
-          return NextResponse.json({ success: false, error: `No active connection for provider: ${provider}` }, { status: 400 });
-        }
-
-        const credentials = {
-          apiKey: connection.apiKey,
-          accessToken: connection.accessToken,
-          refreshToken: connection.refreshToken,
-          copilotToken: connection.copilotToken,
-          projectId: connection.projectId,
-          providerSpecificData: connection.providerSpecificData
-        };
-
         const executor = getExecutor(provider);
         const url = executor.buildUrl(model, stream, 0, credentials);
         const headers = executor.buildHeaders(credentials, stream);

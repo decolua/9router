@@ -9,6 +9,12 @@ import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 
+// One Azure resource exposes both surfaces: per-deployment /chat/completions and v1 /responses.
+const AZURE_API_TYPE_OPTIONS = [
+  { value: "chat", label: "Chat Completions" },
+  { value: "responses", label: "Responses API" },
+];
+
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
@@ -20,6 +26,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     apiVersion: "2024-10-01-preview",
     deployment: "",
     organization: "",
+    apiType: "chat",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
   const [region, setRegion] = useState("");
@@ -43,6 +50,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiVersion: connection.providerSpecificData.apiVersion || "2024-10-01-preview",
           deployment: connection.providerSpecificData.deployment || "",
           organization: connection.providerSpecificData.organization || "",
+          apiType: connection.providerSpecificData.apiType || "chat",
         });
       }
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
@@ -162,6 +170,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiVersion: azureData.apiVersion,
           deployment: azureData.deployment,
           organization: azureData.organization,
+          apiType: azureData.apiType,
         };
       }
       if (isCloudflareAi) {
@@ -232,6 +241,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
             <div className="flex flex-col gap-3">
+              <Select
+                label="API Type"
+                options={AZURE_API_TYPE_OPTIONS}
+                value={azureData.apiType}
+                onChange={(e) => setAzureData({ ...azureData, apiType: e.target.value })}
+                hint="Responses API is required for function tools with reasoning effort. Needs a resource that exposes /openai/v1."
+              />
               <Input
                 label="Azure Endpoint"
                 value={azureData.azureEndpoint}
@@ -251,7 +267,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 value={azureData.apiVersion}
                 onChange={(e) => setAzureData({ ...azureData, apiVersion: e.target.value })}
                 placeholder="2024-10-01-preview"
-                hint="Azure OpenAI API version to use"
+                hint={azureData.apiType === "responses"
+                  ? "Unused on the Responses API, which only accepts api-version=preview"
+                  : "Azure OpenAI API version to use"}
               />
               <Input
                 label="Organization"

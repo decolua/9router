@@ -218,13 +218,16 @@ describe("applyThinking per provider format", () => {
     ["gpt-5.6-terra", "ultra", "ultra"],
     ["gpt-5.6-luna", "max", "max"],
     ["gpt-5.6-luna", "ultra", "max"],
+    // The Responses wire carries effort as reasoning.effort — it rejects a top-level
+    // reasoning_effort. Levels are normalized the same way either way.
   ])("normalizes Codex %s effort %s to %s", (model, effort, expected) => {
     const out = apply("openai-responses", model, { reasoning: { effort } }, "codex");
-    expect(out.reasoning_effort).toBe(expected);
+    expect(out.reasoning).toEqual({ effort: expected });
+    expect(out.reasoning_effort).toBeUndefined();
   });
   it("applies a supported Codex Ultra suffix", () => {
     const out = apply("openai-responses", "gpt-5.6-sol(ultra)", {}, "codex");
-    expect(out.reasoning_effort).toBe("ultra");
+    expect(out.reasoning).toEqual({ effort: "ultra" });
   });
   it("keeps Codex-only GPT-5.6 levels out of Kiro translation", () => {
     const out = apply("openai", "gpt-5.6-sol", { reasoning_effort: "max" }, "kiro");

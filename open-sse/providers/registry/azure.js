@@ -17,5 +17,9 @@ export default {
   transport: {
     baseUrl: "",
     headers: {},
+    // One Azure resource exposes two API surfaces: the legacy per-deployment
+    // /chat/completions and the v1 /responses. The connection picks one via
+    // providerSpecificData.apiType — the same switch openai-compatible nodes use.
+    supportsApiType: true,
   },
 };

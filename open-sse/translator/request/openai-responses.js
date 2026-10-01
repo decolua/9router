@@ -319,9 +319,14 @@ function buildReasoningInputItem(msg) {
  * Convert OpenAI Chat Completions to OpenAI Responses API format
  */
 export function openaiToOpenAIResponsesRequest(model, body, stream, credentials) {
+  // Every other request translator honors the caller's stream flag; hardcoding true
+  // here made a non-streaming client get an SSE body back, and the JSON path's SSE
+  // parser only understands chat.completion chunks → empty content. Providers that
+  // require streaming (codex, openai) set forceStream, so they still get true.
+  const wantsStream = stream !== false;
   // Body already in Responses API format (e.g. Cursor CLI calling /chat/completions with input[])
   if (body.input) {
-    const out = { ...body, model, stream: true };
+    const out = { ...body, model, stream: wantsStream };
     if (out.max_output_tokens === undefined) {
       if (out.max_completion_tokens !== undefined) out.max_output_tokens = out.max_completion_tokens;
       else if (out.max_tokens !== undefined) out.max_output_tokens = out.max_tokens;
@@ -334,7 +339,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   const result = {
     model,
     input: [],
-    stream: true,
+    stream: wantsStream,
     store: false
   };
 
