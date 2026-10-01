@@ -314,7 +314,19 @@ function flattenTypeArrays(obj) {
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object") continue;
+    // `properties` maps property *names* to schemas. Recurse into each schema,
+    // but never treat the map itself as a schema: a tool may legitimately
+    // declare a property named "properties", and doing so would otherwise
+    // inject a bogus `type:"object"` entry into the map — the exact
+    // bare-string rejection this module exists to prevent (#2877).
+    if (key === "properties" && !Array.isArray(value)) {
+      for (const propSchema of Object.values(value)) ensureObjectType(propSchema);
+      continue;
+    }
+    ensureObjectType(value);
+  }
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -348,6 +360,78 @@ function ensureArrayItems(obj) {
   for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
 }
 
+// JSON Schema primitive type names Gemini's Schema proto understands.
+const JSON_SCHEMA_TYPES = new Set([
+  "string", "number", "integer", "boolean", "array", "object", "null"
+]);
+
+function isSchemaObject(value) {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+// A bare type name used where a Schema is expected means "any value of this
+// type"; anything unrecognised degrades to a string.
+function schemaFromTypeHint(value) {
+  const hint = typeof value === "string" ? value.trim() : "";
+  return { type: JSON_SCHEMA_TYPES.has(hint) ? hint : "string" };
+}
+
+// Mirror of selectBest(): keep the most informative member of a tuple.
+function selectBestVariant(variants) {
+  let best = variants[0];
+  let bestScore = -1;
+  for (const item of variants) {
+    let score = 0;
+    if (item.type === "object" || item.properties) score = 3;
+    else if (item.type === "array" || item.items) score = 2;
+    else if (item.type && item.type !== "null") score = 1;
+    if (score > bestScore) {
+      bestScore = score;
+      best = item;
+    }
+  }
+  return best;
+}
+
+// Normalize the two shapes that are legal JSON Schema but that Gemini's Schema
+// proto cannot represent. Real MCP tool servers emit both, so a single offending
+// parameter rejects the whole request:
+//
+//   Invalid value at '…function_declarations[71].parameters.properties[9].value'
+//     (type.googleapis.com/google.cloud.aiplatform.master.Schema), "object"   (#2877, #2489)
+//   Unknown name "items" at '…parameters.properties[0].value':
+//     Proto field is not repeating, cannot start list.                        (tuple `items`)
+//
+// `properties` is special-cased because its keys are arbitrary property *names*
+// and must never be read as schema keywords.
+function normalizeSchemaValueShapes(obj) {
+  if (!obj || typeof obj !== "object") return;
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) normalizeSchemaValueShapes(item);
+    return;
+  }
+
+  if (Array.isArray(obj.items)) {
+    const variants = obj.items.filter(isSchemaObject);
+    if (variants.length > 0) obj.items = selectBestVariant(variants);
+    else delete obj.items;
+  } else if (typeof obj.items === "string") {
+    obj.items = schemaFromTypeHint(obj.items);
+  }
+
+  for (const [key, value] of Object.entries(obj)) {
+    if (key === "properties" && isSchemaObject(value)) {
+      for (const [name, propSchema] of Object.entries(value)) {
+        if (!isSchemaObject(propSchema)) value[name] = schemaFromTypeHint(propSchema);
+        normalizeSchemaValueShapes(value[name]);
+      }
+      continue;
+    }
+    normalizeSchemaValueShapes(value);
+  }
+}
+
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
   if (!schema || typeof schema !== "object") return schema;
@@ -364,6 +448,11 @@ export function cleanJSONSchemaForAntigravity(schema) {
   convertPrefixItems(cleaned);
   flattenAnyOfOneOf(cleaned);
   flattenTypeArrays(cleaned);
+
+  // Phase 2.1: Coerce schema shapes the Gemini Schema proto cannot express
+  // (free-form property values, tuple `items`). Runs before the default-filling
+  // passes below so that a dropped `items` still gets the array placeholder.
+  normalizeSchemaValueShapes(cleaned);
 
   // Phase 2.5: Infer missing type=object when properties exist (Gemini requirement)
   ensureObjectType(cleaned);
