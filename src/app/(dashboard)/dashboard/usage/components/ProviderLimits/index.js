@@ -169,6 +169,7 @@ export default function ProviderLimits() {
   const [connectionsLoading, setConnectionsLoading] = useState(true);
   const [deletingId, setDeletingId] = useState(null);
   const [togglingId, setTogglingId] = useState(null);
+  const [fastModeId, setFastModeId] = useState(null);
   const [resettingLimitId, setResettingLimitId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
@@ -480,6 +481,34 @@ export default function ProviderLimits() {
       }
     },
     [fetchConnections, page],
+  );
+
+  const handleToggleFastMode = useCallback(
+    async (conn) => {
+      const next = !(conn.providerSpecificData?.codexFastMode === true);
+      setFastModeId(conn.id);
+      try {
+        const res = await fetch(`/api/providers/${conn.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ providerSpecificData: { codexFastMode: next } }),
+        });
+        if (res.ok) {
+          setConnections((prev) =>
+            prev.map((c) =>
+              c.id === conn.id
+                ? { ...c, providerSpecificData: { ...(c.providerSpecificData || {}), codexFastMode: next } }
+                : c,
+            ),
+          );
+        }
+      } catch (error) {
+        console.error("Error toggling fast mode:", error);
+      } finally {
+        setFastModeId(null);
+      }
+    },
+    [],
   );
 
   const handleUpdateConnection = useCallback(
@@ -1115,7 +1144,7 @@ export default function ProviderLimits() {
           const resetLabel = isCodex ? "Codex reset credit" : "Claude limit reset";
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
-          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit || fastModeId === conn.id;
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
@@ -1252,6 +1281,27 @@ export default function ProviderLimits() {
                           className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${autoPingMaps[conn.provider]?.[conn.id] === true ? "text-primary" : "text-text-muted"}`}
                         >
                           <span className="material-symbols-outlined text-[18px]">bolt</span>
+                        </button>
+                      </Tooltip>
+                    )}
+                    {isCodex && (
+                      <Tooltip
+                        text={
+                          conn.providerSpecificData?.codexFastMode === true
+                            ? "Fast mode ON — Codex requests on this account use the priority tier. Click to disable."
+                            : "Force fast mode — Codex requests on this account use the priority tier."
+                        }
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleToggleFastMode(conn)}
+                          disabled={rowBusy}
+                          aria-label="Toggle fast mode"
+                          className={`flex h-8 w-8 items-center justify-center rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5 ${conn.providerSpecificData?.codexFastMode === true ? "text-primary" : "text-text-muted"}`}
+                        >
+                          <span className={`material-symbols-outlined text-[18px] ${fastModeId === conn.id ? "animate-spin" : ""}`}>
+                            {fastModeId === conn.id ? "progress_activity" : "speed"}
+                          </span>
                         </button>
                       </Tooltip>
                     )}
