@@ -21,6 +21,27 @@ import {
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 
+// Recursively rename JSON-Schema-meta-like keys ($ref, $defs, $schema, ...) inside a
+// tool result before it is embedded in a Gemini functionResponse. Tool output can
+// legitimately contain such keys as plain data (e.g. a fetched JSON Schema document);
+// Gemini's function_response parser treats a literal "$ref"/"$defs" key specially and
+// rejects the whole request ("does not match to a display_name") if it can't resolve it
+// as an internal schema reference, even though it is just payload data here.
+function sanitizeFunctionResponseValue(value) {
+  if (Array.isArray(value)) {
+    return value.map(sanitizeFunctionResponseValue);
+  }
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, val] of Object.entries(value)) {
+      const safeKey = key.startsWith("$") ? `_${key.slice(1)}` : key;
+      out[safeKey] = sanitizeFunctionResponseValue(val);
+    }
+    return out;
+  }
+  return value;
+}
+
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
 // Replace any invalid character with '_' and truncate to 64.
@@ -183,7 +204,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
                 functionResponse: {
                   id: fid,
                   name: sanitizeGeminiFunctionName(name),
-                  response: { result: parsedResp }
+                  response: { result: sanitizeFunctionResponseValue(parsedResp) }
                 }
               });
             }
@@ -371,7 +392,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
+                response: { result: sanitizeFunctionResponseValue(tryParseJSON(content) || content) }
               }
             });
           }
