@@ -107,3 +107,26 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Source code terintegrasi dan siap di-build ke container).
 - **Catatan untuk AI selanjutnya (Handoff Note):** Seluruh branch (`master`, `feat/auto-update-menu`, `feat/cloudflare-agreement`, `vnot-production`) sudah disinkronkan ke remote fork pengguna `my9routerfork`. Database SQLite pengguna di `./data/db/data.sqlite` terlindungi dengan aman. Untuk memuat update v0.5.75 beserta fitur Auto-Update, jalankan build Docker.
+
+### 2026-10-01 — Upstream Sync to v0.5.95 and Webhook Hardening
+- **Tugas:** Melakukan pembaruan codebase ke versi terbaru pengembang upstream (v0.5.95) dan menstabilkan skrip updater agar tidak memunculkan merge conflict akibat `git stash`.
+- **Masalah:**
+  1. Pembaruan v0.5.95 tersedia dari upstream (`a99cf572`).
+  2. Terjadi merge conflict di `AddCustomModelModal.js` dan `page.js` saat penggabungan upstream v0.5.95 dengan fitur kustom Cloudflare agreement dan Auto-Update.
+  3. Skrip `webhook.py` sebelumnya menjalankan `git stash pop` tanpa memeriksa apakah ada perubahan yang disimpan, sehingga meletuskan stash lama dari bulan Juli dan mengotori working tree.
+  4. GitHub PAT remote fork memerlukan scope `workflow` untuk push file Action `.github/workflows/docker-publish.yml` dan `tray-binaries.yml` yang baru ditambahkan upstream.
+- **Penyelesaian:**
+  - Membersihkan stash usang dari sistem (`git stash clear`).
+  - Mengambil pembaruan upstream terbaru `origin/master` (commit `a99cf572` - v0.5.95) ke branch `master`.
+  - Menggabungkan (*merge*) `master` ke dalam branch deployment `vnot-production`.
+  - Menyelesaikan konflik pada `AddCustomModelModal.js` (mengintegrasikan dukungan STT Transports upstream bersama state Cloudflare agreement) dan `page.js` (menggabungkan helper Region Error China upstream bersama banner Cloudflare agreement).
+  - Memastikan konfigurasi `docker-compose.yml` tetap menggunakan build lokal (`build: context: . dockerfile: Dockerfile`) dan bind mount persisten `./data:/app/data`.
+  - Memperbaiki `webhook.py` agar memeriksa status working directory sebelum melakukan `git stash`, sehingga `git stash pop` hanya dieksekusi jika memang ada perubahan lokal yang disimpan.
+  - Memuat ulang layanan systemd `9router-updater.service`.
+- **File yang diubah/dibuat:**
+  - `src/app/(dashboard)/dashboard/providers/[id]/AddCustomModelModal.js`
+  - `src/app/(dashboard)/dashboard/providers/[id]/page.js`
+  - `/home/vnot/utils/9router-updater/webhook.py`
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Codebase v0.5.95 siap di-build ke container).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Seluruh fitur kustom (Auto-Update menu/sidebar, Cloudflare agreement, persistent SQLite data) telah terintegrasi di `vnot-production` di atas upstream v0.5.95. Jalankan `docker compose up -d --build` untuk menerapkan update ke container yang sedang berjalan.
