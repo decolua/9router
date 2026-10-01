@@ -298,6 +298,11 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
     }
     delete out.max_tokens;
     delete out.max_completion_tokens;
+    if (typeof out.max_output_tokens === "number" && out.max_output_tokens < 16) {
+      out.max_output_tokens = 16;
+    } else if (out.max_output_tokens === undefined) {
+      out.max_output_tokens = 16;
+    }
     if (out.reasoning_effort !== undefined && out.reasoning === undefined) {
       out.reasoning = { effort: out.reasoning_effort, summary: "auto" };
     }

@@ -433,6 +433,11 @@ export class OpenCodeExecutor extends BaseExecutor {
       }
       delete body.max_tokens;
       delete body.max_completion_tokens;
+      if (typeof body.max_output_tokens === "number" && body.max_output_tokens < 16) {
+        body.max_output_tokens = 16;
+      } else if (body.max_output_tokens === undefined) {
+        body.max_output_tokens = 16;
+      }
       normalizeOpencodeReasoning(model, body);
       body.stream = true;
       body.store = false;
