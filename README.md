@@ -1320,7 +1320,13 @@ docker pull decolua/9router:latest   # update to latest
 | `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                    | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime)        |
 | `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`          | HMAC secret for generated API keys                                                  |
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                    | Salt for stable machine ID hashing                                                  |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                  | Enables request/response logs under `logs/`                                         |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                  | *Initial default only* for the `enableObservability` and `observabilityFrameLogging` settings. Settings are authoritative — see below |
+| `OBSERVABILITY_ENABLED`                              | unset                                    | Initial default for the `enableObservability` setting                |
+| `OBSERVABILITY_FRAME_LOGGING`                        | `false`                                  | Initial default for the `observabilityFrameLogging` setting (raw upstream SSE frame capture) |
+| `OBSERVABILITY_RETENTION_HOURS`                      | `12`                                     | Initial default for `observabilityRetentionHours` — rolling time window of frame logs kept |
+| `OBSERVABILITY_MAX_LOG_SIZE_MB`                      | `512`                                    | Initial default for `observabilityMaxLogSizeMb` — rolling size budget for the frame-log directory |
+| `OBSERVABILITY_FRAME_LOG_DIR`                        | `$DATA_DIR/logs/frames`                  | Where raw frame dumps are written                                    |
+| `OBSERVABILITY_FRAME_LOG_MIN_FREE_MB`                | `1024`                                   | Frame writing pauses below this much free disk (traffic unaffected)  |
 | `AUTH_COOKIE_SECURE`                                 | `false`                                  | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
 | `REQUIRE_API_KEY`                                    | `false`                                  | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
@@ -1337,7 +1343,8 @@ Notes:
 
 - Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
 - Auto backups: `${DATA_DIR}/db/backups/`
-- Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
+- Optional translator logs: `<repo>/logs/translator/...`
+- Raw upstream SSE frame dumps: `${DATA_DIR}/logs/frames/<source>_<target>_<model>_<timestamp>/` when the `observabilityFrameLogging` setting is on. One folder per request, holding the unparsed provider frames plus request/response bodies and headers — high volume and prompt-bearing, so treat the directory as sensitive. Bounded by a rolling time window (`observabilityRetentionHours`, default 12h) **and** a rolling size budget (`observabilityMaxLogSizeMb`, default 512 MB, oldest session trimmed first); writing pauses if free disk drops below `OBSERVABILITY_FRAME_LOG_MIN_FREE_MB`. Worst-case footprint with the defaults is therefore ~512 MB, and 0 while the toggle is off (it is off by default).
 - Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
 
 </details>
@@ -1454,9 +1461,12 @@ Notes:
 - Check `INITIAL_PASSWORD` in `.env`
 - If unset, fallback password is `123456`
 
-**No request logs under `logs/`**
+**No request logs**
 
-- Set `ENABLE_REQUEST_LOGS=true`
+- These are settings-driven, not env-driven. Turn on **Enable Observability**, then **Raw Frame Logging**, at `/dashboard/profile` — or `PATCH /api/settings {"enableObservability": true, "observabilityFrameLogging": true}`. No restart needed.
+- `ENABLE_REQUEST_LOGS` only supplies the *initial default* before either setting has ever been written; it cannot override or disable the runtime toggle.
+- Parsed request details land in SQLite (dashboard → Usage → Details). Raw provider frames land in `${DATA_DIR}/logs/frames/`.
+- If frames stop appearing, check the server log for `[frameLogs] frame capture suppressed` — the size budget or the free-disk floor was reached.
 
 ---
 

@@ -51,7 +51,7 @@ export NODE_ENV="production"
 | `INITIAL_PASSWORD` | `123456` | Dashboard login password |
 | `DATA_DIR` | `~/.9router` | Database and data storage path |
 | `NODE_ENV` | `development` | Set to `production` for deployment |
-| `ENABLE_REQUEST_LOGS` | `false` | Enable debug request/response logs |
+| `ENABLE_REQUEST_LOGS` | `false` | *Initial default only* for the `enableObservability` / `observabilityFrameLogging` settings. Request capture is controlled at `/dashboard/profile` or via `PATCH /api/settings`; the stored setting always wins. |
 
 ### Step 5: Create Data Directory
 
