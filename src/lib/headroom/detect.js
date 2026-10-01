@@ -15,6 +15,9 @@ export const EXTRA_MARKERS = {
 };
 
 const HEADROOM_PIP_TIMEOUT_MS = 8000;
+// `python --version` is a fast local probe; a long timeout here only means a
+// longer event-loop stall when the interpreter hangs (findPython310 is sync).
+const HEADROOM_PY_PROBE_TIMEOUT_MS = 500;
 
 const IS_WIN = process.platform === "win32";
 const WHICH_CMD = IS_WIN ? "where" : "which";
@@ -88,13 +91,21 @@ function pythonCandidates() {
   return list;
 }
 
+export function parseHeadroomTimeoutMs() {
+  const raw = Number(process.env.HEADROOM_TIMEOUT_MS);
+  return Number.isFinite(raw) && Number.isInteger(raw) && raw > 0 && raw < 600000 ? raw : 30000;
+}
+
 export function findPython310() {
   let fallback = null;
   for (const candidate of pythonCandidates()) {
     try {
-      const ver = execSync(`${candidate} --version`, {
+      // execFileSync (not execSync with an interpolated path): candidate may
+      // contain spaces ("C:\Program Files\...") and must never be shell-parsed.
+      const ver = execFileSync(candidate, ["--version"], {
         stdio: ["ignore", "pipe", "ignore"],
         windowsHide: true,
+        timeout: HEADROOM_PY_PROBE_TIMEOUT_MS,
         env: { ...process.env, PATH: EXTENDED_PATH },
       }).toString().trim();
       const match = ver.match(/(\d+)\.(\d+)/);

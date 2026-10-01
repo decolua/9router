@@ -27,8 +27,34 @@ function writePid(pid) {
   fs.writeFileSync(PID_FILE, String(pid));
 }
 
-function clearPid() {
-  try { if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE); } catch { /* ignore */ }
+// Clear the PID file only if it still names `expectedPid`. A concurrent start
+// may have rewritten it for a newer process — never delete a newer owner.
+function clearPid(expectedPid = null) {
+  try {
+    if (!fs.existsSync(PID_FILE)) return;
+    if (expectedPid != null) {
+      const current = parseInt(fs.readFileSync(PID_FILE, "utf8"), 10);
+      if (current !== expectedPid) return;
+    }
+    fs.unlinkSync(PID_FILE);
+  } catch { /* ignore */ }
+}
+
+// Wait for `pid` to die. Bounded TERM → poll → KILL → verify. Resolves true
+// only when death is observed; false means it survived everything.
+async function awaitPidDeath(pid, { termGraceMs = 2000, killWaitMs = 1000, pollMs = 50 } = {}) {
+  try { process.kill(pid, "SIGTERM"); } catch { return isPidAlive(pid) ? false : true; }
+  const deadline = Date.now() + termGraceMs;
+  while (Date.now() < deadline && isPidAlive(pid)) {
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  if (!isPidAlive(pid)) return true;
+  try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
+  const killDeadline = Date.now() + killWaitMs;
+  while (Date.now() < killDeadline && isPidAlive(pid)) {
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return !isPidAlive(pid);
 }
 
 // process.kill throws if pid is dead — use this to probe.
@@ -65,19 +91,37 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   if (existing) return { pid: existing, alreadyRunning: true };
 
   ensureDir();
-  // spawn stdio requires fd numbers, not WriteStream objects.
   const outFd = fs.openSync(LOG_FILE, "a");
+  let fdClosed = false;
+  let settled = false;
+  const closeFdOnce = () => { if (!fdClosed) { try { fs.closeSync(outFd); } catch {} fdClosed = true; } };
+  const settleOnce = (res, rej, kind) => {
+    if (settled) return false;
+    settled = true;
+    if (kind === "resolve") res();
+    else rej(kind);
+    return true;
+  };
 
   const args = ["proxy", "--port", String(safePort), ...extrasProxyArgs({ codeAware, kompress })];
-  const child = spawn(binary, args, {
-    stdio: ["ignore", outFd, outFd],
-    detached: true,
-    windowsHide: true,
-    env: { ...process.env },
-  });
+  let child;
+  try {
+    child = spawn(binary, args, {
+      stdio: ["ignore", outFd, outFd],
+      detached: true,
+      windowsHide: true,
+      env: { ...process.env },
+    });
+  } catch (error) {
+    // spawn can throw synchronously (e.g. invalid binary) — never leak the log fd.
+    closeFdOnce();
+    const err = new Error(error?.message || "Failed to spawn headroom proxy");
+    err.code = "SPAWN_FAILED";
+    throw err;
+  }
 
   if (!child.pid) {
-    fs.closeSync(outFd);
+    closeFdOnce();
     const err = new Error("Failed to spawn headroom proxy");
     err.code = "SPAWN_FAILED";
     throw err;
@@ -85,49 +129,60 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
 
   child.unref();
   writePid(child.pid);
+  const spawnedPid = child.pid;
 
-  // Wait until the process either stays alive briefly (success) or exits fast (failure).
-  await new Promise((resolve, reject) => {
-    const startupTimer = setTimeout(() => {
-      if (isPidAlive(child.pid)) resolve();
-      else reject(new Error("headroom proxy exited during startup — see proxy.log"));
-    }, STARTUP_TIMEOUT_MS);
-
-    child.once("exit", (code) => {
+  const pending = await new Promise((resolve, reject) => {
+    let startupTimer;
+    const failEarlyExit = (code) => {
       clearTimeout(startupTimer);
-      clearPid();
-      fs.closeSync(outFd);
       const e = new Error(`headroom proxy exited early (code=${code}) — see proxy.log`);
       e.code = "EARLY_EXIT";
-      reject(e);
+      if (settleOnce(resolve, reject, e)) { closeFdOnce(); clearPid(spawnedPid); }
+    };
+    startupTimer = setTimeout(() => {
+      if (isPidAlive(spawnedPid)) {
+        // Success: drop the early-exit handler so a late crash fires only the
+        // late handler registered after this promise settles.
+        child.removeListener("exit", failEarlyExit);
+        if (settleOnce(resolve, reject, "resolve")) closeFdOnce();
+      } else {
+        const err = new Error("headroom proxy exited during startup — see proxy.log");
+        if (settleOnce(resolve, reject, err)) closeFdOnce();
+      }
+    }, STARTUP_TIMEOUT_MS);
+
+    child.once("error", (error) => {
+      clearTimeout(startupTimer);
+      const e = new Error(error?.message || "Failed to spawn headroom proxy");
+      e.code = error?.code || "SPAWN_FAILED";
+      if (settleOnce(resolve, reject, e)) closeFdOnce();
     });
-  });
 
-  // Close parent's copy of the fd; child retains its own after unref.
-  fs.closeSync(outFd);
+    child.once("exit", failEarlyExit);
+  }).then(
+    () => ({ success: true }),
+    (err) => ({ success: false, err })
+  );
+  if (!pending.success) throw pending.err;
 
-  return { pid: child.pid, alreadyRunning: false };
+  // Late exit AFTER successful startup: only clear the PID file if it still
+  // names THIS spawn's pid (a newer start owns it otherwise). Never throws.
+  child.once("exit", () => { try { if (!isPidAlive(spawnedPid)) clearPid(spawnedPid); } catch {} });
+
+  return { pid: spawnedPid, alreadyRunning: false };
 }
 
-export function stopHeadroomProxy() {
+export async function stopHeadroomProxy() {
   const pid = getManagedPid();
   if (!pid) return { stopped: false, reason: "not_running" };
-  try {
-    process.kill(pid, "SIGTERM");
-    // Give it a moment, then force if still alive.
-    setTimeout(() => {
-      if (isPidAlive(pid)) {
-        try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
-      }
-    }, 2000);
-    clearPid();
-    return { stopped: true, pid };
-  } catch (e) {
-    clearPid();
-    const err = new Error(`Failed to stop headroom proxy: ${e.message}`);
+  const ok = await awaitPidDeath(pid, { termGraceMs: 2000, killWaitMs: 800, pollMs: 100 });
+  if (!ok) {
+    const err = new Error(`Failed to stop headroom proxy (pid ${pid} still alive) — see proxy.log`);
     err.code = "STOP_FAILED";
     throw err;
   }
+  clearPid(pid);
+  return { stopped: true, pid };
 }
 
 // Stop the managed proxy (if any), wait for the pid to die, then start again
@@ -135,16 +190,13 @@ export function stopHeadroomProxy() {
 export async function restartHeadroomProxy(opts = {}) {
   const pid = getManagedPid();
   if (pid) {
-    try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
-    // Wait up to ~3s for graceful exit, force-kill if still alive.
-    for (let i = 0; i < 30 && isPidAlive(pid); i++) {
-      await new Promise((r) => setTimeout(r, 100));
+    const ok = await awaitPidDeath(pid, { termGraceMs: 3000, killWaitMs: 300, pollMs: 100 });
+    if (!ok) {
+      const err = new Error(`restart failed: headroom proxy (pid ${pid}) did not exit`);
+      err.code = "RESTART_FAILED";
+      throw err;
     }
-    if (isPidAlive(pid)) {
-      try { process.kill(pid, "SIGKILL"); } catch { /* already gone */ }
-      await new Promise((r) => setTimeout(r, 300));
-    }
-    clearPid();
+    clearPid(pid);
   }
   return startHeadroomProxy(opts);
 }
@@ -186,16 +238,26 @@ export async function installHeadroomExtras(extras = []) {
   ensureDir();
   // Truncate ("w") so the log reflects only the current install for live progress.
   const outFd = fs.openSync(INSTALL_LOG_FILE, "w");
-  const child = spawn(py, args, {
-    stdio: ["ignore", outFd, outFd],
-    windowsHide: true,
-    env: { ...process.env },
-  });
+  let child;
+  try {
+    child = spawn(py, args, {
+      stdio: ["ignore", outFd, outFd],
+      windowsHide: true,
+      env: { ...process.env },
+    });
+  } catch (error) {
+    try { fs.closeSync(outFd); } catch {}
+    throw error;
+  }
 
   return new Promise((resolve, reject) => {
-    child.once("error", (e) => { fs.closeSync(outFd); reject(e); });
+    let fdClosed = false;
+    let settled = false;
+    const closeFdOnce = () => { if (!fdClosed) { try { fs.closeSync(outFd); } catch {} fdClosed = true; } };
+    const settleOnce = (fn, arg) => { if (settled) return false; settled = true; closeFdOnce(); fn(arg); return true; };
+    child.once("error", (e) => { settleOnce(reject, e); });
     child.once("exit", (code) => {
-      fs.closeSync(outFd);
+      if (!settleOnce(() => {}, null)) return;
       if (code === 0) {
         const status = getInstalledHeadroomExtras(py);
         resolve({ success: true, code, spec, extras: requested, ...status });
@@ -228,16 +290,26 @@ export async function uninstallHeadroomExtras(extras = []) {
 
   ensureDir();
   const outFd = fs.openSync(INSTALL_LOG_FILE, "w");
-  const child = spawn(py, args, {
-    stdio: ["ignore", outFd, outFd],
-    windowsHide: true,
-    env: { ...process.env },
-  });
+  let child;
+  try {
+    child = spawn(py, args, {
+      stdio: ["ignore", outFd, outFd],
+      windowsHide: true,
+      env: { ...process.env },
+    });
+  } catch (error) {
+    try { fs.closeSync(outFd); } catch {}
+    throw error;
+  }
 
   return new Promise((resolve, reject) => {
-    child.once("error", (e) => { fs.closeSync(outFd); reject(e); });
+    let fdClosed = false;
+    let settled = false;
+    const closeFdOnce = () => { if (!fdClosed) { try { fs.closeSync(outFd); } catch {} fdClosed = true; } };
+    const settleOnce = (fn, arg) => { if (settled) return false; settled = true; closeFdOnce(); fn(arg); return true; };
+    child.once("error", (e) => { settleOnce(reject, e); });
     child.once("exit", (code) => {
-      fs.closeSync(outFd);
+      if (!settleOnce(() => {}, null)) return;
       if (code === 0) {
         const status = getInstalledHeadroomExtras(py);
         resolve({ success: true, code, removed: pkgs, extras: requested, ...status });
