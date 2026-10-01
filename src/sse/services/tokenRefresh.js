@@ -1,6 +1,6 @@
 // Re-export from open-sse with local logger
 import * as log from "../utils/logger.js";
-import { updateProviderConnection } from "../../lib/localDb.js";
+import { getProviderConnectionById, updateProviderConnection } from "../../lib/localDb.js";
 import {
   getProjectIdForConnection,
   invalidateProjectId,
@@ -225,6 +225,25 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
+  }
+
+  // Adopt latest DB tokens: OpenAI rotates the refresh token on every refresh, and
+  // refreshing with a stale snapshot (reuse) revokes the whole session → account logout.
+  if (creds.connectionId) {
+    const latest = await getProviderConnectionById(creds.connectionId).catch(() => null);
+    const latestRefreshMs = Date.parse(latest?.lastRefreshAt || "");
+    const credsRefreshMs = Date.parse(creds.lastRefreshAt || "");
+    const dbIsNewer = Number.isFinite(latestRefreshMs)
+      && (!Number.isFinite(credsRefreshMs) || latestRefreshMs > credsRefreshMs);
+    if (dbIsNewer && latest.refreshToken && latest.refreshToken !== creds.refreshToken) {
+      creds = {
+        ...creds,
+        refreshToken: latest.refreshToken,
+        accessToken: latest.accessToken || creds.accessToken,
+        expiresAt: latest.expiresAt || latest.tokenExpiresAt || creds.expiresAt,
+        lastRefreshAt: latest.lastRefreshAt || creds.lastRefreshAt,
+      };
+    }
   }
 
   const force = options?.force === true;

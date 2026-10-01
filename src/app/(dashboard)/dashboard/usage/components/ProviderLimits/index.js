@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
@@ -152,6 +153,9 @@ function formatTimeRemaining(value) {
 
 export default function ProviderLimits() {
   const { copied, copy } = useCopyToClipboard();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
   const [connections, setConnections] = useState([]);
   const [quotaData, setQuotaData] = useState({});
   const [loading, setLoading] = useState({});
@@ -171,7 +175,26 @@ export default function ProviderLimits() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
-  const [providerFilter, setProviderFilter] = useState("all");
+  // Initialize providerFilter from URL ?provider= param so the page
+  // can be bookmarked / deep-linked to a specific provider (#4217).
+  const [providerFilter, _setProviderFilter] = useState(
+    () => searchParams?.get("provider") || "all"
+  );
+  // Wrapper: keeps URL in sync with the selected provider so the view can be
+  // bookmarked. Replaces the URL without adding to browser history.
+  const setProviderFilter = useCallback((value) => {
+    _setProviderFilter(value);
+    try {
+      const params = new URLSearchParams(searchParams?.toString() || "");
+      if (value === "all") {
+        params.delete("provider");
+      } else {
+        params.set("provider", value);
+      }
+      const newUrl = params.toString() ? `${pathname}?${params.toString()}` : pathname;
+      router.replace(newUrl, { scroll: false });
+    } catch { /* non-fatal: URL sync is best-effort */ }
+  }, [pathname, router, searchParams]);
   const [providerOptions, setProviderOptions] = useState([]);
   const [accountFilter, setAccountFilter] = useState("all");
   const [quotaSortMode, setQuotaSortMode] = useState("default");
