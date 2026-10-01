@@ -8,6 +8,7 @@ import {
 import { getSettings, getProviderConnectionById } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
+import { findProviderByJobId } from "open-sse/handlers/videoProviders/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -22,13 +23,16 @@ const DEFAULT_VIDEO_PROVIDER = "xai";
  * connection (`x-connection-id`, returned on create) or an explicit
  * `?provider=` — falling back to the historical xAI default.
  */
-async function resolveGetProvider(request, connectionId) {
+async function resolveGetProvider(request, connectionId, requestId) {
   if (connectionId) {
     const conn = await getProviderConnectionById(connectionId).catch(() => null);
     if (conn?.provider && getVideoConfig(conn.provider)) return conn.provider;
   }
   const queried = new URL(request.url).searchParams.get("provider");
   if (queried && getVideoConfig(queried)) return queried;
+  // Self-identifying job ids (e.g. Vertex operation paths) resolve without a pin.
+  const byJobId = findProviderByJobId(requestId);
+  if (byJobId && getVideoConfig(byJobId)) return byJobId;
   return DEFAULT_VIDEO_PROVIDER;
 }
 
@@ -201,7 +205,7 @@ export async function handleVideoGet(request, requestId) {
   if (!requestId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
 
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
-  const provider = await resolveGetProvider(request, preferredConnectionId);
+  const provider = await resolveGetProvider(request, preferredConnectionId, requestId);
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {

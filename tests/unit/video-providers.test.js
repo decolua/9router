@@ -19,6 +19,7 @@ vi.mock("open-sse/services/tokenRefresh.js", async (importOriginal) => {
 import { handleVideoProxyCore, getVideoConfig } from "open-sse/handlers/videoCore.js";
 import { refreshVertexToken } from "open-sse/services/tokenRefresh.js";
 import { PROVIDER_MEDIA, PROVIDER_MODELS } from "open-sse/providers/index.js";
+import { findProviderByJobId } from "open-sse/handlers/videoProviders/index.js";
 
 const originalFetch = global.fetch;
 const jsonResponse = (body, status = 200) =>
@@ -292,5 +293,28 @@ describe("vertex (veo) video adapter", () => {
     });
     expect(result.status).toBe(400);
     expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe("job-id provider resolution", () => {
+  const opName =
+    "projects/trial-mucocarmen/locations/us-central1/publishers/google/models/veo-3.1-fast-generate-001/operations/57fc8bd0-d287-416e-aec2-63327a2f0622";
+  const jobId = Buffer.from(opName, "utf8").toString("base64url");
+
+  it("recovers vertex from a real Vertex job id with no pinned connection", () => {
+    expect(findProviderByJobId(jobId)).toBe("vertex");
+  });
+
+  it("does not claim an xAI-style opaque id", () => {
+    expect(findProviderByJobId("hKP1ny74fXNfe1hxvPF5")).toBe(null);
+  });
+
+  it("does not claim base64url of a non-operation path", () => {
+    expect(findProviderByJobId(Buffer.from("../../etc/passwd", "utf8").toString("base64url"))).toBe(null);
+  });
+
+  it("returns null for empty input", () => {
+    expect(findProviderByJobId("")).toBe(null);
+    expect(findProviderByJobId(null)).toBe(null);
   });
 });
