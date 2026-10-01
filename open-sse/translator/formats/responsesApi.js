@@ -166,6 +166,43 @@ export function convertResponsesApiFormat(body) {
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
+    else if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+      // Custom tool call (#4276): codex sends exec/shell as type:"custom" with a raw
+      // string in .input rather than a JSON .arguments object. Convert to a standard
+      // OpenAI function_call so all downstream providers can handle it identically.
+      // The output path (transformer) will convert it back to custom_tool_call on return.
+      if (!currentAssistantMsg) {
+        currentAssistantMsg = {
+          role: ROLE.ASSISTANT,
+          content: null,
+          tool_calls: []
+        };
+      }
+      if (item.name && typeof item.name === "string" && item.name.trim()) {
+        currentAssistantMsg.tool_calls.push({
+          id: item.call_id,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: {
+            name: item.name,
+            // Wrap raw input string as {input:...} so the function arguments field
+            // stays valid JSON; the transformer unwraps it on the way back out.
+            arguments: JSON.stringify({ input: item.input ?? "" })
+          }
+        });
+      }
+    }
+    else if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
+      // Custom tool result — treat like function_call_output (#4276)
+      if (currentAssistantMsg) {
+        result.messages.push(currentAssistantMsg);
+        currentAssistantMsg = null;
+      }
+      pendingToolResults.push({
+        role: ROLE.TOOL,
+        tool_call_id: item.call_id,
+        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output ?? "")
+      });
+    }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Skip reasoning items - they are for display only
       continue;
