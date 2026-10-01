@@ -60,7 +60,8 @@ vi.mock("../../open-sse/rtk/caveman.js", () => ({
 }));
 
 vi.mock("../../open-sse/rtk/antislop.js", () => ({
-  injectAntislop: vi.fn(),
+  injectAntislopUi: vi.fn(),
+  injectAntislopCopyHuman: vi.fn(),
 }));
 
 vi.mock("../../open-sse/rtk/ponytail.js", () => ({

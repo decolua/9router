@@ -4,10 +4,10 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK, RESPONSES_ITEM } from "../../open-sse/translator/schema/blocks.js";
 import { ROLE } from "../../open-sse/translator/schema/roles.js";
 import { injectCaveman } from "../../open-sse/rtk/caveman.js";
-import { injectAntislop } from "../../open-sse/rtk/antislop.js";
+import { injectAntislopUi, injectAntislopCopyHuman } from "../../open-sse/rtk/antislop.js";
 import { injectPonytail } from "../../open-sse/rtk/ponytail.js";
 import { CAVEMAN_PROMPTS } from "../../open-sse/rtk/cavemanPrompts.js";
-import { ANTISLOP_PROMPTS } from "../../open-sse/rtk/antislopPrompts.js";
+import { ANTISLOP_UI_PROMPT, ANTISLOP_COPY_HUMAN_PROMPT } from "../../open-sse/rtk/antislopPrompts.js";
 import { PONYTAIL_PROMPTS } from "../../open-sse/rtk/ponytailPrompt.js";
 
 const SEP = "\n\n";
@@ -455,12 +455,13 @@ describe("system-inject fail-open", () => {
     expect(() => injectSystemPrompt(body, FORMATS.GEMINI, P1)).not.toThrow();
   });
 
-  it("injectCaveman, injectAntislop and injectPonytail fail open on frozen", () => {
+  it("injectCaveman, injectAntislopUi, injectAntislopCopyHuman and injectPonytail fail open on frozen", () => {
     const body = { messages: [{ role: ROLE.SYSTEM, content: "hi" }] };
     Object.freeze(body);
     Object.freeze(body.messages);
     expect(() => injectCaveman(body, FORMATS.OPENAI, "full")).not.toThrow();
-    expect(() => injectAntislop(body, FORMATS.OPENAI, "balanced")).not.toThrow();
+    expect(() => injectAntislopUi(body, FORMATS.OPENAI)).not.toThrow();
+    expect(() => injectAntislopCopyHuman(body, FORMATS.OPENAI)).not.toThrow();
     expect(() => injectPonytail(body, FORMATS.OPENAI, "full")).not.toThrow();
   });
 
@@ -469,9 +470,11 @@ describe("system-inject fail-open", () => {
     injectCaveman(body, FORMATS.OPENAI, "full");
     const afterCaveman = body.messages[0].content;
     expect(afterCaveman).toContain(CAVEMAN_PROMPTS.full.slice(0, 30));
-    injectAntislop(body, FORMATS.OPENAI, "balanced");
-    expect(body.messages[0].content).toContain(ANTISLOP_PROMPTS.balanced.slice(0, 30));
+    injectAntislopUi(body, FORMATS.OPENAI);
+    expect(body.messages[0].content).toContain(ANTISLOP_UI_PROMPT.slice(0, 30));
     expect(body.messages[0].content).toContain(afterCaveman);
+    injectAntislopCopyHuman(body, FORMATS.OPENAI);
+    expect(body.messages[0].content).toContain(ANTISLOP_COPY_HUMAN_PROMPT.slice(0, 30));
     injectPonytail(body, FORMATS.OPENAI, "full");
     expect(body.messages[0].content).toContain(PONYTAIL_PROMPTS.full.slice(0, 30));
     expect(body.messages[0].content).toContain(afterCaveman);

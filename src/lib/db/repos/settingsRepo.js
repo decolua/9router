@@ -56,8 +56,8 @@ const DEFAULT_SETTINGS = {
   headroomTimeoutMs: 3000,
   cavemanEnabled: false,
   cavemanLevel: "full",
-  antislopEnabled: false,
-  antislopScope: "balanced",
+  antislopUiEnabled: false,
+  antislopCopyHumanEnabled: false,
   ponytailEnabled: false,
   ponytailLevel: "full",
   pxpipeEnabled: false,
@@ -87,6 +87,13 @@ export function mergeWithDefaults(raw) {
         merged[key] = defVal;
       }
     }
+  }
+  // Migrate single-toggle antislop (antislopEnabled + antislopScope) to 2 toggles.
+  // ui -> UI on; balanced/full -> both on (superset: adds human rules).
+  if (raw && raw.antislopEnabled && raw.antislopUiEnabled === undefined && raw.antislopCopyHumanEnabled === undefined) {
+    const scope = raw.antislopScope || "balanced";
+    merged.antislopUiEnabled = true;
+    merged.antislopCopyHumanEnabled = scope !== "ui";
   }
   if (merged.capacityAdapter && typeof merged.capacityAdapter === "object") {
     for (const capKey of Object.keys(merged.capacityAdapter)) {

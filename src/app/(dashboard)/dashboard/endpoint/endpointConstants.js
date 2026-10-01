@@ -30,9 +30,3 @@ export const PONYTAIL_LEVELS = [
   { id: "full", label: "Full", desc: "Ladder enforced: stdlib/native first" },
   { id: "ultra", label: "Ultra", desc: "YAGNI extremist, deletion first" },
 ];
-
-export const ANTISLOP_SCOPES = [
-  { id: "ui", label: "UI", desc: "Visual filter: purpose-tested decoration" },
-  { id: "balanced", label: "Balanced", desc: "Visual plus copy rules" },
-  { id: "full", label: "Full", desc: "Visual, copy, people, mobile" },
-];

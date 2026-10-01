@@ -82,7 +82,7 @@ vi.mock("../../open-sse/utils/toolDeduper.js", () => ({
 }));
 
 vi.mock("../../open-sse/rtk/caveman.js", () => ({ injectCaveman: vi.fn() }));
-vi.mock("../../open-sse/rtk/antislop.js", () => ({ injectAntislop: vi.fn() }));
+vi.mock("../../open-sse/rtk/antislop.js", () => ({ injectAntislopUi: vi.fn(), injectAntislopCopyHuman: vi.fn() }));
 vi.mock("../../open-sse/rtk/ponytail.js", () => ({ injectPonytail: vi.fn() }));
 vi.mock("../../open-sse/rtk/index.js", () => ({
   compressMessages: vi.fn(() => null),
