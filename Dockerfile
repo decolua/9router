@@ -19,9 +19,11 @@ ARG NPM_REGISTRY
 
 RUN apk add --no-cache python3 make g++ linux-headers
 
-COPY package.json ./
+# Install exactly what package-lock.json pins: the image contains the same dependency
+# tree every build, and a newly published (or compromised) release can't slip in.
+COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm install \
+    npm ci \
       --registry="${NPM_REGISTRY}" \
       --fetch-retries=5 \
       --fetch-retry-factor=2 \

@@ -60,7 +60,10 @@ PUBLIC.md
 Thanks.md
 PUBLIC.en.md
 PR/*
-package-lock.json
+# Root package-lock.json is committed (reproducible installs, `npm ci`). The CLI and
+# tests packages still resolve fresh until they get lockfiles of their own.
+cli/package-lock.json
+tests/package-lock.json
 
 
 #Ignore vscode AI rules
