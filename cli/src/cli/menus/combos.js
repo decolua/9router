@@ -303,7 +303,10 @@ async function handleCreateCombo() {
   
   const createResult = await api.createCombo({
     name,
-    models: selectedModels
+    // Keep catalog objects for the picker, but persist routable model IDs.
+    models: selectedModels.map((model) =>
+      model.routedModel || model.fullModel || `${model.provider}/${model.model}`
+    )
   });
   
   if (!createResult.success) {
