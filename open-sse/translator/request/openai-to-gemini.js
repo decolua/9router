@@ -84,6 +84,9 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   }
 
   // Convert messages
+  // Every system message becomes one systemInstruction part, in order; a
+  // request may carry several (#3972) and the last one must not win.
+  const systemParts = [];
   if (body.messages && Array.isArray(body.messages)) {
     for (let i = 0; i < body.messages.length; i++) {
       const msg = body.messages[i];
@@ -91,10 +94,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       const content = msg.content;
 
       if (role === ROLE.SYSTEM && body.messages.length > 1) {
-        result.systemInstruction = {
-          role: GEMINI_ROLE.USER,
-          parts: [{ text: typeof content === "string" ? content : extractTextContent(content) }]
-        };
+        systemParts.push({ text: typeof content === "string" ? content : extractTextContent(content) });
       } else if (role === ROLE.USER || (role === ROLE.SYSTEM && body.messages.length === 1)) {
         const parts = convertOpenAIContentToParts(content);
         if (parts.length > 0) {
@@ -196,6 +196,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         }
       }
     }
+  }
+
+  if (systemParts.length > 0) {
+    result.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
 
   // Convert tools
