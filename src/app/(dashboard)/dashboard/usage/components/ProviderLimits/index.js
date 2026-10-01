@@ -1358,17 +1358,11 @@ export default function ProviderLimits() {
                 )}
                 {quota?.raw?.speed && (
                   <div className="mt-1 px-1 text-[10px] leading-relaxed text-text-muted tabular-nums">
-                    {quota.raw.speed.byModel?.length > 1 ? (
-                      quota.raw.speed.byModel.slice(0, 3).map((m) => (
-                        <p key={m.model}>
-                          {m.model}: {Math.round(m.avgTps).toLocaleString()} tok/s avg · last {Math.round(m.lastTps).toLocaleString()} · TTFT {(m.avgTtftMs / 1000).toFixed(1)}s (n={m.samples})
-                        </p>
-                      ))
-                    ) : (
-                      <p>
-                        Speed: {Math.round(quota.raw.speed.avgTps).toLocaleString()} tok/s avg · last {Math.round(quota.raw.speed.lastTps).toLocaleString()} · TTFT {(quota.raw.speed.avgTtftMs / 1000).toFixed(1)}s avg (n={quota.raw.speed.samples})
+                    {(quota.raw.speed.byModel?.length ? quota.raw.speed.byModel : [{ model: "Speed", ...quota.raw.speed }]).slice(0, 3).map((m) => (
+                      <p key={m.model}>
+                        {m.model}: {Math.round(m.avgTps).toLocaleString()} tok/s avg · last {Math.round(m.lastTps).toLocaleString()} · TTFT {(m.avgTtftMs / 1000).toFixed(1)}s (n={m.samples})
                       </p>
-                    )}
+                    ))}
                   </div>
                 )}
                 {hiddenQuotaRows.length > 0 && (
