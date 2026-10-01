@@ -143,6 +143,7 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
   let buffer = "";
   const rawChunks = [];
   let detectedError = null;
+  let readError = null;
 
   try {
     while (true) {
@@ -199,16 +200,22 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
           event?.type === "finish" ||
           event?.type === "finish-step"
         ) {
+          // Don't break: the tail of this chunk may still hold finish/finish-step
+          // events needed downstream for finish_reason. Mark and finish the chunk.
           stopLoop = true;
-          break;
         }
       }
 
       if (stopLoop) break;
     }
-  } catch {
+  } catch (err) {
+    // Do not return the original Response here: its body has already been disturbed, so
+    // reading it throws "Body is unusable: Body has already been read" and the buffered
+    // lines are lost. Record the failure and keep going so whatever was buffered still
+    // reaches the client.
+    readError = err;
     try { reader.releaseLock(); } catch { /* ignore */ }
-    return originalResponse;
+    try { buffer += decoder.decode(); } catch { /* ignore */ }
   }
 
   if (detectedError) {
@@ -233,7 +240,14 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
     );
   }
 
-  const combinedStream = createRawReplayedStream(rawChunks, reader);
+  // A dead reader would rethrow on replay, so report EOF instead and let the buffered
+  // chunks flow through the normal path. Upstream's raw replay keeps the bytes it
+  // captured before the reset; only the live reader is replaced.
+  const replayReader = readError
+    ? { read: async () => ({ done: true, value: undefined }), cancel: async () => { } }
+    : reader;
+
+  const combinedStream = createRawReplayedStream(rawChunks, replayReader);
   return wrapNdjsonAsOpenAISse(combinedStream, model, originalResponse);
 }
 

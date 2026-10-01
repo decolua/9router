@@ -39,7 +39,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
   }
 
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey);
+  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, sourceFormat);
 }
 
 /**
@@ -125,7 +125,11 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    const safeContent = contentObj?.content || "[Empty streaming response]";
+    const toolCalls = contentObj?.toolCalls || [];
+    // A tool-call-only turn carries no content. Label it accurately rather than as
+    // "[Empty streaming response]", which is indistinguishable from a truncated stream.
+    const safeContent = contentObj?.content
+      || (toolCalls.length ? `[Tool calls: ${toolCalls.map((call) => call.name || "unknown").join(", ")}]` : "[Empty streaming response]");
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
@@ -135,7 +139,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
+      response: { content: safeContent, thinking: safeThinking, tool_calls: toolCalls, type: "streaming" },
       pxpipe,
       status: "success"
     }, { id: streamDetailId })).catch(err => {

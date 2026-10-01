@@ -116,12 +116,24 @@ describe("commandcode-to-openai — finish", () => {
 });
 
 describe("commandcode-to-openai — error event", () => {
-  it("stringifies object errors so client sees readable message", () => {
-    const { chunks } = feed([
-      { type: "error", error: { type: "server_error", message: "Boom" } },
-    ]);
-    const text = chunks[0].choices[0].delta.content;
-    expect(text).toContain("Boom");
-    expect(text).not.toContain("[object Object]");
+  // Upstream 092c84ea: mid-stream errors throw rather than emit fake content
+  // with finish_reason "stop", so the stream handler marks the stream errored.
+  it("throws on error events instead of emitting fake content", () => {
+    expect(() =>
+      feed([{ type: "error", error: { type: "server_error", message: "Boom" } }])
+    ).toThrowError(/Boom/);
+    expect(() =>
+      feed([{ type: "error", error: { type: "server_error", message: "Boom" } }])
+    ).toThrowError(/\[CommandCode error:/);
+  });
+
+  it("stringifies object errors so the thrown message stays readable", () => {
+    try {
+      feed([{ type: "error", error: { type: "server_error", message: "Boom" } }]);
+      expect.unreachable("should have thrown");
+    } catch (err) {
+      expect(err.message).toContain("Boom");
+      expect(err.message).not.toContain("[object Object]");
+    }
   });
 });

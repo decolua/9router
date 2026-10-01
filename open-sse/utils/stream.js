@@ -1,8 +1,9 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, buildStreamErrorBytes } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
@@ -13,6 +14,64 @@ export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
 
 // sharedEncoder is stateless — safe to share across streams
 const sharedEncoder = new TextEncoder();
+const errorDecoder = new TextDecoder();
+
+// A truthy finish_reason is what tells an OpenAI client the turn is over. Clients
+// that require it (pi: supportsFinishReason is unconditionally true) fail the
+// request with "Stream ended without finish_reason" when it never arrives.
+const hasOpenAITerminal = (chunk) => !!chunk?.choices?.[0]?.finish_reason;
+
+// A trailing line cut mid-payload is unparseable garbage for the client, and
+// forwarding it makes the client error out before it reaches a synthesized
+// terminal. Translate mode already drops these (parseSSELine returns null).
+function isUnusableTail(output) {
+  if (!output.startsWith("data:")) return false;
+  const payload = output.slice(5).trim();
+  if (!payload || payload === "[DONE]") return false;
+  try {
+    JSON.parse(payload);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+// Tool calls arrive as deltas, so a turn that only calls tools accumulates no content
+// and is reported as "[Empty streaming response]" — indistinguishable from an upstream
+// that really returned nothing. The OpenAI shape keys calls by index; the Claude shape
+// splits the header (content_block_start) from the JSON arguments (input_json_delta).
+function accumulateToolCalls(store, parsed) {
+  const calls = parsed?.choices?.[0]?.delta?.tool_calls;
+  if (Array.isArray(calls)) {
+    for (const call of calls) {
+      const index = call.index ?? 0;
+      const entry = store.get(index) || { id: null, name: "", arguments: "" };
+      if (call.id) entry.id = call.id;
+      if (call.function?.name) entry.name += call.function.name;
+      if (call.function?.arguments) entry.arguments += call.function.arguments;
+      store.set(index, entry);
+    }
+    return;
+  }
+
+  const block = parsed?.content_block;
+  if (block?.type === "tool_use") {
+    const index = parsed.index ?? 0;
+    const entry = store.get(index) || { id: null, name: "", arguments: "" };
+    entry.id = block.id || entry.id;
+    entry.name += block.name || "";
+    store.set(index, entry);
+    return;
+  }
+
+  const delta = parsed?.delta;
+  if (delta?.type === "input_json_delta" && typeof delta.partial_json === "string") {
+    const index = parsed.index ?? 0;
+    const entry = store.get(index) || { id: null, name: "", arguments: "" };
+    entry.arguments += delta.partial_json;
+    store.set(index, entry);
+  }
+}
 
 /**
  * Stream modes
@@ -77,6 +136,7 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
+  const toolCallStore = new Map();
   let ttftAt = null;
   let sseLineCount = 0;
   let sseEmittedCount = 0;
@@ -87,6 +147,8 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let passthroughAtEventBoundary = true;  // whether the last passthrough emit closed an SSE event
+  let clientTerminalSeen = false;  // whether a finish_reason reached the client
   let finalized = false;
   let completionFlushTimer = null;
 
@@ -114,7 +176,8 @@ export function createSSEStream(options = {}) {
     if (onStreamComplete) {
       onStreamComplete({
         content: accumulatedContent,
-        thinking: accumulatedThinking
+        thinking: accumulatedThinking,
+        toolCalls: [...toolCallStore.values()].filter((call) => call.name || call.arguments)
       }, finalUsage, ttftAt);
     }
   };
@@ -133,7 +196,7 @@ export function createSSEStream(options = {}) {
     finalizeStream();
   };
 
-  return new TransformStream({
+  const stream = new TransformStream({
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -163,6 +226,18 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
           let responsesTerminal = false;
+
+          // An upstream [DONE] already ends the stream — don't append a second sentinel.
+          // But when no terminal frame ever arrived, hold it back: flush() reports the
+          // truncation in-band (error frame + [DONE]), and a client that stops at this
+          // sentinel would never see that error.
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            const geminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
+            if (sourceFormat === FORMATS.OPENAI && !clientTerminalSeen && !geminiFamily) {
+              continue;
+            }
+            streamDoneSent = true;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -221,6 +296,8 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
+              accumulateToolCalls(toolCallStore, parsed);
+
               const extracted = extractUsage(parsed);
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
@@ -229,6 +306,7 @@ export function createSSEStream(options = {}) {
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              if (isFinishChunk) clientTerminalSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -262,6 +340,9 @@ export function createSSEStream(options = {}) {
 
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
+          // Each passthrough line is emitted with a single \n; only the empty
+          // line that follows a data line closes the event.
+          passthroughAtEventBoundary = output === "\n";
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
           if (responsesTerminal) finalizeStream();
           continue;
@@ -351,6 +432,8 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        accumulateToolCalls(toolCallStore, parsed);
+
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
@@ -400,6 +483,8 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
+            if (sourceFormat === FORMATS.OPENAI && hasOpenAITerminal(item)) clientTerminalSeen = true;
+
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
@@ -435,8 +520,19 @@ export function createSSEStream(options = {}) {
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
             }
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            // SSE events only dispatch on a blank line, and `buffer` never holds
+            // one (it is the remainder after the last \n). Terminate the event
+            // here, or the [DONE] below lands on the same data line and the two
+            // collapse into one unparsable frame — hiding the finish_reason the
+            // tail carries.
+            if (isUnusableTail(output)) {
+              buffer = "";
+            } else {
+              output += "\n\n";
+              reqLogger?.appendConvertedChunk?.(output);
+              controller.enqueue(sharedEncoder.encode(output));
+              passthroughAtEventBoundary = true;
+            }
           }
 
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -445,8 +541,29 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
+
+          // The upstream ended without a finish_reason (empty response, or cut before
+          // its terminal chunk). Close the turn in-band so an OpenAI client sees an
+          // error instead of a stream that simply stops — the same representation the
+          // abort/stall path uses, never a fabricated finish_reason.
+          if (sourceFormat === FORMATS.OPENAI && !clientTerminalSeen && !isGeminiFamily) {
+            if (!passthroughAtEventBoundary) {
+              reqLogger?.appendConvertedChunk?.("\n");
+              controller.enqueue(sharedEncoder.encode("\n"));
+            }
+            const terminal = buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, "Upstream ended before sending a terminal event", sourceFormat);
+            reqLogger?.appendConvertedChunk?.(errorDecoder.decode(terminal));
+            controller.enqueue(terminal);
+            passthroughAtEventBoundary = true;
+            clientTerminalSeen = true;
+            streamDoneSent = true;
+          }
+
           if (!streamDoneSent && !isGeminiFamily) {
-            const doneOutput = "data: [DONE]\n\n";
+            // If the last data line was emitted without its blank line, insert one
+            // so [DONE] starts a new event instead of extending that one.
+            const separator = passthroughAtEventBoundary ? "" : "\n";
+            const doneOutput = separator + "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
@@ -483,6 +600,7 @@ export function createSSEStream(options = {}) {
             if (translated?.length > 0) {
               for (const item of translated) {
                 if (item === null || item === undefined) continue;
+                if (sourceFormat === FORMATS.OPENAI && hasOpenAITerminal(item)) clientTerminalSeen = true;
                 const output = formatSSE(item, sourceFormat);
                 reqLogger?.appendConvertedChunk?.(output);
                 controller.enqueue(sharedEncoder.encode(output));
@@ -503,10 +621,22 @@ export function createSSEStream(options = {}) {
         if (flushed?.length > 0) {
           for (const item of flushed) {
             if (item === null || item === undefined) continue;
+            if (sourceFormat === FORMATS.OPENAI && hasOpenAITerminal(item)) clientTerminalSeen = true;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
           }
+        }
+
+        // A translator's flush is a no-op when the upstream never sent its terminal
+        // event, so an OpenAI client would still end the turn without a finish_reason.
+        // Close it in-band the same way the abort path does.
+        if (sourceFormat === FORMATS.OPENAI && !clientTerminalSeen) {
+          const terminal = buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, "Upstream ended before sending a terminal event", sourceFormat);
+          reqLogger?.appendConvertedChunk?.(errorDecoder.decode(terminal));
+          controller.enqueue(terminal);
+          streamDoneSent = true;
+          clientTerminalSeen = true;
         }
 
         // Synthesize response.failed if a Responses passthrough stream never reached a terminal event
@@ -533,6 +663,8 @@ export function createSSEStream(options = {}) {
       }
     }
   });
+
+  return stream;
 }
 
 export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
@@ -553,9 +685,10 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
+    sourceFormat,
     provider,
     reqLogger,
     model,
