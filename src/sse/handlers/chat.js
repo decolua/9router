@@ -6,6 +6,9 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  getApiKeyRecord,
+  checkAndConsumeRateLimit,
+  isModelAllowedForKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
 import { getSettings } from "@/lib/localDb";
@@ -69,6 +72,7 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  let keyRecord = null;
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
@@ -79,11 +83,26 @@ export async function handleChat(request, clientRawRequest = null) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
+    // Per-key rate limit (sliding window, per minute). 429 when exceeded.
+    keyRecord = await getApiKeyRecord(apiKey);
+    if (keyRecord) {
+      const rl = await checkAndConsumeRateLimit(apiKey, keyRecord.rateLimit);
+      if (!rl.ok) {
+        log.warn("AUTH", `API key rate limit exceeded (${rl.limit}/min)`);
+        return errorResponse(HTTP_STATUS.RATE_LIMITED, `Rate limit exceeded (${rl.limit}/min). Retry in ${rl.retryAfterSec}s.`);
+      }
+    }
   }
 
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
+  }
+
+  // Per-key model allowlist. Empty list = all models allowed.
+  if (keyRecord && !isModelAllowedForKey(keyRecord.allowedModels, modelStr)) {
+    log.warn("AUTH", `Model "${modelStr}" not allowed for this API key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `Model "${modelStr}" is not allowed for this API key`);
   }
 
   // Bypass naming/warmup requests before combo rotation to avoid wasting rotation slots

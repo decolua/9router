@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -25,6 +25,14 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  // Edit key modal
+  const [editingKey, setEditingKey] = useState(null);
+  const [editName, setEditName] = useState("");
+  const [editRateLimit, setEditRateLimit] = useState(60);
+  const [editAllowedModels, setEditAllowedModels] = useState([]); // model strings
+  const [editModelMode, setEditModelMode] = useState("all"); // "all" | "restrict"
+  const [showModelPicker, setShowModelPicker] = useState(false);
+  const [activeProviders, setActiveProviders] = useState([]);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
@@ -267,6 +275,13 @@ export default function APIPageClient({ machineId }) {
         } catch { /* fall through to empty render */ }
       }
       setKeys(existing);
+      try {
+        const pres = await fetch("/api/providers");
+        if (pres.ok) {
+          const pdata = await pres.json();
+          setActiveProviders(pdata.connections || []);
+        }
+      } catch { /* providers optional */ }
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -674,6 +689,37 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const openEditKey = (key) => {
+    setEditingKey(key);
+    setEditName(key.name || "");
+    setEditRateLimit(key.rateLimit ?? 60);
+    setEditAllowedModels(key.allowedModels || []);
+    setEditModelMode((key.allowedModels || []).length > 0 ? "restrict" : "all");
+  };
+
+  const handleSaveKey = async () => {
+    if (!editingKey) return;
+    const allowedModels = editModelMode === "restrict" ? editAllowedModels : [];
+    try {
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editName,
+          rateLimit: Number(editRateLimit),
+          allowedModels,
+        }),
+      });
+      if (res.ok) {
+        const { key } = await res.json();
+        setKeys(prev => prev.map(k => k.id === key.id ? key : k));
+        setEditingKey(null);
+      }
+    } catch (error) {
+      console.log("Error saving key:", error);
+    }
+  };
+
   const maskKey = (fullKey) => {
     if (!fullKey || fullKey.length <= 10) return fullKey || "";
     return fullKey.slice(0, 6) + "•".repeat(fullKey.length - 10) + fullKey.slice(-4);
@@ -1031,11 +1077,21 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <p className="text-xs text-text-muted mt-0.5">
+                    {key.rateLimit ?? 60} req/min · {key.allowedModels?.length ? `${key.allowedModels.length} model(s) allowed` : "All models allowed"}
+                  </p>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => openEditKey(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit key settings"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1136,6 +1192,101 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
       </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        title="Edit API Key"
+        onClose={() => setEditingKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={editName}
+            onChange={(e) => setEditName(e.target.value)}
+            placeholder="Production Key"
+          />
+          <Input
+            label="Rate Limit (requests per minute)"
+            type="number"
+            min="1"
+            value={editRateLimit}
+            onChange={(e) => setEditRateLimit(e.target.value)}
+          />
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium text-sm">Model access</p>
+              <p className="text-xs text-text-muted">
+                {editModelMode === "all"
+                  ? "This key can access all models"
+                  : "This key can only access the models below"}
+              </p>
+            </div>
+            <Toggle
+              size="sm"
+              checked={editModelMode === "restrict"}
+              onChange={(checked) => setEditModelMode(checked ? "restrict" : "all")}
+              title={editModelMode === "all" ? "Restrict models" : "Allow all models"}
+            />
+          </div>
+          {editModelMode === "restrict" && (
+            <div>
+              <label className="block text-sm font-medium mb-1">Allowed models</label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {editAllowedModels.length === 0 && (
+                  <span className="text-xs text-text-muted">No models added yet.</span>
+                )}
+                {editAllowedModels.map((model) => (
+                  <span
+                    key={model}
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs bg-surface border border-border text-text-main"
+                  >
+                    {model}
+                    <button
+                      type="button"
+                      onClick={() => setEditAllowedModels(prev => prev.filter(m => m !== model))}
+                      className="text-text-muted hover:text-text-main leading-none"
+                      aria-label={`Remove ${model}`}
+                    >
+                      <span className="material-symbols-outlined" style={{ fontSize: "12px" }}>close</span>
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <Button onClick={() => setShowModelPicker(true)} fullWidth variant="ghost">
+                <span className="material-symbols-outlined text-[16px] mr-1">add</span>
+                Add Model
+              </Button>
+            </div>
+          )}
+          <div className="flex gap-2">
+            <Button onClick={handleSaveKey} fullWidth>
+              Save
+            </Button>
+            <Button onClick={() => setEditingKey(null)} variant="ghost" fullWidth>
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Model picker for edit modal */}
+      <ModelSelectModal
+        isOpen={showModelPicker}
+        onClose={() => setShowModelPicker(false)}
+        onSelect={(model) => {
+          const value = model?.value || model?.name || model;
+          setEditAllowedModels(prev => prev.includes(value) ? prev : [...prev, value]);
+        }}
+        onDeselect={(model) => {
+          const value = model?.value || model?.name || model;
+          setEditAllowedModels(prev => prev.filter(m => m !== value));
+        }}
+        addedModelValues={editAllowedModels}
+        activeProviders={activeProviders}
+        title="Add Models"
+        closeOnSelect={false}
+      />
 
       {/* Enable Tunnel Modal */}
       <Modal

@@ -1,4 +1,4 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, getApiKeyByValue, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -364,4 +364,48 @@ export function extractApiKey(request) {
 export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
+}
+
+// Sliding-window rate limiter per API key. Keyed by the raw key value so it
+// survives across requests and process restarts are bounded by in-memory scope.
+const rateBuckets = new Map(); // keyValue -> number[] (timestamps in current window, ms)
+const RATE_WINDOW_MS = 60_000;
+
+/**
+ * Resolve the full API key record (with rateLimit / allowedModels) or null.
+ */
+export async function getApiKeyRecord(apiKey) {
+  if (!apiKey) return null;
+  return await getApiKeyByValue(apiKey);
+}
+
+/**
+ * Check + record a request against the key's rate limit (per minute).
+ * Returns { ok: boolean, retryAfterSec: number, limit, current }.
+ * Unbounded when the key has no rateLimit set.
+ */
+export async function checkAndConsumeRateLimit(apiKeyValue, rateLimit) {
+  const limit = Number(rateLimit) > 0 ? Number(rateLimit) : null;
+  if (!limit) return { ok: true, limit: null, current: 0, retryAfterSec: 0 };
+
+  const now = Date.now();
+  const bucket = (rateBuckets.get(apiKeyValue) || []).filter((t) => now - t < RATE_WINDOW_MS);
+  bucket.push(now);
+  rateBuckets.set(apiKeyValue, bucket);
+
+  if (bucket.length > limit) {
+    const oldest = bucket[0];
+    const retryAfterSec = Math.max(1, Math.ceil((oldest + RATE_WINDOW_MS - now) / 1000));
+    return { ok: false, limit, current: bucket.length, retryAfterSec };
+  }
+  return { ok: true, limit, current: bucket.length, retryAfterSec: 0 };
+}
+
+/**
+ * Check whether the request model is allowed for this key. Empty allowedModels
+ * (or a key with no restriction) permits everything.
+ */
+export function isModelAllowedForKey(allowedModels, modelStr) {
+  if (!Array.isArray(allowedModels) || allowedModels.length === 0) return true;
+  return allowedModels.includes(modelStr);
 }
