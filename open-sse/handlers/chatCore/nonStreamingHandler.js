@@ -205,10 +205,16 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (usage) {
+      const promptTokens = (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0);
+      const completionTokens = usage.candidatesTokenCount || 0;
       result.usage = {
-        prompt_tokens: (usage.promptTokenCount || 0) + (usage.thoughtsTokenCount || 0),
-        completion_tokens: usage.candidatesTokenCount || 0,
-        total_tokens: usage.totalTokenCount || 0
+        prompt_tokens: promptTokens,
+        completion_tokens: completionTokens,
+        // Sum the derived parts when upstream omits totalTokenCount. The other
+        // branches in this file (and the streaming normaliser) all do this, and
+        // a usage block claiming prompt 10 + completion 20 + total 0 is simply
+        // self-contradictory for callers that bill or display from it. #3789
+        total_tokens: usage.totalTokenCount || promptTokens + completionTokens
       };
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
