@@ -43,6 +43,8 @@ export default function TokenSaverClient() {
   const logPollRef = useRef(null);
   const [cavemanEnabled, setCavemanEnabled] = useState(false);
   const [cavemanLevel, setCavemanLevel] = useState("full");
+  const [antislopUiEnabled, setAntislopUiEnabled] = useState(false);
+  const [antislopCopyHumanEnabled, setAntislopCopyHumanEnabled] = useState(false);
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
@@ -344,6 +346,16 @@ export default function TokenSaverClient() {
     patchSetting({ cavemanLevel: level });
   };
 
+  const handleAntislopUiEnabled = (value) => {
+    setAntislopUiEnabled(value);
+    patchSetting({ antislopUiEnabled: value });
+  };
+
+  const handleAntislopCopyHumanEnabled = (value) => {
+    setAntislopCopyHumanEnabled(value);
+    patchSetting({ antislopCopyHumanEnabled: value });
+  };
+
   const handlePonytailEnabled = (value) => {
     setPonytailEnabled(value);
     patchSetting({ ponytailEnabled: value });
@@ -428,6 +440,8 @@ export default function TokenSaverClient() {
           setKompress(data.headroomKompress !== false);
           setCavemanEnabled(!!data.cavemanEnabled);
           setCavemanLevel(data.cavemanLevel || "full");
+          setAntislopUiEnabled(!!data.antislopUiEnabled);
+          setAntislopCopyHumanEnabled(!!data.antislopCopyHumanEnabled);
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
           setPxpipeEnabled(!!data.pxpipeEnabled);
@@ -738,6 +752,48 @@ export default function TokenSaverClient() {
             <Toggle
               checked={ponytailEnabled}
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Anti-slop UI filter{" "}
+              <span className="text-xs font-normal text-primary">
+                (Antislop)
+              </span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Purpose-tested visuals: no generic gradients, dead controls, or
+              fabricated claims
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <Toggle
+              checked={antislopUiEnabled}
+              onChange={() => handleAntislopUiEnabled(!antislopUiEnabled)}
+            />
+          </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">
+              Anti-slop copy and human{" "}
+              <span className="text-xs font-normal text-primary">
+                (Antislop)
+              </span>
+            </p>
+            <p className="text-sm text-text-muted">
+              Honest copy plus people rules: no AI tells, contrast, keyboard,
+              states, mobile reflow
+            </p>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <Toggle
+              checked={antislopCopyHumanEnabled}
+              onChange={() =>
+                handleAntislopCopyHumanEnabled(!antislopCopyHumanEnabled)
+              }
             />
           </div>
         </div>

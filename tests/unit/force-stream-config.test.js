@@ -59,6 +59,11 @@ vi.mock("../../open-sse/rtk/caveman.js", () => ({
   injectCaveman: vi.fn(),
 }));
 
+vi.mock("../../open-sse/rtk/antislop.js", () => ({
+  injectAntislopUi: vi.fn(),
+  injectAntislopCopyHuman: vi.fn(),
+}));
+
 vi.mock("../../open-sse/rtk/ponytail.js", () => ({
   injectPonytail: vi.fn(),
 }));

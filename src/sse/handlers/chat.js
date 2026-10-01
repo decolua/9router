@@ -284,6 +284,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       headroomTimeoutMs: chatSettings.headroomTimeoutMs,
       cavemanEnabled: !!chatSettings.cavemanEnabled,
       cavemanLevel: chatSettings.cavemanLevel || "full",
+      antislopUiEnabled: !!chatSettings.antislopUiEnabled,
+      antislopCopyHumanEnabled: !!chatSettings.antislopCopyHumanEnabled,
       ponytailEnabled: !!chatSettings.ponytailEnabled,
       ponytailLevel: chatSettings.ponytailLevel || "full",
       pxpipeEnabled: !!chatSettings.pxpipeEnabled,
