@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+import { applyCodexFastMode } from "../../src/sse/handlers/chat.js";
 
 function streamFromText(text) {
   const encoder = new TextEncoder();
@@ -97,5 +98,42 @@ describe("Codex reasoning normalization", () => {
 
     expect(body.model).toBe("gpt-5.6-terra");
     expect(body.reasoning.effort).toBe("ultra");
+  });
+});
+
+describe("applyCodexFastMode", () => {
+  const body = { model: "gpt-6.1-sol", input: "hi" };
+  const connOn = { providerSpecificData: { codexFastMode: true } };
+  const connOff = { providerSpecificData: { codexFastMode: false } };
+
+  it("does nothing when both global and per-connection flags are off", () => {
+    expect(applyCodexFastMode(body, "codex", "gpt-6.1-sol", {}, connOff).service_tier).toBeUndefined();
+    expect(applyCodexFastMode(body, "codex", "gpt-6.1-sol", null, null).service_tier).toBeUndefined();
+  });
+
+  it("applies priority when the global setting is on", () => {
+    expect(applyCodexFastMode(body, "codex", "gpt-6.1-sol", { codexFastMode: true }).service_tier).toBe("priority");
+  });
+
+  it("applies priority when only the connection flag is on", () => {
+    expect(applyCodexFastMode(body, "codex", "gpt-6.1-sol", {}, connOn).service_tier).toBe("priority");
+  });
+
+  it("covers sol-family variants and review models", () => {
+    const on = { codexFastMode: true };
+    for (const m of ["gpt-5.6-sol", "gpt-5.6-sol-review", "gpt-6.1-sol", "gpt-6.1-sol(xhigh)"]) {
+      expect(applyCodexFastMode({ ...body, model: m }, "codex", m, on).service_tier).toBe("priority");
+    }
+  });
+
+  it("ignores non-sol codex models and other providers", () => {
+    const on = { codexFastMode: true };
+    expect(applyCodexFastMode({ ...body, model: "gpt-6-luna" }, "codex", "gpt-6-luna", on, connOn).service_tier).toBeUndefined();
+    expect(applyCodexFastMode(body, "openai", "gpt-6.1-sol", on, connOn).service_tier).toBeUndefined();
+  });
+
+  it("preserves a client-supplied service_tier", () => {
+    const explicit = { ...body, service_tier: "flex" };
+    expect(applyCodexFastMode(explicit, "codex", "gpt-6.1-sol", { codexFastMode: true }, connOn).service_tier).toBe("flex");
   });
 });

@@ -69,6 +69,9 @@ export default function ProviderDetailPage() {
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
+  const [codexFastMode, setCodexFastMode] = useState(false);
+  const [savingCodexFastMode, setSavingCodexFastMode] = useState(false);
+  const [codexFastModeError, setCodexFastModeError] = useState("");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {} });
   const [suggestedModels, setSuggestedModels] = useState([]);
   const [liveModels, setLiveModels] = useState([]);
@@ -328,6 +331,7 @@ export default function ProviderDetailPage() {
       // Load per-provider thinking config
       const thinkingCfg = (settingsData.providerThinking || {})[providerId] || {};
       setThinkingMode(thinkingCfg.mode || "auto");
+      setCodexFastMode(providerId === "codex" && settingsData.codexFastMode === true);
       const autoPingSettingsKey = AUTO_PING_SETTINGS_KEYS[providerId];
       const apCfg = autoPingSettingsKey ? settingsData[autoPingSettingsKey] || {} : {};
       setAutoPing({ enabled: apCfg.enabled === true, connections: apCfg.connections || {} });
@@ -461,6 +465,48 @@ export default function ProviderDetailPage() {
 
   const handleAutoPingConnection = (connectionId, on) => {
     saveAutoPing({ ...autoPing, connections: { ...autoPing.connections, [connectionId]: on } });
+  };
+
+  const handleCodexFastModeChange = async (enabled) => {
+    if (savingCodexFastMode) return;
+    setCodexFastMode(enabled);
+    setSavingCodexFastMode(true);
+    setCodexFastModeError("");
+    try {
+      const response = await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ codexFastMode: enabled }),
+      });
+      if (!response.ok) throw new Error(`Settings update failed (${response.status})`);
+    } catch (error) {
+      setCodexFastMode(!enabled);
+      setCodexFastModeError("Could not save Fast inference setting.");
+      console.log("Error saving Codex Fast mode:", error);
+    } finally {
+      setSavingCodexFastMode(false);
+    }
+  };
+
+  const handleFastModeConnection = async (connectionId, on) => {
+    try {
+      const res = await fetch(`/api/providers/${connectionId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providerSpecificData: { codexFastMode: on } }),
+      });
+      if (res.ok) {
+        setConnections((prev) =>
+          prev.map((c) =>
+            c.id === connectionId
+              ? { ...c, providerSpecificData: { ...(c.providerSpecificData || {}), codexFastMode: on } }
+              : c,
+          ),
+        );
+      }
+    } catch (error) {
+      console.log("Error toggling fast mode:", error);
+    }
   };
 
   useEffect(() => {
@@ -1046,6 +1092,10 @@ export default function ProviderDetailPage() {
                   onToggle: (on) => handleAutoPingConnection(conn.id, on),
                   provider: providerId,
                 } : null}
+                fastMode={providerId === "codex" ? {
+                  on: conn.providerSpecificData?.codexFastMode === true,
+                  onToggle: (on) => handleFastModeConnection(conn.id, on),
+                } : null}
                 onUpdateProxy={async (proxyPoolId) => {
                   try {
                     const res = await fetch(`/api/providers/${conn.id}`, {
@@ -1581,6 +1631,18 @@ export default function ProviderDetailPage() {
                   </div>
                 )}
               </div>
+              {providerId === "codex" && (
+                <Toggle
+                  checked={codexFastMode}
+                  onChange={handleCodexFastModeChange}
+                  disabled={savingCodexFastMode}
+                  label="Fast inference"
+                  description="Use the priority tier for Sol models (all accounts). Per-account override lives on each connection row and quota card."
+                />
+              )}
+              {providerId === "codex" && codexFastModeError && (
+                <span className="text-xs text-red-500" role="alert">{codexFastModeError}</span>
+              )}
             </div>
           </div>
 
