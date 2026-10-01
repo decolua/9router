@@ -278,6 +278,16 @@ function normalizeToolParameters(params) {
   return params;
 }
 
+// Share the image mapping between user content and images extracted from tool results.
+function toResponsesImage(part) {
+  if (part?.type === OPENAI_BLOCK.IMAGE_URL) {
+    const url = typeof part.image_url === "string" ? part.image_url : part.image_url?.url;
+    return { type: RESPONSES_ITEM.INPUT_IMAGE, image_url: url, detail: part.image_url?.detail || "auto" };
+  }
+  if (part?.type === RESPONSES_ITEM.INPUT_IMAGE) return part;
+  return null;
+}
+
 /**
  * Build a Responses `reasoning` input item from Chat Completions assistant fields.
  * Preserves encrypted blobs needed by store=false multi-turn (Grok CLI / Codex).
@@ -369,14 +379,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         : Array.isArray(msg.content)
           ? msg.content.map(c => {
             if (c.type === OPENAI_BLOCK.TEXT) return { type: contentType, text: c.text };
-            // Convert Chat Completions image_url → Responses API input_image
-            // Responses API expects: { type: "input_image", image_url: "<url string>" }
-            // Chat Completions sends: { type: "image_url", image_url: { url: "...", detail: "..." } }
-            if (c.type === OPENAI_BLOCK.IMAGE_URL) {
-              const url = typeof c.image_url === "string" ? c.image_url : c.image_url?.url;
-              return { type: RESPONSES_ITEM.INPUT_IMAGE, image_url: url, detail: c.image_url?.detail || "auto" };
-            }
-            if (c.type === RESPONSES_ITEM.INPUT_IMAGE) return c;
+            const image = toResponsesImage(c);
+            if (image) return image;
             // Serialize any unknown type (tool_use, tool_result, thinking, etc.) as text
             const text = c.text || c.content || JSON.stringify(c);
             return { type: contentType, text: typeof text === "string" ? text : JSON.stringify(text) };
@@ -410,13 +414,26 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
       }
     }
 
-    // Convert tool results - output must be a string for Responses API
+    // Keep scalar tool output for strict backends such as Codex. Images must
+    // reach the visual input path, not be serialized as JSON inside output.
     if (msg.role === ROLE.TOOL) {
+      const images = [];
+      const output = Array.isArray(msg.content)
+        ? msg.content.filter(part => {
+          const image = toResponsesImage(part);
+          if (!image) return true;
+          images.push(image);
+          return false;
+        })
+        : msg.content;
       result.input.push({
         type: RESPONSES_ITEM.FUNCTION_CALL_OUTPUT,
         call_id: clampResponsesCallId(msg.tool_call_id),
-        output: coerceResponsesOutput(msg.content)
+        output: coerceResponsesOutput(output)
       });
+      if (images.length > 0) {
+        result.input.push({ type: RESPONSES_ITEM.MESSAGE, role: ROLE.USER, content: images });
+      }
     }
   }
 
