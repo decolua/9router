@@ -3,6 +3,7 @@ import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { getModelTargetFormat } from "../config/providerModels.js";
 import { FORMATS } from "../translator/formats.js";
+import { readToolStrict, restoreToolStrict } from "../translator/concerns/toolStrict.js";
 import {
   normalizeResponsesInput,
   clampResponsesCallId,
@@ -65,11 +66,14 @@ function normalizeResponsesTools(body) {
     // Mirror the request translator: {type:"object"} without properties is rejected
     // by strict Responses backends, so fill in the empty properties map.
     if (parameters.type === "object" && !parameters.properties) parameters = { ...parameters, properties: {} };
+    // Keep the client-declared strict: omitted means strict-normalized on Responses.
+    const strict = readToolStrict(tool);
     for (const k of Object.keys(tool)) delete tool[k];
     tool.type = "function";
     tool.name = name.slice(0, MAX_TOOL_NAME_LEN);
     if (description) tool.description = description;
     tool.parameters = parameters;
+    restoreToolStrict(tool, strict);
     validNames.add(tool.name);
     return true;
   });

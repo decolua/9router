@@ -13,6 +13,7 @@ import {
   coerceResponsesOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { chatStrictForResponses, chatStrictFrom } from "../concerns/toolStrict.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -223,7 +224,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
             name,
             description: String(tool.description || ""),
             parameters: normalizeToolParameters(tool.parameters),
-            strict: tool.strict
+            ...chatStrictFrom(tool)
           }
         };
       })
@@ -437,7 +438,8 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
           name: name.slice(0, MAX_TOOL_NAME_LEN),
           description: String(tool.function.description || ""),
           parameters: normalizeToolParameters(tool.function.parameters),
-          strict: tool.function.strict
+          // Omitted strict is non-strict on Chat but strict-normalized on Responses.
+          strict: chatStrictForResponses(tool.function)
         };
       }
       return tool;

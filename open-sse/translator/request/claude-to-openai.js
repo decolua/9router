@@ -4,6 +4,7 @@ import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
+import { chatStrictFrom } from "../concerns/toolStrict.js";
 
 function stripAnthropicBillingHeader(text) {
   if (typeof text !== "string") return "";
@@ -70,7 +71,8 @@ export function claudeToOpenAIRequest(model, body, stream) {
       function: {
         name: tool.name,
         description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
+        parameters: tool.input_schema || { type: "object", properties: {} },
+        ...chatStrictFrom(tool)
       }
     }));
   }
