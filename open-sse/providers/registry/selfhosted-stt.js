@@ -30,13 +30,21 @@ export default {
   category: "apikey",
   auth: {
     apiKey: {
-      text: "Set providerSpecificData.baseUrl to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",
+      text: "Set Base URL to the full transcriptions URL, e.g. http://host:8080/v1/audio/transcriptions. The API key is not checked by local servers; any value works.",
     },
   },
   models: [
     { id: "whisper-1", name: "Whisper (self-hosted)", params: ["language", "response_format", "temperature", "prompt"], kind: "stt" },
   ],
   serviceKinds: ["stt"],
+  // Declaring this is what puts a Base URL field on the Add/Edit connection
+  // forms; the dashboard stores it as providerSpecificData.baseUrl, which is
+  // what sttCore reads as the endpoint override.
+  connectionBaseUrl: {
+    label: "Base URL",
+    placeholder: "http://stt-host:8080/v1/audio/transcriptions",
+    hint: "Full transcriptions URL. Leave empty to use http://localhost:8080/v1/audio/transcriptions.",
+  },
   sttConfig: {
     // Overridden per connection by providerSpecificData.baseUrl; this default
     // only makes the provider usable out of the box on a same-host deployment.
