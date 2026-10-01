@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { formatResetTime, getRemainingPercentage } from "./utils";
+import QuotaTableBar, { getQuotaColorClasses } from "./QuotaTableBar";
 
 const PAGE_SIZE = 10;
 
@@ -37,36 +38,6 @@ function formatResetTimeDisplay(resetTime) {
   } catch {
     return null;
   }
-}
-
-/**
- * Get color classes based on remaining percentage
- */
-function getColorClasses(remainingPercentage) {
-  if (remainingPercentage > 70) {
-    return {
-      text: "text-green-600 dark:text-green-400",
-      bg: "bg-green-500",
-      bgLight: "bg-green-500/10",
-      emoji: "🟢",
-    };
-  }
-
-  if (remainingPercentage >= 30) {
-    return {
-      text: "text-yellow-600 dark:text-yellow-400",
-      bg: "bg-yellow-500",
-      bgLight: "bg-yellow-500/10",
-      emoji: "🟡",
-    };
-  }
-
-  return {
-    text: "text-red-600 dark:text-red-400",
-    bg: "bg-red-500",
-    bgLight: "bg-red-500/10",
-    emoji: "🔴",
-  };
 }
 
 function sortQuotas(quotas, sortMode) {
@@ -154,7 +125,7 @@ export default function QuotaTable({
           const isCreditBalance = quota.isCreditBalance === true;
           const colors = isCreditBalance
             ? { text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500", bgLight: "bg-blue-500/10", emoji: "💰" }
-            : getColorClasses(quota.remaining);
+            : getQuotaColorClasses(quota.remaining);
           const countdown = formatResetTime(quota.resetAt);
           const resetDisplay = formatResetTimeDisplay(quota.resetAt);
           // recurring defaults true: a missing flag means the quota
@@ -179,14 +150,7 @@ export default function QuotaTable({
               {/* Progress + used/total */}
               <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
                 {!isUnlimited && !isCreditBalance && (
-                <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
-                  quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
-                }`}>
-                  <div
-                    className={`h-full transition-all duration-300 ${colors.bg}`}
-                    style={{ width: `${Math.min(quota.remaining, 100)}%` }}
-                  />
-                </div>
+                  <QuotaTableBar remaining={quota.remaining} compact={compact} colors={colors} />
                 )}
 
                 <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
