@@ -1,4 +1,5 @@
 import { handleImageGeneration } from "@/sse/handlers/imageGeneration.js";
+import { withScopeAuth } from "@/middleware/scopeAuth.js";
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -12,5 +13,5 @@ export async function OPTIONS() {
 
 /** POST /v1/images/generations - OpenAI-compatible image generation endpoint */
 export async function POST(request) {
-  return await handleImageGeneration(request);
+  return await withScopeAuth(handleImageGeneration)(request);
 }
