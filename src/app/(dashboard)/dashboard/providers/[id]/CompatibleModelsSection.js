@@ -4,6 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button } from "@/shared/components";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import ProviderModelsImportModal from "./ProviderModelsImportModal";
 function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias, onTest, testStatus, isTesting }) {
   const borderColor = testStatus === "ok"
     ? "border-green-500/40"
@@ -77,6 +78,9 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   const [importing, setImporting] = useState(false);
   const [testingModelId, setTestingModelId] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
+  const [showSelectModal, setShowSelectModal] = useState(false);
+  const [availableModels, setAvailableModels] = useState([]);
+  const [savingImport, setSavingImport] = useState(false);
 
   const handleTestModel = async (modelId) => {
     if (testingModelId) return;
@@ -122,7 +126,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
     }
   };
 
-  const handleImport = async () => {
+  const handleOpenImportModal = async () => {
     if (importing) return;
     const activeConnection = connections.find((conn) => conn.isActive !== false);
     if (!activeConnection) return;
@@ -132,29 +136,54 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
       const res = await fetch(`/api/providers/${activeConnection.id}/models`);
       const data = await res.json();
       if (!res.ok) {
-        alert(data.error || "Failed to import models");
+        alert(data.error || "Failed to fetch models from provider");
         return;
       }
-      const models = data.models || [];
+      const models = (data.models || []).map((model) => {
+        const id = model.id || model.name || model.model;
+        return {
+          id,
+          name: model.name || id,
+        };
+      }).filter((m) => typeof m.id === "string" && m.id.trim() !== "");
+
       if (models.length === 0) {
         alert("No models returned from /models.");
         return;
       }
-      let importedCount = 0;
-      for (const model of models) {
-        const modelId = model.id || model.name || model.model;
-        if (!modelId) continue;
-        if (allModels.some((entry) => entry.id === modelId)) continue;
-        await onAddCustomModel(modelId);
-        importedCount += 1;
-      }
-      if (importedCount === 0) {
-        alert("No new models were added.");
-      }
+
+      setAvailableModels(models);
+      setShowSelectModal(true);
     } catch (error) {
-      console.log("Error importing models:", error);
+      console.log("Error fetching models:", error);
+      alert("Error fetching models: " + error.message);
     } finally {
       setImporting(false);
+    }
+  };
+
+  const handleSaveSelectedModels = async (toAdd, toRemove) => {
+    setSavingImport(true);
+    try {
+      for (const modelId of toAdd) {
+        await onAddCustomModel(modelId);
+      }
+      for (const modelId of toRemove) {
+        const existing = allModels.find((entry) => entry.id === modelId);
+        if (existing) {
+          if (existing.source === "custom") {
+            await onDeleteCustomModel(modelId);
+          } else if (existing.alias) {
+            await onDeleteAlias(existing.alias);
+          }
+        }
+      }
+      setShowSelectModal(false);
+    } catch (error) {
+      console.log("Error saving models:", error);
+      alert("Error saving models: " + error.message);
+    } finally {
+      setSavingImport(false);
     }
   };
 
@@ -163,7 +192,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or select them from the /models endpoint.
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -182,16 +211,27 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
-          {importing ? "Importing..." : "Import from /models"}
+        <Button size="sm" variant="secondary" icon="download" onClick={handleOpenImportModal} disabled={!canImport || importing}>
+          {importing ? "Fetching..." : "Select from /models"}
         </Button>
       </div>
 
       {!canImport && (
         <p className="text-xs text-text-muted">
-          Add a connection to enable importing models.
+          Add a connection to enable selecting models from /models.
         </p>
       )}
+
+      {/* Modal for selecting models from upstream catalog */}
+      <ProviderModelsImportModal
+        isOpen={showSelectModal}
+        onClose={() => setShowSelectModal(false)}
+        title={`Select Models from Provider (${availableModels.length} available)`}
+        availableModels={availableModels}
+        initialSelectedIds={new Set(allModels.map((m) => m.id))}
+        onSave={handleSaveSelectedModels}
+        saving={savingImport}
+      />
 
       {allModels.length > 0 && (
         <div className="flex flex-col gap-3">

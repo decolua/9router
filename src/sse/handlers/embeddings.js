@@ -4,6 +4,7 @@ import {
   clearAccountError,
   extractApiKey,
   isValidApiKey,
+  validateApiKeyWithRules,
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
@@ -51,18 +52,17 @@ export async function handleEmbeddings(request) {
     log.debug("AUTH", "No API key provided (local mode)");
   }
 
-  // Enforce API key if enabled in settings
+  // Enforce API key if enabled in settings, and validate per-key rules
   const settings = await getSettings();
-  if (settings.requireApiKey) {
-    if (!apiKey) {
-      log.warn("AUTH", "Missing API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
+  if (apiKey) {
+    const keyCheck = await validateApiKeyWithRules(apiKey, modelStr);
+    if (!keyCheck.valid) {
+      log.warn("AUTH", `${keyCheck.error} (key=${log.maskKey(apiKey)})`);
+      return errorResponse(keyCheck.status || HTTP_STATUS.UNAUTHORIZED, keyCheck.error);
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
-      log.warn("AUTH", "Invalid API key (requireApiKey=true)");
-      return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
-    }
+  } else if (settings.requireApiKey) {
+    log.warn("AUTH", "Missing API key (requireApiKey=true)");
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
   }
 
   if (!modelStr) {
@@ -72,7 +72,7 @@ export async function handleEmbeddings(request) {
 
   if (!body.input) {
     log.warn("EMBEDDINGS", "Missing input");
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing input");
   }
 
   const modelInfo = await getModelInfo(modelStr);
@@ -82,14 +82,8 @@ export async function handleEmbeddings(request) {
   }
 
   const { provider, model } = modelInfo;
+  log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
-  if (modelStr !== `${provider}/${model}`) {
-    log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
-  } else {
-    log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
-  }
-
-  // Credential + fallback loop (mirrors handleChat)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
@@ -97,23 +91,20 @@ export async function handleEmbeddings(request) {
   while (true) {
     const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
 
-    // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
+        const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("EMBEDDINGS", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
       }
       if (excludeConnectionIds.size === 0) {
-        log.error("AUTH", `No credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        log.warn("AUTH", `No active credentials for provider: ${provider}`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
       }
       log.warn("EMBEDDINGS", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
     }
-
-    log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
@@ -122,38 +113,41 @@ export async function handleEmbeddings(request) {
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,
+      apiKey,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           ...newCreds,
           existingProviderSpecificData: credentials.providerSpecificData,
-          testStatus: "active"
+          testStatus: "active",
         });
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
-      }
+      },
     });
 
     if (result.success) {
-      const usage = exactEmbeddingUsage(result.usage);
-      if (usage) {
-        saveRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint: url.pathname,
-          tokens: usage,
-          status: "success",
-        }).catch(() => {});
-      }
+      // Record usage so embeddings appear in UsageStats, usage.json, and requestDetails.
+      // Upstream responses that return an exact token count (e.g. OpenAI prompt_tokens)
+      // are persisted verbatim; fallback providers without usage metadata get an
+      // estimate based on the input text so zero-token requests still register.
+      const exactTokens = exactEmbeddingUsage(result.rawUsage);
+      const fallbackTokens = exactTokens || { prompt_tokens: Math.max(1, Math.ceil(JSON.stringify(body.input).length / 4)), completionTokens: 0 };
+      saveRequestUsage({
+        provider,
+        model,
+        tokens: fallbackTokens,
+        connectionId: credentials.connectionId,
+        apiKey: apiKey || null,
+        endpoint: url.pathname,
+        status: "ok",
+      }).catch((e) => log.warn("EMBEDDINGS", `Failed to record usage: ${e.message}`));
       return result.response;
     }
 
-    const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
-
-    if (shouldFallback) {
-      log.warn("AUTH", `Account ${credentials.connectionName} unavailable (${result.status}), trying fallback`);
+    const cooldown = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
+    if (cooldown.shouldFallback) {
+      log.warn("FALLBACK", `Account unavailable (${result.status}) -> trying next account`);
       excludeConnectionIds.add(credentials.connectionId);
       lastError = result.error;
       lastStatus = result.status;

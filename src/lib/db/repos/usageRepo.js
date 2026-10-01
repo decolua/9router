@@ -5,9 +5,10 @@ import { getMeta, setMeta } from "../helpers/metaStore.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
-  if (key.length <= 12) return key.charAt(0) + "***";
+  const trimmed = key.trim();
+  if (trimmed.length <= 12) return trimmed.charAt(0) + "***";
   // Keep the tail: keys sharing a machine-id prefix (team keys) must not collide.
-  return key.slice(0, 8) + "***" + key.slice(-4);
+  return trimmed.slice(0, 8) + "***" + trimmed.slice(-4);
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -289,6 +290,15 @@ export async function saveRequestUsage(entry) {
         ]
       );
 
+      // Increment usedTokens on apiKey if request used a key
+      if (entry.apiKey && typeof entry.apiKey === "string") {
+        const cleanKey = entry.apiKey.trim();
+        const totalTokens = (promptTokens || 0) + (completionTokens || 0);
+        if (totalTokens > 0) {
+          db.run(`UPDATE apiKeys SET usedTokens = COALESCE(usedTokens, 0) + ? WHERE key = ?`, [totalTokens, cleanKey]);
+        }
+      }
+
       const dateKey = getLocalDateKey(entry.timestamp);
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
@@ -367,7 +377,9 @@ export async function getUsageStats(period = "all") {
   let allApiKeys = [];
   try { allApiKeys = await getApiKeys(); } catch {}
   const apiKeyMap = {};
-  for (const k of allApiKeys) apiKeyMap[k.key] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  for (const k of allApiKeys) {
+    if (k.key) apiKeyMap[k.key.trim()] = { name: k.name, id: k.id, createdAt: k.createdAt };
+  }
 
   // recentRequests from live history (last 100 entries enough for 20 deduped)
   const recentRows = db.all(`SELECT timestamp, provider, model, tokens, status FROM usageHistory ORDER BY id DESC LIMIT 100`);
@@ -501,15 +513,16 @@ export async function getUsageStats(period = "all") {
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
 
-      for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
+      for (const [akRawKey, ak] of Object.entries(day.byApiKey || {})) {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
-        const apiKeyVal = ak.apiKey;
+        const apiKeyVal = ak.apiKey ? ak.apiKey.trim() : null;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
-        const keyName = keyInfo?.name || (apiKeyVal ? apiKeyVal.slice(0, 8) + "..." : "Local (No API Key)");
         const apiKeyMasked = maskApiKey(apiKeyVal);
+        const keyName = keyInfo?.name || (apiKeyVal ? (apiKeyMasked || apiKeyVal.slice(0, 8) + "...") : "Local (No API Key)");
         const apiKeyKey = apiKeyMasked || "local-no-key";
+        const akKey = apiKeyMasked ? `${apiKeyMasked}|${rawModel}|${provider || "unknown"}` : "local-no-key";
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey, lastUsed: dateKey };
         }
@@ -562,8 +575,9 @@ export async function getUsageStats(period = "all") {
         if (stats.byAccount[accountKey] && new Date(ts) > new Date(stats.byAccount[accountKey].lastUsed)) stats.byAccount[accountKey].lastUsed = ts;
       }
 
-      const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+      const apiKeyMasked = maskApiKey(e.apiKey);
+      const apiKeyKey = apiKeyMasked
+        ? `${apiKeyMasked}|${e.model}|${e.provider || "unknown"}`
         : "local-no-key";
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
@@ -588,9 +602,9 @@ export async function getUsageStats(period = "all") {
 
     for (const r of filtered) {
       const tokens = parseJson(r.tokens, {}) || {};
-      const promptTokens = tokens.prompt_tokens || 0;
-      const completionTokens = tokens.completion_tokens || 0;
-      const cachedTokens = tokens.cached_tokens || tokens.cache_read_input_tokens || 0;
+      const promptTokens = tokens.prompt_tokens ?? tokens.input_tokens ?? r.promptTokens ?? 0;
+      const completionTokens = tokens.completion_tokens ?? tokens.output_tokens ?? r.completionTokens ?? 0;
+      const cachedTokens = tokens.cached_tokens ?? tokens.cache_read_input_tokens ?? 0;
       const entryCost = r.cost || 0;
       const providerDisplayName = providerNodeNameMap[r.provider] || r.provider;
 
@@ -632,9 +646,10 @@ export async function getUsageStats(period = "all") {
       }
 
       if (r.apiKey && typeof r.apiKey === "string") {
-        const keyInfo = apiKeyMap[r.apiKey];
-        const keyName = keyInfo?.name || r.apiKey.slice(0, 8) + "...";
+        const apiKeyVal = r.apiKey.trim();
+        const keyInfo = apiKeyMap[apiKeyVal];
         const apiKeyMasked = maskApiKey(r.apiKey);
+        const keyName = keyInfo?.name || (apiKeyMasked || r.apiKey.slice(0, 8) + "...");
         // Key by the FULL api key (same as the daily rollup + lastUsed overlay)
         // — masking here collided all keys sharing a prefix into one bucket.
         const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
