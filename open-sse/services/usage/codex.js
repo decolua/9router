@@ -59,7 +59,10 @@ function appendCodexQuotaWindows(quotas, prefix, snapshot) {
   let added = false;
 
   if (primary) {
-    quotas[prefix ? `${prefix}_session` : "session"] = formatCodexWindow(primary);
+    // Primary isn't always the 5h window — e.g. the Luna reserve bucket reports
+    // a 7-day window there. Label by duration so it doesn't render as a fake session row.
+    const windowType = toFiniteNumber(primary.limit_window_seconds, 0) >= 604800 ? "weekly" : "session";
+    quotas[prefix ? `${prefix}_${windowType}` : windowType] = formatCodexWindow(primary);
     added = true;
   }
   if (secondary) {
@@ -104,6 +107,23 @@ function getCodexSparkRateLimit(data) {
   }) || null;
 }
 
+// Luna reserve pool — an `additional_rate_limits` entry like
+// { limit_name: "gpt-reserve", normal_model_slug: "gpt-5.6-luna", rate_limit: {...} }
+// that serves requests once the primary weekly limit is exhausted.
+function getCodexReserveRateLimit(data) {
+  const byLimitId = data.rate_limits_by_limit_id;
+  if (byLimitId && typeof byLimitId === "object" && !Array.isArray(byLimitId)) {
+    const direct = byLimitId["gpt-reserve"] || byLimitId.gpt_reserve || byLimitId.reserve;
+    if (direct) return direct;
+  }
+
+  const additional = Array.isArray(data.additional_rate_limits) ? data.additional_rate_limits : [];
+  return additional.find((entry) => {
+    const id = String(entry?.limit_name || entry?.metered_feature || entry?.id || "").toLowerCase();
+    return id.includes("reserve");
+  }) || null;
+}
+
 export async function getCodexUsage(accessToken, proxyOptions = null) {
   try {
     const response = await proxyAwareFetch(CODEX_CONFIG.usageUrl, {
@@ -122,19 +142,35 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
     const normalRateLimit = data.rate_limit || data.rate_limits || data.rate_limits_by_limit_id?.codex || {};
     const reviewRateLimit = getCodexReviewRateLimit(data);
     const sparkRateLimit = getCodexSparkRateLimit(data);
+    const reserveRateLimit = getCodexReserveRateLimit(data);
     const availableResetCredits = Math.max(0, toFiniteNumber(data.rate_limit_reset_credits?.available_count, 0));
     const quotas = {};
 
     appendCodexQuotaWindows(quotas, "", normalRateLimit);
     appendCodexQuotaWindows(quotas, "review", reviewRateLimit);
     appendCodexQuotaWindows(quotas, "spark", sparkRateLimit);
+    appendCodexQuotaWindows(quotas, "reserve", reserveRateLimit);
+
+    // ChatGPT account credit balance — separate from rate-limit reset credits
+    // (the "credits" field on /wham/usage; e.g. used for paid overage).
+    const rawCredits = data.credits && typeof data.credits === "object" ? data.credits : {};
+    const credits = {
+      hasCredits: rawCredits.has_credits === true,
+      balance: toFiniteNumber(rawCredits.balance, 0),
+      unlimited: rawCredits.unlimited === true,
+      overageLimitReached: rawCredits.overage_limit_reached === true,
+      approxLocalMessages: Array.isArray(rawCredits.approx_local_messages) ? rawCredits.approx_local_messages : null,
+      approxCloudMessages: Array.isArray(rawCredits.approx_cloud_messages) ? rawCredits.approx_cloud_messages : null,
+    };
 
     return {
       plan: data.plan_type || data.summary?.plan || "unknown",
       limitReached: getCodexRateLimitBody(normalRateLimit)?.limit_reached || false,
       reviewLimitReached: getCodexRateLimitBody(reviewRateLimit)?.limit_reached || false,
       sparkLimitReached: getCodexRateLimitBody(sparkRateLimit)?.limit_reached || false,
+      reserveLimitReached: getCodexRateLimitBody(reserveRateLimit)?.limit_reached || false,
       resetCredits: { availableCount: availableResetCredits },
+      credits,
       quotas,
     };
   } catch (error) {

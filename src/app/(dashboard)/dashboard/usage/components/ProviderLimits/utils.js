@@ -524,6 +524,8 @@ export function parseQuotaData(provider, data) {
             else if (quotaType === "weekly") displayName = "Weekly";
             else if (quotaType === "review_session") displayName = "Review (5h)";
             else if (quotaType === "review_weekly") displayName = "Review (Weekly)";
+            else if (quotaType === "reserve_session") displayName = "Luna Reserve (5h)";
+            else if (quotaType === "reserve_weekly") displayName = "Luna Reserve (Weekly)";
 
             normalizedQuotas.push({
               name: displayName,
