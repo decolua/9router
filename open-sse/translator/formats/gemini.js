@@ -142,8 +142,74 @@ export function generateProjectId() {
   return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
 }
 
+// Keys whose VALUE is a schema (or a container of schemas) rather than plain
+// data. Every recursive pass below descends through these and nothing else.
+//
+// Why this matters (#4306): the obvious `Object.values(obj)` walk also steps
+// into the `properties` MAP, so a user parameter that happens to be named
+// "properties" gets treated as a schema node. Its {type:"array",...} value
+// then reads as "this node has a `properties` key, so it must be an object",
+// and a stray `type:"object"` is written INTO the parameter's own schema.
+// Gemini then rejects the whole tool with a 400. Real MCP servers hit this:
+// Notion (notion-create-pages) and Atlassian (getJiraIssue) both take a
+// parameter named `properties`.
+//
+// A user parameter NAME lives inside `properties`, so it is only ever reached
+// as a key of that map — never as a keyword. Restricting the walk to the keys
+// below means a parameter called "properties" (or "items", "required",
+// "default", ...) is inert, because none of those are treated as keywords.
+// Keys whose VALUE is a schema — descend straight into it.
+const SCHEMA_VALUE_KEYS = new Set([
+  "items", "additionalItems", "contains", "if", "then", "else", "not",
+  "propertyNames", "unevaluatedItems", "unevaluatedProperties",
+  "anyOf", "oneOf", "allOf", "prefixItems",
+]);
+
+// Keys whose value is a MAP of name -> schema. The map itself is NOT a schema
+// node, so it must never be visited: doing so lets a pass read a parameter
+// NAME as a keyword (a parameter called "properties" looks like a node with a
+// `properties` key, so ensureObjectType stamps `type:"object"` onto the map).
+// Visit each parameter's schema instead.
+const SCHEMA_MAP_KEYS = new Set([
+  "properties", "patternProperties", "definitions", "$defs", "dependentSchemas",
+]);
+
+// Walk every schema node in a JSON Schema document, calling visit(node).
+// Descends only through schema positions, so parameter names and literal data
+// (defaults, descriptions, examples) are never mistaken for schemas.
+//
+// visit() must be a LEAF transform: it receives one node and must not recurse
+// itself. Recursion is this function's job. Having visit() call walkSchema()
+// with itself would re-enter on the same node forever.
+function walkSchema(obj, visit) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) walkSchema(item, visit);
+    return;
+  }
+
+  visit(obj);
+
+  for (const key of Object.keys(obj)) {
+    if (SCHEMA_MAP_KEYS.has(key)) {
+      const map = obj[key];
+      if (map && typeof map === "object" && !Array.isArray(map)) {
+        for (const name of Object.keys(map)) walkSchema(map[name], visit);
+      }
+      continue;
+    }
+    if (!SCHEMA_VALUE_KEYS.has(key)) continue;
+    walkSchema(obj[key], visit);
+  }
+}
+
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
+//
+// Keyword stripping runs per NODE, never per arbitrary key: UNSUPPORTED_SCHEMA_CONSTRAINTS
+// contains ordinary words like "title", "optional" and "default", so a blanket
+// `Object.keys(obj)` delete would strip a user parameter that happens to be
+// called "title" (the previous walk did exactly that). #4306
 function removeUnsupportedKeywords(obj, keywords) {
   if (!obj || typeof obj !== "object") return;
 
@@ -154,15 +220,28 @@ function removeUnsupportedKeywords(obj, keywords) {
     return;
   }
 
+  // Strip keywords from this node itself.
   for (const key of Object.keys(obj)) {
     if (keywords.includes(key) || key.startsWith("x-")) {
       delete obj[key];
+    }
+  }
+
+  // Then descend into the sub-schemas that survive. Schema MAPS are descended
+  // by entry, never by key-walk: their keys are user parameter names, so a
+  // blanket Object.keys delete would strip a parameter called "title".
+  for (const key of Object.keys(obj)) {
+    if (SCHEMA_MAP_KEYS.has(key)) {
+      const map = obj[key];
+      if (map && typeof map === "object" && !Array.isArray(map)) {
+        for (const paramName of Object.keys(map)) {
+          removeUnsupportedKeywords(map[paramName], keywords);
+        }
+      }
       continue;
     }
-
-    const value = obj[key];
-    if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
+    if (SCHEMA_VALUE_KEYS.has(key) && obj[key] && typeof obj[key] === "object") {
+      removeUnsupportedKeywords(obj[key], keywords);
     }
   }
 }
@@ -175,12 +254,6 @@ function convertConstToEnum(obj) {
     obj.enum = [obj.const];
     delete obj.const;
   }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertConstToEnum(value);
-    }
-  }
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
@@ -192,12 +265,6 @@ function convertEnumValuesToStrings(obj) {
     // Gemini API requires type:"string" when enum is present — without it returns 400
     if (!obj.type) {
       obj.type = "string";
-    }
-  }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertEnumValuesToStrings(value);
     }
   }
 }
@@ -227,12 +294,6 @@ function mergeAllOf(obj) {
     delete obj.allOf;
     if (merged.properties) obj.properties = { ...obj.properties, ...merged.properties };
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
-  }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      mergeAllOf(value);
-    }
   }
 }
 
@@ -286,12 +347,6 @@ function flattenAnyOfOneOf(obj) {
       Object.assign(obj, selected);
     }
   }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenAnyOfOneOf(value);
-    }
-  }
 }
 
 // Flatten type arrays
@@ -302,19 +357,12 @@ function flattenTypeArrays(obj) {
     const nonNullTypes = obj.type.filter(t => t !== "null");
     obj.type = nonNullTypes.length > 0 ? nonNullTypes[0] : "string";
   }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenTypeArrays(value);
-    }
-  }
 }
 
 // Infer missing type=object when properties exist (Gemini requires explicit type)
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureObjectType(v);
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -331,12 +379,6 @@ function convertPrefixItems(obj) {
     }
     delete obj.prefixItems;
   }
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertPrefixItems(value);
-    }
-  }
 }
 
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
@@ -345,7 +387,6 @@ function ensureArrayItems(obj) {
   if (obj.type === "array" && !obj.items) {
     obj.items = { type: "string" };
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -356,18 +397,18 @@ export function cleanJSONSchemaForAntigravity(schema) {
   let cleaned = schema;
 
   // Phase 1: Convert and prepare
-  convertConstToEnum(cleaned);
-  convertEnumValuesToStrings(cleaned);
+  walkSchema(cleaned, convertConstToEnum);
+  walkSchema(cleaned, convertEnumValuesToStrings);
 
   // Phase 2: Flatten complex structures
-  mergeAllOf(cleaned);
-  convertPrefixItems(cleaned);
-  flattenAnyOfOneOf(cleaned);
-  flattenTypeArrays(cleaned);
+  walkSchema(cleaned, mergeAllOf);
+  walkSchema(cleaned, convertPrefixItems);
+  walkSchema(cleaned, flattenAnyOfOneOf);
+  walkSchema(cleaned, flattenTypeArrays);
 
   // Phase 2.5: Infer missing type=object when properties exist (Gemini requirement)
-  ensureObjectType(cleaned);
-  ensureArrayItems(cleaned);
+  walkSchema(cleaned, ensureObjectType);
+  walkSchema(cleaned, ensureArrayItems);
 
   // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
@@ -386,16 +427,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
         obj.required = validRequired;
       }
     }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        cleanupRequired(value);
-      }
-    }
   }
 
-  cleanupRequired(cleaned);
+  walkSchema(cleaned, cleanupRequired);
 
   // Phase 5: Add placeholder for empty object schemas (Antigravity requirement)
   function addPlaceholders(obj) {
@@ -426,15 +460,10 @@ export function cleanJSONSchemaForAntigravity(schema) {
       }
     }
 
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        addPlaceholders(value);
-      }
-    }
+    // Recurse into nested schemas (driven by the caller via walkSchema)
   }
 
-  addPlaceholders(cleaned);
+  walkSchema(cleaned, addPlaceholders);
 
   return cleaned;
 }
