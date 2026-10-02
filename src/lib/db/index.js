@@ -55,6 +55,31 @@ export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
 
+// Selective provider + combo transfer
+export async function getTransferCatalog() {
+  const db = await getAdapter();
+  const { getTransferCatalogFromDb } = await import("./transfer/providerComboTransfer.js");
+  return getTransferCatalogFromDb(db);
+}
+
+export async function createTransferBundle(selection) {
+  const db = await getAdapter();
+  const { createTransferBundleFromDb } = await import("./transfer/providerComboTransfer.js");
+  return createTransferBundleFromDb(db, selection);
+}
+
+export async function planSelectiveTransfer(payload) {
+  const db = await getAdapter();
+  const { planTransferFromDb } = await import("./transfer/providerComboTransfer.js");
+  return planTransferFromDb(db, payload);
+}
+
+export async function applySelectiveTransfer(payload, resolutions) {
+  const db = await getAdapter();
+  const { applyTransferToDb } = await import("./transfer/providerComboTransfer.js");
+  return applyTransferToDb(db, payload, resolutions);
+}
+
 // Usage
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
@@ -89,7 +114,6 @@ export async function exportDb() {
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
-
   return out;
 }
 
