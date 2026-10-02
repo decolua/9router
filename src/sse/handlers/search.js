@@ -13,6 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
+import { filterAvailableProviders } from "../services/model.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -70,8 +71,9 @@ export async function handleSearch(request) {
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers
   const combos = await getCombos();
-  const comboModels = getComboModelsFromData(providerInput, combos);
-  if (comboModels) {
+  const storedComboModels = getComboModelsFromData(providerInput, combos);
+  if (storedComboModels) {
+    const comboModels = await filterAvailableProviders(storedComboModels);
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;

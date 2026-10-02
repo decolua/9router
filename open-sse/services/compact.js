@@ -11,15 +11,12 @@
 export function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
+
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
+
   const combo = combos.find(c => c.name === modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
-  }
-  return null;
+  return combo && Array.isArray(combo.models) ? combo.models : null;
 }
 
 /**
