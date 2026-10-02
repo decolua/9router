@@ -29,6 +29,11 @@ const PUBLIC_API_PATHS = [
   "/api/auth/status",
   "/api/auth/oidc",
   "/api/auth/saml",
+  // Login step 2. Public by necessity — the caller holds no session yet, only
+  // the short-lived mfa_pending cookie, which the route verifies itself.
+  // Listed as an exact path so /api/auth/mfa/{setup,enable,disable} stay
+  // behind the normal session check.
+  "/api/auth/mfa/verify",
   "/api/version",
   "/api/settings/require-login",
 ];

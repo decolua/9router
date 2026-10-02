@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
+import MfaCard from "./MfaCard";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
@@ -940,6 +941,15 @@ export default function ProfilePage() {
             )}
           </div>
         </Card>
+
+        {/* Two-Factor Authentication (TOTP) */}
+        {settings.requireLogin === true && (
+          <MfaCard
+            enabled={settings.mfaEnabled === true}
+            backupCodesRemaining={settings.mfaBackupCodesRemaining || 0}
+            onChanged={reloadSettings}
+          />
+        )}
 
         {/* Single Sign-On (SSO) */}
         <Card>

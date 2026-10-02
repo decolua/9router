@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
-import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
+import { setDashboardAuthCookie, setMfaPendingCookie } from "@/lib/auth/dashboardSession";
+import { isMfaEnabled } from "@/lib/auth/mfa";
 import { isOidcConfigured } from "@/lib/auth/oidc";
 import { isSamlConfigured } from "@/lib/auth/saml.js";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
@@ -60,7 +61,6 @@ export async function POST(request) {
     }
 
     if (isValid) {
-      recordSuccess(ip);
 
       // Default password still in use on a remote client → force a password
       // change before the dashboard is exposed remotely (keeps local UX intact).
@@ -88,6 +88,22 @@ export async function POST(request) {
       }
 
       const cookieStore = await cookies();
+
+      // Password is only the first factor. When MFA is on, hand back a
+      // short-lived pending token instead of a session — it carries no
+      // `authenticated` claim, so it cannot reach the dashboard on its own.
+      if (isMfaEnabled(settings)) {
+        // Deliberately do NOT clear the failure counter here: the login is not
+        // complete, and resetting it would hand an attacker a fresh lockout
+        // budget for brute-forcing the second factor.
+        await setMfaPendingCookie(cookieStore, request);
+        return NextResponse.json(
+          { success: false, mfaRequired: true, mustChangePassword: false },
+          { headers: NO_STORE_HEADERS },
+        );
+      }
+
+      recordSuccess(ip);
       await setDashboardAuthCookie(cookieStore, request);
 
       return NextResponse.json({ success: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
