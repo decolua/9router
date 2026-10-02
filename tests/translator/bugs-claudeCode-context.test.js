@@ -70,4 +70,31 @@ describe("Claude Code CLI context → OpenAI", () => {
     const tool = out.messages.find((m) => m.role === "tool");
     expect(tool?.content, "image turned into raw JSON").not.toMatch(/^\[/);
   });
+
+
+    it("preserves container_upload user messages on Claude→Claude passthrough", () => {
+    const out = T(FORMATS.CLAUDE, FORMATS.CLAUDE, {
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "container_upload" }],
+        },
+      ],
+    });
+
+    expect(out.messages?.[0]?.content?.[0]?.type).toBe("container_upload");
+  });
+
+  it("rejects container_upload when translating Claude→OpenAI", () => {
+    expect(() =>
+      T(FORMATS.CLAUDE, FORMATS.OPENAI, {
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "container_upload" }],
+          },
+        ],
+      })
+    ).toThrow("Unsupported Claude content block type for OpenAI: container_upload");
+  });
 });
