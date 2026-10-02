@@ -1,6 +1,7 @@
 // Tool call helper functions for translator
 
 import { FORMATS } from "../formats.js";
+import { coerceResponsesArguments } from "../formats/responsesApi.js";
 
 // Anthropic tool_use.id must match: ^[a-zA-Z0-9_-]+$
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -40,9 +41,9 @@ export function ensureToolCallIds(body) {
         if (!tc.type) {
           tc.type = "function";
         }
-        // Ensure arguments is JSON string, not object
-        if (tc.function?.arguments && typeof tc.function.arguments !== "string") {
-          tc.function.arguments = JSON.stringify(tc.function.arguments);
+        // Ensure arguments is valid JSON string (stringify objects, validate/fallback strings)
+        if (tc.function?.arguments !== undefined) {
+          tc.function.arguments = coerceResponsesArguments(tc.function.arguments);
         }
       }
     }
