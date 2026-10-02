@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { cn } from "@/shared/utils/cn";
 import Button from "./Button";
 import Tooltip from "./Tooltip";
@@ -14,8 +14,11 @@ export default function Modal({
   size = "md",
   closeOnOverlay = true,
   showTrafficLights = true,
+  allowFullscreen = true,
   className,
 }) {
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
   const sizes = {
     sm: "max-w-sm",
     md: "max-w-md",
@@ -29,6 +32,7 @@ export default function Modal({
       document.body.style.overflow = "hidden";
     } else {
       document.body.style.overflow = "";
+      setIsFullscreen(false);
     }
     return () => { document.body.style.overflow = ""; };
   }, [isOpen]);
@@ -57,14 +61,19 @@ export default function Modal({
           "relative w-full bg-surface",
           "border border-border-subtle",
           "rounded-[14px] shadow-[var(--shadow-elev)]",
-          "fade-in",
-          sizes[size],
+          "fade-in transition-all duration-150",
+          isFullscreen
+            ? "max-w-[95vw] w-[95vw] h-[90vh] max-h-[90vh] flex flex-col"
+            : sizes[size],
           className
         )}
       >
         {/* Header */}
         {(title || showTrafficLights) && (
-          <div className="flex items-center justify-between p-2 border-b border-border-subtle">
+          <div
+            className="flex items-center justify-between p-2 border-b border-border-subtle select-none cursor-default"
+            onDoubleClick={() => allowFullscreen && setIsFullscreen((prev) => !prev)}
+          >
             <div className="flex items-center">
               {/* Traffic lights — desktop only */}
               {showTrafficLights && (
@@ -80,26 +89,69 @@ export default function Modal({
                     </button>
                   </Tooltip>
                   <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
-                  <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
+                  {allowFullscreen ? (
+                    <Tooltip
+                      text={isFullscreen ? "Restore" : "Maximize"}
+                      position="top"
+                      color="#28C840"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => setIsFullscreen((prev) => !prev)}
+                        aria-label={isFullscreen ? "Restore" : "Maximize"}
+                        title={isFullscreen ? "Restore" : "Maximize (Full screen)"}
+                        className="w-4 h-4 rounded-full bg-[#28C840] border border-[#1AAB29] hover:brightness-90 transition-all cursor-pointer flex items-center justify-center group/dot"
+                      >
+                        <span className="text-[10px] font-bold text-[#004d11] opacity-0 group-hover/dot:opacity-100 transition-opacity leading-none">
+                          {isFullscreen ? "⤡" : "⤢"}
+                        </span>
+                      </button>
+                    </Tooltip>
+                  ) : (
+                    <div className="w-4 h-4 rounded-full bg-[#3a3a3a]/20 dark:bg-white/15 cursor-not-allowed" />
+                  )}
                 </div>
               )}
               {title && (
                 <h2 className="text-lg font-semibold text-text-main">{title}</h2>
               )}
             </div>
-            {/* X button — mobile only */}
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
-            >
-              <span className="material-symbols-outlined text-[20px]">close</span>
-            </button>
+            {/* Header action buttons */}
+            <div className="flex items-center gap-1">
+              {allowFullscreen && (
+                <button
+                  type="button"
+                  onClick={() => setIsFullscreen((prev) => !prev)}
+                  aria-label={isFullscreen ? "Restore" : "Full Screen"}
+                  title={isFullscreen ? "Restore" : "Full Screen"}
+                  className="hidden md:flex p-1.5 rounded-[10px] text-text-muted hover:text-text-primary hover:bg-surface-2 transition-colors cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[18px]">
+                    {isFullscreen ? "close_fullscreen" : "open_in_full"}
+                  </span>
+                </button>
+              )}
+              {/* X button — mobile only */}
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="md:hidden p-1.5 rounded-[10px] text-text-muted hover:bg-surface-2 hover:text-text-main transition-colors"
+              >
+                <span className="material-symbols-outlined text-[20px]">close</span>
+              </button>
+            </div>
           </div>
         )}
 
         {/* Body */}
-        <div className="p-6 max-h-[calc(85vh-100px)] overflow-y-auto custom-scrollbar">{children}</div>
+        <div
+          className={cn(
+            "p-6 overflow-y-auto custom-scrollbar",
+            isFullscreen ? "flex-1 min-h-0" : "max-h-[calc(85vh-100px)]"
+          )}
+        >
+          {children}
+        </div>
 
         {/* Footer */}
         {footer && (
