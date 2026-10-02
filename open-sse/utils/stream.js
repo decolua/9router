@@ -270,6 +270,15 @@ export function createSSEStream(options = {}) {
         // Translate mode
         if (!trimmed) continue;
 
+        // SSE comment (e.g. Kiro's ": kiro-validation" heartbeat while the integrity
+        // gate buffers the whole reply). parseSSELine drops it, so without this the
+        // client receives no bytes — not even headers — and reverse proxies time out.
+        // Forward a neutral keepalive; clients ignore comments per the SSE spec.
+        if (trimmed.charCodeAt(0) === 58) { // ':' = 58
+          controller.enqueue(sharedEncoder.encode(": keepalive\n\n"));
+          continue;
+        }
+
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
 
