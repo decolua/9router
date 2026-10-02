@@ -92,10 +92,38 @@ export function createSSEStream(options = {}) {
 
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
-  const finalizeStream = () => {
+  // `ctl` is the TransformStream controller when one is in scope, so the terminal
+  // [DONE] frame can still be enqueued on the way out.
+  const finalizeStream = (ctl) => {
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     if (finalized) return;
     finalized = true;
+
+    // Terminate the SSE stream the way the target format's client expects.
+    //
+    // Previously the [DONE] sentinel was only emitted for the Responses
+    // passthrough shape, so a plain /v1/chat/completions client talking to a
+    // translating or passthrough stream got a final chunk with finish_reason
+    // and then a bare close. Strict OpenAI clients treat the missing sentinel as
+    // a truncated stream: Cline's AI SDK raised "Response stream ended without a
+    // finish reason" and failed the run. #4356
+    //
+    // finalizeStream is the one place every path converges — transform, tail
+    // flush, and abort — so terminating here covers all of them. Gemini-family
+    // clients are excluded because they reject the OpenAI sentinel with a 400
+    // syntax error.
+    const targetEmitsDoneSentinel =
+      targetFormat === FORMATS.OPENAI ||
+      targetFormat === FORMATS.OPENAI_RESPONSES ||
+      targetFormat === FORMATS.OPENAI_RESPONSE;
+    if (!streamDoneSent && targetEmitsDoneSentinel) {
+      streamDoneSent = true;
+      const doneOutput = "data: [DONE]\n\n";
+      reqLogger?.appendConvertedChunk?.(doneOutput);
+      try {
+        ctl?.enqueue(sharedEncoder.encode(doneOutput));
+      } catch { /* controller already closed */ }
+    }
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
@@ -263,7 +291,7 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
-          if (responsesTerminal) finalizeStream();
+          if (responsesTerminal) finalizeStream(controller);
           continue;
         }
 
@@ -308,9 +336,17 @@ export function createSSEStream(options = {}) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
+            openAIResponsesDoneSent = true;
+            streamDoneSent = true;   // this path DID emit a downstream sentinel
           }
-          streamDoneSent = true;
-          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
+          // Consuming an upstream sentinel is not the same as having emitted one
+          // downstream: the client is waiting on a terminal frame in ITS format
+          // regardless of what upstream sent. streamDoneSent is left untouched
+          // when the block above did not run, so finalizeStream() still
+          // terminates the stream for an OpenAI-family target. Setting it
+          // unconditionally here is what suppressed the client's [DONE] and made
+          // strict readers (Cline) fail the run. #4356
+          finalizeStream(controller);
           continue;
         }
 
@@ -363,7 +399,7 @@ export function createSSEStream(options = {}) {
           currentOpenAIResponsesEvent = null;
           sseEmittedCount++;
           // Responses clients (codex) close on response.completed instead of [DONE]
-          if (openAIResponsesTerminalSeen) finalizeStream();
+          if (openAIResponsesTerminalSeen) finalizeStream(controller);
           continue;
         }
 
@@ -451,7 +487,7 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
-          finalizeStream();
+          finalizeStream(controller);
           return;
         }
 
@@ -526,10 +562,10 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
-        finalizeStream();
+        finalizeStream(controller);
       } catch (error) {
         console.log("Error in flush:", error);
-        finalizeStream();
+        finalizeStream(controller);
       }
     }
   });
