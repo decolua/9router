@@ -7,6 +7,7 @@ import { parseDataUri } from "../concerns/image.js";
 import { extractTextContent } from "../formats/gemini.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
+import { applyAssistantPrefillPolicy } from "../concerns/assistantPrefillPolicy.js";
 
 // Empty prefix matches real Claude Code behavior (no tool name prefix).
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
@@ -371,6 +372,12 @@ function openaiToClaudeRequestForAntigravity(model, body, stream) {
       return { ...msg, content: updatedContent };
     });
   }
+
+  // Vertex (behind Antigravity) rejects a trailing assistant turn with
+  // "This model does not support assistant message prefill" (#2302). Restore
+  // the terminal-user invariant without discarding unresolved tool calls or
+  // provider-signed reasoning.
+  applyAssistantPrefillPolicy(result);
 
   return result;
 }
