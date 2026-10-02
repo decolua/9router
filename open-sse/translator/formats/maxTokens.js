@@ -7,13 +7,16 @@ import { DEFAULT_MAX_TOKENS, DEFAULT_MIN_TOKENS } from "../../config/runtimeConf
  *   Callers with model context (e.g. openai-to-claude) pass the model's real
  *   maxOutput so high-output models (Opus 4.8 = 128000) aren't pre-clamped to
  *   the conservative 64000 default before the model-aware step sees them.
+ * @param {boolean} [honorExplicitCap=false] - Keep an explicit client cap
+ *   (max_completion_tokens wins over max_tokens) instead of raising it to the
+ *   tool floor, so a 1-token prompt-cache warm request stays 1 token.
  * @returns {number} Adjusted max_tokens
  */
-export function adjustMaxTokens(body, ceiling = DEFAULT_MAX_TOKENS) {
-  let maxTokens = body.max_tokens || DEFAULT_MAX_TOKENS;
+export function adjustMaxTokens(body, ceiling = DEFAULT_MAX_TOKENS, honorExplicitCap = false) {
+  let maxTokens = body.max_completion_tokens || body.max_tokens || DEFAULT_MAX_TOKENS;
 
   // Auto-increase for tool calling to prevent truncated arguments (min never above max)
-  if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
+  if (!honorExplicitCap && body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     if (maxTokens < DEFAULT_MIN_TOKENS) {
       maxTokens = DEFAULT_MIN_TOKENS;
     }
