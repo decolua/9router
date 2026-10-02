@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mocks = vi.hoisted(() => ({
   proxyAwareFetch: vi.fn(),
   getProviderConnectionById: vi.fn(),
+  updateProviderConnection: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
   refreshAndUpdateCredentials: vi.fn(),
   getCodexRateLimitResetCredits: vi.fn(),
@@ -17,6 +18,7 @@ vi.mock("open-sse/index.js", () => ({}));
 
 vi.mock("@/lib/localDb", () => ({
   getProviderConnectionById: mocks.getProviderConnectionById,
+  updateProviderConnection: mocks.updateProviderConnection,
 }));
 
 vi.mock("@/lib/network/connectionProxy", () => ({
@@ -172,6 +174,40 @@ describe("Codex reset credits", () => {
     expect(mocks.getCodexRateLimitResetCredits).toHaveBeenNthCalledWith(2, "forced-token", expect.any(Object), {});
   });
 
+  it("POST clears local cooldowns after consuming a reset credit", async () => {
+    const connection = {
+      id: "conn_1",
+      provider: "codex",
+      authType: "access_token",
+      accessToken: "token",
+      testStatus: "unavailable",
+      modelLock_gpt_5: "2026-07-01T00:00:00.000Z",
+      providerSpecificData: {},
+    };
+    mocks.getProviderConnectionById.mockResolvedValue(connection);
+    mocks.consumeCodexRateLimitResetCredit.mockResolvedValue({
+      ok: true,
+      status: 200,
+      code: "reset",
+      windowsReset: 2,
+      raw: {},
+    });
+
+    const { POST } = await import("../../src/app/api/usage/[connectionId]/codex-reset-credits/route.js");
+    const response = await POST(new Request("http://localhost/api/usage/conn_1/codex-reset-credits", { method: "POST" }), {
+      params: Promise.resolve({ connectionId: "conn_1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(mocks.updateProviderConnection).toHaveBeenCalledWith("conn_1", expect.objectContaining({
+      modelLock_gpt_5: null,
+      testStatus: "active",
+      lastError: null,
+      errorCode: null,
+      backoffLevel: 0,
+    }));
+  });
+
   it("POST returns 409 when there are no reset credits to consume", async () => {
     mocks.getProviderConnectionById.mockResolvedValue({
       id: "conn_1",
@@ -205,5 +241,6 @@ describe("Codex reset credits", () => {
       expect.any(String),
       expect.objectContaining({ strictProxy: false }),
     );
+    expect(mocks.updateProviderConnection).not.toHaveBeenCalled();
   });
 });
