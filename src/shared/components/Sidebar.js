@@ -48,11 +48,16 @@ export default function Sidebar({ onClose }) {
   const [updateInfo, setUpdateInfo] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState(null);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
   const { copied, copy } = useCopyToClipboard(2000);
 
-  const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
+  const isDockerUpdate = updateInfo?.updateMethod?.startsWith("docker");
+  const isAutomaticDockerUpdate = updateInfo?.updateMethod === "docker-auto";
+  const installCmd = isDockerUpdate
+    ? UPDATER_CONFIG.dockerInstallCmdLatest
+    : UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
     useSettingsStore.getState().fetchSettings().then((data) => {
@@ -78,16 +83,41 @@ export default function Sidebar({ onClose }) {
     return pathname.startsWith(href);
   };
 
-  // Open manual update panel (no countdown yet — user must click Copy to trigger shutdown)
-  const handleUpdate = () => {
+  const handleUpdate = async () => {
     setShowUpdateModal(false);
+    setUpdateError(null);
     setIsUpdating(true);
+    if (!isAutomaticDockerUpdate) return;
+
+    try {
+      const response = await fetch("/api/version/update", { method: "POST" });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || "Failed to start update");
+
+      const deadline = Date.now() + 120000;
+      while (Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        try {
+          const versionResponse = await fetch(`/api/version?t=${Date.now()}`, { cache: "no-store" });
+          const version = await versionResponse.json();
+          if (version.currentVersion === updateInfo?.latestVersion) {
+            globalThis.location.reload();
+            return;
+          }
+        } catch { /* expected while container restarts */ }
+      }
+      throw new Error("Update timed out. Reload the page to check the server.");
+    } catch (error) {
+      setUpdateError(error.message);
+    }
   };
 
-  // Triggered by Copy button inside ManualUpdatePanel: copy + countdown + shutdown
+  // npm installs need the app stopped; Docker Compose replaces the container itself.
   const handleCopyAndShutdown = async () => {
-    try { await navigator.clipboard.writeText(INSTALL_CMD); } catch { /* clipboard blocked */ }
-    copy(INSTALL_CMD);
+    try { await navigator.clipboard.writeText(installCmd); } catch { /* clipboard blocked */ }
+    copy(installCmd);
+    if (isDockerUpdate) return;
+
     let remaining = UPDATER_CONFIG.shutdownCountdownSec;
     setShutdownCountdown(remaining);
     const timer = setInterval(() => {
@@ -146,12 +176,12 @@ export default function Sidebar({ onClose }) {
                   Update now
                 </button>
                 <button
-                  onClick={() => copy(INSTALL_CMD)}
+                  onClick={() => copy(installCmd)}
                   title="Copy install command"
                   className="flex-1 text-left hover:opacity-80 transition-opacity cursor-pointer min-w-0"
                 >
                   <code className="block text-[10px] text-green-600/80 dark:text-amber-400/70 font-mono truncate">
-                    {copied ? "✓ copied!" : INSTALL_CMD}
+                    {copied ? "✓ copied!" : installCmd}
                   </code>
                 </button>
               </div>
@@ -363,8 +393,12 @@ export default function Sidebar({ onClose }) {
         onClose={() => setShowUpdateModal(false)}
         onConfirm={handleUpdate}
         title="Update 9Router"
-        message={`Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
-        confirmText="Show Command"
+        message={isAutomaticDockerUpdate
+          ? `Download and install v${updateInfo?.latestVersion || ""} now? 9Router will restart automatically.`
+          : isDockerUpdate
+          ? `Show the Docker Compose command for v${updateInfo?.latestVersion || ""}? Run it on the host from the directory containing compose.yml.`
+          : `Show install command for v${updateInfo?.latestVersion || ""}? You can copy it and shutdown to install manually.`}
+        confirmText={isAutomaticDockerUpdate ? "Update Now" : "Show Command"}
         cancelText="Cancel"
         variant="primary"
       />
@@ -373,9 +407,12 @@ export default function Sidebar({ onClose }) {
       {(isDisconnected || isUpdating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
-            <ManualUpdatePanel
+            isAutomaticDockerUpdate ? (
+              <AutomaticUpdatePanel error={updateError} onCancel={handleCancelUpdate} />
+            ) : <ManualUpdatePanel
               latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
+              installCmd={installCmd}
+              isDocker={isDockerUpdate}
               copied={copied}
               onCopyAndShutdown={handleCopyAndShutdown}
               onCancel={handleCancelUpdate}
@@ -404,7 +441,7 @@ Sidebar.propTypes = {
   onClose: PropTypes.func,
 };
 
-function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
+function ManualUpdatePanel({ latestVersion, installCmd, isDocker, copied, onCopyAndShutdown, onCancel, countdown, isDisconnected }) {
   const isCountingDown = countdown > 0;
   return (
     <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white">
@@ -417,6 +454,8 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
           <p className="text-xs text-white/60">
             {isDisconnected
               ? "Server stopped. Paste the command into a terminal to install."
+              : isDocker
+                ? "Run this command on the Docker host from the directory containing compose.yml."
               : isCountingDown
                 ? `Command copied. Server will stop in ${countdown}s...`
                 : "Click the button below to copy the install command and shutdown."}
@@ -429,11 +468,19 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
         <code className="text-xs font-mono text-amber-400 break-all">{installCmd}</code>
       </div>
 
-      <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
-        <li>Click <strong>Copy & Shutdown</strong> below.</li>
-        <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
-      </ol>
+      {isDocker ? (
+        <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
+          <li>Click <strong>Copy Docker Command</strong> below.</li>
+          <li>Open a terminal on the Docker host and enter the directory containing <code className="px-1 rounded bg-white/10 text-green-400">compose.yml</code>.</li>
+          <li>Paste the command and press Enter. Docker Compose will pull and replace the 9Router container.</li>
+        </ol>
+      ) : (
+        <ol className="text-xs text-white/70 space-y-1 list-decimal list-inside mb-4">
+          <li>Click <strong>Copy & Shutdown</strong> below.</li>
+          <li>Paste the command into your terminal and press Enter.</li>
+          <li>Run <code className="px-1 rounded bg-white/10 text-green-400">9router</code> again after install.</li>
+        </ol>
+      )}
 
       {isDisconnected ? (
         <Button variant="secondary" fullWidth onClick={() => globalThis.location.reload()}>
@@ -445,7 +492,9 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
             Cancel
           </Button>
           <Button variant="primary" fullWidth onClick={onCopyAndShutdown} disabled={isCountingDown}>
-            {copied ? "✓ Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
+            {isDocker
+              ? copied ? "✓ Docker command copied" : "Copy Docker Command"
+              : copied ? "✓ Copied — shutting down..." : isCountingDown ? `Shutting down in ${countdown}s` : "Copy & Shutdown"}
           </Button>
         </div>
       )}
@@ -453,9 +502,28 @@ function ManualUpdatePanel({ latestVersion, installCmd, copied, onCopyAndShutdow
   );
 }
 
+function AutomaticUpdatePanel({ error, onCancel }) {
+  return (
+    <div className="w-full max-w-lg rounded-xl bg-neutral-900/95 border border-white/10 p-6 text-white text-center">
+      <span className="material-symbols-outlined text-[40px] text-amber-400 animate-spin">progress_activity</span>
+      <h2 className="text-lg font-semibold mt-3">Updating 9Router</h2>
+      <p className="text-sm text-white/60 mt-2">
+        {error || "Pulling the latest Docker image. The server will restart automatically."}
+      </p>
+      {error && <Button variant="secondary" fullWidth onClick={onCancel} className="mt-4">Close</Button>}
+    </div>
+  );
+}
+
+AutomaticUpdatePanel.propTypes = {
+  error: PropTypes.string,
+  onCancel: PropTypes.func.isRequired,
+};
+
 ManualUpdatePanel.propTypes = {
   latestVersion: PropTypes.string,
   installCmd: PropTypes.string.isRequired,
+  isDocker: PropTypes.bool,
   copied: PropTypes.bool,
   onCopyAndShutdown: PropTypes.func.isRequired,
   onCancel: PropTypes.func.isRequired,
