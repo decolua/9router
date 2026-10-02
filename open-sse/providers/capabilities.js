@@ -624,7 +624,20 @@ export function getCapabilitiesForModel(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
-  const baseModel = model.includes("/") ? model.split("/").pop() : model;
+  // Resolve OpenRouter tilde meta-aliases (~vendor/model-latest) to concrete ids.
+  // E.g., ~anthropic/claude-sonnet-latest → claude-sonnet-5.
+  let resolvedModel = model;
+  if (provider === "openrouter" && model.startsWith("~")) {
+    const OPENROUTER_TILDE_ALIASES = {
+      "~anthropic/claude-sonnet-latest": "claude-sonnet-5",
+      "~anthropic/claude-opus-latest": "claude-opus-5",
+      "~openai/gpt-sol-latest": "gpt-5.6-sol",
+      "~anthropic/claude-haiku-latest": "claude-haiku-4-5",
+    };
+    resolvedModel = OPENROUTER_TILDE_ALIASES[model] || model;
+  }
+  
+  const baseModel = resolvedModel.includes("/") ? resolvedModel.split("/").pop() : resolvedModel;
 
   // CommandCode wire is /alpha/generate for every model. Family patterns
   // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
