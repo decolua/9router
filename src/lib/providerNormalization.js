@@ -1,4 +1,5 @@
 import { AI_PROVIDERS } from "../shared/constants/providers.js";
+import { parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 /**
  * Detect xAI Grok models by id pattern (grok-*, Grok_*, etc).
@@ -39,6 +40,11 @@ export function normalizeProviderSpecificData(provider, body = {}, providerSpeci
     ).trim();
 
     if (baseUrl) next.baseUrl = baseUrl;
+  }
+
+  const customHeaders = parseCustomHeaders(next.customHeaders || body.customHeaders);
+  if (customHeaders) {
+    next.customHeaders = customHeaders;
   }
 
   return Object.keys(next).length > 0 ? next : null;

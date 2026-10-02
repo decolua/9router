@@ -5,6 +5,7 @@ import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -30,6 +31,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     priority: 1,
     proxyPoolId: NONE_PROXY_POOL_VALUE,
     ollamaHostUrl: "",
+    customHeaders: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -53,24 +55,27 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
 
   const buildProviderSpecificData = () => {
+    const psd = {};
     if (isOllamaLocal && formData.ollamaHostUrl.trim()) {
-      return { baseUrl: formData.ollamaHostUrl.trim() };
+      psd.baseUrl = formData.ollamaHostUrl.trim();
     }
     if (isAzure) {
-      return {
-        azureEndpoint: azureData.azureEndpoint,
-        apiVersion: azureData.apiVersion,
-        deployment: azureData.deployment,
-        organization: azureData.organization,
-      };
+      psd.azureEndpoint = azureData.azureEndpoint;
+      psd.apiVersion = azureData.apiVersion;
+      psd.deployment = azureData.deployment;
+      psd.organization = azureData.organization;
     }
     if (isCloudflareAi) {
-      return { accountId: cloudflareData.accountId };
+      psd.accountId = cloudflareData.accountId;
     }
     if (providerRegions && region) {
-      return { region };
+      psd.region = region;
     }
-    return undefined;
+    if (formData.customHeaders?.trim()) {
+      const parsed = parseCustomHeaders(formData.customHeaders);
+      if (parsed) psd.customHeaders = parsed;
+    }
+    return Object.keys(psd).length > 0 ? psd : undefined;
   };
 
   const handleValidate = async () => {
@@ -363,6 +368,17 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             </div>
           </div>
         )}
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-text-muted">Custom Headers (Optional)</label>
+          <textarea
+            className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[70px] focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder={'{\n  "HTTP-Referer": "https://example.com"\n}'}
+            value={formData.customHeaders}
+            onChange={(e) => setFormData({ ...formData, customHeaders: e.target.value })}
+          />
+          <span className="text-[11px] text-text-muted">Optional. JSON object or Key: Value per line. Supports &#123;&#123;API_KEY&#125;&#125; placeholder.</span>
+        </div>
 
         <Input
           label="Priority"

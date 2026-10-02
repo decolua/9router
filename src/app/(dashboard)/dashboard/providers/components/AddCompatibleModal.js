@@ -41,6 +41,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
     prefix: "",
     ...(config.hasApiType ? { apiType: "chat" } : {}),
     baseUrl: config.defaultBaseUrl,
+    customHeaders: "",
   });
 
   const [formData, setFormData] = useState(initialFormData);
@@ -74,6 +75,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          customHeaders: formData.customHeaders.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -101,6 +103,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
+          customHeaders: formData.customHeaders.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -165,6 +168,16 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           placeholder={config.defaultBaseUrl}
           hint={config.baseUrlHint}
         />
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-text-muted">Custom Headers (Optional)</label>
+          <textarea
+            className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[70px] focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder={'{\n  "HTTP-Referer": "https://example.com"\n}'}
+            value={formData.customHeaders}
+            onChange={(e) => setFormData({ ...formData, customHeaders: e.target.value })}
+          />
+          <span className="text-[11px] text-text-muted">Optional. JSON object or Key: Value per line. Supports &#123;&#123;API_KEY&#125;&#125; placeholder.</span>
+        </div>
         <Input
           label="API Key (for Check)"
           type="password"

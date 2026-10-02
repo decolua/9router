@@ -8,12 +8,14 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { formatCustomHeaders, parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
     priority: 1,
     apiKey: "",
+    customHeaders: "",
   });
   const [azureData, setAzureData] = useState({
     azureEndpoint: "",
@@ -35,6 +37,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         name: connection.name || "",
         priority: connection.priority || 1,
         apiKey: "",
+        customHeaders: formatCustomHeaders(connection.providerSpecificData?.customHeaders),
       });
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
@@ -171,6 +174,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
+
+      const rawCustomHeaders = formData.customHeaders.trim() ? parseCustomHeaders(formData.customHeaders) : null;
+      updates.providerSpecificData = {
+        ...(connection.providerSpecificData || {}),
+        ...(updates.providerSpecificData || {}),
+        customHeaders: rawCustomHeaders,
+      };
       
       await onSave(updates);
     } finally {
@@ -285,6 +295,17 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
             )}
           </div>
         )}
+
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-text-muted">Custom Headers (Optional)</label>
+          <textarea
+            className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[70px] focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder={'{\n  "HTTP-Referer": "https://example.com"\n}'}
+            value={formData.customHeaders}
+            onChange={(e) => setFormData({ ...formData, customHeaders: e.target.value })}
+          />
+          <span className="text-[11px] text-text-muted">Optional. JSON object or Key: Value per line. Supports &#123;&#123;API_KEY&#125;&#125; placeholder.</span>
+        </div>
 
         <div className="flex gap-2">
           <Button onClick={handleSubmit} fullWidth disabled={saving}>{saving ? "Saving..." : "Save"}</Button>

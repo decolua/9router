@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
+import { parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 // PUT /api/provider-nodes/[id] - Update provider node
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, customHeaders: rawCustomHeaders } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -54,6 +55,10 @@ export async function PUT(request, { params }) {
       baseUrl: sanitizedBaseUrl,
     };
 
+    if (rawCustomHeaders !== undefined) {
+      updates.customHeaders = parseCustomHeaders(rawCustomHeaders);
+    }
+
     if (node.type === "openai-compatible") {
       updates.apiType = apiType;
     }
@@ -69,6 +74,7 @@ export async function PUT(request, { params }) {
           apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          customHeaders: updated.customHeaders,
         }
       })
     )));

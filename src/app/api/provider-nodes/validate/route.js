@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
+import { parseCustomHeaders, applyCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -55,7 +56,8 @@ const getChatErrorMessage = (status) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { baseUrl, apiKey, type, modelId, customHeaders: rawCustomHeaders } = body;
+    const customHeaders = parseCustomHeaders(rawCustomHeaders);
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
@@ -81,12 +83,14 @@ export async function POST(request) {
       if (!modelId?.trim()) {
         return NextResponse.json({ valid: false, error: "Model ID required for embedding validation" });
       }
+      const headers = {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      };
+      applyCustomHeaders(headers, customHeaders, { apiKey });
       const embedRes = await fetchWithTimeout(`${normalizedBase}/embeddings`, {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
+        headers,
         body: JSON.stringify({ model: modelId.trim(), input: "ping" })
       });
       if (embedRes.ok) {
@@ -113,13 +117,15 @@ export async function POST(request) {
       }
 
       const modelsUrl = `${normalizedBase}/models`;
+      const modelsHeaders = {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "Authorization": `Bearer ${apiKey}`
+      };
+      applyCustomHeaders(modelsHeaders, customHeaders, { apiKey });
       const res = await fetchWithTimeout(modelsUrl, {
         method: "GET",
-        headers: {
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${apiKey}`
-        }
+        headers: modelsHeaders
       });
 
       if (res.ok) return NextResponse.json({ valid: true });
@@ -131,14 +137,16 @@ export async function POST(request) {
 
       // Fallback: try chat/completions if modelId provided
       if (modelId) {
+        const chatHeaders = {
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        };
+        applyCustomHeaders(chatHeaders, customHeaders, { apiKey });
         const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
           method: "POST",
-          headers: {
-            "Authorization": `Bearer ${apiKey}`,
-            "Content-Type": "application/json",
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01"
-          },
+          headers: chatHeaders,
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: "user", content: "ping" }],
@@ -160,8 +168,10 @@ export async function POST(request) {
 
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
+    const defaultHeaders = { "Authorization": `Bearer ${apiKey}` };
+    applyCustomHeaders(defaultHeaders, customHeaders, { apiKey });
     const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: defaultHeaders,
     });
 
     if (res.ok) return NextResponse.json({ valid: true });
@@ -173,12 +183,14 @@ export async function POST(request) {
 
     // Fallback: try chat/completions if modelId provided
     if (modelId) {
+      const chatHeaders = {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      };
+      applyCustomHeaders(chatHeaders, customHeaders, { apiKey });
       const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers: {
-          "Authorization": `Bearer ${apiKey}`,
-          "Content-Type": "application/json"
-        },
+        headers: chatHeaders,
         body: JSON.stringify({
           model: modelId,
           messages: [{ role: "user", content: "ping" }],

@@ -20,6 +20,7 @@ import {
   KIMCHI_CONFIG,
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
+import { applyCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -498,8 +499,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
     try {
+      const headers = { "Authorization": `Bearer ${connection.apiKey}` };
+      applyCustomHeaders(headers, connection.providerSpecificData?.customHeaders, connection);
       const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, {
-        headers: { "Authorization": `Bearer ${connection.apiKey}` },
+        headers,
       }, effectiveProxy);
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
@@ -515,14 +518,16 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       if (modelsBase.endsWith("/messages")) modelsBase = modelsBase.slice(0, -9);
       const messagesUrl = `${modelsBase}/v1/messages`;
       const model = connection.defaultModel || "claude-3-haiku-20240307";
+      const headers = {
+        "x-api-key": connection.apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+        "Authorization": `Bearer ${connection.apiKey}`,
+      };
+      applyCustomHeaders(headers, connection.providerSpecificData?.customHeaders, connection);
       const res = await fetchWithConnectionProxy(messagesUrl, {
         method: "POST",
-        headers: {
-          "x-api-key": connection.apiKey,
-          "anthropic-version": "2023-06-01",
-          "content-type": "application/json",
-          "Authorization": `Bearer ${connection.apiKey}`,
-        },
+        headers,
         body: JSON.stringify({
           model,
           max_tokens: 1,

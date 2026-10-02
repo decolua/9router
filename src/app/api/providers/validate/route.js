@@ -6,6 +6,7 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
+import { parseCustomHeaders, applyCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
 // Returns true if API key is accepted (status !== 401 && !== 403).
@@ -87,6 +88,7 @@ export async function POST(request) {
     const body = await request.json();
     const provider = normalizeProviderId(body.provider);
     const { apiKey, providerSpecificData } = body;
+    const reqCustomHeaders = parseCustomHeaders(body.customHeaders || providerSpecificData?.customHeaders);
 
     const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;
     if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth)) {
@@ -104,8 +106,10 @@ export async function POST(request) {
           return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
+        const headers = { "Authorization": `Bearer ${apiKey}` };
+        applyCustomHeaders(headers, reqCustomHeaders || node.customHeaders, { apiKey });
         const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers,
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -121,8 +125,10 @@ export async function POST(request) {
           return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
         }
         const baseUrl = node.baseUrl?.replace(/\/$/, "");
+        const modelsHeaders = { "Authorization": `Bearer ${apiKey}` };
+        applyCustomHeaders(modelsHeaders, reqCustomHeaders || node.customHeaders, { apiKey });
         const modelsRes = await fetch(`${baseUrl}/models`, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers: modelsHeaders,
         });
         if (modelsRes.ok) {
           return NextResponse.json({ valid: true });
@@ -132,9 +138,11 @@ export async function POST(request) {
           return NextResponse.json({ valid: false, error: "Invalid API key" });
         }
         // Fallback: probe /embeddings with a common test model — many providers lack /models
+        const embedHeaders = { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" };
+        applyCustomHeaders(embedHeaders, reqCustomHeaders || node.customHeaders, { apiKey });
         const embedRes = await fetch(`${baseUrl}/embeddings`, {
           method: "POST",
-          headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+          headers: embedHeaders,
           body: JSON.stringify({ model: "test", input: "ping" }),
         });
         // 401/403 = bad key; anything else (including 400 "model not found") means key works
@@ -159,14 +167,17 @@ export async function POST(request) {
         const messagesUrl = `${normalizedBase}/v1/messages`;
         const model = node.defaultModel || "claude-3-haiku-20240307";
 
+        const headers = {
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "content-type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        };
+        applyCustomHeaders(headers, reqCustomHeaders || node.customHeaders, { apiKey });
+
         const res = await fetch(messagesUrl, {
           method: "POST",
-          headers: {
-            "x-api-key": apiKey,
-            "anthropic-version": "2023-06-01",
-            "content-type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
+          headers,
           body: JSON.stringify({
             model,
             max_tokens: 1,

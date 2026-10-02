@@ -9,6 +9,7 @@ import {
 import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
+import { parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 export const dynamic = "force-dynamic";
 
@@ -138,6 +139,7 @@ export async function POST(request) {
         apiType: node.apiType,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+        customHeaders: node.customHeaders,
       };
     } else if (isAnthropicCompatibleProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -148,6 +150,7 @@ export async function POST(request) {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+        customHeaders: node.customHeaders,
       };
     } else if (isCustomEmbeddingProvider(provider)) {
       const node = await getProviderNodeById(provider);
@@ -158,6 +161,7 @@ export async function POST(request) {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
+        customHeaders: node.customHeaders,
       };
     }
 
@@ -167,6 +171,11 @@ export async function POST(request) {
       connectionProxyUrl: proxyConfig.connectionProxyUrl,
       connectionNoProxy: proxyConfig.connectionNoProxy,
     };
+
+    const directCustomHeaders = parseCustomHeaders(body.customHeaders || body.providerSpecificData?.customHeaders);
+    if (directCustomHeaders) {
+      mergedProviderSpecificData.customHeaders = directCustomHeaders;
+    }
 
     if (proxyPoolId !== null) {
       mergedProviderSpecificData.proxyPoolId = proxyPoolId;

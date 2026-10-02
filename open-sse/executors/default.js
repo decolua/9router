@@ -8,6 +8,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
+import { applyCustomHeaders } from "../utils/customHeaders.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -217,6 +218,8 @@ export class DefaultExecutor extends BaseExecutor {
         }
       }
     }
+
+    applyCustomHeaders(headers, credentials?.providerSpecificData?.customHeaders || credentials?.customHeaders || this.config?.customHeaders, credentials);
 
     if (stream) headers["Accept"] = "text/event-stream";
     return headers;
