@@ -2,7 +2,8 @@ import { getProviderConnections, validateApiKey, updateProviderConnection, getSe
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, getProviderAlias, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { getDisabledByProvider } from "@/lib/disabledModelsDb";
 import { getAntigravityQuotaCache } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
@@ -16,6 +17,26 @@ function githubMonthlyResetMs(status, errorText, provider) {
   if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
   const now = new Date();
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
+}
+
+/**
+ * Read the dashboard's disabled-model list for a provider.
+ * The UI writes kv scope "disabledModels" keyed by BOTH alias and provider id,
+ * so check both. Fail-open: a DB error must never block routing.
+ */
+async function isModelDisabled(providerId, model) {
+  if (!model) return false;
+  try {
+    const alias = getProviderAlias(providerId);
+    const keys = alias && alias !== providerId ? [alias, providerId] : [providerId];
+    for (const key of keys) {
+      const disabled = await getDisabledByProvider(key);
+      if (Array.isArray(disabled) && disabled.includes(model)) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
 }
 
 /**
@@ -42,6 +63,15 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Resolve alias to provider ID (e.g., "kc" -> "kilocode")
     const providerId = resolveProviderId(provider);
+
+    // Honour the dashboard's disabled-model toggle at request time (#4249, #4246).
+    // Without this the toggle is UI-only: a model switched off in the dashboard is
+    // still routed, and a dead upstream model burns the full connect timeout first.
+    // Returning null is the shape every caller already handles as "unavailable".
+    if (await isModelDisabled(providerId, model)) {
+      log.warn("AUTH", `${provider}|${model} is disabled in the dashboard — rejecting`);
+      return null;
+    }
 
     // Inject a virtual connection for no-auth free providers (with optional proxy pool from settings)
     if (FREE_PROVIDERS[providerId]?.noAuth) {
