@@ -853,8 +853,7 @@ export default function ProviderDetailPage() {
 
       if (res.ok) {
         await fetchConnections();
-        setShowAddApiKeyModal(false);
-        return;
+        return true; // the modal resets and closes itself
       }
 
       setAddConnectionError(data?.error || "Failed to save connection");
@@ -862,6 +861,7 @@ export default function ProviderDetailPage() {
       console.log("Error saving connection:", error);
       setAddConnectionError("Failed to save connection");
     }
+    return false;
   };
 
   const handleUpdateConnection = async (formData) => {

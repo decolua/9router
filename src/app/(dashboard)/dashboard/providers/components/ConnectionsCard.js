@@ -196,10 +196,18 @@ ConnectionRow.propTypes = {
 // ── AddApiKeyModal ─────────────────────────────────────────────
 function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, onClose }) {
   const NONE = "__none__";
-  const [formData, setFormData] = useState({ name: "", apiKey: "", priority: 1, proxyPoolId: NONE });
+  const createInitialFormData = () => ({ name: "", apiKey: "", priority: 1, proxyPoolId: NONE });
+  const [formData, setFormData] = useState(createInitialFormData);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  // Reset state and close
+  const handleClose = () => {
+    setFormData(createInitialFormData());
+    setValidationResult(null);
+    onClose();
+  };
 
   const handleValidate = async () => {
     setValidating(true);
@@ -232,20 +240,21 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
         setValidationResult(isValid ? "success" : "failed");
       } catch { setValidationResult("failed"); }
       finally { setValidating(false); }
-      await onSave({
+      const saved = await onSave({
         name: formData.name,
         apiKey: formData.apiKey,
         priority: formData.priority,
         proxyPoolId: formData.proxyPoolId === NONE ? null : formData.proxyPoolId,
         testStatus: isValid ? "active" : "unknown",
       });
+      if (saved) handleClose();
     } finally { setSaving(false); }
   };
 
   if (!provider) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} API Key`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Add ${providerName || provider} API Key`} onClose={handleClose}>
       <div className="flex flex-col gap-4">
         <div>
           <label className="text-xs text-text-muted mb-1 block">Name</label>
@@ -277,7 +286,7 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
           <Button onClick={handleSubmit} fullWidth disabled={!formData.name || !formData.apiKey || saving}>
             {saving ? "Saving..." : "Save"}
           </Button>
-          <Button onClick={onClose} variant="ghost" fullWidth>Cancel</Button>
+          <Button onClick={handleClose} variant="ghost" fullWidth>Cancel</Button>
         </div>
       </div>
     </Modal>
@@ -385,8 +394,9 @@ export default function ConnectionsCard({ providerId, isOAuth }) {
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: providerId, ...formData }) });
-      if (res.ok) { await fetch_(); setShowAddModal(false); }
+      if (res.ok) { await fetch_(); return true; } // the modal resets and closes itself
     } catch (e) { console.log("save apikey error:", e); }
+    return false;
   };
 
   const handleUpdateConnection = async (formData) => {
