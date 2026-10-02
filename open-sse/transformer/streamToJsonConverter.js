@@ -34,6 +34,14 @@ function processSSEMessage(msg, state) {
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
       state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
     }
+  } else if (eventType === "response.incomplete") {
+    state.status = "incomplete";
+    state.incompleteDetails = parsed.response?.incomplete_details || null;
+    if (parsed.response?.usage) {
+      state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
+      state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
+      state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
+    }
   } else if (eventType === "response.failed") {
     state.status = "failed";
   }
@@ -97,6 +105,7 @@ export async function convertResponsesStreamToJson(stream) {
     object: "response",
     created_at: state.created,
     status: state.status || "completed",
+    incomplete_details: state.incompleteDetails || null,
     output,
     usage: state.usage
   };

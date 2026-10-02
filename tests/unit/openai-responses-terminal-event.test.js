@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
+import { convertResponsesStreamToJson } from "../../open-sse/transformer/streamToJsonConverter.js";
 
 async function runTransform(input) {
   const encoder = new TextEncoder();
@@ -92,5 +93,43 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output.indexOf("event: response.failed")).toBeLessThan(output.indexOf("data: [DONE]"));
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
     expect(output).not.toContain("data: null");
+  });
+
+  it("treats response.incomplete as a real terminal event, not a broken stream", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test",
+        status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } })}`,
+      "",
+    ].join("\n"));
+
+    expect(output).toContain("event: response.incomplete");
+    expect(output).not.toContain("event: response.failed");
+    expect(output).toContain("data: [DONE]");
+  });
+
+  it("retains response.incomplete status, reason and usage when collecting SSE as JSON", async () => {
+    const payload = [
+      "event: response.output_item.done",
+      `data: ${JSON.stringify({ type: "response.output_item.done", output_index: 0,
+        item: { type: "reasoning", summary: [{ type: "summary_text", text: "One token" }] } })}`,
+      "",
+      "event: response.incomplete",
+      `data: ${JSON.stringify({ type: "response.incomplete", response: {
+        status: "incomplete", incomplete_details: { reason: "max_output_tokens" },
+        usage: { input_tokens: 20, output_tokens: 1, total_tokens: 21 },
+      } })}`,
+      "",
+    ].join("\n");
+    const bytes = new TextEncoder().encode(payload);
+    const result = await convertResponsesStreamToJson(new ReadableStream({
+      start(controller) { controller.enqueue(bytes); controller.close(); },
+    }));
+    expect(result).toMatchObject({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      output: [{ type: "reasoning" }],
+      usage: { input_tokens: 20, output_tokens: 1, total_tokens: 21 },
+    });
   });
 });

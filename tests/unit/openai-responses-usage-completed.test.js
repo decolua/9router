@@ -99,11 +99,11 @@ const EXPECTED_USAGE = {
   output_tokens: 37,
   total_tokens: 921,
   input_tokens_details: { cached_tokens: 256 },
+  output_tokens_details: { reasoning_tokens: 0 },
 };
 
 // Claude-shaped stream with NO usage anywhere: the only way the client gets a
-// terminal event is the finish_reason branch, because the pivot never reaches
-// flushEvents() with the terminal null chunk.
+// terminal event must also survive the pivot and its explicit Responses flush.
 const CLAUDE_CHUNKS = [
   { type: "message_start", message: { id: "msg_1", model: "claude-x" } },
   { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
@@ -137,8 +137,10 @@ describe("OpenAI Responses usage on response.completed", () => {
 
   it("maps usage reported on a trailing usage-only chunk with empty choices", async () => {
     const output = await runTransform([TEXT_CHUNK, FINISH_CHUNK, USAGE_ONLY_CHUNK]);
-
-    expect(completedResponse(output).usage).toEqual(EXPECTED_USAGE);
+    // Missing optional reasoning details remain unknown; the normalized usage
+    // still carries all required counts and the reported cache count.
+    const { output_tokens_details, ...reportedUsage } = EXPECTED_USAGE;
+    expect(completedResponse(output).usage).toEqual(reportedUsage);
   });
 
   it("still completes when the upstream reports no usage at all", async () => {

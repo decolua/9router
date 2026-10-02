@@ -131,8 +131,10 @@ function processElement(element) {
 export async function initRuntimeI18n() {
   if (typeof window === "undefined") return;
   
-  currentLocale = getLocaleFromCookie();
-  await loadTranslations(currentLocale);
+  const locale = getLocaleFromCookie();
+  await loadTranslations(locale);
+  currentLocale = locale;
+  reloadCallbacks.forEach(callback => callback());
   
   // Process existing DOM
   processElement(document.body);
@@ -166,8 +168,9 @@ export async function initRuntimeI18n() {
 
 // Reload translations when locale changes
 export async function reloadTranslations() {
-  currentLocale = getLocaleFromCookie();
-  await loadTranslations(currentLocale);
+  const locale = getLocaleFromCookie();
+  await loadTranslations(locale);
+  currentLocale = locale;
   
   // Notify all registered callbacks
   reloadCallbacks.forEach(callback => callback());

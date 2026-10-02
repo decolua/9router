@@ -37,6 +37,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
   const customToolNames = new Set();
+  const toolNamespaces = new Map();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -81,7 +82,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
 
       // Convert content: input_text → text, output_text → text, input_image → image_url
-      const content = Array.isArray(item.content)
+      let content = Array.isArray(item.content)
         ? item.content.map(c => {
           if (c.type === RESPONSES_ITEM.INPUT_TEXT) return { type: OPENAI_BLOCK.TEXT, text: c.text };
           if (c.type === RESPONSES_ITEM.OUTPUT_TEXT) return { type: OPENAI_BLOCK.TEXT, text: c.text };
@@ -92,6 +93,13 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
           return c;
         })
         : item.content;
+      // Codex replays compacted assistant summaries as output_text arrays.
+      // Chat providers that expect assistant strings must still receive the text;
+      // retain multimodal arrays without dropping their non-text parts.
+      if (item.role === ROLE.ASSISTANT && Array.isArray(content) && content.length > 0 &&
+          content.every(part => part?.type === OPENAI_BLOCK.TEXT && typeof part.text === "string")) {
+        content = content.map(part => part.text).join("\n");
+      }
       const msg = { role: item.role, content };
       // Attach buffered reasoning to assistant turn (required by xiaomi-mimo + store=false continuity)
       if (item.role === ROLE.ASSISTANT) attachPendingReasoning(msg);
@@ -149,6 +157,22 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
       if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
     }
+    else if (itemType === "web_search_call") {
+      // Chat-compatible providers have no hosted server-tool history. Preserve
+      // the completed search as plain context so later Codex turns do not lose it.
+      if (currentAssistantMsg) {
+        result.messages.push(currentAssistantMsg);
+        currentAssistantMsg = null;
+      }
+      if (pendingToolResults.length > 0) {
+        for (const tr of pendingToolResults) result.messages.push(tr);
+        pendingToolResults = [];
+      }
+      result.messages.push({
+        role: ROLE.USER,
+        content: `9router web_search results (query: ${item.action?.query || ""}):\n${JSON.stringify(item.results || [])}`
+      });
+    }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Buffer reasoning text; attached to next assistant message/function_call.
       // Also stash encrypted_content so a later openai→responses hop can restore
@@ -178,10 +202,24 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  const responseTools = [
+  // Codex ≥0.151 ships tools inside the input as `additional_tools` items whose
+  // entries are namespace wrappers ({type:"namespace", name:"functions", tools:[...]}).
+  // Unwrap namespaces to the real tool declarations before mapping them to Chat format.
+  const flattenToolList = (list, namespace = null) => (list ?? []).flatMap((t) => {
+    if (t?.type === "namespace" && Array.isArray(t.tools)) {
+      const nextNamespace = t.name || namespace;
+      for (const child of t.tools) {
+        const childName = child?.name || child?.function?.name;
+        if (childName && nextNamespace) toolNamespaces.set(childName, nextNamespace);
+      }
+      return flattenToolList(t.tools, nextNamespace);
+    }
+    return [t];
+  });
+  const responseTools = flattenToolList([
     ...(Array.isArray(body.tools) ? body.tools : []),
     ...additionalTools,
-  ];
+  ]);
   if (responseTools.length > 0) {
     result.tools = responseTools
       .map(tool => {
@@ -230,6 +268,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+  if (toolNamespaces.size > 0) result._toolNamespaces = [...toolNamespaces];
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)

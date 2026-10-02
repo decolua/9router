@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.js";
+import { translateRequest } from "../../open-sse/translator/index.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
 import { initState } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
@@ -68,6 +69,57 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
     });
   });
 
+  it("records the originating namespace for namespaced tool calls", () => {
+    const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
+      input: [
+        {
+          type: "additional_tools",
+          tools: [{
+            type: "namespace",
+            name: "multi_agent_v1",
+            tools: [{ type: "function", name: "spawn_agent", description: "Spawn", parameters: { type: "object", properties: {} } }],
+          }],
+        },
+      ],
+    }, true, null);
+
+    expect(out._toolNamespaces).toEqual([["spawn_agent", "multi_agent_v1"]]);
+  });
+
+  it("preserves namespace metadata when pivoting Responses requests through OpenAI to Ollama", () => {
+    const out = translateRequest(FORMATS.OPENAI_RESPONSES, FORMATS.OLLAMA, "glm/glm-5.3", {
+      input: [
+        {
+          type: "additional_tools",
+          tools: [{
+            type: "namespace",
+            name: "multi_agent_v1",
+            tools: [{ type: "function", name: "spawn_agent", description: "Spawn", parameters: { type: "object", properties: {} } }],
+          }],
+        },
+      ],
+    }, true, null);
+
+    expect(out.model).toBe("glm/glm-5.3");
+    expect(out._customToolNames).toBeUndefined();
+    expect(out._toolNameMap).toBeUndefined();
+    expect(out._toolNamespaces).toEqual([["spawn_agent", "multi_agent_v1"]]);
+  });
+
+  it("converts completed hosted web_search history into Chat-visible context", () => {
+    const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
+      input: [
+        { type: "web_search_call", status: "completed", action: { type: "search", query: "codex responses api" }, results: [{ title: "Docs", url: "https://example.com", snippet: "Use SSE" }] },
+        { type: "message", role: "assistant", content: [{ type: "output_text", text: "Use SSE." }] },
+      ],
+    }, true, null);
+
+    const context = out.messages.find(message => message.role === "user");
+    expect(context.content).toContain("codex responses api");
+    expect(context.content).toContain("https://example.com");
+    expect(out.input).toBeUndefined();
+  });
+
   it("merges additional_tools with normal top-level function tools", () => {
     const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
       input: [{ type: "additional_tools", role: "developer", tools: [EXEC_TOOL] }],
@@ -76,6 +128,27 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
 
     expect(out.tools.map((tool) => tool.function.name)).toEqual(["search", "exec"]);
     expect(out._customToolNames).toEqual(["exec"]);
+  });
+});
+
+describe("OpenAI Chat stream → Codex namespaced function_call", () => {
+  it("adds the original namespace to a normal Chat tool call", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    state.toolNamespaces = new Map([["spawn_agent", "multi_agent_v1"]]);
+    const events = [
+      { id: "chatcmpl-normal", choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_spawn", type: "function", function: { name: "spawn_agent", arguments: "{}" } }] }, finish_reason: null }] },
+      { id: "chatcmpl-normal", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+    ].flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
+
+    expect(events.find((event) => event.event === "response.output_item.added").data.item).toMatchObject({
+      type: "function_call",
+      call_id: "call_spawn",
+      name: "spawn_agent",
+      namespace: "multi_agent_v1",
+    });
+    expect(events.find((event) => event.event === "response.output_item.done").data.item).toMatchObject({
+      namespace: "multi_agent_v1",
+    });
   });
 });
 
@@ -149,5 +222,21 @@ describe("OpenAI Chat stream → Codex custom_tool_call", () => {
       name: "search",
       arguments: "{\"q\":\"x\"}",
     });
+  });
+});
+
+// Real Codex replays portable summaries as assistant output_text blocks.
+describe("Codex assistant history replay", () => {
+  it("retains text from compacted assistant arrays for Chat providers", () => {
+    const result = openaiResponsesToOpenAIRequest("test", { input: [
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "QA_SUMMARY" }, { type: "output_text", text: "continue here" }] },
+    ] });
+    expect(result.messages[0]).toEqual({ role: "assistant", content: "QA_SUMMARY\ncontinue here" });
+  });
+  it("retains non-text assistant blocks", () => {
+    const result = openaiResponsesToOpenAIRequest("test", { input: [
+      { type: "message", role: "assistant", content: [{ type: "output_text", text: "Image" }, { type: "input_image", image_url: "https://example.invalid/image.png" }] },
+    ] });
+    expect(result.messages[0].content).toEqual([{ type: "text", text: "Image" }, { type: "image_url", image_url: { url: "https://example.invalid/image.png", detail: "auto" } }]);
   });
 });

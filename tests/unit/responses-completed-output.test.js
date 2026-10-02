@@ -4,9 +4,7 @@ import { FORMATS } from "../../open-sse/translator/formats.js";
 import { initState } from "../../open-sse/translator/index.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
 
-// targetFormat === OPENAI is the direct openai -> openai-responses route, which is
-// the only one where flush() reaches this translator (see the flushReachesUs note
-// above the finish_reason branch).
+// The fork completes on flush on both direct and pivot routes, preserving trailing usage.
 function newState() {
   return { ...initState(FORMATS.OPENAI_RESPONSES), targetFormat: FORMATS.OPENAI };
 }
@@ -28,6 +26,9 @@ function runChunks(chunks) {
   const events = [];
   for (const chunk of chunks) {
     for (const event of openaiToOpenAIResponsesResponse(chunk, state)) events.push(event);
+  }
+  if (chunks.some(chunk => chunk?.choices?.some(choice => choice.finish_reason))) {
+    events.push(...openaiToOpenAIResponsesResponse(null, state));
   }
   return { state, events };
 }
@@ -147,5 +148,37 @@ describe("response.completed output (issue #4307)", () => {
 
     expect(second).toEqual([]);
     expect(state.completedOutputItems.size).toBe(1);
+  });
+
+  it("retains reasoning, text, and namespaced tools sharing Chat index zero", () => {
+    const state = newState();
+    state.toolNamespaces = new Map([["exec", "functions"]]);
+    const chunks = [
+      reasoningChunk("Check the file"),
+      textChunk("Reading it now"),
+      { choices: [{ index: 0, delta: { tool_calls: [
+        { index: 0, id: "call_1", function: { name: "exec", arguments: '{"cmd":"pwd"}' } },
+      ] } }] },
+      finishChunk(),
+      { choices: [], usage: { prompt_tokens: 11, completion_tokens: 7 } },
+      null,
+    ];
+    const events = chunks.flatMap(chunk => openaiToOpenAIResponsesResponse(chunk, state));
+    const response = completedResponse(events);
+    expect(response.output.map(item => item.type)).toEqual(["reasoning", "message", "function_call"]);
+    expect(response.output).toEqual(doneItems(events));
+    expect(response.output[2]).toMatchObject({ namespace: "functions", call_id: "call_1" });
+    expect(events.filter(e => e.event === "response.output_item.added").map(e => e.data.output_index)).toEqual([0, 1, 2]);
+    expect(response.usage).toMatchObject({ input_tokens: 11, output_tokens: 7 });
+  });
+
+  it("preserves output on an incomplete terminal response", () => {
+    const state = newState();
+    openaiToOpenAIResponsesResponse(textChunk("Partial answer"), state);
+    openaiToOpenAIResponsesResponse({ choices: [{ index: 0, delta: {}, finish_reason: "length" }] }, state);
+    const events = openaiToOpenAIResponsesResponse(null, state);
+    const terminal = events.find(e => e.event === "response.incomplete");
+    expect(terminal.data.response.output[0].content[0].text).toBe("Partial answer");
+    expect(terminal.data.response.incomplete_details.reason).toBe("max_output_tokens");
   });
 });
