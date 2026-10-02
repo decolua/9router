@@ -1,8 +1,37 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
-import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
+import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal, Select } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+
+const PROXY_TYPE_OPTIONS = [
+  { value: "http", label: "HTTP / HTTPS" },
+  { value: "socks5", label: "SOCKS5" },
+  { value: "cloudflare", label: "Cloudflare Relay" },
+  { value: "vercel", label: "Vercel Relay" },
+  { value: "deno", label: "Deno Relay" },
+];
+
+const BATCH_IMPORT_TYPE_OPTIONS = [
+  { value: "auto", label: "Auto-detect (from URL scheme or host)" },
+  ...PROXY_TYPE_OPTIONS,
+];
+
+function getProxyUrlPlaceholder(type) {
+  switch (type) {
+    case "socks5":
+      return "socks5://127.0.0.1:1080";
+    case "cloudflare":
+      return "https://my-relay.workers.dev";
+    case "vercel":
+      return "https://my-relay.vercel.app";
+    case "deno":
+      return "https://my-relay.deno.net";
+    case "http":
+    default:
+      return "http://127.0.0.1:7897";
+  }
+}
 
 function getStatusVariant(status) {
   if (status === "active") return "success";
@@ -24,6 +53,7 @@ function normalizeFormData(data = {}) {
     noProxy: data.noProxy || "",
     isActive: data.isActive !== false,
     strictProxy: data.strictProxy === true,
+    type: data.type || "http",
   };
 }
 
@@ -39,6 +69,7 @@ export default function ProxyPoolsPage() {
   const [editingProxyPool, setEditingProxyPool] = useState(null);
   const [formData, setFormData] = useState(normalizeFormData());
   const [batchImportText, setBatchImportText] = useState("");
+  const [batchImportType, setBatchImportType] = useState("auto");
   const [vercelForm, setVercelForm] = useState({ vercelToken: "", projectName: "vercel-relay" });
   const [cloudflareForm, setCloudflareForm] = useState({ accountId: "", apiToken: "", projectName: "cloudflare-relay" });
   const [denoForm, setDenoForm] = useState({ denoToken: "", orgDomain: "", projectName: "" });
@@ -106,12 +137,26 @@ export default function ProxyPoolsPage() {
   };
 
   const handleSave = async () => {
+    let proxyUrl = formData.proxyUrl.trim();
+    const type = formData.type || "http";
+
+    if (proxyUrl && !proxyUrl.includes("://")) {
+      if (type === "socks5") {
+        proxyUrl = `socks5://${proxyUrl}`;
+      } else if (type === "cloudflare" || type === "vercel" || type === "deno") {
+        proxyUrl = `https://${proxyUrl}`;
+      } else {
+        proxyUrl = `http://${proxyUrl}`;
+      }
+    }
+
     const payload = {
       name: formData.name.trim(),
-      proxyUrl: formData.proxyUrl.trim(),
+      proxyUrl,
       noProxy: formData.noProxy.trim(),
       isActive: formData.isActive === true,
       strictProxy: formData.strictProxy === true,
+      type,
     };
 
     if (!payload.name || !payload.proxyUrl) return;
@@ -334,6 +379,7 @@ export default function ProxyPoolsPage() {
 
   const openBatchImportModal = () => {
     setBatchImportText("");
+    setBatchImportType("auto");
     setShowBatchImportModal(true);
   };
 
@@ -447,31 +493,94 @@ export default function ProxyPoolsPage() {
     }
   };
 
-  const parseProxyLine = (line) => {
-    const trimmed = line.trim();
+  const parseProxyLine = (line, defaultType = "auto") => {
+    let trimmed = line.trim();
     if (!trimmed) return null;
+
+    if (!trimmed.includes("://") && trimmed.includes("@")) {
+      const scheme =
+        defaultType === "socks5"
+          ? "socks5"
+          : defaultType === "cloudflare" || defaultType === "vercel" || defaultType === "deno"
+          ? "https"
+          : "http";
+      trimmed = `${scheme}://${trimmed}`;
+    }
 
     if (trimmed.includes("://")) {
       const parsed = new URL(trimmed);
       const hostLabel = parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
+      let type = defaultType !== "auto" ? defaultType : "http";
+
+      if (defaultType === "auto") {
+        if (/^socks[45]?h?:?$/i.test(parsed.protocol)) {
+          type = "socks5";
+        } else if (parsed.hostname.endsWith(".workers.dev")) {
+          type = "cloudflare";
+        } else if (parsed.hostname.endsWith(".vercel.app")) {
+          type = "vercel";
+        } else if (parsed.hostname.endsWith(".deno.dev") || parsed.hostname.endsWith(".deno.net")) {
+          type = "deno";
+        } else {
+          type = "http";
+        }
+      }
       return {
         proxyUrl: parsed.toString(),
         name: `Imported ${hostLabel}`,
+        type,
       };
     }
 
     const parts = trimmed.split(":");
+    const scheme =
+      defaultType === "socks5"
+        ? "socks5"
+        : defaultType === "cloudflare" || defaultType === "vercel" || defaultType === "deno"
+        ? "https"
+        : "http";
+    const type = defaultType === "auto" ? "http" : defaultType;
+
+    // host:port:username:password OR username:password:host:port
     if (parts.length === 4) {
-      const [host, port, username, password] = parts;
+      let host, port, username, password;
+      const isSecondPort = /^\d+$/.test(parts[1]);
+      const isFourthPort = /^\d+$/.test(parts[3]);
+
+      if (isSecondPort) {
+        [host, port, username, password] = parts;
+      } else if (isFourthPort) {
+        [username, password, host, port] = parts;
+      } else {
+        [host, port, username, password] = parts;
+      }
+
       if (!host || !port || !username || !password) {
         throw new Error("Invalid host:port:user:pass format");
       }
 
-      const proxyUrl = `http://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`;
+      const proxyUrl = `${scheme}://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}`;
       const parsed = new URL(proxyUrl);
       return {
         proxyUrl: parsed.toString(),
         name: `Imported ${host}:${port}`,
+        type,
+      };
+    }
+
+    // host:port
+    if (parts.length === 2) {
+      const [host, port] = parts;
+      if (!host || !port || !/^\d+$/.test(port)) {
+        throw new Error("Invalid host:port format");
+      }
+
+      const proxyUrl = `${scheme}://${host}:${port}`;
+      const parsed = new URL(proxyUrl);
+      return {
+        proxyUrl: parsed.toString(),
+        name: `Imported ${host}:${port}`,
+        type,
       };
     }
 
@@ -494,7 +603,7 @@ export default function ProxyPoolsPage() {
 
     lines.forEach((line, index) => {
       try {
-        const parsed = parseProxyLine(line);
+        const parsed = parseProxyLine(line, batchImportType);
         if (parsed) {
           parsedEntries.push({
             ...parsed,
@@ -536,6 +645,7 @@ export default function ProxyPoolsPage() {
             proxyUrl: entry.proxyUrl,
             noProxy: "",
             isActive: true,
+            type: entry.type || "http",
           }),
         });
 
@@ -722,6 +832,15 @@ export default function ProxyPoolsPage() {
                     {pool.type === "cloudflare" && (
                       <Badge variant="default" size="sm">cloudflare relay</Badge>
                     )}
+                    {pool.type === "deno" && (
+                      <Badge variant="default" size="sm">deno relay</Badge>
+                    )}
+                    {pool.type === "socks5" && (
+                      <Badge variant="default" size="sm">socks5</Badge>
+                    )}
+                    {(!pool.type || pool.type === "http") && (
+                      <Badge variant="default" size="sm">http</Badge>
+                    )}
                     <Badge variant="default" size="sm">
                       {pool.boundConnectionCount || 0} bound
                     </Badge>
@@ -784,16 +903,23 @@ export default function ProxyPoolsPage() {
         onClose={closeBatchImportModal}
       >
         <div className="flex flex-col gap-4">
+          <Select
+            label="Default Proxy Type"
+            value={batchImportType}
+            onChange={(e) => setBatchImportType(e.target.value)}
+            options={BATCH_IMPORT_TYPE_OPTIONS}
+            hint="Used for proxy lines without protocol scheme (e.g. host:port:user:pass)"
+          />
           <div>
             <label className="text-sm font-medium text-text-main mb-1 block">Paste Proxy List (One per line)</label>
             <textarea
               value={batchImportText}
               onChange={(e) => setBatchImportText(e.target.value)}
-              placeholder={"http://user:pass@127.0.0.1:7897\n127.0.0.1:7897:user:pass"}
+              placeholder={"http://user:pass@127.0.0.1:7897\nsocks5://127.0.0.1:1080\n127.0.0.1:7897:user:pass\n127.0.0.1:1080"}
               className="w-full min-h-[180px] py-2 px-3 text-sm text-text-main bg-white dark:bg-white/5 border border-black/10 dark:border-white/10 rounded-md focus:ring-1 focus:ring-primary/30 focus:border-primary/50 focus:outline-none transition-all"
             />
             <p className="text-xs text-text-muted mt-1">
-              Supported formats: protocol://user:pass@host:port, host:port:user:pass
+              Supported formats: protocol://user:pass@host:port, host:port:user:pass, user:pass:host:port, host:port
             </p>
           </div>
 
@@ -996,11 +1122,52 @@ export default function ProxyPoolsPage() {
             onChange={(e) => setFormData((prev) => ({ ...prev, name: e.target.value }))}
             placeholder="Office Proxy"
           />
+          <Select
+            label="Proxy Type"
+            value={formData.type || "http"}
+            onChange={(e) => {
+              const newType = e.target.value;
+              setFormData((prev) => {
+                let updatedUrl = prev.proxyUrl;
+                if (newType === "socks5" && updatedUrl.startsWith("http://")) {
+                  updatedUrl = updatedUrl.replace(/^http:\/\//, "socks5://");
+                } else if (newType === "http" && updatedUrl.startsWith("socks5://")) {
+                  updatedUrl = updatedUrl.replace(/^socks5:\/\//, "http://");
+                }
+                return {
+                  ...prev,
+                  type: newType,
+                  proxyUrl: updatedUrl,
+                };
+              });
+            }}
+            options={PROXY_TYPE_OPTIONS}
+          />
           <Input
             label="Proxy URL"
             value={formData.proxyUrl}
-            onChange={(e) => setFormData((prev) => ({ ...prev, proxyUrl: e.target.value }))}
-            placeholder="http://127.0.0.1:7897"
+            onChange={(e) => {
+              const val = e.target.value;
+              setFormData((prev) => {
+                let newType = prev.type;
+                const trimmed = val.trim().toLowerCase();
+                if (trimmed.startsWith("socks5://") || trimmed.startsWith("socks://")) {
+                  newType = "socks5";
+                } else if (trimmed.includes(".workers.dev")) {
+                  newType = "cloudflare";
+                } else if (trimmed.includes(".vercel.app")) {
+                  newType = "vercel";
+                } else if (trimmed.includes(".deno.dev") || trimmed.includes(".deno.net")) {
+                  newType = "deno";
+                }
+                return {
+                  ...prev,
+                  proxyUrl: val,
+                  type: newType,
+                };
+              });
+            }}
+            placeholder={getProxyUrlPlaceholder(formData.type)}
           />
           <Input
             label="No Proxy"
