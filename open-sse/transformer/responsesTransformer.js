@@ -73,7 +73,10 @@ export function createResponsesApiTransformStream(logger = null) {
     funcArgsDone: {},
     funcItemDone: {},
     buffer: "",
-    completedSent: false
+    completedSent: false,
+    // Accumulate completed output items so response.completed carries a full output array.
+    // Each entry is { output_index, item } from the response.output_item.done events.
+    outputItems: []
   };
 
   const encoder = new TextEncoder();
@@ -145,15 +148,17 @@ export function createResponsesApiTransformStream(logger = null) {
         part: { type: "summary_text", text: state.reasoningBuf }
       });
 
-      emit(controller, "response.output_item.done", {
-        type: "response.output_item.done",
-        output_index: state.reasoningIndex,
-        item: {
+      const reasoningItem = {
           id: state.reasoningId,
           type: "reasoning",
           summary: [{ type: "summary_text", text: state.reasoningBuf }]
-        }
+        };
+      emit(controller, "response.output_item.done", {
+        type: "response.output_item.done",
+        output_index: state.reasoningIndex,
+        item: reasoningItem
       });
+      state.outputItems.push({ output_index: state.reasoningIndex, item: reasoningItem });
     }
   };
 
@@ -180,16 +185,18 @@ export function createResponsesApiTransformStream(logger = null) {
         part: { type: "output_text", annotations: [], logprobs: [], text: fullText }
       });
 
+      const msgItem = {
+        id: msgId,
+        type: "message",
+        content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
+        role: "assistant"
+      };
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
         output_index: parseInt(idx),
-        item: {
-          id: msgId,
-          type: "message",
-          content: [{ type: "output_text", annotations: [], logprobs: [], text: fullText }],
-          role: "assistant"
-        }
+        item: msgItem
       });
+      state.outputItems.push({ output_index: parseInt(idx), item: msgItem });
     }
   };
 
@@ -205,17 +212,19 @@ export function createResponsesApiTransformStream(logger = null) {
         arguments: args
       });
 
+      const fcItem = {
+        id: `fc_${callId}`,
+        type: "function_call",
+        arguments: args,
+        call_id: callId,
+        name: state.funcNames[idx] || ""
+      };
       emit(controller, "response.output_item.done", {
         type: "response.output_item.done",
         output_index: parseInt(idx),
-        item: {
-          id: `fc_${callId}`,
-          type: "function_call",
-          arguments: args,
-          call_id: callId,
-          name: state.funcNames[idx] || ""
-        }
+        item: fcItem
       });
+      state.outputItems.push({ output_index: parseInt(idx), item: fcItem });
 
       state.funcItemDone[idx] = true;
       state.funcArgsDone[idx] = true;
@@ -225,6 +234,14 @@ export function createResponsesApiTransformStream(logger = null) {
   const sendCompleted = (controller) => {
     if (!state.completedSent) {
       state.completedSent = true;
+      // Build the output array from accumulated output_item.done items, sorted by
+      // output_index so the order matches the streaming order.
+      // This satisfies clients (GitHub Copilot CLI, OpenAI SDK final-response helpers)
+      // that build the final result from response.completed rather than from deltas.
+      const output = state.outputItems
+        .slice()
+        .sort((a, b) => a.output_index - b.output_index)
+        .map(e => e.item);
       emit(controller, "response.completed", {
         type: "response.completed",
         response: {
@@ -233,7 +250,8 @@ export function createResponsesApiTransformStream(logger = null) {
           created_at: state.created,
           status: "completed",
           background: false,
-          error: null
+          error: null,
+          output
         }
       });
     }
