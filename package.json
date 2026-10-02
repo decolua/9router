@@ -28,6 +28,7 @@
     "bcryptjs": "^3.0.3",
     "chalk": "^5.6.2",
     "confbox": "^0.2.4",
+    "enquirer": "^2.4.1",
     "express": "^5.2.1",
     "http-proxy-middleware": "^3.0.5",
     "jose": "^6.1.3",
