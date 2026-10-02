@@ -518,7 +518,7 @@ Runtime visibility sources:
 - per-request usage aggregates in `usage.json`
 - textual request status log in `log.txt`
 - optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
-- dashboard usage endpoints (`/api/usage/*`) for UI consumption
+- dashboard usage endpoints (`/api/usage/*`) for UI consumption; stored prompts and responses are redacted unless `SHOW_REQUEST_PAYLOADS=true`
 
 ## Security-Sensitive Boundaries
 
@@ -536,6 +536,7 @@ Environment variables actively used by code:
 - Storage: `DATA_DIR`
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
 - Logging: `ENABLE_REQUEST_LOGS`
+- Dashboard payload visibility: `SHOW_REQUEST_PAYLOADS` (independent from log collection, default `false`)
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
