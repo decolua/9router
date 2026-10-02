@@ -13,6 +13,11 @@ const origCreate = http.createServer.bind(http);
 const PEER_TOKEN = crypto.randomBytes(24).toString("hex");
 process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
 
+// Batas h2c upgrade: tanpa plafon, satu koneksi bisa buffer tanpa batas; tanpa
+// batas waktu, body yang tak pernah lengkap menggantung socket selamanya.
+const H2C_MAX_BODY = 1024 * 1024;
+const H2C_BODY_TIMEOUT_MS = 30000;
+
 let backgroundRefreshStarted = false;
 
 function startBackgroundTokenRefreshFromCustomServer() {
@@ -75,6 +80,25 @@ http.createServer = (...args) => {
   const server = origCreate(...rest, wrapped);
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
+    // agents-b: load instrumentation manually (custom server bypass Next lifecycle).
+    // Guard globalThis: kalau hook ini terpanggil lagi (server dibuat ulang di
+    // proses yang sama) register() tak diulang.
+    if (globalThis.__nineRouterInstrumentationLoaded) return;
+    globalThis.__nineRouterInstrumentationLoaded = true;
+    const instrPath = path.join(__dirname, ".next", "server", "instrumentation.js");
+    if (!fs.existsSync(instrPath)) {
+      console.warn("[custom-server] instrumentation.js tak ditemukan, register dilewati");
+      return;
+    }
+    try {
+      const instr = require(instrPath);
+      // register() async: tanpa .catch() penolakan promise jadi unhandledRejection
+      // -> proses mati setelah listening -> crash-loop (restart: always).
+      if (instr.register) Promise.resolve(instr.register()).catch((e) => console.error("[custom-server] instrumentation register failed:", e?.message || e));
+      else console.warn("[custom-server] instrumentation.js tak mengekspor register()");
+    } catch (e) {
+      console.error("[custom-server] instrumentation load failed:", e?.message || e);
+    }
   });
   const origEmit = server.emit;
   // JBR 25 sends h2c upgrades that the HTTP/1.1 server would otherwise close.
@@ -85,12 +109,15 @@ http.createServer = (...args) => {
     }
 
     const contentLength = Number(req.headers["content-length"] || 0);
-    if (!Number.isSafeInteger(contentLength) || contentLength < 0) {
+    if (!Number.isSafeInteger(contentLength) || contentLength < 0 || contentLength > H2C_MAX_BODY) {
       socket.destroy();
       return true;
     }
-    const chunks = [head];
-    let received = head.length;
+    // head bisa Buffer kosong/undefined saat upgrade tanpa sisa data.
+    const chunks = head ? [head] : [];
+    let received = head ? head.length : 0;
+    // Body h2c yang tak pernah selesai = socket menggantung selamanya.
+    socket.setTimeout(H2C_BODY_TIMEOUT_MS, () => socket.destroy());
     const serve = () => {
       // Replay the upgraded request through the existing HTTP/1.1 handler.
       const replay = new http.IncomingMessage(socket);

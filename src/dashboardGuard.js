@@ -87,6 +87,10 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  // agents-b: menypawn harness `sh` dengan env process.env (AGENTS_API_KEY) + prompt
+  // dari request. Harus loopback-only, bukan sekadar deny-by-default /api/* yang
+  // lolos begitu settings.requireLogin === false.
+  "/api/agents",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
