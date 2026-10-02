@@ -1,0 +1,23 @@
+# fly.toml app configuration file generated for 9router-6n365w on 2026-10-02T20:17:06Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = '9router-6n365w'
+primary_region = 'ams'
+
+[build]
+
+[http_service]
+  internal_port = 20128
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 1024
