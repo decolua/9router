@@ -25,6 +25,8 @@ const navItems = [
   { href: "/dashboard/combos", label: "Combo & Vision Adapter", icon: "layers" },
   { href: "/dashboard/usage", label: "Usage", icon: "bar_chart" },
   { href: "/dashboard/quota", label: "Quota Tracker", icon: "data_usage" },
+  // [qoder 权益 v0.6.0] Qoder 签到与福利中心（每日签到领 Credits / Pro 福利包 / 兑换码 / 本机凭证扫描）
+  { href: "/dashboard/qoder-rewards", label: "Qoder Rewards", icon: "redeem" },
   { href: "/dashboard/token-saver", label: "Token Saver", icon: "savings" },
   // { href: "/dashboard/pxpipe", label: "PXPIPE", icon: "image" },
   { href: "/dashboard/cli-tools", label: "CLI Tools", icon: "terminal" },

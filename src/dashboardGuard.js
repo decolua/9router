@@ -87,6 +87,8 @@ const LOCAL_ONLY_PATHS = [
   "/api/headroom/start",
   "/api/headroom/stop",
   "/api/headroom/proxy",
+  // [qoder 权益 v0.6.0] 本机凭证扫描会读取桌面/CLI 凭证并拉起 PowerShell 做 DPAPI 解密，限制为仅本机可访问
+  "/api/qoder/credentials/",
 ];
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
