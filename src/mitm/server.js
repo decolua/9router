@@ -372,6 +372,16 @@ function killPort(port) {
   }
 }
 
+const { removeAllDNSEntriesSync } = require("./dns/dnsConfig");
+try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
+process.on("uncaughtException", (err) => {
+  try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
+  console.error("Uncaught exception:", err.message);
+  process.exit(1);
+});
+process.on("exit", () => {
+  try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
+});
 try {
   killPort(LOCAL_PORT);
 } catch (e) {
@@ -382,13 +392,13 @@ try {
 server.listen(LOCAL_PORT, () => log(`🚀 Server ready on :${LOCAL_PORT}`));
 
 server.on("error", (e) => {
+  try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
   if (e.code === "EADDRINUSE") err(`Port ${LOCAL_PORT} already in use`);
   else if (e.code === "EACCES") err(`Permission denied for port ${LOCAL_PORT}`);
   else err(e.message);
   process.exit(1);
 });
 
-const { removeAllDNSEntriesSync } = require("./dns/dnsConfig");
 let isShuttingDown = false;
 const shutdown = () => {
   if (isShuttingDown) return;
