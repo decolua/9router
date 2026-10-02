@@ -166,3 +166,22 @@ export function stripUnsupportedModalities(body, sourceFormat, caps) {
   }
   return true;
 }
+
+// True when the body carries any media block (image / audio / file), any format.
+// Used to skip behavioral style prompts (ponytail): on susceptible models they
+// measurably degrade multimodal grounding (deepseek-v4.1-flash probed live:
+// hallucinated colors on solid images with the prompt injected, correct without).
+// Serialized-scan (not tree-walk) so every wire shape — including Kiro's
+// conversationState and future formats — is covered by one implementation.
+// Property names inlineData/fileData are media-only in Gemini shapes; the
+// quoted type values cover Claude (image/document), OpenAI chat (image_url /
+// input_audio / file) and Responses (input_image / input_file).
+const MEDIA_MARKER_RE = /"type"\s*:\s*"(?:image|document|image_url|input_image|input_file|input_audio|audio_url|file)"|"inlineData"|"fileData"/;
+export function hasMediaBlocks(body) {
+  if (!body || typeof body !== "object") return false;
+  try {
+    return MEDIA_MARKER_RE.test(JSON.stringify(body));
+  } catch {
+    return false;
+  }
+}
