@@ -21,6 +21,11 @@ export default {
   hasOAuth: true,
   transport: {
     baseUrl: "https://api.cline.bot/api/v1/chat/completions",
+    // Cline is streaming-only upstream: a non-streaming request returns the
+    // legacy {"data":{...}} envelope (no `success` flag), which the client would
+    // receive verbatim. Force upstream streaming so chatCore accumulates the SSE
+    // and converts it back to JSON for stream:false clients.
+    forceStream: true,
     headers: {
       "HTTP-Referer": "https://cline.bot",
       "X-Title": "Cline",

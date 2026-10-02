@@ -71,6 +71,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -102,7 +104,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestDetail: vi.fn(() => Promise.resolve()),
 }));
 
-const FORCED = ["openai", "codex", "commandcode"];
+const FORCED = ["openai", "codex", "commandcode", "cline", "clinepass"];
 
 function makeOptions(bodyStream) {
   const body = {
@@ -131,13 +133,13 @@ describe("forceStream provider config", () => {
     executeMock.mockRejectedValue(new Error("boom"));
   });
 
-  it("only openai/codex/commandcode force streaming", async () => {
+  it("only streaming-only upstreams force streaming", async () => {
     const { PROVIDERS } = await import("../../open-sse/config/providers.js");
     for (const id of FORCED) {
       expect(PROVIDERS[id]?.forceStream, `${id} forced`).toBe(true);
     }
     // a sample of others must NOT force
-    for (const id of ["deepseek", "claude", "gemini", "openrouter"]) {
+    for (const id of ["deepseek", "claude", "gemini", "openrouter", "kiro"]) {
       expect(PROVIDERS[id]?.forceStream, `${id} not forced`).not.toBe(true);
     }
   });
