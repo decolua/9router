@@ -67,12 +67,22 @@ export const ERROR_RULES = [
   { text: "quota exceeded",           backoff: true },
   { text: "capacity",                 backoff: true },
   { text: "overloaded",               backoff: true },
+  // Account+model scoped permanent errors: the credential cannot serve this model.
+  // These arrive as HTTP 400 or 410 from Codex / OpenAI-compatible providers but are
+  // NOT request-scoped (renaming the model or switching accounts resolves them), so
+  // the combo must skip to the next member rather than returning the error to the client.
+  { text: "is not supported when using codex with a chatgpt account", cooldownMs: COOLDOWN.long },
+  { text: "has reached its end of life",                              cooldownMs: COOLDOWN.long },
+  { text: "model_entitlement",                                        cooldownMs: COOLDOWN.long },
+  { text: "end of life",                                              cooldownMs: COOLDOWN.long },
 
   // --- Status-based rules (fallback when text doesn't match) ---
   { status: 401, cooldownMs: COOLDOWN.long },
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  // 410 Gone = model retired / end of life. Always account+model scoped; always fall through.
+  { status: 410, cooldownMs: COOLDOWN.long },
   { status: 429, backoff: true },
 ];
 
