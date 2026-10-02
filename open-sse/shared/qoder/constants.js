@@ -176,3 +176,97 @@ MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQDA8iMH5c02LilrsERw9t6Pv5Nc
 6HRkPJ7S236FZz73In/KVuLnwI8JJ2CbuJap8kvheCCZpmAWpb/cPx/3Vr/J6I17
 XcW+ML9FoCI6AOvOzwIDAQAB
 -----END PUBLIC KEY-----`;
+// ---------------------------------------------------------------------------
+// [qoder 权益 v0.6.0] 活动平台 / 签到 / 福利包常量（移植自 qoder2api-hub）
+// 这些端点全部挂 openapi 基址，纯 Bearer 鉴权，**不需要 COSY 签名**。
+// ---------------------------------------------------------------------------
+
+export const QODER_PATH_CAMPAIGNS = "/sash/api/v1/me/campaigns";
+export const QODER_PATH_CAMPAIGN_REWARD = "/sash/api/v1/me/campaigns/%s/reward";
+export const QODER_PATH_CAMPAIGN_CLAIM = "/sash/api/v1/me/campaigns/%s/claim";
+export const QODER_PATH_CHECKIN_STATUS = "/sash/api/v1/me/daily-check-in/status";
+export const QODER_PATH_CHECKIN_CLAIM = "/sash/api/v1/me/daily-check-in/claim";
+export const QODER_PATH_PRO_ELIGIBILITY = "/sash/api/v1/me/pro-upgrade/eligibility";
+export const QODER_PATH_PRO_CLAIM = "/sash/api/v1/me/pro-upgrade/claim";
+export const QODER_PATH_PLAN = "/api/v2/user/plan";
+
+export function qoderCampaignsUrl(region) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_CAMPAIGNS}`;
+}
+export function qoderCampaignRewardUrl(region, campaignId) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_CAMPAIGN_REWARD.replace("%s", campaignId)}`;
+}
+export function qoderCampaignClaimUrl(region, campaignId) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_CAMPAIGN_CLAIM.replace("%s", campaignId)}`;
+}
+export function qoderCheckinStatusUrl(region) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_CHECKIN_STATUS}`;
+}
+export function qoderCheckinClaimUrl(region) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_CHECKIN_CLAIM}`;
+}
+export function qoderProEligibilityUrl(region) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_PRO_ELIGIBILITY}`;
+}
+export function qoderProClaimUrl(region) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_PRO_CLAIM}`;
+}
+export function qoderPlanUrl(region) {
+  return `${qoderOpenApiBase(region)}${QODER_PATH_PLAN}`;
+}
+
+// 活动平台请求头：官方桌面端 = Cosy-ClientType 10（CLI = 5，QoderWork = 6）。
+// 缺这些头服务端不报错、但返回**空活动列表**；机器身份用派生假值则会**静默少掉
+// 设备定向活动**（如「每日领取 100 Credits」）。两者缺一不可。
+export const QODER_DESKTOP_CLIENT_TYPE = "10";
+export const QODER_DESKTOP_CLIENT_VERSION = "0.4.3";
+export const QODER_MACHINE_OS_DESKTOP = "x86_64_win32";
+export const QODER_MACHINE_HOSTNAME = "DESKTOP-QODER";
+
+/** 桌面端版本号；客户端更新后可用 QD_DESKTOP_VERSION 覆盖。 */
+export function qoderDesktopVersion() {
+  const v = String(process.env.QD_DESKTOP_VERSION || QODER_DESKTOP_CLIENT_VERSION).trim();
+  return v || QODER_DESKTOP_CLIENT_VERSION;
+}
+
+/** 原生机身身份缓存 TTL：身份会轮换，旧身份仍被接受，长缓存降低二进制调用成本。 */
+export const QODER_NATIVE_IDENTITY_TTL_MS = 30 * 60 * 1000;
+
+/** 桌面端安装目录候选名（用于定位 runtime-info.exe）。 */
+export const QODER_DESKTOP_INSTALL_NAMES = {
+  intl: ["Qoder"],
+  cn: ["Qoder CN", "QoderCN", "Qoder"],
+};
+
+/** 本机凭证扫描目录（app_dir = %APPDATA% 下；home_dir = 用户主目录下）。 */
+export const QODER_DESKTOP_DIRS = {
+  intl: {
+    name: "国际版 (Global)",
+    domain: "qoder.com",
+    appDir: "com.qoder.app.stable",
+    homeDir: ".qoder",
+  },
+  cn: {
+    name: "国内版 (China)",
+    domain: "qoder.com.cn",
+    appDir: "com.qodercn.app.stable",
+    homeDir: ".qoder-cn",
+  },
+};
+
+/** 活动领取失败码 → 中文说明（与官方前端状态机一致）。 */
+export const QODER_CAMPAIGN_FAILURE_CN = {
+  REDEMPTION_CODE_OUT_OF_STOCK: "今日名额已发完（每日 10:00 刷新，次日再来）",
+  ACHIEVEMENT_NOT_COMPLETED: "需先在官方桌面端完成新人任务后可领",
+  CAMPAIGN_NOT_ACTIVE: "活动已结束或未开始",
+  RISK_BLOCKED: "被风控拦截",
+  SAME_PERSON_ALREADY_CLAIMED: "同人已领取（同一设备/身份下其他账号本轮已领）",
+  NOT_ELIGIBLE: "当前账号无资格（不在活动定向内）",
+};
+
+/** 同人已领取后的冷却时长（多账号同机器时不必每轮都试）。 */
+export const QODER_CAMPAIGN_BLOCKED_COOLDOWN_MS = 6 * 3600 * 1000;
+/** 签到能力探测 TTL：接口不存在（404/405/410）时缓存，到期自动重探。 */
+export const QODER_CHECKIN_PROBE_TTL_MS = 6 * 3600 * 1000;
+/** 活动列表短缓存 TTL（写操作后立即失效）。 */
+export const QODER_CAMPAIGNS_TTL_MS = 20 * 1000;

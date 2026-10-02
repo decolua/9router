@@ -118,6 +118,11 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+  // [qoder 权益 v0.6.0] Qoder 每日签到调度器（09:00 / 21:00 自动签到领 Credits）。
+  // Token 保活已由上面的 backgroundTokenRefresh 承担，这里只做签到排程。
+  import("@/shared/services/qoderScheduler.js")
+    .then(({ startQoderScheduler }) => startQoderScheduler())
+    .catch((e) => console.log("[QoderScheduler] start failed:", e.message));
 }
 
 function hasQuotaAutoPingEnabled(settings) {
