@@ -5,6 +5,7 @@ const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   resolveConnectionProxyConfig: vi.fn(),
   getAntigravityUsage: vi.fn(),
+  updateProviderConnection: vi.fn(),
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -12,7 +13,7 @@ vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   getProxyPools: vi.fn(),
   validateApiKey: vi.fn(),
-  updateProviderConnection: vi.fn(),
+  updateProviderConnection: mocks.updateProviderConnection,
 }));
 vi.mock("@/lib/network/connectionProxy", () => ({
   resolveConnectionProxyConfig: mocks.resolveConnectionProxyConfig,
@@ -27,7 +28,7 @@ vi.mock("open-sse/services/usage/google.js", () => ({
 }));
 vi.mock("@/sse/utils/logger.js", () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn() }));
 
-const { getAntigravityQuotaCache, handleAntigravityQuotaError, refreshAntigravityQuota, clearAntigravityStrikes } = await import("@/sse/services/antigravityQuota.js");
+const { getAntigravityQuotaCache, handleAntigravityQuotaError, refreshAntigravityQuota, clearAntigravityStrikes, findAntigravityQuota, syncAntigravityQuotaLocksToDb } = await import("@/sse/services/antigravityQuota.js");
 const { getProviderCredentials } = await import("@/sse/services/auth.js");
 
 const MODEL = "claude-opus-4-6-thinking";
@@ -307,5 +308,78 @@ describe("Antigravity quota-aware routing", () => {
     // Optimistic reading must NOT poison the shared cache (auth pre-filter
     // treats cached 0% as exhausted).
     expect(getAntigravityQuotaCache().get("ag-optimistic")?.[MODEL]?.remainingPercentage).toBe(90);
+  });
+
+  it("findAntigravityQuota matches models by family or alias", () => {
+    const quotas = {
+      "gemini-3-flash-agent": { displayName: "Gemini 3 Flash (High)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+      "gemini-pro-agent": { displayName: "Gemini Pro", remainingPercentage: 50, resetAt: FUTURE_RESET },
+      "claude-sonnet-4-6": { displayName: "Claude Sonnet 4.6", remainingPercentage: 10, resetAt: FUTURE_RESET },
+      "claude-opus-4-6-thinking": { displayName: "Claude Opus 4.6 (Thinking)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+    };
+
+    expect(findAntigravityQuota(quotas, "gemini-3.8-flash-high")).toBe(quotas["gemini-3-flash-agent"]);
+    expect(findAntigravityQuota(quotas, "ag/gemini-3.7-flash-high")).toBe(quotas["gemini-3-flash-agent"]);
+    expect(findAntigravityQuota(quotas, "gemini-3.1-pro-low")).toBe(quotas["gemini-pro-agent"]);
+    expect(findAntigravityQuota(quotas, "claude-sonnet-4-6")).toBe(quotas["claude-sonnet-4-6"]);
+    expect(findAntigravityQuota(quotas, "claude-opus-4-6-thinking")).toBe(quotas["claude-opus-4-6-thinking"]);
+  });
+
+  it("skips account when model quota is exhausted via family matching", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-a", email: "a@example.com", isActive: true },
+      { id: "ag-b", email: "b@example.com", isActive: true },
+    ]);
+    getAntigravityQuotaCache().set("ag-a", {
+      "gemini-3-flash-agent": { displayName: "Gemini 3 Flash (High)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+    });
+
+    try {
+      await expect(getProviderCredentials("antigravity", null, "gemini-3.8-flash-high")).resolves.toMatchObject({
+        connectionId: "ag-b",
+        connectionName: "b@example.com",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("findAntigravityQuota matches weekly quotas for Free tier and exhausted weekly pools", () => {
+    const freeTierQuotas = {
+      "gemini_weekly": { displayName: "Gemini (Weekly)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+      "claude_gpt_weekly": { displayName: "Claude & GPT (Weekly)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+    };
+
+    expect(findAntigravityQuota(freeTierQuotas, "gemini-3.8-flash-high")).toBe(freeTierQuotas["gemini_weekly"]);
+    expect(findAntigravityQuota(freeTierQuotas, "gemini-pro-agent")).toBe(freeTierQuotas["gemini_weekly"]);
+    expect(findAntigravityQuota(freeTierQuotas, "claude-sonnet-4-6")).toBe(freeTierQuotas["claude_gpt_weekly"]);
+    expect(findAntigravityQuota(freeTierQuotas, "claude-opus-4-6-thinking")).toBe(freeTierQuotas["claude_gpt_weekly"]);
+    expect(findAntigravityQuota(freeTierQuotas, "gpt-oss-120b-medium")).toBe(freeTierQuotas["claude_gpt_weekly"]);
+  });
+
+  it("syncAntigravityQuotaLocksToDb writes model locks for Free tier exhausted accounts", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    const freeTierQuotas = {
+      "gemini_weekly": { displayName: "Gemini (Weekly)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+      "claude_gpt_weekly": { displayName: "Claude & GPT (Weekly)", remainingPercentage: 0, resetAt: FUTURE_RESET },
+    };
+
+    try {
+      await syncAntigravityQuotaLocksToDb("ag-free-1", freeTierQuotas);
+      expect(mocks.updateProviderConnection).toHaveBeenCalledWith(
+        "ag-free-1",
+        expect.objectContaining({
+          "modelLock_gemini-3.8-flash-high": FUTURE_RESET,
+          "modelLock_claude-sonnet-4-6": FUTURE_RESET,
+          "modelLock_claude-opus-4-6-thinking": FUTURE_RESET,
+          "modelLock_gpt-oss-120b-medium": FUTURE_RESET,
+        })
+      );
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
