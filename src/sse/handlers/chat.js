@@ -319,7 +319,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (provider === "antigravity" && (result.status === 409 || result.status === 429)) {
       quotaResetMs = await handleAntigravityQuotaError(
         credentials.connectionId, result.status, model,
-        refreshedCredentials.accessToken, credentials.providerSpecificData
+        refreshedCredentials.accessToken, credentials.providerSpecificData,
+        result.error
       );
       if (quotaResetMs) resetsAtMs = quotaResetMs;
     }

@@ -179,12 +179,12 @@ describe("Antigravity quota-aware routing", () => {
     } });
 
     try {
-      const first = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {});
+      const first = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(first).toBeNull();
-      const second = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {});
+      const second = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(second).toBeNull();
 
-      const third = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {});
+      const third = await handleAntigravityQuotaError("ag-strike", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(third).toBe(Date.parse("2026-08-26T00:15:00.000Z"));
     } finally {
       vi.useRealTimers();
@@ -199,10 +199,10 @@ describe("Antigravity quota-aware routing", () => {
     } });
 
     try {
-      await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {});
-      await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {});
+      await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       await vi.advanceTimersByTimeAsync(61_000);
-      const result = await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {});
+      const result = await handleAntigravityQuotaError("ag-window", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(result).toBeNull(); // window lapsed — counter restarted at 1
     } finally {
       vi.useRealTimers();
@@ -216,9 +216,9 @@ describe("Antigravity quota-aware routing", () => {
     mocks.getAntigravityUsage.mockResolvedValue({ message: "forbidden", quotas: {} });
 
     try {
-      await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {});
-      await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {});
-      const third = await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {});
+      await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      const third = await handleAntigravityQuotaError("ag-null", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(third).toBe(Date.parse("2026-08-26T00:15:00.000Z"));
     } finally {
       vi.useRealTimers();
@@ -233,9 +233,9 @@ describe("Antigravity quota-aware routing", () => {
     } });
 
     try {
-      await handleAntigravityQuotaError("ag-persist", 429, MODEL, "token", {});
-      await handleAntigravityQuotaError("ag-persist", 429, MODEL, "token", {});
-      await handleAntigravityQuotaError("ag-persist", 429, MODEL, "token", {});
+      await handleAntigravityQuotaError("ag-persist", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await handleAntigravityQuotaError("ag-persist", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await handleAntigravityQuotaError("ag-persist", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
 
       // The synthesized entry must be visible to the auth pre-filter reading
       // the shared cache — and must survive an optimistic upstream refresh.
@@ -260,9 +260,9 @@ describe("Antigravity quota-aware routing", () => {
     } });
 
     try {
-      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {});
-      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {});
-      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {});
+      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(getAntigravityQuotaCache().get("ag-clear")?.[MODEL]?.remainingPercentage).toBe(0);
 
       clearAntigravityStrikes("ag-clear", MODEL);
@@ -270,8 +270,8 @@ describe("Antigravity quota-aware routing", () => {
       expect(getAntigravityQuotaCache().get("ag-clear")?.[MODEL]).toBeUndefined();
 
       // Two more 429s do NOT inherit earlier strikes: no block on the third-in-episode.
-      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {});
-      await expect(handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {})).resolves.toBeNull();
+      await handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
+      await expect(handleAntigravityQuotaError("ag-clear", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED")).resolves.toBeNull();
     } finally {
       vi.useRealTimers();
     }
@@ -285,12 +285,12 @@ describe("Antigravity quota-aware routing", () => {
     } });
 
     try {
-      await handleAntigravityQuotaError("ag-anchor", 429, MODEL, "token", {});      // t=0
+      await handleAntigravityQuotaError("ag-anchor", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");      // t=0
       await vi.advanceTimersByTimeAsync(45_000);
-      await handleAntigravityQuotaError("ag-anchor", 429, MODEL, "token", {});      // t=45s
+      await handleAntigravityQuotaError("ag-anchor", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");      // t=45s
       await vi.advanceTimersByTimeAsync(45_000);
       // t=90s: within 60s of strike #2 but outside 60s of strike #1 => new window
-      const result = await handleAntigravityQuotaError("ag-anchor", 429, MODEL, "token", {});
+      const result = await handleAntigravityQuotaError("ag-anchor", 429, MODEL, "token", {}, "RATE_LIMIT_EXCEEDED");
       expect(result).toBeNull();
     } finally {
       vi.useRealTimers();
@@ -307,5 +307,27 @@ describe("Antigravity quota-aware routing", () => {
     // Optimistic reading must NOT poison the shared cache (auth pre-filter
     // treats cached 0% as exhausted).
     expect(getAntigravityQuotaCache().get("ag-optimistic")?.[MODEL]?.remainingPercentage).toBe(90);
+  });
+  it("does not strike-break on generic content-triggered 429s", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getAntigravityUsage.mockResolvedValue({ quotas: {
+      [MODEL]: { remainingPercentage: 90, resetAt: FUTURE_RESET },
+    } });
+
+    const errorMessage = "Resource has been exhausted (e.g. check quota)";
+
+    try {
+      await handleAntigravityQuotaError("ag-content-429", 429, MODEL, "token", {}, errorMessage);
+      await handleAntigravityQuotaError("ag-content-429", 429, MODEL, "token", {}, errorMessage);
+      const third = await handleAntigravityQuotaError(
+        "ag-content-429", 429, MODEL, "token", {}, errorMessage
+      );
+
+      expect(third).toBeNull();
+      expect(getAntigravityQuotaCache().get("ag-content-429")?.[MODEL]?.remainingPercentage).toBe(90);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

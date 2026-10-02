@@ -25,6 +25,11 @@ const MIN_REFRESH_INTERVAL_MS = 30_000; // 30s between refreshes per connection
 const STRIKE_WINDOW_MS = 60_000; // strikes older than this reset the count
 const STRIKE_THRESHOLD = 3;
 const STRIKE_BLOCK_MS = 15 * 60_000;
+const QUOTA_ERROR_MARKERS = [
+  "RATE_LIMIT_EXCEEDED",
+  "QUOTA_EXHAUSTED",
+  "Individual quota reached",
+];
 const strikeCounts = new Map(); // "connectionId|model" → { count, windowStart (anchored at first strike) }
 const strikeBlocks = new Map(); // "connectionId|model" → blockedUntil ms
 
@@ -135,12 +140,23 @@ async function _doRefresh(connectionId, accessToken, providerSpecificData, now) 
  * Called from chat handler error path.
  * @returns {number|null} resetAt timestamp ms (for resetsAtMs passthrough) or null
  */
-export async function handleAntigravityQuotaError(connectionId, status, model, accessToken, providerSpecificData) {
+export async function handleAntigravityQuotaError(connectionId, status, model, accessToken, providerSpecificData, errorMessage = "") {
   log.info("AG_QUOTA", `${connectionId.slice(0, 8)} | ${status} on ${model} — refreshing quota`);
 
   // Throttle applies to error paths too: one quota request per account/30s.
   // The first 409/429 populates cache; concurrent or repeated errors reuse it.
   const quota = (await refreshAntigravityQuota(connectionId, accessToken, providerSpecificData))?.[model];
+
+  const isQuotaError = QUOTA_ERROR_MARKERS.some((marker) =>
+    errorMessage.includes(marker)
+  );
+
+  // Generic 429s (for example content-triggered rejections) must not
+  // contribute to the strike breaker while the quota reading is optimistic
+  // or unavailable.
+  if (status === 429 && !isQuotaError && (!quota || quota.remainingPercentage > 0)) {
+    return null;
+  }
 
   // Strike breaker: count every 429 whose quota reading is either optimistic
   // (remaining > 0) or unavailable (quota API 403/error). 3 within the window
@@ -149,7 +165,7 @@ export async function handleAntigravityQuotaError(connectionId, status, model, a
   // well (see #3561 — "skip exhausted account/model quota before upstream
   // retry" was motivated by 409/429 pairs), and poisoning by transient 409s
   // requires 3 of them inside 60 seconds on the same pair.
-  if (!quota || quota.remainingPercentage > 0) {
+  if ((!quota || quota.remainingPercentage > 0) && isQuotaError) {
     const key = `${connectionId}|${model}`;
     const now = Date.now();
     const strike = strikeCounts.get(key);
