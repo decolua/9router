@@ -556,6 +556,85 @@ function getCatalogSource() {
   return globalThis.__9rCatalogSource || null;
 }
 
+// User-declared capabilities for custom (OpenAI-compatible /
+// Anthropic-compatible) models, installed by the server at startup. Same
+// injection shape as the catalog source above, and the same reason: this module
+// is bundled into the browser too, so it must not import the DB.
+//
+// Without this, a custom model whose id is not in the built-in catalog resolves
+// vision from the name heuristic alone. `step-5-preview` matches no vision
+// token, so the request path strips the image even though the user marked the
+// model vision-capable in the dashboard — the flag only reached the
+// /api/models catalog, never getCapabilitiesForModel(). #4301
+let customCapsSource = null;
+
+/**
+ * Install the custom-model capability reader (server only).
+ * @param {{ getCaps: (provider: string, model: string) => object|null } | null} source
+ */
+export function setCustomCapsSource(source) {
+  customCapsSource = source;
+  // Clear the shared slot too when uninstalling. Leaving a torn-down reader on
+  // globalThis would let the next module copy (each route chunk gets its own
+  // copy of this file) resurrect it on first read.
+  if (typeof globalThis !== "undefined") {
+    if (source) globalThis.__9rCustomCapsSource = source;
+    else delete globalThis.__9rCustomCapsSource;
+  }
+}
+
+function getCustomCapsSource() {
+  if (customCapsSource) return customCapsSource;
+  if (typeof globalThis === "undefined") return null;
+  return (customCapsSource = globalThis.__9rCustomCapsSource || null);
+}
+
+// Only these keys may be declared by a user. Keeps a stray `thinkingFormat` or
+// limit from a UI round-trip silently rewriting engine behaviour.
+const CUSTOM_CAP_KEYS = ["vision", "pdf", "audioInput", "videoInput", "search", "tools", "reasoning"];
+
+// Custom (OpenAI-/Anthropic-compatible) node aliases always carry one of these
+// prefixes — see OPENAI_COMPATIBLE_PREFIX in shared/constants/providers.js.
+// Gating on them means a stale or hand-written customModels row can never
+// shadow a BUILT-IN provider's curated table (e.g. "anthropic"), which would
+// silently change routing for every request that does not use a custom node.
+const CUSTOM_PROVIDER_PREFIXES = ["openai-compatible-", "anthropic-compatible-", "custom-embedding-"];
+
+function isCustomProviderAlias(provider) {
+  return typeof provider === "string" && CUSTOM_PROVIDER_PREFIXES.some((p) => provider.startsWith(p));
+}
+
+/**
+ * Overlay a user-declared capability set for a custom model.
+ *
+ * An explicit declaration wins over the name heuristic AND over the built-in
+ * tables: the reporter's point in #4301 is that a custom provider's model id
+ * is opaque to our catalog, so only the user knows what it accepts. Applied
+ * last so it is the final word, and restricted to CUSTOM_CAP_KEYS so it can
+ * never smuggle in thinking/limit changes.
+ */
+function withCustomCaps(resolved, provider, model, baseModel) {
+  if (!provider || !isCustomProviderAlias(provider)) return resolved;
+  const source = getCustomCapsSource();
+  if (!source) return resolved;
+
+  let declared = null;
+  try {
+    declared = source.getCaps(provider, model) || source.getCaps(provider, baseModel);
+  } catch {
+    return resolved; // fail open — never let a lookup error strip capability data
+  }
+  if (!declared || typeof declared !== "object") return resolved;
+
+  const overlay = {};
+  for (const key of CUSTOM_CAP_KEYS) {
+    if (typeof declared[key] === "boolean") overlay[key] = declared[key];
+  }
+  if (Object.keys(overlay).length === 0) return resolved;
+
+  return { ...resolved, ...overlay };
+}
+
 // Apply the synced catalog + name heuristic on top of a table-resolved result.
 // Strictly additive: a capability already true stays true, and a false one only
 // flips when an outside source positively declares support.
@@ -630,9 +709,9 @@ export function getCapabilitiesForModel(provider, model) {
   // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
   if (provider === "commandcode" || provider === "cmc") {
     const providerCaps = PROVIDER_CAPABILITIES.commandcode;
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
-    return {
+    if (providerCaps?.[model]) return withCustomCaps({ ...DEFAULT_CAPABILITIES, ...providerCaps[model] }, provider, model, baseModel);
+    if (providerCaps?.[baseModel]) return withCustomCaps({ ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] }, provider, model, baseModel);
+    return withCustomCaps({
       ...DEFAULT_CAPABILITIES,
       reasoning: true,
       thinkingFormat: "commandcode",
@@ -640,28 +719,28 @@ export function getCapabilitiesForModel(provider, model) {
       vision: !isCommandCodeTextOnly(model),
       contextWindow: 1000000,
       maxOutput: 384000,
-    };
+    }, provider, model, baseModel);
   }
 
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    if (providerCaps?.[model]) return withCustomCaps({ ...DEFAULT_CAPABILITIES, ...providerCaps[model] }, provider, model, baseModel);
+    if (providerCaps?.[baseModel]) return withCustomCaps({ ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] }, provider, model, baseModel);
   }
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
   //    deltas still apply. Step 1 above still short-circuits.
-  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model);
-  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model);
+  if (MODEL_CAPABILITIES[baseModel]) return withCustomCaps(refine(MODEL_CAPABILITIES[baseModel], provider, model), provider, model, baseModel);
+  if (MODEL_CAPABILITIES[model]) return withCustomCaps(refine(MODEL_CAPABILITIES[model], provider, model), provider, model, baseModel);
 
   // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return refine(caps, provider, model);
+      return withCustomCaps(refine(caps, provider, model), provider, model, baseModel);
     }
   }
 
   // 4. Floor
-  return refine(null, provider, model);
+  return withCustomCaps(refine(null, provider, model), provider, model, baseModel);
 }
