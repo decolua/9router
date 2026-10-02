@@ -23,8 +23,8 @@ export function filterToOpenAIFormat(body, opts = {}) {
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === ROLE.TOOL) return msg;
 
-    // Keep assistant messages with tool_calls as-is
-    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return msg;
+    // Keep assistant messages with tool_calls as-is (an empty array carries none)
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls?.length) return msg;
 
     // Handle string content
     if (typeof msg.content === "string") return msg;
@@ -64,8 +64,8 @@ export function filterToOpenAIFormat(body, opts = {}) {
   body.messages = body.messages.filter(msg => {
     // Always keep tool messages
     if (msg.role === ROLE.TOOL) return true;
-    // Always keep assistant messages with tool_calls
-    if (msg.role === ROLE.ASSISTANT && msg.tool_calls) return true;
+    // Always keep assistant messages with tool_calls (an empty array carries none)
+    if (msg.role === ROLE.ASSISTANT && msg.tool_calls?.length) return true;
     
     if (typeof msg.content === "string") return msg.content.trim() !== "";
     if (Array.isArray(msg.content)) {
