@@ -6,7 +6,9 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getApiKeyByKey } from "@/lib/localDb";
+import { extractApiKey } from "@/sse/services/auth.js";
+import { filterAllowedModels } from "@/sse/services/modelAcl.js";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
@@ -380,6 +382,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       id: combo.name,
       object: "model",
       owned_by: "combo",
+      comboModels: combo.models,
     };
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
@@ -651,7 +654,16 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    let data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const keyRecord = await getApiKeyByKey(apiKey);
+      if (keyRecord && keyRecord.allowedModels && !keyRecord.allowedModels.includes("*")) {
+        data = filterAllowedModels(data, keyRecord.allowedModels);
+      }
+    }
+
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

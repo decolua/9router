@@ -1,6 +1,9 @@
 services:
   9router:
-    image: decolua/9router:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: 9router:latest
     container_name: 9router
     restart: always
     ports:
@@ -8,13 +11,15 @@ services:
     volumes:
       - 9router-data:/app/data
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATA_DIR: /app/data
       PORT: "20128"
       HOSTNAME: "0.0.0.0"
       NODE_ENV: production
       HEADROOM_URL: http://headroom:8787
+      INITIAL_PASSWORD: "123456"
     depends_on:
       - headroom
 

@@ -1,4 +1,5 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, getApiKeyByKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { checkApiKeyModelAccess, isModelAllowed } from "./modelAcl.js";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
@@ -339,20 +340,44 @@ export async function clearAccountError(connectionId, currentConnection, model =
   await updateProviderConnection(connectionId, clearObj);
 }
 
-/**
- * Extract API key from request headers
- */
 export function extractApiKey(request) {
-  // Check Authorization header first
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) {
-    return authHeader.slice(7);
+  if (!request) return null;
+
+  const getHeader = (name) => {
+    if (typeof request.headers?.get === "function") {
+      return request.headers.get(name) || request.headers.get(name.toLowerCase());
+    }
+    if (request.headers && typeof request.headers === "object") {
+      return request.headers[name] || request.headers[name.toLowerCase()] || request.headers[name.toUpperCase()];
+    }
+    return null;
+  };
+
+  const authHeader = getHeader("authorization");
+  if (authHeader && typeof authHeader === "string") {
+    const trimmed = authHeader.trim();
+    if (/^bearer\s+/i.test(trimmed)) {
+      return trimmed.replace(/^bearer\s+/i, "").trim();
+    }
+    if (/^token\s+/i.test(trimmed)) {
+      return trimmed.replace(/^token\s+/i, "").trim();
+    }
+    if (!trimmed.toLowerCase().startsWith("basic ") && !trimmed.toLowerCase().startsWith("digest ")) {
+      return trimmed;
+    }
   }
 
-  // Check Anthropic x-api-key header
-  const xApiKey = request.headers.get("x-api-key");
-  if (xApiKey) {
-    return xApiKey;
+  const altKey = getHeader("x-api-key") || getHeader("api-key") || getHeader("x-goog-api-key");
+  if (altKey && typeof altKey === "string") {
+    return altKey.trim();
+  }
+
+  if (request.url) {
+    try {
+      const url = new URL(request.url, "http://localhost");
+      const qKey = url.searchParams.get("key") || url.searchParams.get("apiKey") || url.searchParams.get("api_key");
+      if (qKey) return qKey.trim();
+    } catch {}
   }
 
   return null;
@@ -365,3 +390,69 @@ export async function isValidApiKey(apiKey) {
   if (!apiKey) return false;
   return await validateApiKey(apiKey);
 }
+
+/**
+ * Get full API key details (record)
+ */
+export async function getApiKeyDetails(apiKey) {
+  if (!apiKey) return null;
+  return await getApiKeyByKey(apiKey);
+}
+
+/**
+ * Extract client IP from request headers or socket
+ */
+export function extractClientIp(request) {
+  if (!request) return null;
+  const x9r = request.headers?.get?.("x-9r-real-ip");
+  if (x9r) return x9r;
+  const xRealIp = request.headers?.get?.("x-real-ip");
+  if (xRealIp) return xRealIp;
+  const xff = request.headers?.get?.("x-forwarded-for");
+  if (xff) return xff.split(",")[0].trim();
+  return null;
+}
+
+/**
+ * Validate API Key, Expiration, and Model ACL access
+ */
+export async function authenticateAndAuthorize({ request, modelStr, modelInfo = null, comboModels = null, requireApiKey = false }) {
+  const apiKey = extractApiKey(request);
+  if (!apiKey) {
+    if (requireApiKey) {
+      return { ok: false, status: 401, error: "Missing API key" };
+    }
+    return { ok: true, keyRecord: null, apiKey: null };
+  }
+
+  const keyRecord = await getApiKeyByKey(apiKey);
+  if (!keyRecord) {
+    return { ok: false, status: 401, error: "Invalid API key" };
+  }
+
+  if (keyRecord.isActive === false || keyRecord.enabled === false) {
+    return { ok: false, status: 401, error: "API key is disabled" };
+  }
+
+  if (keyRecord.expiresAt) {
+    const exp = new Date(keyRecord.expiresAt).getTime();
+    if (!Number.isNaN(exp) && exp < Date.now()) {
+      return { ok: false, status: 401, error: "API key has expired" };
+    }
+  }
+
+  if (modelStr) {
+    const access = checkApiKeyModelAccess(keyRecord, modelStr, modelInfo, comboModels);
+    if (!access.allowed) {
+      return {
+        ok: false,
+        status: 403,
+        error: access.reason || `Model '${modelStr}' is not allowed for this API key`,
+        keyRecord,
+      };
+    }
+  }
+
+  return { ok: true, keyRecord, apiKey };
+}
+

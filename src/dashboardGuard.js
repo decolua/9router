@@ -139,13 +139,18 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) return apiKeyHeader;
+  const authHeader = request.headers.get("Authorization") || request.headers.get("authorization");
+  if (authHeader) {
+    const trimmed = authHeader.trim();
+    if (/^bearer\s+/i.test(trimmed)) return trimmed.replace(/^bearer\s+/i, "").trim();
+    if (/^token\s+/i.test(trimmed)) return trimmed.replace(/^token\s+/i, "").trim();
+    if (!trimmed.toLowerCase().startsWith("basic ") && !trimmed.toLowerCase().startsWith("digest ")) return trimmed;
+  }
+  const apiKeyHeader = request.headers.get("x-api-key") || request.headers.get("api-key");
+  if (apiKeyHeader) return apiKeyHeader.trim();
   const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) return googleApiKeyHeader;
-  return request.nextUrl.searchParams?.get("key") || null;
+  if (googleApiKeyHeader) return googleApiKeyHeader.trim();
+  return request.nextUrl.searchParams?.get("key") || request.nextUrl.searchParams?.get("apiKey") || null;
 }
 
 async function hasValidApiKey(request) {

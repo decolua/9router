@@ -1,4 +1,7 @@
 import { PROVIDER_MODELS } from "@/shared/constants/models";
+import { extractApiKey } from "@/sse/services/auth.js";
+import { getApiKeyByKey } from "@/lib/localDb";
+import { filterAllowedModels } from "@/sse/services/modelAcl.js";
 
 /**
  * Handle CORS preflight
@@ -17,7 +20,7 @@ export async function OPTIONS() {
  * GET /v1beta/models - Gemini compatible models list
  * Returns models in Gemini API format
  */
-export async function GET() {
+export async function GET(request) {
   try {
     const models = [];
     const seen = new Set();
@@ -54,7 +57,16 @@ export async function GET() {
       }
     }
 
-    return Response.json({ models });
+    let filteredModels = models;
+    const apiKey = extractApiKey(request);
+    if (apiKey) {
+      const keyRecord = await getApiKeyByKey(apiKey);
+      if (keyRecord && keyRecord.allowedModels && !keyRecord.allowedModels.includes("*")) {
+        filteredModels = filterAllowedModels(models, keyRecord.allowedModels);
+      }
+    }
+
+    return Response.json({ models: filteredModels });
   } catch (error) {
     console.log("Error fetching models:", error);
     return Response.json({ error: { message: error.message } }, { status: 500 });

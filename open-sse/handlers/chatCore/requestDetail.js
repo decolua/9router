@@ -14,7 +14,16 @@ const OPTIONAL_PARAMS = [
 ];
 
 export function extractRequestConfig(body, stream) {
-  const config = { messages: body.messages || [], model: body.model, stream };
+  let messages = Array.isArray(body.messages) ? [...body.messages] : [];
+  if (body.system && !messages.some((m) => m.role === "system")) {
+    const sysContent = typeof body.system === "string" ? body.system : JSON.stringify(body.system);
+    messages.unshift({ role: "system", content: sysContent });
+  }
+  if ((!messages || messages.length === 0) && body.prompt) {
+    messages = [{ role: "user", content: typeof body.prompt === "string" ? body.prompt : JSON.stringify(body.prompt) }];
+  }
+
+  const config = { messages, model: body.model, stream };
   for (const param of OPTIONAL_PARAMS) {
     if (body[param] !== undefined) config[param] = body[param];
   }
@@ -65,19 +74,33 @@ export function extractUsageFromResponse(responseBody) {
 }
 
 export function buildRequestDetail(base, overrides = {}) {
+  const promptTokens = base.tokens?.prompt_tokens ?? base.tokens?.input_tokens ?? 0;
+  const completionTokens = base.tokens?.completion_tokens ?? base.tokens?.output_tokens ?? 0;
+  const totalTokens = base.tokens?.total_tokens ?? (promptTokens + completionTokens);
+
   return {
     provider: base.provider || "unknown",
     model: base.model || "unknown",
     connectionId: base.connectionId || undefined,
+    apiKey: base.apiKey || overrides.apiKey || undefined,
+    customer: base.customer || overrides.customer || undefined,
+    ip: base.ip || overrides.ip || undefined,
     timestamp: new Date().toISOString(),
     latency: base.latency || { ttft: 0, total: 0 },
-    tokens: base.tokens || { prompt_tokens: 0, completion_tokens: 0 },
+    tokens: {
+      ...base.tokens,
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: totalTokens,
+    },
+    cost: typeof base.cost === "number" ? base.cost : (typeof overrides.cost === "number" ? overrides.cost : 0),
     request: base.request,
     providerRequest: base.providerRequest || null,
     providerResponse: base.providerResponse || null,
     response: base.response || {},
     pxpipe: base.pxpipe || undefined,
     status: base.status || "success",
+    error: base.error || overrides.error || undefined,
     ...overrides
   };
 }

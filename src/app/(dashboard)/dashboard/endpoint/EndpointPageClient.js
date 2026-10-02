@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal, Badge, ModelSelectModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -18,18 +18,30 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import ModelAclSelector from "./components/ModelAclSelector";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
+  const [activeProviders, setActiveProviders] = useState([]);
+  const [combos, setCombos] = useState([]);
+  const [showModelPickerModal, setShowModelPickerModal] = useState(false);
+  const [modelPickerTarget, setModelPickerTarget] = useState("new");
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyAllowedModels, setNewKeyAllowedModels] = useState("*");
+  const [newKeyExpiresAt, setNewKeyExpiresAt] = useState("");
+  const [editingKey, setEditingKey] = useState(null);
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editKeyAllowedModels, setEditKeyAllowedModels] = useState("*");
+  const [editKeyExpiresAt, setEditKeyExpiresAt] = useState("");
+  const [editKeyActive, setEditKeyActive] = useState(true);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
- const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
+  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
 
  // Cloudflare Tunnel state
   const [tunnelChecking, setTunnelChecking] = useState(true);
@@ -254,7 +266,13 @@ export default function APIPageClient({ machineId }) {
         return data.keys || [];
       };
 
-      let existing = await fetchKeys();
+      const [existingKeys, providersRes, combosRes] = await Promise.all([
+        fetchKeys(),
+        fetch("/api/providers").catch(() => null),
+        fetch("/api/combos").catch(() => null),
+      ]);
+
+      let existing = existingKeys;
       // Auto-provision a default key for first-time users so the endpoint works out of the box.
       if (existing.length === 0) {
         try {
@@ -267,6 +285,24 @@ export default function APIPageClient({ machineId }) {
         } catch { /* fall through to empty render */ }
       }
       setKeys(existing);
+
+      if (providersRes && providersRes.ok) {
+        const pData = await providersRes.json();
+        setActiveProviders(
+          Array.isArray(pData.connections)
+            ? pData.connections.filter((c) => c.isActive !== false)
+            : []
+        );
+      }
+
+      if (combosRes && combosRes.ok) {
+        const cData = await combosRes.json();
+        setCombos(
+          Array.isArray(cData.combos)
+            ? cData.combos.filter((c) => !c.kind || c.kind === "llm")
+            : []
+        );
+      }
     } catch (error) {
       console.log("Error fetching data:", error);
     } finally {
@@ -618,10 +654,19 @@ export default function APIPageClient({ machineId }) {
     if (!newKeyName.trim()) return;
 
     try {
+      const modelsList = newKeyAllowedModels
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({
+          name: newKeyName.trim(),
+          allowed_models: modelsList.length > 0 ? modelsList : ["*"],
+          expires_at: newKeyExpiresAt.trim() || null,
+        }),
       });
       const data = await res.json();
 
@@ -629,10 +674,41 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyAllowedModels("*");
+        setNewKeyExpiresAt("");
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleUpdateKey = async () => {
+    if (!editingKey) return;
+
+    try {
+      const modelsList = editKeyAllowedModels
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: editKeyName.trim(),
+          allowed_models: modelsList.length > 0 ? modelsList : ["*"],
+          expires_at: editKeyExpiresAt.trim() || null,
+          isActive: editKeyActive,
+        }),
+      });
+
+      if (res.ok) {
+        await fetchData();
+        setEditingKey(null);
+      }
+    } catch (error) {
+      console.log("Error updating key:", error);
     }
   };
 
@@ -999,13 +1075,37 @@ export default function APIPageClient({ machineId }) {
           </div>
         ) : (
           <div className="flex flex-col">
-            {keys.map((key) => (
+            {keys.map((key) => {
+              let allowedList = ["*"];
+              if (Array.isArray(key.allowedModels)) {
+                allowedList = key.allowedModels;
+              } else if (typeof key.allowedModels === "string") {
+                try {
+                  const parsed = JSON.parse(key.allowedModels);
+                  if (Array.isArray(parsed)) allowedList = parsed;
+                  else allowedList = [key.allowedModels];
+                } catch {
+                  allowedList = key.allowedModels.split(",").map((s) => s.trim()).filter(Boolean);
+                }
+              }
+              const isAllModels = !allowedList.length || allowedList.includes("*");
+              const isExpired = key.expiresAt && new Date(key.expiresAt).getTime() < Date.now();
+
+              return (
               <div
                 key={key.id}
                 className={`group flex items-center justify-between py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium">{key.name}</p>
+                <div className="flex-1 min-w-0 pr-4">
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{key.name}</p>
+                    {isExpired && (
+                      <Badge size="sm" variant="error">Expired</Badge>
+                    )}
+                    {key.isActive === false && (
+                      <Badge size="sm" variant="warning">Paused</Badge>
+                    )}
+                  </div>
                   <div className="flex items-center gap-2 mt-1">
                     <code className="text-xs text-text-muted font-mono">
                       {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
@@ -1028,14 +1128,53 @@ export default function APIPageClient({ machineId }) {
                       </span>
                     </button>
                   </div>
+
+                  {/* Allowed models & expiration metadata */}
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <span className="text-[11px] text-text-muted font-medium">Models:</span>
+                    {isAllModels ? (
+                      <Badge size="sm" variant="success">All Models (*)</Badge>
+                    ) : (
+                      allowedList.map((m, idx) => (
+                        <Badge key={idx} size="sm" variant="primary" className="font-mono">
+                          {m}
+                        </Badge>
+                      ))
+                    )}
+                    {key.expiresAt && (
+                      <span className={`text-[11px] ml-1.5 ${isExpired ? "text-red-500 font-medium" : "text-text-muted"}`}>
+                        {isExpired ? "Expired: " : "Expires: "}
+                        {new Date(key.expiresAt).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
+
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
-                  {key.isActive === false && (
-                    <p className="text-xs text-orange-500 mt-1">Paused</p>
-                  )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      setEditingKey(key);
+                      setEditKeyName(key.name || "");
+                      setEditKeyAllowedModels(
+                        Array.isArray(key.allowedModels)
+                          ? key.allowedModels.join(", ")
+                          : (key.allowedModels || "*")
+                      );
+                      setEditKeyExpiresAt(
+                        key.expiresAt
+                          ? new Date(key.expiresAt).toISOString().split("T")[0]
+                          : ""
+                      );
+                      setEditKeyActive(key.isActive ?? true);
+                    }}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Edit key permissions"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1063,7 +1202,8 @@ export default function APIPageClient({ machineId }) {
                   </button>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Card>
@@ -1071,20 +1211,45 @@ export default function APIPageClient({ machineId }) {
       {/* Add Key Modal */}
       <Modal
         isOpen={showAddModal}
+        size="lg"
         title="Create API Key"
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyAllowedModels("*");
+          setNewKeyExpiresAt("");
         }}
       >
         <div className="flex flex-col gap-4">
           <Input
-            label="Key Name"
+            label="Key Name / Customer"
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
-            placeholder="Production Key"
+            placeholder="e.g. Customer 1"
           />
-          <div className="flex gap-2">
+
+          <ModelAclSelector
+            value={newKeyAllowedModels}
+            onChange={setNewKeyAllowedModels}
+            activeProviders={activeProviders}
+            combos={combos}
+            onOpenModelPicker={() => {
+              setModelPickerTarget("new");
+              setShowModelPickerModal(true);
+            }}
+          />
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Expiration Date (Optional)
+            </label>
+            <Input
+              type="date"
+              value={newKeyExpiresAt}
+              onChange={(e) => setNewKeyExpiresAt(e.target.value)}
+            />
+          </div>
+          <div className="flex gap-2 mt-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
               Create
             </Button>
@@ -1092,7 +1257,71 @@ export default function APIPageClient({ machineId }) {
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyAllowedModels("*");
+                setNewKeyExpiresAt("");
               }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        size="lg"
+        title="Edit API Key Permissions"
+        onClose={() => setEditingKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name / Customer"
+            value={editKeyName}
+            onChange={(e) => setEditKeyName(e.target.value)}
+            placeholder="e.g. Customer 1"
+          />
+
+          <ModelAclSelector
+            value={editKeyAllowedModels}
+            onChange={setEditKeyAllowedModels}
+            activeProviders={activeProviders}
+            combos={combos}
+            onOpenModelPicker={() => {
+              setModelPickerTarget("edit");
+              setShowModelPickerModal(true);
+            }}
+          />
+
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Expiration Date (Optional)
+            </label>
+            <Input
+              type="date"
+              value={editKeyExpiresAt}
+              onChange={(e) => setEditKeyExpiresAt(e.target.value)}
+            />
+          </div>
+          <div className="flex items-center justify-between py-2 border-t border-border">
+            <span className="text-sm font-medium">Status</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-text-muted">{editKeyActive ? "Active" : "Paused"}</span>
+              <Toggle
+                size="sm"
+                checked={editKeyActive}
+                onChange={setEditKeyActive}
+              />
+            </div>
+          </div>
+          <div className="flex gap-2 mt-2">
+            <Button onClick={handleUpdateKey} fullWidth disabled={!editKeyName.trim()}>
+              Save Changes
+            </Button>
+            <Button
+              onClick={() => setEditingKey(null)}
               variant="ghost"
               fullWidth
             >
@@ -1292,6 +1521,50 @@ export default function APIPageClient({ machineId }) {
         message={confirmState?.message}
         variant="danger"
       />
+
+      {/* Model Catalog Picker Modal */}
+      {showModelPickerModal && (
+        <ModelSelectModal
+          isOpen={showModelPickerModal}
+          onClose={() => setShowModelPickerModal(false)}
+          onSelect={(model) => {
+            const val = model?.value || model?.name || model?.id;
+            if (!val) return;
+            const targetVal = modelPickerTarget === "new" ? newKeyAllowedModels : editKeyAllowedModels;
+            const curr = (targetVal || "").split(",").map((s) => s.trim()).filter(Boolean);
+            if (!curr.some((x) => x.toLowerCase() === val.toLowerCase())) {
+              const updated = [...curr.filter((x) => x !== "*"), val].join(", ");
+              if (modelPickerTarget === "new") {
+                setNewKeyAllowedModels(updated);
+              } else {
+                setEditKeyAllowedModels(updated);
+              }
+            }
+          }}
+          onDeselect={(model) => {
+            const val = model?.value || model?.name || model?.id;
+            if (!val) return;
+            const targetVal = modelPickerTarget === "new" ? newKeyAllowedModels : editKeyAllowedModels;
+            const curr = (targetVal || "").split(",").map((s) => s.trim()).filter(Boolean);
+            const next = curr.filter((x) => x.toLowerCase() !== val.toLowerCase() && x !== "*");
+            const updated = next.length === 0 ? "*" : next.join(", ");
+            if (modelPickerTarget === "new") {
+              setNewKeyAllowedModels(updated);
+            } else {
+              setEditKeyAllowedModels(updated);
+            }
+          }}
+          activeProviders={activeProviders}
+          addedModelValues={
+            (modelPickerTarget === "new" ? newKeyAllowedModels : editKeyAllowedModels)
+              ?.split(",")
+              ?.map((s) => s.trim())
+              ?.filter(Boolean) || []
+          }
+          closeOnSelect={false}
+          title="Select Allowed Models or Combos"
+        />
+      )}
     </div>
   );
 }

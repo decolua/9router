@@ -25,7 +25,7 @@ async function tryBetterSqlite() {
   if (nodeMajor >= 24) return null;
   try {
     const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
-    return createBetterSqliteAdapter(DATA_FILE);
+    return await createBetterSqliteAdapter(DATA_FILE);
   } catch (e) {
     console.warn(`[DB] better-sqlite3 unavailable: ${e.message}`);
     return null;
