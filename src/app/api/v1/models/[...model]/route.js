@@ -1,4 +1,6 @@
-import { buildModelsList } from "../route.js";
+import { extractRequestApiKey } from "@/lib/requestApiKey";
+import { buildModelsList, filterModelsForApiKey } from "../route.js";
+import * as localDb from "@/lib/localDb";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -11,6 +13,10 @@ const KIND_SLUG_MAP = {
 };
 
 const LLM_KIND = "llm";
+
+function extractApiKey(request) {
+  return extractRequestApiKey(request);
+}
 
 export async function OPTIONS() {
   return new Response(null, {
@@ -37,21 +43,28 @@ function json(data, options = {}) {
  * GET /v1/models/{provider}/{model} - OpenAI-compatible single model lookup.
  * Supported kinds: image, tts, stt, embedding, image-to-text, web.
  */
-export async function GET(_request, { params }) {
+export async function GET(request, { params }) {
   try {
     const { model } = await params;
     const path = Array.isArray(model) ? model : [model];
     const identifier = path.filter(Boolean).join("/");
     const kindFilter = path.length === 1 ? KIND_SLUG_MAP[identifier] : null;
 
+    const apiKey = extractApiKey(request);
+    const apiKeyRecord = apiKey ? await localDb.getApiKeyByValue(apiKey) : null;
+
     if (kindFilter) {
-      const data = await buildModelsList(kindFilter);
+      const models = await buildModelsList(kindFilter);
+      const data = await filterModelsForApiKey(models, apiKeyRecord);
       return json({ object: "list", data });
     }
 
     // Match the same LLM catalog exposed by GET /v1/models. A catch-all
     // parameter is required because provider-prefixed IDs contain a slash.
-    const models = await buildModelsList([LLM_KIND]);
+    const models = await filterModelsForApiKey(
+      await buildModelsList([LLM_KIND]),
+      apiKeyRecord,
+    );
     const matchedModel = models.find((candidate) => candidate.id === identifier);
 
     if (!matchedModel) {

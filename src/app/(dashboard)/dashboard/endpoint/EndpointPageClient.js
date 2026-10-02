@@ -18,12 +18,20 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import KeyPermissionsEditor from "./components/KeyPermissionsEditor";
+import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
+
+const EMPTY_KEY_PERMISSIONS = { providerIds: [], models: [], forceProviderId: "", forceModel: "" };
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyPermissions, setNewKeyPermissions] = useState(EMPTY_KEY_PERMISSIONS);
   const [createdKey, setCreatedKey] = useState(null);
+  const [editingKeyAccess, setEditingKeyAccess] = useState(null);
+  const [accessCatalog, setAccessCatalog] = useState({ providers: [], models: [], loading: true, error: "" });
   const [confirmState, setConfirmState] = useState(null);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
@@ -273,6 +281,69 @@ export default function APIPageClient({ machineId }) {
       setLoading(false);
     }
   };
+
+  const loadAccessCatalog = async () => {
+    try {
+      const [nodesRes, connectionsRes, modelsRes] = await Promise.all([
+        fetch("/api/provider-nodes", { cache: "no-store" }),
+        fetch("/api/providers", { cache: "no-store" }),
+        // /v1/models is intentionally API-key protected. Use the
+        // dashboard-session endpoint so this form never needs to expose a key
+        // in the browser merely to populate the access controls.
+        fetch("/api/models/available", { cache: "no-store" }),
+      ]);
+      const nodes = nodesRes.ok ? (await nodesRes.json()).nodes || [] : [];
+      const connections = connectionsRes.ok ? (await connectionsRes.json()).connections || [] : [];
+      const nodeByPrefix = new Map(nodes.filter((node) => node.prefix).map((node) => [node.prefix, node]));
+      const providerMap = new Map();
+      for (const node of nodes) {
+        providerMap.set(node.id, { id: node.id, label: `${node.name} (${node.prefix})` });
+      }
+      for (const connection of connections) {
+        if (!providerMap.has(connection.provider)) {
+          providerMap.set(connection.provider, { id: connection.provider, label: connection.name || connection.provider });
+        }
+      }
+      const modelData = modelsRes.ok ? (await modelsRes.json()).models || [] : [];
+      const models = modelData
+        .filter((model) => typeof model?.id === "string" && model.id.includes("/"))
+        .map((model) => {
+          const slash = model.id.indexOf("/");
+          const prefix = model.id.slice(0, slash);
+          const modelId = model.id.slice(slash + 1);
+          const builtInProviderId = ALIAS_TO_ID[prefix] || (AI_PROVIDERS[prefix] ? prefix : null);
+          const node = builtInProviderId ? null : nodeByPrefix.get(prefix);
+          const providerId = builtInProviderId || node?.id || prefix;
+          // Permission checks use the stable provider-node ID, while forced
+          // routing must retain the public prefix emitted by /v1/models.
+          return {
+            id: `${providerId}/${modelId}`,
+            routeId: model.id,
+            providerId,
+            label: model.id,
+          };
+        });
+      setAccessCatalog({
+        providers: [...providerMap.values()].sort((a, b) => a.label.localeCompare(b.label)),
+        models: [...new Map(models.map((model) => [model.id, model])).values()].sort((a, b) => a.label.localeCompare(b.label)),
+        loading: false,
+        error: modelsRes.ok ? "" : "Available models could not be loaded. Refresh the page and try again.",
+      });
+    } catch (error) {
+      console.log("Error loading API key access catalog:", error);
+      setAccessCatalog((current) => ({
+        ...current,
+        loading: false,
+        error: "Available models could not be loaded. Refresh the page and try again.",
+      }));
+    }
+  };
+
+  useEffect(() => {
+    // Defer catalogue loading to avoid synchronous state updates in an effect
+    // when a fetch fails before reaching its first await.
+    void Promise.resolve().then(loadAccessCatalog);
+  }, []);
 
   // u2500u2500u2500 Cloudflare Tunnel handlers
   // Ping tunnel health until reachable. Race multiple URLs (shortlink + direct) — 1 OK is enough.
@@ -621,7 +692,7 @@ export default function APIPageClient({ machineId }) {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, permissions: newKeyPermissions }),
       });
       const data = await res.json();
 
@@ -629,6 +700,7 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyPermissions(EMPTY_KEY_PERMISSIONS);
         setShowAddModal(false);
       }
     } catch (error) {
@@ -672,6 +744,34 @@ export default function APIPageClient({ machineId }) {
     } catch (error) {
       console.log("Error toggling key:", error);
     }
+  };
+
+  const saveKeyAccess = async () => {
+    if (!editingKeyAccess) return;
+    try {
+      const res = await fetch(`/api/keys/${editingKeyAccess.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ permissions: editingKeyAccess.permissions }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setKeys((current) => current.map((key) => key.id === data.key.id ? data.key : key));
+        setEditingKeyAccess(null);
+      }
+    } catch (error) {
+      console.log("Error saving API key access:", error);
+    }
+  };
+
+  const accessSummary = (permissions) => {
+    const providerCount = permissions?.providerIds?.length || 0;
+    const modelCount = permissions?.models?.length || 0;
+    const access = !providerCount && !modelCount
+      ? "All providers and models"
+      : `${providerCount} provider${providerCount === 1 ? "" : "s"}, ${modelCount} model${modelCount === 1 ? "" : "s"}`;
+    const routing = permissions?.forceModel ? "forced model" : permissions?.forceProviderId ? "forced provider" : "";
+    return routing ? `${access}; ${routing}` : access;
   };
 
   const maskKey = (fullKey) => {
@@ -1031,11 +1131,22 @@ export default function APIPageClient({ machineId }) {
                   <p className="text-xs text-text-muted mt-1">
                     Created {new Date(key.createdAt).toLocaleDateString()}
                   </p>
+                  <p className="text-xs text-text-muted mt-1">
+                    Access: {accessSummary(key.permissions)}
+                  </p>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setEditingKeyAccess({ id: key.id, name: key.name, permissions: key.permissions || EMPTY_KEY_PERMISSIONS })}
+                    className="p-2 hover:bg-primary/10 rounded text-text-muted hover:text-primary transition-all"
+                    title="Manage provider and model access"
+                    aria-label={`Manage access for ${key.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1075,6 +1186,7 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyPermissions(EMPTY_KEY_PERMISSIONS);
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1083,6 +1195,14 @@ export default function APIPageClient({ machineId }) {
             value={newKeyName}
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
+          />
+          <KeyPermissionsEditor
+            value={newKeyPermissions}
+            onChange={setNewKeyPermissions}
+            providers={accessCatalog.providers}
+            models={accessCatalog.models}
+            loading={accessCatalog.loading}
+            error={accessCatalog.error}
           />
           <div className="flex gap-2">
             <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
@@ -1098,6 +1218,27 @@ export default function APIPageClient({ machineId }) {
             >
               Cancel
             </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        isOpen={!!editingKeyAccess}
+        title={editingKeyAccess ? `Access: ${editingKeyAccess.name}` : "API Key Access"}
+        onClose={() => setEditingKeyAccess(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <KeyPermissionsEditor
+            value={editingKeyAccess?.permissions || EMPTY_KEY_PERMISSIONS}
+            onChange={(permissions) => setEditingKeyAccess((current) => ({ ...current, permissions }))}
+            providers={accessCatalog.providers}
+            models={accessCatalog.models}
+            loading={accessCatalog.loading}
+            error={accessCatalog.error}
+          />
+          <div className="flex gap-2">
+            <Button onClick={saveKeyAccess} fullWidth>Save access</Button>
+            <Button onClick={() => setEditingKeyAccess(null)} variant="ghost" fullWidth>Cancel</Button>
           </div>
         </div>
       </Modal>

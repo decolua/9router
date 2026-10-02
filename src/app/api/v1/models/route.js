@@ -1,3 +1,4 @@
+import { extractRequestApiKey } from "@/lib/requestApiKey";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
 import {
   ALIAS_TO_ID,
@@ -7,7 +8,9 @@ import {
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import * as localDb from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { isApiKeyModelVisible, normalizeApiKeyPermissions } from "@/lib/apiKeyPermissions";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
@@ -169,6 +172,10 @@ const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
+
+function extractApiKey(request) {
+  return extractRequestApiKey(request);
+}
 
 // Map per-model `type` field (in PROVIDER_MODELS) to service kind.
 // Models without `type` are treated as LLM.
@@ -630,6 +637,53 @@ export async function buildModelsList(kindFilter, options = {}) {
   return dedupedModels;
 }
 
+// Restrict the public catalogue to the same route policy used by chat. This
+// prevents an API key that is tied to one model/provider from discovering
+// unrelated models. Model resolution is required for user-defined compatible
+// provider prefixes, whose public prefix is not their stable provider ID.
+export async function filterModelsForApiKey(models, apiKeyRecord) {
+  if (!apiKeyRecord) return models;
+  const permissions = normalizeApiKeyPermissions(apiKeyRecord.permissions);
+
+  // Legacy keys keep the existing catalogue without any resolution overhead.
+  // Forced routes still have to satisfy provider and individual-model grants.
+  if (!permissions.forceModel && !permissions.forceProviderId
+      && !permissions.providerIds.length && !permissions.models.length) return models;
+  if (permissions.forceModel) models = models.filter((entry) => entry.id === permissions.forceModel);
+
+  // Keep the normal catalogue builder light and testable; custom-prefix
+  // resolution is needed only for a key-scoped response.
+  const { getModelInfo } = await import("@/sse/services/model");
+  const providersByPrefix = new Map();
+
+  const visible = await Promise.all(models.map(async (entry) => {
+    try {
+      const slash = entry.id.indexOf("/");
+      let modelInfo;
+      if (slash >= 0) {
+        const prefix = entry.id.slice(0, slash);
+        if (!providersByPrefix.has(prefix)) {
+          providersByPrefix.set(prefix, getModelInfo(entry.id));
+        }
+        const resolved = await providersByPrefix.get(prefix);
+        modelInfo = { provider: resolved.provider, model: entry.id.slice(slash + 1) };
+      } else {
+        // Combos have no single provider and cannot satisfy a restricted key.
+        modelInfo = { provider: null, model: entry.id };
+      }
+      return isApiKeyModelVisible(permissions, {
+        publicModelId: entry.id,
+        provider: modelInfo.provider,
+        model: modelInfo.model,
+      });
+    } catch {
+      // A failed policy lookup must never result in a model being exposed.
+      return false;
+    }
+  }));
+  return models.filter((_, index) => visible[index]);
+}
+
 /**
  * Handle CORS preflight
  */
@@ -651,7 +705,10 @@ export async function GET(request) {
   try {
     // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const apiKey = extractApiKey(request);
+    const apiKeyRecord = apiKey ? await localDb.getApiKeyByValue(apiKey) : null;
+    const models = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    const data = await filterModelsForApiKey(models, apiKeyRecord);
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });

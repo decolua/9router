@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
+import { getApiKeyByValue } from "@/lib/localDb";
+import { extractRequestApiKey } from "@/lib/requestApiKey";
+import { hasApiKeyPolicy, supportsApiKeyPolicyPath } from "@/lib/apiKeyPermissions";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
@@ -139,13 +142,7 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-  const apiKeyHeader = request.headers.get("x-api-key");
-  if (apiKeyHeader) return apiKeyHeader;
-  const googleApiKeyHeader = request.headers.get("x-goog-api-key");
-  if (googleApiKeyHeader) return googleApiKeyHeader;
-  return request.nextUrl.searchParams?.get("key") || null;
+  return extractRequestApiKey(request);
 }
 
 async function hasValidApiKey(request) {
@@ -221,7 +218,16 @@ export async function proxy(request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (isPublicLlmApi(pathname)) {
+  if (isPublicLlmApi(pathname) || pathname === "/systemone") {
+    const apiKey = extractApiKey(request);
+    const keyRecord = apiKey ? await getApiKeyByValue(apiKey) : null;
+    if (keyRecord && !keyRecord.isActive) {
+      return NextResponse.json({ error: "Invalid API key" }, { status: 401 });
+    }
+    if (hasApiKeyPolicy(keyRecord?.permissions) && request.method !== "OPTIONS"
+        && !supportsApiKeyPolicyPath(pathname, request.method)) {
+      return NextResponse.json({ error: "Scoped API keys support chat inference and /v1/models only" }, { status: 403 });
+    }
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
     return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
   }

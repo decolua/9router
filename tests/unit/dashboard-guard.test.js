@@ -8,6 +8,7 @@ const mocks = vi.hoisted(() => ({
   })),
   getSettings: vi.fn(),
   validateApiKey: vi.fn(),
+  getApiKeyByValue: vi.fn(),
   getConsistentMachineId: vi.fn(),
   verifyDashboardAuthToken: vi.fn(),
 }));
@@ -23,6 +24,7 @@ vi.mock("next/server", () => ({
 vi.mock("@/lib/localDb", () => ({
   getSettings: mocks.getSettings,
   validateApiKey: mocks.validateApiKey,
+  getApiKeyByValue: mocks.getApiKeyByValue,
 }));
 
 vi.mock("@/shared/utils/machineId", () => ({
@@ -37,10 +39,12 @@ const { proxy, __test__ } = await import("../../src/dashboardGuard.js");
 
 const PEER_TOKEN = "peer-token-fixture";
 
-function request(pathname, headers = {}) {
+function request(pathname, headers = {}, method = "GET") {
   const normalizedHeaders = new Headers(headers);
+  const url = new URL(`http://localhost${pathname}`);
   return {
-    nextUrl: { pathname, searchParams: new URL(`http://localhost${pathname}`).searchParams },
+    nextUrl: { pathname: url.pathname, searchParams: url.searchParams },
+    method,
     headers: normalizedHeaders,
     cookies: { get: vi.fn(() => undefined) },
     url: `http://localhost${pathname}`,
@@ -59,6 +63,7 @@ describe("dashboard guard public LLM API access", () => {
     process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getApiKeyByValue.mockResolvedValue(null);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
@@ -222,6 +227,7 @@ describe("dashboard guard local-only access", () => {
     process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
     mocks.getSettings.mockResolvedValue({ requireLogin: true });
     mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getApiKeyByValue.mockResolvedValue(null);
     mocks.getConsistentMachineId.mockResolvedValue("cli-token");
     mocks.verifyDashboardAuthToken.mockResolvedValue(false);
   });
@@ -284,6 +290,92 @@ describe("dashboard guard local-only access", () => {
     }));
 
     expect(response).toBe(mocks.nextResponse);
+  });
+});
+
+describe("dashboard guard scoped API key boundaries", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: false });
+    mocks.validateApiKey.mockResolvedValue(true);
+    mocks.getApiKeyByValue.mockResolvedValue({ isActive: true, permissions: { forceModel: "local/model-a" } });
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  const unsupportedPaths = [
+    "/v1/audio/speech", "/v1/audio/transcriptions", "/api/v1/audio/speech",
+    "/v1/embeddings", "/api/v1/embeddings", "/v1/images/generations",
+    "/v1/videos", "/v1/web/search", "/v1/web/fetch", "/systemone",
+    "/v1beta/models/model-a:generateContent",
+    "/api/v1beta/models/model-a:generateContent",
+    "/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
+    "/v1beta/models/gemini-2.5-flash:streamGenerateContent",
+  ];
+
+  it.each(unsupportedPaths)("fails closed for scoped POST %s", async (path) => {
+    const result = await proxy(request(path, { authorization: "Bearer scoped-key" }, "POST"));
+    expect(result.status).toBe(403);
+    expect(result.body.error).toContain("Scoped API keys");
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it.each(["/v1beta/models", "/api/v1beta/models"])("does not expose unfiltered Gemini catalogue %s", async (path) => {
+    expect((await proxy(request(path, { "x-goog-api-key": "scoped-key" }))).status).toBe(403);
+  });
+
+  it.each([
+    "/v1/chat/completions", "/api/v1/chat/completions", "/v1/v1/chat/completions",
+    "/v1/messages", "/api/v1/messages", "/v1/responses", "/api/v1/responses",
+    "/v1/responses/compact", "/v1/api/chat", "/responses", "/responses/compact",
+    "/codex/responses", "/codex/responses/compact",
+  ])("allows scoped POST %s through to enforcing chat handler", async (path) => {
+    expect(await proxy(request(path, { authorization: "Bearer scoped-key" }, "POST"))).toBe(mocks.nextResponse);
+  });
+
+  it.each([
+    "/v1/models", "/api/v1/models", "/v1/v1/models", "/v1/models/local/model-a",
+    "/v1/models/info?id=local/model-a", "/api/v1/models/embedding",
+  ])("allows scoped GET %s through to filtered model handler", async (path) => {
+    expect(await proxy(request(path, { authorization: "Bearer scoped-key" }))).toBe(mocks.nextResponse);
+  });
+
+  it.each(["x-api-key", "x-goog-api-key", "query"])("applies fail-closed scope with %s authentication", async (transport) => {
+    const headers = transport === "query" ? {} : { [transport]: "scoped-key" };
+    const path = `/v1/embeddings${transport === "query" ? "?key=scoped-key" : ""}`;
+    expect((await proxy(request(path, headers, "POST"))).status).toBe(403);
+    expect(mocks.getApiKeyByValue).toHaveBeenCalledWith("scoped-key");
+  });
+
+  it.each([{ providerIds: ["local"] }, { models: ["local/model-a"] }, { forceProviderId: "local" }])(
+    "fails closed for every other policy shape %j", async (permissions) => {
+      mocks.getApiKeyByValue.mockResolvedValue({ isActive: true, permissions });
+      expect((await proxy(request("/v1/embeddings", { authorization: "Bearer scoped-key" }, "POST"))).status).toBe(403);
+    },
+  );
+
+  it("does not let loopback or CLI authentication bypass a supplied scoped key", async () => {
+    const req = localRequest("/v1/audio/speech", { authorization: "Bearer scoped-key", "x-9r-cli-token": "cli-token" });
+    req.method = "POST";
+    expect((await proxy(req)).status).toBe(403);
+  });
+
+  it("rejects inactive key even for loopback requests", async () => {
+    mocks.getApiKeyByValue.mockResolvedValue({ isActive: false, permissions: {} });
+    const req = localRequest("/v1/chat/completions", { authorization: "Bearer disabled-key" });
+    req.method = "POST";
+    expect((await proxy(req)).status).toBe(401);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it.each(unsupportedPaths)("preserves unrestricted legacy POST access to %s", async (path) => {
+    mocks.getApiKeyByValue.mockResolvedValue({ isActive: true });
+    expect(await proxy(request(path, { authorization: "Bearer legacy-key" }, "POST"))).toBe(mocks.nextResponse);
+  });
+
+  it("allows an authenticated scoped CORS preflight without widening inference access", async () => {
+    expect(await proxy(request("/v1/embeddings", { authorization: "Bearer scoped-key" }, "OPTIONS"))).toBe(mocks.nextResponse);
   });
 });
 
