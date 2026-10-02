@@ -1,3 +1,10 @@
+# Unreleased
+
+## Fixes
+- **Codex Responses**: expose active namespace child tools to Chat providers with distinct names and restore their qualified names on return, including when multiple namespaces contain a `js` tool. Preserve reasoning, answer, refusal, and tool items with distinct indices. Report truncated, incomplete, failed, or reasoning-only upstream results accurately, including native Codex CLI traffic.
+- **Responses tools**: keep sanitized tool names distinct across declarations, history, and explicit choices; preserve custom calls in Chat JSON and fail completed streams containing malformed calls.
+- **Claude tool schemas**: convert top-level `oneOf`, `allOf`, and `anyOf` tool input schemas to object-root schemas so Codex namespace tools remain callable through Claude providers.
+
 # v0.5.95 (2026-10-01)
 
 ## Features

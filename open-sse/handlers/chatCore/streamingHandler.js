@@ -28,7 +28,10 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
-  const needsCodexTranslation = isResponsesProvider && targetFormat === FORMATS.OPENAI_RESPONSES && !isDroidCLI;
+  // Same-format Responses still needs terminal validation for native CLI clients.
+  const needsCodexTranslation = isResponsesProvider
+    && targetFormat === FORMATS.OPENAI_RESPONSES
+    && (sourceFormat === FORMATS.OPENAI_RESPONSES || !isDroidCLI);
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;

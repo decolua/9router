@@ -13,8 +13,133 @@ import {
   coerceResponsesOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import {
+  CHAT_TOOL_NAME_MAX_LENGTH,
+  RESPONSES_TOOL_NAME_MAX_LENGTH,
+  allocateToolName,
+  isValidToolName,
+  sanitizeToolName,
+} from "../../utils/toolNameAliases.js";
+import { composeToolNameMaps } from "../../utils/opencodeFingerprint.js";
 
-const MAX_TOOL_NAME_LEN = 128;
+export function sanitizeResponsesToolName(name) {
+  return sanitizeToolName(name, RESPONSES_TOOL_NAME_MAX_LENGTH);
+}
+
+function responsesToolName(tool) {
+  if (tool?.type === OPENAI_BLOCK.FUNCTION) {
+    if (typeof tool.function?.name === "string") return tool.function.name;
+    return typeof tool.name === "string" ? tool.name : "";
+  }
+  return typeof tool?.name === "string" ? tool.name : "";
+}
+
+function normalizeResponsesToolReferences(result) {
+  if (Array.isArray(result.input)) {
+    result.input = result.input.map((item) =>
+      item?.type === RESPONSES_ITEM.ADDITIONAL_TOOLS && Array.isArray(item.tools)
+        ? { ...item, tools: [...item.tools] }
+        : item
+    );
+  }
+  const containers = [
+    result,
+    ...(Array.isArray(result.input)
+      ? result.input.filter((item) => item?.type === RESPONSES_ITEM.ADDITIONAL_TOOLS && Array.isArray(item.tools))
+      : []),
+  ];
+  const declarations = containers.flatMap((container) => Array.isArray(container.tools) ? container.tools : []);
+  const stableNames = new Set(declarations
+    .filter((tool) => [OPENAI_BLOCK.FUNCTION, "custom", "namespace"].includes(tool?.type))
+    .map(responsesToolName)
+    .filter((name) => isValidToolName(name, RESPONSES_TOOL_NAME_MAX_LENGTH)));
+  const usedNames = new Set(stableNames);
+  const aliases = new Map();
+  const childAliases = new Map();
+  const renamed = new Map();
+  const aliasFor = (rawName) => {
+    if (aliases.has(rawName)) return aliases.get(rawName);
+    const alias = isValidToolName(rawName, RESPONSES_TOOL_NAME_MAX_LENGTH)
+      ? rawName
+      : allocateToolName(rawName, RESPONSES_TOOL_NAME_MAX_LENGTH, usedNames);
+    aliases.set(rawName, alias);
+    if (alias !== rawName) renamed.set(alias, rawName);
+    return alias;
+  };
+
+  for (const container of containers) {
+    if (!Array.isArray(container.tools)) continue;
+    container.tools = container.tools.map((tool) => {
+      if (!tool || typeof tool !== "object") return tool;
+      if (tool.type === OPENAI_BLOCK.FUNCTION || tool.type === "custom") {
+        const rawName = responsesToolName(tool);
+        if (!rawName.trim()) return null;
+        const alias = aliasFor(rawName);
+        if (tool.function) {
+          return {
+            ...tool,
+            ...(typeof tool.name === "string" ? { name: alias } : {}),
+            function: { ...tool.function, name: alias },
+          };
+        }
+        return { ...tool, name: alias };
+      }
+      if (tool.type === "namespace") {
+        const rawName = responsesToolName(tool);
+        if (!rawName.trim()) return null;
+        const children = Array.isArray(tool.tools) ? tool.tools : [];
+        const stableChildren = new Set(children
+          .map((child) => child?.name)
+          .filter((name) => isValidToolName(name, RESPONSES_TOOL_NAME_MAX_LENGTH)));
+        const usedChildren = new Set(stableChildren);
+        const assignedChildren = new Map();
+        const normalizedChildren = children.map((child) => {
+          if (!child || typeof child !== "object" || typeof child.name !== "string" || !child.name.trim()) return child;
+          let alias = assignedChildren.get(child.name);
+          if (!alias) {
+            alias = isValidToolName(child.name, RESPONSES_TOOL_NAME_MAX_LENGTH)
+              ? child.name
+              : allocateToolName(child.name, RESPONSES_TOOL_NAME_MAX_LENGTH, usedChildren);
+            assignedChildren.set(child.name, alias);
+          }
+          if (!childAliases.has(child.name)) childAliases.set(child.name, alias);
+          return { ...child, name: alias };
+        });
+        return { ...tool, name: aliasFor(rawName), tools: normalizedChildren };
+      }
+      return tool;
+    }).filter(Boolean);
+  }
+
+  const resolveAlias = (name) => aliases.get(name) || childAliases.get(name) || sanitizeResponsesToolName(name);
+  if (Array.isArray(result.input)) {
+    result.input = result.input.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      let modified = item;
+      if ((item.type === RESPONSES_ITEM.FUNCTION_CALL || item.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL)
+        && typeof item.name === "string") {
+        const alias = resolveAlias(item.name);
+        if (alias !== item.name) modified = { ...modified, name: alias };
+      }
+      if (item.call && typeof item.call.name === "string") {
+        const alias = resolveAlias(item.call.name);
+        if (alias !== item.call.name) modified = { ...modified, call: { ...item.call, name: alias } };
+      }
+      return modified;
+    });
+  }
+  const choice = result.tool_choice;
+  if (choice && typeof choice === "object" && (choice.type === OPENAI_BLOCK.FUNCTION || choice.type === "custom")) {
+    const selectedName = typeof choice.name === "string" ? choice.name : choice.function?.name;
+    if (typeof selectedName === "string") {
+      result.tool_choice = { ...choice, name: resolveAlias(selectedName) };
+      delete result.tool_choice.function;
+    }
+  }
+  const combinedMap = composeToolNameMaps(result._toolNameMap, renamed);
+  if (combinedMap?.size) result._toolNameMap = combinedMap;
+  return result;
+}
 
 /**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
@@ -178,56 +303,122 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
+  // Codex groups callable tools under namespaces. Only tools loaded through
+  // additional_tools are callable when defer_loading is set.
+  const expandTools = (declarations, includeDeferred) => declarations.flatMap((group) => {
+    if (!group || typeof group !== "object") return [];
+    const isNamespace = group.type === "namespace";
+    if (isNamespace && (typeof group.name !== "string" || !group.name.trim())) return [];
+    const children = isNamespace ? (Array.isArray(group.tools) ? group.tools : []) : [group];
+    const owner = isNamespace ? group.name : null;
+    return children
+      .filter((tool) => tool && (includeDeferred || tool.defer_loading !== true))
+      .map((tool) => ({ tool, owner }));
+  });
+  const callableTools = [
+    ...expandTools(Array.isArray(body.tools) ? body.tools : [], false),
+    ...expandTools(additionalTools, true),
   ];
-  if (responseTools.length > 0) {
-    result.tools = responseTools
-      .map(tool => {
-        // Already in Chat Completions format: { type: "function", function: { name, ... } }
-        if (tool.function) return tool;
-        // Responses API function/custom tool: { type, name, description, parameters|format }.
-        // Chat Completions has no freeform custom-tool declaration, so expose custom
-        // tools as functions with one raw `input` string while retaining their names
-        // in translator-only metadata for the response conversion.
-        const name = tool.name;
-        if (!name || typeof name !== "string" || name.trim() === "") return null;
-        if (tool.type === "custom") {
-          customToolNames.add(name);
-          const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
-          return {
-            type: OPENAI_BLOCK.FUNCTION,
-            function: {
-              name,
-              description: [String(tool.description || ""), formatHint].filter(Boolean).join("\n\n"),
-              parameters: {
-                type: "object",
-                properties: {
-                  input: {
-                    type: "string",
-                    description: "Raw freeform input for this custom tool"
-                  }
-                },
-                required: ["input"],
-                additionalProperties: false
+  const convertTool = (tool) => {
+    // Already in Chat Completions format: { type: "function", function: { name, ... } }
+    if (tool.function) return tool;
+    // Responses API function/custom tool: { type, name, description, parameters|format }.
+    // Hosted tools and namespace containers cannot become Chat functions.
+    if (tool.type && tool.type !== "function" && tool.type !== "custom") return null;
+    const name = tool.name;
+    if (!name || typeof name !== "string" || name.trim() === "") return null;
+    if (tool.type === "custom") {
+      const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
+      return {
+        type: OPENAI_BLOCK.FUNCTION,
+        function: {
+          name,
+          description: [String(tool.description || ""), formatHint].filter(Boolean).join("\n\n"),
+          parameters: {
+            type: "object",
+            properties: {
+              input: {
+                type: "string",
+                description: "Raw freeform input for this custom tool"
               }
-            }
-          };
-        }
-        // Responses API function tool: { type: "function", name, description, parameters }
-        // Only convert when a non-empty name is present; skip hosted tools without one.
-        return {
-          type: OPENAI_BLOCK.FUNCTION,
-          function: {
-            name,
-            description: String(tool.description || ""),
-            parameters: normalizeToolParameters(tool.parameters),
-            strict: tool.strict
+            },
+            required: ["input"],
+            additionalProperties: false
           }
-        };
-      })
-      .filter(Boolean);
+        }
+      };
+    }
+    return {
+      type: OPENAI_BLOCK.FUNCTION,
+      function: {
+        name,
+        description: String(tool.description || ""),
+        parameters: normalizeToolParameters(tool.parameters),
+        strict: tool.strict
+      }
+    };
+  };
+  if (callableTools.length > 0) {
+    const declarations = [];
+    const seenIdentities = new Map();
+    for (const { tool, owner } of callableTools) {
+      const converted = convertTool(tool);
+      const name = converted?.function?.name;
+      if (typeof name !== "string" || !name.trim()) continue;
+      const originalName = owner === null ? name : `${owner}__${name}`.replace(/[^A-Za-z0-9_-]/g, '_');
+      const entry = { converted, name, owner, originalName, custom: tool.type === "custom" };
+      const declarationKey = `${owner ?? ""}::${name}`;
+      const previousIndex = seenIdentities.get(declarationKey);
+      if (previousIndex !== undefined) declarations[previousIndex] = entry;
+      else {
+        seenIdentities.set(declarationKey, declarations.length);
+        declarations.push(entry);
+      }
+    }
+
+    // Chat function names cannot contain dots and are limited to 64 characters.
+    // Keep the namespace visible to the model, then map every sent alias back to
+    // Codex's fully qualified tool name on the response path.
+    const stableTopLevelNames = new Set(declarations
+      .filter(({ owner, name }) => owner === null && isValidToolName(name, CHAT_TOOL_NAME_MAX_LENGTH))
+      .map(({ name }) => name));
+    const usedNames = new Set(stableTopLevelNames);
+    const originalToAlias = new Map();
+    const toolNameMap = new Map();
+    result.tools = declarations.map(({ converted, name, owner, originalName, custom }) => {
+      const sentName = owner === null && stableTopLevelNames.has(name)
+        ? name
+        : allocateToolName(originalName, CHAT_TOOL_NAME_MAX_LENGTH, usedNames);
+      if (owner !== null || sentName !== name) toolNameMap.set(sentName, originalName);
+      originalToAlias.set(originalName, sentName);
+      if (owner !== null) {
+        originalToAlias.set(`${owner}.${name}`, sentName);
+      }
+      if (custom) customToolNames.add(sentName);
+      return { ...converted, function: { ...converted.function, name: sentName } };
+    });
+
+    for (const message of result.messages) {
+      if (message.role !== ROLE.ASSISTANT || !Array.isArray(message.tool_calls)) continue;
+      for (const call of message.tool_calls) {
+        const originalName = call.function?.name;
+        if (originalToAlias.has(originalName)) {
+          call.function.name = originalToAlias.get(originalName);
+        } else if (typeof call.function?.name === "string" && !/^[a-zA-Z0-9_-]+$/.test(call.function.name)) {
+          call.function.name = sanitizeToolName(call.function.name, CHAT_TOOL_NAME_MAX_LENGTH);
+        }
+      }
+    }
+    const selectedName = result.tool_choice?.function?.name || result.tool_choice?.name;
+    if (originalToAlias.has(selectedName)) {
+      result.tool_choice = {
+        type: OPENAI_BLOCK.FUNCTION,
+        function: { name: originalToAlias.get(selectedName) }
+      };
+    }
+    if (toolNameMap.size > 0) result._toolNameMap = toolNameMap;
+  } else if (Array.isArray(body.tools) && body.tools.length > 0) {
+    result.tools = [];
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
 
@@ -328,7 +519,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     }
     delete out.max_tokens;
     delete out.max_completion_tokens;
-    return out;
+    return normalizeResponsesToolReferences(out);
   }
 
   const result = {
@@ -404,7 +595,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
         result.input.push({
           type: RESPONSES_ITEM.FUNCTION_CALL,
           call_id: clampResponsesCallId(tc.id),
-          name: name.slice(0, MAX_TOOL_NAME_LEN),
+          name,
           arguments: coerceResponsesArguments(tc.function?.arguments)
         });
       }
@@ -430,19 +621,28 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     result.tools = body.tools.map(tool => {
       if (tool.type === OPENAI_BLOCK.FUNCTION) {
         // Strict upstreams reject nameless/overlong tool declarations
-        const name = typeof tool.function?.name === "string" ? tool.function.name.trim() : "";
+        const name = typeof tool.function?.name === "string" ? tool.function.name.trim() : (typeof tool.name === "string" ? tool.name.trim() : "");
         if (!name) return null;
+        const description = String(tool.function?.description ?? tool.description ?? "");
+        const parameters = normalizeToolParameters(tool.function?.parameters ?? tool.parameters);
+        const strict = tool.function?.strict ?? tool.strict;
         return {
           type: OPENAI_BLOCK.FUNCTION,
-          name: name.slice(0, MAX_TOOL_NAME_LEN),
-          description: String(tool.function.description || ""),
-          parameters: normalizeToolParameters(tool.function.parameters),
-          strict: tool.function.strict
+          name,
+          description,
+          parameters,
+          strict
         };
+      }
+      if (tool.type === "custom") {
+        const name = typeof tool.name === "string" ? tool.name.trim() : "";
+        if (!name) return null;
+        return { ...tool, name };
       }
       return tool;
     }).filter(Boolean);
   }
+  if (body.tool_choice !== undefined) result.tool_choice = body.tool_choice;
 
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
@@ -459,7 +659,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
 
-  return result;
+  return normalizeResponsesToolReferences(result);
 }
 
 // Register both directions

@@ -27,15 +27,30 @@ function processSSEMessage(msg, state) {
     state.created = parsed.response?.created_at || state.created;
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
-  } else if (eventType === "response.completed" || eventType === "response.done") {
-    state.status = "completed";
+  } else if (eventType === "response.completed" || eventType === "response.done" || eventType === "response.incomplete") {
+    state.terminalSeen = true;
+    const doneStatus = eventType === "response.done" ? parsed.response?.status : null;
+    state.status = eventType === "response.incomplete" || doneStatus === "incomplete"
+      ? "incomplete"
+      : doneStatus === "failed" ? "failed" : "completed";
+    if (state.status === "incomplete") {
+      state.incompleteDetails = parsed.response?.incomplete_details || null;
+    }
+    if (state.status === "failed") {
+      state.error = parsed.response?.error || { type: "stream_error", message: "upstream Responses stream failed" };
+    }
+    if (Array.isArray(parsed.response?.output)) {
+      parsed.response.output.forEach((item, index) => state.items.set(index, item));
+    }
     if (parsed.response?.usage) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
       state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
     }
-  } else if (eventType === "response.failed") {
+  } else if (eventType === "response.failed" || eventType === "error") {
+    state.terminalSeen = true;
     state.status = "failed";
+    state.error = parsed.response?.error || parsed.error || { type: "stream_error", message: "upstream Responses stream failed" };
   }
 }
 
@@ -59,6 +74,9 @@ export async function convertResponsesStreamToJson(stream) {
     responseId: "",
     created: Math.floor(Date.now() / 1000),
     status: "in_progress",
+    terminalSeen: false,
+    incompleteDetails: null,
+    error: null,
     usage: { ...EMPTY_RESPONSE },
     items: new Map()
   };
@@ -85,6 +103,15 @@ export async function convertResponsesStreamToJson(stream) {
     reader.releaseLock();
   }
 
+  if (!state.terminalSeen) {
+    state.status = "failed";
+    state.error = {
+      type: "stream_error",
+      code: "stream_disconnected",
+      message: "stream closed before a terminal response event",
+    };
+  }
+
   // Build output array from accumulated items (ordered by index)
   const output = [];
   const maxIndex = state.items.size > 0 ? Math.max(...state.items.keys()) : -1;
@@ -97,6 +124,8 @@ export async function convertResponsesStreamToJson(stream) {
     object: "response",
     created_at: state.created,
     status: state.status || "completed",
+    ...(state.error ? { error: state.error } : {}),
+    ...(state.incompleteDetails ? { incomplete_details: state.incompleteDetails } : {}),
     output,
     usage: state.usage
   };

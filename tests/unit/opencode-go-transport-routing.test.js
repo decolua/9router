@@ -96,14 +96,17 @@ const RESPONSE_BY_FORMAT = {
 };
 
 async function route(model, sourceFormat) {
-  executeMock.mockResolvedValueOnce({
-    response: new Response(JSON.stringify(RESPONSE_BY_FORMAT[sourceFormat === "openai" ? "openai" : sourceFormat] || RESPONSE_BY_FORMAT.openai), {
-      status: 200,
-      headers: { "content-type": "application/json" },
-    }),
-    url: ENDPOINTS[sourceFormat] || ENDPOINTS.openai,
-    headers: {},
-    transformedBody: null,
+  executeMock.mockImplementationOnce(async ({ credentials: creds }) => {
+    const responseFormat = creds.runtimeTransport?.format || "openai";
+    return {
+      response: new Response(JSON.stringify(RESPONSE_BY_FORMAT[responseFormat]), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+      url: ENDPOINTS[responseFormat],
+      headers: {},
+      transformedBody: null,
+    };
   });
 
   const credentials = { apiKey: "test-key", providerSpecificData: {} };
@@ -120,7 +123,6 @@ async function route(model, sourceFormat) {
     sourceFormatOverride: sourceFormat,
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
   });
-
   const { credentials: creds } = executeMock.mock.calls.at(-1)[0];
   return { result, runtimeTransport: creds.runtimeTransport ?? null };
 }

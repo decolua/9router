@@ -13,6 +13,13 @@ import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
+import { recordRenamedToolNames } from "../utils/opencodeFingerprint.js";
+import {
+  RESPONSES_TOOL_NAME_MAX_LENGTH,
+  allocateToolName,
+  isValidToolName,
+  sanitizeToolName,
+} from "../utils/toolNameAliases.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
 const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
@@ -39,9 +46,6 @@ const CODEX_HOSTED_TOOL_TYPES = new Set([
   "computer", "computer_use_preview", "code_interpreter", "mcp", "local_shell",
   "tool_search"
 ]);
-
-// Responses-native freeform tools carry a name plus format payload and must pass through intact.
-const CODEX_PASSTHROUGH_TOOL_TYPES = new Set(["custom"]);
 
 // Allowlist of fields accepted by Codex Responses API — anything else is stripped
 const RESPONSES_API_ALLOWLIST = new Set([
@@ -74,59 +78,162 @@ function stripStoredItemReferences(body, preserveLitePrefix = false) {
   });
 }
 
-// Flatten Chat-Completions tool shape into Responses flat format + filter unsupported tools
-function normalizeCodexTools(body) {
-  if (!Array.isArray(body.tools)) return;
+function codexToolName(tool) {
+  if (tool?.type === "function") {
+    if (typeof tool.name === "string") return tool.name;
+    return typeof tool.function?.name === "string" ? tool.function.name : "";
+  }
+  return typeof tool?.name === "string" ? tool.name : "";
+}
+
+// Normalize the declarations that will be sent, then apply the same aliases to
+// tool history and an explicit choice. Lite clients may already carry declarations
+// in an additional_tools input prefix instead of body.tools.
+function normalizeCodexTools(body, responsesLite) {
+  const prefixed = responsesLite && Array.isArray(body.input)
+    ? body.input.filter((item) => item?.type === "additional_tools" && Array.isArray(item.tools))
+    : [];
+  const containers = prefixed.length > 0 ? prefixed : [body];
+  const declarations = containers.flatMap((container) => Array.isArray(container.tools) ? container.tools : []);
+  const stableNames = new Set(declarations
+    .filter((tool) => ["function", "custom", "namespace"].includes(tool?.type))
+    .map(codexToolName)
+    .filter((name) => isValidToolName(name, RESPONSES_TOOL_NAME_MAX_LENGTH)));
+  const usedNames = new Set(stableNames);
+  const topLevelAliases = new Map();
+  const callableAliases = new Map();
+  const childAliases = new Map();
+  const ambiguousChildren = new Set();
+  const toolNameMap = new Map();
   const validNames = new Set();
   // Codex's schema validator has no Unicode property escapes; a `pattern`
   // carrying `\p{...}` 400s the whole request on every account (#3922).
   const patternStats = { removed: 0 };
-  body.tools = body.tools.filter((tool) => {
-    if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
-    const type = typeof tool.type === "string" ? tool.type : "";
-    if (type === "namespace") {
-      if (Array.isArray(tool.tools)) {
-        for (const st of tool.tools) {
-          const n = typeof st?.name === "string" ? st.name.trim().slice(0, 128) : "";
-          if (n) validNames.add(n);
-          if (st?.parameters && typeof st.parameters === "object") {
-            st.parameters = stripCodexUnsupportedPatterns(st.parameters, patternStats);
+
+  const topLevelAlias = (rawName, callable) => {
+    let alias = topLevelAliases.get(rawName);
+    if (!alias) {
+      alias = isValidToolName(rawName, RESPONSES_TOOL_NAME_MAX_LENGTH)
+        ? rawName
+        : allocateToolName(rawName, RESPONSES_TOOL_NAME_MAX_LENGTH, usedNames);
+      topLevelAliases.set(rawName, alias);
+    }
+    if (callable) {
+      callableAliases.set(rawName, alias);
+      validNames.add(alias);
+      if (alias !== rawName) toolNameMap.set(alias, rawName);
+    }
+    return alias;
+  };
+
+  for (const container of containers) {
+    if (!Array.isArray(container.tools)) continue;
+    container.tools = container.tools.filter((tool) => {
+      if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
+      const type = typeof tool.type === "string" ? tool.type : "";
+      if (type === "namespace") {
+        const rawName = codexToolName(tool);
+        if (!rawName.trim()) return false;
+        tool.name = topLevelAlias(rawName, false);
+        const children = Array.isArray(tool.tools) ? tool.tools : [];
+        const stableChildren = new Set(children
+          .map((child) => child?.name)
+          .filter((name) => isValidToolName(name, RESPONSES_TOOL_NAME_MAX_LENGTH)));
+        const usedChildren = new Set(stableChildren);
+        const assignedChildren = new Map();
+        tool.tools = children.filter((child) => {
+          if (!child || typeof child !== "object" || Array.isArray(child)) return false;
+          const rawChildName = typeof child.name === "string" ? child.name : "";
+          if (!rawChildName.trim()) return false;
+          let alias = assignedChildren.get(rawChildName);
+          if (!alias) {
+            alias = isValidToolName(rawChildName, RESPONSES_TOOL_NAME_MAX_LENGTH)
+              ? rawChildName
+              : allocateToolName(rawChildName, RESPONSES_TOOL_NAME_MAX_LENGTH, usedChildren);
+            assignedChildren.set(rawChildName, alias);
           }
-        }
+          child.name = alias;
+          validNames.add(alias);
+          if (!ambiguousChildren.has(rawChildName)) {
+            const previous = childAliases.get(rawChildName);
+            if (previous && previous !== alias) {
+              childAliases.delete(rawChildName);
+              ambiguousChildren.add(rawChildName);
+            } else {
+              childAliases.set(rawChildName, alias);
+            }
+          }
+          if (child.parameters && typeof child.parameters === "object") {
+            child.parameters = stripCodexUnsupportedPatterns(child.parameters, patternStats);
+          }
+          return true;
+        });
+        return true;
       }
+      if (type === "custom") {
+        const rawName = codexToolName(tool);
+        if (!rawName.trim()) return false;
+        tool.name = topLevelAlias(rawName, true);
+        return true;
+      }
+      if (type !== "function") {
+        if (!type || tool.function || typeof tool.name === "string") return false;
+        return CODEX_HOSTED_TOOL_TYPES.has(type);
+      }
+      const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
+      const rawName = codexToolName(tool);
+      if (!rawName.trim()) return false;
+      const name = topLevelAlias(rawName, true);
+      const description = typeof tool.description === "string" ? tool.description : (typeof fn?.description === "string" ? fn.description : "");
+      const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
+        ? tool.parameters
+        : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
+      for (const key of Object.keys(tool)) delete tool[key];
+      tool.type = "function";
+      tool.name = name;
+      if (description) tool.description = description;
+      tool.parameters = stripCodexUnsupportedPatterns(parameters, patternStats);
       return true;
-    }
-    if (type !== "function") {
-      if (CODEX_PASSTHROUGH_TOOL_TYPES.has(type)) return true;
-      if (!type || tool.function || typeof tool.name === "string") return false;
-      return CODEX_HOSTED_TOOL_TYPES.has(type);
-    }
-    const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function) ? tool.function : null;
-    const rawName = typeof tool.name === "string" ? tool.name : (typeof fn?.name === "string" ? fn.name : "");
-    const name = rawName.trim();
-    if (!name) return false;
-    const description = typeof tool.description === "string" ? tool.description : (typeof fn?.description === "string" ? fn.description : "");
-    const parameters = (tool.parameters && typeof tool.parameters === "object" && !Array.isArray(tool.parameters))
-      ? tool.parameters
-      : (fn?.parameters && typeof fn.parameters === "object" && !Array.isArray(fn.parameters) ? fn.parameters : { type: "object", properties: {} });
-    for (const k of Object.keys(tool)) delete tool[k];
-    tool.type = "function";
-    tool.name = name.slice(0, 128);
-    if (description) tool.description = description;
-    tool.parameters = stripCodexUnsupportedPatterns(parameters, patternStats);
-    validNames.add(name);
-    return true;
-  });
+    });
+  }
+  for (const [rawName, alias] of childAliases) {
+    if (!callableAliases.has(rawName)) callableAliases.set(rawName, alias);
+  }
   if (patternStats.removed > 0) {
     dbg("CODEX", `stripped ${patternStats.removed} unsupported tool schema pattern(s)`);
   }
-  // Drop tool_choice if it references an unknown function name
+
+  if (Array.isArray(body.input)) {
+    body.input = body.input.map((item) => {
+      if (!item || typeof item !== "object") return item;
+      let modified = item;
+      if ((item.type === "function_call" || item.type === "custom_tool_call") && typeof item.name === "string") {
+        const name = callableAliases.get(item.name) || sanitizeToolName(item.name, RESPONSES_TOOL_NAME_MAX_LENGTH);
+        if (name !== item.name) modified = { ...modified, name };
+      }
+      if (item.call && typeof item.call.name === "string") {
+        const name = callableAliases.get(item.call.name) || sanitizeToolName(item.call.name, RESPONSES_TOOL_NAME_MAX_LENGTH);
+        if (name !== item.call.name) modified = { ...modified, call: { ...item.call, name } };
+      }
+      return modified;
+    });
+  }
+
+  // Keep explicit tool choices aligned with the declarations Codex will see.
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
-    if (body.tool_choice.type === "function") {
-      const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
-      if (!n || !validNames.has(n)) delete body.tool_choice;
+    if (body.tool_choice.type === "function" || body.tool_choice.type === "custom") {
+      const rawName = typeof body.tool_choice.name === "string"
+        ? body.tool_choice.name : body.tool_choice.function?.name;
+      const alias = callableAliases.get(rawName);
+      if (!alias || !validNames.has(alias)) {
+        delete body.tool_choice;
+      } else {
+        body.tool_choice = { ...body.tool_choice, name: alias };
+        delete body.tool_choice.function;
+      }
     }
   }
+  recordRenamedToolNames(body, toolNameMap);
 }
 
 // Resolve prompt-cache session id: client session → assistant-text-hash → workspaceId → connection
@@ -456,7 +563,7 @@ export class CodexExecutor extends BaseExecutor {
     // Strip server-generated item IDs (rs_/fc_/resp_/msg_) — Codex /responses can't resolve when store=false
     stripStoredItemReferences(body, responsesLite);
     // Flatten function tools + drop unsupported types
-    normalizeCodexTools(body);
+    normalizeCodexTools(body, responsesLite);
 
     // Ensure streaming is enabled (Codex API requires it)
     body.stream = true;

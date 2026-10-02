@@ -54,6 +54,7 @@ describe("response.completed output (issue #4307)", () => {
     const state = newState();
     openaiToOpenAIResponsesResponse(textChunk("O"), state);
     openaiToOpenAIResponsesResponse(textChunk("K"), state);
+    openaiToOpenAIResponsesResponse(finishChunk(), state);
     const response = completedResponse(openaiToOpenAIResponsesResponse(null, state));
 
     expect(response.status).toBe("completed");
@@ -115,9 +116,14 @@ describe("response.completed output (issue #4307)", () => {
     expect(response.output[1].content[0]).toMatchObject({ type: "output_text", text: "answer" });
   });
 
-  it("reports an empty output array when nothing was produced", () => {
+  it("reports an empty output array on EOF without a finish marker", () => {
     const state = newState();
-    const response = completedResponse(openaiToOpenAIResponsesResponse(null, state));
+    const failed = openaiToOpenAIResponsesResponse(null, state)
+      .find((event) => event.event === "response.failed");
+    expect(failed).toBeTruthy();
+    const response = failed.data.response;
+    expect(response.status).toBe("failed");
+    expect(response.error.code).toBe("stream_disconnected");
     expect(response.output).toEqual([]);
   });
 
@@ -142,10 +148,44 @@ describe("response.completed output (issue #4307)", () => {
   it("does not duplicate items when flush runs more than once", () => {
     const state = newState();
     openaiToOpenAIResponsesResponse(textChunk("once"), state);
+    openaiToOpenAIResponsesResponse(finishChunk(), state);
     openaiToOpenAIResponsesResponse(null, state);
     const second = openaiToOpenAIResponsesResponse(null, state);
 
     expect(second).toEqual([]);
     expect(state.completedOutputItems.size).toBe(1);
+  });
+
+  it("includes trailing usage and completed output when the finish chunk had no usage", () => {
+    const state = newState();
+    const events = [
+      ...openaiToOpenAIResponsesResponse(textChunk("answer"), state),
+      ...openaiToOpenAIResponsesResponse(finishChunk(), state),
+      ...openaiToOpenAIResponsesResponse({ id: "chatcmpl-1", choices: [], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }, state),
+      ...openaiToOpenAIResponsesResponse(null, state),
+    ];
+    const response = completedResponse(events);
+
+    expect(response.usage).toMatchObject({ input_tokens: 5, output_tokens: 2, total_tokens: 7 });
+    expect(response.output).toEqual(doneItems(events));
+    expect(response.output[0].content[0].text).toBe("answer");
+  });
+
+  it("keeps trailing usage and output on an incomplete max-token result", () => {
+    const state = newState();
+    const events = [
+      ...openaiToOpenAIResponsesResponse(textChunk("partial"), state),
+      ...openaiToOpenAIResponsesResponse({ id: "chatcmpl-1", choices: [{ index: 0, delta: {}, finish_reason: "length" }] }, state),
+      ...openaiToOpenAIResponsesResponse({ id: "chatcmpl-1", choices: [], usage: { prompt_tokens: 5, completion_tokens: 2, total_tokens: 7 } }, state),
+      ...openaiToOpenAIResponsesResponse(null, state),
+    ];
+    const incomplete = events.find((event) => event.event === "response.incomplete");
+    expect(incomplete).toBeTruthy();
+    expect(incomplete.data.response).toMatchObject({
+      status: "incomplete",
+      incomplete_details: { reason: "max_output_tokens" },
+      usage: { input_tokens: 5, output_tokens: 2, total_tokens: 7 },
+    });
+    expect(incomplete.data.response.output).toEqual(doneItems(events));
   });
 });

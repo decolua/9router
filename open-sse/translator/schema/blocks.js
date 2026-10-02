@@ -35,6 +35,7 @@ export const RESPONSES_ITEM = {
   ADDITIONAL_TOOLS: "additional_tools",
   REASONING: "reasoning",
   OUTPUT_TEXT: "output_text",
+  REFUSAL: "refusal",
   INPUT_TEXT: "input_text",
   INPUT_IMAGE: "input_image",
   SUMMARY_TEXT: "summary_text",

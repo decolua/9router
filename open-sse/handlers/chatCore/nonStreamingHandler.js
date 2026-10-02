@@ -6,13 +6,13 @@ import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTrackin
 import { createErrorResult } from "../../utils/error.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
-import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { parseSSEToOpenAIResponse, hasActionableChatOutput } from "./sseToJsonHandler.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -85,6 +85,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   if (!choice) return responseBody;
 
   const message = choice.message || {};
+  const customNames = customToolNames instanceof Set ? customToolNames : new Set(customToolNames || []);
   const output = [];
 
   // Reasoning → a reasoning item (summary text), mirroring the streaming path.
@@ -98,18 +99,22 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 
   // Assistant text → a message item with output_text content.
   const text = typeof message.content === "string" ? message.content : "";
+  const refusal = typeof message.refusal === "string" ? message.refusal : "";
+  const messageContent = [];
   if (text.length > 0) {
-    output.push({
-      type: RESPONSES_ITEM.MESSAGE,
-      role: ROLE.ASSISTANT,
-      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] }],
-    });
+    messageContent.push({ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] });
+  }
+  if (refusal.length > 0) {
+    messageContent.push({ type: RESPONSES_ITEM.REFUSAL, refusal });
+  }
+  if (messageContent.length > 0) {
+    output.push({ type: RESPONSES_ITEM.MESSAGE, role: ROLE.ASSISTANT, content: messageContent });
   }
 
   // tool_calls → function_call/custom_tool_call items (Responses-native tool shape).
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const custom = customNames.has(fn.name);
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
@@ -122,7 +127,15 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   }
 
   const usage = responseBody.usage || {};
-  const status = choice.finish_reason === "tool_calls" ? "completed" : (choice.finish_reason === "stop" ? "completed" : (choice.finish_reason || "completed"));
+  const incompleteReason = choice.finish_reason === OPENAI_FINISH.LENGTH
+    ? "max_output_tokens"
+    : choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER
+      ? "content_filter"
+      : null;
+  const completed = choice.finish_reason === OPENAI_FINISH.STOP || choice.finish_reason === OPENAI_FINISH.TOOL_CALLS;
+  const status = incompleteReason
+    ? "incomplete"
+    : completed ? "completed" : "failed";
 
   return {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
@@ -130,8 +143,11 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     created_at: responseBody.created || Math.floor(Date.now() / 1000),
     model: responseBody.model || "unknown",
     status,
+    ...(incompleteReason ? { incomplete_details: { reason: incompleteReason } } : {}),
     background: false,
-    error: null,
+    error: status === "failed"
+      ? { type: "invalid_response_error", code: "invalid_finish_reason", message: "Upstream Chat response has no valid finish_reason" }
+      : null,
     output,
     usage: {
       input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
@@ -296,6 +312,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     }
+    if (parsed.error || !parsed.choices?.[0]?.finish_reason) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        parsed.error?.message || "Upstream SSE ended before finish_reason"
+      );
+    }
     responseBody = parsed;
   } else {
     try {
@@ -313,6 +336,25 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   responseBody = unwrapClineEnvelope(responseBody, provider);
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+  if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES) {
+    const chatChoice = responseBody?.choices?.[0];
+    if (chatChoice?.finish_reason === "other" && Array.isArray(chatChoice.message?.tool_calls)
+      && chatChoice.message.tool_calls.some((call) => typeof call?.function?.name === "string" && call.function.name.trim())) {
+      chatChoice.finish_reason = OPENAI_FINISH.TOOL_CALLS;
+    }
+    if (!chatChoice?.message || !Object.values(OPENAI_FINISH).includes(chatChoice.finish_reason)) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(
+        HTTP_STATUS.BAD_GATEWAY,
+        responseBody?.error?.message || "Upstream Chat response has no valid finish_reason"
+      );
+    }
+    if ([OPENAI_FINISH.STOP, OPENAI_FINISH.TOOL_CALLS].includes(chatChoice.finish_reason)
+      && !hasActionableChatOutput(chatChoice)) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream finished without assistant text or a tool call");
+    }
+  }
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)

@@ -3,9 +3,11 @@ import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
+import { responsesIncompleteToOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { PROVIDERS } from "../../config/providers.js";
+import { hasActionableResponsesOutput, hasInvalidResponsesToolCalls } from "../../utils/responsesStreamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { ROLE, RESPONSES_ITEM, OPENAI_BLOCK, OPENAI_FINISH } from "../../translator/schema/index.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -20,20 +22,33 @@ function textFromResponsesMessageItem(item) {
   return "";
 }
 
+function refusalFromResponsesMessageItem(item) {
+  if (!Array.isArray(item?.content)) return "";
+  const part = item.content.find((c) => c.type === RESPONSES_ITEM.REFUSAL);
+  return typeof part?.refusal === "string" ? part.refusal : "";
+}
+
 /**
  * Codex / Responses API may emit many alternating reasoning + message items.
- * Early message blocks often have empty output_text; the user-visible answer is usually in the last non-empty message.
+ * Early message blocks may be empty; use the last message with text or a refusal.
  */
 function pickAssistantMessageForChatCompletion(output) {
-  if (!Array.isArray(output)) return { msgItem: null, textContent: null };
+  if (!Array.isArray(output)) return { msgItem: null, textContent: null, refusalContent: null };
   const messages = output.filter((item) => item?.type === "message");
-  if (messages.length === 0) return { msgItem: null, textContent: null };
+  if (messages.length === 0) return { msgItem: null, textContent: null, refusalContent: null };
   for (let i = messages.length - 1; i >= 0; i--) {
     const text = textFromResponsesMessageItem(messages[i]);
-    if (text.length > 0) return { msgItem: messages[i], textContent: text };
+    const refusal = refusalFromResponsesMessageItem(messages[i]);
+    if (text.length > 0 || refusal.length > 0) {
+      return { msgItem: messages[i], textContent: text, refusalContent: refusal };
+    }
   }
   const last = messages[messages.length - 1];
-  return { msgItem: last, textContent: textFromResponsesMessageItem(last) };
+  return {
+    msgItem: last,
+    textContent: textFromResponsesMessageItem(last),
+    refusalContent: refusalFromResponsesMessageItem(last),
+  };
 }
 
 /**
@@ -50,11 +65,29 @@ function extractCustomToolInput(argumentsValue) {
   return argumentsText;
 }
 
+function hasValidToolIdentity(id, name) {
+  return typeof id === "string" && id.trim().length > 0
+    && typeof name === "string" && name.trim().length > 0;
+}
+
+export function hasActionableChatOutput(choice) {
+  const message = choice?.message;
+  const toolCalls = message?.tool_calls;
+  if (toolCalls != null && (!Array.isArray(toolCalls) || !toolCalls.every(
+    (call) => hasValidToolIdentity(call?.id, call?.function?.name)
+  ))) return false;
+
+  return (typeof message?.content === "string" && message.content.trim().length > 0)
+    || (typeof message?.refusal === "string" && message.refusal.trim().length > 0)
+    || (Array.isArray(toolCalls) && toolCalls.length > 0);
+}
+
 function chatCompletionToResponses(responseBody, customToolNames = null) {
   const choice = responseBody?.choices?.[0];
   if (!choice) return responseBody;
 
   const message = choice.message || {};
+  const customNames = customToolNames instanceof Set ? customToolNames : new Set(customToolNames || []);
   const output = [];
 
   const reasoning = message.reasoning_content || message.reasoning;
@@ -66,17 +99,21 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
   }
 
   const text = typeof message.content === "string" ? message.content : "";
+  const refusal = typeof message.refusal === "string" ? message.refusal : "";
+  const messageContent = [];
   if (text.length > 0) {
-    output.push({
-      type: RESPONSES_ITEM.MESSAGE,
-      role: ROLE.ASSISTANT,
-      content: [{ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] }],
-    });
+    messageContent.push({ type: RESPONSES_ITEM.OUTPUT_TEXT, text, annotations: [] });
+  }
+  if (refusal.length > 0) {
+    messageContent.push({ type: RESPONSES_ITEM.REFUSAL, refusal });
+  }
+  if (messageContent.length > 0) {
+    output.push({ type: RESPONSES_ITEM.MESSAGE, role: ROLE.ASSISTANT, content: messageContent });
   }
 
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const custom = customToolNames?.has(fn.name);
+    const custom = customNames.has(fn.name);
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
@@ -89,12 +126,18 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
   }
 
   const usage = responseBody.usage || {};
+  const incompleteReason = choice.finish_reason === OPENAI_FINISH.LENGTH
+    ? "max_output_tokens"
+    : choice.finish_reason === OPENAI_FINISH.CONTENT_FILTER
+      ? "content_filter"
+      : null;
   return {
     id: `resp_${responseBody.id || ""}`.replace(/^resp_chatcmpl-/, "resp_"),
     object: "response",
     created_at: responseBody.created || Math.floor(Date.now() / 1000),
     model: responseBody.model || "unknown",
-    status: "completed",
+    status: incompleteReason ? "incomplete" : "completed",
+    ...(incompleteReason ? { incomplete_details: { reason: incompleteReason } } : {}),
     background: false,
     error: null,
     output,
@@ -131,15 +174,17 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
 
   const first = chunks[0];
   const contentParts = [];
+  const refusalParts = [];
   const reasoningParts = [];
   const toolCallMap = new Map(); // index -> { id, type, function: { name, arguments } }
-  let finishReason = "stop";
+  let finishReason = null;
   let usage = null;
 
   for (const chunk of chunks) {
     const choice = chunk?.choices?.[0];
     const delta = choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
+    if (typeof delta.refusal === "string" && delta.refusal.length > 0) refusalParts.push(delta.refusal);
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
@@ -160,6 +205,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   }
 
   const message = { role: "assistant", content: contentParts.join("") || (toolCallMap.size > 0 ? null : "") };
+  if (refusalParts.length > 0) message.refusal = refusalParts.join("");
   if (reasoningParts.length > 0) message.reasoning_content = reasoningParts.join("");
   if (toolCallMap.size > 0) {
     message.tool_calls = [...toolCallMap.entries()].sort((a, b) => a[0] - b[0]).map(([, tc]) => tc);
@@ -201,6 +247,21 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      if (jsonResponse.status !== "completed" && jsonResponse.status !== "incomplete") {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(
+          HTTP_STATUS.BAD_GATEWAY,
+          jsonResponse.error?.message || "Upstream Responses stream failed"
+        );
+      }
+      if (hasInvalidResponsesToolCalls(jsonResponse.output)) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream returned a tool call without a valid ID or name");
+      }
+      if (jsonResponse.status === "completed" && !hasActionableResponsesOutput(jsonResponse.output)) {
+        appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream finished without assistant text or a tool call");
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -213,14 +274,14 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const inTokensForLog = (usage.input_tokens || 0)
         + (usage.cache_read_input_tokens || usage.cached_tokens || 0)
         + (usage.cache_creation_input_tokens || 0);
-      const { msgItem, textContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
+      const { msgItem, textContent, refusalContent } = pickAssistantMessageForChatCompletion(jsonResponse.output);
       const totalLatency = Date.now() - requestStartTime;
 
       saveRequestDetail(buildRequestDetail({
         ...ctx,
         latency: { ttft: totalLatency, total: totalLatency },
         tokens: { prompt_tokens: inTokensForLog, completion_tokens: usage.output_tokens || 0 },
-        response: { content: textContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
+        response: { content: textContent || refusalContent, thinking: null, finish_reason: jsonResponse.status || "unknown" },
         status: "success"
       }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
 
@@ -246,14 +307,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         : {};
       let finalResp;
 
-      // Extract tool calls from Responses API output (function_call items)
-      const funcCallItems = (jsonResponse.output || []).filter(item => item.type === "function_call");
-      const toolCalls = funcCallItems.map((item, idx) => ({
+      // Chat tool calls represent both Responses function and freeform custom calls.
+      const toolCallItems = (jsonResponse.output || []).filter(item =>
+        item?.type === RESPONSES_ITEM.FUNCTION_CALL || item?.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+      );
+      const toolCalls = toolCallItems.map((item, idx) => ({
         id: item.call_id || `call_${item.name}_${Date.now()}_${idx}`,
-        type: "function",
+        type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
-          arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})
+          arguments: item.type === RESPONSES_ITEM.CUSTOM_TOOL_CALL
+            ? JSON.stringify({ input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") })
+            : typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {})
         }
       }));
       const hasToolCalls = toolCalls.length > 0;
@@ -268,10 +333,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
           }
         };
       } else {
-        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        const message = { role: "assistant", content: textContent || (hasToolCalls || refusalContent ? null : "") };
+        if (refusalContent) message.refusal = refusalContent;
         if (hasToolCalls) message.tool_calls = toolCalls;
-        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
-        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const finishReason = jsonResponse.status === "incomplete"
+          ? responsesIncompleteToOpenAIFinish(jsonResponse.incomplete_details?.reason)
+          : hasToolCalls ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP;
         finalResp = {
           id: jsonResponse.id || `chatcmpl-${Date.now()}`,
           object: "chat.completion",
@@ -307,6 +374,22 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
         status,
         parsed.error.message || "Upstream SSE stream failed"
       );
+    }
+    const chatChoice = parsed.choices?.[0];
+    if (chatChoice?.finish_reason === "other" && Array.isArray(chatChoice.message?.tool_calls)
+      && chatChoice.message.tool_calls.some((call) => typeof call?.id === "string" && call.id.length > 0
+        && typeof call?.function?.name === "string" && call.function.name.trim())) {
+      chatChoice.finish_reason = OPENAI_FINISH.TOOL_CALLS;
+    }
+    if (!Object.values(OPENAI_FINISH).includes(chatChoice?.finish_reason)) {
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream SSE ended without a valid finish_reason");
+    }
+    if (
+      sourceFormat === FORMATS.OPENAI_RESPONSES
+      && [OPENAI_FINISH.STOP, OPENAI_FINISH.TOOL_CALLS].includes(chatChoice.finish_reason)
+      && !hasActionableChatOutput(chatChoice)
+    ) {
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream finished without assistant text or a tool call");
     }
 
     if (onRequestSuccess) await onRequestSuccess();
