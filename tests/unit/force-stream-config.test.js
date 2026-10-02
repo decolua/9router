@@ -71,6 +71,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -124,6 +126,26 @@ function makeOptions(bodyStream) {
     log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   };
 }
+
+describe("client streaming default", () => {
+  beforeEach(() => {
+    executeMock.mockReset();
+    executeMock.mockRejectedValue(new Error("boom"));
+  });
+
+  it.each([undefined, null, false, true])("honors explicit stream=true without an Accept header (%s)", async (bodyStream) => {
+    const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
+    const options = makeOptions(bodyStream);
+    options.modelInfo = { provider: "deepseek", model: "deepseek-chat" };
+    options.clientRawRequest.headers = {};
+
+    await handleChatCore(options);
+
+    expect(executeMock).toHaveBeenCalledTimes(1);
+    expect(executeMock.mock.calls[0][0].stream).toBe(bodyStream === true);
+  });
+});
+
 
 describe("forceStream provider config", () => {
   beforeEach(() => {
