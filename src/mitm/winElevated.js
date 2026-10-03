@@ -9,7 +9,7 @@ const IS_WIN = process.platform === "win32";
 function isAdmin() {
   if (IS_WIN) {
     try {
-      execSync("net session >nul 2>&1", { windowsHide: true, stdio: "ignore" });
+      execSync("fltmc", { windowsHide: true, stdio: "ignore" });
       return true;
     } catch {
       return false;

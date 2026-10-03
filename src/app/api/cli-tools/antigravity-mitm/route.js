@@ -48,7 +48,7 @@ function requiresSudoPassword(pwd) {
 function checkIsAdmin() {
   if (isWin) {
     try {
-      require("child_process").execSync("net session >nul 2>&1", { windowsHide: true });
+      require("child_process").execSync("fltmc", { windowsHide: true, stdio: "ignore" });
       return true;
     } catch {
       return false;
