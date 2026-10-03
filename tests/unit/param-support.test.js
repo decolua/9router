@@ -21,6 +21,29 @@ describe("stripUnsupportedParams", () => {
     expect(body.messages[0].content).toBe("hello world");
   });
 
+  it("drops the Claude Code `diagnostics` telemetry field for Claude models", () => {
+    const body = {
+      model: "claude-opus-5",
+      max_tokens: 16,
+      messages: [{ role: "user", content: "hi" }],
+      diagnostics: { client: "cli" },
+    };
+
+    stripUnsupportedParams("claude", "claude-opus-5", body);
+
+    expect(body.diagnostics).toBeUndefined();
+    expect(body.messages).toHaveLength(1);
+    expect(body.max_tokens).toBe(16);
+  });
+
+  it("leaves `diagnostics` intact for non-Claude models", () => {
+    const body = { diagnostics: { client: "cli" } };
+
+    stripUnsupportedParams("openai", "gpt-5", body);
+
+    expect(body.diagnostics).toEqual({ client: "cli" });
+  });
+
   it("still drops unsupported GitHub model params", () => {
     const body = { temperature: 0.7, top_p: 1 };
 
