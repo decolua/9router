@@ -71,6 +71,8 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
 vi.mock("../../open-sse/rtk/headroom.js", () => ({
   compressWithHeadroom: vi.fn(async () => null),
   formatHeadroomLog: vi.fn(() => ""),
+  formatHeadroomSizeLog: vi.fn(() => ""),
+  isHeadroomPhantomSavings: vi.fn(() => false),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
@@ -149,5 +151,11 @@ describe("forceStream provider config", () => {
 
     expect(executeMock).toHaveBeenCalledTimes(1);
     expect(executeMock.mock.calls[0][0].stream).toBe(true);
+    // The negotiated flag must also land in the upstream BODY, not just the
+    // stream param: openai→openai (passthrough/transport) skips translators, so
+    // a stale client body.stream:false would reach the provider and make it
+    // answer with a plain JSON body while the response path treats it as SSE.
+    const sentBody = executeMock.mock.calls[0][0].body;
+    expect(sentBody.stream).toBe(true);
   });
 });

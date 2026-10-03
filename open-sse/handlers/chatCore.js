@@ -188,6 +188,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (passthrough) {
     log?.debug?.("PASSTHROUGH", `${clientTool} → ${provider} | native lossless`);
     translatedBody = { ...body, model: stripThinkingSuffix(upstreamModel) };
+    // Sync the negotiated stream flag into the upstream body. `stream` may differ
+    // from the client's body.stream (forceStream providers, Accept-header JSON
+    // preference): the client's stale `stream:false` must not reach a provider
+    // we just asked to stream — the response shape would disagree with the
+    // response-handling branch downstream.
+    if (translatedBody.stream !== stream) translatedBody.stream = stream;
     if (provider === "codex") {
       const suffixThinking = {};
       applyThinking(sourceFormat, upstreamModel, suffixThinking, provider);
@@ -214,6 +220,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     stripContinuityFields(translatedBody);
+    // Same-format "translation" (openai→openai via transports) skips every
+    // translator, so the client's stream flag survives verbatim. Sync it to the
+    // negotiated value — same rationale as the passthrough branch above.
+    if (translatedBody.stream !== stream) translatedBody.stream = stream;
   }
 
   // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
