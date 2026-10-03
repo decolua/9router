@@ -48,7 +48,12 @@ function isFreshDb(adapter) {
   try {
     const row = adapter.get(`SELECT COUNT(*) as c FROM _meta`);
     return !row || row.c === 0;
-  } catch {
+  } catch (err) {
+    const msg = String(err?.message || "").toLowerCase();
+    if (msg.includes("malformed") || msg.includes("corrupt") || msg.includes("disk image")) {
+      console.error(`[DB][CRITICAL] SQLite disk image is malformed: ${err.message}. Aborting to prevent data wipe.`);
+      throw err;
+    }
     return true;
   }
 }
@@ -215,6 +220,22 @@ function importLegacyDetails(adapter, data) {
 // ─── Main entry ──────────────────────────────────────────────────────────
 export async function runMigrationOnce(adapter) {
   if (_migratedAdapters.has(adapter)) return;
+
+  // Run quick integrity check on existing database to detect disk image corruption early (#3817)
+  try {
+    const check = adapter.get(`PRAGMA quick_check(1)`);
+    const val = Object.values(check || {})[0];
+    if (val && typeof val === "string" && val.toLowerCase() !== "ok") {
+      throw new Error(`PRAGMA quick_check returned: ${val}`);
+    }
+  } catch (err) {
+    const msg = String(err?.message || "").toLowerCase();
+    if (msg.includes("malformed") || msg.includes("corrupt") || msg.includes("disk image")) {
+      console.error(`[DB][CRITICAL] SQLite database corruption detected on boot: ${err.message}. Refusing to start with corrupt DB to protect backups and data.`);
+      throw err;
+    }
+  }
+
   _migratedAdapters.add(adapter);
 
   // Capture freshness BEFORE migrations stamp _meta (otherwise we'd misclassify
