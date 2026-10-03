@@ -21,6 +21,13 @@ export {
   createProviderNode, updateProviderNode, deleteProviderNode,
 } from "./repos/nodesRepo.js";
 
+// Custom provider adapters
+export {
+  getCustomAdapters, getCustomAdapterById,
+  createCustomAdapter, updateCustomAdapter, deleteCustomAdapter,
+  initCustomAdapters,
+} from "./repos/customAdaptersRepo.js";
+
 // Proxy pools
 export {
   getProxyPools, getProxyPoolById,

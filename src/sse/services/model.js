@@ -3,6 +3,8 @@ import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
+import { getCustomAdapter } from "open-sse/custom-adapters/loader.js";
+
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
   xmtp: "xiaomi-tokenplan",
@@ -58,6 +60,11 @@ export async function getModelInfo(modelStr) {
       const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedEmbedding) {
         return { provider: matchedEmbedding.id, model: parsed.model };
+      }
+
+      const matchedCustomAdapter = getCustomAdapter(parsed.providerAlias);
+      if (matchedCustomAdapter) {
+        return { provider: matchedCustomAdapter.id, model: parsed.model };
       }
     }
     return {
