@@ -139,6 +139,7 @@ const MODEL_PREFIX_PROVIDERS = [
   [/^gpt-reserve/, "codex"],
   [/^claude-/, "anthropic"],
   [/^gemini-/, "gemini"],
+  [/^grok-/, "xai"],
   [/^gpt-/, "openai"],
   [/^o[134]/, "openai"],
   [/^deepseek-/, "openrouter"],
