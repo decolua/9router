@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { repairDuplicatedJsonArguments, appendToolArgs } from "../concerns/toolArgs.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -10,18 +11,25 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 // is then a no-op. Kept intentionally; do NOT couple to request's empty prefix.
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
-// Sanitize tool call arguments to fix bad params from non-Anthropic models
+// Sanitize tool call arguments to fix bad params from non-Anthropic models.
+// Fast path: single parse for the common valid case; repair only on failure.
 function sanitizeToolArgs(toolName, argsJson) {
+  let args;
   try {
-    const args = JSON.parse(argsJson);
-    const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
-      ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
-      : toolName;
-    if (name === "Read") sanitizeReadArgs(args);
-    return JSON.stringify(args);
+    args = JSON.parse(argsJson);
   } catch {
-    return argsJson;
+    const repairedJson = repairDuplicatedJsonArguments(argsJson);
+    try {
+      args = JSON.parse(repairedJson);
+    } catch {
+      return repairedJson;
+    }
   }
+  const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
+    ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
+    : toolName;
+  if (name === "Read") sanitizeReadArgs(args);
+  return JSON.stringify(args);
 }
 
 function sanitizeReadArgs(args) {
@@ -215,7 +223,8 @@ export function openaiToClaudeResponse(chunk, state) {
         if (toolInfo) {
           // Buffer args instead of streaming — sanitize at finish to fix bad params
           if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
-          state.toolArgBuffers.set(idx, (state.toolArgBuffers.get(idx) || "") + tc.function.arguments);
+          const current = state.toolArgBuffers.get(idx) || "";
+          state.toolArgBuffers.set(idx, appendToolArgs(current, tc.function.arguments));
         }
       }
     }
@@ -226,34 +235,51 @@ export function openaiToClaudeResponse(chunk, state) {
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+    if (state.toolCalls) {
+      for (const [idx, toolInfo] of state.toolCalls) {
+        if (toolInfo.closed) continue;
+        toolInfo.closed = true;
+        // Emit buffered + sanitized args as single delta before stop
+        const buffered = state.toolArgBuffers?.get(idx);
+        if (buffered) {
+          const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+          results.push({
+            type: "content_block_delta",
+            index: toolInfo.blockIndex,
+            delta: { type: "input_json_delta", partial_json: sanitized }
+          });
+        }
         results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
+          type: "content_block_stop",
+          index: toolInfo.blockIndex
         });
       }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
     }
 
-    // Mark finish for later usage injection in stream.js
-    state.finishReason = choice.finish_reason;
+    if (!state.finishReasonSent) {
+      state.finishReasonSent = true;
+      // Mark finish for later usage injection in stream.js
+      state.finishReason = choice.finish_reason;
 
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+      // Use tracked usage (will be estimated in stream.js if not valid)
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+    } else if (state.usage && !state.messageStopSent) {
+      // Later finish chunk (commonly finish_reason:"stop" carrying usage).
+      // Tool blocks are already closed; emit a usage-only message_delta so the
+      // client still receives final usage without re-opening/duplicating blocks.
+      state.messageStopSent = true;
+      results.push({
+        type: "message_delta",
+        delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+        usage: state.usage
+      });
+    }
   }
 
   return results.length > 0 ? results : null;
