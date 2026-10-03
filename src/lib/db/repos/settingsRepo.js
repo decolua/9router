@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS = {
   tailscaleUrl: "",
   stickyRoundRobinLimit: 3,
   providerStrategies: {},
+  // Tuning for the `latency-aware` fallback strategy; empty = built-in defaults
+  latencyAwareConfig: {},
   quotaVisibility: {},
   comboStrategy: "fallback",
   comboStickyRoundRobinLimit: 1,
