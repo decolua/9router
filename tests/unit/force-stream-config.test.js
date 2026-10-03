@@ -68,9 +68,13 @@ vi.mock("../../open-sse/rtk/index.js", () => ({
   formatRtkLog: vi.fn(() => ""),
 }));
 
-vi.mock("../../open-sse/rtk/headroom.js", () => ({
+// Spread the real module: chatCore imports four things from here, and a factory
+// that lists only the ones it needed at the time breaks the whole file the next
+// time an export is added (it did — formatHeadroomSizeLog and
+// isHeadroomPhantomSavings). Only the call that would reach out is stubbed.
+vi.mock("../../open-sse/rtk/headroom.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   compressWithHeadroom: vi.fn(async () => null),
-  formatHeadroomLog: vi.fn(() => ""),
 }));
 
 vi.mock("../../open-sse/providers/capabilities.js", () => ({
