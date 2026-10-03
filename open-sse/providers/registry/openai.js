@@ -27,6 +27,16 @@ export default {
     baseUrl: "https://api.openai.com/v1/chat/completions",
     forceStream: true,
   },
+  transports: [
+    {
+      format: "openai",
+      baseUrl: "https://api.openai.com/v1/chat/completions",
+    },
+    {
+      format: "openai-responses",
+      baseUrl: "https://api.openai.com/v1/responses",
+    },
+  ],
   models: [
     { id: "gpt-5.5", name: "GPT-5.5" },
     { id: "gpt-5.4", name: "GPT-5.4" },
