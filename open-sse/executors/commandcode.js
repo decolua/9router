@@ -141,7 +141,7 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
   const reader = originalResponse.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  const bufferedLines = [];
+  const rawChunks = [];
   let detectedError = null;
 
   try {
@@ -155,16 +155,15 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
             const parsed = JSON.parse(jsonStr);
             if (parsed?.type === "error") {
               detectedError = parsed;
-            } else {
-              bufferedLines.push(trimmed);
             }
           } catch {
-            bufferedLines.push(trimmed);
+            /* ignore */
           }
         }
         break;
       }
 
+      rawChunks.push(value);
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split("\n");
       buffer = lines.pop() || "";
@@ -175,7 +174,6 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
         if (!trimmed) continue;
         const jsonStr = trimmed.startsWith("data:") ? trimmed.slice(5).trim() : trimmed;
         if (!jsonStr || jsonStr === "[DONE]") {
-          bufferedLines.push(trimmed);
           stopLoop = true;
           break;
         }
@@ -184,7 +182,6 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
         try {
           event = JSON.parse(jsonStr);
         } catch {
-          bufferedLines.push(trimmed);
           continue;
         }
 
@@ -193,8 +190,6 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
           stopLoop = true;
           break;
         }
-
-        bufferedLines.push(trimmed);
 
         if (
           event?.type === "text-delta" ||
@@ -238,29 +233,18 @@ export async function inspectAndWrapCommandCodeResponse(originalResponse, model)
     );
   }
 
-  const combinedStream = createReplayedStream(bufferedLines, buffer, reader);
+  const combinedStream = createRawReplayedStream(rawChunks, reader);
   return wrapNdjsonAsOpenAISse(combinedStream, model, originalResponse);
 }
 
-function createReplayedStream(bufferedLines, remainingBuffer, reader) {
-  const encoder = new TextEncoder();
-  let replayed = false;
+function createRawReplayedStream(rawChunks, reader) {
+  let chunkIndex = 0;
 
   return new ReadableStream({
     async pull(controller) {
-      if (!replayed) {
-        replayed = true;
-        let prefix = bufferedLines.join("\n");
-        if (prefix && remainingBuffer) {
-          prefix += "\n" + remainingBuffer;
-        } else if (remainingBuffer) {
-          prefix = remainingBuffer;
-        } else if (prefix) {
-          prefix += "\n";
-        }
-        if (prefix) {
-          controller.enqueue(encoder.encode(prefix));
-        }
+      if (chunkIndex < rawChunks.length) {
+        controller.enqueue(rawChunks[chunkIndex++]);
+        return;
       }
 
       try {

@@ -175,7 +175,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           return;
         }
 
-        if (data.error === "expired_token" || data.error === "access_denied") {
+        if (data.error === "expired_token" || data.error === "access_denied" || data.fatal) {
           throw new Error(data.errorDescription || data.error);
         }
 
@@ -291,6 +291,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "qoder",
         "qoder-cn",
         "grok-cli",
+        "muse",
+        "glm",
       ];
       if (deviceCodeProviders.includes(provider)) {
         setIsDeviceCode(true);
@@ -333,6 +335,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
             }
           : (provider === "kimi" || provider === "kimi-coding")
           ? { _kimiDeviceId: data._kimiDeviceId }
+          : provider === "glm"
+          ? { _zcodePollToken: data._zcodePollToken }
           : null;
         startPolling(
           data.device_code,
@@ -753,25 +757,27 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
   return (
     <Modal isOpen={isOpen} title={modalTitle} onClose={handleClose} size="lg">
       <div className="flex flex-col gap-4">
-        {/* Trae/Windsurf: browser OAuth (proxy) + paste-token fallback */}
+        {/* Proxy OAuth (trae/windsurf/zed): browser flow; paste-token only when configured */}
         {PROXY_OAUTH_PROVIDERS.has(provider) && (step === "waiting" || step === "input" || step === "error") && (
           <>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🌐 Sign in with browser
-              </button>
-              <button
-                type="button"
-                onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
-                className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
-              >
-                🔑 Paste token
-              </button>
-            </div>
+            {PASTE_TOKEN_PROVIDERS[provider] && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("browser"); setError(null); setStep("waiting"); startOAuthFlow(); }}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "browser" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+                >
+                  🌐 Sign in with browser
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setAuthMode("paste-token"); setError(null); setStep("input"); }}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm transition-colors ${authMode === "paste-token" ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted hover:text-primary"}`}
+                >
+                  🔑 Paste token
+                </button>
+              </div>
+            )}
 
             {authMode === "browser" && (
               <>
@@ -801,7 +807,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
               </>
             )}
 
-            {authMode === "paste-token" && (
+            {authMode === "paste-token" && PASTE_TOKEN_PROVIDERS[provider] && (
               <div className="space-y-3">
                 {ideStatus && !ideStatus.installed && (
                   <div className={`px-3 py-2 rounded-lg text-sm ${PASTE_TOKEN_PROVIDERS[provider].ideOptional ? "bg-blue-500/10 text-blue-700 dark:text-blue-300" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-300"}`}>
@@ -921,18 +927,20 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
                   </Button>
                 </div>
               </div>
-              <div className="bg-primary/10 p-4 rounded-lg">
-                <p className="text-xs text-text-muted mb-1">Your Code</p>
-                <div className="flex items-center justify-center gap-2">
-                  <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    icon={copied === "user_code" ? "check" : "content_copy"}
-                    onClick={() => copy(deviceData.user_code, "user_code")}
-                  />
+              {deviceData.user_code && (
+                <div className="bg-primary/10 p-4 rounded-lg">
+                  <p className="text-xs text-text-muted mb-1">Your Code</p>
+                  <div className="flex items-center justify-center gap-2">
+                    <p className="text-2xl font-mono font-bold text-primary">{deviceData.user_code}</p>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon={copied === "user_code" ? "check" : "content_copy"}
+                      onClick={() => copy(deviceData.user_code, "user_code")}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             {polling && (
               <div className="flex items-center justify-center gap-2 text-sm text-text-muted">

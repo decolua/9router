@@ -2,8 +2,28 @@
 //
 // Fallback order (first match wins):
 //   1. PROVIDER_PRICING[provider][model]  — provider-specific override
-//   2. MODEL_PRICING[model]               — canonical model price (provider-agnostic)
-//   3. PATTERN_PRICING                    — glob pattern match (e.g. "codex-*")
+//   2. FREE_MODEL_NAMESPACES               — upstream bills these at $0
+//   3. MODEL_PRICING[model]               — canonical model price (provider-agnostic)
+//   4. PATTERN_PRICING                    — glob pattern match (e.g. "codex-*")
+
+/**
+ * Namespaces upstream meters at $0. A free model must never inherit a paid
+ * rate: the vendor-prefix strip in getPricingForModel() would turn
+ * "cline-free/deepseek-v4.1-flash" into "deepseek-v4.1-flash" and match
+ * MODEL_PRICING, so the namespace is checked before both fallbacks.
+ */
+export const FREE_MODEL_NAMESPACES = ["cline-free/"];
+
+export const ZERO_PRICING = {
+  input: 0, output: 0, cached: 0, reasoning: 0, cache_creation: 0,
+};
+
+/** True when the model id sits in a namespace upstream bills at $0. */
+export function isFreeModel(model) {
+  if (!model) return false;
+  const lower = String(model).toLowerCase();
+  return FREE_MODEL_NAMESPACES.some((ns) => lower.startsWith(ns));
+}
 
 /**
  * Canonical model pricing — provider-agnostic.
@@ -29,6 +49,8 @@ export const MODEL_PRICING = {
   "claude-opus-4-5-thinking":     { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 37.50,  cache_creation: 5.00  },
   "claude-opus-4-6-thinking":     { input: 5.00,  output: 25.00, cached: 0.50,  reasoning: 37.50,  cache_creation: 5.00  },
   "claude-fable-5":               { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 12.50 },
+  "claude-sonnet-5-5":            { input: 2.00,  output: 10.00, cached: 0.20,  reasoning: 10.00,  cache_creation: 2.50  },
+  "claude-sonnet-5":              { input: 2.00,  output: 10.00, cached: 0.20,  reasoning: 10.00,  cache_creation: 2.50  },
 
   // === OpenAI / GPT ===
   "gpt-3.5-turbo":                { input: 0.50,  output: 1.50,  cached: 0.25,  reasoning: 2.25,   cache_creation: 0.50  },
@@ -53,7 +75,12 @@ export const MODEL_PRICING = {
   "gpt-5.6-luna":                 { input: 1.00,  output: 6.00,  cached: 0.10,  reasoning: 6.00,   cache_creation: 1.00  },
   "gpt-5.6-terra":                { input: 2.50,  output: 15.00, cached: 0.25,  reasoning: 15.00,  cache_creation: 2.50  },
   "gpt-5.6-sol":                  { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 30.00,  cache_creation: 5.00  },
-  "gpt-6-astra":                  { input: 5.00,  output: 30.00, cached: 0.50,  reasoning: 30.00,  cache_creation: 5.00  },
+  // OpenAI Standard short-context pricing (developers.openai.com/api/docs/pricing).
+  // Long-context pricing is higher, but this table currently stores one rate per model.
+  "gpt-6-astra":                  { input: 10.00, output: 50.00, cached: 1.00,  reasoning: 50.00,  cache_creation: 12.50 },
+  "gpt-6.1-sol":                  { input: 2.00,  output: 10.00, cached: 0.10,  reasoning: 10.00,  cache_creation: 2.50  },
+  "gpt-6-sol":                    { input: 2.00,  output: 10.00, cached: 0.20,  reasoning: 10.00,  cache_creation: 2.50  },
+  "gpt-6-luna":                   { input: 0.10,  output: 0.50,  cached: 0.01,  reasoning: 0.50,   cache_creation: 0.125 },
   "o1":                           { input: 15.00, output: 60.00, cached: 7.50,  reasoning: 90.00,  cache_creation: 15.00 },
   "o1-mini":                      { input: 3.00,  output: 12.00, cached: 1.50,  reasoning: 18.00,  cache_creation: 3.00  },
 
@@ -131,6 +158,15 @@ export const MODEL_PRICING = {
 
   // === Grok ===
   "grok-code-fast-1":             { input: 0.50,  output: 2.00,  cached: 0.25,  reasoning: 3.00,   cache_creation: 0.50  },
+
+  // === Muse (Meta Model API) ===
+  // Rates from https://dev.meta.ai/docs/pricing-rate-limits (contributor tier:
+  // cheaper, Meta may train on the data).
+  "muse-spark-1.3":                { input: 1.25, output: 4.25, cached: 0.15,  reasoning: 4.25,   cache_creation: 0 },
+  "muse-spark-1.2":                { input: 1.25, output: 4.25, cached: 0.15,  reasoning: 4.25,   cache_creation: 0 },
+  "muse-spark-1.1":                { input: 1.25, output: 4.25, cached: 0.15,  reasoning: 4.25,   cache_creation: 0 },
+  "muse-spark-1.3-contributor":    { input: 0.10, output: 0.20, cached: 0.002, reasoning: 0.20,   cache_creation: 0 },
+  "muse-spark-1.2-contributor":    { input: 0.10, output: 0.20, cached: 0.002, reasoning: 0.20,   cache_creation: 0 },
 
   // === OpenRouter fallback ===
   "auto":                         { input: 2.00,  output: 8.00,  cached: 1.00,  reasoning: 12.00,  cache_creation: 2.00  },
@@ -361,10 +397,11 @@ export function matchPattern(pattern, model) {
 }
 
 /**
- * Resolve pricing for a model using the 3-step fallback chain:
+ * Resolve pricing for a model using the 4-step fallback chain:
  *   1. PROVIDER_PRICING[provider][model]
- *   2. MODEL_PRICING[model]
- *   3. PATTERN_PRICING (glob match)
+ *   2. free namespace (upstream bills $0)
+ *   3. MODEL_PRICING[model]
+ *   4. PATTERN_PRICING (glob match)
  *
  * @param {string} provider
  * @param {string} model
@@ -378,12 +415,15 @@ export function getPricingForModel(provider, model) {
     return PROVIDER_PRICING[provider][model];
   }
 
-  // 2. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
+  // 2. Free namespaces bill $0 regardless of the model name behind them.
+  if (isFreeModel(model)) return ZERO_PRICING;
+
+  // 3. Canonical model pricing (strip vendor prefix if needed: "deepseek/deepseek-chat" → "deepseek-chat")
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
   if (MODEL_PRICING[baseModel]) return MODEL_PRICING[baseModel];
   if (MODEL_PRICING[model]) return MODEL_PRICING[model];
 
-  // 3. Pattern match
+  // 4. Pattern match
   for (const { pattern, pricing } of PATTERN_PRICING) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
       return pricing;

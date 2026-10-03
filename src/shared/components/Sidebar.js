@@ -8,6 +8,7 @@ import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG, UPDATER_CONFIG } from "@/shared/constants/config";
 import { MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import useSettingsStore from "@/store/settingsStore";
 import Button from "./Button";
 import { ConfirmModal } from "./Modal";
 import NineRemotePromoModal from "./NineRemotePromoModal";
@@ -54,18 +55,20 @@ export default function Sidebar({ onClose }) {
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
 
   useEffect(() => {
-    fetch("/api/settings")
-      .then(res => res.json())
-      .then(data => { if (data.enableTranslator) setEnableTranslator(true); })
-      .catch(() => {});
+    useSettingsStore.getState().fetchSettings().then((data) => {
+      if (data?.enableTranslator) setEnableTranslator(true);
+    });
   }, []);
 
-  // Lazy check for new npm version on mount
+  // Lazy check for new npm version in background after initial render
   useEffect(() => {
-    fetch("/api/version")
-      .then(res => res.json())
-      .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
-      .catch(() => {});
+    const timer = setTimeout(() => {
+      fetch("/api/version")
+        .then(res => res.json())
+        .then(data => { if (data.hasUpdate) setUpdateInfo(data); })
+        .catch(() => {});
+    }, 2500);
+    return () => clearTimeout(timer);
   }, []);
 
   const isActive = (href) => {
@@ -200,9 +203,6 @@ export default function Sidebar({ onClose }) {
             >
               <span className="material-symbols-outlined text-[18px]">perm_media</span>
               <span className="text-[13px] font-medium flex-1 text-left">Media Providers</span>
-              {MEDIA_PROVIDER_KINDS.some((k) => VISIBLE_MEDIA_KINDS.includes(k.id) && k.isNew) && (
-                <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px] bg-green-500/15 text-green-400">NEW</span>
-              )}
               <span className="material-symbols-outlined text-[14px] transition-transform" style={{ transform: mediaOpen ? "rotate(180deg)" : "rotate(0deg)" }}>
                 expand_more
               </span>
@@ -223,9 +223,6 @@ export default function Sidebar({ onClose }) {
                   >
                     <span className="material-symbols-outlined text-[16px]">{kind.icon}</span>
                     <span className="text-sm">{kind.label}</span>
-                    {kind.isNew && (
-                      <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px] bg-green-500/15 text-green-400">NEW</span>
-                    )}
                   </Link>
                 ))}
                 <Link
@@ -309,8 +306,8 @@ export default function Sidebar({ onClose }) {
                 computer
               </span>
               <span className="text-[13px] font-medium">9Remote</span>
-              <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px] bg-green-500/15 text-green-400">
-                NEW
+              <span className="ml-auto text-[10px] font-semibold px-1.5 py-0.5 rounded-[3px] bg-orange-500/15 text-orange-400">
+                HOT
               </span>
             </button>
 
