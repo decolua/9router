@@ -1,23 +1,8 @@
 import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
-import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { hasValidCliToken } from "@/lib/auth/internalCliToken";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
-
-const CLI_TOKEN_HEADER = "x-9r-cli-token";
-const CLI_TOKEN_SALT = "9r-cli-auth";
-
-let cachedCliToken = null;
-async function getCliToken() {
-  if (!cachedCliToken) cachedCliToken = await getConsistentMachineId(CLI_TOKEN_SALT);
-  return cachedCliToken;
-}
-
-async function hasValidCliToken(request) {
-  const token = request.headers.get(CLI_TOKEN_HEADER);
-  if (!token) return false;
-  return token === await getCliToken();
-}
 
 // Public API paths — no auth required (LLM API has its own key auth inside handler).
 const PUBLIC_API_PATHS = [
