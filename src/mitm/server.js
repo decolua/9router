@@ -16,6 +16,18 @@ const LOCAL_PORT = 443;
 const IS_WIN = process.platform === "win32";
 const ENABLE_FILE_LOG = IS_DEV;
 
+// Verbose request-routing trace. Enabled by MITM_KIRO_DEBUG so we can see WHY a
+// Kiro request never reaches the intercept handler (wrong host match, not
+// classified as chat, model not mapped → silent passthrough, etc.). This fires
+// at the very top of the request handler, before any branch decision.
+function kiroDbgEnabled() {
+  const v = (process.env.MITM_KIRO_DEBUG || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on" || v === "yes";
+}
+function routeDbg(msg) {
+  if (kiroDbgEnabled()) log(`[route] ${msg}`);
+}
+
 // Clear stale dump files on every MITM start (prevents unbounded disk usage)
 clearDumpDir();
 const INTERNAL_REQUEST_HEADER = { name: "x-request-source", value: "local" };
@@ -38,16 +50,26 @@ const handlers = {
 const certCache = new Map();
 let rootCAPem;
 
+function sniDbgEnabled() {
+  const v = (process.env.MITM_KIRO_DEBUG || "").trim().toLowerCase();
+  return v === "1" || v === "true" || v === "on" || v === "yes";
+}
+
 function sniCallback(servername, cb) {
   try {
+    if (sniDbgEnabled()) log(`[sni] ClientHello servername=${servername || "-"}`);
     if (certCache.has(servername)) return cb(null, certCache.get(servername));
     const certData = getCertForDomain(servername);
-    if (!certData) return cb(new Error(`Failed to generate cert for ${servername}`));
+    if (!certData) {
+      if (sniDbgEnabled()) err(`[sni] getCertForDomain returned null for ${servername}`);
+      return cb(new Error(`Failed to generate cert for ${servername}`));
+    }
     const ctx = require("tls").createSecureContext({
       key: certData.key,
       cert: `${certData.cert}\n${rootCAPem}`
     });
     certCache.set(servername, ctx);
+    if (sniDbgEnabled()) log(`[sni] cert ready for ${servername}`);
     cb(null, ctx);
   } catch (e) {
     err(`SNI error for ${servername}: ${e.message}`);
@@ -65,7 +87,15 @@ try {
   const rootKey = fs.readFileSync(path.join(MITM_DIR, "rootCA.key"));
   const rootCert = fs.readFileSync(path.join(MITM_DIR, "rootCA.crt"));
   rootCAPem = rootCert.toString("utf8");
-  sslOptions = { key: rootKey, cert: rootCert, SNICallback: sniCallback };
+  sslOptions = {
+    key: rootKey,
+    cert: rootCert,
+    SNICallback: sniCallback,
+    // This is an HTTP/1.1 server (https.createServer). Advertise http/1.1 via ALPN
+    // so an HTTP/2-capable client (which offers "h2,http/1.1") cleanly selects 1.1
+    // instead of negotiating h2 and then hanging (a cause of TLS ECONNRESET).
+    ALPNProtocols: ["http/1.1"],
+  };
 } catch (e) {
   err(`Root CA not found: ${e.message}`);
   process.exit(1);
@@ -303,16 +333,29 @@ const server = https.createServer(sslOptions, async (req, res) => {
     const bodyBuffer = await collectBodyRaw(req);
     if (ENABLE_FILE_LOG) dumpRequest(req, bodyBuffer, "raw");
 
+    const host = (req.headers.host || "").split(":")[0];
+    routeDbg(`${req.method} host=${host} url=${req.url} bytes=${bodyBuffer.length} ` +
+      `x-amz-target=${req.headers["x-amz-target"] || "-"} ` +
+      `x-request-source=${req.headers[INTERNAL_REQUEST_HEADER.name] || "-"}`);
+
     // Anti-loop: skip requests from 9Router
     if (req.headers[INTERNAL_REQUEST_HEADER.name] === INTERNAL_REQUEST_HEADER.value) {
+      routeDbg("→ passthrough (internal 9Router request, anti-loop)");
       return passthrough(req, res, bodyBuffer);
     }
 
     const tool = getToolForHost(req.headers.host);
-    if (!tool) return passthrough(req, res, bodyBuffer);
+    if (!tool) {
+      routeDbg(`→ passthrough (no tool matched for host=${host})`);
+      return passthrough(req, res, bodyBuffer);
+    }
+    routeDbg(`tool=${tool}`);
 
     // Kiro IDE posts chat to `/` with x-amz-target (not path /generateAssistantResponse)
-    if (!isChatRequest(tool, req)) return passthrough(req, res, bodyBuffer);
+    if (!isChatRequest(tool, req)) {
+      routeDbg(`→ passthrough (not a chat request for tool=${tool}; url=${req.url} x-amz-target=${req.headers["x-amz-target"] || "-"})`);
+      return passthrough(req, res, bodyBuffer);
+    }
 
     // Cursor uses binary proto — model extraction not possible at this layer.
     // Delegate directly to handler which decodes proto internally.
@@ -321,18 +364,23 @@ const server = https.createServer(sslOptions, async (req, res) => {
     }
 
     const model = extractModel(req.url, bodyBuffer);
+    routeDbg(`extracted model=${model ?? "null"}`);
 
     // Intentional passthrough: some models must never be re-routed (e.g. Antigravity
     // tab-autocomplete) so latency-critical inline completion stays native. Silent — this
     // is by design, not a leak, and fires per keystroke. See MODEL_NO_MAP in config.js.
     if (model && (MODEL_NO_MAP[tool] || []).some((re) => re.test(model))) {
+      routeDbg(`→ passthrough (model=${model} in MODEL_NO_MAP for tool=${tool})`);
       return passthrough(req, res, bodyBuffer);
     }
 
     const mappedModel = getMappedModel(tool, model);
     if (!mappedModel) {
+      routeDbg(`→ passthrough (no mitmAlias mapping for tool=${tool} model=${model}). ` +
+        `Check the tool's MITM alias table in the dashboard.`);
       return passthrough(req, res, bodyBuffer);
     }
+    routeDbg(`→ intercept tool=${tool} model=${model} → mappedModel=${mappedModel}`);
 
     return handlers[tool].intercept(req, res, bodyBuffer, mappedModel, passthrough);
   } catch (e) {
@@ -386,6 +434,31 @@ server.on("error", (e) => {
   else if (e.code === "EACCES") err(`Permission denied for port ${LOCAL_PORT}`);
   else err(e.message);
   process.exit(1);
+});
+
+// TLS handshake failures never reach the request handler — so if Kiro rejects
+// our MITM cert (untrusted CA, SNI mismatch, protocol error), the symptom is a
+// Kiro "internal error" with ZERO request logs. Surface those here so the root
+// cause is visible. Gated by MITM_KIRO_DEBUG to avoid noise from routine probes.
+server.on("tlsClientError", (e, socket) => {
+  if (!kiroDbgEnabled()) return;
+  const peer = socket && socket.remoteAddress ? `${socket.remoteAddress}:${socket.remotePort}` : "?";
+  err(`[tls] handshake failed from ${peer}: ${e.code || ""} ${e.message}`);
+});
+
+server.on("clientError", (e, socket) => {
+  if (kiroDbgEnabled()) err(`[client] connection error: ${e.code || ""} ${e.message}`);
+  try {
+    if (socket.writable && !socket.destroyed) socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+  } catch { /* ignore */ }
+});
+
+// Log every accepted TLS connection + SNI so we can confirm Kiro is actually
+// connecting through the MITM (vs bypassing it entirely).
+server.on("secureConnection", (tlsSocket) => {
+  if (!kiroDbgEnabled()) return;
+  const peer = `${tlsSocket.remoteAddress || "?"}:${tlsSocket.remotePort || "?"}`;
+  log(`[tls] connected servername=${tlsSocket.servername || "-"} alpn=${tlsSocket.alpnProtocol || "-"} from ${peer}`);
 });
 
 const { removeAllDNSEntriesSync } = require("./dns/dnsConfig");

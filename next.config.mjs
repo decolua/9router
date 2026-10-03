@@ -49,6 +49,15 @@ const nextConfig = {
         path: false,
       };
     }
+    // On Windows, webpack resolves symlinks by calling readlink() on every path
+    // segment of resolved modules. Files with restrictive ACLs anywhere under the
+    // user profile (e.g. ~/.ssh/authorized_keys, Steam/Chrome cache, %TEMP% locks)
+    // return EPERM instead of EINVAL, which webpack does not tolerate and the build
+    // crashes with a misleading FlightClientEntryPlugin error. Our node_modules has
+    // no symlinks, so disabling symlink resolution is safe and avoids the probing.
+    if (process.platform === "win32") {
+      config.resolve.symlinks = false;
+    }
     // Exclude non-source dirs from watcher to reduce inotify load
     config.watchOptions = {
       ...config.watchOptions,

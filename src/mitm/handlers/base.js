@@ -155,6 +155,7 @@ async function pipeTransformedSSE(routerRes, res, transformFn, state) {
  * @param {object} state - Mutable state object shared across chunks and flush
  */
 async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
+  const DBG = !!process.env.DEBUG_MITM;
   const resHeaders = {
     "Content-Type": "application/vnd.amazon.eventstream",
     "Cache-Control": "no-cache",
@@ -162,8 +163,20 @@ async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
   };
   res.writeHead(200, resHeaders);
 
+  // Diagnostics: track how much of the upstream stream we actually consumed and
+  // how many binary frames we emitted. A stream that yields 0 frames is the
+  // classic cause of Kiro "internal error" (Kiro gets an empty/invalid EventStream).
+  let sseChunks = 0;      // raw network chunks read from router
+  let dataLines = 0;      // "data:" SSE lines seen
+  let parseErrors = 0;    // JSON.parse failures on data lines
+  let framesWritten = 0;  // binary frames written to Kiro
+  let bytesWritten = 0;   // total binary bytes written to Kiro
+  let firstRawLine = null;
+
   if (!routerRes.body) {
-    res.end(await routerRes.text().catch(() => ""));
+    const fallback = await routerRes.text().catch(() => "");
+    if (DBG) log(`[EventStream] router had NO body. status=${routerRes.status} fallbackLen=${fallback.length} preview=${JSON.stringify(fallback.slice(0, 300))}`);
+    res.end(fallback);
     return;
   }
 
@@ -174,6 +187,7 @@ async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
+    sseChunks++;
 
     buffer += decoder.decode(value, { stream: true });
     const lines = buffer.split("\n");
@@ -182,11 +196,13 @@ async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed || !trimmed.startsWith("data:")) continue;
+      dataLines++;
 
       const data = trimmed.slice(5).trim();
       if (data === "[DONE]") continue;
+      if (firstRawLine == null) firstRawLine = data.slice(0, 300);
 
-      if (process.env.DEBUG_MITM) {
+      if (DBG) {
         log(`[SSE in] ${data.slice(0, 200)}`);
       }
 
@@ -196,8 +212,10 @@ async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
         if (result != null) {
           const outputs = Array.isArray(result) ? result : [result];
           for (const output of outputs) {
-            if (process.env.DEBUG_MITM) {
-              const len = output.length || output.byteLength || 0;
+            const len = output.length || output.byteLength || 0;
+            framesWritten++;
+            bytesWritten += len;
+            if (DBG) {
               log(`[write binary frame] (${len}B) first 20B: ${Array.from(output.slice(0, 20)).join(',')}`);
             }
             res.write(Buffer.from(output));
@@ -205,6 +223,7 @@ async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
         }
       } catch {
         // Skip unparseable lines
+        parseErrors++;
       }
     }
   }
@@ -215,12 +234,22 @@ async function pipeTransformedEventStream(routerRes, res, transformFn, state) {
     if (flushed != null) {
       const outputs = Array.isArray(flushed) ? flushed : [flushed];
       for (const output of outputs) {
+        framesWritten++;
+        bytesWritten += output.length || output.byteLength || 0;
         res.write(output);
       }
     }
-  } catch { /* ignore flush errors */ }
+  } catch (e) {
+    if (DBG) err(`[EventStream] flush error: ${e.message}`);
+  }
 
   res.end();
+
+  if (DBG) {
+    log(`[EventStream] done: sseChunks=${sseChunks} dataLines=${dataLines} parseErrors=${parseErrors} ` +
+        `framesWritten=${framesWritten} bytesWritten=${bytesWritten}` +
+        (framesWritten === 0 ? ` ⚠ ZERO FRAMES → Kiro will show "internal error". firstRawLine=${JSON.stringify(firstRawLine)}` : ""));
+  }
 }
 
 module.exports = { fetchRouter, pipeSSE, pipeTransformedSSE, pipeTransformedEventStream };
