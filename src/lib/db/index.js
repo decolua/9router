@@ -71,6 +71,8 @@ export {
 export async function exportDb() {
   const db = await getAdapter();
   const { exportSettings } = await import("./repos/settingsRepo.js");
+  const lifetimeRow = db.get(`SELECT value FROM _meta WHERE key = 'totalRequestsLifetime'`);
+  const totalRequestsLifetime = Number.parseInt(lifetimeRow?.value || "0", 10);
 
   const out = {
     settings: await exportSettings(),
@@ -83,6 +85,18 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    usageHistory: db.all(`SELECT * FROM usageHistory ORDER BY id ASC`).map((r) => ({
+      ...r,
+      tokens: parseJson(r.tokens, {}),
+      meta: parseJson(r.meta, {}),
+    })),
+    usageDaily: db.all(`SELECT * FROM usageDaily ORDER BY dateKey ASC`).map((r) => ({
+      dateKey: r.dateKey,
+      data: parseJson(r.data, {}),
+    })),
+    usageMeta: {
+      totalRequestsLifetime: Number.isFinite(totalRequestsLifetime) ? totalRequestsLifetime : 0,
+    },
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
@@ -98,9 +112,12 @@ export async function importDb(payload) {
     throw new Error("Invalid database payload");
   }
   const db = await getAdapter();
+  const hasUsageHistory = Array.isArray(payload.usageHistory);
+  const hasUsageDaily = Array.isArray(payload.usageDaily);
 
   db.transaction(() => {
-    // Wipe all tables (keep _meta)
+    // Usage tables are only replaced when present, so backups created by an
+    // older version do not unexpectedly erase usage collected by a newer one.
     db.run(`DELETE FROM settings`);
     db.run(`DELETE FROM providerConnections`);
     db.run(`DELETE FROM providerNodes`);
@@ -108,6 +125,8 @@ export async function importDb(payload) {
     db.run(`DELETE FROM apiKeys`);
     db.run(`DELETE FROM combos`);
     db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+    if (hasUsageHistory) db.run(`DELETE FROM usageHistory`);
+    if (hasUsageDaily) db.run(`DELETE FROM usageDaily`);
 
     // Settings
     if (payload.settings) {
@@ -160,7 +179,53 @@ export async function importDb(payload) {
     for (const [provider, models] of Object.entries(payload.pricing || {})) {
       db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
     }
+
+    if (hasUsageHistory) {
+      for (const entry of payload.usageHistory) {
+        const tokens = entry.tokens && typeof entry.tokens === "object" ? entry.tokens : {};
+        const promptTokens = entry.promptTokens ?? tokens.prompt_tokens ?? tokens.input_tokens ?? 0;
+        const completionTokens = entry.completionTokens ?? tokens.completion_tokens ?? tokens.output_tokens ?? 0;
+        db.run(
+          `INSERT OR REPLACE INTO usageHistory(id, timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            entry.id ?? null, entry.timestamp, entry.provider || null, entry.model || null,
+            entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
+            promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
+            stringifyJson(tokens), stringifyJson(entry.meta || {}),
+          ]
+        );
+      }
+
+      const requestedLifetime = Number(payload.usageMeta?.totalRequestsLifetime);
+      const totalRequestsLifetime = Number.isFinite(requestedLifetime)
+        ? Math.max(0, Math.trunc(requestedLifetime))
+        : payload.usageHistory.length;
+      db.run(
+        `INSERT INTO _meta(key, value) VALUES('totalRequestsLifetime', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [String(totalRequestsLifetime)]
+      );
+    }
+
+    if (hasUsageDaily) {
+      for (const day of payload.usageDaily) {
+        db.run(
+          `INSERT OR REPLACE INTO usageDaily(dateKey, data) VALUES(?, ?)`,
+          [day.dateKey, stringifyJson(day.data || {})]
+        );
+      }
+    }
   });
+
+  // The usage dashboard keeps a small process-local cache. Force it to reload
+  // the newly imported rows instead of showing pre-import recent requests.
+  if (hasUsageHistory && global._recentRing) {
+    global._recentRing.items = [];
+    global._recentRing.initialized = false;
+  }
+  if (global._connectionMapCache) {
+    global._connectionMapCache.map = {};
+    global._connectionMapCache.ts = 0;
+  }
 
   return await exportDb();
 }
