@@ -732,9 +732,12 @@ export class CursorExecutor extends BaseExecutor {
                   log?.info?.("CURSOR", `AgentService rejected IDE exec fields=${[...execRequest.keys()].join(",")}`);
                   session.write(rejection);
                 } else {
+                  // A variant we have no result field for. Log it, then answer with
+                  // the empty success so a protocol addition upstream degrades into
+                  // "tool unavailable" instead of killing a complete turn.
                   debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
-                  finished = true;
-                  onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
+                  const { id: unknownId, execId: unknownExecId } = execIds(execRequest);
+                  session.write(wrapExecClientMessage(unknownId, unknownExecId, 9, new Uint8Array()));
                 }
               }
             }

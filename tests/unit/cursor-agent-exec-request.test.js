@@ -194,6 +194,21 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     }
   });
 
+  it("degrades an unrecognised exec variant instead of failing the turn", async () => {
+    // Field 99 is not in the descriptor at all. Protocol drift must not turn a
+    // turn that already streamed a full answer into an API error.
+    const { result, written } = await runAgent({
+      frames: [textFrame("answer"), execRequestFrame(99)],
+      stream: true,
+    });
+
+    const body = await result.response.text();
+    expect(body).not.toContain("unsupported IDE tool");
+    expect(written.length).toBe(2);
+    const content = parseSSE(body).map((e) => e.choices?.[0]?.delta?.content || "").join("");
+    expect(content).toBe("answer");
+  });
+
   it("keeps the pi_* and mini_swe renumbering out of the way", async () => {
     // pi_read_args is field 45 on the server side but field 46 on the client side,
     // so the map is not an identity and a copy-pasted offset would go unnoticed.
