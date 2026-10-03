@@ -18,9 +18,19 @@ const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
 
 // Match top-level "model:" block (until next non-indented, non-empty line)
 const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
+const DELEGATION_BLOCK_RE = /^delegation:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
+// "auxiliary:" block; children are 2-space-indented role keys with 4+-space fields
+const AUX_BLOCK_RE = /^auxiliary:[ \t]*\r?\n((?:(?:[ \t]+.*\r?\n?)|(?:[ \t]*\r?\n))*)/m;
+const auxRoleRe = (role) => new RegExp(`^  ${role}:[ \\t]*\\r?\\n(?:(?:[ \\t]{4,}.*\\r?\\n?)|(?:[ \\t]*\\r?\\n))*`, "m");
 
 const buildModelBlock = (model, baseUrl) =>
   `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
+
+const buildDelegationBlock = (model, baseUrl) =>
+  `delegation:\n  model: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
+
+const buildAuxRoleBlock = (role, model, baseUrl) =>
+  `  ${role}:\n    provider: "custom"\n    model: "${model}"\n    base_url: "${baseUrl}"\n    api_key: \${OPENAI_API_KEY}\n`;
 
 // Parse current model block back to fields (best-effort, simple key:value)
 const parseModelBlock = (yaml) => {
@@ -42,6 +52,60 @@ const parseModelBlock = (yaml) => {
 const upsertModelBlock = (yaml, newBlock) => {
   if (MODEL_BLOCK_RE.test(yaml)) return yaml.replace(MODEL_BLOCK_RE, newBlock);
   return yaml.length > 0 ? `${newBlock}\n${yaml}` : newBlock;
+};
+
+const upsertDelegationBlock = (yaml, newBlock) => {
+  if (DELEGATION_BLOCK_RE.test(yaml)) return yaml.replace(DELEGATION_BLOCK_RE, newBlock);
+  return yaml.endsWith("\n") || yaml.length === 0 ? `${yaml}${newBlock}` : `${yaml}\n${newBlock}`;
+};
+
+const removeDelegationBlock = (yaml) => yaml.replace(DELEGATION_BLOCK_RE, "");
+
+const upsertAuxRole = (yaml, role, roleBlock) => {
+  const re = auxRoleRe(role);
+  const m = yaml.match(AUX_BLOCK_RE);
+  if (!m) {
+    const block = `auxiliary:\n${roleBlock}`;
+    return yaml.endsWith("\n") || yaml.length === 0 ? `${yaml}${block}` : `${yaml}\n${block}`;
+  }
+  const body = re.test(m[1]) ? m[1].replace(re, roleBlock) : `${m[1]}${roleBlock}`;
+  return yaml.replace(AUX_BLOCK_RE, `auxiliary:\n${body}`);
+};
+
+const removeAuxRole = (yaml, role) => {
+  const m = yaml.match(AUX_BLOCK_RE);
+  if (!m) return yaml;
+  const body = m[1].replace(auxRoleRe(role), "");
+  if (body.trim() === "") return yaml.replace(AUX_BLOCK_RE, "");
+  return yaml.replace(AUX_BLOCK_RE, `auxiliary:\n${body}`);
+};
+
+// role -> { model, provider, base_url } for every entry under "auxiliary:"
+const parseAuxRoles = (yaml) => {
+  const m = yaml.match(AUX_BLOCK_RE);
+  if (!m) return {};
+  const roles = {};
+  const subRe = /^  ([A-Za-z0-9_]+):[ \t]*\r?\n((?:(?:[ \t]{4,}.*\r?\n?)|(?:[ \t]*\r?\n))*)/gm;
+  let sm;
+  while ((sm = subRe.exec(m[1]))) {
+    const get = (key) => {
+      const km = sm[2].match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\\r\\n]+)["']?`, "m"));
+      return km ? km[1].trim() : null;
+    };
+    roles[sm[1]] = { model: get("model"), provider: get("provider"), base_url: get("base_url") };
+  }
+  return roles;
+};
+
+const parseDelegationBlock = (yaml) => {
+  const match = yaml.match(DELEGATION_BLOCK_RE);
+  if (!match) return null;
+  const body = match[1] || "";
+  const get = (key) => {
+    const m = body.match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\\r\\n]+)["']?`, "m"));
+    return m ? m[1].trim() : null;
+  };
+  return { model: get("model"), provider: get("provider"), base_url: get("base_url") };
 };
 
 const removeModelBlock = (yaml) => yaml.replace(MODEL_BLOCK_RE, "").replace(/^\n+/, "");
@@ -107,10 +171,12 @@ export async function GET() {
     }
     const yaml = await readConfigYaml();
     const model = parseModelBlock(yaml);
+    const delegation = parseDelegationBlock(yaml);
+    const auxiliary = parseAuxRoles(yaml);
     return NextResponse.json({
       installed: true,
-      settings: { model },
-      has9Router: has9RouterConfig(model),
+      settings: { model, delegation, auxiliary },
+      has9Router: has9RouterConfig(model) || has9RouterConfig(delegation) || Object.values(auxiliary).some(has9RouterConfig),
       configPath: getHermesConfigPath(),
     });
   } catch (error) {
@@ -121,8 +187,14 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model } = await request.json();
-    if (!baseUrl || !model) {
+    const { baseUrl, apiKey, model, selections } = await request.json();
+    // selections: [{role, model}] — "default" plus any auxiliary/delegation slots.
+    // Legacy callers (CLI quick setup) send a bare `model` → treat as default role.
+    const sel = Array.isArray(selections) && selections.some((s) => s?.role && s?.model)
+      ? selections.filter((s) => s?.role && s?.model)
+      : model ? [{ role: "default", model }] : [];
+    const defaultSel = sel.find((s) => s.role === "default");
+    if (!baseUrl || !defaultSel) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
@@ -131,9 +203,17 @@ export async function POST(request) {
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
-    // Update config.yaml — replace/insert model: block, keep everything else
-    const existingYaml = await readConfigYaml();
-    const newYaml = upsertModelBlock(existingYaml, buildModelBlock(model, normalizedBaseUrl));
+    // Update config.yaml — upsert each role block, keep everything else
+    let newYaml = await readConfigYaml();
+    for (const { role, model: roleModel } of sel) {
+      if (role === "default") {
+        newYaml = upsertModelBlock(newYaml, buildModelBlock(roleModel, normalizedBaseUrl));
+      } else if (role === "delegation") {
+        newYaml = upsertDelegationBlock(newYaml, buildDelegationBlock(roleModel, normalizedBaseUrl));
+      } else {
+        newYaml = upsertAuxRole(newYaml, role, buildAuxRoleBlock(role, roleModel, normalizedBaseUrl));
+      }
+    }
     await fs.writeFile(getHermesConfigPath(), newYaml);
 
     // Update .env — upsert OPENAI_API_KEY only when caller provides one
@@ -166,9 +246,15 @@ export async function DELETE() {
       }
       throw error;
     }
-    const newYaml = removeModelBlock(yaml);
+    let newYaml = removeModelBlock(yaml);
+    newYaml = removeDelegationBlock(newYaml);
+    // Only drop auxiliary entries we manage (custom provider, any base URL — covers tunnels)
+    for (const [role, cfg] of Object.entries(parseAuxRoles(yaml))) {
+      if (cfg?.provider === "custom") newYaml = removeAuxRole(newYaml, role);
+    }
+    newYaml = newYaml.replace(/^\n+/, "");
     await fs.writeFile(configPath, newYaml);
-    return NextResponse.json({ success: true, message: `${PROVIDER_NAME} model block removed` });
+    return NextResponse.json({ success: true, message: `${PROVIDER_NAME} model blocks removed` });
   } catch (error) {
     console.log("Error resetting hermes settings:", error);
     return NextResponse.json({ error: "Failed to reset hermes settings" }, { status: 500 });

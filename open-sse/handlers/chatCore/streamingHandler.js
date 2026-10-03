@@ -9,6 +9,7 @@ import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -109,7 +110,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
   return {
     success: true,
-    response: new Response(transformedBody, { headers: SSE_HEADERS })
+    response: new Response(transformedBody, { headers: { ...SSE_HEADERS, ...upstreamResponseHeaders(providerResponse.headers) } })
   };
 }
 
@@ -119,20 +120,12 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 
-  const onStreamComplete = (contentObj, usage, ttftAt, streamResult = null) => {
+  const onStreamComplete = (contentObj, usage, ttftAt) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
       total: Date.now() - requestStartTime
     };
-    // A stream can fail after HTTP 200 has already been sent - the upstream
-    // emits `error` / `response.failed` inside the SSE body and the stream then
-    // ends normally. That turn reached the client as a failure, so recording it
-    // as "success" is what made the dashboard all-green while clients retried
-    // (issue #4104).
-    const streamError = streamResult?.error || null;
-    const safeContent = streamError
-      ? `[Streaming failed: ${streamError.message || "unknown error"}]`
-      : contentObj?.content || "[Empty streaming response]";
+    const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
     saveRequestDetail(buildRequestDetail({
@@ -142,9 +135,9 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       request: extractRequestConfig(body, stream),
       providerRequest: finalBody || translatedBody || null,
       providerResponse: safeContent,
-      response: { content: safeContent, thinking: safeThinking, type: "streaming", ...(streamError ? { error: streamError } : {}) },
+      response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: streamError ? "error" : "success"
+      status: "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });

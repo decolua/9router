@@ -13,6 +13,7 @@ import {
   CLIENT_PING_FAST_MS,
 } from "./endpointConstants";
 import { clientPingUrl, clientPingAny } from "./endpointPing";
+import useSettingsStore from "@/store/settingsStore";
 import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
@@ -194,16 +195,15 @@ export default function APIPageClient({ machineId }) {
   const loadSettings = async () => {
     setTunnelChecking(true);
     try {
-      const [settingsRes, statusRes] = await Promise.all([
-        fetch("/api/settings"),
+      const [settingsData, statusRes] = await Promise.all([
+        useSettingsStore.getState().fetchSettings(),
         fetch("/api/tunnel/status", { cache: "no-store" })
       ]);
-      if (settingsRes.ok) {
-        const data = await settingsRes.json();
-        setRequireApiKey(data.requireApiKey || false);
-        setRequireLogin(data.requireLogin !== false);
-        setHasPassword(data.hasPassword || false);
-        setTunnelDashboardAccess(data.tunnelDashboardAccess || false);
+      if (settingsData) {
+        setRequireApiKey(settingsData.requireApiKey || false);
+        setRequireLogin(settingsData.requireLogin !== false);
+        setHasPassword(settingsData.hasPassword || false);
+        setTunnelDashboardAccess(settingsData.tunnelDashboardAccess || false);
       }
       if (statusRes.ok) {
         const data = await statusRes.json();
@@ -229,12 +229,8 @@ export default function APIPageClient({ machineId }) {
 
   const handleTunnelDashboardAccess = async (value) => {
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tunnelDashboardAccess: value }),
-      });
-      if (res.ok) setTunnelDashboardAccess(value);
+      const updated = await useSettingsStore.getState().patchSettings({ tunnelDashboardAccess: value });
+      if (updated) setTunnelDashboardAccess(value);
     } catch (error) {
       console.log("Error updating tunnelDashboardAccess:", error);
     }
@@ -242,12 +238,8 @@ export default function APIPageClient({ machineId }) {
 
   const handleRequireApiKey = async (value) => {
     try {
-      const res = await fetch("/api/settings", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ requireApiKey: value }),
-      });
-      if (res.ok) setRequireApiKey(value);
+      const updated = await useSettingsStore.getState().patchSettings({ requireApiKey: value });
+      if (updated) setRequireApiKey(value);
     } catch (error) {
       console.log("Error updating requireApiKey:", error);
     }

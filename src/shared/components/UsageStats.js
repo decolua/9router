@@ -15,11 +15,11 @@ import Card from "./Card";
 import OverviewCards from "@/app/(dashboard)/dashboard/usage/components/OverviewCards";
 import UsageTable, { fmt, fmtTime } from "@/app/(dashboard)/dashboard/usage/components/UsageTable";
 import dynamic from "next/dynamic";
-// Lazy-load: keeps @xyflow/react out of the shared bundle until topology renders
+// Lazy-load: keeps @xyflow/react and recharts out of the initial bundle
 const ProviderTopology = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderTopology"), { ssr: false });
-import UsageChart from "@/app/(dashboard)/dashboard/usage/components/UsageChart";
-import ProviderBarChart from "@/app/(dashboard)/dashboard/usage/components/ProviderBarChart";
-import TopModelsChart from "@/app/(dashboard)/dashboard/usage/components/TopModelsChart";
+const UsageChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/UsageChart"), { ssr: false });
+const ProviderBarChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/ProviderBarChart"), { ssr: false });
+const TopModelsChart = dynamic(() => import("@/app/(dashboard)/dashboard/usage/components/TopModelsChart"), { ssr: false });
 
 function timeAgo(timestamp) {
   const diff = Math.floor((Date.now() - new Date(timestamp)) / 1000);
@@ -239,6 +239,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         const unique = (d?.connections || []).filter((c) => {
           if (c.isActive === false) return false;
           if (!isLLMProvider(c.provider)) return false;
+          if (AI_PROVIDERS[c.provider]?.hidden) return false;
           if (seen.has(c.provider)) return false;
           seen.add(c.provider);
           return true;
@@ -247,7 +248,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           nodeName: nodeNameMap[c.provider] || null,
         }));
         const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !seen.has(p.id) && isLLMProvider(p.id))
+          .filter((p) => p.noAuth && !p.hidden && !seen.has(p.id) && isLLMProvider(p.id))
           .map((p) => ({ provider: p.id, name: p.name }));
         setProviders([...unique, ...noAuthProviders]);
       })

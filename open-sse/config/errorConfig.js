@@ -58,6 +58,7 @@ const COOLDOWN = {
  */
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
+  { provider: "codex", text: "model is not supported when using codex with a chatgpt account", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },

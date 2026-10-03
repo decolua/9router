@@ -374,6 +374,29 @@ function buildXquikRequest(config, params) {
   };
 }
 
+function buildTinyfishRequest(config, params) {
+  if (params.searchType && !["web", "news", "research_paper"].includes(params.searchType)) {
+    throw new Error("Unsupported TinyFish search type");
+  }
+  const qp = new URLSearchParams({ query: params.query });
+  if (params.searchType && params.searchType !== "web") qp.set("domain_type", params.searchType);
+  if (params.country) qp.set("location", params.country);
+  if (params.language) qp.set("language", params.language);
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  if (includes.length) qp.set("include_domains", includes.join(","));
+  if (excludes.length) qp.set("exclude_domains", excludes.join(","));
+  if (Number.isInteger(params.offset) && params.offset > 0) {
+    if (params.offset >= 110) throw new Error("TinyFish search offset exceeds available pages");
+    if (params.offset % 10 + params.maxResults > 10) throw new Error("TinyFish search offset and max_results must fit within one page");
+    qp.set("page", String(Math.floor(params.offset / 10)));
+  }
+  return {
+    // Keep API-key endpoint fixed; client baseUrl overrides must not receive the key.
+    url: `${config.baseUrl}?${qp}`,
+    init: { method: "GET", headers: { Accept: "application/json", "X-API-Key": params.token } },
+  };
+}
+
 // ── Ollama Cloud web_search ──────────────────────────────────────────────
 // POST https://ollama.com/api/web_search { query, max_results }
 // Response: { results: [{ title, url, content, published_at? }] }
@@ -436,6 +459,7 @@ const BUILDERS = {
   "youcom": buildYouComRequest,
   "searxng": buildSearxngRequest,
   "xquik": buildXquikRequest,
+  "tinyfish": buildTinyfishRequest,
   "ollama-search": buildOllamaSearchRequest,
   "glm": buildGlmSearchRequest,
 };
