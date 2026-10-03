@@ -219,6 +219,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const [periodLocal, setPeriodLocal] = useState("today");
   const isInitialLoad = useRef(true);
   const hasLoadedStats = useRef(false);
+  const statsFetchAbortRef = useRef(null);
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
@@ -257,6 +258,9 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
+    const controller = new AbortController();
+    statsFetchAbortRef.current = controller;
+
     // First load: show full spinner; subsequent: show subtle fetching indicator
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
@@ -265,7 +269,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       setFetching(true);
     }
 
-    fetch(`/api/usage/stats?period=${period}`)
+    fetch(`/api/usage/stats?period=${period}`, { signal: controller.signal })
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
         if (data) {
@@ -275,30 +279,31 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       })
       .catch(() => {})
       .finally(() => {
-        setLoading(false);
-        setFetching(false);
+        if (statsFetchAbortRef.current === controller) {
+          statsFetchAbortRef.current = null;
+          setLoading(false);
+          setFetching(false);
+        }
       });
+
+    return () => {
+      controller.abort();
+      if (statsFetchAbortRef.current === controller) statsFetchAbortRef.current = null;
+    };
   }, [period]);
 
-  // SSE connection - real-time updates for activeRequests + recentRequests only
+  // Keep the full, period-filtered snapshot current as completed requests are persisted.
   useEffect(() => {
-    const es = new EventSource("/api/usage/stream");
+    const es = new EventSource(`/api/usage/stream?period=${encodeURIComponent(period)}`);
 
     es.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        // Always merge only real-time fields, never overwrite full stats from REST
-        setStats((prev) => {
-          if (!prev) return prev;
-          return {
-            ...prev,
-            activeRequests: data.activeRequests,
-            recentRequests: data.recentRequests,
-            errorProvider: data.errorProvider,
-            pending: data.pending,
-          };
-        });
-        if (hasLoadedStats.current) setLoading(false);
+        // The SSE snapshot is newer than an in-flight initial/period REST fetch.
+        statsFetchAbortRef.current?.abort();
+        setStats(data);
+        hasLoadedStats.current = true;
+        setLoading(false);
       } catch (err) {
         console.error("[SSE CLIENT] parse error:", err);
       }
@@ -307,7 +312,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     es.onerror = () => setLoading(false);
 
     return () => es.close();
-  }, []);
+  }, [period]);
 
   const toggleSort = useCallback((tableType, field) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -485,7 +490,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       )}
 
       {/* Token / Cost chart - sync period */}
-      {loading ? spinner : <UsageChart period={period} />}
+      {loading ? spinner : <UsageChart period={period} refreshKey={stats.totalRequests} />}
 
       {/* Provider and model breakdown charts */}
       {!loading && (stats.byProvider || stats.byModel) && (
