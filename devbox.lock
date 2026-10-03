@@ -1,0 +1,22 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "act": {
+      "resolved": "github:NixOS/nixpkgs/e9b6aa075c9364c5d152b7657c41349998391daf#act",
+      "source": "nixpkg"
+    },
+    "github:NixOS/nixpkgs/e9b6aa075c9364c5d152b7657c41349998391daf": {
+      "last_modified": "1970-01-01T00:00:00Z",
+      "resolved": "github:NixOS/nixpkgs/e9b6aa075c9364c5d152b7657c41349998391daf"
+    },
+    "nodejs_22": {
+      "plugin_version": "0.0.4",
+      "resolved": "github:NixOS/nixpkgs/e9b6aa075c9364c5d152b7657c41349998391daf#nodejs_22",
+      "source": "nixpkg"
+    },
+    "sqlite": {
+      "resolved": "github:NixOS/nixpkgs/e9b6aa075c9364c5d152b7657c41349998391daf#sqlite",
+      "source": "nixpkg"
+    }
+  }
+}

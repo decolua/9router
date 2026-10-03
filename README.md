@@ -134,6 +134,109 @@ Default URLs:
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
 
+### Nix (Flakes)
+
+The project provides optional Nix flake outputs for users who already use
+Nix. The flake builds the published `9router` CLI from source (root
+dashboard + `cli/` wrapper).
+
+```bash
+# Run without installing
+nix run github:decolua/9router
+
+# Install into your profile
+nix profile add github:decolua/9router
+
+# Specific release (the flake builds from source, so any tag works)
+nix run github:decolua/9router/v0.5.86
+
+# Named output
+nix run github:decolua/9router#9router
+
+# Build / develop / non-flake
+nix build github:decolua/9router
+nix develop github:decolua/9router
+nix-build default.nix   # in a checkout, builds without flakes
+```
+
+The flake exposes `packages.<system>.default` /
+`packages.<system>."9router"`, `apps.<system>.default` /
+`apps.<system>."9router"`, `devShells.<system>.default`,
+`overlays.default`, `homeModules.default`, `nixosModules.default`, and
+`checks.<system>.smoke` / `hmModuleStruct` / `nixosModuleStruct`.
+
+Supported platforms: `x86_64-linux`, `aarch64-linux`, `x86_64-darwin`,
+`aarch64-darwin`. On `x86_64-darwin` the flake pins
+`nixpkgs-26.05-darwin`, the last nixpkgs release that supports Intel
+Macs (nixpkgs-unstable dropped `x86_64-darwin`).
+
+> **Note:** The Nix build runs in a sandbox with no network access. The
+> `next/font/google` Inter fetch is neutralized during the Nix build (the
+> dashboard falls back to the system sans-serif stack already declared in
+> `globals.css`). Install scripts are skipped (`--ignore-scripts`); the
+> app falls back to `node:sqlite`/`sql.js` at runtime and lazily installs
+> optional runtime deps into `~/.9router/runtime` on first start, same as
+> a fresh `npm i -g` install. Both adjustments are scoped to the Nix
+> derivation only; the Docker and npm build paths are unchanged.
+
+#### Home-Manager
+
+For declarative user-environment management via [Home-Manager](https://nix-community.github.io/home-manager/):
+
+```nix
+# flake.nix (your config)
+inputs.9router.url = "github:decolua/9router";
+
+# home.nix
+{ pkgs, inputs, ... }:
+{
+  nixpkgs.overlays = [ inputs.9router.overlays.default ];
+  imports = [ inputs.9router.homeModules.default ];
+
+  programs."9router" = {
+    enable = true;
+    port = 20128;
+    hostname = "0.0.0.0";
+    dataDir = "~/.9router";
+  };
+}
+```
+
+#### NixOS service
+
+For declarative deployment on NixOS as a systemd service:
+
+```nix
+{ inputs, ... }:
+{
+  nixpkgs.overlays = [ inputs.9router.overlays.default ];
+  imports = [ inputs.9router.nixosModules.default ];
+
+  services."9router" = {
+    enable = true;
+    port = 20128;
+    # Put INITIAL_PASSWORD / JWT_SECRET / API_KEY_SECRET / MACHINE_ID_SALT
+    # in a KEY=value file and point the service at it:
+    # environmentFile = "/var/lib/9router/env";
+  };
+}
+```
+
+### Devbox
+
+For a reproducible development environment, use [Devbox](https://www.jetify.com/devbox):
+
+```bash
+# Install Devbox first (if not already installed)
+curl -fsSL https://get.jetify.dev/devbox | bash
+
+# Enter the development environment
+devbox shell
+
+# Build the project
+devbox run build
+```
+
 ---
 
 ## Video Guides

@@ -1,0 +1,82 @@
+---
+name: Nix flake
+
+# Validates the flake. The full Next.js source build takes 10+ minutes, so
+# this workflow runs on manual dispatch, on published releases, and on PRs
+# that touch Nix-relevant files - not on every push.
+#
+# Steps, in order of what they catch:
+#   1. nix flake check --all-systems  - every system's outputs evaluate
+#      (including darwin on an ubuntu runner).
+#   2. nix build .#default            - fetchNpmDeps + Next.js standalone
+#      build actually realises for the runner's system.
+#   3. nix run .#default -- --version - the wrapped CLI actually execs.
+#      Catches wrapper/binary launch bugs that pass flake check but fail
+#      at runtime. Do NOT drop it.
+#   4. nix-build default.nix          - the non-flake callPackage path works.
+
+on:
+  workflow_dispatch: {}
+  release:
+    types: [published]
+  pull_request:
+    branches: [master]
+    paths:
+      - "flake.nix"
+      - "flake.lock"
+      - "package.nix"
+      - "default.nix"
+      - "nix/**"
+      - ".github/workflows/nix.yml"
+      - "package.json"
+      - "package-lock.json"
+      - "cli/package.json"
+      - "cli/package-lock.json"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nix-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: nix flake check (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-latest: x86_64-linux. macos-26: aarch64-darwin.
+        # macos-26-intel: x86_64-darwin - exercises the nixpkgs-26.05-darwin
+        # legacy pin, which is the only Nix path left for Intel Macs.
+        runner: [ubuntu-latest, macos-26, macos-26-intel]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          persist-credentials: false
+
+      # v23
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa  # yamllint disable-line rule:line-length
+
+      - name: nix flake check --all-systems
+        # --no-build: evaluate every system's outputs without realising them
+        # (darwin stdenv can't run on linux). The build/run steps below
+        # handle realisation for the runner's own system.
+        run: nix flake check --all-systems --no-build
+
+      - name: nix build .#default
+        run: nix build .#default --print-build-logs
+
+      - name: nix run .#default -- --version
+        # SECURITY: `nix run` execs the built binary outside the sandbox on
+        # the runner, where it can reach the OIDC endpoint and GITHUB_TOKEN.
+        # On a PR that binary is PR-controlled code - skip it there.
+        if: github.event_name != 'pull_request'
+        run: nix run .#default -- --version
+
+      - name: nix-build default.nix (non-flake path)
+        run: nix-build default.nix --no-out-link

@@ -101,3 +101,9 @@ graphify-out/*
 .start-dev.ps1
 start-dev-silent.cjs
 debug.log
+
+# Nix build result symlinks
+/result
+/result-*
+# Devbox generated artifacts
+.devbox/

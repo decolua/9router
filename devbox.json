@@ -1,0 +1,19 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.12.0/.schema/devbox.schema.json",
+  "nixpkgs": {
+    "commit": "e9b6aa075c9364c5d152b7657c41349998391daf"
+  },
+  "packages": ["nodejs_22", "sqlite", "act"],
+  "shell": {
+    "init_hook": [
+      "echo '9Router devbox environment (Node.js 22 + npm)'"
+    ],
+    "scripts": {
+      "install": "npm install",
+      "build": "npm run build",
+      "dev": "npm run dev",
+      "start": "npm run start",
+      "test": "npm test"
+    }
+  }
+}
