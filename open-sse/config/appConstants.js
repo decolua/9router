@@ -243,3 +243,11 @@ export function buildKimiHeaders(deviceId) {
     "X-Msh-Device-Id": resolvedId,
   };
 }
+
+// Max length for a Responses-API tool/function name. The OpenAI Responses
+// endpoint rejects anything longer with a 400 reading
+//   "name must be at most 64 characters, got N"
+// which surfaced on long MCP tool names (#4496). The executors previously
+// clamped at 128, so any name between 65 and 128 passed our check and then
+// failed upstream. Keep the three opencode* executors on this value.
+export const MAX_TOOL_NAME_LEN = 64;

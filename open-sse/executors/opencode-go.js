@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { MAX_TOOL_NAME_LEN } from "../config/appConstants.js";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { getModelTargetFormat } from "../config/providerModels.js";
@@ -15,7 +16,6 @@ const SESSION_FIELD = "_opencodeGoSession";
 const MAX_SESSION_LENGTH = 256;
 
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/go/v1/responses";
-const MAX_TOOL_NAME_LEN = 128;
 
 function normalizeSession(value) {
   if (typeof value !== "string") return null;
@@ -76,7 +76,12 @@ function normalizeResponsesTools(body) {
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
     if (body.tool_choice.type === "function") {
       const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
-      if (!n || !validNames.has(n)) delete body.tool_choice;
+      // validNames holds CLAMPED names; a tool_choice still carrying the original
+      // would not match and would be dropped, silently turning a forced tool call
+      // into an unforced one. Compare and rewrite against the clamped form.
+      const clamped = n.slice(0, MAX_TOOL_NAME_LEN);
+      if (!n || (!validNames.has(n) && !validNames.has(clamped))) delete body.tool_choice;
+      else body.tool_choice.name = clamped;
     }
   }
 }

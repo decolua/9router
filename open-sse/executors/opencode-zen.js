@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { MAX_TOOL_NAME_LEN } from "../config/appConstants.js";
 import { DefaultExecutor } from "./default.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
@@ -14,7 +15,6 @@ const SESSION_FIELD = "_opencodeZenSession";
 const MAX_SESSION_LENGTH = 256;
 
 const RESPONSES_BASE_URL = "https://opencode.ai/zen/v1/responses";
-const MAX_TOOL_NAME_LEN = 128;
 const OPENCODE_UA = "opencode/1.18.31";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
@@ -192,7 +192,12 @@ function normalizeResponsesTools(body) {
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
     if (body.tool_choice.type === "function") {
       const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
-      if (!n || !validNames.has(n)) delete body.tool_choice;
+      // validNames holds CLAMPED names; a tool_choice still carrying the original
+      // would not match and would be dropped, silently turning a forced tool call
+      // into an unforced one. Compare and rewrite against the clamped form.
+      const clamped = n.slice(0, MAX_TOOL_NAME_LEN);
+      if (!n || (!validNames.has(n) && !validNames.has(clamped))) delete body.tool_choice;
+      else body.tool_choice.name = clamped;
     }
   }
 }
