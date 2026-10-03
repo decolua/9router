@@ -21,7 +21,11 @@ export class CommandCodeExecutor extends BaseExecutor {
   }
 
   transformRequest(model, body, stream, credentials) {
+    if (!body.params) body.params = {};
+  
     body.stream = true;
+    body.params.stream = true;
+  
     return body;
   }
 
