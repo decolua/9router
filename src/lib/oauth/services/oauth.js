@@ -1,5 +1,5 @@
 import open from "open";
-import { startLocalServer } from "../utils/server.js";
+import { startLocalServer, waitForCallbackParams } from "../utils/server.js";
 import { generatePKCE } from "../utils/pkce.js";
 import { spinner as createSpinner } from "../utils/ui.js";
 import { OAUTH_TIMEOUT } from "../constants/oauth.js";
@@ -51,22 +51,13 @@ export class OAuthService {
       waitForCallback: async () => {
         spinner.start(`Waiting for ${providerName} authorization...`);
 
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error("Authentication timeout (5 minutes)"));
-          }, OAUTH_TIMEOUT);
-
-          const checkInterval = setInterval(() => {
-            if (callbackParams) {
-              clearInterval(checkInterval);
-              clearTimeout(timeout);
-              resolve();
-            }
-          }, 100);
-        });
-
-        spinner.stop();
-        close();
+        try {
+          await waitForCallbackParams(() => callbackParams, OAUTH_TIMEOUT);
+        } finally {
+          // A timed-out wait used to return without ever closing the callback server.
+          spinner.stop();
+          close();
+        }
 
         if (callbackParams.error) {
           throw new Error(callbackParams.error_description || callbackParams.error);
