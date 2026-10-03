@@ -10,6 +10,8 @@
 
 import { describe, it, expect } from "vitest";
 import { commandCodeToOpenAIResponse } from "../../open-sse/translator/response/commandcode-to-openai.js";
+import { initState } from "../../open-sse/translator/index.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 function feed(events) {
   const state = {};
@@ -123,5 +125,55 @@ describe("commandcode-to-openai — error event", () => {
     const text = chunks[0].choices[0].delta.content;
     expect(text).toContain("Boom");
     expect(text).not.toContain("[object Object]");
+  });
+});
+
+describe("commandcode-to-openai — state pre-populated by initState (Responses API client)", () => {
+  // initState(FORMATS.OPENAI_RESPONSES) sets state.responseId before this translator
+  // ever runs. ensureState() used to gate ALL of its field init (toolIndexById,
+  // openTools, etc.) behind `if (!state.responseId)`, so a pre-set responseId left
+  // those fields undefined and the first tool-call event crashed with
+  // "Cannot read properties of undefined (reading 'has')".
+  it("does not crash on the first tool-call event (original crash repro)", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    expect(state.responseId).toBeTruthy(); // fixture: pre-set by initState, not by this translator
+
+    const out = commandCodeToOpenAIResponse(
+      JSON.stringify({ type: "tool-call", toolCallId: "call_a", toolName: "Read", input: { path: "x" } }),
+      state
+    );
+
+    expect(out?.[0]?.choices[0].delta.tool_calls[0].id).toBe("call_a");
+  });
+
+  it("is idempotent — re-feeding the same tool-call event is a no-op", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    const chunk = JSON.stringify({ type: "tool-call", toolCallId: "call_a", toolName: "Read", input: { path: "x" } });
+
+    commandCodeToOpenAIResponse(chunk, state);
+    const second = commandCodeToOpenAIResponse(chunk, state);
+
+    expect(second).toBeNull();
+  });
+
+  it("advances the tool index for a second distinct tool call", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    commandCodeToOpenAIResponse(
+      JSON.stringify({ type: "tool-call", toolCallId: "call_a", toolName: "Read", input: { path: "x" } }),
+      state
+    );
+    const out2 = commandCodeToOpenAIResponse(
+      JSON.stringify({ type: "tool-call", toolCallId: "call_b", toolName: "Grep", input: { pattern: "y" } }),
+      state
+    );
+
+    expect(out2[0].choices[0].delta.tool_calls[0].index).toBe(1);
+  });
+
+  it("still handles a text-delta under pre-init state", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    const out = commandCodeToOpenAIResponse(JSON.stringify({ type: "text-delta", text: "hello" }), state);
+
+    expect(out[0].choices[0].delta.content).toBe("hello");
   });
 });
