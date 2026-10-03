@@ -37,7 +37,6 @@ vi.mock("@/shared/constants/config", () => ({
         resetAtDriftMs: 30000,
         minPingIntervalMs: 600000,
         skipWhenBlockingQuotaExhausted: true,
-        pingModel: "gpt-5.5",
         pingText: "hi",
         pingInstructions: "Reply with OK.",
         pingReasoningEffort: "none",
@@ -64,6 +63,7 @@ vi.mock("open-sse/services/usage/claude.js", () => ({
 
 vi.mock("open-sse/services/usage/codex.js", () => ({
   getCodexUsage: vi.fn(),
+  getCodexModels: vi.fn(),
 }));
 
 vi.mock("open-sse/executors/index.js", () => ({
@@ -76,6 +76,7 @@ describe("quota auto-ping", () => {
   let deps;
   let state;
   let getCodexUsage;
+  let getCodexModels;
   let getClaudeUsage;
   let getExecutor;
   let codexResponseText;
@@ -87,6 +88,7 @@ describe("quota auto-ping", () => {
     delete global.__quotaAutoPing;
 
     ({ getCodexUsage } = await import("open-sse/services/usage/codex.js"));
+    ({ getCodexModels } = await import("open-sse/services/usage/codex.js"));
     ({ getClaudeUsage } = await import("open-sse/services/usage/claude.js"));
     ({ getExecutor } = await import("open-sse/executors/index.js"));
     ({ runQuotaAutoPingTick, configureQuotaAutoPing } = await import("../../src/shared/services/quotaAutoPing.js"));
@@ -106,6 +108,7 @@ describe("quota auto-ping", () => {
     getExecutor.mockReturnValue({
       execute: vi.fn().mockResolvedValue({ response: { ok: true, text: codexResponseText } }),
     });
+    getCodexModels.mockResolvedValue([{ slug: "gpt-5.6-terra", priority: 1 }]);
     state = { running: false, resetCache: {}, failureCache: {} };
     vi.setSystemTime(new Date("2026-01-01T12:00:00.000Z"));
   });
@@ -278,7 +281,7 @@ describe("quota auto-ping", () => {
     expect(deps.updateProviderConnection).not.toHaveBeenCalled();
   });
 
-  it("sends one tiny gpt-5.5 Codex request through the executor", async () => {
+  it("uses the account's preferred supported Codex model", async () => {
     deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
     deps.getProviderConnections.mockImplementation(async ({ provider }) => (
       provider === "codex"
@@ -289,13 +292,21 @@ describe("quota auto-ping", () => {
     getCodexUsage.mockResolvedValue({
       quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
     });
+    getCodexModels.mockResolvedValue([
+      { slug: "gpt-5.6-terra", priority: 1 },
+      { slug: "gpt-5.6-luna", priority: 10 },
+    ]);
 
     await runQuotaAutoPingTick(deps, state);
 
     const executor = deps.getExecutor.mock.results[0].value;
     expect(deps.getExecutor).toHaveBeenCalledWith("codex");
+    expect(getCodexModels).toHaveBeenCalledWith("token", expect.objectContaining({
+      connectionProxyEnabled: false,
+      strictProxy: false,
+    }), { workspaceId: "ws-1" });
     expect(executor.execute).toHaveBeenCalledWith(expect.objectContaining({
-      model: "gpt-5.5",
+      model: "gpt-5.6-terra",
       stream: true,
       credentials: expect.objectContaining({
         accessToken: "token",
@@ -303,7 +314,7 @@ describe("quota auto-ping", () => {
         providerSpecificData: { workspaceId: "ws-1" },
       }),
       body: {
-        model: "gpt-5.5",
+        model: "gpt-5.6-terra",
         input: [{
           type: "message",
           role: "user",
@@ -320,6 +331,23 @@ describe("quota auto-ping", () => {
       lastPingedResetAt: "2026-01-01T17:01:00.000Z",
       lastPingedResetKey: "2026-01-01T17:01:00.000Z",
     }));
+  });
+
+  it("does not ping Codex when the live model catalog is empty", async () => {
+    deps.getSettings.mockResolvedValue({ codexAutoPing: { connections: { "codex-1": true } } });
+    deps.getProviderConnections.mockImplementation(async ({ provider }) => (
+      provider === "codex" ? [{ id: "codex-1", provider: "codex", authType: "oauth", accessToken: "token" }] : []
+    ));
+    state.resetCache["codex:codex-1"] = "2026-01-01T17:00:00.000Z";
+    getCodexUsage.mockResolvedValue({
+      quotas: { session: { used: 1, total: 100, remaining: 99, resetAt: "2026-01-01T17:01:00.000Z" } },
+    });
+    getCodexModels.mockResolvedValue([]);
+
+    await runQuotaAutoPingTick(deps, state);
+
+    expect(deps.getExecutor).not.toHaveBeenCalled();
+    expect(deps.updateProviderConnection).not.toHaveBeenCalled();
   });
 
   it("does not ping same Codex reset twice when seconds drift", async () => {
