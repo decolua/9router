@@ -1,6 +1,11 @@
 import { describe, it, expect, beforeEach } from "vitest";
 
-import { getRotatedModels, resetComboRotation } from "../../open-sse/services/combo.js";
+import {
+  findComboCycle,
+  getRotatedModels,
+  resetComboRotation,
+  validateComboAcyclic,
+} from "../../open-sse/services/combo.js";
 
 describe("combo round-robin routing", () => {
   beforeEach(() => {
@@ -54,5 +59,53 @@ describe("combo round-robin routing", () => {
 
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
     expect(getRotatedModels(models, "code-xhigh", "fallback", 2)).toEqual(models);
+  });
+});
+
+describe("combo cycle validation", () => {
+  it("detects a direct self-reference", () => {
+    const validation = validateComboAcyclic({
+      name: "my-combo",
+      models: ["my-combo"],
+      combosData: [],
+    });
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toBe("Combo circular dependency detected: my-combo -> my-combo");
+  });
+
+  it("detects an indirect cycle through another combo", () => {
+    const validation = validateComboAcyclic({
+      name: "alpha",
+      models: ["beta"],
+      combosData: [
+        { id: "b", name: "beta", models: ["gamma"] },
+        { id: "g", name: "gamma", models: ["alpha"] },
+      ],
+    });
+
+    expect(validation.valid).toBe(false);
+    expect(validation.error).toBe("Combo circular dependency detected: alpha -> beta -> gamma -> alpha");
+  });
+
+  it("allows provider models and non-cyclic combo chains", () => {
+    const validation = validateComboAcyclic({
+      name: "alpha",
+      models: ["beta", "openai/gpt-5"],
+      combosData: [
+        { id: "b", name: "beta", models: ["anthropic/claude-sonnet"] },
+      ],
+    });
+
+    expect(validation).toEqual({ valid: true, error: null });
+  });
+
+  it("can scan an existing combo graph", () => {
+    const cycle = findComboCycle([
+      { id: "a", name: "alpha", models: ["beta"] },
+      { id: "b", name: "beta", models: ["alpha"] },
+    ]);
+
+    expect(cycle).toEqual(["alpha", "beta", "alpha"]);
   });
 });
