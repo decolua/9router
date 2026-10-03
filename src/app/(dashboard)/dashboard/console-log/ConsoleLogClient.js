@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, Button } from "@/shared/components";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config";
+import { isPinnedToBottom } from "@/shared/utils/scrollFollow";
 
 const LOG_LEVEL_COLORS = {
   LOG: "text-green-400",
@@ -62,9 +63,18 @@ export default function ConsoleLogClient() {
     return () => es.close();
   }, []);
 
-  // Auto-scroll to bottom on new logs
+  // Follow the tail only while the reader is already at it. Recorded on
+  // scroll rather than read in the effect: by the time the effect runs the
+  // new lines are laid out, so the element no longer reports where the
+  // reader was before they arrived.
+  const followTailRef = useRef(true);
+
+  const handleLogScroll = () => {
+    followTailRef.current = isPinnedToBottom(logRef.current);
+  };
+
   useEffect(() => {
-    if (!logRef.current) return;
+    if (!logRef.current || !followTailRef.current) return;
     logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [logs]);
 
@@ -78,6 +88,7 @@ export default function ConsoleLogClient() {
         </div>
         <div
           ref={logRef}
+          onScroll={handleLogScroll}
           className="bg-black rounded-b-lg p-4 text-xs font-mono h-[calc(100vh-220px)] overflow-y-auto"
         >
           {logs.length === 0 ? (
