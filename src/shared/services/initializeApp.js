@@ -16,6 +16,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { registerShutdownFlusher } from "@/lib/shutdown.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -58,10 +59,8 @@ export async function initializeApp() {
         try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
         try { killAllBridges(); } catch { /* best effort */ }
         killCloudflared();
-        process.exit();
       };
-      process.on("SIGINT", cleanup);
-      process.on("SIGTERM", cleanup);
+      registerShutdownFlusher(cleanup, -100);
       process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
       g.signalHandlersRegistered = true;
     }
