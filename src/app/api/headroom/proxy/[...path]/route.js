@@ -49,11 +49,15 @@ function forwardedHeaders(request, target) {
   return headers;
 }
 
-function rewriteDashboardHtml(html) {
-  return html.replace(
-    /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
-    `fetch('${DASHBOARD_PREFIX}`,
-  );
+export function rewriteDashboardHtml(html) {
+  return html
+    .replace(
+      /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
+      `fetch('${DASHBOARD_PREFIX}`,
+    )
+    .replace(/(?:src|href)=["']\/dashboard\//g, (match) => {
+      return match.replace("/dashboard/", `${DASHBOARD_PREFIX}/dashboard/`);
+    });
 }
 
 async function proxy(request, { params }) {
