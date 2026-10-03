@@ -239,11 +239,17 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       const cacheCreate = usage.cache_creation_input_tokens || 0;
       const inTokens = (usage.input_tokens || 0) + cacheRead + cacheCreate;
       const outTokens = usage.output_tokens || 0;
-      const cacheDetails = (cacheRead > 0 || cacheCreate > 0)
-        ? { prompt_tokens_details: {
-              ...(cacheRead > 0 ? { cached_tokens: cacheRead } : {}),
-              ...(cacheCreate > 0 ? { cache_creation_tokens: cacheCreate } : {}) } }
-        : {};
+      // The Responses API reports its cache hit inside input_tokens_details,
+      // already counted in input_tokens, so it is shown but not added again.
+      const responsesCached = usage.input_tokens_details?.cached_tokens || 0;
+      const shownCached = cacheRead || responsesCached;
+      const reasoning = usage.output_tokens_details?.reasoning_tokens || 0;
+      const cacheDetails = {
+        ...((shownCached > 0 || cacheCreate > 0) ? { prompt_tokens_details: {
+              ...(shownCached > 0 ? { cached_tokens: shownCached } : {}),
+              ...(cacheCreate > 0 ? { cache_creation_tokens: cacheCreate } : {}) } } : {}),
+        ...(reasoning > 0 ? { completion_tokens_details: { reasoning_tokens: reasoning } } : {})
+      };
       let finalResp;
 
       // Extract tool calls from Responses API output (function_call items)
