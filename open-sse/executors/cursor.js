@@ -211,14 +211,31 @@ function createRequestContextResponse(execRequest) {
   return wrapExecClientMessage(id, execId, 10, requestContextResult);
 }
 
-// ExecServerMessage variant → ExecClientMessage result field (same numbers).
+// ExecServerMessage variant → ExecClientMessage result field.
+//
+// The two numbers only coincide for most variants: pi_* and mini_swe_agent_bash
+// are renumbered in ExecClientMessage, so this map is descriptor-derived rather
+// than an identity mapping. 10 (request_context_args) and 11 (mcp_args) are
+// served by dedicated branches upstream of rejectExecRequest() and are
+// intentionally absent here.
 const EXEC_RESULT_FIELD = {
-  2: 2, 3: 3, 4: 4, 5: 5, 7: 7, 8: 8, 9: 9, 16: 16, 20: 20, 23: 23,
+  2: 2, 3: 3, 4: 4, 5: 5, 7: 7, 8: 8, 9: 9, 16: 16, 17: 17, 18: 18,
+  20: 20, 21: 21, 22: 22, 23: 23, 27: 27, 28: 28, 29: 29, 30: 30, 31: 31,
+  36: 36, 37: 37, 38: 38, 40: 40, 41: 41, 42: 42, 43: 43,
+  45: 46, 46: 47, 47: 48, 48: 49, 49: 50, 50: 51, 51: 52, 52: 55,
+  53: 53, 54: 54,
 };
+
+// Variants with no ExecClientMessage counterpart. The empty diagnostics success
+// is the shape already proven to unblock the stream, so reuse it here.
+const EXEC_EMPTY_SUCCESS_VARIANTS = new Set([14]); // shell_stream_args
 
 function rejectExecRequest(execRequest) {
   const { id, execId } = execIds(execRequest);
   const variant = [...(execRequest?.keys?.() || [])].find((field) => field !== 1 && field !== 15);
+  if (EXEC_EMPTY_SUCCESS_VARIANTS.has(variant)) {
+    return wrapExecClientMessage(id, execId, 9, new Uint8Array());
+  }
   const resultField = EXEC_RESULT_FIELD[variant];
   if (!resultField) return null;
   // Diagnostics has no rejected variant — empty success unblocks the stream.

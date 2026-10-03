@@ -72,6 +72,43 @@ async function runAgent({ frames, stream, model = "gpt-5.2", tools }) {
   return { result, written };
 }
 
+// Field numbers present in a Connect streaming frame (1 flag byte + 4 length
+// bytes), descending into length-delimited payloads so nested messages count.
+function protobufFieldNumbers(buf, start = 5, end = buf.length) {
+  const numbers = [];
+  let i = start;
+  while (i < end) {
+    let tag = 0;
+    let shift = 0;
+    let byte;
+    do {
+      byte = buf[i++];
+      tag |= (byte & 0x7f) << shift;
+      shift += 7;
+    } while (byte & 0x80);
+    numbers.push(tag >>> 3);
+    const wire = tag & 7;
+    if (wire === 2) {
+      let len = 0;
+      shift = 0;
+      do {
+        byte = buf[i++];
+        len |= (byte & 0x7f) << shift;
+        shift += 7;
+      } while (byte & 0x80);
+      numbers.push(...protobufFieldNumbers(buf, i, i + len));
+      i += len;
+    } else if (wire === 0) {
+      while (buf[i++] & 0x80);
+    } else if (wire === 5) {
+      i += 4;
+    } else if (wire === 1) {
+      i += 8;
+    }
+  }
+  return numbers;
+}
+
 describe("CursorExecutor AgentService exec_request handling", () => {
   it("acknowledges a request-context exec request without ending the turn", async () => {
     const { result, written } = await runAgent({
@@ -135,6 +172,39 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     expect(result.response.status).not.toBe(200);
     const payload = await result.response.json();
     expect(payload.error.message).toContain("unsupported IDE tool");
+  });
+
+  it("answers every mapped exec variant instead of failing the turn", async () => {
+    const variants = [
+      2, 3, 4, 5, 7, 8, 9, 14, 16, 17, 18, 20, 21, 22, 23, 27, 28, 29, 30, 31, 36, 37, 38,
+      40, 41, 42, 43, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54,
+    ];
+
+    for (const variant of variants) {
+      const { result, written } = await runAgent({
+        frames: [textFrame("answer"), execRequestFrame(variant)],
+        stream: true,
+      });
+
+      const body = await result.response.text();
+      expect(body, `variant ${variant} must not fail the turn`).not.toContain("unsupported IDE tool");
+      expect(written.length, `variant ${variant} must be answered`).toBe(2);
+      const content = parseSSE(body).map((e) => e.choices?.[0]?.delta?.content || "").join("");
+      expect(content, `variant ${variant} must keep the streamed text`).toBe("answer");
+    }
+  });
+
+  it("keeps the pi_* and mini_swe renumbering out of the way", async () => {
+    // pi_read_args is field 45 on the server side but field 46 on the client side,
+    // so the map is not an identity and a copy-pasted offset would go unnoticed.
+    const { written } = await runAgent({
+      frames: [textFrame("answer"), execRequestFrame(45)],
+      stream: true,
+    });
+
+    const fields = protobufFieldNumbers(Buffer.from(written[1]));
+    expect(fields).toContain(46);
+    expect(fields).not.toContain(45);
   });
 
   it("streams Composer visible content from thinking_delta after </think>", async () => {
