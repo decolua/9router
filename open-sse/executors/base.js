@@ -5,6 +5,29 @@ import { dbg } from "../utils/debugLog.js";
 import { ANTHROPIC_API_VERSION, OPENAI_COMPAT_BASE, ANTHROPIC_COMPAT_BASE } from "../providers/shared.js";
 import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 
+function uniqueCommaValues(values) {
+  return [...new Set(values
+    .filter(value => value !== undefined && value !== null && value !== "")
+    .flatMap(value => String(value).split(","))
+    .map(value => value.trim())
+    .filter(Boolean))];
+}
+
+function normalizeAnthropicHeaderVariants(headers) {
+  const versionValues = uniqueCommaValues([headers["anthropic-version"], headers["Anthropic-Version"]]);
+  delete headers["Anthropic-Version"];
+  delete headers["anthropic-version"];
+  if (versionValues.length > 0) {
+    // Fixes #1475 for executors using BaseExecutor directly.
+    headers["anthropic-version"] = versionValues[0];
+  }
+
+  const betaValues = uniqueCommaValues([headers["anthropic-beta"], headers["Anthropic-Beta"]]);
+  delete headers["Anthropic-Beta"];
+  delete headers["anthropic-beta"];
+  if (betaValues.length > 0) headers["anthropic-beta"] = betaValues.join(",");
+}
+
 /**
  * BaseExecutor - Base class for provider executors
  */
@@ -71,6 +94,8 @@ export class BaseExecutor {
     if (stream) {
       headers["Accept"] = "text/event-stream";
     }
+
+    normalizeAnthropicHeaderVariants(headers);
 
     return headers;
   }
