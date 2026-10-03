@@ -5,8 +5,34 @@ import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
+import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+
+const REQUEST_TABS = [
+  { value: "clientRequest", label: "1. Client Request (Input)", icon: "input" },
+  { value: "providerRequest", label: "2. Provider Request (Translated)", icon: "translate" },
+];
+
+const RESPONSE_TABS = [
+  { value: "providerResponse", label: "3. Provider Response (Raw)", icon: "data_object" },
+  { value: "clientResponse", label: "4. Client Response (Final)", icon: "output" },
+];
+
+function getTabValue(detail, tab) {
+  switch (tab) {
+    case "clientRequest": return detail?.request ?? null;
+    case "providerRequest": return detail?.providerRequest ?? null;
+    case "providerResponse": return detail?.providerResponse ?? null;
+    case "clientResponse": return detail?.response ?? null;
+    default: return null;
+  }
+}
+
+function stringifyTabValue(value) {
+  if (value === null || value === undefined) return "";
+  return typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -97,6 +123,198 @@ function getInputTokens(tokens) {
   // rows don't under-report input.
   const cache = getCachedTokens(tokens);
   return prompt < cache ? cache : prompt;
+}
+
+// Cache write tokens (Claude: cache_creation_input_tokens). Other providers
+// don't report cache writes, so this is 0 for them.
+function getCacheWriteTokens(tokens) {
+  return tokens?.cache_creation_input_tokens || 0;
+}
+
+// Cache read/hit tokens (Claude: cache_read_input_tokens; OpenAI: cached_tokens).
+function getCacheReadTokens(tokens) {
+  return tokens?.cache_read_input_tokens
+    || tokens?.cached_tokens
+    || tokens?.prompt_tokens_details?.cached_tokens
+    || 0;
+}
+
+// Coerce a tab value into a JSON object/array for tree rendering.
+// Returns null for plain (non-JSON) strings or empty values so the caller
+// can fall back to raw text.
+function coerceJson(value) {
+  if (value && typeof value === "object") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (parsed && typeof parsed === "object") return parsed;
+      } catch {
+        // not valid JSON — fall through to raw text
+      }
+    }
+  }
+  return null;
+}
+
+// Render a primitive JSON value with type-based coloring.
+function JsonPrimitive({ value }) {
+  if (value === null) return <span className="text-rose-500 dark:text-rose-400">null</span>;
+  const type = typeof value;
+  if (type === "string") return <span className="whitespace-pre-wrap break-words text-emerald-600 dark:text-emerald-400">&quot;{value}&quot;</span>;
+  if (type === "number") return <span className="text-blue-600 dark:text-blue-400">{String(value)}</span>;
+  if (type === "boolean") return <span className="text-purple-600 dark:text-purple-400">{String(value)}</span>;
+  return <span className="break-words text-text-main">{String(value)}</span>;
+}
+
+// Recursive collapsible JSON tree node. Objects/arrays are collapsible; the
+// top level is expanded by default and nested nodes start collapsed so large
+// payloads (messages, tools) can be drilled into on demand.
+function JsonNode({ name, value, depth = 0 }) {
+  const isCollection = value !== null && typeof value === "object";
+  const [open, setOpen] = useState(depth < 1);
+
+  const label = name !== undefined && (
+    <span className="text-sky-700 dark:text-sky-300" data-i18n-skip="true">
+      {typeof name === "number" ? name : `"${name}"`}
+      <span className="text-text-muted">: </span>
+    </span>
+  );
+
+  // Leaf: primitive value on a single indented line.
+  if (!isCollection) {
+    return (
+      <div className="break-words" style={{ paddingLeft: depth * 14 }}>
+        {label}
+        <JsonPrimitive value={value} />
+      </div>
+    );
+  }
+
+  const isArray = Array.isArray(value);
+  const entries = isArray ? value.map((v, i) => [i, v]) : Object.entries(value);
+  const openBrace = isArray ? "[" : "{";
+  const closeBrace = isArray ? "]" : "}";
+  const summary = isArray ? `${entries.length} items` : `${entries.length} keys`;
+
+  return (
+    <div style={{ paddingLeft: depth * 14 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        className="flex w-full items-start gap-1 text-left hover:bg-black/[0.03] dark:hover:bg-white/[0.03]"
+      >
+        <span className={cn(
+          "material-symbols-outlined mt-0.5 shrink-0 text-[14px] text-text-muted transition-transform duration-200",
+          open ? "rotate-90" : ""
+        )}>
+          chevron_right
+        </span>
+        <span className="min-w-0 break-words">
+          {label}
+          <span className="text-text-muted">{openBrace}</span>
+          {!open && <span className="text-text-muted opacity-60"> {summary} {closeBrace}</span>}
+        </span>
+      </button>
+      {open && (
+        <>
+          {entries.map(([k, v]) => (
+            <JsonNode key={k} name={k} value={v} depth={depth + 1} />
+          ))}
+          {/* Closing brace aligned under the opening node */}
+          <div className="text-text-muted" style={{ paddingLeft: depth * 14 }}>{closeBrace}</div>
+        </>
+      )}
+    </div>
+  );
+}
+
+// Collapsible JSON tree view for request/response bodies.
+function JsonViewer({ data }) {
+  return (
+    <div className="custom-scrollbar max-h-[400px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs leading-relaxed text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+      <JsonNode value={data} depth={0} />
+    </div>
+  );
+}
+
+function TabbedDetailCard({ title, icon, tabs, detail, copyKey, defaultTab }) {
+  const [activeTab, setActiveTab] = useState(defaultTab);
+  const { copied, copy } = useCopyToClipboard();
+
+  useEffect(() => {
+    setActiveTab(defaultTab);
+  }, [detail?.id, defaultTab]);
+
+  const value = getTabValue(detail, activeTab);
+  const text = stringifyTabValue(value);
+  // Parse the body as JSON for the collapsible tree view; null => show raw text.
+  const jsonData = coerceJson(value);
+  const showThinking = activeTab === "clientResponse" && detail?.response?.thinking;
+
+  return (
+    <CollapsibleSection title={title} defaultOpen={true} icon={icon}>
+      <div className="mb-3 space-y-2">
+        <div className="grid grid-cols-2 gap-1 rounded-[10px] bg-surface-2 p-1">
+          {tabs.map((tab) => (
+            <button
+              key={tab.value}
+              type="button"
+              onClick={() => setActiveTab(tab.value)}
+              className={cn(
+                "flex min-w-0 items-center justify-center gap-1.5 rounded-[8px] px-2 py-1.5 text-xs font-medium transition-all",
+                activeTab === tab.value
+                  ? "bg-surface text-text-main shadow-sm"
+                  : "text-text-muted hover:text-text-main"
+              )}
+            >
+              <span className="material-symbols-outlined shrink-0 text-[14px]">{tab.icon}</span>
+              <span className="truncate">{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex justify-end">
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={copied === copyKey ? "check" : "content_copy"}
+            onClick={() => copy(text, copyKey)}
+            disabled={!text}
+          >
+            {copied === copyKey ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      </div>
+
+      {showThinking && (
+        <div className="mb-4">
+          <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
+            <span className="material-symbols-outlined text-[16px]">psychology</span>
+            Thinking Process
+          </h4>
+          <pre className="custom-scrollbar max-h-[200px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
+            {detail.response.thinking}
+          </pre>
+        </div>
+      )}
+
+      {text ? (
+        jsonData ? (
+          <JsonViewer data={jsonData} />
+        ) : (
+          <pre className="custom-scrollbar max-h-[400px] max-w-full overflow-y-auto overflow-x-hidden whitespace-pre-wrap break-words rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
+            {text}
+          </pre>
+        )
+      ) : (
+        <div className="p-8 text-center text-sm text-text-muted">
+          No data available
+        </div>
+      )}
+    </CollapsibleSection>
+  );
 }
 
 export default function RequestDetailsTab() {
@@ -235,14 +453,26 @@ export default function RequestDetailsTab() {
           
           <div className="flex min-w-0 flex-col gap-2 sm:col-span-2 lg:col-span-1">
             <span className="hidden text-sm font-medium text-text-main opacity-0 lg:block" aria-hidden="true">Clear</span>
-            <Button 
-              variant="ghost" 
-              onClick={handleClearFilters}
-              disabled={!filters.provider && !filters.startDate && !filters.endDate}
-              className="w-full"
-            >
-              Clear Filters
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="ghost"
+                onClick={handleClearFilters}
+                disabled={!filters.provider && !filters.startDate && !filters.endDate}
+                className="flex-1"
+              >
+                Clear Filters
+              </Button>
+              {/* Manually re-fetch the current page of request details */}
+              <Button
+                variant="outline"
+                icon="refresh"
+                onClick={fetchDetails}
+                loading={loading}
+                aria-label="Refresh"
+              >
+                Refresh
+              </Button>
+            </div>
           </div>
         </div>
       </Card>
@@ -350,68 +580,66 @@ export default function RequestDetailsTab() {
         width="lg"
       >
         {selectedDetail && (
-          <div className="space-y-6">
-            <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-              <div>
-                <span className="text-text-muted">ID:</span>{" "}
-                <span className="break-all font-mono text-text-main">{selectedDetail.id}</span>
-              </div>
-              <div>
-                <span className="text-text-muted">Timestamp:</span>{" "}
-                <span className="text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
-              </div>
-              <div>
-                 <span className="text-text-muted">Provider:</span>{" "}
-                 <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
-               </div>
-              <div>
-                <span className="text-text-muted">Model:</span>{" "}
-                <span className="text-text-main font-mono">{selectedDetail.model}</span>
-              </div>
-              <div>
-                <span className="text-text-muted">Status:</span>{" "}
-                <span className={cn(
-                  "font-medium",
-                  selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
-                )}>
-                  {selectedDetail.status}
-                </span>
-              </div>
-              <div>
-                <span className="text-text-muted">Latency:</span>{" "}
-                <span className="text-text-main font-mono">
-                  TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
-                </span>
-              </div>
-              <div>
-                <span className="text-text-muted">Input Tokens:</span>{" "}
-                <span className="text-text-main font-mono">
-                  {getInputTokens(selectedDetail.tokens).toLocaleString()}
-                </span>
-              </div>
-              {getCachedTokens(selectedDetail.tokens) > 0 && (
+          <div className="space-y-4">
+            <CollapsibleSection title="Summary" defaultOpen={true} icon="info">
+              <div className="grid min-w-0 grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
-                  <span className="text-text-muted">Cached Tokens:</span>{" "}
-                  <span className="text-text-main font-mono">
-                    {getCachedTokens(selectedDetail.tokens).toLocaleString()}
+                  <span className="text-text-muted">ID:</span>{" "}
+                  <span className="break-all font-mono text-text-main" data-i18n-skip="true">{selectedDetail.id}</span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Timestamp:</span>{" "}
+                  <span className="text-text-main">{new Date(selectedDetail.timestamp).toLocaleString()}</span>
+                </div>
+                <div>
+                   <span className="text-text-muted">Provider:</span>{" "}
+                   <span className="text-text-main font-medium">{getProviderName(selectedDetail.provider, providerNameCache)}</span>
+                 </div>
+                <div>
+                  <span className="text-text-muted">Model:</span>{" "}
+                  <span className="text-text-main font-mono" data-i18n-skip="true">{selectedDetail.model}</span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Status:</span>{" "}
+                  <span className={cn(
+                    "font-medium",
+                    selectedDetail.status === "success" ? "text-green-600" : "text-red-600"
+                  )}>
+                    {selectedDetail.status}
                   </span>
                 </div>
-              )}
-              {getCacheCreationTokens(selectedDetail.tokens) > 0 && (
+                <div>
+                  <span className="text-text-muted">Latency:</span>{" "}
+                  <span className="text-text-main font-mono">
+                    TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Input Tokens:</span>{" "}
+                  <span className="text-text-main font-mono">
+                    {getInputTokens(selectedDetail.tokens).toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-text-muted">Output Tokens:</span>{" "}
+                  <span className="text-text-main font-mono">
+                    {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
+                  </span>
+                </div>
                 <div>
                   <span className="text-text-muted">Cache Creation:</span>{" "}
                   <span className="text-text-main font-mono">
-                    {getCacheCreationTokens(selectedDetail.tokens).toLocaleString()}
+                    {getCacheWriteTokens(selectedDetail.tokens).toLocaleString()}
                   </span>
                 </div>
-              )}
-              <div>
-                <span className="text-text-muted">Output Tokens:</span>{" "}
-                <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
-                </span>
+                <div>
+                  <span className="text-text-muted">Cached:</span>{" "}
+                  <span className="text-text-main font-mono">
+                    {getCacheReadTokens(selectedDetail.tokens).toLocaleString()}
+                  </span>
+                </div>
               </div>
-            </div>
+            </CollapsibleSection>
 
             {selectedDetail.pxpipe && (
               <div className="rounded-lg border border-black/5 dark:border-white/5 p-4">
@@ -455,53 +683,23 @@ export default function RequestDetailsTab() {
               </div>
             )}
 
-            <div className="space-y-4">
-              <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {JSON.stringify(selectedDetail.request, null, 2)}
-                </pre>
-              </CollapsibleSection>
+            <TabbedDetailCard
+              title="Request"
+              icon="input"
+              tabs={REQUEST_TABS}
+              detail={selectedDetail}
+              copyKey="request"
+              defaultTab="clientRequest"
+            />
 
-              {selectedDetail.providerRequest && (
-                <CollapsibleSection title="2. Provider Request (Translated)" icon="translate">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {JSON.stringify(selectedDetail.providerRequest, null, 2)}
-                  </pre>
-                </CollapsibleSection>
-              )}
-
-              {selectedDetail.providerResponse && (
-                <CollapsibleSection title="3. Provider Response (Raw)" icon="data_object">
-                  <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                    {typeof selectedDetail.providerResponse === 'object'
-                      ? JSON.stringify(selectedDetail.providerResponse, null, 2)
-                      : selectedDetail.providerResponse
-                    }
-                  </pre>
-                </CollapsibleSection>
-              )}
-              
-              <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
-                {selectedDetail.response?.thinking && (
-                  <div className="mb-4">
-                    <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
-                      <span className="material-symbols-outlined text-[16px]">psychology</span>
-                      Thinking Process
-                    </h4>
-                    <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
-                      {selectedDetail.response.thinking}
-                    </pre>
-                  </div>
-                )}
-                
-                <h4 className="font-semibold text-text-main mb-2 text-xs uppercase tracking-wide opacity-70">
-                  Content
-                </h4>
-                <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {selectedDetail.response?.content || "[No content]"}
-                </pre>
-              </CollapsibleSection>
-            </div>
+            <TabbedDetailCard
+              title="Response"
+              icon="output"
+              tabs={RESPONSE_TABS}
+              detail={selectedDetail}
+              copyKey="response"
+              defaultTab="clientResponse"
+            />
           </div>
         )}
       </Drawer>

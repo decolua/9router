@@ -5,6 +5,9 @@ const DEFAULT_MAX_RECORDS = 200;
 const DEFAULT_BATCH_SIZE = 20;
 const DEFAULT_FLUSH_INTERVAL_MS = 5000;
 const DEFAULT_MAX_JSON_SIZE = 5 * 1024;
+// Tools definitions get a dedicated, generous budget so they survive even when
+// the full request (message history + tools) blows past DEFAULT_MAX_JSON_SIZE.
+const TOOLS_MAX_JSON_SIZE = 64 * 1024;
 const CONFIG_CACHE_TTL_MS = 5000;
 
 let cachedConfig = null;
@@ -85,6 +88,17 @@ function truncateField(obj, maxSize) {
   return obj || {};
 }
 
+// When a request field gets truncated, its `tools` are lost along with the
+// message history. Re-attach the tools (truncated with their own generous
+// budget) so the UI can always show them regardless of message-history size.
+function truncateRequestField(obj, maxSize) {
+  const truncated = truncateField(obj, maxSize);
+  if (truncated?._truncated && obj && typeof obj === "object" && obj.tools !== undefined) {
+    return { ...truncated, tools: truncateField(obj.tools, TOOLS_MAX_JSON_SIZE) };
+  }
+  return truncated;
+}
+
 async function flushToDatabase() {
   if (isFlushing) return;
   if (writeBuffer.length === 0) return;
@@ -111,8 +125,8 @@ async function flushToDatabase() {
             status: item.status || null,
             latency: item.latency || {},
             tokens: item.tokens || {},
-            request: truncateField(item.request, config.maxJsonSize),
-            providerRequest: truncateField(item.providerRequest, config.maxJsonSize),
+            request: truncateRequestField(item.request, config.maxJsonSize),
+            providerRequest: truncateRequestField(item.providerRequest, config.maxJsonSize),
             providerResponse: truncateField(item.providerResponse, config.maxJsonSize),
             response: truncateField(item.response, config.maxJsonSize),
             pxpipe: item.pxpipe || undefined,
