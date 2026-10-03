@@ -49,6 +49,19 @@ const nextConfig = {
         path: false,
       };
     }
+    // better-sqlite3 is an OPTIONAL native dep. On hosts without a C++ toolchain
+    // (e.g. Hostinger Node hosting) its native build is skipped and the module is
+    // absent — serverExternalPackages then can't externalize it (it resolves the
+    // package first) and webpack fails with "Can't resolve 'better-sqlite3'".
+    // Force-externalize so webpack never resolves it at build; driver.js catches the
+    // missing require at runtime and falls back to node:sqlite (Node >=22.5) / sql.js.
+    if (isServer) {
+      const prev = config.externals;
+      config.externals = [
+        ({ request }, cb) => (request === "better-sqlite3" ? cb(null, "commonjs better-sqlite3") : cb()),
+        ...(Array.isArray(prev) ? prev : prev ? [prev] : []),
+      ];
+    }
     // Exclude non-source dirs from watcher to reduce inotify load
     config.watchOptions = {
       ...config.watchOptions,

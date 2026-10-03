@@ -5,6 +5,8 @@ const PROVIDER_API = {
   elevenlabs: (origin) => `${origin}/api/media-providers/tts/elevenlabs/voices`,
   deepgram: (origin) => `${origin}/api/media-providers/tts/deepgram/voices`,
   inworld: (origin) => `${origin}/api/media-providers/tts/inworld/voices`,
+  minimax: (origin) => `${origin}/api/media-providers/tts/minimax/voices`,
+  "minimax-cn": (origin) => `${origin}/api/media-providers/tts/minimax/voices?provider=minimax-cn`,
   "edge-tts": (origin) => `${origin}/api/media-providers/tts/voices?provider=edge-tts`,
   "local-device": (origin) => `${origin}/api/media-providers/tts/voices?provider=local-device`,
 };
