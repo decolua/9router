@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { hasCircularDependency } from "@/lib/comboValidation";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,11 @@ export async function POST(request) {
     const existing = await getComboByName(name);
     if (existing) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
+    }
+
+    // Check for circular dependencies
+    if (await hasCircularDependency(name, models || [])) {
+      return NextResponse.json({ error: "Circular dependency detected: Combo cannot include itself directly or indirectly." }, { status: 400 });
     }
 
     const combo = await createCombo({ name, models: models || [], kind: kind || null });
