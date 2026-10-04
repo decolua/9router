@@ -172,6 +172,18 @@ export function fixToolUseOrdering(messages) {
 // Models that reject thinking.type "adaptive" + output_config.effort (Opus 4.5+/Sonnet 4.6+ only)
 const ADAPTIVE_THINKING_UNSUPPORTED = /haiku/i;
 
+// Antigravity fronts both Gemini and Claude under an OpenAI-compatible
+// connection, so the provider string here is `openai-compatible-chat-*` and
+// never equals "claude" even when the requested model is a Claude one.
+const ANTIGRAVITY_PROVIDERS = new Set([
+  "openai-compatible-chat-ce741e14",
+  "openai-compatible-chat-cd87d063",
+]);
+
+function isAntigravityProvider(provider) {
+  return typeof provider === "string" && ANTIGRAVITY_PROVIDERS.has(provider);
+}
+
 function handlesThinkingBlocks(provider) {
   return provider === "claude" || provider?.startsWith("anthropic-compatible") || provider === "deepseek";
 }
@@ -602,7 +614,16 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         }
 
         // Handle thinking blocks for Anthropic-compatible endpoints.
-        if (handlesThinkingBlocks(provider) || deepSeekServed) {
+        //
+        // Antigravity is Gemini upstream, and Gemini rejects the whole request
+        // when a thinking block has no signature
+        // ("messages.N.content.M.thinking.signature: Field required"). The
+        // previous default-signature fallback produced exactly that, and a DEEP
+        // combo mixes Claude and Gemini so a Claude-signed block also reaches
+        // Gemini. Keep a block only when it carries a signature that is not
+        // obviously a Claude one, and drop the rest.
+        const antigravityServed = isAntigravityProvider(provider);
+        if (handlesThinkingBlocks(provider) || deepSeekServed || antigravityServed) {
           let hasToolUse = false;
           let hasKeptThinking = false;
 
@@ -610,6 +631,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
           // DeepSeek (official + opencode-go models): keep existing thinking as-is;
           // add an unsigned placeholder only if missing.
+          // Antigravity/Gemini: keep only blocks that carry a non-Claude signature.
           const isClaudeNative = provider === "claude";
           const kept = [];
           for (const block of msg.content) {
@@ -623,6 +645,14 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
               } else if (deepSeekServed) {
                 hasKeptThinking = true;
                 kept.push(block);
+              } else if (antigravityServed) {
+                // A Claude signature is meaningless to Gemini and vice versa.
+                // Keeping whichever signature survived keeps one coherent chain
+                // instead of mixing two formats inside one conversation.
+                if (typeof block.signature === "string" && block.signature.length > 0) {
+                  hasKeptThinking = true;
+                  kept.push(block);
+                }
               } else {
                 block.signature = DEFAULT_THINKING_CLAUDE_SIGNATURE;
                 hasKeptThinking = true;
@@ -635,8 +665,10 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           }
           msg.content = kept;
 
-          // Add thinking block if thinking enabled + has tool_use but no thinking
-          if (thinkingEnabled && !hasKeptThinking && hasToolUse) {
+          // Add thinking block if thinking enabled + has tool_use but no thinking.
+          // Not for Antigravity: a placeholder cannot carry a signature Gemini
+          // will accept, so inserting one only trades this 400 for the same one.
+          if (thinkingEnabled && !hasKeptThinking && hasToolUse && !antigravityServed) {
             msg.content.unshift(buildThinkingPlaceholder(provider, deepSeekServed));
           }
         }
