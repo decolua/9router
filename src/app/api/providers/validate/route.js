@@ -46,7 +46,8 @@ async function probeWebProvider(provider, apiKey) {
     body = JSON.stringify({ query: "ping", q: "ping", url: "https://example.com" });
   }
 
-  const res = await fetch(url, { method: cfg.method, headers, body, signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url, { method: cfg.method, headers, body, signal: AbortSignal.timeout(8000),
+    ...(cfg.preventRedirects ? { redirect: "error" } : {}) });
   return res.status !== 401 && res.status !== 403;
 }
 

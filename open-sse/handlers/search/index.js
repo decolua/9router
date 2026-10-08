@@ -101,7 +101,8 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
   log?.info?.("SEARCH", `${provider.id} | "${params.query.slice(0, 80)}" | type=${params.searchType}`);
 
   try {
-    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal });
+    const resp = await fetchPublic(url, { ...init, headers: sanitizeHeaders(init.headers), signal: controller.signal },
+      { maxRedirects: providerConfig.preventRedirects ? 0 : 5 });
     clearTimeout(timer);
     if (!resp.ok) {
       const errText = await resp.text().catch(() => "");
@@ -119,6 +120,11 @@ async function tryDedicatedProvider({ provider, providerConfig, body, credential
       queries_used: 1,
       search_cost_usd: providerConfig.costPerQuery ?? null,
     };
+    if (providerConfig.costByMode) {
+      const mode = JSON.parse(init.body).mode;
+      usage.search_cost_usd = (providerConfig.costByMode[mode] ?? providerConfig.costPerQuery)
+        + Math.max(0, normalized.results.length - providerConfig.includedResults) * providerConfig.extraResultCost;
+    }
     if (Number.isFinite(providerConfig.creditsPerResult)) {
       usage.provider_credits_used = results.length * providerConfig.creditsPerResult;
     }
