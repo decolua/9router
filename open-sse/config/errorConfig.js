@@ -125,6 +125,27 @@ export const TRANSIENT_STREAM_ERROR_PATTERNS = [
   "temporarily overloaded",
 ];
 
+/**
+ * Extra phrasings that make a stream failure worth an in-router retry. Only
+ * consulted before any content reached the client, so broader wording is safe.
+ */
+export const PRE_CONTENT_RETRY_PATTERNS = [
+  "overload",
+  "unavailable",
+  "timeout",
+  "timed out",
+  "connection",
+  "upstream",
+  "try again",
+  "capacity",
+  "server_error",
+  "internal error",
+  "rate_limit",
+  "rate limit",
+  "too many requests",
+  "terminated",
+];
+
 /** In-band errors that mean the account/model is saturated → rotate accounts. */
 export const ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS = [
   "selected model is at capacity",

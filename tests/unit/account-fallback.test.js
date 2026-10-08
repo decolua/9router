@@ -7,6 +7,7 @@ describe("account fallback classification", () => {
     expect(checkFallbackError(400, '{"error":{"message":"Bad Request"}}')).toEqual({
       shouldFallback: false,
       cooldownMs: 0,
+      requestScoped: true,
     });
   });
 

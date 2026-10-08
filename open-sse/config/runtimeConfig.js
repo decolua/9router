@@ -78,6 +78,14 @@ export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1
 // Env: SSE_PREFLIGHT_PEEK_TIMEOUT_MS.
 export const SSE_PREFLIGHT_PEEK_TIMEOUT_MS = envMsAllowingZero("SSE_PREFLIGHT_PEEK_TIMEOUT_MS", 1500);
 
+// In-router retry for streams that fail before any content reached the client
+// (in-band overload/HTTP2 frames, dropped connections, EOF with no output).
+// Pre-content events are held back, so a retry is invisible to the client.
+// Delay doubles per attempt. Env: STREAM_PRECONTENT_RETRY_ATTEMPTS (0 disables),
+// STREAM_PRECONTENT_RETRY_DELAY_MS.
+export const STREAM_PRECONTENT_RETRY_ATTEMPTS = envMsAllowingZero("STREAM_PRECONTENT_RETRY_ATTEMPTS", 3);
+export const STREAM_PRECONTENT_RETRY_DELAY_MS = envMsAllowingZero("STREAM_PRECONTENT_RETRY_DELAY_MS", 2000);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
