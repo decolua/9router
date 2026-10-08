@@ -3,9 +3,10 @@ import { needsTranslation } from "../../translator/index.js";
 import { createSSETransformStreamWithLogger, createPassthroughStreamWithLogger } from "../../utils/stream.js";
 import { pipeWithDisconnect } from "../../utils/streamHandler.js";
 import { PROVIDERS } from "../../config/providers.js";
-import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig.js";
+import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS, SSE_PREFLIGHT_PEEK_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
-import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
+import { buildStreamErrorBytes, peekSseErrorFrame } from "../../utils/streamHelpers.js";
+import { createErrorResult, detectErrorBody, getClientErrorStatus } from "../../utils/error.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -82,6 +83,50 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       }),
     };
+  }
+
+  // A streaming request answered with a JSON body: it may be an error the upstream
+  // sent with a success status (relays and gateways do this). It must not be piped
+  // as if it were SSE, and the client must be able to retry it.
+  if (upstreamContentType.includes('application/json') && !upstreamContentType.includes('text/event-stream')) {
+    const bodyText = await providerResponse.text().catch(() => '');
+    let parsedBody = null;
+    try { parsedBody = JSON.parse(bodyText); } catch { /* not JSON: fall through */ }
+
+    const errorBody = detectErrorBody(parsedBody);
+    if (errorBody) {
+      const status = getClientErrorStatus(HTTP_STATUS.BAD_GATEWAY, errorBody.message);
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · error body with HTTP ${providerResponse.status}\n    ${errorBody.message}`);
+      else console.warn(`[STREAM] ${provider} | ${model} | error body with HTTP ${providerResponse.status}: ${errorBody.message}`);
+      streamController?.handleError?.(new Error(errorBody.message));
+      return createErrorResult(status, `[${status}]: ${errorBody.message}`, undefined, upstreamResponseHeaders(providerResponse.headers));
+    }
+
+    // Not an error body — restore the consumed body for the streaming pipeline.
+    providerResponse = new Response(bodyText, {
+      status: providerResponse.status,
+      statusText: providerResponse.statusText,
+      headers: providerResponse.headers,
+    });
+  }
+
+  // An SSE body whose first event is already an error frame (relays/gateways do
+  // this when overloaded) would be forwarded as a mid-stream failure the client
+  // can only retry. Peek the first event with a short deadline for compatible
+  // providers: surfacing it as a pre-flight 502 lets account fallback/retry run
+  // before any bytes are sent. Healthy streams are replayed byte-for-byte.
+  if (upstreamContentType.includes("text/event-stream")
+    && provider?.startsWith?.("openai-compatible-")
+    && SSE_PREFLIGHT_PEEK_TIMEOUT_MS > 0) {
+    const peeked = await peekSseErrorFrame(providerResponse, SSE_PREFLIGHT_PEEK_TIMEOUT_MS);
+    if (peeked.error) {
+      const status = getClientErrorStatus(HTTP_STATUS.BAD_GATEWAY, peeked.error.message);
+      if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · error frame before first chunk\n    ${peeked.error.message}`);
+      else console.warn(`[STREAM] ${provider} | ${model} | error frame before first chunk: ${peeked.error.message}`);
+      streamController?.handleError?.(new Error(peeked.error.message));
+      return createErrorResult(status, `[${status}]: ${peeked.error.message}`, undefined, upstreamResponseHeaders(providerResponse.headers));
+    }
+    providerResponse = peeked.response;
   }
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });

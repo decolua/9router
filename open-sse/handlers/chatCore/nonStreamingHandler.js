@@ -3,7 +3,7 @@ import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createErrorResult, detectErrorBody, getClientErrorStatus } from "../../utils/error.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -269,6 +269,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // bare OpenAI body and usage tracking sees data.usage. No-op unless the
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
+
+  // A success status can still carry an error body (relays and gateways answer
+  // 200 while the payload holds the failure). Surface it as a retryable error
+  // instead of forwarding it as if it were a completion.
+  const errorBody = detectErrorBody(responseBody);
+  if (errorBody) {
+    const status = getClientErrorStatus(HTTP_STATUS.BAD_GATEWAY, errorBody.message);
+    appendLog({ status: `FAILED ${status}` });
+    return createErrorResult(status, `[${status}]: ${errorBody.message}`, undefined, upstreamResponseHeaders(providerResponse.headers));
+  }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {

@@ -1,6 +1,6 @@
 import { FORMATS } from "../translator/formats.js";
 import { fallbackToolCallId } from "../translator/concerns/toolCall.js";
-import { buildErrorBody } from "./error.js";
+import { buildErrorBody, detectErrorBody } from "./error.js";
 import { SSE_DONE } from "./sseConstants.js";
 
 const sharedEncoder = new TextEncoder();
@@ -182,11 +182,128 @@ export function formatSSE(data, sourceFormat) {
 // NOTE: non-SSE client formats (Ollama NDJSON) get an SSE frame here — dead in
 // practice because detectFormatByEndpoint never resolves to OLLAMA.
 export function buildStreamErrorBytes(statusCode, message, clientFormat) {
-  const { error } = buildErrorBody(statusCode, message);
+  const { error: built } = buildErrorBody(statusCode, message);
+
+  // OpenAI-compatible harnesses (Kilo CLI / opencode) only treat an in-stream
+  // error as retryable when the error object has a string message, no `type`
+  // field, and a numeric 4xx/5xx code. A string `type` blocks their envelope
+  // synthesis, so the failure surfaces as a non-retryable UnknownError.
+  const error = clientFormat === FORMATS.CLAUDE
+    ? built
+    : { message: built.message, code: statusCode };
 
   const sse = clientFormat === FORMATS.CLAUDE
     ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
     : formatSSE({ error }, clientFormat) + SSE_DONE;
 
   return sharedEncoder.encode(sse);
+}
+
+// Parse the first SSE event of an upstream stream. Returns the error descriptor
+// when that event is an error frame (nested, flat, or a Responses failure),
+// otherwise null. Only the first event is inspected — a later error is a
+// mid-stream failure and cannot change the response status anymore.
+export function parseFirstSseError(text) {
+  const firstEvent = String(text || "").split("\n\n", 1)[0] || "";
+  for (const line of firstEvent.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) continue;
+    const payload = trimmed.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+
+    let parsed;
+    try { parsed = JSON.parse(payload); } catch { continue; }
+
+    const error = detectErrorBody(parsed)
+      || (parsed?.type === "response.failed" ? detectErrorBody(parsed.response?.error) : null);
+    if (error) return error;
+  }
+  return null;
+}
+
+/**
+ * Peek the first SSE event of an upstream body before piping it to the client.
+ *
+ * Relays and gateways answer a streaming request with an in-band error frame
+ * (often before any content) when they are overloaded. Forwarding it leaves the
+ * client with a mid-stream error it can only retry; surfacing it as a pre-flight
+ * failure instead lets account fallback/retry run before any bytes are sent.
+ *
+ * Waits at most `timeoutMs` for the first event. Every byte read is replayed on
+ * the returned response, so a healthy stream is never truncated.
+ *
+ * @returns {Promise<{error: {message: string, code?: string|number, type?: string} | null, response: Response|null}>}
+ */
+export async function peekSseErrorFrame(response, timeoutMs) {
+  const body = response?.body;
+  if (!body || !(timeoutMs > 0)) return { error: null, response };
+
+  const reader = body.getReader();
+  const chunks = [];
+  const decoder = new TextDecoder();
+  let text = "";
+  let finished = false;
+  // A read that outlived the deadline must be kept: the underlying stream queues
+  // it, so dropping it would swallow the next chunk.
+  let pendingRead = null;
+  const deadline = Date.now() + timeoutMs;
+
+  while (!text.includes("\n\n")) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+
+    let timer;
+    const timeout = new Promise((resolve) => { timer = setTimeout(() => resolve("timeout"), remaining); });
+    let result;
+    try {
+      pendingRead = pendingRead || reader.read();
+      result = await Promise.race([pendingRead, timeout]);
+    } catch {
+      finished = true;
+      break;
+    } finally {
+      clearTimeout(timer);
+    }
+
+    if (result === "timeout") break;
+    pendingRead = null;
+    if (result.done) { finished = true; break; }
+    chunks.push(result.value);
+    text += decoder.decode(result.value, { stream: true });
+  }
+
+  const error = parseFirstSseError(text);
+  if (error) {
+    reader.cancel().catch(() => { });
+    return { error, response: null };
+  }
+
+  const stream = new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(chunk);
+    },
+    async pull(controller) {
+      if (finished) { controller.close(); return; }
+      try {
+        const result = await (pendingRead || reader.read());
+        pendingRead = null;
+        if (result.done) controller.close();
+        else controller.enqueue(result.value);
+      } catch (err) {
+        controller.error(err);
+      }
+    },
+    cancel(reason) {
+      reader.cancel(reason).catch(() => { });
+    },
+  });
+
+  return {
+    error: null,
+    response: new Response(stream, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: response.headers,
+    }),
+  };
 }
