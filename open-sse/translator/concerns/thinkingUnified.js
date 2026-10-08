@@ -50,6 +50,17 @@ export function parseSuffix(model) {
 export function extractThinking(body) {
   if (!body || typeof body !== "object") return null;
 
+  // Some AI SDK clients keep the selected variant in a provider-options
+  // envelope while also emitting a generic top-level default. The explicit
+  // variant is the user's intent and must win over that default.
+  const optionEffort = body.options?.reasoningEffort ?? body.options?.reasoning_effort;
+  if (typeof optionEffort === "string" && optionEffort) {
+    const e = optionEffort.toLowerCase();
+    if (e === "none" || e === "off") return { mode: "none" };
+    if (e === "auto") return { mode: "auto" };
+    return { mode: "level", level: e };
+  }
+
   // Claude output_config.effort (explicit) — priority over adaptive thinking
   const oc = body.output_config?.effort;
   if (typeof oc === "string" && oc) {
@@ -171,6 +182,10 @@ function toLevel(cfg) {
 
 function normalizeOpenAILevel(level, supportedLevels) {
   if (level !== "max" && level !== "ultra") return level;
+  // Dynamic OpenAI-compatible providers are transparent proxies. When their
+  // private model catalog does not declare an effort enum, preserve the
+  // client's explicit value instead of assuming the public OpenAI limits.
+  if (!supportedLevels) return level;
   if (supportedLevels?.includes(level)) return level;
   if (level === "ultra" && supportedLevels?.includes("max")) return "max";
   return "xhigh";
@@ -440,6 +455,8 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!body || typeof body !== "object") return body;
 
   const { cleanModel, override } = parseSuffix(model);
+  const hasProviderOptionEffort = provider?.startsWith("openai-compatible-")
+    && typeof (body.options?.reasoningEffort ?? body.options?.reasoning_effort) === "string";
   const cfg = override || intent || extractThinking(body);
   const caps = getCapabilitiesForModel(provider, cleanModel);
 
@@ -451,12 +468,26 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!cfg) return body;
 
   const fmt = resolveFormat(targetFormat, cleanModel, provider);
-  const supportedLevels = getThinkingLevels(provider, cleanModel);
+  const supportedLevels = provider?.startsWith("openai-compatible-")
+    ? null
+    : getThinkingLevels(provider, cleanModel);
   // Anthropic's `display` (summarized | omitted) decides whether thinking text
   // comes back at all; keep what the client asked for instead of resetting it.
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel);
+
+  // Promote AI SDK wrapper options to the selected OpenAI-compatible wire shape.
+  if (hasProviderOptionEffort && (fmt === "openai" || fmt === "openai-responses")) {
+    const level = toLevel(cfg);
+    if (level === "ultra") {
+      delete body.reasoning_effort;
+      body.reasoning = { effort: level };
+    }
+    delete body.options.reasoningEffort;
+    delete body.options.reasoning_effort;
+    if (Object.keys(body.options).length === 0) delete body.options;
+  }
   return body;
 }
