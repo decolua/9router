@@ -91,6 +91,7 @@
 
 ## Fixes
 - Avoid Headroom compression warnings caused by large unchanged tool schemas (#4809).
+- **Dashboard**: ship modality capabilities (`pdf`/`audioInput`/`videoInput`) to the model picker — `/api/models` and the `useModelCaps` fallback now share one subset, so the Audio adapter picker no longer filters out every candidate (#4638)
 - **Dashboard**: fix mobile layouts for API Keys card (alignment, code wrap), header breadcrumbs (overflow collision), model chips (full width, break-all), and Claude CLI settings
 - **Gemini**: do not treat properties map as schema node when tool parameter is named `properties` (#4620); rename `$ref` keys in `functionResponse` payloads
 - **Translator**: uniquify duplicate `tool_call_ids` for Gemini (#4532)
