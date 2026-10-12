@@ -5,10 +5,10 @@ import {
   markAccountUnavailable,
   clearAccountError,
   extractApiKey,
-  isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getApiKeyByValue } from "@/lib/localDb";
+import { applyApiKeyRouting, hasApiKeyRestrictions, isApiKeyRouteAllowed } from "@/lib/apiKeyPermissions";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -55,7 +55,8 @@ export async function handleChat(request, clientRawRequest = null) {
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.
-  const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
+  const { model: inputModelStr, contextMarker } = stripModelContextMarker(body.model);
+  let modelStr = inputModelStr;
   if (contextMarker) body.model = modelStr;
 
   const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
@@ -75,27 +76,58 @@ export async function handleChat(request, clientRawRequest = null) {
 
   // Enforce API key if enabled in settings
   const settings = await getSettings();
+  const apiKeyRecord = apiKey ? await getApiKeyByValue(apiKey) : null;
+  if (apiKeyRecord && !apiKeyRecord.isActive) {
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
+  }
   if (settings.requireApiKey) {
     if (!apiKey) {
       log.warn("AUTH", "Missing API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     }
-    const valid = await isValidApiKey(apiKey);
-    if (!valid) {
+    if (!apiKeyRecord?.isActive) {
       log.warn("AUTH", "Invalid API key (requireApiKey=true)");
       return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Invalid API key");
     }
   }
 
+  const routePolicy = apiKeyRecord ? {
+    apiKeyRecord,
+    permissions: apiKeyRecord.permissions,
+    forcedTarget: apiKeyRecord.permissions?.forceModel
+      ? await getModelInfo(apiKeyRecord.permissions.forceModel) : null,
+  } : null;
+
+  const routedModelStr = apiKeyRecord ? applyApiKeyRouting(apiKeyRecord.permissions, modelStr) : modelStr;
+  if (routedModelStr !== modelStr) {
+    log.info("AUTH", `API key routing override: ${modelStr || "<omitted>"} -> ${routedModelStr}`);
+    modelStr = routedModelStr;
+    body.model = modelStr;
+  }
+
+  // An exact Enforced model supplies the route even when the client leaves
+  // `model` out. A Force provider alone cannot do that: it deliberately keeps
+  // the client model ID, so a request without one remains invalid.
   if (!modelStr) {
     log.warn("CHAT", "Missing model");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  // A restricted key is checked after an API-key routing override but before
+  // combo expansion or provider routing, so
+  // an unapproved provider can never receive a request. Existing keys have
+  // empty permissions and remain unrestricted for backwards compatibility.
+  if (routePolicy && (hasApiKeyRestrictions(routePolicy.permissions) || routePolicy.permissions?.forceModel || routePolicy.permissions?.forceProviderId)) {
+    const modelInfo = await getModelInfo(modelStr);
+    if (!isApiKeyRouteAllowed(routePolicy.permissions, modelInfo, routePolicy.forcedTarget)) {
+      log.warn("AUTH", `API key is not authorized for requested model: ${modelStr}`);
+      return errorResponse(HTTP_STATUS.FORBIDDEN, "This API key is not authorized for the requested provider or model");
+    }
+  }
   // Per-key access control: a restricted key may call only its listed combos and
   // models. Checked once on the requested target, before bypass, combo expansion
   // and any credential lookup; an allowed combo grants the members it routes to.
-  const keyAccess = await getKeyAccessContext(request);
+  const keyAccess = await getKeyAccessContext(request, apiKeyRecord || undefined);
   const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
 
@@ -127,7 +159,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, routePolicy);
         },
         log,
         comboName: modelStr,
@@ -143,7 +175,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routePolicy),
         adapterAdded
       ),
       log,
@@ -175,7 +207,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routePolicy),
         adapterAdded
       ),
       log,
@@ -184,14 +216,18 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, contextMarker ? `${modelStr.slice(modelStr.indexOf("/") + 1)}[${contextMarker}]` : null);
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, routePolicy, contextMarker ? `${modelStr.slice(modelStr.indexOf("/") + 1)}[${contextMarker}]` : null);
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, routePolicy = null, requestedModel = null) {
   const modelInfo = await getModelInfo(modelStr);
+
+  if (routePolicy && !isApiKeyRouteAllowed(routePolicy.permissions, modelInfo, routePolicy.forcedTarget)) {
+    return errorResponse(HTTP_STATUS.FORBIDDEN, "This API key is not authorized for the selected provider or model");
+  }
 
   // If provider is null, this might be a combo name - check and handle
   if (!modelInfo.provider) {
@@ -205,7 +241,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const requiredCapabilities = detectRequiredCapabilities(body);
       // Nested combo (a combo member that is itself a combo): the access decision
       // was made on the outer target; only drop adapter models the key may not call.
-      const keyAccess = await getKeyAccessContext(request);
+      const keyAccess = await getKeyAccessContext(request, routePolicy?.apiKeyRecord || undefined);
       const augmentedModels = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, chatSettings), comboModels);
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
@@ -220,7 +256,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, routePolicy);
           },
           log,
           comboName: modelStr,
@@ -238,7 +274,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, routePolicy),
           adapterAdded
         ),
         log,
