@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Anthropic**: stop adding the Claude Code beta to ordinary API-key requests, avoiding the misleading insufficient-credit error reported in #4739
+
 # v0.5.112 (2026-10-28)
 
 ## Features
@@ -38,6 +43,7 @@
 - **Thinking**: keep `reasoning_effort: max` for GPT-5.6 / GPT-6 served through OpenAI Compatible nodes instead of clamping it to `xhigh` (#5186)
 - **Codex Image**: drive the `image_generation` tool call from `gpt-6-sol` instead of the legacy `gpt-5.6-terra` host, and add `cx/gpt-6-sol-image`; drop the `gpt-5.6-{sol,terra,luna}-image` aliases they supersede
 - **Capabilities**: match `*gpt-6*image*` before the generic `gpt-6` family pattern so `gpt-6-sol-image` resolves as an image model instead of inheriting the chat caps (vision/reasoning/1.05M window) and losing `imageOutput`
+
 
 # v0.5.109 (2026-10-23)
 
@@ -85,6 +91,7 @@
 - **Search**: reset regex state between model matches in search filters (#5853a88)
 - **Pi Settings**: declare `existingProvider` before use in POST handler to prevent ReferenceError 500 (#342ecb0)
 - **Tests**: triage master test suite (GLM-5.2 effort, gpt-6.1-sol codex capabilities, image SSRF mocks, refresh known-fails) (#b6a9ca4)
+
 
 # v0.5.104 (2026-10-15)
 
