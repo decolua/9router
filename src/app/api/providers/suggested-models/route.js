@@ -24,7 +24,9 @@ export async function GET(request) {
     }
     const json = await res.json();
     const raw = json.data ?? json.models ?? json;
-    const data = filter(Array.isArray(raw) ? raw : []);
+    // Object-shaped catalogs (minimax-code's {providers:[…]}) ride in as a
+    // single-element array so every filter keeps an array input contract.
+    const data = filter(Array.isArray(raw) ? raw : typeof raw === "object" && raw !== null ? [raw] : []);
     return NextResponse.json({ data });
   } catch {
     return NextResponse.json({ data: [] });

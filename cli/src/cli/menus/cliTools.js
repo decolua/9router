@@ -1,5 +1,5 @@
 const api = require("../api/client");
-const { pause, confirm } = require("../utils/input");
+const { pause, confirm, select } = require("../utils/input");
 const { showStatus } = require("../utils/display");
 const { selectModelFromList } = require("../utils/modelSelector");
 const { showMenuWithBack } = require("../utils/menuHelper");
@@ -515,25 +515,69 @@ async function showOpenCodeMenu(port, breadcrumb = []) {
 
 // ─── Hermes Agent ─────────────────────────────────────────────────────────────
 
-async function buildHermesHeader() {
-  const result = await api.getCliToolSettings("hermes");
+// Profile targeted by Quick Setup / Reset. The menu rebuilds through `refresh()` on every
+// loop, so the pick has to live outside the render — module state, like the menu itself.
+let hermesActiveProfile = "default";
+
+async function fetchHermesProfiles() {
+  const result = await api.listHermesProfiles();
+  if (!result.success) return [];
+  return result.data.profiles || [];
+}
+
+const hermesProfileLine = (p) => {
+  const name = p.displayName && !p.isDefault ? `${p.name} (${p.displayName})` : p.name;
+  const state = p.has9Router
+    ? `${COLORS.green}✓ 9router${COLORS.reset}`
+    : p.baseUrl
+      ? `${COLORS.red}other: ${p.baseUrl}${COLORS.reset}`
+      : `${COLORS.red}✗ not configured${COLORS.reset}`;
+  const model = p.model ? ` ${COLORS.dim}· ${p.model}${COLORS.reset}` : "";
+  return `${name} — ${state}${model}`;
+};
+
+async function buildHermesHeader(profiles) {
+  const list = profiles || (await fetchHermesProfiles());
+  const result = await api.getCliToolSettings("hermes", hermesActiveProfile);
   if (!result.success) return `  ${COLORS.red}Failed to load settings${COLORS.reset}`;
 
-  const { installed, has9Router, settings } = result.data;
+  const { installed, has9Router, settings, profile } = result.data;
   if (!installed) return `Status:   ${COLORS.red}✗ Hermes Agent not installed${COLORS.reset}`;
 
-  if (!has9Router) {
-    return [
-      `Status:   ${COLORS.red}✗ Not configured${COLORS.reset}`,
-      `${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`
-    ].join("\n");
+  const name = profile?.name || hermesActiveProfile;
+  const lines = [];
+  if (has9Router) {
+    lines.push(`Status:   ${COLORS.green}✓ Configured${COLORS.reset} (${name})`);
+  } else {
+    lines.push(`Status:   ${COLORS.red}✗ Not configured${COLORS.reset} (${name})`);
+    lines.push(`${COLORS.dim}Run "Quick Setup" to configure${COLORS.reset}`);
   }
 
   const model = settings?.model || {};
-  const lines = [`Status:   ${COLORS.green}✓ Configured${COLORS.reset}`];
   if (model.base_url) lines.push(`Endpoint: ${COLORS.cyan}${model.base_url}${COLORS.reset}`);
   if (model.default)  lines.push(`Model:    ${COLORS.dim}${model.default}${COLORS.reset}`);
+
+  if (list.length > 1) {
+    const summary = list
+      .map((p) => `${p.name}${p.has9Router ? `${COLORS.green}✓` : `${COLORS.red}✗`}`)
+      .join(`${COLORS.reset} `);
+    lines.push(`Profiles:  ${summary}${COLORS.reset}`);
+  }
   return lines.join("\n");
+}
+
+async function selectHermesProfile() {
+  const profiles = await fetchHermesProfiles();
+  if (profiles.length === 0) {
+    showStatus("No Hermes profiles found.", "error");
+    await pause();
+    return;
+  }
+
+  const index = await select("Select Hermes profile:", profiles.map(hermesProfileLine));
+  hermesActiveProfile = profiles[index].name;
+  showStatus(`Active profile: "${hermesActiveProfile}"`, "success");
+  await pause();
 }
 
 async function hermesQuickSetup(port) {
@@ -546,17 +590,63 @@ async function hermesQuickSetup(port) {
     return;
   }
 
-  const model = await selectModelFromList("Select Hermes Model", "", { excludeCombos: true });
+  const model = await selectModelFromList(`Select Hermes Model (${hermesActiveProfile})`, "", { excludeCombos: true });
   if (!model) return;
 
-  const result = await api.applyCliToolSettings("hermes", { baseUrl: endpoint, apiKey, model });
-  showStatus(result.success ? "Hermes setup completed!" : `Failed: ${result.error}`, result.success ? "success" : "error");
+  const result = await api.applyCliToolSettings("hermes", {
+    profile: hermesActiveProfile,
+    baseUrl: endpoint,
+    apiKey,
+    model,
+  });
+  showStatus(
+    result.success ? `Hermes setup completed for profile "${hermesActiveProfile}"!` : `Failed: ${result.error}`,
+    result.success ? "success" : "error"
+  );
+  await pause();
+}
+
+// Endpoint + API key across every profile. Each profile keeps its own model — profiles
+// already routed through 9router are refreshed, anything else is reported as skipped.
+async function hermesApplyAll(port) {
+  const { endpoint } = await getEndpoint(port);
+  const apiKey = await getFirstApiKey();
+
+  if (!apiKey) {
+    showStatus("No API keys found. Create one in API Keys menu first.", "error");
+    await pause();
+    return;
+  }
+
+  const model = await selectModelFromList("Select Model (used only for profiles with no model yet)", "", { excludeCombos: true });
+  if (!model) return;
+
+  const result = await api.applyCliToolSettings("hermes", { applyToAll: true, baseUrl: endpoint, apiKey, model });
+  if (!result.success) {
+    showStatus(`Failed: ${result.error}`, "error");
+    await pause();
+    return;
+  }
+
+  const skipped = (result.data.results || []).filter((r) => r.status !== "updated");
+  if (skipped.length === 0) {
+    showStatus(`Endpoint applied to ${result.data.updated} profile(s).`, "success");
+  } else {
+    const detail = skipped.map((r) => `  ${r.profile}: ${r.reason || r.status}`).join("\n");
+    showStatus(
+      `Updated ${result.data.updated} profile(s), skipped ${skipped.length}:\n${detail}`,
+      result.data.updated > 0 ? "success" : "error"
+    );
+  }
   await pause();
 }
 
 async function hermesReset() {
-  const result = await api.resetCliToolSettings("hermes");
-  showStatus(result.success ? "Hermes settings reset!" : `Failed: ${result.error}`, result.success ? "success" : "error");
+  const result = await api.resetCliToolSettings("hermes", hermesActiveProfile);
+  showStatus(
+    result.success ? `Hermes settings reset for profile "${hermesActiveProfile}"!` : `Failed: ${result.error}`,
+    result.success ? "success" : "error"
+  );
   await pause();
 }
 
@@ -564,11 +654,20 @@ async function showHermesMenu(port, breadcrumb = []) {
   await showMenuWithBack({
     title: "⚡ Hermes Agent Settings",
     breadcrumb,
+    refresh: async () => {
+      const profiles = await fetchHermesProfiles();
+      // Drop a stale selection (profile deleted in another tab) back to default.
+      if (profiles.length > 0 && !profiles.some((p) => p.name === hermesActiveProfile)) {
+        hermesActiveProfile = "default";
+      }
+      return profiles;
+    },
     headerContent: buildHermesHeader,
-    refresh: async () => ({}),
     items: [
+      { label: () => `🎯 Profile: ${hermesActiveProfile}`, action: async () => { await selectHermesProfile(); return true; } },
       { label: "⚡ Quick Setup", action: async () => { await hermesQuickSetup(port); return true; } },
-      { label: "Reset to Default", action: async () => { await hermesReset(); return true; } }
+      { label: "🔁 Apply to All Profiles", action: async () => { await hermesApplyAll(port); return true; } },
+      { label: () => `↺ Reset Profile: ${hermesActiveProfile}`, action: async () => { await hermesReset(); return true; } }
     ]
   });
 }

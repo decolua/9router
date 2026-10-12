@@ -1,6 +1,39 @@
+# v0.5.99 (2026-10-08)
+
+## Features
+- **Antigravity**: refresh model catalog with Gemini 3.8 Flash (High/Medium/Low), Gemini 3.6 Flash, and Gemini 3.1 Pro High; remove deprecated 3.5/3-flash models; update MITM default to `gemini-3.8-flash-medium`
+- **Antigravity**: add Claude Sonnet 5.5 and Opus 5.5 support with reasoning effort variants, pricing, and family quota routing
+- **Bedrock**: add Amazon Bedrock (`bedrock` and `bedrock-xai`) provider with static keys, AWS SSO profiles, native SigV4 signer, and shared EventStream decoder (#4157)
+- **Hermes**: per-profile configuration across API, Dashboard card, and CLI menu with bulk apply, scoped reset, and auxiliary roles (#4660)
+- **API Keys**: per-API-key access control — restrict keys to allowed combos and models via interactive modal
+- **ElevenLabs**: add Scribe speech-to-text support (#4537)
+- **Proxy Pools**: add Netlify serverless relay proxy pool with digest-deploy API and dashboard management modal
+- **Providers**: add MiniMax Code (`mcode`) credits provider
+- **System One**: support Cloudflare AI `clef-flash` endpoint
+- **Codebuddy CN**: sync catalog with 2026-09-30 server config
+- **Dashboard**: open 9Remote sidebar item directly to website
+
+## Fixes
+- **Dashboard**: fix mobile layouts for API Keys card (alignment, code wrap), header breadcrumbs (overflow collision), model chips (full width, break-all), and Claude CLI settings
+- **Gemini**: do not treat properties map as schema node when tool parameter is named `properties` (#4620); rename `$ref` keys in `functionResponse` payloads
+- **Translator**: uniquify duplicate `tool_call_ids` for Gemini (#4532)
+- **Capabilities**: mark GLM-5.3 as unable to disable thinking (#4656); correct GLM-5.2/5.3 context window to 1M (#4544)
+- **Combos**: show compatible node models in picker without an active connection (#4659)
+- **CLI**: take `connect` models from server; add `show`, `--save`, Pi and Oh My Pi; store full model IDs in TUI combos
+- **Kimi**: route Responses clients to Kimi Code `/responses` endpoint
+- **Cursor**: forward reasoning effort to AgentService Run; reject empty turns without successful stop
+- **Codex**: preserve explicit tool strict flags; track exact image token usage
+- **Ollama**: report `prompt_eval_cached_count` as cached tokens in usage tracking
+- **Muse**: route Responses-only models to declared transport and nest reasoning effort
+- **TTS**: accept server model and voice in self-hosted example
+
 # v0.5.95 (2026-10-01)
 
 ## Features
+- **Hermes**: sync the auxiliary role picker with Hermes 0.21.5 (`hermes_cli/config_defaults.py`) — add TTS Audio Tags, Triage Specifier, Kanban Decomposer, Profile Describer, Review and Goal Judge; drop Web Extract, which stopped calling an LLM
+- **CLI**: Hermes profile selection in the settings menu — per-profile status header, Quick Setup and Reset scoped to the picked profile, plus "Apply to All Profiles"
+- **Dashboard**: per-profile Hermes config — profile selector with status dots and run command, Apply/Reset scoped to the selected profile, per-profile Manual Config paths, and an "Apply to All Profiles" action
+- **Hermes**: profile-aware settings API — target a profile with `?profile=`/body, list them via `GET /api/cli-tools/hermes-profiles`, and apply endpoint + API key to every profile in one call (`applyToAll`)
 - **Providers**: add Meta Muse provider with OAuth login and model catalog; add v1m System One provider
 - **GLM**: add Z.ai OAuth login to GLM Coding (dual-auth)
 - **Codex**: add GPT-6.1 Sol; expose 1M context variants for GPT-6 and GPT-5.6; add gpt-daybreak/reserve models and route bare `gpt-5.x`/`gpt-6.x` slugs to codex
@@ -12,6 +45,7 @@
 - **Dashboard**: drop NEW badges in sidebar, mark 9Remote as HOT
 
 ## Fixes
+- **Hermes**: stop breaking the config write when an earlier save left the `model: ""` sentinel behind (duplicate-key handling in `config.yaml`)
 - **Claude**: preserve intentional prefill from non-messages[] source formats; keep a trailing user turn so cleanup never yields assistant prefill
 - **Claude**: cache a tool loop's final tool results with the 4th breakpoint
 - **Claude**: resolve Sonnet 5.x to adaptive thinking so no forged thinking placeholders are sent; inject unsigned thinking placeholders for opencode-go DeepSeek `/messages` (#4436)

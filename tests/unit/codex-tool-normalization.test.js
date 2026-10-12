@@ -20,6 +20,28 @@ function normalizeTools(tools) {
 }
 
 describe("CodexExecutor tool normalization", () => {
+  it("preserves explicit strict flags without changing optional arguments", () => {
+    const parameters = {
+      type: "object",
+      properties: { sessionID: { type: "string" } },
+      required: [],
+    };
+    const tools = normalizeTools([
+      { type: "function", name: "flat_false", strict: false, parameters },
+      { type: "function", name: "flat_true", strict: true, parameters },
+      { type: "function", function: { name: "nested_false", strict: false, parameters } },
+      { type: "function", function: { name: "nested_true", strict: true, parameters } },
+      { type: "function", name: "unspecified", parameters },
+    ]);
+
+    expect(tools.map((tool) => tool.strict)).toEqual([false, true, false, true, undefined]);
+    for (const tool of tools) {
+      expect(tool.parameters).toEqual(parameters);
+      expect(tool.parameters.required).toEqual([]);
+    }
+    expect(tools[4]).not.toHaveProperty("strict");
+  });
+
   it("preserves Responses text.format for structured outputs", () => {
     const executor = new CodexExecutor();
     const schema = {

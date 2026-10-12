@@ -4,123 +4,83 @@ import { NextResponse } from "next/server";
 import { exec } from "child_process";
 import { promisify } from "util";
 import fs from "fs/promises";
-import path from "path";
 import os from "os";
+
+import {
+  buildModelBlock,
+  buildDelegationBlock,
+  buildAuxRoleBlock,
+  parseModelBlock,
+  parseDelegationBlock,
+  parseAuxRoles,
+  upsertModelBlock,
+  upsertDelegationBlock,
+  upsertAuxRole,
+  removeModelBlock,
+  removeDelegationBlock,
+  removeAuxRole,
+  upsertEnvVar,
+  has9RouterConfig,
+  isCustomBlock,
+} from "./hermesYaml.js";
+import { resolveHermesHome, listProfiles, dirExists } from "./hermesProfiles.js";
 
 const execAsync = promisify(exec);
 
 const PROVIDER_NAME = "9router";
 const API_KEY_ENV = "OPENAI_API_KEY";
 
-const getHermesDir = () => path.join(os.homedir(), ".hermes");
-const getHermesConfigPath = () => path.join(getHermesDir(), "config.yaml");
-const getHermesEnvPath = () => path.join(getHermesDir(), ".env");
-
-// Match top-level "model:" block (until next non-indented, non-empty line)
-const MODEL_BLOCK_RE = /^model:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
-const DELEGATION_BLOCK_RE = /^delegation:[ \t]*\r?\n((?:[ \t]+.*\r?\n?|[ \t]*\r?\n)*)/m;
-// "auxiliary:" block; children are 2-space-indented role keys with 4+-space fields
-const AUX_BLOCK_RE = /^auxiliary:[ \t]*\r?\n((?:(?:[ \t]+.*\r?\n?)|(?:[ \t]*\r?\n))*)/m;
-const auxRoleRe = (role) => new RegExp(`^  ${role}:[ \\t]*\\r?\\n(?:(?:[ \\t]{4,}.*\\r?\\n?)|(?:[ \\t]*\\r?\\n))*`, "m");
-
-const buildModelBlock = (model, baseUrl) =>
-  `model:\n  default: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
-
-const buildDelegationBlock = (model, baseUrl) =>
-  `delegation:\n  model: "${model}"\n  provider: "custom"\n  base_url: "${baseUrl}"\n  api_key: \${OPENAI_API_KEY}\n`;
-
-const buildAuxRoleBlock = (role, model, baseUrl) =>
-  `  ${role}:\n    provider: "custom"\n    model: "${model}"\n    base_url: "${baseUrl}"\n    api_key: \${OPENAI_API_KEY}\n`;
-
-// Parse current model block back to fields (best-effort, simple key:value)
-const parseModelBlock = (yaml) => {
-  const match = yaml.match(MODEL_BLOCK_RE);
-  if (!match) return null;
-  const body = match[1] || "";
-  const get = (key) => {
-    const m = body.match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\\r\\n]+)["']?`, "m"));
-    return m ? m[1].trim() : null;
-  };
-  return {
-    default: get("default"),
-    provider: get("provider"),
-    base_url: get("base_url"),
-    api_key: get("api_key"),
-  };
-};
-
-const upsertModelBlock = (yaml, newBlock) => {
-  if (MODEL_BLOCK_RE.test(yaml)) return yaml.replace(MODEL_BLOCK_RE, newBlock);
-  return yaml.length > 0 ? `${newBlock}\n${yaml}` : newBlock;
-};
-
-const upsertDelegationBlock = (yaml, newBlock) => {
-  if (DELEGATION_BLOCK_RE.test(yaml)) return yaml.replace(DELEGATION_BLOCK_RE, newBlock);
-  return yaml.endsWith("\n") || yaml.length === 0 ? `${yaml}${newBlock}` : `${yaml}\n${newBlock}`;
-};
-
-const removeDelegationBlock = (yaml) => yaml.replace(DELEGATION_BLOCK_RE, "");
-
-const upsertAuxRole = (yaml, role, roleBlock) => {
-  const re = auxRoleRe(role);
-  const m = yaml.match(AUX_BLOCK_RE);
-  if (!m) {
-    const block = `auxiliary:\n${roleBlock}`;
-    return yaml.endsWith("\n") || yaml.length === 0 ? `${yaml}${block}` : `${yaml}\n${block}`;
+// Profile comes from ?profile= on GET (all-statuses calls GET() with no argument at all,
+// so every reader must tolerate a missing request) and from the JSON body on POST/DELETE.
+// POST/DELETE fall back to the query string — callers reach for either.
+const getQueryParam = (request, key) => {
+  if (!request) return null;
+  try {
+    const url = request.nextUrl || (typeof request.url === "string" ? new URL(request.url) : null);
+    return url?.searchParams?.get(key) || null;
+  } catch {
+    return null;
   }
-  const body = re.test(m[1]) ? m[1].replace(re, roleBlock) : `${m[1]}${roleBlock}`;
-  return yaml.replace(AUX_BLOCK_RE, `auxiliary:\n${body}`);
 };
 
-const removeAuxRole = (yaml, role) => {
-  const m = yaml.match(AUX_BLOCK_RE);
-  if (!m) return yaml;
-  const body = m[1].replace(auxRoleRe(role), "");
-  if (body.trim() === "") return yaml.replace(AUX_BLOCK_RE, "");
-  return yaml.replace(AUX_BLOCK_RE, `auxiliary:\n${body}`);
-};
+const getProfileParam = (request) => getQueryParam(request, "profile");
 
-// role -> { model, provider, base_url } for every entry under "auxiliary:"
-const parseAuxRoles = (yaml) => {
-  const m = yaml.match(AUX_BLOCK_RE);
-  if (!m) return {};
-  const roles = {};
-  const subRe = /^  ([A-Za-z0-9_]+):[ \t]*\r?\n((?:(?:[ \t]{4,}.*\r?\n?)|(?:[ \t]*\r?\n))*)/gm;
-  let sm;
-  while ((sm = subRe.exec(m[1]))) {
-    const get = (key) => {
-      const km = sm[2].match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\\r\\n]+)["']?`, "m"));
-      return km ? km[1].trim() : null;
-    };
-    roles[sm[1]] = { model: get("model"), provider: get("provider"), base_url: get("base_url") };
+const truthy = (value) => value === true || value === "true" || value === "1";
+
+const resolveHome = (profile) => {
+  try {
+    return { home: resolveHermesHome(profile) };
+  } catch (error) {
+    return { error: error.message };
   }
-  return roles;
 };
 
-const parseDelegationBlock = (yaml) => {
-  const match = yaml.match(DELEGATION_BLOCK_RE);
-  if (!match) return null;
-  const body = match[1] || "";
-  const get = (key) => {
-    const m = body.match(new RegExp(`^[ \\t]+${key}:[ \\t]*["']?([^"'\\r\\n]+)["']?`, "m"));
-    return m ? m[1].trim() : null;
-  };
-  return { model: get("model"), provider: get("provider"), base_url: get("base_url") };
+const readTextFile = async (file) => {
+  try {
+    return await fs.readFile(file, "utf-8");
+  } catch (error) {
+    if (error.code === "ENOENT") return "";
+    throw error;
+  }
 };
 
-const removeModelBlock = (yaml) => yaml.replace(MODEL_BLOCK_RE, "").replace(/^\n+/, "");
+const readConfigYaml = (home) => readTextFile(home.configPath);
+const readEnvFile = (home) => readTextFile(home.envPath);
 
-// .env helpers — upsert/remove single KEY=VALUE line
-const upsertEnvVar = (envText, key, value) => {
-  const re = new RegExp(`^${key}=.*$`, "m");
-  const line = `${key}=${value}`;
-  if (re.test(envText)) return envText.replace(re, line);
-  return envText.length > 0 && !envText.endsWith("\n") ? `${envText}\n${line}\n` : `${envText}${line}\n`;
+// Named profile homes are created by `hermes profile create` — never by us: a directory
+// without identity files is not a profile, and we must not fabricate one.
+const writeHomeConfig = async (home, yaml) => {
+  if (home.isDefault) await fs.mkdir(home.dir, { recursive: true });
+  await fs.writeFile(home.configPath, yaml);
 };
 
-const removeEnvVar = (envText, key) => {
-  const re = new RegExp(`^${key}=.*\\r?\\n?`, "m");
-  return envText.replace(re, "");
+// Only ever upserts the OPENAI_API_KEY line — per-profile .env files also carry bot tokens
+// and messaging-channel credentials that must stay untouched.
+const writeHomeEnv = async (home, apiKey) => {
+  if (!apiKey) return;
+  if (home.isDefault) await fs.mkdir(home.dir, { recursive: true });
+  const env = upsertEnvVar(await readEnvFile(home), API_KEY_ENV, apiKey);
+  await fs.writeFile(home.envPath, env);
 };
 
 const checkHermesInstalled = async () => {
@@ -131,7 +91,7 @@ const checkHermesInstalled = async () => {
     return true;
   } catch {
     try {
-      await fs.access(getHermesConfigPath());
+      await fs.access(resolveHermesHome(null).configPath);
       return true;
     } catch {
       return false;
@@ -139,45 +99,29 @@ const checkHermesInstalled = async () => {
   }
 };
 
-const readConfigYaml = async () => {
-  try {
-    return await fs.readFile(getHermesConfigPath(), "utf-8");
-  } catch (error) {
-    if (error.code === "ENOENT") return "";
-    throw error;
-  }
-};
-
-const readEnvFile = async () => {
-  try {
-    return await fs.readFile(getHermesEnvPath(), "utf-8");
-  } catch (error) {
-    if (error.code === "ENOENT") return "";
-    throw error;
-  }
-};
-
-// Detect 9router by base_url containing localhost/127.0.0.1 or matching tunnel URL
-const has9RouterConfig = (modelCfg) => {
-  if (!modelCfg?.base_url) return false;
-  return modelCfg.provider === "custom" && /localhost|127\.0\.0\.1|0\.0\.0\.0/.test(modelCfg.base_url);
-};
-
-export async function GET() {
+export async function GET(request) {
   try {
     const installed = await checkHermesInstalled();
     if (!installed) {
       return NextResponse.json({ installed: false, settings: null, message: "Hermes Agent is not installed" });
     }
-    const yaml = await readConfigYaml();
+
+    const { home, error } = resolveHome(getProfileParam(request));
+    if (error) return NextResponse.json({ error }, { status: 400 });
+    if (!home.isDefault && !(await dirExists(home.dir))) {
+      return NextResponse.json({ error: `Hermes profile "${home.name}" not found` }, { status: 404 });
+    }
+
+    const yaml = await readConfigYaml(home);
     const model = parseModelBlock(yaml);
     const delegation = parseDelegationBlock(yaml);
     const auxiliary = parseAuxRoles(yaml);
     return NextResponse.json({
       installed: true,
+      profile: { name: home.name, dir: home.dir, isDefault: home.isDefault },
       settings: { model, delegation, auxiliary },
       has9Router: has9RouterConfig(model) || has9RouterConfig(delegation) || Object.values(auxiliary).some(has9RouterConfig),
-      configPath: getHermesConfigPath(),
+      configPath: home.configPath,
     });
   } catch (error) {
     console.log("Error checking hermes settings:", error);
@@ -185,9 +129,65 @@ export async function GET() {
   }
 }
 
+// Endpoint + API key across every profile: refresh the 9router blocks each profile already
+// has (models stay per-profile), and wire up profiles that have no main model yet using the
+// model chosen in this request. Profiles on another provider are reported, never rewritten.
+const applyToAllProfiles = async ({ normalizedBaseUrl, apiKey, model }) => {
+  const profiles = await listProfiles();
+  const results = [];
+  for (const profile of profiles) {
+    const home = resolveHermesHome(profile.name);
+    try {
+      let yaml = await readConfigYaml(home);
+      const main = parseModelBlock(yaml);
+
+      if (main?.default && isCustomBlock(main)) {
+        yaml = upsertModelBlock(yaml, buildModelBlock(main.default, normalizedBaseUrl));
+        const delegation = parseDelegationBlock(yaml);
+        if (delegation?.model && isCustomBlock(delegation)) {
+          yaml = upsertDelegationBlock(yaml, buildDelegationBlock(delegation.model, normalizedBaseUrl));
+        }
+        for (const [role, cfg] of Object.entries(parseAuxRoles(yaml))) {
+          if (cfg?.model && isCustomBlock(cfg)) {
+            yaml = upsertAuxRole(yaml, role, buildAuxRoleBlock(role, cfg.model, normalizedBaseUrl));
+          }
+        }
+        await writeHomeConfig(home, yaml);
+        await writeHomeEnv(home, apiKey);
+        results.push({ profile: profile.name, status: "updated", model: main.default });
+      } else if (main?.default) {
+        results.push({
+          profile: profile.name,
+          status: "skipped",
+          reason: `main model uses provider "${main.provider || "unknown"}" — configure this profile individually`,
+        });
+      } else if (model) {
+        yaml = upsertModelBlock(yaml, buildModelBlock(model, normalizedBaseUrl));
+        await writeHomeConfig(home, yaml);
+        await writeHomeEnv(home, apiKey);
+        results.push({ profile: profile.name, status: "updated", model });
+      } else {
+        results.push({ profile: profile.name, status: "skipped", reason: "no main model configured" });
+      }
+    } catch (error) {
+      results.push({ profile: profile.name, status: "failed", reason: error.message });
+    }
+  }
+  const updated = results.filter((r) => r.status === "updated").length;
+  return NextResponse.json({
+    success: updated > 0,
+    bulk: true,
+    results,
+    updated,
+    skipped: results.length - updated,
+    message: `Updated endpoint on ${updated} profile(s)`,
+  });
+};
+
 export async function POST(request) {
   try {
-    const { baseUrl, apiKey, model, selections } = await request.json();
+    const body = await request.json();
+    const { baseUrl, apiKey, model, selections } = body;
     // selections: [{role, model}] — "default" plus any auxiliary/delegation slots.
     // Legacy callers (CLI quick setup) send a bare `model` → treat as default role.
     const sel = Array.isArray(selections) && selections.some((s) => s?.role && s?.model)
@@ -198,13 +198,21 @@ export async function POST(request) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
     }
 
-    const dir = getHermesDir();
-    await fs.mkdir(dir, { recursive: true });
-
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
+    if (truthy(body.applyToAll ?? getQueryParam(request, "applyToAll"))) {
+      return await applyToAllProfiles({ normalizedBaseUrl, apiKey, model: defaultSel.model });
+    }
+
+    // Profile target: JSON body first, then ?profile= — callers reach for either.
+    const { home, error } = resolveHome(body.profile ?? getProfileParam(request));
+    if (error) return NextResponse.json({ error }, { status: 400 });
+    if (!home.isDefault && !(await dirExists(home.dir))) {
+      return NextResponse.json({ error: `Hermes profile "${home.name}" not found` }, { status: 404 });
+    }
+
     // Update config.yaml — upsert each role block, keep everything else
-    let newYaml = await readConfigYaml();
+    let newYaml = await readConfigYaml(home);
     for (const { role, model: roleModel } of sel) {
       if (role === "default") {
         newYaml = upsertModelBlock(newYaml, buildModelBlock(roleModel, normalizedBaseUrl));
@@ -214,19 +222,16 @@ export async function POST(request) {
         newYaml = upsertAuxRole(newYaml, role, buildAuxRoleBlock(role, roleModel, normalizedBaseUrl));
       }
     }
-    await fs.writeFile(getHermesConfigPath(), newYaml);
+    await writeHomeConfig(home, newYaml);
 
     // Update .env — upsert OPENAI_API_KEY only when caller provides one
-    if (apiKey) {
-      const existingEnv = await readEnvFile();
-      const newEnv = upsertEnvVar(existingEnv, API_KEY_ENV, apiKey);
-      await fs.writeFile(getHermesEnvPath(), newEnv);
-    }
+    await writeHomeEnv(home, apiKey);
 
     return NextResponse.json({
       success: true,
-      message: "Hermes settings applied successfully!",
-      configPath: getHermesConfigPath(),
+      message: home.isDefault ? "Hermes settings applied successfully!" : `Hermes settings applied to profile "${home.name}"!`,
+      profile: { name: home.name, dir: home.dir, isDefault: home.isDefault },
+      configPath: home.configPath,
     });
   } catch (error) {
     console.log("Error updating hermes settings:", error);
@@ -234,27 +239,72 @@ export async function POST(request) {
   }
 }
 
-export async function DELETE() {
+export async function DELETE(request) {
   try {
-    const configPath = getHermesConfigPath();
+    let body = null;
+    if (request && typeof request.json === "function") {
+      try {
+        body = await request.json();
+      } catch {
+        body = null; // CLI reset sends an empty body → default profile
+      }
+    }
+
+    const { home, error } = resolveHome(body?.profile ?? getProfileParam(request));
+    if (error) return NextResponse.json({ error }, { status: 400 });
+    if (!home.isDefault && !(await dirExists(home.dir))) {
+      return NextResponse.json({ error: `Hermes profile "${home.name}" not found` }, { status: 404 });
+    }
+
     let yaml = "";
     try {
-      yaml = await fs.readFile(configPath, "utf-8");
-    } catch (error) {
-      if (error.code === "ENOENT") {
-        return NextResponse.json({ success: true, message: "No config file to reset" });
+      yaml = await fs.readFile(home.configPath, "utf-8");
+    } catch (readError) {
+      if (readError.code === "ENOENT") {
+        return NextResponse.json({ success: true, profile: home.name, message: "No config file to reset" });
       }
-      throw error;
+      throw readError;
     }
-    let newYaml = removeModelBlock(yaml);
-    newYaml = removeDelegationBlock(newYaml);
-    // Only drop auxiliary entries we manage (custom provider, any base URL — covers tunnels)
+
+    // Only drop blocks 9router wrote (custom provider) — a model/delegation/aux block owned
+    // by another provider is this profile's own configuration and must survive a reset.
+    const removed = { model: false, delegation: false, auxiliary: [] };
+    const kept = [];
+
+    const main = parseModelBlock(yaml);
+    if (main && isCustomBlock(main)) {
+      yaml = removeModelBlock(yaml);
+      removed.model = true;
+    } else if (main) {
+      kept.push("model");
+    }
+
+    const delegation = parseDelegationBlock(yaml);
+    if (delegation && isCustomBlock(delegation)) {
+      yaml = removeDelegationBlock(yaml);
+      removed.delegation = true;
+    } else if (delegation) {
+      kept.push("delegation");
+    }
+
     for (const [role, cfg] of Object.entries(parseAuxRoles(yaml))) {
-      if (cfg?.provider === "custom") newYaml = removeAuxRole(newYaml, role);
+      if (isCustomBlock(cfg)) {
+        yaml = removeAuxRole(yaml, role);
+        removed.auxiliary.push(role);
+      }
     }
-    newYaml = newYaml.replace(/^\n+/, "");
-    await fs.writeFile(configPath, newYaml);
-    return NextResponse.json({ success: true, message: `${PROVIDER_NAME} model blocks removed` });
+
+    yaml = yaml.replace(/^\n+/, "");
+    await writeHomeConfig(home, yaml);
+
+    const scope = home.isDefault ? "" : ` in profile "${home.name}"`;
+    return NextResponse.json({
+      success: true,
+      profile: home.name,
+      removed,
+      kept,
+      message: `${PROVIDER_NAME} model blocks removed${scope}`,
+    });
   } catch (error) {
     console.log("Error resetting hermes settings:", error);
     return NextResponse.json({ error: "Failed to reset hermes settings" }, { status: 500 });

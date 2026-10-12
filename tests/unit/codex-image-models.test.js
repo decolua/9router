@@ -26,6 +26,17 @@ describe("Codex GPT-5.6 image models", () => {
     const events = [
       ["response.image_generation_call.partial_image", { partial_image_b64: "cGFydGlhbA==", partial_image_index: 0 }],
       ["response.output_item.done", { item: { type: "image_generation_call", result: "ZmluYWw=" } }],
+      ["response.completed", {
+        response: {
+          usage: {
+            input_tokens: 321,
+            output_tokens: 654,
+            total_tokens: 975,
+            input_tokens_details: { cached_tokens: 111 },
+            output_tokens_details: { reasoning_tokens: 22 },
+          },
+        },
+      }],
     ];
     const fetchMock = vi.fn().mockResolvedValue(new Response(
       events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join(""),
@@ -33,6 +44,7 @@ describe("Codex GPT-5.6 image models", () => {
     ));
     vi.stubGlobal("fetch", fetchMock);
     const onRequestSuccess = vi.fn();
+    const onUsage = vi.fn();
     const modelInfo = await getModelInfoCore(`cx/${model}-image`);
     expect(modelInfo).toEqual({ provider: "codex", model: `${model}-image` });
     expect(await getModelInfoCore(`codex/${model}-image`)).toEqual(modelInfo);
@@ -51,6 +63,7 @@ describe("Codex GPT-5.6 image models", () => {
       credentials: { accessToken: "test-token" },
       streamToClient: true,
       onRequestSuccess,
+      onUsage,
     });
 
     expect(result.success).toBe(true);
@@ -72,5 +85,13 @@ describe("Codex GPT-5.6 image models", () => {
     expect(stream).toContain("event: done\n");
     expect(stream).toContain('"data":[{"b64_json":"ZmluYWw="}]');
     expect(onRequestSuccess).toHaveBeenCalledTimes(1);
+    expect(onUsage).toHaveBeenCalledTimes(1);
+    expect(onUsage).toHaveBeenCalledWith({
+      prompt_tokens: 321,
+      completion_tokens: 654,
+      total_tokens: 975,
+      cached_tokens: 111,
+      reasoning_tokens: 22,
+    });
   });
 });

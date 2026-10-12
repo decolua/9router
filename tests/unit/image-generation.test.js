@@ -323,12 +323,16 @@ describe("handleImageGenerationCore", () => {
           "event: response.output_item.done",
           'data: {"item":{"type":"image_generation_call","result":"base64codeximage"}}',
           "",
+          "event: response.completed",
+          'data: {"response":{"usage":{"input_tokens":123,"output_tokens":456,"total_tokens":579,"input_tokens_details":{"cached_tokens":12}}}}',
+          "",
           "",
         ].join("\n"),
         { status: 200, headers: { "Content-Type": "text/event-stream" } }
       )
     );
 
+    const onUsage = vi.fn();
     const result = await handleImageGenerationCore({
       body: {
         prompt: "A green square",
@@ -341,6 +345,7 @@ describe("handleImageGenerationCore", () => {
         providerSpecificData: { chatgptAccountId: "account-123" },
       },
       log: null,
+      onUsage,
     });
 
     expect(result.success).toBe(true);
@@ -365,6 +370,12 @@ describe("handleImageGenerationCore", () => {
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
+    expect(onUsage).toHaveBeenCalledWith({
+      prompt_tokens: 123,
+      completion_tokens: 456,
+      total_tokens: 579,
+      cached_tokens: 12,
+    });
   });
 
   it("generates image with Codex gpt-image-2.5 tool model", async () => {

@@ -53,6 +53,19 @@ describe("toOpenAIUsage", () => {
     expect(u.prompt_tokens).toBe(7);
     expect(u.completion_tokens).toBe(4);
     expect(u.total_tokens).toBe(11);
+    // no cache fields -> no prompt_tokens_details
+    expect(u.prompt_tokens_details).toBeUndefined();
+  });
+
+  it("ollama: surfaces prompt_eval_cached_count as cached_tokens detail", () => {
+    const u = toOpenAIUsage(
+      { prompt_eval_count: 100, eval_count: 20, prompt_eval_cached_count: 80 },
+      "ollama"
+    );
+    expect(u.prompt_tokens).toBe(100); // cache-INCLUSIVE: prompt already contains cached
+    expect(u.completion_tokens).toBe(20);
+    expect(u.total_tokens).toBe(120);
+    expect(u.prompt_tokens_details.cached_tokens).toBe(80);
   });
 
   it("commandcode: keeps totalTokens fallback", () => {

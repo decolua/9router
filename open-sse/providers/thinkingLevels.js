@@ -53,21 +53,35 @@ const PATTERN_THINKING = [
   // DeepSeek v4.* (Alibaba MaaS, probed live): effort low|medium|high|xhigh|max
   // all 200 via output_config.effort; "none" is a 400 on the anthropic route
   // (disable thinking instead). none kept for the picker = disable.
+  // ⚠️ The codebuddy-cn exact ids below MUST stay above this unqualified glob —
+  // PATTERN_THINKING is first-match-wins, so a later provider-qualified entry
+  // would never fire for dotted ids like deepseek-v4.1-flash.
+  { provider: "codebuddy-cn", pattern: "deepseek-v4-pro",     levels: ["low", "high", "xhigh"] },
+  { provider: "codebuddy-cn", pattern: "deepseek-v4.1-flash", levels: ["low", "high", "max"] },
   { pattern: "*deepseek-v4.*", levels: ["none", "low", "medium", "high", "xhigh", "max"] },
   // codebuddy-cn per-model effort sets — the server's product-config payload
   // publishes `reasoning.supportedEfforts` per model. NOTE: the chat endpoint
   // accepts any level you send (probed none/minimal/low/medium/high/xhigh/max
   // → all 200), but values outside a model's supportedEfforts are silently
   // clamped, so the declared set stays authoritative for the picker. Models
-  // that publish no supportedEfforts (glm-5.1 / glm-5v-turbo / kimi-k2.x /
-  // kimi-k3-1 / minimax-m3) fall through to the openai format default.
-  { provider: "codebuddy-cn", pattern: "glm-5.3*",     levels: ["low", "high", "max"] },
+  // that publish no supportedEfforts (glm-5.1 / kimi-k3-1 / minimax-m3)
+  // fall through to the openai format default.
+  { provider: "codebuddy-cn", pattern: "glm-5.3",      levels: ["low", "high", "max"] },
+  { provider: "codebuddy-cn", pattern: "glm-5.3-flash", levels: ["low", "high", "max"] },
   { provider: "codebuddy-cn", pattern: "glm-5.2",      levels: ["high", "xhigh"] },
-  { provider: "codebuddy-cn", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
-  { provider: "codebuddy-cn", pattern: "hy3*",         levels: ["low", "high"] },
-  { provider: "codebuddy-cn", pattern: "hy4*",         levels: ["high"] },
+  { provider: "codebuddy-cn", pattern: "kimi-k2.8-preview",  levels: ["low", "medium", "high"] },
+  { provider: "codebuddy-cn", pattern: "hy3",          levels: ["low", "high"] },
+  { provider: "codebuddy-cn", pattern: "hy4-preview",  levels: ["high"] },
   // codebuddy-intl rides the same gateway catalog, so its deepseek levels match.
   { provider: "codebuddy-intl", pattern: "deepseek-v4*", levels: ["low", "high", "xhigh"] },
+  // MiniMax Code (mcode) — adaptive effort via output_config.effort. M3.1
+  // always thinks (no none); M3 is switchable with none/high only, per the
+  // magpie static catalog. M2.7 pair falls through to the claude-adaptive
+  // set minus none (canDisable: false).
+  { provider: "minimax-code", pattern: "MiniMax-M3.1*", levels: ["low", "medium", "high", "xhigh", "max"] },
+  { provider: "minimax-code", pattern: "MiniMax-M3", levels: ["none", "high"] },
+  { provider: "minimax-code-global", pattern: "MiniMax-M3.1*", levels: ["low", "medium", "high", "xhigh", "max"] },
+  { provider: "minimax-code-global", pattern: "MiniMax-M3", levels: ["none", "high"] },
 ];
 
 // Returns valid thinking levels for a model, or null when the model has no reasoning.

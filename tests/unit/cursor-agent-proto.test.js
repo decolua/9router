@@ -29,6 +29,29 @@ const entry = (k, v) => Buffer.concat([
 ]);
 
 describe("Cursor AgentService codec (cursorProtobuf.js)", () => {
+  for (const [model, effort, key, value] of [
+    ["gpt-5.2", "high", "reasoning", "high"],
+    ["claude-4.6-opus", "minimal", "effort", "low"],
+    ["composer-2.5", "ultra", "effort", "max"],
+  ]) {
+    it(`forwards ${effort} as a RequestedModel parameter for ${model}`, () => {
+      const frame = buildAgentRunFrame([{ role: "user", content: "hi" }], model, [], effort);
+      const run = decodeMessage(decodeMessage(frame.subarray(5)).get(1)[0].value);
+      const requested = decodeMessage(run.get(9)[0].value);
+      const parameter = decodeMessage(requested.get(3)[0].value);
+      expect(Buffer.from(parameter.get(1)[0].value).toString()).toBe(key);
+      expect(Buffer.from(parameter.get(2)[0].value).toString()).toBe(value);
+      expect(Buffer.from(requested.get(1)[0].value).toString()).toBe(model);
+      expect(run.has(3)).toBe(true);
+    });
+  }
+  for (const effort of [null, "none", ""]) {
+    it(`does not invent a RequestedModel parameter for ${String(effort)}`, () => {
+      const frame = buildAgentRunFrame([{ role: "user", content: "hi" }], "gpt-5.2", [], effort);
+      const run = decodeMessage(decodeMessage(frame.subarray(5)).get(1)[0].value);
+      expect(decodeMessage(run.get(9)[0].value).has(3)).toBe(false);
+    });
+  }
   describe("google.protobuf.Value round-trip", () => {
     const cases = [
       ["null", null],

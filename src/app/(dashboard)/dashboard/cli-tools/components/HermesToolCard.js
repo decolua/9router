@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
-import { rememberEndpoint } from "./cliEndpointPresets";
+import { rememberEndpoint, readPresets } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 import { CLI_TOOLS } from "@/shared/constants/cliTools";
@@ -40,6 +40,10 @@ export default function HermesToolCard({
   const [modelAliases, setModelAliases] = useState({});
   const [showManualConfigModal, setShowManualConfigModal] = useState(false);
   const [customBaseUrl, setCustomBaseUrl] = useState("");
+  const [profiles, setProfiles] = useState([]);
+  const [activeProfile, setActiveProfile] = useState("default");
+  const [applyingAll, setApplyingAll] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState("");
   const hasInitializedModel = useRef(false);
 
   const currentBaseUrl = hermesStatus?.settings?.model?.base_url || "";
@@ -54,6 +58,24 @@ export default function HermesToolCard({
 
   const configStatus = getConfigStatus();
 
+  // Same three-state rule as the header badge, evaluated per profile from the list payload.
+  const profileStatus = (p) => {
+    if (p.has9Router || (p.baseUrl && matchKnownEndpoint(p.baseUrl, { tunnelPublicUrl, tailscaleUrl }))) return "configured";
+    if (p.baseUrl) return "other";
+    return "not_configured";
+  };
+
+  const STATUS_DOT = {
+    configured: "bg-green-500",
+    other: "bg-blue-500",
+    not_configured: "bg-yellow-500",
+  };
+  const STATUS_LABEL = {
+    configured: "Connected",
+    other: "Other endpoint",
+    not_configured: "Not configured",
+  };
+
   useEffect(() => {
     if (apiKeys?.length > 0 && !selectedApiKey) {
       setSelectedApiKey(apiKeys[0].key);
@@ -64,10 +86,21 @@ export default function HermesToolCard({
     if (initialStatus) setHermesStatus(initialStatus);
   }, [initialStatus]);
 
+  const fetchProfiles = async () => {
+    try {
+      const res = await fetch("/api/cli-tools/hermes-profiles");
+      const data = await res.json();
+      if (res.ok) setProfiles(data.profiles || []);
+    } catch (error) {
+      console.log("Error fetching hermes profiles:", error);
+    }
+  };
+
   useEffect(() => {
     if (isExpanded) {
       if (!hermesStatus) checkStatus();
       fetchModelAliases();
+      fetchProfiles();
     }
   }, [isExpanded]);
 
@@ -85,7 +118,8 @@ export default function HermesToolCard({
     if (hermesStatus?.installed && !hasInitializedModel.current) {
       hasInitializedModel.current = true;
       const cfg = hermesStatus.settings?.model;
-      if (cfg?.default) setSelectedModel(cfg.default);
+      // Always reset both: stale values from the previously selected profile must not leak in.
+      setSelectedModel(cfg?.default || "");
       const initial = {};
       if (hermesStatus.settings?.delegation?.model) initial.delegation = hermesStatus.settings.delegation.model;
       for (const [role, rcfg] of Object.entries(hermesStatus.settings?.auxiliary || {})) {
@@ -95,12 +129,40 @@ export default function HermesToolCard({
     }
   }, [hermesStatus]);
 
-  const checkStatus = async () => {
+  const selectProfile = (name) => {
+    if (name === activeProfile) return;
+    setActiveProfile(name);
+    hasInitializedModel.current = false;
+    setMessage(null);
+    setCustomBaseUrl("");
+    checkStatus(name);
+  };
+
+  const copyCommand = async (cmd) => {
+    try {
+      await navigator.clipboard.writeText(cmd);
+      setCopiedCommand(cmd);
+      setTimeout(() => setCopiedCommand(""), 2000);
+    } catch (error) {
+      console.log("Copy failed", error);
+    }
+  };
+
+  const checkStatus = async (profile = activeProfile) => {
     setChecking(true);
     try {
-      const res = await fetch(ENDPOINT);
+      const res = await fetch(`${ENDPOINT}?profile=${encodeURIComponent(profile)}`);
       const data = await res.json();
-      setHermesStatus(data);
+      if (res.ok) {
+        setHermesStatus(data);
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to load Hermes settings" });
+        if (res.status === 404) {
+          // Profile disappeared (e.g. deleted in another tab) — fall back to default.
+          fetchProfiles();
+          setActiveProfile("default");
+        }
+      }
     } catch (error) {
       setHermesStatus({ installed: false, error: error.message });
     } finally {
@@ -122,20 +184,24 @@ export default function HermesToolCard({
     return url.endsWith("/v1") ? url : `${url}/v1`;
   };
 
+  const getKeyToUse = () =>
+    selectedApiKey?.trim()
+      || (apiKeys?.length > 0 ? apiKeys[0].key : null)
+      || (!cloudEnabled ? "sk_9router" : null);
+
+  const profileLabel = (name) => (name === "default" ? "default profile" : `profile "${name}"`);
+
   const handleApply = async () => {
     setApplying(true);
     setMessage(null);
     try {
-      const keyToUse = selectedApiKey?.trim()
-        || (apiKeys?.length > 0 ? apiKeys[0].key : null)
-        || (!cloudEnabled ? "sk_9router" : null);
-
       const res = await fetch(ENDPOINT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          profile: activeProfile,
           baseUrl: getEffectiveBaseUrl(),
-          apiKey: keyToUse,
+          apiKey: getKeyToUse(),
           selections: [
             { role: "default", model: selectedModel },
             ...Object.entries(roleModels)
@@ -148,8 +214,9 @@ export default function HermesToolCard({
       if (res.ok) {
         // Remember the endpoint so it stays selectable next time
         rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
-        setMessage({ type: "success", text: "Settings applied successfully!" });
+        setMessage({ type: "success", text: `Settings applied to ${profileLabel(activeProfile)}!` });
         checkStatus();
+        fetchProfiles();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to apply settings" });
       }
@@ -160,17 +227,78 @@ export default function HermesToolCard({
     }
   };
 
+  // Endpoint + API key across every profile. Each profile keeps its own model — only
+  // profiles already routed through 9router are refreshed, the rest are reported.
+  // The endpoint field mirrors whatever the active profile currently points at, so it can
+  // hold a foreign provider URL (openrouter, ...) — propagating that to every profile would
+  // be a mistake, hence the known-endpoint guard.
+  const handleApplyAll = async () => {
+    const endpoint = getEffectiveBaseUrl();
+    const isKnown =
+      matchKnownEndpoint(endpoint, { tunnelPublicUrl, tailscaleUrl })
+      || readPresets().some((p) => (p.baseUrl || "").replace(/\/+$/, "") === endpoint.replace(/\/+$/, ""));
+    if (!isKnown) {
+      setMessage({
+        type: "error",
+        text: `"${endpoint}" is not a 9router endpoint. Select the local, tunnel, Tailscale or a saved 9router endpoint before applying to all profiles.`,
+      });
+      return;
+    }
+
+    setApplyingAll(true);
+    setMessage(null);
+    try {
+      const res = await fetch(ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          applyToAll: true,
+          baseUrl: endpoint,
+          apiKey: getKeyToUse(),
+          model: selectedModel,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.bulk) {
+        rememberEndpoint(endpoint, { tunnelPublicUrl, tailscaleUrl });
+        const skipped = (data.results || []).filter((r) => r.status !== "updated");
+        if (skipped.length === 0) {
+          setMessage({ type: "success", text: `Endpoint and API key applied to ${data.updated} profile(s).` });
+        } else {
+          const detail = skipped.map((r) => `${r.profile} — ${r.reason || r.status}`).join("; ");
+          setMessage({
+            type: data.updated > 0 ? "success" : "error",
+            text: `Updated ${data.updated} profile(s), skipped ${skipped.length}: ${detail}`,
+          });
+        }
+        fetchProfiles();
+        checkStatus();
+      } else {
+        setMessage({ type: "error", text: data.error || "Failed to apply settings" });
+      }
+    } catch (error) {
+      setMessage({ type: "error", text: error.message });
+    } finally {
+      setApplyingAll(false);
+    }
+  };
+
   const handleReset = async () => {
     setRestoring(true);
     setMessage(null);
     try {
-      const res = await fetch(ENDPOINT, { method: "DELETE" });
+      const res = await fetch(ENDPOINT, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profile: activeProfile }),
+      });
       const data = await res.json();
       if (res.ok) {
-        setMessage({ type: "success", text: "Settings reset successfully!" });
+        setMessage({ type: "success", text: `Settings reset for ${profileLabel(activeProfile)}!` });
         setSelectedModel("");
         setRoleModels({});
         checkStatus();
+        fetchProfiles();
       } else {
         setMessage({ type: "error", text: data.error || "Failed to reset settings" });
       }
@@ -201,7 +329,9 @@ export default function HermesToolCard({
       : (!cloudEnabled ? "sk_9router" : "<API_KEY_FROM_DASHBOARD>");
 
     const base = getEffectiveBaseUrl();
-    let yamlContent = `model:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${base}"\n  api_key: \${OPENAI_API_KEY}\n`;
+    const homeDir = activeProfile === "default" ? "~/.hermes" : `~/.hermes/profiles/${activeProfile}`;
+    const runHint = profiles.find((p) => p.name === activeProfile)?.command || "hermes";
+    let yamlContent = `# Run this profile: ${runHint}\nmodel:\n  default: "${selectedModel || "provider/model-id"}"\n  provider: "custom"\n  base_url: "${base}"\n  api_key: \${OPENAI_API_KEY}\n`;
     if (roleModels.delegation?.trim()) {
       yamlContent += `delegation:\n  model: "${roleModels.delegation.trim()}"\n  provider: "custom"\n  base_url: "${base}"\n  api_key: \${OPENAI_API_KEY}\n`;
     }
@@ -214,8 +344,8 @@ export default function HermesToolCard({
     const envContent = `OPENAI_API_KEY=${keyToUse}\n`;
 
     return [
-      { filename: "~/.hermes/config.yaml", content: yamlContent },
-      { filename: "~/.hermes/.env", content: envContent },
+      { filename: `${homeDir}/config.yaml`, content: yamlContent },
+      { filename: `${homeDir}/.env`, content: envContent },
     ];
   };
 
@@ -232,6 +362,9 @@ export default function HermesToolCard({
               {configStatus === "configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-green-500/10 text-green-600 dark:text-green-400 rounded-full">Connected</span>}
               {configStatus === "not_configured" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 rounded-full">Not configured</span>}
               {configStatus === "other" && <span className="px-1.5 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400 rounded-full">Other</span>}
+              {activeProfile !== "default" && (
+                <span className="px-1.5 py-0.5 text-[10px] font-medium bg-primary/10 text-primary rounded-full font-mono" title="Hermes profile shown below">{activeProfile}</span>
+              )}
             </div>
             <p className="text-xs text-text-muted truncate">{tool.description}</p>
           </div>
@@ -270,6 +403,54 @@ export default function HermesToolCard({
 
           {!checking && hermesStatus?.installed && (
             <>
+              {profiles.length > 1 && (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-semibold text-text-main mr-1">Profile</span>
+                    {profiles.map((p) => {
+                      const active = p.name === activeProfile;
+                      const status = profileStatus(p);
+                      return (
+                        <button
+                          key={p.name}
+                          onClick={() => selectProfile(p.name)}
+                          title={p.isDefault ? `Default profile — ${STATUS_LABEL[status]}` : `${p.command} — ${STATUS_LABEL[status]}`}
+                          className={`flex items-center gap-1.5 px-2 py-1 rounded border text-xs transition-colors ${
+                            active
+                              ? "border-primary bg-primary/10 text-primary cursor-pointer"
+                              : "bg-surface border-border text-text-muted hover:text-text-main hover:border-border-hover cursor-pointer"
+                          }`}
+                        >
+                          <span className={`size-1.5 rounded-full shrink-0 ${STATUS_DOT[status]}`} />
+                          <span className="font-medium">{p.displayName || p.name}</span>
+                          {p.displayName && !p.isDefault && <span className="font-mono text-[10px] opacity-60">{p.name}</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-text-muted">
+                    <span className="material-symbols-outlined text-[14px]">terminal</span>
+                    <code className="px-1.5 py-0.5 bg-surface/60 rounded font-mono text-[11px]">
+                      {profiles.find((p) => p.name === activeProfile)?.command || "hermes"}
+                    </code>
+                    <button
+                      onClick={() => copyCommand(profiles.find((p) => p.name === activeProfile)?.command || "hermes")}
+                      className={`p-0.5 rounded transition-colors ${
+                        copiedCommand === (profiles.find((p) => p.name === activeProfile)?.command || "hermes")
+                          ? "text-green-600"
+                          : "text-text-muted hover:text-text-main"
+                      }`}
+                      title="Copy command"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">
+                        {copiedCommand === (profiles.find((p) => p.name === activeProfile)?.command || "hermes") ? "check" : "content_copy"}
+                      </span>
+                    </button>
+                    <span className="hidden sm:inline">— every profile runs as its own agent with its own model.</span>
+                  </div>
+                </div>
+              )}
+
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-center sm:gap-2">
                   <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Select Endpoint</span>
@@ -365,6 +546,18 @@ export default function HermesToolCard({
                 <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto">
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
+                {profiles.length > 1 && (
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={handleApplyAll}
+                    loading={applyingAll}
+                    title="Set the endpoint and API key on every profile that routes through 9router. Each profile keeps its own model."
+                    className="w-full sm:w-auto"
+                  >
+                    <span className="material-symbols-outlined text-[14px] mr-1">groups</span>Apply to All Profiles
+                  </Button>
+                )}
                 <Button variant="outline" size="sm" onClick={handleReset} disabled={!hermesStatus?.has9Router} loading={restoring} className="w-full sm:w-auto">
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
