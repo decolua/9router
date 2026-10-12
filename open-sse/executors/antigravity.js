@@ -5,7 +5,7 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX,
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
+import { cleanJSONSchemaForAntigravity, normalizeGeminiContents, DEFAULT_SAFETY_SETTINGS } from "../translator/formats/gemini.js";
 import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
 
@@ -323,7 +323,7 @@ export class AntigravityExecutor extends BaseExecutor {
       ...(contents && { contents }),
       ...(tools && { tools }),
       sessionId,
-      safetySettings: undefined,
+      safetySettings: DEFAULT_SAFETY_SETTINGS,
       ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
     };
 
