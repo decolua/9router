@@ -10,6 +10,29 @@ const signatureKv = makeKv(SCOPE);
 const memorySignatures = new Map();
 let pruneCounter = 0;
 
+// Hydrate in-memory cache from persistent SQLite store on module load so unexpired signatures survive restarts
+(async () => {
+  try {
+    const all = await signatureKv.getAll();
+    if (all && typeof all === "object") {
+      const now = Date.now();
+      for (const [k, entry] of Object.entries(all)) {
+        if (entry && typeof entry.signature === "string" && (!entry.expiresAt || entry.expiresAt > now)) {
+          if (!memorySignatures.has(k)) {
+            memorySignatures.set(k, {
+              signature: entry.signature,
+              family: entry.family || null,
+              expiresAt: entry.expiresAt || (now + MEMORY_TTL_MS),
+            });
+          }
+        }
+      }
+    }
+  } catch {
+    // Fail-open
+  }
+})();
+
 /**
  * Model family that produced / will consume a signature. Antigravity serves Gemini and Claude
  * models behind the same API, and each backend only accepts its own signatures: a Claude
