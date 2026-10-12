@@ -23,6 +23,17 @@ describe("model context marker", () => {
     });
   });
 
+  it("strips [200k] and other numeric context markers", () => {
+    expect(stripModelContextMarker("claude-sonnet-5[200k]")).toEqual({
+      model: "claude-sonnet-5",
+      contextMarker: "200k",
+    });
+    expect(stripModelContextMarker("claude-haiku-4.5[128k]")).toEqual({
+      model: "claude-haiku-4.5",
+      contextMarker: "128k",
+    });
+  });
+
   it("strips it from a provider-prefixed model too", () => {
     expect(stripModelContextMarker("cc/claude-sonnet-4.5[1m]")).toEqual({
       model: "cc/claude-sonnet-4.5",

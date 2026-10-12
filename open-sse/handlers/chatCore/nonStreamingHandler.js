@@ -13,6 +13,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -164,6 +165,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return openAICompletionToClaudeMessage(result);
+    }
     return result;
   }
 
@@ -279,9 +283,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
+  let translatedResponse = needsTranslation(targetFormat, sourceFormat)
     ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
     : responseBody;
+
+  // Ensure Claude client receives Anthropic Messages shape even if upstream returned OpenAI completion directly
+  if (sourceFormat === FORMATS.CLAUDE && translatedResponse?.choices && translatedResponse.type !== "message") {
+    translatedResponse = openAICompletionToClaudeMessage(translatedResponse);
+  }
+
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.

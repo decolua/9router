@@ -273,6 +273,20 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
             responseId: jsonResponse.id || `resp_${Date.now()}`
           }
         };
+      } else if (sourceFormat === FORMATS.CLAUDE) {
+        const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
+        if (hasToolCalls) message.tool_calls = toolCalls;
+        const responseDone = jsonResponse.status === "completed" || jsonResponse.status === "done";
+        const finishReason = hasToolCalls ? "tool_calls" : (responseDone ? "stop" : (jsonResponse.status || "stop"));
+        const intermediateOpenAI = {
+          id: jsonResponse.id || `chatcmpl-${Date.now()}`,
+          object: "chat.completion",
+          created: jsonResponse.created_at || Math.floor(Date.now() / 1000),
+          model: jsonResponse.model || model,
+          choices: [{ index: 0, message, finish_reason: finishReason }],
+          usage: { prompt_tokens: inTokens, completion_tokens: outTokens, total_tokens: inTokens + outTokens, ...cacheDetails }
+        };
+        finalResp = chatCompletionToClaudeMessage(intermediateOpenAI);
       } else {
         const message = { role: "assistant", content: textContent || (hasToolCalls ? null : "") };
         if (hasToolCalls) message.tool_calls = toolCalls;

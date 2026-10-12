@@ -2,6 +2,7 @@
 import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
+import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 
 // Local provider alias overrides (HMR-friendly, applied on top of open-sse map)
 const LOCAL_PROVIDER_ALIASES = {
@@ -68,7 +69,13 @@ export async function getModelInfo(modelStr) {
 
   // Check if this is a combo name before resolving as alias
   // This prevents combo names from being incorrectly routed to providers
-  const combo = await getComboByName(parsed.model);
+  let combo = await getComboByName(parsed.model);
+  if (!combo) {
+    const { model: stripped } = stripModelContextMarker(parsed.model);
+    if (stripped && stripped !== parsed.model) {
+      combo = await getComboByName(stripped);
+    }
+  }
   if (combo) {
     // Return null provider to signal this should be handled as combo
     // The caller (handleChat) will detect this and handle it as combo
@@ -86,9 +93,16 @@ export async function getComboModels(modelStr) {
   // Only check if it's not in provider/model format
   if (modelStr.includes("/")) return null;
 
-  const combo = await getComboByName(modelStr);
+  let combo = await getComboByName(modelStr);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
+  }
+  const { model: stripped } = stripModelContextMarker(modelStr);
+  if (stripped && stripped !== modelStr) {
+    combo = await getComboByName(stripped);
+    if (combo && combo.models && combo.models.length > 0) {
+      return combo.models;
+    }
   }
   return null;
 }

@@ -1,4 +1,5 @@
 import REGISTRY from "../providers/registry/index.js";
+import { stripModelContextMarker } from "../utils/modelMarkers.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
 // Media-only providers without a registry transport entry keep explicit aliases here.
@@ -61,8 +62,14 @@ export function parseModel(modelStr) {
 export function resolveModelAliasFromMap(alias, aliases) {
   if (!aliases) return null;
 
-  // Check if alias exists
-  const resolved = aliases[alias];
+  // Check if alias exists directly or with context marker stripped
+  let resolved = aliases[alias];
+  if (!resolved && typeof alias === "string") {
+    const { model: stripped } = stripModelContextMarker(alias);
+    if (stripped && stripped !== alias) {
+      resolved = aliases[stripped];
+    }
+  }
   if (!resolved) return null;
 
   // Resolved value is "provider/model" format
