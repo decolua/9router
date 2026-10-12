@@ -1,6 +1,10 @@
 import { PROVIDER_MODELS } from "open-sse/config/providerModels.js";
 import { AI_PROVIDERS, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getModelKind } from "@/shared/constants/models";
+import { getApiKeyByValue } from "@/lib/localDb";
+import { filterModelsForApiKey } from "../route.js";
+import { extractRequestApiKey } from "@/lib/requestApiKey";
+import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
 
 const KIND_ENDPOINT = {
   llm: "/v1/chat/completions",
@@ -93,7 +97,11 @@ export async function GET(request) {
       { status: 400, headers: { "Access-Control-Allow-Origin": "*" } },
     );
   }
-  const info = lookup(id, kind);
+  const apiKey = extractRequestApiKey(request);
+  const apiKeyRecord = apiKey ? await getApiKeyByValue(apiKey) : null;
+  const found = lookup(id, kind);
+  const visible = found ? await filterModelsForApiKey([found], apiKeyRecord) : [];
+  const [info] = await filterModelsListForKey(await getKeyAccessContext(request, apiKeyRecord), visible);
   if (!info) {
     return Response.json(
       { error: { message: `Model not found: ${id}`, type: "not_found" } },

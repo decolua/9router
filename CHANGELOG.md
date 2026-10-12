@@ -1,3 +1,11 @@
+# Unreleased
+
+## Features
+- **API keys**: add provider/model allow-lists and enforced chat routing, including compatible providers; filter public model catalogues by key policy.
+
+## Security
+- **API keys**: check every chat dispatch including adapter fallbacks, unify accepted key transports, and deny unsupported API services for scoped keys.
+
 # v0.5.119 (2026-11-11)
 
 ## Features
