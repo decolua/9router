@@ -132,6 +132,30 @@ describe("Claude non-streaming response projection & classifier compatibility", 
     expect(translated.content.some(b => b.type === "thinking" && b.thinking === "Evaluating risk level.")).toBe(true);
   });
 
+  it("projects Gemini promptFeedback policy blocks to compliant Anthropic refusal Message", () => {
+    const blockedResponse = {
+      promptFeedback: {
+        blockReason: "PROHIBITED_CONTENT",
+        safetyRatings: [
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", probability: "HIGH" }
+        ]
+      }
+    };
+
+    const translated = translateNonStreamingResponse(
+      blockedResponse,
+      FORMATS.ANTIGRAVITY,
+      FORMATS.CLAUDE
+    );
+
+    expect(translated.type).toBe("message");
+    expect(translated.role).toBe("assistant");
+    expect(translated.stop_reason).toBe("refusal");
+    expect(translated.id).toContain("msg_");
+    expect(translated.content[0].text).toContain("PROHIBITED_CONTENT");
+    expect(translated.stop_details).toEqual({ type: "refusal", category: "general_harms" });
+  });
+
   it("normalizes context suffix in model aliases and combo lookups", () => {
     const aliases = {
       "claude-opus-5-5": "ag/gemini-3.8-flash-high",

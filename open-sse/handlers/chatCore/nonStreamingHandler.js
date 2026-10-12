@@ -110,7 +110,29 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
     const response = responseBody.response || responseBody;
-    if (!response?.candidates?.[0]) return responseBody;
+    if (!response?.candidates?.[0]) {
+      if (response?.promptFeedback?.blockReason) {
+        const blockReason = response.promptFeedback.blockReason;
+        const msgText = `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`;
+        const result = {
+          id: `chatcmpl-${response.responseId || Date.now()}`,
+          object: "chat.completion",
+          created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
+          model: response.modelVersion || "gemini",
+          choices: [{
+            index: 0,
+            message: { role: "assistant", content: msgText },
+            finish_reason: "content_filter"
+          }],
+          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
+        };
+        if (sourceFormat === FORMATS.CLAUDE) {
+          return openAICompletionToClaudeMessage(result);
+        }
+        return result;
+      }
+      return responseBody;
+    }
 
     const candidate = response.candidates[0];
     const content = candidate.content;
@@ -266,6 +288,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
 
+  if (responseBody?.error && !responseBody?.choices) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_REQUEST}` });
+    const errMsg = responseBody.error.message || (typeof responseBody.error === "string" ? responseBody.error : JSON.stringify(responseBody.error));
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, errMsg);
+  }
+
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
     Promise.resolve()
@@ -290,6 +318,28 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // Ensure Claude client receives Anthropic Messages shape even if upstream returned OpenAI completion directly
   if (sourceFormat === FORMATS.CLAUDE && translatedResponse?.choices && translatedResponse.type !== "message") {
     translatedResponse = openAICompletionToClaudeMessage(translatedResponse);
+  }
+
+  // Ensure Claude client receives valid Message envelope even on raw promptFeedback blocks or unexpected payloads
+  if (sourceFormat === FORMATS.CLAUDE && translatedResponse?.type !== "message") {
+    if (translatedResponse?.promptFeedback?.blockReason) {
+      const blockReason = translatedResponse.promptFeedback.blockReason;
+      const msgText = `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`;
+      translatedResponse = {
+        id: `msg_${Date.now()}`,
+        type: "message",
+        role: "assistant",
+        model: model || "unknown",
+        content: [{ type: "text", text: msgText }],
+        stop_reason: "refusal",
+        stop_sequence: null,
+        stop_details: { type: "refusal", category: "general_harms" },
+        usage: { input_tokens: 0, output_tokens: 0 }
+      };
+    } else {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Malformed upstream response: expected Message");
+    }
   }
 
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
