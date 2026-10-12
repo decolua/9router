@@ -185,8 +185,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
             const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
-            // First call gets cached signature or fallback; sibling calls remain unsigned if no cached sig
-            const callSig = cachedSig || (!firstFunctionCallSeen ? signature : undefined);
+            // Always backfill fallback signature so Gemini 3+ / Thinking models never reject unsigned calls #2193
+            const callSig = cachedSig || signature || DEFAULT_THINKING_AG_SIGNATURE;
             firstFunctionCallSeen = true;
 
             // Emitted id is uniquified; the thought-signature lookup above stays
@@ -422,7 +422,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId, model) : null;
-            const callSig = cachedSig || (!firstToolUseSeen ? signature : undefined);
+            const callSig = cachedSig || signature || DEFAULT_THINKING_AG_SIGNATURE;
             firstToolUseSeen = true;
 
             const part = {
@@ -436,10 +436,25 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
               part.thoughtSignature = callSig;
             }
             parts.push(part);
+          } else if (block.type === CLAUDE_BLOCK.IMAGE) {
+            if (block.source?.type === "base64" && block.source.data) {
+              const mimeType = block.source.media_type || "image/png";
+              parts.push({
+                inlineData: { mimeType, mime_type: mimeType, data: block.source.data }
+              });
+            }
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             let content = block.content;
             if (Array.isArray(content)) {
-              content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : JSON.stringify(c)).join("\n");
+              for (const c of content) {
+                if (c?.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64" && c.source.data) {
+                  const mimeType = c.source.media_type || "image/png";
+                  parts.push({
+                    inlineData: { mimeType, mime_type: mimeType, data: c.source.data }
+                  });
+                }
+              }
+              content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : (c.type === CLAUDE_BLOCK.IMAGE ? "" : JSON.stringify(c))).filter(Boolean).join("\n");
             }
             // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
             const resolvedName = toolUseIdToName[block.tool_use_id]
