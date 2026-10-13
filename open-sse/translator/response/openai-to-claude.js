@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -49,6 +50,18 @@ function isValidPdfPagesArg(filePath, pages) {
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
+  const sig = state.thinkingSignature || DEFAULT_THINKING_CLAUDE_SIGNATURE;
+  if (sig && !state.signatureDeltaSent) {
+    state.signatureDeltaSent = true;
+    results.push({
+      type: "content_block_delta",
+      index: state.thinkingBlockIndex,
+      delta: {
+        type: "signature_delta",
+        signature: sig
+      }
+    });
+  }
   results.push({
     type: "content_block_stop",
     index: state.thinkingBlockIndex
@@ -140,9 +153,15 @@ export function openaiToClaudeResponse(chunk, state) {
   if (reasoningContent) {
     stopTextBlock(state, results);
 
+    const sig = delta?.thought_signature || delta?.thoughtSignature || delta?.signature || chunk.thought_signature || chunk.thoughtSignature;
+    if (sig) {
+      state.thinkingSignature = sig;
+    }
+
     if (!state.thinkingBlockStarted) {
       state.thinkingBlockIndex = state.nextBlockIndex++;
       state.thinkingBlockStarted = true;
+      state.signatureDeltaSent = false;
       results.push({
         type: "content_block_start",
         index: state.thinkingBlockIndex,

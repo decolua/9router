@@ -96,6 +96,20 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.max_tokens !== undefined) {
     result.generationConfig.maxOutputTokens = body.max_tokens;
   }
+  const stopSeqs = body.stop_sequences || (Array.isArray(body.stop) ? body.stop : (body.stop ? [body.stop] : undefined));
+  if (stopSeqs) {
+    result.generationConfig.stopSequences = Array.isArray(stopSeqs) ? stopSeqs : [stopSeqs];
+  }
+  if (body.thinking && body.thinking.type === "enabled") {
+    const budget = Number(body.thinking.budget_tokens);
+    result.generationConfig.thinkingConfig = {
+      thinkingBudget: Number.isFinite(budget) && budget > 0 ? budget : -1
+    };
+  } else if (body.thinking_budget !== undefined) {
+    result.generationConfig.thinkingConfig = {
+      thinkingBudget: body.thinking_budget
+    };
+  }
 
   // Build tool_call_id -> name map
   const tcID2Name = {};
@@ -307,6 +321,23 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
     if (functionDeclarations.length > 0) {
       result.tools = [{ functionDeclarations }];
+
+      if (body.tool_choice) {
+        const tc = body.tool_choice;
+        if (tc === "none") {
+          result.toolConfig = { functionCallingConfig: { mode: "NONE" } };
+        } else if (tc === "required" || tc === "any") {
+          result.toolConfig = { functionCallingConfig: { mode: "ANY" } };
+        } else if (typeof tc === "object" && (tc.function?.name || tc.name)) {
+          const toolName = tc.function?.name || tc.name;
+          result.toolConfig = {
+            functionCallingConfig: {
+              mode: "ANY",
+              allowedFunctionNames: [sanitizeGeminiFunctionName(toolName)]
+            }
+          };
+        }
+      }
     }
   }
 
@@ -394,11 +425,32 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       sessionId: toNumericSessionId(credentials?._clientSessionId) || deriveSessionId(credentials?.email || credentials?.connectionId),
       contents: [],
       generationConfig: {
-        temperature: claudeRequest.temperature || 1,
+        temperature: claudeRequest.temperature !== undefined ? claudeRequest.temperature : 1,
         maxOutputTokens: claudeRequest.max_tokens || 4096
       }
     }
   };
+
+  if (claudeRequest.top_p !== undefined) {
+    envelope.request.generationConfig.topP = claudeRequest.top_p;
+  }
+  if (claudeRequest.top_k !== undefined) {
+    envelope.request.generationConfig.topK = claudeRequest.top_k;
+  }
+  const stopSeqs = claudeRequest.stop_sequences || claudeRequest.stop;
+  if (stopSeqs) {
+    envelope.request.generationConfig.stopSequences = Array.isArray(stopSeqs) ? stopSeqs : [stopSeqs];
+  }
+  if (claudeRequest.thinking && claudeRequest.thinking.type === "enabled") {
+    const budget = Number(claudeRequest.thinking.budget_tokens);
+    envelope.request.generationConfig.thinkingConfig = {
+      thinkingBudget: Number.isFinite(budget) && budget > 0 ? budget : -1
+    };
+  } else if (claudeRequest.thinking_budget !== undefined) {
+    envelope.request.generationConfig.thinkingConfig = {
+      thinkingBudget: claudeRequest.thinking_budget
+    };
+  }
 
   // Build tool_use id -> name map so functionResponse can use the correct name
   const toolUseIdToName = {};
@@ -447,18 +499,36 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
                 inlineData: { mimeType, mime_type: mimeType, data: block.source.data }
               });
             }
+          } else if (block.type === CLAUDE_BLOCK.DOCUMENT || block.type === "document") {
+            if (block.source?.type === "base64" && block.source.data) {
+              const mimeType = block.source.media_type || "application/pdf";
+              parts.push({
+                inlineData: { mimeType, mime_type: mimeType, data: block.source.data }
+              });
+            }
+          } else if (block.type === CLAUDE_BLOCK.THINKING || block.type === "thinking") {
+            if (block.thinking) {
+              parts.push({ thought: true, text: block.thinking });
+              if (block.signature) {
+                parts.push({ thoughtSignature: block.signature, text: "" });
+              }
+            }
+          } else if (block.type === CLAUDE_BLOCK.REDACTED_THINKING || block.type === "redacted_thinking") {
+            if (block.data) {
+              parts.push({ thought: true, text: `[Redacted thinking: ${block.data}]` });
+            }
           } else if (block.type === CLAUDE_BLOCK.TOOL_RESULT) {
             let content = block.content;
             if (Array.isArray(content)) {
               for (const c of content) {
-                if (c?.type === CLAUDE_BLOCK.IMAGE && c.source?.type === "base64" && c.source.data) {
-                  const mimeType = c.source.media_type || "image/png";
+                if ((c?.type === CLAUDE_BLOCK.IMAGE || c?.type === CLAUDE_BLOCK.DOCUMENT || c?.type === "document") && c.source?.type === "base64" && c.source.data) {
+                  const mimeType = c.source.media_type || (c.type === CLAUDE_BLOCK.IMAGE ? "image/png" : "application/pdf");
                   parts.push({
                     inlineData: { mimeType, mime_type: mimeType, data: c.source.data }
                   });
                 }
               }
-              content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : (c.type === CLAUDE_BLOCK.IMAGE ? "" : JSON.stringify(c))).filter(Boolean).join("\n");
+              content = content.map(c => c.type === CLAUDE_BLOCK.TEXT ? c.text : ((c.type === CLAUDE_BLOCK.IMAGE || c.type === CLAUDE_BLOCK.DOCUMENT || c.type === "document") ? "" : JSON.stringify(c))).filter(Boolean).join("\n");
             }
             // Resolve the original tool name from the id — Gemini requires it to match the functionCall name
             const resolvedName = toolUseIdToName[block.tool_use_id]
@@ -506,8 +576,24 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     }
     if (functionDeclarations.length > 0) {
       envelope.request.tools = [{ functionDeclarations }];
+      let mode = "VALIDATED";
+      let allowedFunctionNames;
+      if (claudeRequest.tool_choice) {
+        const tc = claudeRequest.tool_choice;
+        if (tc.type === "any" || tc === "required") {
+          mode = "ANY";
+        } else if (tc.type === "none" || tc === "none") {
+          mode = "NONE";
+        } else if (tc.type === "tool" && tc.name) {
+          mode = "ANY";
+          allowedFunctionNames = [sanitizeGeminiFunctionName(tc.name)];
+        }
+      }
       envelope.request.toolConfig = {
-        functionCallingConfig: { mode: "VALIDATED" }
+        functionCallingConfig: {
+          mode,
+          ...(allowedFunctionNames && { allowedFunctionNames })
+        }
       };
     }
   }
