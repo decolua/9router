@@ -479,25 +479,108 @@ function moveFunctionResponsesLast(parts) {
   return [...parts.filter(p => !p.functionResponse), ...responses];
 }
 
-// Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns
+// Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns,
+// and enforce strict alternating roles (user <-> model) required by Google Gemini.
 export function normalizeGeminiContents(contents, model = null) {
+  if (!contents || !Array.isArray(contents)) return [];
   const frLast = isGemini4Model(model);
-  const out = [];
-  for (const c of contents || []) {
-    if (!c?.role || !Array.isArray(c.parts)) continue;
-    const parts = c.parts.filter(p => p && Object.keys(p).length > 0).map(sanitizeFunctionResponsePart);
-    if (parts.length === 0) continue;
-    const last = out.at(-1);
-    if (last?.role === c.role) {
-      last.parts.push(...parts);
-      if (frLast) last.parts = moveFunctionResponsesLast(last.parts);
-    } else out.push({ ...c, parts: [...parts] });
+
+  const raw = [];
+  for (const c of contents) {
+    if (!c?.role) continue;
+    let parts = (Array.isArray(c.parts) ? c.parts : [])
+      .filter(p => p && Object.keys(p).length > 0)
+      .map(sanitizeFunctionResponsePart);
+
+    // If an explicit turn was provided but had empty parts (e.g. error/filtered assistant turn),
+    // preserve it as a minimal placeholder so it does not collapse surrounding turns into consecutive duplicates
+    if (parts.length === 0) {
+      parts = [{ text: "..." }];
+    }
+
+    const last = raw.at(-1);
+
+    // If previous turn was a model turn with functionCall, and next turn is a user turn without functionResponse:
+    // Gemini requires every functionCall to be immediately followed by functionResponse in the next USER turn.
+    if (last && last.role === "model" && c.role === "user") {
+      const lastFnCalls = last.parts.filter(p => p && p.functionCall);
+      const currHasFnResp = parts.some(p => p && p.functionResponse);
+      if (lastFnCalls.length > 0 && !currHasFnResp) {
+        const autoResponses = lastFnCalls.map(p => {
+          const call = p.functionCall || {};
+          const fr = { name: call.name || "tool", response: { result: "Continue." } };
+          if (call.id) fr.id = call.id;
+          return { functionResponse: fr };
+        });
+        raw.push({ role: "user", parts: autoResponses });
+        raw.push({ role: "model", parts: [{ text: "..." }] });
+      }
+    }
+
+    const updatedLast = raw.at(-1);
+    if (updatedLast?.role === c.role) {
+      const lastHasFnResponse = updatedLast.parts.some(p => p && p.functionResponse);
+      const currHasFnResponse = parts.some(p => p && p.functionResponse);
+      const lastHasFnCall = updatedLast.parts.some(p => p && p.functionCall);
+      const currHasFnCall = parts.some(p => p && p.functionCall);
+
+      if (c.role === "user") {
+        if (lastHasFnResponse || currHasFnResponse) {
+          // Gemini forbids mixing functionResponse with text/inlineData in the same Content,
+          // and forbids adjacent user turns. Insert an intervening model turn to alternate cleanly.
+          raw.push({ role: "model", parts: [{ text: "..." }] });
+          raw.push({ ...c, parts: [...parts] });
+        } else {
+          // Both are regular user messages — safe to merge parts
+          updatedLast.parts.push(...parts);
+          if (frLast) updatedLast.parts = moveFunctionResponsesLast(updatedLast.parts);
+        }
+      } else if (c.role === "model") {
+        if (lastHasFnCall && !currHasFnCall) {
+          // Model turn called tools, but next model turn did not.
+          // Synthesize user tool responses so Gemini validation succeeds.
+          const responses = updatedLast.parts.filter(p => p && p.functionCall).map(p => ({
+            functionResponse: {
+              name: p.functionCall.name || "tool",
+              id: p.functionCall.id,
+              response: { result: "Continue." }
+            }
+          }));
+          raw.push({ role: "user", parts: responses });
+          raw.push({ ...c, parts: [...parts] });
+        } else {
+          updatedLast.parts.push(...parts);
+        }
+      }
+    } else {
+      raw.push({ ...c, parts: [...parts] });
+    }
   }
-  if (out.length > 0 && out[0].role !== "user") {
-    out.unshift({ role: "user", parts: [{ text: "..." }] });
+
+  // Pass 2: Strict guarantee of alternating roles (user <-> model)
+  const alternating = [];
+  for (let i = 0; i < raw.length; i++) {
+    const curr = raw[i];
+    const prev = alternating.at(-1);
+
+    if (prev && prev.role === curr.role) {
+      if (curr.role === "user") {
+        alternating.push({ role: "model", parts: [{ text: "..." }] });
+      } else {
+        alternating.push({ role: "user", parts: [{ text: "Continue." }] });
+      }
+    }
+    alternating.push(curr);
   }
-  if (out.length > 0 && out.at(-1).role === "model") {
-    const fnCalls = (out.at(-1).parts || []).filter(p => p && p.functionCall);
+
+  // Pass 3: Initial turn must be user
+  if (alternating.length > 0 && alternating[0].role !== "user") {
+    alternating.unshift({ role: "user", parts: [{ text: "..." }] });
+  }
+
+  // Pass 4: Terminal turn must be user
+  if (alternating.length > 0 && alternating.at(-1).role === "model") {
+    const fnCalls = (alternating.at(-1).parts || []).filter(p => p && p.functionCall);
     if (fnCalls.length > 0) {
       const responses = fnCalls.map(p => {
         const call = p.functionCall || {};
@@ -508,12 +591,21 @@ export function normalizeGeminiContents(contents, model = null) {
         if (call.id) fr.id = call.id;
         return { functionResponse: fr };
       });
-      out.push({ role: "user", parts: responses });
+      alternating.push({ role: "user", parts: responses });
     } else {
-      out.push({ role: "user", parts: [{ text: "Continue." }] });
+      alternating.push({ role: "user", parts: [{ text: "Continue." }] });
     }
   }
-  return out;
+
+  if (frLast) {
+    for (const turn of alternating) {
+      if (turn.role === "user" && Array.isArray(turn.parts)) {
+        turn.parts = moveFunctionResponsesLast(turn.parts);
+      }
+    }
+  }
+
+  return alternating;
 }
 
 
