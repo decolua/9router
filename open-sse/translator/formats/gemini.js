@@ -154,6 +154,31 @@ export function generateProjectId() {
   return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
 }
 
+// Schema map keys that contain dictionaries of schemas rather than schema nodes
+const SCHEMA_MAP_KEYS = new Set([
+  "properties",
+  "$defs",
+  "definitions",
+  "patternProperties",
+  "dependentSchemas",
+]);
+
+function forEachSubschema(obj, fn) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) fn(item);
+    return;
+  }
+  for (const [key, val] of Object.entries(obj)) {
+    if (!val || typeof val !== "object") continue;
+    if (SCHEMA_MAP_KEYS.has(key) && !Array.isArray(val)) {
+      for (const sub of Object.values(val)) fn(sub);
+    } else {
+      fn(val);
+    }
+  }
+}
+
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
 function removeUnsupportedKeywords(obj, keywords) {
@@ -171,12 +196,9 @@ function removeUnsupportedKeywords(obj, keywords) {
       delete obj[key];
       continue;
     }
-
-    const value = obj[key];
-    if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
-    }
   }
+
+  forEachSubschema(obj, sub => removeUnsupportedKeywords(sub, keywords));
 }
 
 // Convert const to enum
@@ -184,15 +206,11 @@ function convertConstToEnum(obj) {
   if (!obj || typeof obj !== "object") return;
 
   if (obj.const !== undefined && !obj.enum) {
-    obj.enum = [obj.const];
+    obj.enum = [String(obj.const)];
     delete obj.const;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertConstToEnum(value);
-    }
-  }
+  forEachSubschema(obj, convertConstToEnum);
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
@@ -207,11 +225,7 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertEnumValuesToStrings(value);
-    }
-  }
+  forEachSubschema(obj, convertEnumValuesToStrings);
 }
 
 // Merge allOf schemas
@@ -241,11 +255,7 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      mergeAllOf(value);
-    }
-  }
+  forEachSubschema(obj, mergeAllOf);
 }
 
 // Select best schema from anyOf/oneOf
@@ -299,11 +309,7 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenAnyOfOneOf(value);
-    }
-  }
+  forEachSubschema(obj, flattenAnyOfOneOf);
 }
 
 // Flatten type arrays
@@ -336,25 +342,18 @@ function flattenTypeArrays(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenTypeArrays(value);
-    }
+  if (typeof obj.type === "string") {
+    obj.type = obj.type.toLowerCase();
   }
+
+  forEachSubschema(obj, flattenTypeArrays);
 }
 
 // Infer missing type=object when properties exist (Gemini requires explicit type)
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const [key, v] of Object.entries(obj)) {
-    if (!v || typeof v !== "object") continue;
-    if (key === "properties" && !Array.isArray(v)) {
-      for (const sub of Object.values(v)) ensureObjectType(sub);
-    } else {
-      ensureObjectType(v);
-    }
-  }
+  forEachSubschema(obj, ensureObjectType);
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -372,11 +371,7 @@ function convertPrefixItems(obj) {
     delete obj.prefixItems;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertPrefixItems(value);
-    }
-  }
+  forEachSubschema(obj, convertPrefixItems);
 }
 
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
@@ -395,7 +390,42 @@ function ensureArrayItems(obj) {
       }
     }
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+  forEachSubschema(obj, ensureArrayItems);
+}
+
+// Ensure object schemas have a valid properties map (never undefined or null)
+function ensureObjectProperties(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) ensureObjectProperties(item);
+    return;
+  }
+  if (obj.type === "object" && (!obj.properties || typeof obj.properties !== "object")) {
+    obj.properties = {};
+  }
+  forEachSubschema(obj, ensureObjectProperties);
+}
+
+// Cleanup required fields recursively
+function cleanupRequired(obj) {
+  if (!obj || typeof obj !== "object") return;
+
+  if (obj.required && Array.isArray(obj.required)) {
+    if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
+      const validRequired = obj.required.filter(field =>
+        typeof field === "string" && Object.prototype.hasOwnProperty.call(obj.properties, field)
+      );
+      if (validRequired.length === 0) {
+        delete obj.required;
+      } else {
+        obj.required = validRequired;
+      }
+    } else {
+      delete obj.required;
+    }
+  }
+
+  forEachSubschema(obj, cleanupRequired);
 }
 
 // Gemini Schema proto validation rules:
@@ -437,7 +467,7 @@ function enforceTypeConstraints(obj) {
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
-  if (!schema || typeof schema !== "object") return schema;
+  if (!schema || typeof schema !== "object") return { type: "object", properties: {} };
 
   // Mutate directly (schema is only used once per request)
   let cleaned = schema;
@@ -460,68 +490,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
 
   // Phase 4: Cleanup required fields recursively
-  function cleanupRequired(obj) {
-    if (!obj || typeof obj !== "object") return;
-
-    if (obj.required && Array.isArray(obj.required) && obj.properties) {
-      const validRequired = obj.required.filter(field =>
-        Object.prototype.hasOwnProperty.call(obj.properties, field)
-      );
-      if (validRequired.length === 0) {
-        delete obj.required;
-      } else {
-        obj.required = validRequired;
-      }
-    }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        cleanupRequired(value);
-      }
-    }
-  }
-
   cleanupRequired(cleaned);
 
-  // Phase 5: Add placeholder for empty object schemas (Antigravity requirement)
-  function addPlaceholders(obj) {
-    if (!obj || typeof obj !== "object") return;
+  // Phase 5: Ensure object schemas have properties map (no synthetic reason placeholders)
+  ensureObjectProperties(cleaned);
 
-    // Empty schema {} (no type, no properties) after $ref removal — treat as object with placeholder
-    if (Object.keys(obj).length === 0) {
-      obj.type = "object";
-      obj.properties = {
-        reason: {
-          type: "string",
-          description: "Brief explanation of why you are calling this tool"
-        }
-      };
-      obj.required = ["reason"];
-      return;
-    }
-
-    if (obj.type === "object") {
-      if (!obj.properties || Object.keys(obj.properties).length === 0) {
-        obj.properties = {
-          reason: {
-            type: "string",
-            description: "Brief explanation of why you are calling this tool"
-          }
-        };
-        obj.required = ["reason"];
-      }
-    }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        addPlaceholders(value);
-      }
-    }
-  }
-
-  addPlaceholders(cleaned);
+  if (!cleaned.type) cleaned.type = "object";
+  if (!cleaned.properties || typeof cleaned.properties !== "object") cleaned.properties = {};
 
   // Phase 6: Enforce Gemini protobuf type predicates (items only on array, properties/required only on object)
   enforceTypeConstraints(cleaned);

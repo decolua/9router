@@ -279,7 +279,7 @@ export class AntigravityExecutor extends BaseExecutor {
             name,
             parameters: fn.parameters
               ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
-              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
+              : { type: "object", properties: {} }
           });
         }
       }
@@ -289,7 +289,7 @@ export class AntigravityExecutor extends BaseExecutor {
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
-    
+
     // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
     // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
     if (requestWithoutTools.systemInstruction?.parts) {
@@ -329,12 +329,17 @@ export class AntigravityExecutor extends BaseExecutor {
     // `search` buckets are unaffected and keep their own requestType.
     delete body.requestType;
 
+    let cleanModel = (body.model || model).replace(/\([^()]+\)\s*$/, "").trim();
+    if (cleanModel.startsWith("gemini-3.8-flash")) {
+      cleanModel = "gemini-3.8-flash-tiered";
+    }
+
     return {
       ...body,
       project: projectId,
-      model: body.model || model,
+      model: cleanModel,
       userAgent: "antigravity",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
+      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model: cleanModel, requestType: "agent" }),
       request: transformedRequest
     };
   }
