@@ -194,3 +194,82 @@ describe("functionResponse `$ref` sanitization", () => {
   });
 });
 
+describe("strict role alternation (user <-> model)", () => {
+  it("separates user functionResponse and subsequent user text with an intervening model turn", () => {
+    const contents = [
+      { role: "user", parts: [{ text: "do work" }] },
+      { role: "model", parts: [{ functionCall: { id: "c1", name: "tool1" } }] },
+      { role: "user", parts: [{ functionResponse: { id: "c1", name: "tool1", response: { result: "done" } } }] },
+      { role: "user", parts: [{ text: "now summarize" }] }
+    ];
+    const out = normalizeGeminiContents(contents);
+
+    // Roles must alternate: user -> model -> user -> model -> user
+    const roles = out.map(c => c.role);
+    expect(roles).toEqual(["user", "model", "user", "model", "user"]);
+    expect(out[2].parts[0].functionResponse).toBeDefined();
+    expect(out[3].parts[0].text).toBe("...");
+    expect(out[4].parts[0].text).toBe("now summarize");
+  });
+
+  it("preserves empty assistant message in openaiToGeminiRequest to prevent user turn collision", () => {
+    const body = {
+      messages: [
+        { role: "user", content: "Query 1" },
+        { role: "assistant", content: "" }, // Empty assistant response (e.g. error/timeout)
+        { role: "user", content: "Query 2" }
+      ]
+    };
+    const out = openaiToGeminiRequest("gemini-3-flash", body, false);
+    const roles = out.contents.map(c => c.role);
+    expect(roles).toEqual(["user", "model", "user"]);
+    expect(out.contents[0].parts[0].text).toBe("Query 1");
+    expect(out.contents[1].parts[0].text).toBe("...");
+    expect(out.contents[2].parts[0].text).toBe("Query 2");
+  });
+
+  it("synthesizes functionResponse and bridge model turn if user sends text after functionCall without tool response", () => {
+    const contents = [
+      { role: "user", parts: [{ text: "start" }] },
+      { role: "model", parts: [{ functionCall: { id: "c_cancel", name: "calc" } }] },
+      { role: "user", parts: [{ text: "cancel, do something else" }] }
+    ];
+    const out = normalizeGeminiContents(contents);
+    const roles = out.map(c => c.role);
+    expect(roles).toEqual(["user", "model", "user", "model", "user"]);
+    expect(out[2].parts[0].functionResponse.id).toBe("c_cancel");
+    expect(out[3].parts[0].text).toBe("...");
+    expect(out[4].parts[0].text).toBe("cancel, do something else");
+  });
+
+  it("merges adjacent user text turns when neither contains functionResponse", () => {
+    const contents = [
+      { role: "user", parts: [{ text: "Hello" }] },
+      { role: "user", parts: [{ text: "world" }] }
+    ];
+    const out = normalizeGeminiContents(contents);
+    expect(out).toHaveLength(1);
+    expect(out[0].role).toBe("user");
+    expect(out[0].parts).toHaveLength(2);
+    expect(out[0].parts[0].text).toBe("Hello");
+    expect(out[0].parts[1].text).toBe("world");
+  });
+
+  it("strictly enforces role alternation across complex sequences with duplicate roles", () => {
+    const contents = [
+      { role: "model", parts: [{ text: "initial model" }] },
+      { role: "user", parts: [{ text: "u1" }] },
+      { role: "user", parts: [{ functionResponse: { name: "t", response: {} } }] },
+      { role: "user", parts: [{ text: "u2" }] }
+    ];
+    const out = normalizeGeminiContents(contents);
+
+    // Check that every turn alternates role
+    for (let i = 0; i < out.length - 1; i++) {
+      expect(out[i].role).not.toBe(out[i + 1].role);
+    }
+    expect(out[0].role).toBe("user");
+    expect(out.at(-1).role).toBe("user");
+  });
+});
+
