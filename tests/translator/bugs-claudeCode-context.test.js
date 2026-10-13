@@ -40,8 +40,7 @@ describe("Claude Code CLI context → OpenAI", () => {
   });
 
   // claude-to-openai.js:128 — redacted_thinking also dropped
-  // KNOWN BUG
-  it.fails("redacted_thinking block is not silently dropped", () => {
+  it("redacted_thinking block is not silently dropped", () => {
     const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, {
       messages: [
         { role: "assistant", content: [
@@ -55,7 +54,6 @@ describe("Claude Code CLI context → OpenAI", () => {
   });
 
   // claude-to-openai.js:155-173 — tool_result image block stringified into raw JSON
-  // KNOWN BUG
   // Fixed in f4f06f29 ("keep tool-result images"): now a regression test.
   it("tool_result image block is preserved", () => {
     const out = T(FORMATS.CLAUDE, FORMATS.OPENAI, {

@@ -80,6 +80,37 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.tool_choice = convertToolChoice(body.tool_choice);
   }
 
+  // Generation controls (Anthropic -> OpenAI intermediate)
+  if (body.stop_sequences && Array.isArray(body.stop_sequences)) {
+    result.stop = body.stop_sequences;
+  } else if (body.stop) {
+    result.stop = Array.isArray(body.stop) ? body.stop : [body.stop];
+  }
+
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  if (body.top_k !== undefined) {
+    result.top_k = body.top_k;
+  }
+
+  // Extended thinking / reasoning controls
+  if (body.thinking && typeof body.thinking === "object") {
+    result.thinking = body.thinking;
+    if (body.thinking.type === "enabled" && body.thinking.budget_tokens !== undefined) {
+      result.thinking_budget = Number(body.thinking.budget_tokens);
+    }
+  }
+
+  if (body.output_config && typeof body.output_config === "object") {
+    result.output_config = body.output_config;
+  }
+
+  if (body.metadata?.user_id) {
+    result.user = body.metadata.user_id;
+  }
+
   if (body.reasoning_effort !== undefined) {
     result.reasoning_effort = body.reasoning_effort;
   } else if (body.reasoning?.effort !== undefined) {
@@ -159,7 +190,10 @@ function convertClaudeMessage(msg) {
   
   // Simple string content
   if (typeof msg.content === "string") {
-    return { role, content: msg.content };
+    const res = { role, content: msg.content };
+    if (msg.reasoning_content) res.reasoning_content = msg.reasoning_content;
+    if (msg.thought_signature) res.thought_signature = msg.thought_signature;
+    return res;
   }
 
   // Array content
@@ -167,6 +201,8 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    let reasoningContent = "";
+    let thoughtSignature = "";
 
     for (const block of msg.content) {
       switch (block.type) {
@@ -182,6 +218,35 @@ function convertClaudeMessage(msg) {
                 url: encodeDataUri(block.source.media_type, block.source.data)
               }
             });
+          }
+          break;
+
+        case CLAUDE_BLOCK.DOCUMENT:
+        case "document":
+          if (block.source?.type === "base64" && block.source.data) {
+            parts.push({
+              type: OPENAI_BLOCK.FILE,
+              file: {
+                file_data: encodeDataUri(block.source.media_type || "application/pdf", block.source.data)
+              }
+            });
+          }
+          break;
+
+        case CLAUDE_BLOCK.THINKING:
+        case "thinking":
+          if (block.thinking) {
+            reasoningContent = block.thinking;
+            if (block.signature) {
+              thoughtSignature = block.signature;
+            }
+          }
+          break;
+
+        case CLAUDE_BLOCK.REDACTED_THINKING:
+        case "redacted_thinking":
+          if (block.data) {
+            reasoningContent = `[Redacted thinking: ${block.data}]`;
           }
           break;
 
@@ -208,6 +273,11 @@ function convertClaudeMessage(msg) {
                   type: OPENAI_BLOCK.IMAGE_URL,
                   image_url: { url: encodeDataUri(c.source.media_type, c.source.data) }
                 });
+              } else if ((c?.type === CLAUDE_BLOCK.DOCUMENT || c?.type === "document") && c.source?.type === "base64") {
+                resultImages.push({
+                  type: OPENAI_BLOCK.FILE,
+                  file: { file_data: encodeDataUri(c.source.media_type || "application/pdf", c.source.data) }
+                });
               }
             }
             const textOnly = block.content.filter(c => c?.type === CLAUDE_BLOCK.TEXT);
@@ -226,7 +296,7 @@ function convertClaudeMessage(msg) {
           // tool returned would otherwise vanish. Hand it to the model in the user
           // turn that follows the tool messages, tagged with the call it came from.
           if (resultImages.length) {
-            parts.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${block.tool_use_id}]` });
+            parts.push({ type: OPENAI_BLOCK.TEXT, text: `[Content from tool result ${block.tool_use_id}]` });
             parts.push(...resultImages);
           }
           break;
@@ -249,15 +319,24 @@ function convertClaudeMessage(msg) {
         result.content = collapseTextParts(parts);
       }
       result.tool_calls = toolCalls;
+      if (reasoningContent) {
+        result.reasoning_content = reasoningContent;
+        if (thoughtSignature) result.thought_signature = thoughtSignature;
+      }
       return result;
     }
 
     // Return content
-    if (parts.length > 0) {
-      return {
+    if (parts.length > 0 || reasoningContent) {
+      const res = {
         role,
-        content: collapseTextParts(parts)
+        content: parts.length > 0 ? collapseTextParts(parts) : ""
       };
+      if (reasoningContent && role === ROLE.ASSISTANT) {
+        res.reasoning_content = reasoningContent;
+        if (thoughtSignature) res.thought_signature = thoughtSignature;
+      }
+      return res;
     }
     
     // Empty content array

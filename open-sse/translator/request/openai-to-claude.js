@@ -31,6 +31,29 @@ export function openaiToClaudeRequest(model, body, stream) {
     result.temperature = body.temperature;
   }
 
+  // Generation controls
+  if (body.stop) {
+    result.stop_sequences = Array.isArray(body.stop) ? body.stop : [body.stop];
+  } else if (body.stop_sequences) {
+    result.stop_sequences = body.stop_sequences;
+  }
+
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  if (body.top_k !== undefined) {
+    result.top_k = body.top_k;
+  }
+
+  if (body.thinking) {
+    result.thinking = body.thinking;
+  }
+
+  if (body.thinking_budget !== undefined) {
+    result.thinking_budget = body.thinking_budget;
+  }
+
   // Messages
   result.messages = [];
   const systemParts = [];
@@ -283,6 +306,14 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    if (msg.reasoning_content) {
+      blocks.push({
+        type: CLAUDE_BLOCK.THINKING,
+        thinking: msg.reasoning_content,
+        ...(msg.thought_signature && { signature: msg.thought_signature })
+      });
+    }
+
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
