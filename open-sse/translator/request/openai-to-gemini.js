@@ -402,8 +402,17 @@ function wrapInCloudCodeEnvelope(model, geminiCLI, credentials = null, isAntigra
   }
 
   if (geminiCLI.tools?.length > 0) {
+    let mode = "VALIDATED";
+    let allowedFunctionNames;
+    if (geminiCLI.toolConfig?.functionCallingConfig) {
+      mode = geminiCLI.toolConfig.functionCallingConfig.mode || "VALIDATED";
+      allowedFunctionNames = geminiCLI.toolConfig.functionCallingConfig.allowedFunctionNames;
+    }
     envelope.request.toolConfig = {
-      functionCallingConfig: { mode: "VALIDATED" }
+      functionCallingConfig: {
+        mode,
+        ...(allowedFunctionNames && { allowedFunctionNames })
+      }
     };
   }
 
