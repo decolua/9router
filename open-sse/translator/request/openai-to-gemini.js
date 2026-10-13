@@ -271,6 +271,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
           }
         } else if (parts.length > 0) {
           result.contents.push({ role: GEMINI_ROLE.MODEL, parts });
+        } else {
+          // If assistant message was present in conversation history but empty/stripped,
+          // preserve it as a model placeholder turn so surrounding user turns do not collide
+          result.contents.push({ role: GEMINI_ROLE.MODEL, parts: [{ text: "..." }] });
         }
       }
     }
@@ -477,6 +481,11 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
         envelope.request.contents.push({
           role: msg.role === ROLE.ASSISTANT ? GEMINI_ROLE.MODEL : GEMINI_ROLE.USER,
           parts
+        });
+      } else if (msg.role === ROLE.ASSISTANT) {
+        envelope.request.contents.push({
+          role: GEMINI_ROLE.MODEL,
+          parts: [{ text: "..." }]
         });
       }
     }
