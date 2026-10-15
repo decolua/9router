@@ -182,15 +182,15 @@ export default function AddApiKeyModal({ isOpen, customJson = false, apiKeyOptio
     let failed = 0;
     for (const entry of plan) {
       try {
-        // Validate each key before saving so bulk-added connections get a
-        // real status (active/unknown) like single adds, instead of a
-        // hardcoded "unknown" that never flips until a manual test.
+        // Match single-add validation: custom JSON nodes only check configuration
+        // while saving; real business requests require an explicit test.
+        // Other providers still validate each key before saving.
         let isValid = false;
         try {
           const vres = await fetch("/api/providers/validate", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ provider, apiKey: entry.apiKey }),
+            body: JSON.stringify({ provider, apiKey: entry.apiKey, ...(customJson ? { validateOnly: true } : {}) }),
           });
           const vdata = await vres.json().catch(() => ({}));
           isValid = !!vdata.valid;
