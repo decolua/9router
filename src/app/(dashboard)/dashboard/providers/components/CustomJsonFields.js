@@ -37,33 +37,33 @@ export default function CustomJsonFields({ value, onChange }) {
       <fieldset className="flex min-w-0 flex-col gap-3">
         <legend className="mb-2 text-sm font-medium">Request JSON Template</legend>
         <div className="flex gap-2">
-          <Button size="sm" variant={value.templateMode === "fields" ? "primary" : "ghost"} onClick={() => changeMode("fields")}>字段配置</Button>
-          <Button size="sm" variant={value.templateMode === "json" ? "primary" : "ghost"} onClick={() => changeMode("json")}>完整 JSON（高级）</Button>
+          <Button size="sm" variant={value.templateMode === "fields" ? "primary" : "ghost"} onClick={() => changeMode("fields")}>Field editor</Button>
+          <Button size="sm" variant={value.templateMode === "json" ? "primary" : "ghost"} onClick={() => changeMode("json")}>Full JSON (advanced)</Button>
         </div>
         {value.templateMode === "fields" ? <>
-          <p className="text-xs text-text-muted">默认发送 model 和 messages。额外字段可选，不添加也能直接使用。</p>
-          <pre aria-label="默认请求模板" className={`${textareaClass} overflow-x-auto`}>{JSON.stringify(CUSTOM_JSON_DEFAULTS.requestTemplate, null, 2)}</pre>
+          <p className="text-xs text-text-muted">Sends model and messages by default. Extra fields are optional.</p>
+          <pre aria-label="Default request template" className={`${textareaClass} overflow-x-auto`}>{JSON.stringify(CUSTOM_JSON_DEFAULTS.requestTemplate, null, 2)}</pre>
           {fields.map((field, index) => (
             <div key={field.id} className="flex flex-col gap-3 rounded-lg border border-border p-3">
               <div className="flex items-center justify-between gap-3">
-                <span className="text-sm">额外字段 {index + 1}（可选）</span>
-                <Button size="sm" variant="ghost" onClick={() => setFields(fields.filter((_, i) => i !== index))} aria-label={`删除字段 ${index + 1}`}>删除</Button>
+                <span className="text-sm">Extra field {index + 1} (optional)</span>
+                <Button size="sm" variant="ghost" onClick={() => setFields(fields.filter((_, i) => i !== index))} aria-label={`Delete field ${index + 1}`}>Delete</Button>
               </div>
               <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <Input label="字段名" aria-label={`字段名 ${index + 1}`} value={field.name} placeholder="例如 project_id" onChange={(event) => editField(index, { name: event.target.value })} />
-                <Select label="值类型" aria-label={`值类型 ${index + 1}`} value={field.type} onChange={(event) => editField(index, { type: event.target.value })} options={[{ value: "text", label: "文本 / 占位符" }, { value: "json", label: "JSON（数字、布尔、数组或对象）" }]} />
+                <Input label="Field name" aria-label={`Field name ${index + 1}`} value={field.name} placeholder="e.g. project_id" onChange={(event) => editField(index, { name: event.target.value })} />
+                <Select label="Value type" aria-label={`Value type ${index + 1}`} value={field.type} onChange={(event) => editField(index, { type: event.target.value })} options={[{ value: "text", label: "Text / placeholder" }, { value: "json", label: "JSON (number, boolean, array or object)" }]} />
               </div>
-              <Input label="字段值" aria-label={`字段值 ${index + 1}`} value={field.value} placeholder="例如 demo-project 或 {{prompt}}" onChange={(event) => editField(index, { value: event.target.value })} />
+              <Input label="Field value" aria-label={`Field value ${index + 1}`} value={field.value} placeholder="e.g. demo-project or {{prompt}}" onChange={(event) => editField(index, { value: event.target.value })} />
             </div>
           ))}
-          <Button size="sm" variant="secondary" onClick={() => setFields([...fields, { id: `${id}-${nextField.current++}`, name: "", type: "text", value: "" }])}>添加字段</Button>
+          <Button size="sm" variant="secondary" onClick={() => setFields([...fields, { id: `${id}-${nextField.current++}`, name: "", type: "text", value: "" }])}>Add field</Button>
         </> : <>
           <label htmlFor={`${id}-template`} className="sr-only">Request JSON Template</label>
           <textarea id={`${id}-template`} rows={6} spellCheck={false} value={value.requestTemplateText} onChange={update("requestTemplateText")} className={textareaClass} />
-          <p className="text-xs text-text-muted">完整 JSON 模式可调整或移除默认字段。已有的自定义模板保持原样。</p>
+          <p className="text-xs text-text-muted">Full JSON mode lets you change or remove default fields. Existing custom templates are preserved.</p>
         </>}
         {fieldError && <p role="alert" className="text-sm text-red-500">{fieldError}</p>}
-        <p className="text-xs text-text-muted">{"支持 {{prompt}}（最新用户文本）、{{messages}}（聊天历史）、{{model}}（模型 ID）和 {{request.field}}。完整占位符会保留数组或对象类型。"}</p>
+        <p className="text-xs text-text-muted">{"Use {{prompt}} for the latest user text, {{messages}} for chat history, {{model}} for the model ID, or {{request.field}} for a supplied request field. A whole placeholder preserves arrays and objects."}</p>
       </fieldset>
       <Input label="Response Field Path" aria-label="Response Field Path" value={value.responsePath} onChange={update("responsePath")} placeholder="data.answer" hint="Examples: answer, data.answer, results[0].text. Use $ to return the entire JSON value." />
       <details>
