@@ -438,9 +438,6 @@ export default function ProvidersPage() {
             Custom Providers{" "}
           </h2>
           <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
-            <Button size="sm" icon="add" variant="secondary" onClick={() => setShowAddCustomJsonModal(true)}>
-              Add Custom JSON API
-            </Button>
             <Button
               size="sm"
               icon="add"
@@ -457,6 +454,9 @@ export default function ProvidersPage() {
               className="w-full !bg-white !text-black hover:!bg-gray-100 sm:w-auto"
             >
               Add OpenAI Compatible
+            </Button>
+            <Button size="sm" icon="add" variant="secondary" onClick={() => setShowAddCustomJsonModal(true)}>
+              Add Custom JSON API
             </Button>
           </div>
         </div>
