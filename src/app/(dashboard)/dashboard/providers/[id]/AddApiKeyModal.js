@@ -8,7 +8,7 @@ import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
+export default function AddApiKeyModal({ isOpen, customJson = false, apiKeyOptional = false, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
@@ -100,6 +100,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   // handleSubmit's early return both read it; encoding the rule twice is what let Save look
   // clickable while silently doing nothing for profile-only Bedrock connections.
   const apiKeySatisfied = () => {
+    if (apiKeyOptional) return true;
     const psd = buildProviderSpecificData();
     if (apiKeyOptionalWith && psd?.[apiKeyOptionalWith]) return true;
     // AWS static keys are a pair: a secret alone saves a connection that can never sign.
@@ -113,7 +114,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
       const res = await fetch("/api/providers/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData(), ...(customJson ? { modelId: formData.defaultModel || undefined } : {}) }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
@@ -142,7 +143,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         const res = await fetch("/api/providers/validate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+          body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData(), ...(customJson ? { validateOnly: true } : {}) }),
         });
         const data = await res.json();
         isValid = !!data.valid;
@@ -222,7 +223,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   if (!provider) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${customJson ? "Connection" : credentialLabel}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
         {/* Mode switcher. Hidden for AWS credentials: bulk lines carry only a key, so a
             Bedrock entry would be saved with no access key id or profile and never work. */}
@@ -281,7 +282,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             />
             <div className="pt-6">
               <Button onClick={handleValidate} disabled={validating || saving} variant="secondary">
-                {validating ? "Checking..." : "Check"}
+                {validating ? "Checking..." : (customJson ? "Send Test Request" : "Check")}
               </Button>
             </div>
           </div>
@@ -289,7 +290,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         {!isOllamaLocal && (
           <div className="flex gap-2">
             <Input
-              label={credentialLabel}
+              label={apiKeyOptional ? `${credentialLabel} (optional)` : credentialLabel}
               type={isCookie ? "text" : "password"}
               value={formData.apiKey}
               onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
@@ -298,7 +299,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             />
             <div className="pt-6">
               <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving} variant="secondary">
-                {validating ? "Checking..." : "Check"}
+                {validating ? "Checking..." : (customJson ? "Send Test Request" : "Check")}
               </Button>
             </div>
           </div>
@@ -352,7 +353,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         )}
         {isCompatible && (
           <p className="text-xs text-text-muted">
-            Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default.
+            {customJson ? "Choose a model ID for this endpoint. It is available to the request template as {{model}}." : "Enter the model ID exactly as your compatible endpoint expects it. This model will be saved as the connection default."}
           </p>
         )}
         {isCloudflareAi && (
@@ -488,6 +489,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
 AddApiKeyModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
+  customJson: PropTypes.bool,
+  apiKeyOptional: PropTypes.bool,
   provider: PropTypes.string,
   providerName: PropTypes.string,
   isCompatible: PropTypes.bool,

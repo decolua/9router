@@ -26,7 +26,8 @@ function isAnthropicCompatible(provider) {
 // embed the type: openai-compatible-<chat|responses>-<uuid>.
 export function resolveOpenAICompatibleApiType(provider, credentials = null) {
   const stored = credentials?.providerSpecificData?.apiType;
-  if (stored === "chat" || stored === "responses") return stored;
+  if (stored === "chat" || stored === "responses" || stored === "custom-json") return stored;
+  if (provider?.startsWith("openai-compatible-custom-json-")) return "custom-json";
   return typeof provider === "string" && provider.includes("responses") ? "responses" : "chat";
 }
 

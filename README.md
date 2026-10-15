@@ -487,6 +487,8 @@ Default URLs:
     </tr>
   </table>
   <p><i>...and 20+ more providers including Nebius, Chutes, Hyperbolic, and custom OpenAI/Anthropic compatible endpoints</i></p>
+
+  <p>Need a business endpoint with its own JSON schema? See <a href="CUSTOM_JSON_API.md">Custom JSON APIs</a> for request templates and response mapping.</p>
 </div>
 
 ### 🏠 Self-hosted Providers

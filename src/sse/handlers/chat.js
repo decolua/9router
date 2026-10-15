@@ -20,6 +20,7 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { CUSTOM_JSON_API_TYPE, CUSTOM_JSON_NO_FALLBACK } from "open-sse/config/customJson.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import * as log from "../utils/logger.js";
@@ -357,6 +358,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
+    // An ambiguous business failure may already have performed its operation.
+    // Preserve the response and stop account/combo replay, including empty success.
+    if (credentials.providerSpecificData?.apiType === CUSTOM_JSON_API_TYPE) {
+      result.response[CUSTOM_JSON_NO_FALLBACK] = true;
+      return result.response;
+    }
     if (result.success) return result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking

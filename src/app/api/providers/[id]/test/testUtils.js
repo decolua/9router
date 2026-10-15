@@ -1,3 +1,4 @@
+import { probeCustomJsonEndpoint } from "open-sse/services/customJson.js";
 import { getProviderConnectionById, updateProviderConnection } from "@/lib/localDb";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { testProxyUrl } from "@/lib/network/proxyTest";
@@ -519,6 +520,9 @@ async function fetchWithConnectionProxy(url, options = {}, effectiveProxy = null
 }
 
 async function testApiKeyConnection(connection, effectiveProxy = null) {
+  if (isOpenAICompatibleProvider(connection.provider) && connection.providerSpecificData?.apiType === "custom-json") {
+    return probeCustomJsonEndpoint({ id: connection.provider, ...connection.providerSpecificData }, connection.apiKey, connection.defaultModel || "custom", effectiveProxy);
+  }
   if (isOpenAICompatibleProvider(connection.provider)) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };

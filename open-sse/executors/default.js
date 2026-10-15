@@ -1,3 +1,4 @@
+import { CustomJsonExecutor } from "./custom-json.js";
 import { BaseExecutor } from "./base.js";
 import { randomUUID } from "node:crypto";
 import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
@@ -80,6 +81,13 @@ export class DefaultExecutor extends BaseExecutor {
     super(provider, PROVIDERS[provider] || PROVIDERS.openai);
   }
 
+  async execute(args) {
+    if (this.provider?.startsWith("openai-compatible-") && resolveOpenAICompatibleApiType(this.provider, args.credentials) === "custom-json") {
+      return new CustomJsonExecutor(this.provider).execute(args);
+    }
+    return super.execute(args);
+  }
+
   transformRequest(model, body, stream, credentials) {
     const transformed = this.applyJsonSchemaFallback(this.applyNousAttribution(model, body, stream, credentials));
 
@@ -145,6 +153,7 @@ export class DefaultExecutor extends BaseExecutor {
     }
     if (this.provider?.startsWith?.("openai-compatible-")) {
       const baseUrl = credentials?.providerSpecificData?.baseUrl || OPENAI_COMPAT_BASE;
+      if (resolveOpenAICompatibleApiType(this.provider, credentials) === "custom-json") return baseUrl;
       const normalized = baseUrl.replace(/\/$/, "");
       const path = resolveOpenAICompatibleApiType(this.provider, credentials) === "responses" ? "/responses" : "/chat/completions";
       return `${normalized}${path}`;

@@ -102,6 +102,7 @@ export default function ProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
+  const [showAddCustomJsonModal, setShowAddCustomJsonModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
@@ -430,13 +431,16 @@ export default function ProvidersPage() {
         </div>
       )}
 
-      {/* Custom Providers (OpenAI/Anthropic Compatible) — dynamic */}
+      {/* Custom Providers — dynamic */}
       <div className="flex flex-col gap-4">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
-            Custom Providers (OpenAI/Anthropic Compatible){" "}
+            Custom Providers{" "}
           </h2>
-          <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
+          <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap">
+            <Button size="sm" icon="add" variant="secondary" onClick={() => setShowAddCustomJsonModal(true)}>
+              Add Custom JSON API
+            </Button>
             <Button
               size="sm"
               icon="add"
@@ -460,7 +464,7 @@ export default function ProvidersPage() {
         anthropicCompatibleProviders.length === 0 ? (
           <div className="flex items-center justify-center gap-2 py-2 border border-dashed border-border rounded-xl text-text-muted text-sm">
             <span className="material-symbols-outlined text-[18px]">extension</span>
-            <span>No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</span>
+            <span>No custom providers — add a compatible endpoint or custom JSON API</span>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
@@ -650,6 +654,15 @@ export default function ProvidersPage() {
       </div>
       )}
 
+      <AddCompatibleModal
+        variant="custom"
+        isOpen={showAddCustomJsonModal}
+        onClose={() => setShowAddCustomJsonModal(false)}
+        onCreated={(node) => {
+          setProviderNodes((prev) => [...prev, node]);
+          setShowAddCustomJsonModal(false);
+        }}
+      />
       <AddCompatibleModal
         variant="openai"
         isOpen={showAddCompatibleModal}
@@ -887,7 +900,7 @@ function ApiKeyProviderCard({
                     {getStatusDisplay(connected, error, errorCode)}
                     {isCompatible && (
                       <Badge variant="default" size="sm">
-                        {provider.apiType === "responses"
+                        {provider.apiType === "custom-json" ? "JSON" : provider.apiType === "responses"
                           ? "Responses"
                           : "Chat"}
                       </Badge>

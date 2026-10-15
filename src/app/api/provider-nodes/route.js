@@ -1,3 +1,4 @@
+import { normalizeCustomJsonConfig } from "open-sse/utils/customJson.js";
 import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
@@ -46,15 +47,21 @@ export async function POST(request) {
     const nodeType = type || "openai-compatible";
 
     if (nodeType === "openai-compatible") {
-      if (!apiType || !["chat", "responses"].includes(apiType)) {
+      if (!apiType || !["chat", "responses", "custom-json"].includes(apiType)) {
         return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
       }
 
+      let customJson;
+      if (apiType === "custom-json") {
+        try { customJson = normalizeCustomJsonConfig(body.customJson, baseUrl); }
+        catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
+      }
       const node = await createProviderNode({
         id: `${OPENAI_COMPATIBLE_PREFIX}${apiType}-${generateId()}`,
         type: "openai-compatible",
         prefix: prefix.trim(),
         apiType,
+        ...(customJson ? { customJson } : {}),
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
       });

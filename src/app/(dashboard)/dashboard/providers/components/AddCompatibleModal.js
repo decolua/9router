@@ -1,10 +1,18 @@
 "use client";
+import CustomJsonFields from "./CustomJsonFields";
+import { customJsonForm, parseCustomJsonForm } from "@/shared/utils/customJsonForm";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Badge, Button, Input, Modal, Select } from "@/shared/components";
 
 const VARIANT_CONFIG = {
+  custom: {
+    title: "Add Custom JSON API", type: "openai-compatible", apiType: "custom-json",
+    defaultBaseUrl: "", namePlaceholder: "Custom API", prefixPlaceholder: "custom",
+    baseUrlHint: "Enter the complete endpoint URL. No path is appended.",
+    modelIdPlaceholder: "e.g. custom-model", errorLabel: "Custom JSON API", hasApiType: false,
+  },
   openai: {
     title: "Add OpenAI Compatible",
     type: "openai-compatible",
@@ -32,37 +40,31 @@ const VARIANT_CONFIG = {
 const API_TYPE_OPTIONS = [
   { value: "chat", label: "Chat Completions" },
   { value: "responses", label: "Responses API" },
+  { value: "custom-json", label: "Custom JSON API" },
 ];
 
-function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
+function AddCompatibleForm({ variant, isOpen, onClose, onCreated }) {
   const config = VARIANT_CONFIG[variant];
   const initialFormData = () => ({
     name: "",
     prefix: "",
-    ...(config.hasApiType ? { apiType: "chat" } : {}),
+    ...(config.hasApiType || config.apiType ? { apiType: config.apiType || "chat" } : {}),
     baseUrl: config.defaultBaseUrl,
   });
 
   const [formData, setFormData] = useState(initialFormData);
   const [submitting, setSubmitting] = useState(false);
+  const [jsonForm, setJsonForm] = useState(() => customJsonForm());
+  const [formError, setFormError] = useState("");
+  const isCustom = formData.apiType === "custom-json";
   const [checkKey, setCheckKey] = useState("");
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
-  // openai: reset baseUrl when apiType changes; anthropic: reset checks when opened
-  useEffect(() => {
-    if (config.hasApiType) {
-      setFormData((prev) => ({ ...prev, baseUrl: config.defaultBaseUrl }));
-    } else if (isOpen) {
-      setValidationResult(null);
-      setCheckKey("");
-      setCheckModelId("");
-    }
-  }, [config.hasApiType ? formData.apiType : isOpen]);
-
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    setFormError("");
     setSubmitting(true);
     try {
       const res = await fetch("/api/provider-nodes", {
@@ -71,7 +73,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         body: JSON.stringify({
           name: formData.name,
           prefix: formData.prefix,
-          ...(config.hasApiType ? { apiType: formData.apiType } : {}),
+          ...(formData.apiType ? { apiType: formData.apiType } : {}),
+          ...(isCustom ? { customJson: parseCustomJsonForm(jsonForm, formData.baseUrl) } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
         }),
@@ -82,9 +85,10 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         setFormData(initialFormData());
         setCheckKey("");
         setValidationResult(null);
-      }
+        setJsonForm(customJsonForm());
+      } else { setFormError(data.error || "Failed to create provider"); }
     } catch (error) {
-      console.log(`Error creating ${config.errorLabel} node:`, error);
+      setFormError(error.message);
     } finally {
       setSubmitting(false);
     }
@@ -92,6 +96,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
 
   const handleValidate = async () => {
     setValidating(true);
+    setFormError("");
     try {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
@@ -99,14 +104,16 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         body: JSON.stringify({
           baseUrl: formData.baseUrl,
           apiKey: checkKey,
+          apiType: formData.apiType,
+          ...(isCustom ? { customJson: parseCustomJsonForm(jsonForm, formData.baseUrl) } : {}),
           type: config.type,
           modelId: checkModelId.trim() || undefined,
         }),
       });
       const data = await res.json();
       setValidationResult(data);
-    } catch {
-      setValidationResult({ valid: false, error: "Network error" });
+    } catch (error) {
+      setValidationResult({ valid: false, error: error.message });
     } finally {
       setValidating(false);
     }
@@ -134,7 +141,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   };
 
   return (
-    <Modal isOpen={isOpen} title={config.title} onClose={onClose}>
+    <Modal isOpen={isOpen} title={config.title} onClose={onClose} size={isCustom ? "xl" : "md"}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
@@ -155,18 +162,23 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
             label="API Type"
             options={API_TYPE_OPTIONS}
             value={formData.apiType}
-            onChange={(e) => setFormData({ ...formData, apiType: e.target.value })}
+            onChange={(e) => {
+              setFormData({ ...formData, apiType: e.target.value, baseUrl: e.target.value === "custom-json" ? "" : config.defaultBaseUrl });
+              setValidationResult(null);
+            }}
           />
         )}
         <Input
-          label="Base URL"
+          label={isCustom ? "Endpoint URL" : "Base URL"}
           value={formData.baseUrl}
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={config.defaultBaseUrl}
-          hint={config.baseUrlHint}
+          hint={isCustom ? "Enter the complete HTTP(S) endpoint URL. No path is appended." : config.baseUrlHint}
         />
+        {isCustom && <CustomJsonFields value={jsonForm} onChange={setJsonForm} />}
+        {formError && <p role="alert" className="text-sm text-red-500">{formError}</p>}
         <Input
-          label="API Key (for Check)"
+          label={isCustom && jsonForm.authType === "none" ? "API Key (not required)" : "API Key (for Check)"}
           type="password"
           value={checkKey}
           onChange={(e) => setCheckKey(e.target.value)}
@@ -176,16 +188,16 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           value={checkModelId}
           onChange={(e) => setCheckModelId(e.target.value)}
           placeholder={config.modelIdPlaceholder}
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+          hint={isCustom ? "Optional model ID used for the test request." : "If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."}
         />
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
             onClick={handleValidate}
-            disabled={!checkKey || validating || !formData.baseUrl.trim()}
+            disabled={(!checkKey && !(isCustom && jsonForm.authType === "none")) || validating || !formData.baseUrl.trim()}
             variant="secondary"
             className="w-full sm:w-auto"
           >
-            {validating ? "Checking..." : "Check"}
+            {validating ? "Checking..." : (isCustom ? "Send Test Request" : "Check")}
           </Button>
           {renderValidationResult()}
         </div>
@@ -211,8 +223,12 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   );
 }
 
+function AddCompatibleModal(props) {
+  return props.isOpen ? <AddCompatibleForm {...props} /> : null;
+}
+
 AddCompatibleModal.propTypes = {
-  variant: PropTypes.oneOf(["openai", "anthropic"]).isRequired,
+  variant: PropTypes.oneOf(["openai", "anthropic", "custom"]).isRequired,
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
   onCreated: PropTypes.func.isRequired,

@@ -1,40 +1,36 @@
 "use client";
+import CustomJsonFields from "../components/CustomJsonFields";
+import { customJsonForm, parseCustomJsonForm } from "@/shared/utils/customJsonForm";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 
-export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
+function EditCompatibleNodeForm({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
-    name: "",
-    prefix: "",
-    apiType: "chat",
-    baseUrl: "https://api.openai.com/v1",
+    name: node.name || "",
+    prefix: node.prefix || "",
+    apiType: node.apiType || "chat",
+    baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
   });
   const [saving, setSaving] = useState(false);
+  const [jsonForm, setJsonForm] = useState(() => customJsonForm(node.customJson || undefined));
+  const [formError, setFormError] = useState("");
+  const isCustom = formData.apiType === "custom-json";
   const [checkKey, setCheckKey] = useState("");
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
 
-  useEffect(() => {
-    if (node) {
-      setFormData({
-        name: node.name || "",
-        prefix: node.prefix || "",
-        apiType: node.apiType || "chat",
-        baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
-      });
-    }
-  }, [node, isAnthropic]);
-
   const apiTypeOptions = [
     { value: "chat", label: "Chat Completions" },
     { value: "responses", label: "Responses API" },
+    { value: "custom-json", label: "Custom JSON API" },
   ];
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    setFormError("");
     setSaving(true);
     try {
       const payload = {
@@ -44,15 +40,17 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
+        if (isCustom) payload.customJson = parseCustomJsonForm(jsonForm, formData.baseUrl);
       }
       await onSave(payload);
-    } finally {
+    } catch (error) { setFormError(error.message); } finally {
       setSaving(false);
     }
   };
 
   const handleValidate = async () => {
     setValidating(true);
+    setFormError("");
     try {
       const res = await fetch("/api/provider-nodes/validate", {
         method: "POST",
@@ -60,13 +58,17 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         body: JSON.stringify({
           baseUrl: formData.baseUrl,
           apiKey: checkKey,
+          apiType: formData.apiType,
+          ...(isCustom ? { customJson: parseCustomJsonForm(jsonForm, formData.baseUrl) } : {}),
           type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
           modelId: checkModelId.trim() || undefined
         }),
       });
       const data = await res.json();
       setValidationResult(data.valid ? "success" : "failed");
-    } catch {
+      if (!data.valid) setFormError(data.error || "Validation failed");
+    } catch (error) {
+      setFormError(error.message);
       setValidationResult("failed");
     } finally {
       setValidating(false);
@@ -76,7 +78,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
   if (!node) return null;
 
   return (
-    <Modal isOpen={isOpen} title={`Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`} onClose={onClose}>
+    <Modal isOpen={isOpen} title={isCustom ? "Edit Custom JSON API" : `Edit ${isAnthropic ? "Anthropic" : "OpenAI"} Compatible`} onClose={onClose} size={isCustom ? "xl" : "md"}>
       <div className="flex flex-col gap-4">
         <Input
           label="Name"
@@ -101,23 +103,25 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           />
         )}
         <Input
-          label="Base URL"
+          label={isCustom ? "Endpoint URL" : "Base URL"}
           value={formData.baseUrl}
           onChange={(e) => setFormData({ ...formData, baseUrl: e.target.value })}
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
-          hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
+          hint={isCustom ? "Enter the complete HTTP(S) endpoint URL. No path is appended." : `Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
+        {isCustom && <CustomJsonFields value={jsonForm} onChange={setJsonForm} />}
+        {formError && <p role="alert" className="text-sm text-red-500">{formError}</p>}
         <div className="flex gap-2">
           <Input
-            label="API Key (for Check)"
+            label={isCustom && jsonForm.authType === "none" ? "API Key (not required)" : "API Key (for Check)"}
             type="password"
             value={checkKey}
             onChange={(e) => setCheckKey(e.target.value)}
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
-              {validating ? "Checking..." : "Check"}
+            <Button onClick={handleValidate} disabled={(!checkKey && !(isCustom && jsonForm.authType === "none")) || validating || !formData.baseUrl.trim()} variant="secondary">
+              {validating ? "Checking..." : (isCustom ? "Send Test Request" : "Check")}
             </Button>
           </div>
         </div>
@@ -126,7 +130,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           value={checkModelId}
           onChange={(e) => setCheckModelId(e.target.value)}
           placeholder="e.g. my-model-id"
-          hint="If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."
+          hint={isCustom ? "Optional model ID used for the test request." : "If provider lacks /models endpoint, enter a model ID to validate via chat/completions instead."}
         />
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
@@ -144,6 +148,10 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
       </div>
     </Modal>
   );
+}
+
+export default function EditCompatibleNodeModal(props) {
+  return props.isOpen && props.node ? <EditCompatibleNodeForm key={props.node.id} {...props} /> : null;
 }
 
 EditCompatibleNodeModal.propTypes = {

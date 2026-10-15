@@ -1,3 +1,5 @@
+import { normalizeCustomJsonConfig } from "open-sse/utils/customJson.js";
+import { probeCustomJsonEndpoint } from "open-sse/services/customJson.js";
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
@@ -94,7 +96,9 @@ export async function POST(request) {
     const provider = normalizeProviderId(body.provider);
     const { apiKey, providerSpecificData } = body;
 
-    const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;
+    const compatibleNode = isOpenAICompatibleProvider(provider) ? await getProviderNodeById(provider) : null;
+    const customNoAuth = compatibleNode?.apiType === "custom-json" && compatibleNode.customJson?.authType === "none";
+    const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true || customNoAuth;
     // Same exemption as the create route: a provider can name a providerSpecificData field
     // that replaces the API key (Bedrock's `profile`), so validating that setup must not 400.
     const apiKeySubstitute = AI_PROVIDERS[provider]?.apiKeyOptionalWith;
@@ -109,9 +113,16 @@ export async function POST(request) {
     // Validate with each provider
     try {
       if (isOpenAICompatibleProvider(provider)) {
-        const node = await getProviderNodeById(provider);
+        const node = compatibleNode;
         if (!node) {
           return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
+        }
+        if (node.apiType === "custom-json") {
+          if (body.validateOnly) {
+            normalizeCustomJsonConfig(node.customJson, node.baseUrl);
+            return NextResponse.json({ valid: true });
+          }
+          return NextResponse.json(await probeCustomJsonEndpoint(node, apiKey, body.modelId || "custom"));
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
