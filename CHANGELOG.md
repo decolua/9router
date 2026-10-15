@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Kiro**: return Claude message JSON for non-streaming Claude clients, fixing Claude Code Auto classifier failures caused by Chat Completions-shaped replies; preserve tool calls and cache usage.
+
 # v0.5.109 (2026-10-23)
 
 ## Features

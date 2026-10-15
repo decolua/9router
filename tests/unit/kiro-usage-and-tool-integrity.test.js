@@ -40,6 +40,15 @@
  * the request-scoped `fallback: false` rule kind, not here.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import "../translator/registerAll.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
+
+vi.mock("@/lib/usageDb.js", () => ({
+  appendRequestLog: vi.fn(async () => {}),
+  saveRequestDetail: vi.fn(async () => {}),
+  saveRequestUsage: vi.fn(async () => {}),
+  trackPendingRequest: vi.fn()
+}));
 
 const fetchMock = vi.fn();
 
@@ -48,6 +57,8 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 }));
 
 const { KiroExecutor } = await import("../../open-sse/executors/kiro.js");
+const { handleNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
+const { createSSETransformStreamWithLogger } = await import("../../open-sse/utils/stream.js");
 const { kiroToClaudeResponse, kiroToClaudeNonStreaming } = await import(
   "../../open-sse/translator/response/kiro-to-claude.js"
 );
@@ -180,6 +191,96 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+describe("Kiro executor response format at the client boundary", () => {
+  async function reply(frames, stream = false) {
+    fetchMock.mockResolvedValueOnce(response(frames));
+    return execute(new KiroExecutor(), { stream });
+  }
+
+  async function jsonReply(frames, sourceFormat) {
+    const result = await reply(frames);
+    const handled = await handleNonStreamingResponse({
+      providerResponse: result.response,
+      provider: "kiro",
+      model: "kr/claude-opus-4.8",
+      sourceFormat,
+      // Match chatCore's response-format selection, including its fallback.
+      targetFormat: result.responseFormat || FORMATS.KIRO,
+      body: { stream: false },
+      stream: false,
+      requestStartTime: Date.now(),
+      reqLogger: { logProviderResponse() {}, logConvertedResponse() {} },
+      trackDone() {},
+      appendLog() {}
+    });
+    expect(handled.success).toBe(true);
+    return handled.response.json();
+  }
+
+  it("returns a Claude message for a non-streaming Auto classifier verdict", async () => {
+    const verdict = "<block>no</block><severity>0</severity>";
+    const json = await jsonReply([
+      frame("assistantResponseEvent", { content: verdict }),
+      frame("metadataEvent", { stopReason: "end_turn" })
+    ], FORMATS.CLAUDE);
+    expect(json).toMatchObject({
+      type: "message", role: "assistant", stop_reason: "end_turn",
+      content: [{ type: "text", text: verdict }],
+      usage: { input_tokens: expect.any(Number), output_tokens: expect.any(Number) }
+    });
+    expect(json).not.toHaveProperty("choices");
+  });
+
+  it("preserves non-streaming Claude tool calls", async () => {
+    const json = await jsonReply([
+      frame("toolUseEvent", { toolUseId: "call_a", name: "Bash", input: { command: "echo ok" } }),
+      frame("metadataEvent", { stopReason: "tool_use" })
+    ], FORMATS.CLAUDE);
+    expect(json).toMatchObject({
+      type: "message", stop_reason: "tool_use",
+      content: [{ type: "tool_use", id: "call_a", name: "Bash", input: { command: "echo ok" } }]
+    });
+  });
+
+  it("keeps OpenAI JSON clients in Chat Completions format", async () => {
+    const json = await jsonReply([
+      frame("assistantResponseEvent", { content: "hello" }),
+      frame("metadataEvent", { stopReason: "end_turn" })
+    ], FORMATS.OPENAI);
+    expect(json).toMatchObject({ object: "chat.completion", choices: [{ message: { content: "hello" }, finish_reason: "stop" }] });
+  });
+
+  it("preserves Kiro cache usage in a non-streaming Claude message", async () => {
+    const json = await jsonReply([
+      frame("assistantResponseEvent", { content: "hello" }),
+      frame("metricsEvent", { inputTokens: 42, outputTokens: 4, cacheReadInputTokens: 20, cacheCreationInputTokens: 10 }),
+      frame("metadataEvent", { stopReason: "end_turn" })
+    ], FORMATS.CLAUDE);
+    expect(json.usage).toMatchObject({
+      output_tokens: 4, cache_read_input_tokens: 20, cache_creation_input_tokens: 10
+    });
+  });
+
+  it("still streams Claude tool events after decoding Kiro frames", async () => {
+    const result = await reply([
+      frame("toolUseEvent", { toolUseId: "call_a", name: "Bash", input: { command: "echo ok" } }),
+      frame("metadataEvent", { stopReason: "tool_use" })
+    ], true);
+    const transformed = result.response.body.pipeThrough(createSSETransformStreamWithLogger(
+      result.responseFormat || FORMATS.KIRO, FORMATS.CLAUDE, "kiro"
+    ));
+    const raw = await new Response(transformed).text();
+    const events = raw.split("\n").filter(line => line.startsWith("data: {")).map(line => JSON.parse(line.slice(6)));
+    expect(events[0].type).toBe("message_start");
+    expect(events).toContainEqual(expect.objectContaining({
+      type: "content_block_start", content_block: { type: "tool_use", id: "call_a", name: "Bash", input: {} }
+    }));
+    expect(events.filter(event => event.type === "content_block_delta").map(event => event.delta.partial_json || "").join("")).toBe('{"command":"echo ok"}');
+    expect(events).toContainEqual(expect.objectContaining({ type: "message_delta", delta: expect.objectContaining({ stop_reason: "tool_use" }) }));
+    expect(events.at(-1).type).toBe("message_stop");
+  });
 });
 
 describe("A: tool-call bytes count as output tokens", () => {
