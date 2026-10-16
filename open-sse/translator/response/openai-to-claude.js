@@ -125,12 +125,13 @@ export function openaiToClaudeResponse(chunk, state) {
   // First chunk - ALWAYS send message_start first
   if (!state.messageStartSent) {
     state.messageStartSent = true;
-    state.messageId = chunk.id?.replace("chatcmpl-", "") || `msg_${Date.now()}`;
-    if (!state.messageId || state.messageId === "chat" || state.messageId.length < 8) {
-      state.messageId = chunk.extend_fields?.requestId ||
+    let rawId = String(chunk.id || "").replace(/^chatcmpl-/, "");
+    if (!rawId || rawId === "chat" || rawId.length < 8) {
+      rawId = chunk.extend_fields?.requestId ||
         chunk.extend_fields?.traceId ||
-        `msg_${Date.now()}`;
+        `${Date.now()}`;
     }
+    state.messageId = rawId.startsWith("msg_") ? rawId : `msg_${rawId}`;
     state.model = chunk.model || MODEL_FALLBACK;
     state.nextBlockIndex = 0;
     results.push({
@@ -158,6 +159,8 @@ export function openaiToClaudeResponse(chunk, state) {
       state.thinkingSignature = sig;
     }
 
+    const isOmitted = state.thinkingDisplay === "omitted";
+
     if (!state.thinkingBlockStarted) {
       state.thinkingBlockIndex = state.nextBlockIndex++;
       state.thinkingBlockStarted = true;
@@ -165,15 +168,24 @@ export function openaiToClaudeResponse(chunk, state) {
       results.push({
         type: "content_block_start",
         index: state.thinkingBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "" }
+        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "", signature: "" }
       });
+      if (isOmitted) {
+        results.push({
+          type: "content_block_delta",
+          index: state.thinkingBlockIndex,
+          delta: { type: "thinking_delta", thinking: "" }
+        });
+      }
     }
 
-    results.push({
-      type: "content_block_delta",
-      index: state.thinkingBlockIndex,
-      delta: { type: "thinking_delta", thinking: reasoningContent }
-    });
+    if (!isOmitted) {
+      results.push({
+        type: "content_block_delta",
+        index: state.thinkingBlockIndex,
+        delta: { type: "thinking_delta", thinking: reasoningContent }
+      });
+    }
   }
 
   // Handle regular content
@@ -204,12 +216,13 @@ export function openaiToClaudeResponse(chunk, state) {
       const idx = tc.index ?? 0;
 
       // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
-      if (tc.id && !state.toolCalls.has(idx)) {
+      if ((tc.id || tc.function?.name) && !state.toolCalls.has(idx)) {
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);
 
+        const toolId = tc.id || `toolu_${Date.now()}_${idx}`;
         const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
+        state.toolCalls.set(idx, { id: toolId, name: tc.function?.name || "", blockIndex: toolBlockIndex });
 
         // Strip prefix from tool name for response
         let toolName = tc.function?.name || "";
@@ -222,7 +235,7 @@ export function openaiToClaudeResponse(chunk, state) {
           index: toolBlockIndex,
           content_block: {
             type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
+            id: toolId,
             name: toolName,
             input: {}
           }
@@ -265,11 +278,19 @@ export function openaiToClaudeResponse(chunk, state) {
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
+    let stopReason = convertFinishReason(choice.finish_reason);
+    if (state.toolCalls.size > 0) {
+      stopReason = "tool_use";
+    }
+
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: {
+        stop_reason: stopReason,
+        stop_sequence: null
+      },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });

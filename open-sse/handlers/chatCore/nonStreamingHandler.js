@@ -96,7 +96,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, body = null) {
   if (targetFormat === sourceFormat) return responseBody;
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
@@ -104,7 +104,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return openAICompletionToResponses(responseBody, customToolNames);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
+    return openAICompletionToClaudeMessage(responseBody, { thinkingDisplay: body?.thinking?.display, body });
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
@@ -189,7 +189,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       }
     }
     if (sourceFormat === FORMATS.CLAUDE) {
-      return openAICompletionToClaudeMessage(result);
+      return openAICompletionToClaudeMessage(result, { thinkingDisplay: body?.thinking?.display, body });
     }
     return result;
   }
@@ -313,12 +313,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   let translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames, body)
     : responseBody;
 
   // Ensure Claude client receives Anthropic Messages shape even if upstream returned OpenAI completion directly
   if (sourceFormat === FORMATS.CLAUDE && translatedResponse?.choices && translatedResponse.type !== "message") {
-    translatedResponse = openAICompletionToClaudeMessage(translatedResponse);
+    translatedResponse = openAICompletionToClaudeMessage(translatedResponse, { thinkingDisplay: body?.thinking?.display, body });
   }
 
   // Ensure Claude client receives valid Message envelope even on raw promptFeedback blocks or unexpected payloads

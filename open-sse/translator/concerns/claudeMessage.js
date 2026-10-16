@@ -1,6 +1,7 @@
 import { FORMATS } from "../formats.js";
 import { fromOpenAIFinish } from "./finishReason.js";
 import { CLAUDE_BLOCK, MODEL_FALLBACK, RESPONSES_ITEM, ROLE } from "../schema/index.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
 function parseToolArguments(value) {
   if (!value) return {};
@@ -12,7 +13,7 @@ function parseToolArguments(value) {
   }
 }
 
-export function openAICompletionToClaudeMessage(responseBody) {
+export function openAICompletionToClaudeMessage(responseBody, options = {}) {
   if (!responseBody?.choices?.[0]) return responseBody;
   const choice = responseBody.choices[0];
   const message = choice.message || {};
@@ -20,7 +21,14 @@ export function openAICompletionToClaudeMessage(responseBody) {
 
   const reasoning = message.reasoning_content || message.provider_specific_fields?.reasoning_content || "";
   if (reasoning) {
-    content.push({ type: CLAUDE_BLOCK.THINKING, thinking: reasoning });
+    const isOmitted = options?.thinkingDisplay === "omitted"
+      || options?.body?.thinking?.display === "omitted"
+      || responseBody?._thinkingDisplay === "omitted";
+    content.push({
+      type: CLAUDE_BLOCK.THINKING,
+      thinking: isOmitted ? "" : reasoning,
+      signature: message.thought_signature || DEFAULT_THINKING_CLAUDE_SIGNATURE,
+    });
   }
   if (typeof message.content === "string" && message.content.length > 0) {
     content.push({ type: CLAUDE_BLOCK.TEXT, text: message.content });

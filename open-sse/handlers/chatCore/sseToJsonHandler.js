@@ -303,7 +303,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
 
       if (sourceFormat === FORMATS.CLAUDE) {
-        finalResp = openAICompletionToClaudeMessage(finalResp);
+        finalResp = openAICompletionToClaudeMessage(finalResp, { thinkingDisplay: body?.thinking?.display, body });
       }
 
       return { success: true, response: new Response(JSON.stringify(restoreToolNames(finalResp, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
@@ -362,11 +362,12 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     // a 90%-cached request from a cheap one without this.
     if (usage && Object.keys(usage).length > 0) parsed.usage = usage;
 
-    // Strip reasoning_content only when content is non-empty.
+    // Strip reasoning_content only when content is non-empty and client is NOT Claude.
     // When content is empty (e.g. thinking models that used all tokens for reasoning),
     // reasoning_content is the only useful output and must be preserved.
-    // Previously this was unconditional, which broke Qwen3.5, Claude extended thinking, etc.
-    if (parsed?.choices) {
+    // For Claude format, openAICompletionToClaudeMessage needs reasoning_content to build
+    // the thinking block.
+    if (parsed?.choices && sourceFormat !== FORMATS.CLAUDE) {
       for (const choice of parsed.choices) {
         if (choice?.message?.reasoning_content && choice.message.content) {
           delete choice.message.reasoning_content;
@@ -383,7 +384,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const finalBody = sourceFormat === FORMATS.OPENAI_RESPONSES
       ? chatCompletionToResponses(parsed, customToolNames)
       : sourceFormat === FORMATS.CLAUDE
-        ? openAICompletionToClaudeMessage(parsed)
+        ? openAICompletionToClaudeMessage(parsed, { thinkingDisplay: body?.thinking?.display, body })
         : parsed;
 
     return { success: true, response: new Response(JSON.stringify(restoreToolNames(finalBody, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
