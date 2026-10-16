@@ -1,4 +1,3 @@
-import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
@@ -88,6 +87,11 @@ export function getModelType(aliasOrId, modelId) {
   return found?.kind || found?.type || null;
 }
 
+// Raw registry entry for a model (suffix-aware) — executor lookups of per-model hints (e.g. defaultLocation).
+export function getModelMeta(aliasOrId, modelId) {
+  return findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId) || null;
+}
+
 export function getModelUpstreamId(aliasOrId, modelId) {
   // Split off thinking suffix "(level)" so lookup hits the base id; re-append it to
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).
@@ -120,9 +124,13 @@ export const OAUTH_ALIASES = Object.fromEntries(
   REGISTRY.filter(r => r.alias && r.alias !== r.id).map(r => [r.id, r.alias])
 );
 
-// Derived from PROVIDERS — no need to maintain manually
+// Derived from REGISTRY — no need to maintain manually. REGISTRY (not PROVIDERS):
+// media-only entries (elevenlabs, cartesia, inworld, ...) declare no transport, so
+// keying off PROVIDERS dropped their alias and made their registry `models`
+// unreachable — the exact same map PROVIDER_MODELS is keyed by
+// (`entry.alias || entry.id` in providers/index.js).
 export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
-  Object.keys(PROVIDERS).map(id => [id, OAUTH_ALIASES[id] || id])
+  REGISTRY.map(r => [r.id, r.alias || r.id])
 );
 
 export function getModelsByProviderId(providerId) {

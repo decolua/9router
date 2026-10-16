@@ -12,6 +12,9 @@ const CLAUDE_CAPABLE = ["minimax-m3", "minimax-m2.7", "minimax-m2.5", "space-bun
   "qwen3.8-max", "qwen3.8-flash", "qwen3.7-max", "qwen3.7-plus", "qwen3.6-plus", "qwen3.5-plus"];
 // Models that also expose the OpenAI /responses endpoint
 const RESPONSES_CAPABLE = ["deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4.1-flash"];
+// Served from /messages only — /chat/completions answers ModelProtocolUnsupported,
+// so every other client wire has to translate through the declared claude target.
+const CLAUDE_ONLY = ["claude-haiku-5-5"];
 
 // Mirror of chatCore's per-model transport guard: use the sourceFormat-matched
 // transport only when the model declares support for that sourceFormat.
@@ -34,6 +37,7 @@ describe("OpenCode Go model catalog", () => {
       "hy4-preview", "hy3", "hy3-preview", "omen-alpha",
       "grok-4.7", "grok-4.6", "grok-4.5", "gpt-5.6-luna", "gpt-6-luna",
       "muse-spark-1.2-contributor", "muse-spark-1.3-contributor",
+      "claude-haiku-5-5",
     ]);
   });
 });
@@ -92,6 +96,13 @@ describe("OpenCode Go per-model supportedFormats", () => {
       expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai"]);
     }
   });
+
+  it("declares [claude] only for /messages-only models (claude-haiku-5-5)", () => {
+    for (const m of CLAUDE_ONLY) {
+      expect(getModelSupportedFormats("opencode-go", m)).toEqual(["claude"]);
+      expect(getModelTargetFormat("opencode-go", m)).toBe("claude");
+    }
+  });
 });
 
 describe("OpenCode Go multi-endpoint transports", () => {
@@ -123,6 +134,12 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
   it("does NOT route chat-only models to /messages on a claude-format request", () => {
     for (const m of CHAT_ONLY) {
       expect(pickTransport("opencode-go", "claude", "opencode-go", m)).toBeNull();
+    }
+  });
+
+  it("pins /messages-only models to /messages for the claude wire", () => {
+    for (const m of CLAUDE_ONLY) {
+      expect(pickTransport("opencode-go", "claude", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/messages");
     }
   });
 

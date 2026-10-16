@@ -13,15 +13,13 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
+import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
+import codexProvider from "open-sse/providers/registry/codex.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
-// The /codex/models endpoint gates each entry by minimal_client_version against this
-// value, and codex CLI's own manifest (openai/codex codex-rs/models-manager/models.json)
-// already requires 0.144.0 for its newest models, so a stale client_version here comes
-// back 200 with those entries quietly missing instead of erroring.
-const CODEX_CLIENT_VERSION = "0.144.6";
-const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${CODEX_CLIENT_VERSION}`;
+// Model discovery must identify as the same Codex CLI version as inference.
+const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -80,6 +78,15 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
+
+const normalizeRoutedNousModels = (data) => normalizeNousModels(data).map((model) => ({
+  ...model,
+  // Live upstream IDs include a vendor namespace (for example,
+  // stepfun/step-5-preview:free). Prefix the owning 9router provider so Basic
+  // Chat does not parse that namespace as the provider itself.
+  id: `nous/${model.id}`,
+  upstreamModelId: model.id,
+}));
 
 const getStaticProviderModels = (providerId) =>
   getModelsByProviderId(providerId).map((model) => ({
@@ -172,6 +179,14 @@ function buildQoderModelsResolver(providerId) {
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
+  "muse": {
+    url: "https://api.meta.ai/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json", "x-api-version": "1.0.0" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => data.data || [],
+  },
   claude: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",
@@ -243,6 +258,10 @@ const PROVIDER_MODELS_CONFIG = {
   },
   openai: createOpenAIModelsConfig("https://api.openai.com/v1/models"),
   openrouter: createOpenAIModelsConfig("https://openrouter.ai/api/v1/models"),
+  nous: {
+    ...createOpenAIModelsConfig(NOUS_MODELS_URL),
+    parseResponse: normalizeRoutedNousModels,
+  },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
     method: "GET",

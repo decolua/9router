@@ -96,4 +96,44 @@ describe("stripUnsupportedParams", () => {
 
     expect(body.messages[0].reasoning_content).toBe("thinking...");
   });
+
+  it("drops response_format for OpenCode Go's deepseek family (both json_schema and json_object)", () => {
+    const formats = [
+      { type: "json_schema", json_schema: { name: "session_title", strict: true, schema: { type: "object" } } },
+      { type: "json_object" },
+    ];
+
+    for (const model of ["deepseek-v4.1-flash", "deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp", "deepseek-v4-pro"]) {
+      for (const response_format of formats) {
+        const body = { messages: [{ role: "user", content: "hi" }], response_format };
+        stripUnsupportedParams("opencode-go", model, body);
+        expect(body.response_format).toBeUndefined();
+        expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
+      }
+    }
+  });
+
+  it("keeps response_format for OpenCode Go models that serve it", () => {
+    const response_format = { type: "json_schema", json_schema: { name: "t", schema: { type: "object" } } };
+
+    for (const model of ["glm-5.3-flash", "glm-5.3", "kimi-k3", "mimo-v2.6-flash", "minimax-m3", "qwen3.8-flash", "grok-4.7", "muse-spark-1.3-contributor"]) {
+      const body = { messages: [{ role: "user", content: "hi" }], response_format };
+      stripUnsupportedParams("opencode-go", model, body);
+      expect(body.response_format).toBe(response_format);
+    }
+  });
+
+  it("leaves response_format alone for other providers fronting deepseek ids", () => {
+    const response_format = { type: "json_schema", json_schema: { name: "t", schema: { type: "object" } } };
+
+    for (const [provider, model] of [
+      ["deepseek", "deepseek-reasoner"],
+      ["opencode-zen", "deepseek-v4.1-flash"],
+      ["openrouter", "deepseek/deepseek-v3.2"],
+    ]) {
+      const body = { messages: [{ role: "user", content: "hi" }], response_format };
+      stripUnsupportedParams(provider, model, body);
+      expect(body.response_format).toBe(response_format);
+    }
+  });
 });

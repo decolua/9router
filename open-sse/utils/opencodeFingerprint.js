@@ -1,25 +1,59 @@
 /**
- * Helpers for the OpenCode Zen free-tier client fingerprint.
+ * Helpers for the OpenCode free-tier client fingerprint.
  *
- * Live upstream probes show that free-tier requests must include the lowercase
- * file-search quartet (bash/glob/grep/read). Agent clients such as Claude Code
- * may declare the same tools with different casing, so those case variants must
- * be renamed instead of duplicated. The response side restores the caller's
- * original spelling so downstream clients still recognise their own tool calls.
+ * Live upstream probes (OpenCode v2, /inference/v1) show that free-tier
+ * requests must declare OpenCode's own `read` and `shell` tools with their exact
+ * descriptions and parameter schemas; stubbed descriptions, renamed schemas or
+ * tool_choice "none" are answered with 403 FreeTierError. Caller tools are sent
+ * untouched, except one that already uses an exact fingerprint name with a
+ * different definition: it travels under an alias and the response side
+ * restores the caller's original name.
  */
 
-/** Canonical names required by the upstream free-tier gate. */
-export const OPENCODE_FINGERPRINT_TOOLS = ["bash", "glob", "grep", "read"];
+/** Names required by the upstream free-tier gate. */
+export const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
+
+// Verbatim from the OpenCode v2.0.26 CLI. Upstream compares description and
+// parameters, so do not reword or reformat these.
+const FINGERPRINT_TOOL_DEFINITIONS = {
+  read: {
+    description: "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "File or directory to read" },
+        offset: { type: "integer", minimum: 0, description: "The line or directory entry to start reading from (1-based)" },
+        limit: { type: "integer", minimum: 0, description: "The maximum number of lines or directory entries to read (defaults to and capped at 2000)" },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
+  shell: {
+    description: "Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
+    parameters: {
+      type: "object",
+      properties: {
+        command: { type: "string", description: "Shell command string to execute" },
+        workdir: { type: "string", description: "Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead." },
+        timeout: { type: "integer", minimum: 0, description: "Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default." },
+        background: { type: "boolean", description: "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion." },
+      },
+      required: ["command"],
+      additionalProperties: false,
+    },
+  },
+};
 
 // Request body -> names renamed for that request. transformRequest() mutates the
 // same body object that chatCore passed into the executor, so a WeakMap keeps the
 // mapping request-local without putting transport metadata on the wire.
 const renamedToolNames = new WeakMap();
 
-/** Canonical lowercase name when `name` is a quartet member; "" otherwise. */
+/** The fingerprint name when `name` is exactly one; "" otherwise. */
 export function fingerprintToolKey(name) {
-  const lower = String(name ?? "").trim().toLowerCase();
-  return OPENCODE_FINGERPRINT_TOOLS.includes(lower) ? lower : "";
+  const trimmed = String(name ?? "").trim();
+  return OPENCODE_FINGERPRINT_TOOLS.includes(trimmed) ? trimmed : "";
 }
 
 /** Read a tool name from either flat ({name}) or chat ({function:{name}}) shape. */
@@ -33,10 +67,29 @@ function toolNameOf(tool) {
   return "";
 }
 
+function chatFunctionOf(tool) {
+  const fn = tool?.function;
+  return fn && typeof fn === "object" && !Array.isArray(fn) ? fn : null;
+}
+
+/** True when `tool` already carries OpenCode's exact definition for `key`. */
+function isFingerprintDefinition(tool, key) {
+  const def = tool && (chatFunctionOf(tool) || tool);
+  const want = FINGERPRINT_TOOL_DEFINITIONS[key];
+  return !!def && def.description === want.description
+    && JSON.stringify(def.parameters) === JSON.stringify(want.parameters);
+}
+
+function withToolName(tool, name) {
+  const fn = chatFunctionOf(tool);
+  return fn ? { ...tool, function: { ...fn, name } } : { ...tool, name };
+}
+
 /**
- * Canonicalise only the fingerprint quartet and remove duplicate quartet
- * variants. Non-fingerprint tools are preserved verbatim, including tools whose
- * names differ only by case; they are outside OpenCode's fingerprint contract.
+ * Move caller tools off the fingerprint names when their definition differs
+ * from OpenCode's, so the exact definitions can be appended without a
+ * duplicate name. Everything else, including case variants such as `Read`, is
+ * preserved verbatim; upstream accepts them alongside `read`.
  *
  * @param {Array} tools
  * @returns {{ tools: Array, map: Map<string,string> }} map: sent name -> original name
@@ -45,7 +98,8 @@ export function concealFingerprintToolNames(tools) {
   const map = new Map();
   if (!Array.isArray(tools) || tools.length === 0) return { tools, map };
 
-  const seenQuartet = new Set();
+  const taken = new Set(tools.map(toolNameOf));
+  const seen = new Set();
   const out = [];
   for (const tool of tools) {
     if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
@@ -53,78 +107,132 @@ export function concealFingerprintToolNames(tools) {
       continue;
     }
 
-    const current = toolNameOf(tool);
-    const key = fingerprintToolKey(current);
+    const key = fingerprintToolKey(toolNameOf(tool));
     if (!key) {
       out.push(tool);
       continue;
     }
 
-    // `Bash` + `bash` is rejected upstream as a duplicate. Keep exactly one
-    // declaration for each quartet member.
-    if (seenQuartet.has(key)) continue;
-    seenQuartet.add(key);
+    // Duplicate declarations of one name are rejected upstream; keep the first.
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-    if (current !== key) {
-      map.set(key, current);
-      const fn = tool.function && typeof tool.function === "object" && !Array.isArray(tool.function)
-        ? tool.function
-        : null;
-      out.push(fn ? { ...tool, function: { ...fn, name: key } } : { ...tool, name: key });
-    } else {
+    if (isFingerprintDefinition(tool, key)) {
       out.push(tool);
+      continue;
     }
+
+    let alias = `${key}_client`;
+    for (let i = 2; taken.has(alias); i++) alias = `${key}_client${i}`;
+    taken.add(alias);
+    map.set(alias, key);
+    out.push(withToolName(tool, alias));
   }
   return { tools: out, map };
 }
 
-/** Append only genuinely missing quartet declarations. */
+/**
+ * Append OpenCode's definition for each fingerprint tool not already declared.
+ *
+ * @returns {string[]} names that were appended
+ */
 export function appendMissingFingerprintTools(tools, flat) {
-  const list = Array.isArray(tools) ? tools : [];
+  const appended = [];
+  if (!Array.isArray(tools)) return appended;
   for (const name of OPENCODE_FINGERPRINT_TOOLS) {
-    if (list.some((tool) => fingerprintToolKey(toolNameOf(tool)) === name)) continue;
-    list.push(flat ? {
-      type: "function",
-      name,
-      description: "This tool is currently unavailable and must not be used.",
-      parameters: { type: "object", properties: {} },
-    } : {
-      type: "function",
-      function: {
-        name,
-        description: "This tool is currently unavailable and must not be used.",
-        parameters: { type: "object", properties: {} },
-      },
-    });
+    if (tools.some((tool) => fingerprintToolKey(toolNameOf(tool)) === name)) continue;
+    const { description, parameters } = FINGERPRINT_TOOL_DEFINITIONS[name];
+    tools.push(flat
+      ? { type: "function", name, description, parameters, strict: false }
+      : { type: "function", function: { name, description, parameters } });
+    appended.push(name);
   }
-  return list;
+  return appended;
 }
 
-/** Point an explicit tool_choice at a quartet member after canonicalisation. */
+/** Invert a sent -> original rename map. */
+function aliasesByOriginal(map) {
+  return new Map([...map].map(([alias, original]) => [original, alias]));
+}
+
+/** Point an explicit tool_choice at the alias of a concealed caller tool. */
 export function retargetToolChoice(body, map) {
   if (!body || typeof body !== "object" || !map?.size) return;
   const choice = body.tool_choice;
   if (!choice || typeof choice !== "object" || Array.isArray(choice)) return;
+  const aliases = aliasesByOriginal(map);
 
   if (typeof choice.name === "string") {
-    const key = fingerprintToolKey(choice.name);
-    if (key && map.has(key)) body.tool_choice = { ...choice, name: key };
+    const alias = aliases.get(choice.name.trim());
+    if (alias) body.tool_choice = { ...choice, name: alias };
     return;
   }
 
   const fn = choice.function;
   if (fn && typeof fn === "object" && !Array.isArray(fn) && typeof fn.name === "string") {
-    const key = fingerprintToolKey(fn.name);
-    if (key && map.has(key)) {
-      body.tool_choice = { ...choice, function: { ...fn, name: key } };
-    }
+    const alias = aliases.get(fn.name.trim());
+    if (alias) body.tool_choice = { ...choice, function: { ...fn, name: alias } };
   }
 }
 
 /**
- * Full request-side pass: canonicalise quartet case variants, remove duplicate
- * quartet declarations, append missing members and preserve the legacy
- * tool_choice defaults used by the OpenCode executor.
+ * Rename prior-turn calls to concealed caller tools as well; otherwise the model
+ * reads its own earlier calls as calls to OpenCode's tool of the same name.
+ */
+export function aliasHistoryToolCalls(body, map) {
+  if (!body || typeof body !== "object" || !map?.size) return;
+  const aliases = aliasesByOriginal(map);
+
+  if (Array.isArray(body.input)) {
+    body.input = body.input.map((item) =>
+      item?.type === "function_call" && aliases.has(item.name)
+        ? { ...item, name: aliases.get(item.name) }
+        : item);
+  }
+
+  if (Array.isArray(body.messages)) {
+    body.messages = body.messages.map((msg) => {
+      if (!Array.isArray(msg?.tool_calls)) return msg;
+      return {
+        ...msg,
+        tool_calls: msg.tool_calls.map((call) =>
+          aliases.has(call?.function?.name)
+            ? { ...call, function: { ...call.function, name: aliases.get(call.function.name) } }
+            : call),
+      };
+    });
+  }
+}
+
+// Without the old "must not be used" descriptions the model does call the
+// appended tools (live probe: `read` on "what files are in /etc?"), so tell it
+// in the system prompt instead. Upstream does not gate on the prompt text.
+// Wording matters: "not available" made the model also refuse the caller's own
+// Read/Bash; "placeholders ... use the other tools" kept those working.
+function noteUnavailableTools(body, flat, names) {
+  const list = names.map((name) => `\`${name}\``).join(" or ");
+  const note = names.length > 1
+    ? `Do not call the ${list} tools; they are placeholders that do nothing. Use the other tools you have been given instead.`
+    : `Do not call the ${list} tool; it is a placeholder that does nothing. Use the other tools you have been given instead.`;
+  if (flat) {
+    body.instructions = typeof body.instructions === "string" && body.instructions.trim()
+      ? `${body.instructions}\n\n${note}`
+      : note;
+    return;
+  }
+  // OpenAI chat shape only; Claude-shaped bodies carry `system` instead.
+  if (!Array.isArray(body.messages) || body.system !== undefined) return;
+  const first = body.messages[0];
+  if (first?.role === "system" && typeof first.content === "string") {
+    body.messages = [{ ...first, content: `${first.content}\n\n${note}` }, ...body.messages.slice(1)];
+  } else {
+    body.messages = [{ role: "system", content: note }, ...body.messages];
+  }
+}
+
+/**
+ * Full request-side pass: alias conflicting caller tools, append OpenCode's
+ * fingerprint definitions, and tell the model the appended ones are off-limits.
  *
  * @param {object} body
  * @param {boolean} flat - true for Responses tools ({name}), false for chat tools
@@ -133,18 +241,16 @@ export function retargetToolChoice(body, map) {
 export function applyFingerprintTools(body, flat) {
   if (!body || typeof body !== "object") return new Map();
 
-  const hadClientTools = Array.isArray(body.tools) && body.tools.length > 0;
   const { tools, map } = concealFingerprintToolNames(body.tools);
-  body.tools = appendMissingFingerprintTools(tools, flat);
+  body.tools = Array.isArray(tools) ? tools : [];
+  const appended = appendMissingFingerprintTools(body.tools, flat);
   retargetToolChoice(body, map);
+  aliasHistoryToolCalls(body, map);
+  if (appended.length) noteUnavailableTools(body, flat, appended);
 
-  // Preserve the existing executor semantics. Responses uses auto when the
-  // fingerprint helper supplies tools; chat requests with no caller tools use
-  // none so the injected decoys cannot be selected.
-  if (!body.tool_choice) {
-    if (flat) body.tool_choice = "auto";
-    else if (!hadClientTools) body.tool_choice = "none";
-  }
+  // Responses keeps its explicit auto default. Never default to "none": upstream
+  // answers tool_choice "none" with 403 FreeTierError.
+  if (!body.tool_choice && flat) body.tool_choice = "auto";
 
   recordRenamedToolNames(body, map);
   return map;

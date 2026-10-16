@@ -48,6 +48,12 @@ export const TTS_PROVIDER_CONFIG = {
     hasBrowseButton: true,
     voiceSource: "api-language", // from API with language picker
   },
+  "selfhosted-tts": {
+    hasModelSelector: true,
+    hasVoiceIdInput: true,
+    hasBrowseButton: false,
+    voiceSource: "manual", // model and voice depend on the connected server
+  },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──
   "nvidia": {
     hasModelSelector: true,

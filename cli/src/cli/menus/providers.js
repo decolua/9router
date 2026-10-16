@@ -67,6 +67,14 @@ const PROVIDER_MODELS = {
     { id: "gemini-3.5-flash-extra-low" },
     { id: "gemini-pro-agent" },
     { id: "gemini-3.1-pro-low" },
+    { id: "claude-sonnet-5-5" },
+    { id: "claude-sonnet-5-5-low" },
+    { id: "claude-sonnet-5-5-medium" },
+    { id: "claude-sonnet-5-5-high" },
+    { id: "claude-opus-5-5" },
+    { id: "claude-opus-5-5-low" },
+    { id: "claude-opus-5-5-medium" },
+    { id: "claude-opus-5-5-high" },
     { id: "claude-sonnet-4-6" },
     { id: "claude-opus-4-6-thinking" },
     { id: "gpt-oss-120b-medium" },
@@ -138,11 +146,12 @@ const OAUTH_PROVIDERS = {
   iflow: { id: "iflow", alias: "if", name: "iFlow AI" },
   qwen: { id: "qwen", alias: "qw", name: "Qwen Code" },
   kiro: { id: "kiro", alias: "kr", name: "Kiro AI" },
+  glm: { id: "glm", alias: "glm", name: "Zai GLM Coding" },
 };
 
 const APIKEY_PROVIDERS = {
   openrouter: { id: "openrouter", name: "OpenRouter" },
-  glm: { id: "glm", name: "GLM Coding" },
+  glm: { id: "glm", name: "Zai GLM Coding" },
   minimax: { id: "minimax", name: "Minimax Coding" },
   kimi: { id: "kimi", name: "Kimi" },
   openai: { id: "openai", name: "OpenAI" },
@@ -399,7 +408,7 @@ async function showConnectionActions(connection, providerId, breadcrumb = []) {
  * @param {string} authType - "oauth" or "apikey"
  */
 // Providers that use Device Code Flow (terminal-based polling)
-const DEVICE_CODE_PROVIDERS = ["github", "qwen", "kiro"];
+const DEVICE_CODE_PROVIDERS = ["github", "qwen", "kiro", "glm"];
 
 /**
  * Handle adding new connection - auto-detect flow type

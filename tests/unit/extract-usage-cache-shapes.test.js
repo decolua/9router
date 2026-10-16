@@ -71,4 +71,44 @@ describe("extractUsageFromResponse cache surfaces", () => {
     expect(out.cached_tokens).toBe(240);
     expect(canonicalizeUsage(out).cached_tokens).toBe(240);
   });
+
+  // Ollama non-streaming: prompt_eval_count/eval_count/prompt_eval_cached_count
+  // live at the top level of the response body (not nested under `usage`).
+  it("extracts Ollama top-level prompt_eval_count/eval_count", () => {
+    const out = extractUsageFromResponse({
+      model: "gpt-oss:120b",
+      done: true,
+      done_reason: "stop",
+      prompt_eval_count: 26,
+      eval_count: 282,
+    });
+    expect(out.prompt_tokens).toBe(26);
+    expect(out.completion_tokens).toBe(282);
+    expect(out.total_tokens).toBe(308);
+    expect(out.cached_tokens).toBe(0);
+  });
+
+  it("extracts Ollama prompt_eval_cached_count as cached_tokens", () => {
+    const out = extractUsageFromResponse({
+      model: "gpt-oss:120b",
+      done: true,
+      prompt_eval_count: 100,
+      eval_count: 20,
+      prompt_eval_cached_count: 80,
+    });
+    expect(out.prompt_tokens).toBe(100); // cache-INCLUSIVE
+    expect(out.completion_tokens).toBe(20);
+    expect(out.cached_tokens).toBe(80);
+    // canonicalize passes cache-INCLUSIVE prompt through unchanged
+    const canon = canonicalizeUsage(out);
+    expect(canon.prompt_tokens).toBe(100);
+    expect(canon.cached_tokens).toBe(80);
+    expect(canon.total_tokens).toBe(120);
+  });
+
+  it("returns null for an Ollama-shaped body missing done flag", () => {
+    // Non-final Ollama chunk (done:false) carries no usage — must not match.
+    expect(extractUsageFromResponse({ model: "x", done: false, prompt_eval_count: 5 }))
+      .toBeNull();
+  });
 });

@@ -43,7 +43,10 @@ async function getInternalHeaders() {
   let apiKey = null;
   try {
     const keys = await getApiKeys();
-    apiKey = keys.find((k) => k.isActive !== false)?.key || null;
+    // Prefer an unrestricted key so a dashboard model test is not refused just
+    // because the first key happens to be restricted.
+    const activeKeys = keys.filter((k) => k.isActive !== false);
+    apiKey = (activeKeys.find((k) => !k.access?.restricted) || activeKeys[0])?.key || null;
   } catch {}
 
   const headers = { "Content-Type": "application/json" };

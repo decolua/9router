@@ -352,6 +352,21 @@ describe("buildEmbeddingsHeaders", () => {
     expect(init.headers["Authorization"]).toBe("Bearer sk-or-key");
   });
 
+  it("github → Copilot embeddings endpoint with Copilot token and IDE headers", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "github", model: "text-embedding-3-small" },
+      credentials: { accessToken: "gho-oauth", copilotToken: "tid=copilot" },
+    }));
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toBe("https://api.githubcopilot.com/embeddings");
+    expect(init.headers["Authorization"]).toBe("Bearer tid=copilot");
+    expect(init.headers["copilot-integration-id"]).toBe("vscode-chat");
+    expect(init.headers["editor-version"]).toMatch(/^vscode\//);
+  });
+
   it("openai-compatible-* → Authorization: Bearer only (no extra headers)", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
 
