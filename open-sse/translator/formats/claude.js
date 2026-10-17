@@ -224,15 +224,35 @@ export function projectGroundingToAnthropicBlocks(groundingMetadata, originalQue
   // Deterministic server_tool_use id matching Anthropic format: /^srvtoolu_[a-zA-Z0-9_]+$/
   const serverToolId = `srvtoolu_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
 
+  // Extract snippet segments per chunk index from groundingSupports if available
+  const chunkSnippets = new Map();
+  if (Array.isArray(groundingMetadata.groundingSupports)) {
+    for (const sup of groundingMetadata.groundingSupports) {
+      const text = sup?.segment?.text || "";
+      const indices = sup?.groundingChunkIndices || [];
+      for (const idx of indices) {
+        if (!chunkSnippets.has(idx)) {
+          chunkSnippets.set(idx, []);
+        }
+        if (text && !chunkSnippets.get(idx).includes(text)) {
+          chunkSnippets.get(idx).push(text);
+        }
+      }
+    }
+  }
+
   const searchResults = chunks.map((ch, idx) => {
     const web = ch?.web || {};
     const url = web.uri || web.url || "";
     const title = web.title || "";
+    const snippets = chunkSnippets.get(idx) || [];
+    const snippet = web.snippet || (snippets.length > 0 ? snippets.join(" ") : title);
     const encryptedContent = Buffer.from(JSON.stringify({ u: url, t: title, i: idx })).toString("base64");
     return {
       type: "web_search_result",
       url,
       title,
+      snippet,
       page_age: "recently",
       encrypted_content: encryptedContent,
     };
