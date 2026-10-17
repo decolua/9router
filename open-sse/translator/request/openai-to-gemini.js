@@ -297,9 +297,18 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   // Convert tools
   if (body.tools && Array.isArray(body.tools) && body.tools.length > 0) {
     const functionDeclarations = [];
+    let hasGoogleSearch = false;
     for (const t of body.tools) {
+      if (t.type === "web_search" || t.name === "web_search" || t.googleSearch || t.google_search) {
+        hasGoogleSearch = true;
+        continue;
+      }
       // Check if already in Anthropic/Claude format (no type field, direct name/description/input_schema)
       if (t.name && t.input_schema) {
+        if (t.type?.startsWith("web_search") || t.name === "web_search") {
+          hasGoogleSearch = true;
+          continue;
+        }
         const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(t.input_schema || { type: "object", properties: {} }));
         functionDeclarations.push({
           name: sanitizeGeminiFunctionName(t.name),
@@ -309,6 +318,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       }
       // OpenAI format
       else if (t.type === OPENAI_BLOCK.FUNCTION && t.function) {
+        if (t.function.name === "web_search") {
+          hasGoogleSearch = true;
+          continue;
+        }
         const fn = t.function;
         const cleanedSchema = cleanJSONSchemaForAntigravity(structuredClone(fn.parameters || { type: "object", properties: {} }));
         functionDeclarations.push({
@@ -319,10 +332,18 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       }
     }
 
+    const geminiTools = [];
     if (functionDeclarations.length > 0) {
-      result.tools = [{ functionDeclarations }];
+      geminiTools.push({ functionDeclarations });
+    }
+    if (hasGoogleSearch) {
+      geminiTools.push({ googleSearch: {} });
+    }
 
-      if (body.tool_choice) {
+    if (geminiTools.length > 0) {
+      result.tools = geminiTools;
+
+      if (body.tool_choice && functionDeclarations.length > 0) {
         const tc = body.tool_choice;
         if (tc === "none") {
           result.toolConfig = { functionCallingConfig: { mode: "NONE" } };
