@@ -488,6 +488,11 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
+            if (state.webSearchUsage?.server_tool_use && item.type === "message_delta") {
+              if (!item.usage) item.usage = {};
+              item.usage.server_tool_use = state.webSearchUsage.server_tool_use;
+            }
+
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));

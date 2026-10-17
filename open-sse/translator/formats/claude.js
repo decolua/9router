@@ -37,6 +37,8 @@ const CONTENTFUL_BLOCKS = new Set([
   CLAUDE_BLOCK.IMAGE,
   CLAUDE_BLOCK.DOCUMENT,
   CLAUDE_BLOCK.CONTAINER_UPLOAD,
+  CLAUDE_BLOCK.SERVER_TOOL_USE,
+  CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT,
 ]);
 
 function isContentfulBlock(block) {
@@ -209,6 +211,55 @@ const CLAUDE_SERVER_TOOL_USE_ID = /^srvtoolu_[a-zA-Z0-9_]+$/;
 function hasForeignServerToolUseId(block) {
   return block?.type === CLAUDE_BLOCK.SERVER_TOOL_USE
     && !CLAUDE_SERVER_TOOL_USE_ID.test(String(block.id ?? ""));
+}
+
+// Map Google Antigravity / Gemini groundingMetadata into official Anthropic server tool blocks
+export function projectGroundingToAnthropicBlocks(groundingMetadata, originalQuery = "") {
+  if (!groundingMetadata) return { serverToolBlock: null, toolResultBlock: null, usageExtra: null };
+
+  const queries = groundingMetadata.webSearchQueries || [];
+  const query = queries[0] || originalQuery || "web search";
+  const chunks = groundingMetadata.groundingChunks || [];
+
+  // Deterministic server_tool_use id matching Anthropic format: /^srvtoolu_[a-zA-Z0-9_]+$/
+  const serverToolId = `srvtoolu_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36)}`;
+
+  const searchResults = chunks.map((ch, idx) => {
+    const web = ch?.web || {};
+    const url = web.uri || web.url || "";
+    const title = web.title || "";
+    const encryptedContent = Buffer.from(JSON.stringify({ u: url, t: title, i: idx })).toString("base64");
+    return {
+      type: "web_search_result",
+      url,
+      title,
+      page_age: "recently",
+      encrypted_content: encryptedContent,
+    };
+  });
+
+  const serverToolBlock = {
+    type: CLAUDE_BLOCK.SERVER_TOOL_USE,
+    id: serverToolId,
+    name: "web_search",
+    input: { query },
+  };
+
+  const toolResultBlock = {
+    type: CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT,
+    tool_use_id: serverToolId,
+    content: searchResults,
+  };
+
+  return {
+    serverToolBlock,
+    toolResultBlock,
+    usageExtra: {
+      server_tool_use: {
+        web_search_requests: 1,
+      },
+    },
+  };
 }
 
 // Normalize a native Claude passthrough body to match Anthropic Messages API spec.

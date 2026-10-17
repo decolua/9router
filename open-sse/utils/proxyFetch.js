@@ -99,6 +99,7 @@ async function tryGotScrapingFetch(url, options) {
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
+const SYSTEM_DNS_CACHE = new Map();
 const TLS_CERT_ERRORS = new Set([
   "SELF_SIGNED_CERT_IN_CHAIN",
   "DEPTH_ZERO_SELF_SIGNED_CERT",
@@ -132,6 +133,24 @@ function normalizeString(value) {
 }
 
 /**
+ * Check if the host is currently redirected to loopback in system DNS (e.g. hosts file MITM)
+ */
+async function isSystemDnsLoopback(hostname) {
+  const cached = SYSTEM_DNS_CACHE.get(hostname);
+  if (cached && Date.now() < cached.expiry) return cached.isLoopback;
+
+  try {
+    const dns = await import("dns/promises");
+    const res = await dns.lookup(hostname);
+    const isLoopback = res.address === "127.0.0.1" || res.address === "::1" || res.address === "0.0.0.0";
+    SYSTEM_DNS_CACHE.set(hostname, { isLoopback, expiry: Date.now() + 15000 });
+    return isLoopback;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
 async function resolveRealIP(hostname) {
@@ -145,6 +164,7 @@ async function resolveRealIP(hostname) {
     resolver.setServers(GOOGLE_DNS_SERVERS);
     const resolve4 = promisify(resolver.resolve4.bind(resolver));
     const addresses = await resolve4(hostname);
+    if (!addresses || addresses.length === 0) return null;
     DNS_CACHE.set(hostname, { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
     return addresses[0];
   } catch (error) {
@@ -230,20 +250,30 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
 /**
  * Create proxy dispatcher lazily (undici-compatible)
  */
-async function getDispatcher(proxyUrl, insecure = false) {
+async function getDispatcher(proxyUrl, insecure = false, customDns = null) {
   const normalized = normalizeProxyUrl(proxyUrl);
-  if (!normalized && !insecure) return null;
 
-  const key = `${normalized || "direct"}::${insecure ? "insecure" : "secure"}`;
+  const key = `${normalized || "direct"}::${insecure ? "insecure" : "secure"}::${customDns?.hostname || "default"}`;
   if (!proxyDispatchers.has(key)) {
     // Evict oldest entry if max size reached
     if (proxyDispatchers.size >= MEMORY_CONFIG.proxyDispatchersMaxSize) {
       proxyDispatchers.delete(proxyDispatchers.keys().next().value);
     }
     const { Agent, ProxyAgent } = await import("undici");
-    const connect = insecure ? { rejectUnauthorized: false } : undefined;
+    const connect = {
+      timeout: 30000,
+      ...(insecure ? { rejectUnauthorized: false } : {}),
+      ...(customDns ? {
+        lookup: (hostname, opts, cb) => {
+          if (customDns.hostname === hostname && customDns.ip) {
+            return cb(null, [{ address: customDns.ip, family: 4 }]);
+          }
+          import("dns").then((dns) => dns.lookup(hostname, opts, cb)).catch(cb);
+        }
+      } : {}),
+    };
     const dispatcher = normalized
-      ? new ProxyAgent({ uri: normalized, ...(insecure ? { requestTls: connect } : {}) })
+      ? new ProxyAgent({ uri: normalized, ...(insecure ? { requestTls: { rejectUnauthorized: false } } : {}) })
       : new Agent({ connect });
     proxyDispatchers.set(key, dispatcher);
   }
@@ -251,12 +281,12 @@ async function getDispatcher(proxyUrl, insecure = false) {
   return proxyDispatchers.get(key);
 }
 
-async function fetchWithTlsFallback(url, options, proxyUrl) {
+async function fetchWithTlsFallback(url, options, proxyUrl, customDns = null) {
   try {
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    const dispatcher = proxyUrl ? await getDispatcher(proxyUrl) : undefined;
+    const dispatcher = proxyUrl ? await getDispatcher(proxyUrl, false, customDns) : undefined;
     return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
     const isStrictSsl = options.strictTls === true || process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
@@ -266,7 +296,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
       }
       // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
       console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
-      const insecureDispatcher = await getDispatcher(proxyUrl, true);
+      const insecureDispatcher = await getDispatcher(proxyUrl, true, customDns);
       return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
     }
     throw err;
@@ -279,56 +309,94 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
 async function createBypassRequest(parsedUrl, realIP, options) {
   const httpsModule = await import("https");
   const netModule = await import("net");
+  const tlsModule = await import("tls");
   // CJS modules expose exports via .default in ESM dynamic import context
   const https = httpsModule.default ?? httpsModule;
   const net = netModule.default ?? netModule;
+  const tls = tlsModule.default ?? tlsModule;
 
   return new Promise((resolve, reject) => {
-    const socket = new net.Socket();
+    const rawSocket = new net.Socket();
+    rawSocket.setTimeout(15000);
 
-    socket.connect(HTTPS_PORT, realIP, () => {
-      const reqOptions = {
-        socket,
-        // SNI + cert hostname are validated against the hostname the caller
-        // asked for, not the IP we connected to. This keeps the DNS-bypass
-        // (avoiding /etc/hosts MITM) while still rejecting on-path attackers
-        // that present a different cert. The MITM_BYPASS_HOSTS targets are
-        // all public-CA-issued (Google / GitHub / AWS / Cursor) so default
-        // verification works without any extra trust store.
+    const cleanup = () => {
+      try { rawSocket.destroy(); } catch { }
+    };
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        cleanup();
+        return reject(new Error("aborted"));
+      }
+      options.signal.addEventListener("abort", () => {
+        cleanup();
+        reject(new Error("aborted"));
+      }, { once: true });
+    }
+
+    rawSocket.connect(HTTPS_PORT, realIP, () => {
+      const tlsSocket = tls.connect({
+        socket: rawSocket,
         servername: parsedUrl.hostname,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: options.method || "POST",
-        headers: {
-          ...options.headers,
-          Host: parsedUrl.hostname,
-        },
-      };
-
-      const req = https.request(reqOptions, (res) => {
-        const response = {
-          ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          headers: new Map(Object.entries(res.headers)),
-          body: Readable.toWeb(res),
-          text: async () => {
-            const chunks = [];
-            for await (const chunk of res) chunks.push(chunk);
-            return Buffer.concat(chunks).toString();
+      }, () => {
+        const reqOptions = {
+          createConnection: () => tlsSocket,
+          servername: parsedUrl.hostname,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: options.method || "POST",
+          headers: {
+            ...options.headers,
+            Host: parsedUrl.hostname,
           },
-          json: async () => JSON.parse(await response.text()),
         };
-        resolve(response);
+
+        const req = https.request(reqOptions, (res) => {
+          const resHeaders = new Headers();
+          for (const [k, v] of Object.entries(res.headers || {})) {
+            if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
+            else if (v != null) resHeaders.set(k, String(v));
+          }
+
+          const response = {
+            ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            headers: resHeaders,
+            body: Readable.toWeb(res),
+            text: async () => {
+              const chunks = [];
+              for await (const chunk of res) chunks.push(chunk);
+              return Buffer.concat(chunks).toString();
+            },
+            json: async () => JSON.parse(await response.text()),
+          };
+          resolve(response);
+        });
+
+        req.on("error", (err) => {
+          cleanup();
+          reject(err);
+        });
+        if (options.body) {
+          req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+        }
+        req.end();
       });
 
-      req.on("error", reject);
-      if (options.body) {
-        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
-      }
-      req.end();
+      tlsSocket.on("error", (err) => {
+        cleanup();
+        reject(err);
+      });
     });
 
-    socket.on("error", reject);
+    rawSocket.on("timeout", () => {
+      cleanup();
+      reject(new Error("connect ETIMEDOUT"));
+    });
+    rawSocket.on("error", (err) => {
+      cleanup();
+      reject(err);
+    });
   });
 }
 
@@ -367,13 +435,24 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
       }
     }
-    // No proxy — manually resolve real IP to bypass DNS spoof
-    try {
-      const parsedUrl = new URL(targetUrl);
-      const realIP = await resolveRealIP(parsedUrl.hostname);
-      if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
-    } catch (error) {
-      console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+
+    let parsedUrl;
+    try { parsedUrl = new URL(targetUrl); } catch { parsedUrl = null; }
+
+    // Only bypass if system DNS actually redirects this host to loopback (MITM active)
+    if (parsedUrl) {
+      const isLoopback = await isSystemDnsLoopback(parsedUrl.hostname);
+      if (isLoopback) {
+        try {
+          const realIP = await resolveRealIP(parsedUrl.hostname);
+          if (realIP) {
+            // First preference: Undici Agent with custom lookup
+            return await fetchWithTlsFallback(url, options, null, { hostname: parsedUrl.hostname, ip: realIP });
+          }
+        } catch (error) {
+          console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+        }
+      }
     }
   }
 

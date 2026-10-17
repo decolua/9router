@@ -65,14 +65,23 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Tools
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => ({
-      type: OPENAI_BLOCK.FUNCTION,
-      function: {
-        name: tool.name,
-        description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
+    result.tools = body.tools.map(tool => {
+      if (tool?.type?.startsWith("web_search") || tool?.name === "web_search") {
+        return {
+          type: "web_search",
+          name: "web_search",
+          ...tool,
+        };
       }
-    }));
+      return {
+        type: OPENAI_BLOCK.FUNCTION,
+        function: {
+          name: tool.name,
+          description: String(tool.description || ""),
+          parameters: tool.input_schema || { type: "object", properties: {} }
+        }
+      };
+    });
   }
 
   // Tool choice
@@ -261,6 +270,37 @@ function convertClaudeMessage(msg) {
           });
           break;
 
+        case CLAUDE_BLOCK.SERVER_TOOL_USE:
+          toolCalls.push({
+            id: block.id,
+            type: OPENAI_BLOCK.FUNCTION,
+            function: {
+              name: block.name || "web_search",
+              arguments: JSON.stringify(block.input || {})
+            }
+          });
+          break;
+
+        case CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT: {
+          let searchContent = "";
+          if (Array.isArray(block.content)) {
+            searchContent = block.content
+              .map(r => `${r.title || ""} (${r.url || ""})`)
+              .filter(Boolean)
+              .join("\n");
+          } else if (typeof block.content === "string") {
+            searchContent = block.content;
+          } else if (block.content) {
+            searchContent = JSON.stringify(block.content);
+          }
+          toolResults.push({
+            role: ROLE.TOOL,
+            tool_call_id: block.tool_use_id,
+            content: searchContent || "Web search completed"
+          });
+          break;
+        }
+
         case CLAUDE_BLOCK.TOOL_RESULT: {
           let resultContent = "";
           const resultImages = [];
@@ -302,6 +342,23 @@ function convertClaudeMessage(msg) {
           break;
         }
       }
+    }
+
+    // If an assistant message contains both server tool calls and server tool results,
+    // split into OpenAI sequence: assistant tool_calls -> tool messages -> assistant text
+    if (toolCalls.length > 0 && toolResults.length > 0) {
+      const msgs = [];
+      const asstCallMsg = { role: ROLE.ASSISTANT, tool_calls: toolCalls };
+      if (reasoningContent) {
+        asstCallMsg.reasoning_content = reasoningContent;
+        if (thoughtSignature) asstCallMsg.thought_signature = thoughtSignature;
+      }
+      msgs.push(asstCallMsg);
+      msgs.push(...toolResults);
+      if (parts.length > 0) {
+        msgs.push({ role: ROLE.ASSISTANT, content: collapseTextParts(parts) });
+      }
+      return msgs;
     }
 
     // If has tool results, return array of tool messages
