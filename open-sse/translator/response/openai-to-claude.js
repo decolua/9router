@@ -4,6 +4,7 @@ import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { projectGroundingToAnthropicBlocks } from "../formats/claude.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -80,6 +81,67 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Helper: project and emit Google search grounding metadata as Anthropic server tools
+function emitGroundingBlocks(groundingMeta, state, results) {
+  if (!groundingMeta || state.groundingBlocksEmitted) return;
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  const { serverToolBlock, toolResultBlock, usageExtra } = projectGroundingToAnthropicBlocks(groundingMeta);
+  if (serverToolBlock) {
+    const srvToolIndex = state.nextBlockIndex++;
+    results.push({
+      type: "content_block_start",
+      index: srvToolIndex,
+      content_block: serverToolBlock
+    });
+    results.push({
+      type: "content_block_stop",
+      index: srvToolIndex
+    });
+
+    const srvResultIndex = state.nextBlockIndex++;
+    results.push({
+      type: "content_block_start",
+      index: srvResultIndex,
+      content_block: toolResultBlock
+    });
+    results.push({
+      type: "content_block_stop",
+      index: srvResultIndex
+    });
+
+    state.groundingBlocksEmitted = true;
+    state.webSearchUsage = usageExtra;
+  }
+}
+
+// Helper: flush any buffered text deltas once grounding blocks have been emitted (or at finish)
+function flushBufferedText(state, results) {
+  if (!state.bufferedTextDeltas || state.bufferedTextDeltas.length === 0) return;
+  const buffered = state.bufferedTextDeltas;
+  state.bufferedTextDeltas = [];
+
+  if (!state.textBlockStarted) {
+    state.textBlockIndex = state.nextBlockIndex++;
+    state.textBlockStarted = true;
+    state.textBlockClosed = false;
+    results.push({
+      type: "content_block_start",
+      index: state.textBlockIndex,
+      content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+    });
+  }
+
+  for (const piece of buffered) {
+    results.push({
+      type: "content_block_delta",
+      index: state.textBlockIndex,
+      delta: { type: "text_delta", text: piece }
+    });
+  }
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
   if (!chunk || !chunk.choices?.[0]) return null;
@@ -134,6 +196,9 @@ export function openaiToClaudeResponse(chunk, state) {
     state.messageId = rawId.startsWith("msg_") ? rawId : `msg_${rawId}`;
     state.model = chunk.model || MODEL_FALLBACK;
     state.nextBlockIndex = 0;
+    state.groundingBlocksEmitted = false;
+    state.bufferedTextDeltas = [];
+    state.hasWebSearch = state.body?.tools?.some(t => t?.type?.startsWith("web_search") || t?.name === "web_search");
     results.push({
       type: "message_start",
       message: {
@@ -147,6 +212,12 @@ export function openaiToClaudeResponse(chunk, state) {
         usage: { input_tokens: 0, output_tokens: 0 }
       }
     });
+  }
+
+  // Check for grounding metadata (Google Search / Antigravity web search results)
+  const groundingMeta = chunk.groundingMetadata || chunk.grounding_metadata || delta?.groundingMetadata || delta?.grounding_metadata;
+  if (groundingMeta && !state.groundingBlocksEmitted) {
+    emitGroundingBlocks(groundingMeta, state, results);
   }
 
   // Handle reasoning (thinking) across vendor shapes - GLM/DeepSeek/Qwen/MiniMax/etc.
@@ -192,26 +263,36 @@ export function openaiToClaudeResponse(chunk, state) {
   if (delta?.content) {
     stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
-      state.textBlockIndex = state.nextBlockIndex++;
-      state.textBlockStarted = true;
-      state.textBlockClosed = false;
+    // If this turn requested web search and grounding metadata has not arrived yet,
+    // buffer text deltas so server tool blocks can be emitted before the grounded text.
+    if (state.hasWebSearch && !state.groundingBlocksEmitted && !choice.finish_reason) {
+      if (!state.bufferedTextDeltas) state.bufferedTextDeltas = [];
+      state.bufferedTextDeltas.push(delta.content);
+    } else {
+      flushBufferedText(state, results);
+
+      if (!state.textBlockStarted) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+      }
+
       results.push({
-        type: "content_block_start",
+        type: "content_block_delta",
         index: state.textBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        delta: { type: "text_delta", text: delta.content }
       });
     }
-
-    results.push({
-      type: "content_block_delta",
-      index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
-    });
   }
 
   // Tool calls
   if (delta?.tool_calls) {
+    flushBufferedText(state, results);
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
 
@@ -255,6 +336,10 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
+    if (groundingMeta && !state.groundingBlocksEmitted) {
+      emitGroundingBlocks(groundingMeta, state, results);
+    }
+    flushBufferedText(state, results);
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
@@ -285,6 +370,9 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    if (state.webSearchUsage?.server_tool_use) {
+      finalUsage.server_tool_use = state.webSearchUsage.server_tool_use;
+    }
     results.push({
       type: "message_delta",
       delta: {

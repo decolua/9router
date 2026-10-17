@@ -147,22 +147,39 @@ export function geminiToOpenAIResponse(chunk, state) {
   const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
   if (geminiUsage) state.usage = geminiUsage;
 
+  // Grounding metadata (web search)
+  const groundingMeta = candidate.groundingMetadata || response.groundingMetadata;
+  if (groundingMeta) {
+    state.groundingMetadata = groundingMeta;
+  }
+
   // Finish reason - include usage in final chunk
   if (candidate.finishReason) {
     let finishReason = toOpenAIFinish(candidate.finishReason, "gemini");
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
     }
-    
+
     const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
-    
+
     // Include usage in final chunk for downstream translators
     if (state.usage) {
       finalChunk.usage = state.usage;
     }
-    
+    if (state.groundingMetadata) {
+      finalChunk.groundingMetadata = state.groundingMetadata;
+    }
+
     results.push(finalChunk);
     state.finishReason = finishReason;
+  }
+
+  if (state.groundingMetadata) {
+    for (const r of results) {
+      if (!r.groundingMetadata) {
+        r.groundingMetadata = state.groundingMetadata;
+      }
+    }
   }
 
   return results.length > 0 ? results : null;

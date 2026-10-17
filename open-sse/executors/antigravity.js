@@ -264,12 +264,17 @@ export class AntigravityExecutor extends BaseExecutor {
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
+    let hasGoogleSearch = false;
+    const allDeclarations = [];
 
     if (tools && tools.length > 0) {
       // Merge all groups into a single functionDeclarations group (Gemini expects 1 group)
       const seenToolNames = new Set();
-      const allDeclarations = [];
       for (const group of tools) {
+        if (group.googleSearch || group.google_search) {
+          hasGoogleSearch = true;
+          continue;
+        }
         for (const fn of group.functionDeclarations || []) {
           const name = sanitizeFunctionName(fn.name);
           if (seenToolNames.has(name)) continue;
@@ -283,12 +288,31 @@ export class AntigravityExecutor extends BaseExecutor {
           });
         }
       }
-      tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
+      tools = [];
+      if (allDeclarations.length > 0) {
+        tools.push({ functionDeclarations: allDeclarations });
+      }
+      if (hasGoogleSearch) {
+        tools.push({ googleSearch: {} });
+      }
     }
 
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
+
+    let toolConfig = undefined;
+    const baseCallingConfig = _originalToolConfig?.functionCallingConfig || { mode: "VALIDATED" };
+    if (allDeclarations.length > 0 && hasGoogleSearch) {
+      toolConfig = {
+        functionCallingConfig: baseCallingConfig,
+        includeServerSideToolInvocations: true,
+      };
+    } else if (allDeclarations.length > 0) {
+      toolConfig = {
+        functionCallingConfig: baseCallingConfig,
+      };
+    }
 
     // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
     // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
@@ -310,10 +334,10 @@ export class AntigravityExecutor extends BaseExecutor {
       ...requestWithoutTools,
       generationConfig,
       ...(contents && { contents }),
-      ...(tools && { tools }),
+      ...(tools?.length > 0 && { tools }),
       sessionId,
       safetySettings: DEFAULT_SAFETY_SETTINGS,
-      ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
+      ...(toolConfig && { toolConfig }),
     };
 
     // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
