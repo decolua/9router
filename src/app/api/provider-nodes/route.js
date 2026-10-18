@@ -32,7 +32,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl, type } = body;
+    const { name, prefix, apiType, baseUrl, type, quotaEnabled, quotaPath } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -40,6 +40,14 @@ export async function POST(request) {
 
     if (!prefix?.trim()) {
       return NextResponse.json({ error: "Prefix is required" }, { status: 400 });
+    }
+
+    let normalizedQuotaPath = "/credits";
+    if (typeof quotaPath === "string" && quotaPath.trim()) {
+      normalizedQuotaPath = quotaPath.trim();
+      if (!/^https?:\/\//i.test(normalizedQuotaPath) && !normalizedQuotaPath.startsWith("/")) {
+        normalizedQuotaPath = `/${normalizedQuotaPath}`;
+      }
     }
 
     // Determine type
@@ -57,6 +65,8 @@ export async function POST(request) {
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
+        quotaEnabled: quotaEnabled === true,
+        quotaPath: normalizedQuotaPath,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
@@ -92,6 +102,8 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        quotaEnabled: quotaEnabled === true,
+        quotaPath: normalizedQuotaPath,
       });
       return NextResponse.json({ node }, { status: 201 });
     }
