@@ -338,6 +338,19 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     store: false
   };
 
+  // Responses API flattens Chat Completions' json_schema wrapper into text.format.
+  // Keep the schema untouched and preserve explicit false/omitted strict values.
+  const responseFormat = body.response_format;
+  if (responseFormat?.type === "json_schema" && responseFormat.json_schema) {
+    const { name, description, strict, schema } = responseFormat.json_schema;
+    const format = { type: responseFormat.type, name, schema };
+    if (description !== undefined) format.description = description;
+    if (strict !== undefined) format.strict = strict;
+    result.text = { format };
+  } else if (responseFormat?.type === "json_object" || responseFormat?.type === "text") {
+    result.text = { format: { type: responseFormat.type } };
+  }
+
   // Extract system message as instructions
   let hasSystemMessage = false;
   const messages = body.messages || [];
