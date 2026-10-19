@@ -214,11 +214,18 @@ export function parseFirstSseError(text) {
     let parsed;
     try { parsed = JSON.parse(payload); } catch { continue; }
 
-    const error = detectErrorBody(parsed)
-      || (parsed?.type === "response.failed" ? detectErrorBody(parsed.response?.error) : null);
+    const error = detectSseEventError(parsed);
     if (error) return error;
   }
   return null;
+}
+
+/** Error descriptor of one parsed SSE event (flat, nested or Responses `response.failed`), else null. */
+export function detectSseEventError(parsed) {
+  if (parsed?.type === "response.failed") {
+    return detectErrorBody(parsed.response?.error) || { message: "response failed" };
+  }
+  return detectErrorBody(parsed);
 }
 
 /**

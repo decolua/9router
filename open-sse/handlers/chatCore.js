@@ -576,7 +576,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // frames, dropped sockets, empty EOF) are retried here with backoff, so the
   // client never sees them; after content starts the stream is committed.
   const upstreamIsSse = (providerResponse.headers.get("content-type") || "").toLowerCase().includes("text/event-stream");
-  if (upstreamIsSse) {
+  // Codex already peeks and retries its own SSE (executors/codex.js); stacking
+  // this layer would multiply attempts.
+  if (upstreamIsSse && provider !== "codex") {
     providerResponse = withPreContentRetry(providerResponse, {
       attempts: STREAM_PRECONTENT_RETRY_ATTEMPTS,
       delayMs: STREAM_PRECONTENT_RETRY_DELAY_MS,

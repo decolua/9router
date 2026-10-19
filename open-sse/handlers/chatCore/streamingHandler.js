@@ -6,7 +6,7 @@ import { PROVIDERS } from "../../config/providers.js";
 import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS, SSE_PREFLIGHT_PEEK_TIMEOUT_MS } from "../../config/runtimeConfig.js";
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { buildStreamErrorBytes, peekSseErrorFrame } from "../../utils/streamHelpers.js";
-import { createErrorResult, detectErrorBody, getClientErrorStatus } from "../../utils/error.js";
+import { createErrorResult, detectErrorBody } from "../../utils/error.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
@@ -95,7 +95,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
 
     const errorBody = detectErrorBody(parsedBody);
     if (errorBody) {
-      const status = getClientErrorStatus(HTTP_STATUS.BAD_GATEWAY, errorBody.message);
+      const status = HTTP_STATUS.BAD_GATEWAY;
       if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · error body with HTTP ${providerResponse.status}\n    ${errorBody.message}`);
       else console.warn(`[STREAM] ${provider} | ${model} | error body with HTTP ${providerResponse.status}: ${errorBody.message}`);
       streamController?.handleError?.(new Error(errorBody.message));
@@ -120,7 +120,7 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     && SSE_PREFLIGHT_PEEK_TIMEOUT_MS > 0) {
     const peeked = await peekSseErrorFrame(providerResponse, SSE_PREFLIGHT_PEEK_TIMEOUT_MS);
     if (peeked.error) {
-      const status = getClientErrorStatus(HTTP_STATUS.BAD_GATEWAY, peeked.error.message);
+      const status = HTTP_STATUS.BAD_GATEWAY;
       if (log?.errorLine) log.errorLine(reqTag, "✗", `ERROR ${status} · ${provider}/${model} · error frame before first chunk\n    ${peeked.error.message}`);
       else console.warn(`[STREAM] ${provider} | ${model} | error frame before first chunk: ${peeked.error.message}`);
       streamController?.handleError?.(new Error(peeked.error.message));

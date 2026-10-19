@@ -12,7 +12,7 @@
 // ponytail: holds raw SSE only (text/event-stream); binary/NDJSON formats
 // (kiro eventstream, ollama) pass through untouched.
 
-import { detectErrorBody } from "./error.js";
+import { detectSseEventError } from "./streamHelpers.js";
 import { TRANSIENT_STREAM_ERROR_PATTERNS, PRE_CONTENT_RETRY_PATTERNS } from "../config/errorConfig.js";
 
 const RETRY_PATTERNS = [...TRANSIENT_STREAM_ERROR_PATTERNS, ...PRE_CONTENT_RETRY_PATTERNS];
@@ -64,11 +64,6 @@ export function isPreContentEvent(parsed) {
   return PRE_CONTENT_TYPES.has(parsed.type);
 }
 
-function eventError(parsed) {
-  if (parsed?.type === "response.failed") return detectErrorBody(parsed.response?.error) || { message: "response failed" };
-  return detectErrorBody(parsed);
-}
-
 /**
  * Classify the complete SSE events in `text`.
  * @returns {{ state: "hold" } | { state: "content" } | { state: "error", message: string }}
@@ -87,7 +82,7 @@ export function classifyPreContent(text) {
     try { parsed = JSON.parse(data); } catch { return { state: "content" }; }
     if (!parsed || typeof parsed !== "object") return { state: "content" };
 
-    const error = eventError(parsed);
+    const error = detectSseEventError(parsed);
     if (error) {
       return isRetryablePreContentError(error)
         ? { state: "error", message: error.message || "upstream error" }
