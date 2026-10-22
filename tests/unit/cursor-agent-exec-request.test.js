@@ -214,3 +214,135 @@ describe("CursorExecutor AgentService exec_request handling", () => {
     expect(content).toBe("hello from grok");
   });
 });
+
+describe("Cursor long-session empty-turn recovery", () => {
+  // agent.v1.AgentClientMessage.run_request → conversation_action (2) →
+  // user_action (1) → conversation_history (7). Present = full replay frame.
+  function runFrameHasHistory(frame) {
+    const run = decodeMessage(decodeMessage(frame.subarray(5)).get(1)[0].value);
+    const userAction = decodeMessage(decodeMessage(run.get(2)[0].value).get(1)[0].value);
+    return userAction.has(7);
+  }
+
+  // 79 filler turns + the live user turn → threshold met by default (80).
+  const longBody = {
+    messages: [
+      ...Array.from({ length: 79 }, (_, i) => ({ role: "user", content: `m${i}` })),
+      { role: "user", content: "answer me" },
+    ],
+  };
+
+  function stubSequentialAgentSessions(executor, attempts) {
+    const writtenPerAttempt = [];
+    let call = 0;
+    executor.openAgentHttp2Stream = () => {
+      const frames = attempts[Math.min(call, attempts.length - 1)];
+      const written = [];
+      writtenPerAttempt.push(written);
+      const queue = [...frames];
+      call++;
+      return {
+        responseHeaders: Promise.resolve({ ":status": 200 }),
+        write: (frame) => written.push(Buffer.from(frame)),
+        end() {},
+        close() {},
+        async read() {
+          if (!queue.length) return { value: undefined, done: true };
+          return { value: queue.shift(), done: false };
+        },
+      };
+    };
+    return writtenPerAttempt;
+  }
+
+  it("retries a wedged long session once with a tail-only frame (streaming)", async () => {
+    const executor = new CursorExecutor();
+    const writtenPerAttempt = stubSequentialAgentSessions(executor, [
+      [],
+      [textFrame("recovered"), turnEndedFrame()],
+    ]);
+    const result = await executor.executeAgent({
+      model: "gpt-5.2", body: longBody, stream: true, credentials,
+    });
+
+    // Consumption (and therefore the retry) is lazy: drain the stream first.
+    const text = await result.response.text();
+    expect(writtenPerAttempt).toHaveLength(2);
+    // First attempt replays full history; the retry ships a tail-only frame.
+    expect(runFrameHasHistory(writtenPerAttempt[0][0])).toBe(true);
+    expect(runFrameHasHistory(writtenPerAttempt[1][0])).toBe(false);
+
+    const events = parseSSE(text);
+    const content = events.map((e) => e.choices?.[0]?.delta?.content || "").join("");
+    expect(content).toBe("recovered");
+    expect(events.filter((e) => e.error)).toHaveLength(0);
+    expect(events.filter((e) => e.choices?.[0]?.finish_reason === "stop")).toHaveLength(1);
+    expect(text.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("recovers a wedged long session for non-stream clients", async () => {
+    const executor = new CursorExecutor();
+    stubSequentialAgentSessions(executor, [
+      [],
+      [textFrame("ok"), turnEndedFrame()],
+    ]);
+    const result = await executor.executeAgent({
+      model: "gpt-5.2", body: longBody, stream: false, credentials,
+    });
+    expect(result.response.status).toBe(200);
+    const payload = await result.response.json();
+    expect(payload.choices[0].message.content).toBe("ok");
+  });
+
+  it("does not retry a short session — first-message empty stays an error", async () => {
+    const executor = new CursorExecutor();
+    const writtenPerAttempt = stubSequentialAgentSessions(executor, [[]]);
+    const result = await executor.executeAgent({
+      model: "gpt-5.2", body: { messages: [{ role: "user", content: "hi" }] },
+      stream: true, credentials,
+    });
+
+    expect(writtenPerAttempt).toHaveLength(1);
+    const text = await result.response.text();
+    const events = parseSSE(text);
+    expect(events.filter((e) => e.error)).toHaveLength(1);
+    expect(events.some((e) => e.choices?.[0]?.finish_reason === "stop")).toBe(false);
+  });
+
+  it("does not retry once real content has streamed", async () => {
+    const executor = new CursorExecutor();
+    // Content followed by EOF: the turn completes with what was emitted.
+    const writtenPerAttempt = stubSequentialAgentSessions(executor, [
+      [textFrame("partial")],
+    ]);
+    const result = await executor.executeAgent({
+      model: "gpt-5.2", body: longBody, stream: true, credentials,
+    });
+
+    expect(writtenPerAttempt).toHaveLength(1);
+    const events = parseSSE(await result.response.text());
+    const content = events.map((e) => e.choices?.[0]?.delta?.content || "").join("");
+    expect(content).toBe("partial");
+    expect(events.filter((e) => e.error)).toHaveLength(0);
+  });
+
+  it("tailOnlyCursorMessages keeps system, drops bulk history, keeps the live turn", async () => {
+    const { tailOnlyCursorMessages } = await import("../../open-sse/executors/cursor.js");
+    const messages = [
+      { role: "system", content: "be helpful" },
+      ...Array.from({ length: 90 }, (_, i) => ({ role: "user", content: `m${i}` })),
+      { role: "assistant", content: "working on it" },
+      { role: "tool", content: "result" },
+      { role: "user", content: "final ask" },
+    ];
+    const trimmed = tailOnlyCursorMessages(messages);
+    expect(trimmed[0]).toEqual({ role: "system", content: "be helpful" });
+    expect(trimmed).toHaveLength(3);
+    expect(trimmed[1].content).toContain("94 messages trimmed");
+    expect(trimmed[2].content).toBe("final ask");
+
+    // Idempotent: prior [9router] notes are stripped on re-trim.
+    const again = tailOnlyCursorMessages(trimmed);
+    expect(again.filter((m) => String(m.content).includes("[9router]"))).toHaveLength(1);
+  });
+});

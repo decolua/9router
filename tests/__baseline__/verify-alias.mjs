@@ -27,6 +27,7 @@ const ALIAS_TOKENS = [
   "muse-code","muse-subscription",
   "br","bedrock","aws-bedrock",
   "brx","bedrock-xai","bedrock-grok",
+  "nous","nous-portal","nous-research","ns",
 ];
 
 // Sort idToAlias by key — runtime accesses by key, order is irrelevant (content-based)

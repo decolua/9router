@@ -267,7 +267,7 @@ export class AntigravityExecutor extends BaseExecutor {
         parts: modifiedParts || parts || [],
       };
     });
-    const contents = normalizeGeminiContents(rawContents);
+    const contents = normalizeGeminiContents(rawContents, model);
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;

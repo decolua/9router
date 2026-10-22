@@ -19,6 +19,13 @@ export default {
     },
     forceStream: true,
     noAuth: true,
+    // Zen reasoning models reject multi-turn history whose assistant messages
+    // carry no reasoning_content (400 missing_required_parameter), and the
+    // response pipeline strips the field before it reaches the client, so the
+    // echo can never come from the client. Inject a placeholder instead.
+    reasoningInject: {
+      scope: "all",
+    },
     quirks: {
       forceAutoToolChoiceModels: ["muse-spark-1.3-contributor-free"],
     },

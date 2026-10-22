@@ -87,6 +87,11 @@ export function getModelType(aliasOrId, modelId) {
   return found?.kind || found?.type || null;
 }
 
+// Raw registry entry for a model (suffix-aware) — executor lookups of per-model hints (e.g. defaultLocation).
+export function getModelMeta(aliasOrId, modelId) {
+  return findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId) || null;
+}
+
 export function getModelUpstreamId(aliasOrId, modelId) {
   // Split off thinking suffix "(level)" so lookup hits the base id; re-append it to
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).

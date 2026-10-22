@@ -173,3 +173,20 @@ describe("opencode-go thinking-suffix guard (regression)", () => {
     expect(runtimeTransport).toBeNull();
   });
 });
+
+// claude-haiku-5-5 is /messages-only upstream: /chat/completions answers
+// "ModelProtocolUnsupported". Every client wire must therefore land on /messages —
+// claude directly, openai/responses through the declared targetFormat fallback.
+describe("opencode-go claude-haiku-5-5 is pinned to /messages for every client wire", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  for (const fmt of ["claude", "openai", "openai-responses"]) {
+    it(`routes a ${fmt}-format client to ${ENDPOINTS.claude}`, async () => {
+      const { result, runtimeTransport } = await route("claude-haiku-5-5", fmt);
+      expect(result.success).toBe(true);
+      expect(runtimeTransport?.baseUrl).toBe(ENDPOINTS.claude);
+    });
+  }
+});

@@ -80,6 +80,10 @@ export default {
     { id: "gpt-6-luna", name: "GPT 6 Luna", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
     { id: "muse-spark-1.3-contributor", name: "Muse Spark 1.3 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
+    // Served by /zen/go/v1/messages only: /chat/completions answers
+    // "ModelProtocolUnsupported". Declaring targetFormat lets clients on the OpenAI
+    // wire translate to Claude and land on the matched transport (chatCore guard).
+    { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", targetFormat: "claude", supportedFormats: ["claude"] },
   ],
   // Live catalogue; ids outside this curated list get their endpoint lane from the
   // family regex in providers/models/helpers.js (opencodeFamilyFormats).

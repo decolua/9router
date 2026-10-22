@@ -20,6 +20,7 @@ import {
   formatProviderCredentials as _formatProviderCredentials,
   getAllAccessTokens as _getAllAccessTokens,
   refreshKiroToken as _refreshKiroToken,
+  refreshNousToken as _refreshNousToken,
   getRefreshLeadMs as _getRefreshLeadMs
 } from "open-sse/services/tokenRefresh.js";
 import {
@@ -54,6 +55,9 @@ export const refreshCopilotToken = (githubAccessToken) =>
 
 export const refreshKiroToken = (refreshToken, providerSpecificData) =>
   _refreshKiroToken(refreshToken, providerSpecificData, log);
+
+export const refreshNousToken = (refreshToken) =>
+  _refreshNousToken(refreshToken, log);
 
 export const getAccessToken = (provider, credentials) =>
   _getAccessToken(provider, credentials, log);
@@ -166,6 +170,7 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 
     if (newCredentials.accessToken)         updates.accessToken  = newCredentials.accessToken;
     if (newCredentials.refreshToken)        updates.refreshToken = newCredentials.refreshToken;
+    if (newCredentials.apiKey)              updates.apiKey       = newCredentials.apiKey;
     if (newCredentials.idToken)             updates.idToken = newCredentials.idToken;
     if (newCredentials.lastRefreshAt)       updates.lastRefreshAt = newCredentials.lastRefreshAt;
     if (newCredentials.expiresAt)           updates.expiresAt = newCredentials.expiresAt;

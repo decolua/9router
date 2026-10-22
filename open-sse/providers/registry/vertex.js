@@ -23,6 +23,8 @@ export default {
     format: "vertex",
   },
   models: [
+    // Argon is served only from the global/us/eu multi-regions, never regional locations.
+    { id: "gemini-4-argon", name: "Gemini 4 Argon", defaultLocation: "global" },
     { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview" },
     { id: "gemini-3.1-flash-lite-preview", name: "Gemini 3.1 Flash Lite Preview" },
     { id: "gemini-3-flash-preview", name: "Gemini 3 Flash Preview" },

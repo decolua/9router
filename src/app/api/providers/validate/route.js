@@ -6,6 +6,11 @@ import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from
 import { openaiToCommandCodeRequest } from "open-sse/translator/request/openai-to-commandcode.js";
 import { resolveQoderCredentials, resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
+import {
+  createNousApiKeyProbe,
+  getNousApiKeyValidationError,
+  isNousApiKeyAccepted,
+} from "open-sse/services/nous.js";
 import { normalizeProviderId } from "@/lib/providerNormalization";
 
 // Probe a webSearch/webFetch provider using its searchConfig/fetchConfig.
@@ -324,6 +329,19 @@ export async function POST(request) {
           isValid = openrouterRes.ok;
           break;
 
+
+        case "nous": {
+          // Nous exposes /models publicly, so a models request cannot validate
+          // the Portal key. Use the smallest authenticated inference instead.
+          const probe = createNousApiKeyProbe(apiKey);
+          const res = await fetch(probe.url, {
+            ...probe.options,
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = isNousApiKeyAccepted(res.status);
+          if (!isValid) error = getNousApiKeyValidationError(res.status);
+          break;
+        }
         case "glm":
         case "glm-cn":
         case "kimi":

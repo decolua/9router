@@ -22,6 +22,10 @@ import {
   upsertEnvVar,
   has9RouterConfig,
   isCustomBlock,
+  parseSttBlock,
+  is9RouterStt,
+  upsertStt9Router,
+  removeStt9Router,
 } from "./hermesYaml.js";
 import { resolveHermesHome, listProfiles, dirExists } from "./hermesProfiles.js";
 
@@ -116,11 +120,13 @@ export async function GET(request) {
     const model = parseModelBlock(yaml);
     const delegation = parseDelegationBlock(yaml);
     const auxiliary = parseAuxRoles(yaml);
+    const stt = parseSttBlock(yaml);
     return NextResponse.json({
       installed: true,
       profile: { name: home.name, dir: home.dir, isDefault: home.isDefault },
-      settings: { model, delegation, auxiliary },
+      settings: { model, delegation, auxiliary, stt },
       has9Router: has9RouterConfig(model) || has9RouterConfig(delegation) || Object.values(auxiliary).some(has9RouterConfig),
+      has9RouterStt: is9RouterStt(stt),
       configPath: home.configPath,
     });
   } catch (error) {
@@ -187,21 +193,33 @@ const applyToAllProfiles = async ({ normalizedBaseUrl, apiKey, model }) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, model, selections } = body;
+    const { baseUrl, apiKey, model, selections, audio } = body;
     // selections: [{role, model}] — "default" plus any auxiliary/delegation slots.
     // Legacy callers (CLI quick setup) send a bare `model` → treat as default role.
     const sel = Array.isArray(selections) && selections.some((s) => s?.role && s?.model)
       ? selections.filter((s) => s?.role && s?.model)
       : model ? [{ role: "default", model }] : [];
     const defaultSel = sel.find((s) => s.role === "default");
-    if (!baseUrl || !defaultSel) {
+    if (!baseUrl || (!defaultSel && !audio)) {
       return NextResponse.json({ error: "baseUrl and model are required" }, { status: 400 });
+    }
+
+    // audio: { enabled, model } — wire Hermes speech-to-text through 9router's
+    // /v1/audio/transcriptions. Absent = leave the stt section untouched (legacy CLI
+    // callers). enabled:true needs a provider-qualified STT model (9router routes on it);
+    // enabled:false removes exactly the wiring this endpoint writes.
+    const audioEnabled = audio ? truthy(audio.enabled) : false;
+    const audioModel = typeof audio?.model === "string" ? audio.model.trim() : "";
+    if (audioEnabled && !audioModel) {
+      return NextResponse.json({ error: "audio.model is required when enabling audio transcription" }, { status: 400 });
     }
 
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
 
+    // applyToAll refreshes endpoint + API key only (and the model blocks those belong to);
+    // the stt wiring is per-profile and follows the single-profile path below.
     if (truthy(body.applyToAll ?? getQueryParam(request, "applyToAll"))) {
-      return await applyToAllProfiles({ normalizedBaseUrl, apiKey, model: defaultSel.model });
+      return await applyToAllProfiles({ normalizedBaseUrl, apiKey, model: defaultSel?.model });
     }
 
     // Profile target: JSON body first, then ?profile= — callers reach for either.
@@ -222,6 +240,15 @@ export async function POST(request) {
         newYaml = upsertAuxRole(newYaml, role, buildAuxRoleBlock(role, roleModel, normalizedBaseUrl));
       }
     }
+    if (audio) {
+      if (audioEnabled) {
+        newYaml = upsertStt9Router(newYaml, audioModel, normalizedBaseUrl);
+      } else if (is9RouterStt(parseSttBlock(newYaml))) {
+        // Never remove stt wiring this endpoint did not write — a user's own STT
+        // provider choice survives an audio-disabled Apply.
+        newYaml = removeStt9Router(newYaml);
+      }
+    }
     await writeHomeConfig(home, newYaml);
 
     // Update .env — upsert OPENAI_API_KEY only when caller provides one
@@ -231,6 +258,7 @@ export async function POST(request) {
       success: true,
       message: home.isDefault ? "Hermes settings applied successfully!" : `Hermes settings applied to profile "${home.name}"!`,
       profile: { name: home.name, dir: home.dir, isDefault: home.isDefault },
+      stt9Router: is9RouterStt(parseSttBlock(newYaml)),
       configPath: home.configPath,
     });
   } catch (error) {
@@ -268,7 +296,7 @@ export async function DELETE(request) {
 
     // Only drop blocks 9router wrote (custom provider) — a model/delegation/aux block owned
     // by another provider is this profile's own configuration and must survive a reset.
-    const removed = { model: false, delegation: false, auxiliary: [] };
+    const removed = { model: false, delegation: false, auxiliary: [], stt: false };
     const kept = [];
 
     const main = parseModelBlock(yaml);
@@ -292,6 +320,17 @@ export async function DELETE(request) {
         yaml = removeAuxRole(yaml, role);
         removed.auxiliary.push(role);
       }
+    }
+
+    const sttCfg = parseSttBlock(yaml);
+    if (sttCfg && is9RouterStt(sttCfg)) {
+      yaml = removeStt9Router(yaml);
+      removed.stt = true;
+      // User settings living inside the block (language, local, ...) survive the key
+      // removal — report the remainder as kept, like any other preserved section.
+      if (parseSttBlock(yaml)) kept.push("stt");
+    } else if (sttCfg) {
+      kept.push("stt");
     }
 
     yaml = yaml.replace(/^\n+/, "");

@@ -208,12 +208,12 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
 
   it("keeps the legacy transport for other models", () => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-5.5", { model: "gpt-5.5", input: "hello" }, true, credentials);
+    const body = executor.transformRequest("gpt-5.6-terra", { model: "gpt-5.6-terra", input: "hello" }, true, credentials);
 
     expect(body.instructions).toBeTruthy();
     expect(body.input[0].type).not.toBe("additional_tools");
     expect(body.reasoning.context).toBeUndefined();
-    expect(executor.buildHeaders(credentials, true, null, "gpt-5.5")["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(executor.buildHeaders(credentials, true, null, "gpt-5.6-terra")["x-openai-internal-codex-responses-lite"]).toBeUndefined();
     expect(getThinkingLevels("codex", "gpt-6-astra")).toContain("none");
     expect(executor.buildHeaders(credentials, true, null, "gpt-6-astra")["x-openai-internal-codex-responses-lite"]).toBeUndefined();
   });

@@ -1099,6 +1099,24 @@ Vertex Partner (Anthropic / DeepSeek / GLM / Qwen via Vertex):
   vertex-partner/qwen3-next-80b-a3b-thinking-maas
 ```
 
+For a raw Google Cloud API-key connection, set the following through
+`PUT /api/providers/<connection-id>` to select the global endpoint:
+
+```json
+{
+  "providerSpecificData": {
+    "projectId": "YOUR_GOOGLE_CLOUD_PROJECT_ID",
+    "location": "global"
+  }
+}
+```
+
+With an explicit project, API-key requests honor `location` and default to
+`global` when it is omitted. Connections without an explicit project retain
+the projectless endpoint. Gemini 4 Argon supports `global`, `us`, and `eu`,
+not regional locations such as `europe-west1`; see
+[Google's supported locations](https://docs.cloud.google.com/gemini-enterprise-agent-platform/models/gemini/4-argon).
+
 **Pro Tip:** New Google Cloud accounts get $300 credits free for 90 days. Plenty for daily coding.
 
 </details>

@@ -44,6 +44,10 @@ export default function HermesToolCard({
   const [activeProfile, setActiveProfile] = useState("default");
   const [applyingAll, setApplyingAll] = useState(false);
   const [copiedCommand, setCopiedCommand] = useState("");
+  // Audio transcription via 9router: stt.provider "openai" + base_url override points
+  // Hermes' speech-to-text at /v1/audio/transcriptions (per-profile, saved with Apply).
+  const [audioEnabled, setAudioEnabled] = useState(false);
+  const [sttModel, setSttModel] = useState("");
   const hasInitializedModel = useRef(false);
 
   const currentBaseUrl = hermesStatus?.settings?.model?.base_url || "";
@@ -126,6 +130,8 @@ export default function HermesToolCard({
         if (rcfg?.model) initial[role] = rcfg.model;
       }
       setRoleModels(initial);
+      setAudioEnabled(!!hermesStatus.has9RouterStt);
+      setSttModel(hermesStatus.has9RouterStt ? hermesStatus.settings?.stt?.model || "" : "");
     }
   }, [hermesStatus]);
 
@@ -135,6 +141,8 @@ export default function HermesToolCard({
     hasInitializedModel.current = false;
     setMessage(null);
     setCustomBaseUrl("");
+    setAudioEnabled(false);
+    setSttModel("");
     checkStatus(name);
   };
 
@@ -208,6 +216,8 @@ export default function HermesToolCard({
               .filter(([, model]) => model?.trim())
               .map(([role, model]) => ({ role, model: model.trim() })),
           ],
+          // Always sent: Apply is also how the stt wiring gets turned off.
+          audio: { enabled: audioEnabled, model: sttModel.trim() },
         }),
       });
       const data = await res.json();
@@ -297,6 +307,8 @@ export default function HermesToolCard({
         setMessage({ type: "success", text: `Settings reset for ${profileLabel(activeProfile)}!` });
         setSelectedModel("");
         setRoleModels({});
+        setAudioEnabled(false);
+        setSttModel("");
         checkStatus();
         fetchProfiles();
       } else {
@@ -310,7 +322,9 @@ export default function HermesToolCard({
   };
 
   const handleModelSelect = (model) => {
-    if (modalTarget === "default") {
+    if (modalTarget === "stt") {
+      setSttModel(model.value);
+    } else if (modalTarget === "default") {
       setSelectedModel(model.value);
     } else {
       setRoleModels((prev) => ({ ...prev, [modalTarget]: model.value }));
@@ -340,6 +354,9 @@ export default function HermesToolCard({
       yamlContent += `auxiliary:\n${auxRoles.map(([role, model]) =>
         `  ${role}:\n    provider: "custom"\n    model: "${model.trim()}"\n    base_url: "${base}"\n    api_key: \${OPENAI_API_KEY}\n`
       ).join("")}`;
+    }
+    if (audioEnabled && sttModel.trim()) {
+      yamlContent += `stt:\n  enabled: true\n  provider: "openai"\n  openai:\n    model: "${sttModel.trim()}"\n    base_url: "${base}"\n    api_key: \${OPENAI_API_KEY}\n`;
     }
     const envContent = `OPENAI_API_KEY=${keyToUse}\n`;
 
@@ -493,6 +510,28 @@ export default function HermesToolCard({
                   <button onClick={() => openModelModal("default")} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
                 </div>
 
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                  <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">Audio STT</span>
+                  <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                  <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer" title="Route Hermes voice & audio transcription through 9router's /v1/audio/transcriptions — usage is tracked on this instance">
+                    <input type="checkbox" checked={audioEnabled} onChange={(e) => setAudioEnabled(e.target.checked)} className="w-3.5 h-3.5 accent-primary cursor-pointer shrink-0" />
+                    <span>Transcribe voice &amp; audio via 9router (per-profile)</span>
+                  </label>
+                  <span />
+                </div>
+
+                {audioEnabled && (
+                  <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr_auto] sm:items-center sm:gap-2">
+                    <span className="text-xs font-semibold text-text-main sm:text-right sm:text-sm">STT Model</span>
+                    <span className="material-symbols-outlined hidden text-text-muted text-[14px] sm:inline">arrow_forward</span>
+                    <div className="relative w-full min-w-0">
+                      <input type="text" value={sttModel} onChange={(e) => setSttModel(e.target.value)} placeholder="provider/whisper-model-id" className="w-full min-w-0 pl-2 pr-7 py-2 bg-surface rounded border border-border text-xs focus:outline-none focus:ring-1 focus:ring-primary/50 sm:py-1.5" />
+                      {sttModel && <button onClick={() => setSttModel("")} className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 text-text-muted hover:text-red-500 rounded transition-colors" title="Clear"><span className="material-symbols-outlined text-[14px]">close</span></button>}
+                    </div>
+                    <button onClick={() => openModelModal("stt")} disabled={!hasActiveProviders} className={`w-full sm:w-auto rounded border px-2 py-2 text-xs transition-colors sm:py-1.5 whitespace-nowrap sm:shrink-0 ${hasActiveProviders ? "bg-surface border-border text-text-main hover:border-primary cursor-pointer" : "opacity-50 cursor-not-allowed border-border"}`}>Select</button>
+                  </div>
+                )}
+
                 <details className="group">
                   <summary className="cursor-pointer select-none text-xs font-semibold text-text-main hover:text-primary transition-colors">
                     <span className="material-symbols-outlined align-middle text-[16px] text-text-muted group-open:rotate-90 transition-transform">chevron_right</span>
@@ -543,7 +582,7 @@ export default function HermesToolCard({
               )}
 
               <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel} loading={applying} className="w-full sm:w-auto">
+                <Button variant="primary" size="sm" onClick={handleApply} disabled={!selectedModel || (audioEnabled && !sttModel.trim())} title={audioEnabled && !sttModel.trim() ? "Select an STT model first" : undefined} loading={applying} className="w-full sm:w-auto">
                   <span className="material-symbols-outlined text-[14px] mr-1">save</span>Apply
                 </Button>
                 {profiles.length > 1 && (
@@ -558,7 +597,7 @@ export default function HermesToolCard({
                     <span className="material-symbols-outlined text-[14px] mr-1">groups</span>Apply to All Profiles
                   </Button>
                 )}
-                <Button variant="outline" size="sm" onClick={handleReset} disabled={!hermesStatus?.has9Router} loading={restoring} className="w-full sm:w-auto">
+                <Button variant="outline" size="sm" onClick={handleReset} disabled={!hermesStatus?.has9Router && !hermesStatus?.has9RouterStt} loading={restoring} className="w-full sm:w-auto">
                   <span className="material-symbols-outlined text-[14px] mr-1">restore</span>Reset
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setShowManualConfigModal(true)} className="w-full sm:w-auto">
@@ -575,10 +614,11 @@ export default function HermesToolCard({
           isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           onSelect={handleModelSelect}
-          selectedModel={modalTarget === "default" ? selectedModel : roleModels[modalTarget] || ""}
+          selectedModel={modalTarget === "stt" ? sttModel : modalTarget === "default" ? selectedModel : roleModels[modalTarget] || ""}
           activeProviders={activeProviders}
           modelAliases={modelAliases}
-          title={`Select Model for Hermes Agent${modalTarget !== "default" ? ` — ${HERMES_ROLES.find((r) => r.id === modalTarget)?.label || modalTarget}` : ""}`}
+          kindFilter={modalTarget === "stt" ? "stt" : undefined}
+          title={modalTarget === "stt" ? "Select STT Model — audio transcription via 9router" : `Select Model for Hermes Agent${modalTarget !== "default" ? ` — ${HERMES_ROLES.find((r) => r.id === modalTarget)?.label || modalTarget}` : ""}`}
         />
       )}
 

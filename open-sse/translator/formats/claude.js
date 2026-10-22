@@ -321,12 +321,16 @@ export function normalizeClaudePassthrough(body, model = "") {
   // Anthropic rejects `messages.N.content` blocks with empty text (400
   // "text content blocks must be non-empty"); a message whose blocks were all
   // stripped above must be dropped, not padded with an empty placeholder.
+  // The same applies to thinking blocks: Anthropic rejects a block with no visible
+  // text (400 "each thinking block must contain non-whitespace thinking"), and such
+  // a block rides along in the client's replayed history on every later turn.
   if (Array.isArray(body.messages)) {
     body.messages = body.messages.filter(msg => {
       if (typeof msg.content === "string") return msg.content.trim().length > 0;
       if (!Array.isArray(msg.content)) return true;
       msg.content = msg.content.filter(block =>
-        !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim()));
+        !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim())
+        && !(block?.type === CLAUDE_BLOCK.THINKING && !String(block.thinking ?? "").trim()));
       return msg.content.length > 0;
     });
     body.messages = ensureTrailingUserTurn(body.messages, originalLastRole);
@@ -488,6 +492,16 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.output_config;
   }
 
+  // Claude Code puts a `context_management` block (context-editing strategy) in
+  // every request; only Anthropic accepts it — gateways fronting other engines
+  // answer 400 "context_management: Extra inputs are not permitted". Same-format
+  // claude→claude requests skip body rebuilding in the translator, so the field
+  // rides through to every non-Anthropic provider on the Claude transport.
+  const isAnthropicServing = provider === "claude" || provider?.startsWith?.("anthropic-compatible-");
+  if (!isAnthropicServing) {
+    delete body.context_management;
+  }
+
   // Models whose API rejects thinking "disabled" and forced tool use with a 400
   // (Sonnet 5.5). Runs on every Claude-bound body, so OpenAI clients, native
   // passthrough and the provider-level "off" override are all covered.
@@ -610,11 +624,15 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           // anthropic-compatible: replace with default (safe fallback for lenient upstreams).
           // DeepSeek (official + opencode-go models): keep existing thinking as-is;
           // add an unsigned placeholder only if missing.
+          // Every branch: a block with no visible thinking text goes — the upstream
+          // Messages API rejects it outright (400 "each thinking block must contain
+          // non-whitespace thinking"), and a valid signature does not save it.
           const isClaudeNative = provider === "claude";
           const kept = [];
           for (const block of msg.content) {
             const isThinking = block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING;
             if (isThinking) {
+              if (!String(block.thinking ?? "").trim()) continue;
               if (isClaudeNative) {
                 if (isValidClaudeSignature(block.signature)) {
                   hasKeptThinking = true;

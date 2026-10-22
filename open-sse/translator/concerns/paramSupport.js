@@ -30,6 +30,15 @@ const STRIP_RULES = [
   { provider: "groq", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
   { provider: "mistral", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
   { provider: "cerebras", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
+  // OpenCode Go's relay rejects `response_format` for its deepseek family with HTTP
+  // 400 — both json_schema and json_object — while glm / kimi / mimo / minimax /
+  // qwen / grok / gpt on the same relay accept it. The rejection body is either a
+  // bare model echo (`{"model":"deepseek-v4.1-flash"}`, which names neither the
+  // field nor the reason) or "This response_format type is unavailable now", so a
+  // client cannot classify it and keeps re-sending the field. Measured 2026-10-13
+  // against /zen/go/v1/chat/completions with one key: 12/12 structured calls 400,
+  // 4/4 identical calls without the field 200.
+  { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.

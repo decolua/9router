@@ -61,13 +61,13 @@ describe("OpenCode Free endpoint routing", () => {
 
   it("routes Muse Spark to /responses and every other model to /chat/completions", () => {
     const executor = new OpenCodeExecutor();
-    expect(executor.buildUrl(MUSE)).toBe("https://opencode.ai/zen/v1/responses");
-    expect(executor.buildUrl(`${MUSE}(xhigh)`)).toBe("https://opencode.ai/zen/v1/responses");
-    expect(executor.buildUrl("muse-spark-1.3-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
-    expect(executor.buildUrl("muse-spark-1.4-contributor-free")).toBe("https://opencode.ai/zen/v1/responses");
-    expect(executor.buildUrl("muse-spark-2.0-contributor-free(xhigh)")).toBe("https://opencode.ai/zen/v1/responses");
-    expect(executor.buildUrl("big-pickle")).toBe("https://opencode.ai/zen/v1/chat/completions");
-    expect(executor.buildUrl("hy3-free")).toBe("https://opencode.ai/zen/v1/chat/completions");
+    expect(executor.buildUrl(MUSE)).toBe("https://opencode.ai/inference/v1/responses");
+    expect(executor.buildUrl(`${MUSE}(xhigh)`)).toBe("https://opencode.ai/inference/v1/responses");
+    expect(executor.buildUrl("muse-spark-1.3-contributor-free")).toBe("https://opencode.ai/inference/v1/responses");
+    expect(executor.buildUrl("muse-spark-1.4-contributor-free")).toBe("https://opencode.ai/inference/v1/responses");
+    expect(executor.buildUrl("muse-spark-2.0-contributor-free(xhigh)")).toBe("https://opencode.ai/inference/v1/responses");
+    expect(executor.buildUrl("big-pickle")).toBe("https://opencode.ai/inference/v1/chat/completions");
+    expect(executor.buildUrl("hy3-free")).toBe("https://opencode.ai/inference/v1/chat/completions");
   });
 
   it("normalizes Chat token/thinking fields only for the Responses model", () => {

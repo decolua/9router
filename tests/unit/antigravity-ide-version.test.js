@@ -7,7 +7,7 @@ const {
   applyAntigravityIdeVersionOverride,
 } = require("../../src/mitm/antigravityIdeVersion.js");
 
-const CURRENT_VERSION = "2.11.0";
+const CURRENT_VERSION = "2.22.0";
 
 function makeRequest(metadata = { ideName: "antigravity", ideVersion: CURRENT_VERSION }) {
   const bodyBuffer = Buffer.from(JSON.stringify({ metadata, request: { contents: [] } }));
