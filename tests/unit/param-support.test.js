@@ -127,7 +127,7 @@ describe("stripUnsupportedParams", () => {
     const response_format = { type: "json_schema", json_schema: { name: "t", schema: { type: "object" } } };
 
     for (const [provider, model] of [
-      ["deepseek", "deepseek-reasoner"],
+      // ["deepseek", "deepseek-reasoner"], // now converts json_schema -> json_object (see #5139)
       ["opencode-zen", "deepseek-v4.1-flash"],
       ["openrouter", "deepseek/deepseek-v3.2"],
     ]) {

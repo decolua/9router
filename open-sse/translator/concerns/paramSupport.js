@@ -39,6 +39,11 @@ const STRIP_RULES = [
   // against /zen/go/v1/chat/completions with one key: 12/12 structured calls 400,
   // 4/4 identical calls without the field 200.
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
+  // DeepSeek's API only documents response_format type json_object; a json_schema
+  // request fails with HTTP 400 \"This response_format type is unavailable now\".
+  // Downgrade json_schema to json_object and move the schema into a system message
+  // so JSON mode is preserved and DeepSeek's \"prompt must mention json\" rule holds.
+  { provider: "deepseek", jsonSchemaToObject: true },
   // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
   // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
   { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
@@ -67,6 +72,25 @@ export function stripUnsupportedParams(provider, model, body) {
       if (body[from] === undefined) continue;
       if (body[to] === undefined) body[to] = body[from];
       delete body[from];
+    }
+    // Downgrade response_format json_schema -> json_object for providers that
+    // reject json_schema (DeepSeek), preserving JSON mode and carrying the
+    // schema over as a system message.
+    if (
+      rule.jsonSchemaToObject &&
+      body.response_format &&
+      body.response_format.type === "json_schema"
+    ) {
+      const s = body.response_format.json_schema || {};
+      body.response_format = { type: "json_object" };
+      if (Array.isArray(body.messages)) {
+        body.messages.unshift({
+          role: "system",
+          content:
+            "Respond only with a JSON object that matches this JSON schema: " +
+            JSON.stringify(s.schema || s),
+        });
+      }
     }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
