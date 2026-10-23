@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Usage**: add GLM five-hour and weekly reset cards to Quota Tracker with expiry details, explicit confirmation, and recovery after uncertain outcomes.
+
 # v0.5.111 (2026-10-26)
 
 ## Features
