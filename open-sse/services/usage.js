@@ -8,6 +8,7 @@ import { getClaudeUsage, consumeClaudeResetGrant } from "./usage/claude.js";
 import { getCodexUsage, consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits } from "./usage/codex.js";
 
 export { consumeCodexRateLimitResetCredit, getCodexRateLimitResetCredits, consumeClaudeResetGrant };
+export { getMiniMaxResetCards, redeemMiniMaxResetCard, getMiniMaxResetCardFlows } from "./minimaxCodeUsage.js";
 import { getKiroUsage } from "./usage/kiro.js";
 import { getMiniMaxUsage } from "./usage/minimax.js";
 import { getMiniMaxCodeUsage } from "./minimaxCodeUsage.js";
@@ -98,6 +99,7 @@ export async function getUsageForProvider(connection, proxyOptions = null, optio
     authType: connection.authType,
     accessToken,
     apiKey,
+    authType: connection.authType,
     providerSpecificData,
     providerDataWithProjectId,
     proxyOptions,
