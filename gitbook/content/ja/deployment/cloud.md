@@ -113,7 +113,7 @@ pm2 monit
 `app` ディレクトリに `Dockerfile` を作成:
 
 ```dockerfile
-FROM node:20-alpine
+FROM node:22.23.4-alpine
 
 WORKDIR /app
 

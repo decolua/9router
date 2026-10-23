@@ -19,9 +19,9 @@ ARG NPM_REGISTRY
 
 RUN apk add --no-cache python3 make g++ linux-headers
 
-COPY package.json ./
+COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm \
-    npm install \
+    npm ci \
       --registry="${NPM_REGISTRY}" \
       --fetch-retries=5 \
       --fetch-retry-factor=2 \
@@ -115,7 +115,17 @@ COPY --from=builder /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.
-COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
+COPY --from=builder /app/node_modules/selfsigned ./node_modules/selfsigned
+COPY --from=builder /app/node_modules/@peculiar ./node_modules/@peculiar
+COPY --from=builder /app/node_modules/@noble/hashes ./node_modules/@noble/hashes
+COPY --from=builder /app/node_modules/asn1js ./node_modules/asn1js
+COPY --from=builder /app/node_modules/bytestreamjs ./node_modules/bytestreamjs
+COPY --from=builder /app/node_modules/pkijs ./node_modules/pkijs
+COPY --from=builder /app/node_modules/pvtsutils ./node_modules/pvtsutils
+COPY --from=builder /app/node_modules/pvutils ./node_modules/pvutils
+COPY --from=builder /app/node_modules/reflect-metadata ./node_modules/reflect-metadata
+COPY --from=builder /app/node_modules/tslib ./node_modules/tslib
+COPY --from=builder /app/node_modules/tsyringe ./node_modules/tsyringe
 # Ensure `next` is available at runtime in case tracing did not include it.
 COPY --from=builder /app/node_modules/next ./node_modules/next
 # sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
@@ -136,6 +146,17 @@ RUN mkdir -p /app/data && chown -R node:node /app && \
 RUN apk add --no-cache su-exec ffmpeg && \
   printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
+
+# npm 12.2.1 still bundles versions with newly disclosed CVEs.
+RUN npm install -g --registry="${NPM_REGISTRY:-https://registry.npmjs.org}" npm@12.2.1 && \
+  npm install --prefix=/tmp/npm-fixes --no-save --ignore-scripts \
+    --registry="${NPM_REGISTRY:-https://registry.npmjs.org}" undici@6.29.1 ip-address@10.7.4 && \
+  rm -rf /usr/local/lib/node_modules/npm/node_modules/undici \
+    /usr/local/lib/node_modules/npm/node_modules/ip-address && \
+  cp -a /tmp/npm-fixes/node_modules/undici /usr/local/lib/node_modules/npm/node_modules/undici && \
+  cp -a /tmp/npm-fixes/node_modules/ip-address /usr/local/lib/node_modules/npm/node_modules/ip-address && \
+  rm -rf /tmp/npm-fixes && \
+  npm cache clean --force
 
 EXPOSE 20128
 

@@ -9,7 +9,7 @@ const { execSync } = require("child_process");
 const { log, err, dumpRequest, createResponseDumper, clearDumpDir } = require("./logger");
 const { IS_DEV, LSOF_BIN, TARGET_HOSTS, URL_PATTERNS, MODEL_SYNONYMS, MODEL_PATTERNS, MODEL_NO_MAP, getToolForHost, isChatRequest, extractModel } = require("./config");
 const { DATA_DIR, MITM_DIR } = require("./paths");
-const { generateCert, getCertForDomain } = require("./cert/generate");
+const { getCertForDomain } = require("./cert/generate");
 const { getMitmAlias } = require("./dbReader");
 const { applyAntigravityIdeVersionOverride } = require("./antigravityIdeVersion");
 const LOCAL_PORT = 443;
@@ -38,10 +38,10 @@ const handlers = {
 const certCache = new Map();
 let rootCAPem;
 
-function sniCallback(servername, cb) {
+async function sniCallback(servername, cb) {
   try {
     if (certCache.has(servername)) return cb(null, certCache.get(servername));
-    const certData = getCertForDomain(servername);
+    const certData = await getCertForDomain(servername);
     if (!certData) return cb(new Error(`Failed to generate cert for ${servername}`));
     const ctx = require("tls").createSecureContext({
       key: certData.key,
@@ -58,8 +58,7 @@ function sniCallback(servername, cb) {
 let sslOptions;
 try {
   if (!fs.existsSync(path.join(MITM_DIR, "rootCA.key")) || !fs.existsSync(path.join(MITM_DIR, "rootCA.crt"))) {
-    log("Root CA missing, generating...");
-    generateCert();
+    throw new Error("Root CA missing. Start the MITM server through 9Router first.");
   }
 
   const rootKey = fs.readFileSync(path.join(MITM_DIR, "rootCA.key"));
