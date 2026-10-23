@@ -118,10 +118,12 @@ export function ConfirmModal({
   onConfirm,
   title = "Confirm",
   message,
+  children,
   confirmText = "Confirm",
   cancelText = "Cancel",
   variant = "danger",
   loading = false,
+  disabled = false,
 }) {
   return (
     <Modal
@@ -134,12 +136,13 @@ export function ConfirmModal({
           <Button variant="ghost" onClick={onClose} disabled={loading}>
             {cancelText}
           </Button>
-          <Button variant={variant} onClick={onConfirm} loading={loading}>
+          <Button variant={variant} onClick={onConfirm} loading={loading} disabled={disabled}>
             {confirmText}
           </Button>
         </>
       }
     >
+      {children}
       <p className="text-text-muted">{message}</p>
     </Modal>
   );

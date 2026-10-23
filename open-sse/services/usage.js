@@ -24,6 +24,7 @@ import { getCursorUsage } from "./usage/cursor.js";
 import { getClinepassUsage } from "./usage/clinepass.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
+export { getGlmResetCards, redeemGlmResetCard } from "./usage/glm.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
 import { getSyntheticUsage } from "./usage/synthetic.js";
 import {
