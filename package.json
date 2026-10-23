@@ -37,7 +37,6 @@
     "material-symbols": "^0.44.6",
     "monaco-editor": "^0.57.0",
     "next": "^16.4.6",
-    "node-forge": "^1.4.3",
     "node-machine-id": "^1.1.12",
     "open": "^11.0.0",
     "ora": "^9.1.0",
