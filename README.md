@@ -97,17 +97,23 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 **1. Install globally — upstream build only (no federation):**
 
-> ⚠️ **Prerequisite:** Node.js ≥ 22 is required before running `npm`. On fresh
-> bunker/SSH-only boxes the OS image ships `git` + `docker` but **not** `node` or
-> `npm`. Rescue path — download the Node tarball, extract into `$HOME` and prepend
-> it to your `PATH`:
+> ⚠️ **Prerequisite: Node.js ≥ 22.19.0** (a current 22.x LTS) is required before
+> running `npm`. The floor is not cosmetic: the app loads `undici` 8, whose
+> decompression table is built at module load from `zlib.createZstdDecompress`
+> (Node ≥ 22.15), so an older runtime (Node 20.x, or 22.14) aborts
+> `npm run build` during page-data collection with
+> `TypeError: Cannot read properties of undefined (reading 'bind')` and names no
+> cause. `npm run build` now preflights the version and prints the requirement
+> instead. On fresh bunker/SSH-only boxes the OS image ships `git` + `docker` but
+> **not** `node` or `npm`. Rescue path — download the Node tarball, extract into
+> `$HOME` and prepend it to your `PATH`:
 >
 > ```bash
-> # Example (adjust ARCH=x64 or arm64):
-> curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz \
+> # Example (adjust ARCH=x64 or arm64; any 22.x >= 22.19.0 works):
+> curl -fsSL https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz \
 >   | tar -xJ -C $HOME
-> export PATH=$HOME/node-v22.14.0-linux-x64/bin:$PATH
-> node -v && npm -v  # verify
+> export PATH=$HOME/node-v22.23.4-linux-x64/bin:$PATH
+> node -v && npm -v  # must print v22.19.0 or newer
 > ```
 >
 > After the toolchain is in place, continue below.
@@ -162,6 +168,11 @@ cp .env.example .env
 npm ci   # reproducible install from the tracked package-lock.json (`npm install` also works)
 PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
 ```
+
+> Node.js **≥ 22.19.0** is required for the source path too — `npm run build`
+> now preflights it (`scripts/check-node-version.mjs`) and prints the required
+> version instead of failing later with the `reading 'bind'` error. See the
+> Quick Start prerequisite above for the no-root toolchain recipe.
 
 Restart the server after adding a provider connection — running config is loaded at boot.
 

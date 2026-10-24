@@ -3,9 +3,13 @@
   "version": "0.5.104",
   "description": "9Router web dashboard",
   "private": true,
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "dev": "next dev --port ${PORT:-20128}",
     "dev:webpack": "next dev --webpack --port ${PORT:-20128}",
+    "prebuild": "node scripts/check-node-version.mjs",
     "build": "next build --webpack",
     "postbuild": "node scripts/copy-standalone-assets.mjs",
     "postbuild:bun": "node scripts/copy-standalone-assets.mjs",
