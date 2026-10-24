@@ -169,7 +169,7 @@ describe("OpenCode free reasoning aliases reach OpenAI-shaped clients", () => {
   it("leaves other providers' deltas alone", async () => {
     const out = passthroughEvents(
       await drain(sseStream([aliasDelta]).pipeThrough(
-        createPassthroughStreamWithLogger("groq", null, MODEL, null, null, null, null),
+        createPassthroughStreamWithLogger("groq", null, null, MODEL),
       )),
     );
     expect(out[0].choices[0].delta.reasoning_content).toBeUndefined();
