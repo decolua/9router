@@ -54,10 +54,6 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
     ? (typeof errorText === "string" ? errorText : JSON.stringify(errorText)).toLowerCase()
     : "";
 
-  if (status === 400 && lowerError.trim() === "bad request") {
-    return { shouldFallback: false, cooldownMs: 0 };
-  }
-
   for (const rule of ERROR_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     // Text-based rule: match substring in error message
