@@ -110,6 +110,13 @@ describe("peekStreamForContent", () => {
     expect(isNoRetryFinish(p.finishReason)).toBe(true);
   });
 
+  it("Responses event framing carries content_filter to the peek decision", async () => {
+    const frame = `event: response.incomplete\ndata: ${JSON.stringify({ response: { status: "incomplete", incomplete_details: { reason: "content_filter" } } })}\n\n`;
+    const p = await peekStreamForContent(sseStream([frame, DONE]));
+    expect(p.outcome).toBe("empty");
+    expect(p.finishReason).toBe("content_filter");
+  });
+
   it("deadline fail-open: slow first content → committed as content", async () => {
     // content frame delayed 200ms, deadline 30ms → must commit (not falsely fall through)
     const p = await peekStreamForContent(sseStream([ROLE, CONTENT, DONE], [0, 200]), { deadlineMs: 30 });
