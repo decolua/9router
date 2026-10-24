@@ -9,6 +9,7 @@ import {
   reconstructStream,
 } from "../../open-sse/services/emptyFailover.js";
 import { NO_RETRY_EMPTY_FINISH } from "../../open-sse/translator/schema/finishReasons.js";
+import { isOpenAIResponsesTerminalEvent } from "../../open-sse/utils/responsesStreamHelpers.js";
 
 // The combo cases below build real streaming responses; keep request-detail writes off disk.
 vi.mock("@/lib/usageDb.js", () => ({
@@ -81,6 +82,9 @@ describe("scanSSEBuffer latches", () => {
 });
 
 describe("isNoRetryFinish", () => {
+  it("treats incomplete response status as terminal when event metadata is absent", () => {
+    expect(isOpenAIResponsesTerminalEvent(null, { response: { status: "incomplete" } })).toBe(true);
+  });
   it("content_filter → no retry", () => expect(isNoRetryFinish("content_filter")).toBe(true));
   it("stop → retry (false)", () => expect(isNoRetryFinish("stop")).toBe(false));
   it("null → false", () => expect(isNoRetryFinish(null)).toBe(false));
