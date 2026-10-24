@@ -111,6 +111,9 @@ function inspectResponsesEvent(obj) {
 export function inspectSSELine(line) {
   const parsed = parseSSELine(line.trimStart());
   if (!parsed || parsed.done) return { content: false, finishReason: null };
+  if (parsed.response?.status === RESPONSES_STATUS.INCOMPLETE) {
+    return inspectResponsesEvent({ ...parsed, type: RESPONSES_EVENT.INCOMPLETE });
+  }
   if (typeof parsed.type === "string" && !Array.isArray(parsed.choices)) {
     return parsed.type.startsWith(RESPONSES_EVENT_PREFIX) ? inspectResponsesEvent(parsed) : inspectClaudeEvent(parsed);
   }

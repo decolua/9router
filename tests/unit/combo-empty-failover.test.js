@@ -264,6 +264,8 @@ describe("inspectSSELine — OpenAI Responses client format", () => {
     const filtered = inspectSSELine(ev({ type: "response.incomplete", response: { status: "incomplete", incomplete_details: { reason: "content_filter" } } }));
     expect(filtered).toMatchObject({ content: false, finishReason: "content_filter" });
     expect(isNoRetryFinish(filtered.finishReason)).toBe(true);
+    const forwarded = inspectSSELine(ev({ response: { status: "incomplete", incomplete_details: { reason: "content_filter" } } }));
+    expect(forwarded).toMatchObject({ content: false, finishReason: "content_filter" });
     const truncated = inspectSSELine(ev({ type: "response.incomplete", response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } }));
     expect(truncated.finishReason).toBe("length");
   });
