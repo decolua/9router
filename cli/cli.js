@@ -3,7 +3,6 @@
 const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const https = require("https");
 const os = require("os");
 
 // Startup readiness/failure detection (DF-9ROUTER-18) and port resolution
@@ -20,6 +19,7 @@ const {
   resolvePort,
   waitForServerReady,
 } = require("./src/cli/utils/serverStartup");
+const { checkForUpdate } = require("./src/cli/utils/updateCheck");
 
 // Native spinner - no external dependency
 function createSpinner(text) {
@@ -111,7 +111,6 @@ if (!noTrayRequested) {
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
-const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
 
 const DEFAULT_HOST = "0.0.0.0";
 
@@ -233,17 +232,6 @@ function logExit(reason, detail) {
 
 // Always use Node.js runtime with absolute path
 const RUNTIME = process.execPath;
-
-// Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
-function compareVersions(a, b) {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (partsA[i] > partsB[i]) return 1;
-    if (partsA[i] < partsB[i]) return -1;
-  }
-  return 0;
-}
 
 // Get app data dir (matches app/src/lib/dataDir.js convention)
 function getAppDataDir() {
@@ -515,55 +503,6 @@ function isRestrictedEnvironment() {
   return null;
 }
 
-// Check if new version available, return latest version or null
-function checkForUpdate() {
-  return new Promise((resolve) => {
-    if (skipUpdate) {
-      resolve(null);
-      return;
-    }
-
-    const spinner = createSpinner("Checking for updates...").start();
-    let resolved = false;
-
-    const safetyTimeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        spinner.stop();
-        resolve(null);
-      }
-    }, 8000);
-
-    const done = (version) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(safetyTimeout);
-      spinner.stop();
-      resolve(version);
-    };
-
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
-            done(latest.version);
-          } else {
-            done(null);
-          }
-        } catch (e) {
-          done(null);
-        }
-      });
-    });
-
-    req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
-  });
-}
-
 // Open browser
 function openBrowser(url) {
   const platform = process.platform;
@@ -599,7 +538,7 @@ if (!fs.existsSync(serverPath)) {
 }
 
 // Start server immediately; run update check in parallel (not on the critical path).
-const updatePromise = checkForUpdate();
+const updatePromise = checkForUpdate({ pkg, skipUpdate, createSpinner });
 killAllAppProcesses(port)
   .then(() => killProcessOnPort(port))
   // Pre-flight (DF-9ROUTER-18): the cleanup above is best-effort — a port we
@@ -622,7 +561,7 @@ killAllAppProcesses(port)
   });
 
 // Show interface selection menu
-async function showInterfaceMenu(latestVersion) {
+async function showInterfaceMenu(updateOffer) {
   const { selectMenu } = require("./src/cli/utils/input");
   const { clearScreen } = require("./src/cli/utils/display");
   const { getEndpoint } = require("./src/cli/utils/endpoint");
@@ -644,8 +583,8 @@ async function showInterfaceMenu(latestVersion) {
 
   const menuItems = [];
 
-  if (latestVersion) {
-    menuItems.push({ label: `Update to v${latestVersion} (current: v${pkg.version})`, icon: "⬆" });
+  if (updateOffer) {
+    menuItems.push({ label: updateOffer.label, icon: "⬆" });
   }
 
   menuItems.push(
@@ -657,9 +596,9 @@ async function showInterfaceMenu(latestVersion) {
 
   const selected = await selectMenu(`Choose Interface (v${pkg.version})`, menuItems, 0, subtitle);
 
-  const offset = latestVersion ? 1 : 0;
+  const offset = updateOffer ? 1 : 0;
 
-  if (latestVersion && selected === 0) return "update";
+  if (updateOffer && selected === 0) return "update";
   if (selected === offset) return "web";
   if (selected === offset + 1) return "terminal";
   if (selected === offset + 2) return "hide";
@@ -670,8 +609,8 @@ const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
 
 function startServer(updatePromise) {
-  // Accept either a Promise (parallel update check) or a resolved value.
-  const latestVersionPromise = Promise.resolve(updatePromise);
+  // Accept either a Promise (parallel update check) or a resolved offer.
+  const updateOfferPromise = Promise.resolve(updatePromise);
   const displayHost = getDisplayHost();
   const url = `http://${displayHost}:${port}/dashboard`;
   // Surface real network exposure when bound to all interfaces (default 0.0.0.0).
@@ -862,22 +801,27 @@ function startServer(updatePromise) {
   waitForServerReady({ port, child: server }).then(async (result) => {
     if (!result.ok) return failStartup(result);
     serverReady = true;
-    // Resolve parallel update check (already running); don't block server start on it.
-    const latestVersion = await latestVersionPromise;
+    // Resolve the parallel update check (already running); don't block server start on it.
+    const updateOffer = await updateOfferPromise;
     // Start tray icon alongside TUI
     initTrayIcon();
 
     try {
       while (true) {
-        const choice = await showInterfaceMenu(latestVersion);
+        const choice = await showInterfaceMenu(updateOffer);
 
         if (choice === "update") {
           isShuttingDown = true;
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
-          console.log(`\n⬆  Update v${pkg.version} → v${latestVersion}\n`);
-          console.log(`Run this after exit:\n`);
-          console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
+          if (updateOffer.kind === "upstream-replaces-fork") {
+            console.log(`\n⬆  Install upstream v${updateOffer.latestVersion} (removes federation)\n`);
+            console.log("This replaces this federation fork with upstream 9router.\n");
+          } else {
+            console.log(`\n⬆  Update v${pkg.version} → v${updateOffer.latestVersion}\n`);
+          }
+          console.log("Run this after exit:\n");
+          console.log(`   \x1b[33m${updateOffer.installCommand}\x1b[0m\n`);
           cleanup();
           await killAllAppProcesses(port);
           await killProcessOnPort(port);
