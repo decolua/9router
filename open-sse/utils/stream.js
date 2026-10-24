@@ -479,12 +479,17 @@ export function createSSEStream(options = {}) {
 
           for (const released of releasedEvents) {
             const releasedLine = released.line;
-            const original = released.payload || parseSSELine(released.trimmed, targetFormat);
+            const original = released.payload ?? parseSSELine(released.trimmed, targetFormat);
             if (!original) {
+              if (released.record) {
+                queueGuardedOutput(controller, replayRawRecord(released));
+                continue;
+              }
               if (released.trimmed.startsWith("data:") && released.trimmed.slice(5).trim() !== "[DONE]") continue;
-              queueGuardedOutput(controller, released.record || (releasedLine.startsWith("data:") && !releasedLine.startsWith("data: ")
+              if (released.trimmed === "data: [DONE]") markDoneSent();
+              queueGuardedOutput(controller, releasedLine.startsWith("data:") && !releasedLine.startsWith("data: ")
                 ? `data: ${releasedLine.slice(5)}\n`
-                : `${releasedLine}\n`));
+                : `${releasedLine}\n`);
               continue;
             }
 
