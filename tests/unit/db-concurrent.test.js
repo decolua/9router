@@ -177,14 +177,25 @@ describe("DB Concurrency — atomic safety", () => {
     expect(g.completionTokens).toBe(N * 50);
   });
 
-  it("records an identical write saved twice in parallel only once", async () => {
+  it("deduplicates parallel requestId-less writes by the upstream usage tuple", async () => {
     const entry = () => ({
-      timestamp: tsFor(3000), provider: "mistral", model: "dup-model", connectionId: "cD",
+      timestamp: tsFor(3000), provider: "mistral", model: "dup-model", connectionId: "cD", apiKey: "dup-key",
       tokens: { prompt_tokens: 7, completion_tokens: 3 }, status: "ok",
     });
     await Promise.all([db.saveRequestUsage(entry()), db.saveRequestUsage(entry())]);
 
-    const stats = await db.getUsageStats("24h");
-    expect(stats.byProvider.mistral.requests).toBe(1);
+    const history = await db.getUsageHistory({ provider: "mistral" });
+    expect(history).toHaveLength(1);
+  });
+
+  it("keeps identical writes with distinct requestIds", async () => {
+    const entry = (requestId) => ({
+      requestId, timestamp: tsFor(3001), provider: "mistral-keyed", model: "dup-model", connectionId: "cD", apiKey: "dup-key",
+      tokens: { prompt_tokens: 7, completion_tokens: 3 }, status: "ok",
+    });
+    await Promise.all([db.saveRequestUsage(entry("request-a")), db.saveRequestUsage(entry("request-b"))]);
+
+    const history = await db.getUsageHistory({ provider: "mistral-keyed" });
+    expect(history).toHaveLength(2);
   });
 });
