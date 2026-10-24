@@ -28,6 +28,7 @@ import { getModelInfo, getComboModels } from "./model.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
 import {
   KEY_ACCESS_COMBO_OWNER,
+  KEY_ACCESS_DENIED_ERROR,
   KEY_ACCESS_PROVIDER_AS_MODEL_KINDS,
   keyAccessDeniedMessage,
 } from "@/shared/constants/keyAccess.js";
@@ -112,7 +113,7 @@ async function isModelStringAllowed(ctx, requested) {
 
 export function keyAccessDeniedResponse(ctx, requested) {
   log.warn("AUTH", `key-access: key "${ctx.keyName}" denied "${requested}"`);
-  return errorResponse(HTTP_STATUS.FORBIDDEN, keyAccessDeniedMessage(requested));
+  return errorResponse(HTTP_STATUS.FORBIDDEN, keyAccessDeniedMessage(requested), null, KEY_ACCESS_DENIED_ERROR);
 }
 
 /**

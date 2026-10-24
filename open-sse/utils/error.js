@@ -4,11 +4,12 @@ import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
  * Build OpenAI-compatible error response body
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {{type: string, code: string}|null} [errorInfoOverride] - Optional error envelope classification
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
-  const errorInfo = ERROR_TYPES[statusCode] || 
-    (statusCode >= 500 
+export function buildErrorBody(statusCode, message, errorInfoOverride = null) {
+  const errorInfo = errorInfoOverride || ERROR_TYPES[statusCode] ||
+    (statusCode >= 500
       ? { type: "server_error", code: "internal_server_error" }
       : { type: "invalid_request_error", code: "" });
 
@@ -25,10 +26,12 @@ export function buildErrorBody(statusCode, message) {
  * Create error Response object (for non-streaming)
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {HeadersInit|null} [extraHeaders] - Optional response headers
+ * @param {{type: string, code: string}|null} [errorInfoOverride] - Optional error envelope classification
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, extraHeaders = null) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, extraHeaders = null, errorInfoOverride = null) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, errorInfoOverride)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",

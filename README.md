@@ -364,6 +364,31 @@ curl -s -b cookies.txt -X POST http://localhost:20129/api/keys \
 # → 201 {"key":"sk-…","name":"my-tool","id":"…","machineId":"…"}
 ```
 
+#### Restrict an API key to specific combos or models
+
+New keys are unrestricted. To make a key usable only with named combos and/or
+models, send the key `id` returned by `POST /api/keys` to the authenticated
+update route:
+
+```bash
+curl -s -b cookies.txt -X PUT http://localhost:20129/api/keys/<id> \
+  -H "Content-Type: application/json" \
+  -d '{"access":{"restricted":true,"allow":["Main","openai/model-b"]}}'
+```
+
+`allow` entries are exact, case-insensitive combo or resolved model names. An
+allowed combo authorizes the models it routes to only when the client calls the
+combo; calling one of those members directly requires its own `allow` entry.
+Set `{"access":{"restricted":false,"allow":[]}}` to remove the restriction.
+
+A restricted key that requests a target outside its `allow` list receives HTTP
+403 before any provider credential lookup. The OpenAI-style error has
+`type` and `code` both set to `permission_error`, for example:
+
+```json
+{"error":{"message":"This API key is not allowed to use model \"openai/model-a\"","type":"permission_error","code":"permission_error"}}
+```
+
 `ollama-local` talks to `http://localhost:11434/api/chat` (the registry default), so
 Ollama itself must be running for those models to answer. Every other provider needs
 its own real credential in the same `POST /api/providers` call — no keyless
