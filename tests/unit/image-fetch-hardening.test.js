@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock DNS lookup so we control which host resolves to what IP.
 const lookupMock = vi.fn();
-// image.js resolves with { all: true } (DNS pinning, c7d07448), which returns an array;
-// a bare record made every lookup fail, so private-IP cases passed for the wrong reason.
+// image.js resolves with { all: true } (DNS pinning, c7d07448), which returns an array.
+// lookupMock always resolves an array of address records, so return it as-is for
+// opts.all and the first record otherwise. Wrapping it again would hand the guard a
+// nested array whose .address is undefined, making every lookup look private.
 vi.mock("node:dns/promises", () => ({
   lookup: async (host, opts) => {
-    const record = await lookupMock(host, opts);
-    return opts?.all ? [record] : record;
+    const records = await lookupMock(host, opts);
+    return opts?.all ? records : records[0];
   },
 }));
 
