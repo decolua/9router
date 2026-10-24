@@ -25,41 +25,14 @@ tasks:
   - The real Gemini-shaped non-stream and streaming chatCore paths persist usageHistory
     prompt tokens equal to usageMetadata.promptTokenCount; tests prove both paths
     and the same request values.
-  status: in_progress
+  status: complete
   created_at: '2026-10-24T20:49:52.447173+00:00'
+  completed_at: '2026-10-24T21:08:13.198216+00:00'
 - id: DF-9ROUTER-66
   title: Document per-key access control and fix denial code
   criteria:
   - README documents PUT /api/keys/<id> access restrictions and the denial uses error.code
     permission_error; a vitest test proves the response.
-  status: in_progress
+  status: complete
   created_at: '2026-10-24T20:49:52.951569+00:00'
-- id: DF-9ROUTER-67
-  title: Fix fresh-machine build
-  criteria:
-  - npm run build passes, the packaged health route test passes over HTTP, and README
-    documents the clean-machine prerequisite or diagnostic.
-  status: in_progress
-  created_at: '2026-10-24T20:49:53.395808+00:00'
-- id: DF-9ROUTER-68
-  title: Prevent fork updater offering upstream install
-  criteria:
-  - When registry version is newer, the fork launcher does not offer an unlabeled
-    npm install -g 9router@latest upstream action; a vitest test proves the fork-safe
-    choice.
-  status: in_progress
-  created_at: '2026-10-24T20:49:55.341778+00:00'
-- id: DF-9ROUTER-69
-  title: Scope 9router gitignore rule
-  criteria:
-  - New skills/9router-chat/SKILL.md is not ignored while a root 9router-0.5.104.tgz
-    artifact remains ignored, and git diff --check passes.
-  status: in_progress
-  created_at: '2026-10-24T20:49:55.771542+00:00'
-- id: DF-9ROUTER-70
-  title: Fix clean-machine CLI headless test
-  criteria:
-  - The CLI headless test is hermetic and passes consistently on clean Debian-13/node-22
-    and the fresh-machine battery is rerun and reported.
-  status: in_progress
-  created_at: '2026-10-24T20:49:57.680619+00:00'
+  completed_at: '2026-10-24T21:11:23.405178+00:00'
