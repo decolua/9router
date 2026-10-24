@@ -395,5 +395,11 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       expect(tried).toEqual(["openai/m0"]);
       expect(out).toContain('"reason":"content_filter"');
     });
+    it("response.incomplete (max_output_tokens) remains eligible for empty failover", async () => {
+      const truncated = rev({ type: "response.incomplete", response: { id: "resp_1", status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } });
+      const { out, tried } = await combo([[CREATED, truncated], [CREATED, TEXT("from-m1"), COMPLETED]], RESP);
+      expect(tried).toEqual(["openai/m0", "openai/m1"]);
+      expect(out).toContain("from-m1");
+    });
   });
 });

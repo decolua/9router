@@ -528,6 +528,12 @@ export function createSSEStream(options = {}) {
             if (typeof thinking === "string") { totalContentLength += thinking.length; accumulatedThinking += thinking; }
             const extracted = extractUsage(parsed);
             if (extracted) usage = mergeUsage(usage, extracted);
+            const isResponsesPassthrough = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
+            if (isResponsesPassthrough) {
+              const eventName = released.eventName || currentOpenAIResponsesEvent || parsed.type;
+              queueGuardedOutput(controller, formatSSE({ event: eventName, data: parsed }, sourceFormat));
+              continue;
+            }
             if (!hasValuableContent(parsed, FORMATS.OPENAI)) continue;
             const isFinishChunk = parsed.choices?.[0]?.finish_reason;
             if (isFinishChunk && !hasValidUsage(parsed.usage)) {
