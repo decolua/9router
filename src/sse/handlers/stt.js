@@ -122,16 +122,12 @@ export async function handleStt(request) {
       }
       if (result.success) {
         if (isCodex) await clearAccountError(credentials.connectionId, credentials, model);
+        const usageError = await recordKeyedUsage(request, keyAccess, { provider, model, connectionId: credentials.connectionId, endpoint: new URL(request.url).pathname, tokens: {} });
+        if (usageError) return usageError;
         return result.response;
       }
     } catch {
       return errorResponse(HTTP_STATUS.BAD_GATEWAY, "STT credential or transport failure");
-    }
-
-    if (result.success) {
-      const usageError = await recordKeyedUsage(request, keyAccess, { provider, model, connectionId: credentials.connectionId, endpoint: new URL(request.url).pathname, tokens: {} });
-      if (usageError) return usageError;
-      return result.response;
     }
     if (request.signal.aborted) return errorResponse(504, "Transcription cancelled");
     // Bad audio and unsupported parameters are client errors, not broken accounts.
