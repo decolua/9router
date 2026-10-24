@@ -117,8 +117,13 @@ describe("commandcode-to-openai — finish", () => {
 
 describe("commandcode-to-openai — error event", () => {
   it("throws a readable error instead of a fake successful assistant chunk", () => {
-    expect(() => feed([
-      { type: "error", error: { type: "server_error", message: "Boom" } },
-    ])).toThrow("Boom");
+    let message = "";
+    try {
+      feed([{ type: "error", error: { type: "server_error", message: "Boom" } }]);
+    } catch (err) {
+      message = err.message;
+    }
+    expect(message).toContain("Boom");
+    expect(message).not.toContain("[object Object]");
   });
 });

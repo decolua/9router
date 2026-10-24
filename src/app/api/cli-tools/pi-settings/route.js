@@ -145,6 +145,8 @@ export async function POST(request) {
       modelList = [{ id: modelId, name: modelId, contextWindow: 128000, maxTokens: 16384 }];
     }
 
+    const existingProvider = existing.providers["9router"] || {};
+
     existing.providers["9router"] = {
       ...existingProvider,
       baseUrl: normalizedBaseUrl,

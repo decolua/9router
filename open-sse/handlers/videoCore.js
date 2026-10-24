@@ -18,6 +18,80 @@ export function getVideoConfig(provider) {
   return PROVIDER_MEDIA[provider]?.videoConfig || null;
 }
 
+function isExecutorDrivenVideo(provider) {
+  return PROVIDER_MEDIA[provider]?.videoConfig?.executorDriven === true;
+}
+
+/** Executor-driven generation: the browser executor returns base64 mp4. */
+async function executeExecutorDrivenVideo({ provider, rawBody, credentials, signal, log, onCredentialsRefreshed }) {
+  let parsed = {};
+  try {
+    parsed = JSON.parse(typeof rawBody === "string" ? rawBody : String(rawBody || "{}"));
+  } catch {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] invalid video request body`);
+  }
+  if (!parsed.prompt) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] video request requires a prompt`);
+  }
+
+  // Image-to-video: accept `image`/`image_url` (string) or `images`/`image_urls` (array)
+  const imageRefs = []
+    .concat(parsed.image ?? parsed.image_url ?? [])
+    .concat(Array.isArray(parsed.images) ? parsed.images : [])
+    .concat(Array.isArray(parsed.image_urls) ? parsed.image_urls : [])
+    .filter((ref) => typeof ref === "string" && ref);
+
+  const { getExecutor } = await import("../executors/index.js");
+  const executor = getExecutor(provider);
+  if (!executor?.generateMedia) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}] has no executor video support`);
+  }
+
+  try {
+    const apiKeyBefore = credentials?.apiKey;
+    const [media] = await executor.generateMedia({
+      prompt: parsed.prompt,
+      kind: "video",
+      size: parsed.size,
+      model: parsed.model,
+      duration: parsed.seconds ?? parsed.duration,
+      resolution: parsed.resolution,
+      n: 1,
+      images: imageRefs,
+      credentials,
+      signal,
+      log,
+    });
+    const dataUrl = `data:${media.mime || "video/mp4"};base64,${media.b64}`;
+    // Cookies that rotate on use (Clerk `__client`) are mutated in place by the
+    // executor — persist the new value so the chain does not drift.
+    if (onCredentialsRefreshed && credentials?.apiKey && credentials.apiKey !== apiKeyBefore) {
+      await onCredentialsRefreshed({ apiKey: credentials.apiKey });
+    }
+    return {
+      success: true,
+      response: new Response(
+        JSON.stringify({
+          id: `video-${provider}-${Date.now()}`,
+          object: "video.generation",
+          created: Math.floor(Date.now() / 1000),
+          model: parsed.model || provider,
+          status: "completed",
+          video: { url: dataUrl, ...(media.width ? { width: media.width } : {}), ...(media.height ? { height: media.height } : {}) },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" },
+        }
+      ),
+    };
+  } catch (error) {
+    const message = sanitizeSecrets(error?.message || "video generation failed", credentials);
+    const status = error?.status && Number.isInteger(error.status) ? error.status : 502;
+    return createErrorResult(status, `[${provider}] ${message}`);
+  }
+}
+
 /** Strip bearer tokens / obvious secrets from text destined for clients or logs. */
 export function sanitizeSecrets(text, credentials = null) {
   if (!text) return text;
@@ -87,6 +161,19 @@ export async function handleVideoProxyCore({
   log,
   onCredentialsRefreshed,
 }) {
+  // Executor-driven providers (browser-automation web providers, e.g.
+  // muse-web): the registry marks them with videoConfig.executorDriven and the
+  // executor's generateMedia() produces the video synchronously as base64.
+  // "generations" = text-to-video; "edits" = image-to-video (input images
+  // are attached to the agent thread before the prompt).
+  if (
+    isExecutorDrivenVideo(provider) &&
+    !requestId &&
+    (action === "generations" || action === "edits")
+  ) {
+    return executeExecutorDrivenVideo({ provider, rawBody, credentials, signal, log, onCredentialsRefreshed });
+  }
+
   const config = getVideoConfig(provider);
   if (!config) {
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support video generation`);

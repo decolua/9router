@@ -29,6 +29,7 @@ import {
 } from "@/lib/oauth/constants/oauth";
 import { buildClineHeaders } from "@/shared/utils/clineAuth";
 import { getKimchiUserAgent } from "open-sse/utils/kimchiUserAgent.js";
+import { hasWebIdentityProbe, fetchWebIdentity } from "open-sse/services/webIdentity.js";
 
 // OAuth provider test endpoints
 const OAUTH_TEST_CONFIG = {
@@ -253,7 +254,7 @@ function parseProviderErrorMessage(bodyText, fallback) {
 
 async function probeCloudCodeAssistAccess(connection, accessToken, effectiveProxy = null) {
   const userAgent = connection.provider === "antigravity"
-    ? "google-api-nodejs-client/9.15.1 vscode-antigravity/1.107.0"
+    ? (ANTIGRAVITY_CONFIG.loadCodeAssistUserAgent || "antigravity/hub/2.24.0 darwin/arm64")
     : "google-api-nodejs-client/9.15.1 gemini-cli/0.34.0";
 
   const res = await fetchWithConnectionProxy(CLOUD_CODE_ASSIST_TEST_URL, {
@@ -590,8 +591,40 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     }
   }
 
+  // Web-cookie providers: a session probe (identity/lightweight endpoint) is the
+  // only meaningful test — the generic key probes have no way to read a cookie
+  // header. An inconclusive probe keeps the connection active so a network
+  // hiccup cannot mark a healthy session as broken.
+  if (hasWebIdentityProbe(connection.provider)) {
+    const identity = await fetchWebIdentity(connection.provider, connection.apiKey || "");
+    if (identity.status === "valid") return { valid: true, error: null };
+    if (identity.status === "invalid") return { valid: false, error: identity.error };
+    return { valid: true, error: `Could not verify the session: ${identity.error}` };
+  }
+
   try {
     switch (connection.provider) {
+      case "commandcode": {
+        const res = await fetchWithConnectionProxy(
+          "https://api.commandcode.ai/alpha/whoami?limits=1",
+          {
+            headers: {
+              Authorization: `Bearer ${connection.apiKey}`,
+              Accept: "application/json",
+            },
+          },
+          effectiveProxy,
+        );
+        const valid = res.ok;
+        return {
+          valid,
+          error: valid
+            ? null
+            : res.status === 401 || res.status === 403
+              ? "Invalid API key"
+              : `Command Code API error (${res.status})`,
+        };
+      }
       case "cloudflare-ai": {
         const psd = connection.providerSpecificData || {};
         const accountId = psd.accountId;
@@ -913,6 +946,23 @@ case "llm7": {
           headers: { Authorization: `Bearer ${connection.apiKey}` },
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
+      }
+      case "sensenova": {
+        const validateUrl = PROVIDERS.sensenova?.validateUrl || "https://token.sensenova.cn/v1/models";
+        const res = await fetchWithConnectionProxy(validateUrl, {
+          method: "GET",
+          headers: {
+            Authorization: "Bearer " + connection.apiKey,
+            Accept: "application/json",
+          },
+        }, effectiveProxy);
+        const valid = res.ok;
+        return {
+          valid,
+          error: valid ? null : res.status === 401 || res.status === 403
+            ? "Invalid API key"
+            : `SenseNova API error (${res.status})`,
+        };
       }
       case "kimchi": {
         // Dual-auth: same validation endpoint as the OAuth flow — the token (API key

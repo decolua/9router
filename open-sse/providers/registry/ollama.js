@@ -31,8 +31,16 @@ export default {
     { id: "qwen3.5", name: "Qwen3.5" },
     { id: "minimax-m3", name: "MiniMax M3" },
     { id: "deepseek-v4.1-flash:cloud", name: "DeepSeek V4.1 Flash" },
+    { id: "clef", name: "Clef", kind: "systemone" },
+    { id: "clef-flash", name: "Clef Flash", kind: "systemone" },
+    { id: "clef:cloud", name: "Clef (Cloud)", kind: "systemone" },
   ],
-  serviceKinds: ["llm", "webFetch"],
+  serviceKinds: ["llm", "webFetch", "systemone"],
+  systemoneConfig: {
+    baseUrl: "https://ollama.com/v1/systemone",
+    authType: "apikey",
+    authHeader: "bearer",
+  },
   fetchConfig: {
     baseUrl: "https://ollama.com/api/web_fetch",
     method: "POST",

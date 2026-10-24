@@ -19,7 +19,9 @@ const SUPPORTED = [
   "deepseek", "freebuff", "opencode-go", "zed", "commandcode",
 ];
 
-describe("usage dispatch", () => {
+// The first case imports the usage-provider graph, which exceeds the 5s default under
+// full-suite load (it passes in isolation).
+describe("usage dispatch", { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("unsupported provider → not-implemented message", async () => {

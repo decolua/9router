@@ -47,6 +47,74 @@ export function resolveDefaultProfileArn(authMethod) {
 export const KIRO_THINKING_BUDGET_DEFAULT = 16000;
 
 /**
+ * Anthropic date-suffixed snapshot id, e.g. `claude-sonnet-4-5-20250929`.
+ * Kiro's data plane only accepts the dotted alias (`claude-sonnet-4.5`).
+ */
+const ANTHROPIC_SNAPSHOT_SUFFIX = /-\d{8}$/;
+
+/**
+ * Fold an Anthropic model id onto the Kiro upstream alias.
+ *
+ * Anthropic and Kiro disagree on id spelling: Anthropic ships
+ * `claude-sonnet-4-5-20250929` / `claude-opus-4-5`, while Kiro's
+ * `GenerateAssistantResponse` only accepts `claude-sonnet-4.5` and answers
+ * anything else with `400 INVALID_MODEL_ID`.
+ *
+ * Clients that speak the Anthropic Messages API (Claude Code, cc-switch, …)
+ * send the Anthropic spelling, so the raw id has to be folded onto the Kiro
+ * alias before the request leaves this process. Matching is keyword-based
+ * rather than an exact-id table: snapshot suffixes and future minor revisions
+ * would otherwise fall through and 400 upstream.
+ *
+ * Unknown ids are returned untouched so operators can still pass through
+ * models Kiro adds ahead of this list.
+ *
+ * @param {string} model
+ * @returns {string}
+ */
+export function normalizeKiroUpstreamModelId(model) {
+  if (typeof model !== "string" || model === "") return model;
+
+  const id = model.toLowerCase().replace(ANTHROPIC_SNAPSHOT_SUFFIX, "");
+
+  if (id.includes("sonnet")) {
+    if (id.includes("5.5") || id.includes("5-5")) return "claude-sonnet-5.5";
+    if (id.includes("4.6") || id.includes("4-6")) return "claude-sonnet-4.6";
+    if (id.includes("sonnet-5") || id.includes("sonnet.5")) return "claude-sonnet-5";
+    if (id.includes("4.5") || id.includes("4-5")) return "claude-sonnet-4.5";
+    if (id.includes("sonnet-4") || id.includes("sonnet.4")) return "claude-sonnet-4";
+    return "claude-sonnet-4.5";
+  }
+  if (id.includes("fable")) return "claude-fable-5";
+  if (id.includes("opus")) {
+    if (id.includes("5.5") || id.includes("5-5")) return "claude-opus-5.5";
+    if (id.includes("opus-5") || id.includes("opus.5") || id.includes("opus 5")) return "claude-opus-5";
+    if (id.includes("4.8") || id.includes("4-8")) return "claude-opus-4.8";
+    if (id.includes("4.7") || id.includes("4-7")) return "claude-opus-4.7";
+    if (id.includes("4.5") || id.includes("4-5")) return "claude-opus-4.5";
+    return "claude-opus-4.6";
+  }
+  if (id.includes("haiku")) {
+    return id.includes("5.5") || id.includes("5-5") ? "claude-haiku-5.5" : "claude-haiku-4.5";
+  }
+  if (id === "auto") return "auto";
+  if (id.includes("deepseek")) return "deepseek-3.2";
+  if (id.includes("glm")) return "glm-5";
+  if (id.includes("minimax")) {
+    return id.includes("2.5") || id.includes("2-5") ? "minimax-m2.5" : "minimax-m2.1";
+  }
+  if (id.includes("qwen")) return "qwen3-coder-next";
+  if (id.includes("kimi")) return "kimi-k3";
+  if (id.includes("gpt")) {
+    if (id.includes("terra")) return "gpt-5.6-terra";
+    if (id.includes("luna")) return "gpt-5.6-luna";
+    if (id.includes("sol") || id.includes("5.6") || id.includes("5-6")) return "gpt-5.6-sol";
+    return model;
+  }
+  return model;
+}
+
+/**
  * Resolve a Kiro model after consuming the generic model(level) suffix.
  * The suffix is a 9router request override, not part of Kiro's upstream model id.
  */
@@ -356,7 +424,7 @@ export function resolveKiroModel(model) {
     thinking = true;
     upstream = stripThinkingSuffix(upstream);
   }
-  return { upstream, agentic, thinking };
+  return { upstream: normalizeKiroUpstreamModelId(upstream), agentic, thinking };
 }
 
 /**

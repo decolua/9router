@@ -152,7 +152,7 @@ export default function QuotaTable({
           const isCreditBalance = quota.isCreditBalance === true;
           const colors = isCreditBalance
             ? { text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500", bgLight: "bg-blue-500/10", emoji: "💰" }
-            : getColorClasses(quota.remaining);
+            : getColorClasses(quota.colorPercentage ?? quota.remaining);
           // Qoder flags open-ended plans with `neverExpires` (its API reports a
           // year-9999 sentinel). Return "-"/"Never expires" rather than an empty
           // countdown: the render below branches on `countdown !== "-"`, so an
@@ -161,7 +161,9 @@ export default function QuotaTable({
           // Providers that expose a detail page but no per-bucket reset date
           // (Qoder add-on grants) get a pointer to it instead of a bare "N/A".
           const seeDetails = !quota.neverExpires && !quota.resetAt && Boolean(quota.detailUrl);
-          const resetDisplay = quota.neverExpires
+          const resetDisplay = quota.emptyMessage
+            ? quota.emptyMessage
+            : quota.neverExpires
             ? "Never expires"
             : seeDetails
               ? "See details"

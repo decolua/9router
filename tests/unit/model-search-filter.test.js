@@ -107,6 +107,22 @@ describe("modelSearchFilter utility", () => {
       expect(matchesSearch(embedding, regexQuery)).toBe(false);
       expect(matchesSearch(gpt4, regexQuery)).toBe(true);
     });
+
+    it.each(["g", "y", "gy"])("matches independently when reusing a regex with %s flags", (flags) => {
+      const query = parseSearchQuery(`/(?<!sonnet)claude/${flags}`);
+
+      expect(matchesSearch("claude-opus", query)).toBe(true);
+      expect(matchesSearch("claude-sonnet", query)).toBe(true);
+      expect(matchesSearch("claude-haiku", query)).toBe(true);
+    });
+
+    it("preserves case-sensitive and sticky matching semantics", () => {
+      const query = parseSearchQuery("/claude/y");
+
+      expect(matchesSearch("Claude-opus", query)).toBe(false);
+      expect(matchesSearch("anthropic/claude-opus", query)).toBe(false);
+      expect(matchesSearch("claude-opus", query)).toBe(true);
+    });
   });
 
   describe("filterModelsByQuery", () => {
@@ -134,6 +150,20 @@ describe("modelSearchFilter utility", () => {
     it("filters with regex pattern", () => {
       const result = filterModelsByQuery(sampleModels, "/gpt-4o-(mini)/i");
       expect(result.map((m) => m.id)).toEqual(["gpt-4o-mini"]);
+    });
+
+    it.each([
+      ["/(?<!sonnet)claude/g", ["claude-opus", "claude-sonnet", "claude-haiku", "claude-4.5"]],
+      ["/^(?!.*haiku).*claude/g", ["claude-opus", "claude-sonnet", "claude-4.5"]],
+    ])("keeps global assertion search %s independent of item order and previous filters", (rawQuery, names) => {
+      const models = ["claude-opus", "claude-sonnet", "claude-haiku", "claude-4.5"]
+        .map((name) => ({ name, id: `anthropic/${name}` }));
+      const expected = models.filter((model) => names.includes(model.name));
+      const query = parseSearchQuery(rawQuery);
+
+      expect(filterModelsByQuery(models, query)).toEqual(expected);
+      expect(filterModelsByQuery(models, query)).toEqual(expected);
+      expect(filterModelsByQuery([...models].reverse(), query)).toEqual([...expected].reverse());
     });
   });
 });

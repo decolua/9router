@@ -40,6 +40,8 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
     return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, onStreamFailure, apiKey, customToolNames, ensureOpenAIDone, credentials, onGuardFailure);
   }
 
+  // The passthrough path has no format translation, so the fingerprint's tool
+  // rename map must be handed over explicitly to restore caller tool names.
   return createPassthroughStreamWithLogger(provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, onStreamFailure, apiKey, targetFormat, sourceFormat, onGuardFailure);
 }
 

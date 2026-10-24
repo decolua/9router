@@ -85,6 +85,7 @@ import p80 from "./searchapi.js";
 import p81 from "./searxng.js";
 import p82 from "./serper.js";
 import p83 from "./siliconflow.js";
+import p139 from "./sensenova.js";
 import p84 from "./stability-ai.js";
 import p85 from "./tavily.js";
 import p86 from "./together.js";
@@ -124,22 +125,28 @@ import p118 from "./selfhosted-tts.js";
 import p119 from "./selfhosted-embedding.js";
 import p120 from "./fish-audio.js";
 import p121 from "./alitp-intl.js";
-import p122 from "./freebuff.js";
-import p125 from "./kenari.js";
-import p126 from "./xquik.js";
-import p127 from "./tokenharbor.js";
-import p128 from "./dahl.js";
-import p129 from "./atria.js";
-import p130 from "./agnes.js";
-import p131 from "./bai.js";
-import p132 from "./tinyfish.js";
-import p133 from "./v1m.js";
-import p134 from "./muse.js";
-import p135 from "./minimax-code.js";
-import p136 from "./minimax-code-global.js";
-import p137 from "./bedrock.js";
-import p138 from "./bedrock-xai.js";
-import p139 from "./nous.js";
+import p122 from "./xquik.js";
+import p125 from "./tokenharbor.js";
+import p127 from "./atria.js";
+import p130 from "./bai.js";
+import p131 from "./tinyfish.js";
+import p132 from "./v1m.js";
+import p133 from "./muse.js";
+import p134 from "./minimax-code.js";
+import p135 from "./minimax-code-global.js";
+import p136 from "./bedrock.js";
+import p137 from "./bedrock-xai.js";
+import p140 from "./deepseek-web.js";
+import p152 from "./freebuff.js";
+import p153 from "./kenari.js";
+import p154 from "./dahl.js";
+import p155 from "./agnes.js";
+import p156 from "./nous.js";
+import p143 from "./gemini-web.js";
+import p144 from "./muse-web.js";
+import p146 from "./chatgpt-web.js";
+import p147 from "./veoaifree-web.js";
+import p151 from "./uc-web.js";
 export default [
   p0,
   p1,
@@ -227,6 +234,7 @@ export default [
   p81,
   p82,
   p83,
+  p139,
   p84,
   p85,
   p86,
@@ -266,10 +274,7 @@ export default [
   p121,
   p122,
   p125,
-  p126,
   p127,
-  p128,
-  p129,
   p130,
   p131,
   p132,
@@ -278,6 +283,15 @@ export default [
   p135,
   p136,
   p137,
-  p138,
-  p139,
+  p140,
+  p143,
+  p144,
+  p146,
+  p147,
+  p151,
+  p152,
+  p153,
+  p154,
+  p155,
+  p156,
 ];

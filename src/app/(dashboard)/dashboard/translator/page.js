@@ -4,8 +4,15 @@ import { useState } from "react";
 import { Card, Button } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import dynamic from "next/dynamic";
+import { MONACO_VS_PATH } from "@/shared/constants/monaco";
 
-const Editor = dynamic(() => import("@monaco-editor/react"), { ssr: false });
+const Editor = dynamic(
+  () => import("@monaco-editor/react").then((mod) => {
+    mod.loader.config({ paths: { vs: MONACO_VS_PATH } });
+    return mod.default;
+  }),
+  { ssr: false }
+);
 
 // 7 steps matching requestLogger files exactly
 const STEPS = [

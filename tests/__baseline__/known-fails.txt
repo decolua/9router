@@ -14,6 +14,11 @@ tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default execu
 tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) clinepass → headers (apiKey / oauth)
 tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) kimi → headers (apiKey / oauth)
 tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor providers) blackbox → url (stream + non-stream)
+# Failures that remain on master (triaged 2026-10-21 against v0.5.104). Grouped by cause;
+# remove an entry as soon as its test passes.
+
+# Catalogued before the June translator refactor (9532ec80); expected behavior not
+# re-established from current code, needs the maintainer.
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
@@ -122,3 +127,21 @@ tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsur
 # Added 2026-09-24: xai-oauth-service needs live network per repo AGENTS.md.
 tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh adds CodeWhisperer external IdP headers and endpoint ordering
 tests/unit/xai-oauth-service.test.js :: xai/oauth service validates discovered endpoints are https x.ai URLs
+
+# Real bug: /api/usage/stats serializes raw API keys as byApiKey property names (GHSA-vjc7).
+# Fixed by decolua/9router#4286.
+tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use masked key, not raw key
+
+# Stale expectations fixed by decolua/9router#3665 (search auto-switch disabled on purpose;
+# reorder returns a copy).
+tests/unit/combo-autoswitch.test.js :: detectRequiredCapabilities web_search tool -> search
+tests/unit/combo-autoswitch.test.js :: reorderByCapabilities keeps order when no model matches
+
+# Live call: the upstream now answers "Unsupported model mimo-auto", the only model the
+# (hidden since 6d96e24b) mimo-free / mmf providers list.
+tests/unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH Chrome User-Agent → 200
+
+# Cannot load in this repo: benchmarks lowdb (removed in bee8dad9) / imports the cloud/ worker,
+# which is not part of this repository.
+tests/unit/db-benchmark.test.js :: <suite failed to load>
+tests/unit/embeddings.cloud.test.js :: <suite failed to load>
