@@ -414,7 +414,7 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
           <h2 className="text-lg font-semibold">Connections</h2>
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs text-text-muted font-medium">Strategy</span>
-            <div className="w-[190px]">
+            <div className="w-[230px]">
               <Select
                 options={PROVIDER_STRATEGY_OPTIONS}
                 value={providerStrategy || globalStrategy}
