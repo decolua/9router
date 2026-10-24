@@ -48,11 +48,12 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     expect(typeof body.input[0].content).not.toBe("string");
   });
 
-  it("skips Responses tool/reasoning history instead of collapsing it into a message (#2132)", async () => {
+  it("compresses only plain-text function_call_output leaves in place (#2132)", async () => {
+    const originalOutput = "ok ".repeat(200).trim();
     global.fetch = vi.fn(async () => ({
       ok: true,
       json: async () => ({
-        messages: [{ role: "user", content: "compressed tool history" }],
+        messages: [{ role: "tool", tool_call_id: "headroom-tool-0", content: "ok" }],
         tokens_saved: 10,
       }),
     }));
@@ -72,7 +73,7 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
       {
         type: "function_call_output",
         call_id: "call_apply_patch_123",
-        output: "ok",
+        output: originalOutput,
       },
       {
         type: "reasoning",
@@ -99,9 +100,36 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
       diagnostics,
     });
 
-    expect(data).toBeNull();
-    expect(global.fetch).not.toHaveBeenCalled();
-    expect(body.input).toEqual(input);
-    expect(diagnostics.reason).toBe("skipped: openai-responses tool/reasoning input is not safe to compress");
+    expect(data).not.toBeNull();
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+
+    // The proxy only ever sees the projected tool-output leaf, never the protocol items.
+    const [, init] = global.fetch.mock.calls[0];
+    expect(JSON.parse(init.body).messages).toEqual([
+      { role: "tool", tool_call_id: "headroom-tool-0", content: originalOutput },
+    ]);
+
+    // Only the plain-text leaf is replaced; everything else stays byte-identical.
+    expect(body.input[2]).toEqual({
+      type: "function_call_output",
+      call_id: "call_apply_patch_123",
+      output: "ok",
+    });
+    expect(body.input[0]).toEqual(input[0]);
+    expect(body.input[1]).toEqual(input[1]);
+    expect(body.input[3]).toEqual(input[3]);
+    expect(body.input.map((item) => item.type)).toEqual([
+      "message",
+      "function_call",
+      "function_call_output",
+      "reasoning",
+    ]);
+    expect(body.tools).toEqual([
+      {
+        type: "custom",
+        name: "apply_patch",
+        format: { type: "grammar", syntax: "lark", definition: "start: /.+/" },
+      },
+    ]);
   });
 });
