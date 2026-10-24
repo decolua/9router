@@ -1,0 +1,18 @@
+{
+  "tick_id": "9router-foreman-2026-10-24-20-46-00",
+  "block_id": "DF-9ROUTER-70",
+  "base": "origin/federation",
+  "base_sha": "f387b89f",
+  "wave_budget": 11,
+  "wave_size": 6,
+  "selection_reason": "block_drive ranked DF-9ROUTER-70 first with six ready rows; all six have no depends_on edges and touch distinct file clusters",
+  "workers": [
+    {"row_id":"DF-9ROUTER-39-R2","worktree":"/home/kara/worktrees/9router-df39-202610242046","branch":"wt/df39-202610242046","brief":"/tmp/9router-20261024-204600-DF-9ROUTER-39-R2.txt"},
+    {"row_id":"DF-9ROUTER-66","worktree":"/home/kara/worktrees/9router-df66-202610242046","branch":"wt/df66-202610242046","brief":"/tmp/9router-20261024-204600-DF-9ROUTER-66.txt"},
+    {"row_id":"DF-9ROUTER-67","worktree":"/home/kara/worktrees/9router-df67-202610242046","branch":"wt/df67-202610242046","brief":"/tmp/9router-20261024-204600-DF-9ROUTER-67.txt"},
+    {"row_id":"DF-9ROUTER-68","worktree":"/home/kara/worktrees/9router-df68-202610242046","branch":"wt/df68-202610242046","brief":"/tmp/9router-20261024-204600-DF-9ROUTER-68.txt"},
+    {"row_id":"DF-9ROUTER-69","worktree":"/home/kara/worktrees/9router-df69-202610242046","branch":"wt/df69-202610242046","brief":"/tmp/9router-20261024-204600-DF-9ROUTER-69.txt"},
+    {"row_id":"DF-9ROUTER-70","worktree":"/home/kara/worktrees/9router-df70-202610242046","branch":"wt/df70-202610242046","brief":"/tmp/9router-20261024-204600-DF-9ROUTER-70.txt"}
+  ],
+  "status": "prepared"
+}
