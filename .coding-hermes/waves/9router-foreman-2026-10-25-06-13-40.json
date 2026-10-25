@@ -1,0 +1,39 @@
+{
+  "tick_id": "9router-foreman-2026-10-25-06-13-40",
+  "type": "wave-recovery",
+  "recovered_from": "9router-foreman-2026-10-24-23-49-40",
+  "project": "9router",
+  "started_at": "2026-10-25T06:13:40-05:00",
+  "finished_at": "2026-10-25T01:37:00-05:00",
+  "recovery": {
+    "workers": 0,
+    "result": "No workers were listed in the injected recovery manifest; prior recovery manifest 9router-foreman-2026-10-25-02-35-16.json is already finished with DF-9ROUTER-70 merged and closed."
+  },
+  "block_id": "QA-9ROUTER-RELENG-2",
+  "wave_id": "9router-foreman-2026-10-25-06-13-40",
+  "mode": "serial-fallback",
+  "wave_budget": 12,
+  "slots_used": 1,
+  "reason": "Host loadavg 6.99 on 16 CPUs computes 9 slots, but the selected QA rows require one foreman-owned bunker battery, not coding workers. The battery was launched directly as required by the QA harness procedure.",
+  "workers": [
+    {
+      "task_id": "QA-9ROUTER-RELENG-1",
+      "status": "failed",
+      "evidence": "/tmp/bunker-qa-evidence-9router-releng-20261025T061340Z.jsonl",
+      "agent": "f0208fbe",
+      "server": "bunker-mvp",
+      "result": "Battery still running after 16 evidence rows; collect exceeded tick window. Row failed with named recovery reason; next QA pass must collect preserved agent."
+    },
+    {
+      "task_id": "QA-9ROUTER-RELENG-2",
+      "status": "failed",
+      "evidence": "/tmp/bunker-qa-evidence-9router-releng-20261025T061340Z.jsonl",
+      "agent": "f0208fbe",
+      "server": "bunker-mvp",
+      "result": "Battery still running after 16 evidence rows; collect exceeded tick window. Row failed with named recovery reason; next QA pass must collect preserved agent."
+    }
+  ],
+  "block_status": "open: QA battery evidence is incomplete; no new coding wave dispatched.",
+  "remote_ci": "failure/stale: gh run list showed a failure from 2026-10-08 and no newer runs; CI-9ROUTER-005 tracks the repository Actions trigger outage.",
+  "main_commit": "pending board closeout"
+}
