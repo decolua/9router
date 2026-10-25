@@ -1,0 +1,24 @@
+{
+  "tick_id": "9router-foreman-2026-10-25-08-07-05",
+  "block_id": "DOC-32",
+  "mode": "serial-fallback",
+  "wave_budget": 1,
+  "computed_slots": 1,
+  "reason": "WAVE_BUDGET=1 hard ceiling; host load 16.71 on 16 CPUs also yields one computed slot. One ready row dispatched from DRIVE block DOC-32.",
+  "rows": [
+    {
+      "task_id": "DOC-28",
+      "worktree": "/home/kara/worktrees/9router-DOC-28-docs",
+      "branch": "wt/DOC-28-docs",
+      "base": "84da98c8",
+      "brief": "/tmp/9router-foreman-2026-10-25-08-07-05-DOC-28.md",
+      "worker_model": "deepseek-v4-flash",
+      "worker_provider": "deepseek-foreman",
+      "status": "merged",
+      "commit": "e0d2891667aeda6b8005e8141a44cb4a0dd17c08",
+      "finished_at": "2026-10-25T10:54:00-05:00"
+    }
+  ],
+  "finished_at": "2026-10-25T10:54:00-05:00",
+  "status": "complete"
+}

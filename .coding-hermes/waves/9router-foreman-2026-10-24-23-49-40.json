@@ -12,5 +12,8 @@
       "branch": "wt/DF-9ROUTER-39-R2-fix",
       "brief": "/tmp/9router-foreman-2026-10-24-23-49-40-DF-9ROUTER-39-R2.md"
     }
-  ]
+  ],
+  "finished_at": "2026-10-25T10:54:00-05:00",
+  "status": "complete",
+  "recovery_note": "Recovered/closed: zero workers were present in the manifest; DF-9ROUTER-39-R2 was already landed and closed by the prior recovery closeout. No residual worker branch remained in this manifest."
 }
