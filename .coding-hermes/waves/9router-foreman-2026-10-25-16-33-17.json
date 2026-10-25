@@ -1,0 +1,10 @@
+{
+  "tick_id": "9router-foreman-2026-10-25-16-33-17",
+  "project": "9router",
+  "block_id": "DOC-32",
+  "wave_size": 1,
+  "mode": "serial-fallback",
+  "selection": ["DOC-29"],
+  "reason": "Selected DOC-32. Five rows were ready, but the documentation rows share operator-reference seams and the host had only one admission slot after loadavg calculation (nproc=16, loadavg=14.86); serial fallback was required.",
+  "workers": [{"task_id":"DOC-29","worktree":"/home/kara/worktrees/9router-DOC-29","branch":"wt/DOC-29","model":"gpt-5.6-terra","provider":"openai-codex","commits":["4b3053ae053acf19dae733b43f6994be6a43943d","1a0b21a63d5735b4fc03aa124ec926e3e8d72185"]}]
+}
