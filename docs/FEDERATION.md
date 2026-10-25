@@ -22,7 +22,7 @@ upstream 9router.
 | Role | `FEDERATION_MODE` | Behavior |
 |---|---|---|
 | **standalone** | unset / `standalone` | Current upstream behavior. No federation code runs (zero drift). |
-| **central** | `central` | Single authoritative writer. Serves its own dashboard, `/v1` pipeline and the federation API (`/api/federation/{snapshot,delta,verify,status,replay}`). Every write to a replicated table stamps a monotonically increasing `federation_version`. |
+| **central** | `central` | Single authoritative writer. Serves its own dashboard, `/v1` pipeline and the federation API (`/api/federation/{config-status,local-status,delta,replay,snapshot,status,verify}`). Every write to a replicated table stamps a monotonically increasing `federation_version`. |
 | **edge** | `edge` | Maintains a local SQLite replica. **LINKED**: proxies `/v1/*` + mutating dashboard API up to `FEDERATION_CENTRAL_URL`. **DEGRADED**: serves `/v1` + dashboard reads from the local replica; writes go to a local `pendingWrites` queue. **RECOVERING**: drains the queue, catches up deltas, returns to LINKED. |
 
 Edges **never self-promote** — there is exactly one writer (central) by
@@ -162,6 +162,25 @@ exit 1); standalone keeps warning-only. Use ≥ 16 chars (prefer 32+, e.g.
 ---
 
 ## 4. Replication model
+
+### Federation API routes
+
+The federation API has these seven registered handlers. `GET /api/federation/config-status`
+is a **token-less, read-only** local configuration surface for an instance's
+own dashboard config page. It returns local configuration metadata only (the
+federation token is reported only as configured yes/no and never leaves the
+server). Its CORS preflight, `OPTIONS /api/federation/config-status`, returns
+`204 No Content`.
+
+| Endpoint | Purpose | Access |
+|---|---|---|
+| `GET /api/federation/config-status` | Local federation configuration metadata for the dashboard config page | Token-less, read-only; `OPTIONS` returns `204` |
+| `GET /api/federation/local-status` | Local edge lifecycle and replica status | Token-less local dashboard status |
+| `GET /api/federation/delta?since=<revision>` | Replication changes since a watermark | `FEDERATION_TOKEN` |
+| `POST /api/federation/replay` | Replay a queued edge write | `FEDERATION_TOKEN` + fencing material |
+| `GET /api/federation/snapshot?since=0` | Bootstrap snapshot | `FEDERATION_TOKEN` |
+| `GET /api/federation/status` | Central/edge diagnostic status | `FEDERATION_TOKEN` |
+| `GET /api/federation/verify` | Heartbeat and lease renewal | `FEDERATION_TOKEN` |
 
 - **What replicates:** the 8 logical config tables — `settings`,
   `providerConnections`, `providerNodes`, `proxyPools`, `apiKeys`,
