@@ -160,9 +160,36 @@ PORT=20129 9router --skip-update --no-browser   # env fallback
 ```
 
 An unusable `PORT` (empty, non-numeric, `0`, negative, `>65535`) is ignored with a
-one-line warning naming the value and the port actually used; an unusable `--port`
-argument falls back the same way. An occupied port is refused with an
+one-line warning naming the value and the port actually used, written to
+**stderr**. An unusable `--port` argument is not that case: it is **silently
+ignored** — no line on either stream — and resolution simply continues down the
+chain (`PORT`, then `20128`). The port it settled on is reported only in the
+launcher's startup output on **stdout** — the `Server: http://<host>:<port>`
+banner, plus the `Dashboard:` URL printed beside it in headless mode — so a
+typo'd flag is visible there and nowhere else. An occupied port is refused with an
 `EADDRINUSE` message that names both `--port <other port>` and `PORT=<other port>`.
+
+That split is the decision itself: `resolvePort()` (`cli/src/cli/utils/serverStartup.js:74-90`)
+returns a `warning` only for an unusable `PORT` — the unusable-flag path returns
+`{ port, source: "env" | "default" }` with no `warning` — and `cli/cli.js:209-210`
+prints that warning with `console.error` (stderr), while the banner uses
+`console.log` (stdout). Probe (a checkout without a built `cli/app/` stops right
+after port resolution, before anything is spawned):
+
+```bash
+$ PORT=abc node cli/cli.js --no-tray --skip-update --no-browser 2>&1 | grep -i port
+⚠ Ignoring invalid PORT="abc" — using 20128.
+$ node cli/cli.js --no-tray --skip-update --no-browser --port abc 2>&1 | grep -i port
+$ echo $?
+1
+```
+
+The `PORT` case names the offending value and the port used; the `--port` case
+emits no port line at all (`grep` exits 1). On a built launcher the second
+command simply boots on `20128` and its startup output is the only mention of the
+port — dogfooded in `docs/dogfood/2026-10-23-cli-launcher-lifecycle.md` §3.3(3):
+`PORT=20313 node cli/cli.js --port abc` boots on 20313 with the banner naming
+20313, while `abc` appears 0 times on stdout and stderr.
 
 **Dashboard**: `http://localhost:20128/dashboard`
 
