@@ -2029,6 +2029,8 @@ Authorization: Bearer your-api-key
 
 Thanks to all contributors who helped make 9Router better!
 
+For work-item markers, evidence, and close-out expectations, see the [repository traceability doctrine](docs/traceability-doctrine.md).
+
 [![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
