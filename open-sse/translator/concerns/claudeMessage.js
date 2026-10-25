@@ -45,17 +45,41 @@ export function openAICompletionToClaudeMessage(responseBody, options = {}) {
   if (content.length === 0) content.push({ type: CLAUDE_BLOCK.TEXT, text: "" });
 
   const usage = responseBody.usage || {};
+  let rawId = String(responseBody.id || "").replace(/^chatcmpl-/, "");
+  if (!rawId || rawId.length < 8) rawId = `${Date.now()}`;
+  const finalId = rawId.startsWith("msg_") ? rawId : `msg_${rawId}`;
+
+  let stopReason = fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE);
+  if (message.tool_calls && message.tool_calls.length > 0) {
+    stopReason = "tool_use";
+  } else if (!stopReason || stopReason === "stop") {
+    stopReason = "end_turn";
+  }
+
+  const promptTokens = usage.prompt_tokens || usage.input_tokens || 0;
+  const completionTokens = usage.completion_tokens || usage.output_tokens || 0;
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+  const cacheCreationTokens = usage.prompt_tokens_details?.cache_creation_tokens;
+  const cacheReadTokens = typeof cachedTokens === "number" ? cachedTokens : 0;
+  const cacheCreateTokens = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
+  const inputTokens = Math.max(0, promptTokens - cacheReadTokens - cacheCreateTokens);
+
+  const claudeUsage = {
+    input_tokens: inputTokens,
+    output_tokens: completionTokens,
+  };
+  if (cacheReadTokens > 0) claudeUsage.cache_read_input_tokens = cacheReadTokens;
+  if (cacheCreateTokens > 0) claudeUsage.cache_creation_input_tokens = cacheCreateTokens;
+
   return {
-    id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+    id: finalId,
     type: RESPONSES_ITEM.MESSAGE,
     role: ROLE.ASSISTANT,
     model: responseBody.model || MODEL_FALLBACK,
     content,
-    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+    stop_reason: stopReason,
     stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-    },
+    stop_details: stopReason === "refusal" ? { type: "refusal", category: "general_harms" } : null,
+    usage: claudeUsage,
   };
 }

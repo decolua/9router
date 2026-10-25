@@ -255,11 +255,18 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
-    blocks.push({
+    const block = {
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
       content: convertToolResultContent(msg.content)
-    });
+    };
+    if (msg.is_error) {
+      block.is_error = true;
+    }
+    if (msg.cache_control) {
+      block.cache_control = msg.cache_control;
+    }
+    blocks.push(block);
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
       if (msg.content) {
@@ -365,7 +372,8 @@ function convertOpenAIToolChoice(choice) {
   // OpenAI string forms: "auto" | "none" | "required"
   if (typeof choice === "string") {
     if (choice === "required") return { type: "any" };
-    return { type: "auto" }; // "auto", "none", or anything unexpected
+    if (choice === "none") return { type: "none" };
+    return { type: "auto" };
   }
 
   if (typeof choice === "object") {

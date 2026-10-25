@@ -33,12 +33,19 @@ export function claudeToOpenAIRequest(model, body, stream) {
     const systemContent = Array.isArray(body.system)
       ? body.system.map(s => stripAnthropicBillingHeader(s.text || "")).filter(Boolean).join("\n")
       : stripAnthropicBillingHeader(body.system);
-    
+
     if (systemContent) {
-      result.messages.push({
+      const systemMsg = {
         role: ROLE.SYSTEM,
         content: systemContent
-      });
+      };
+      const cacheControl = Array.isArray(body.system)
+        ? body.system.find(s => s?.cache_control)?.cache_control
+        : body.system?.cache_control;
+      if (cacheControl) {
+        systemMsg.cache_control = cacheControl;
+      }
+      result.messages.push(systemMsg);
     }
   }
 
@@ -73,7 +80,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
           ...tool,
         };
       }
-      return {
+      const fnObj = {
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: tool.name,
@@ -81,12 +88,19 @@ export function claudeToOpenAIRequest(model, body, stream) {
           parameters: tool.input_schema || { type: "object", properties: {} }
         }
       };
+      if (tool.cache_control) {
+        fnObj.cache_control = tool.cache_control;
+      }
+      return fnObj;
     });
   }
 
   // Tool choice
   if (body.tool_choice) {
     result.tool_choice = convertToolChoice(body.tool_choice);
+    if (typeof body.tool_choice === "object" && body.tool_choice.disable_parallel_tool_use) {
+      result.parallel_tool_calls = false;
+    }
   }
 
   // Generation controls (Anthropic -> OpenAI intermediate)
@@ -109,6 +123,8 @@ export function claudeToOpenAIRequest(model, body, stream) {
     result.thinking = body.thinking;
     if (body.thinking.type === "enabled" && body.thinking.budget_tokens !== undefined) {
       result.thinking_budget = Number(body.thinking.budget_tokens);
+    } else if (body.thinking.type === "adaptive") {
+      result.thinking_budget = -1;
     }
   }
 
@@ -215,9 +231,12 @@ function convertClaudeMessage(msg) {
 
     for (const block of msg.content) {
       switch (block.type) {
-        case CLAUDE_BLOCK.TEXT:
-          parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+        case CLAUDE_BLOCK.TEXT: {
+          const textPart = { type: OPENAI_BLOCK.TEXT, text: block.text };
+          if (block.cache_control) textPart.cache_control = block.cache_control;
+          parts.push(textPart);
           break;
+        }
 
         case CLAUDE_BLOCK.IMAGE:
           if (block.source?.type === "base64") {
@@ -327,11 +346,18 @@ function convertClaudeMessage(msg) {
             resultContent = JSON.stringify(block.content);
           }
 
-          toolResults.push({
+          const toolResultMsg = {
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
             content: resultContent
-          });
+          };
+          if (block.is_error) {
+            toolResultMsg.is_error = true;
+          }
+          if (block.cache_control) {
+            toolResultMsg.cache_control = block.cache_control;
+          }
+          toolResults.push(toolResultMsg);
           // The OpenAI tool role is text-only, so a screenshot or any other image a
           // tool returned would otherwise vanish. Hand it to the model in the user
           // turn that follows the tool messages, tagged with the call it came from.
@@ -413,6 +439,7 @@ function convertToolChoice(choice) {
   switch (choice.type) {
     case "auto": return "auto";
     case "any": return "required";
+    case "none": return "none";
     case "tool": return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
     default: return "auto";
   }
