@@ -333,7 +333,7 @@ Options:
 | `--resolution <res>` | Resolution: `480p`, `720p`, or `1080p`. |
 | `--image <path-or-url>` | Image input for image-to-video. |
 | `--timeout <seconds>` | Maximum wait (default: 600 seconds). |
-| `--host <host>`, `-H <host>` | Gateway host (default: `127.0.0.1`). |
+| `--host <host>`, `-H <host>` | Gateway host (default: `0.0.0.0`), exposed on all reachable network interfaces; use `--host 127.0.0.1` for local-only access. |
 | `--port <port>`, `-p <port>` | Gateway port (default: `20128`). |
 | `--api-key <key>` | 9Router API key; alternatively set `NINE_ROUTER_API_KEY`. |
 | `--help`, `-h` | Show subcommand help. |
