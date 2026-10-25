@@ -8,10 +8,9 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import { resolveProviderId } from "@/shared/constants/providers";
+import { resolveProviderId, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getComboModelConnectionId, getComboModelValue, setComboModelConnectionId, setComboModelValue } from "@/shared/utils/comboModels";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
-import { resolveProviderId, AI_PROVIDERS } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
