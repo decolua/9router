@@ -1,0 +1,16 @@
+{
+  "tick_id": "9router-foreman-2026-10-24-23-49-40",
+  "block_id": "DF-9ROUTER-70",
+  "mode": "serial-fallback",
+  "wave_budget": 3,
+  "computed_slots": 1,
+  "reason": "loadavg 17.83 on 16 CPUs; slots=max(1,min(6,16-ceil(17.83)))=1",
+  "rows": [
+    {
+      "task_id": "DF-9ROUTER-39-R2",
+      "worktree": "/home/kara/worktrees/9router-DF-9ROUTER-39-R2-fix",
+      "branch": "wt/DF-9ROUTER-39-R2-fix",
+      "brief": "/tmp/9router-foreman-2026-10-24-23-49-40-DF-9ROUTER-39-R2.md"
+    }
+  ]
+}
