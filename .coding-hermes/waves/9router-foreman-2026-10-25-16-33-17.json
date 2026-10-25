@@ -6,5 +6,6 @@
   "mode": "serial-fallback",
   "selection": ["DOC-29"],
   "reason": "Selected DOC-32. Five rows were ready, but the documentation rows share operator-reference seams and the host had only one admission slot after loadavg calculation (nproc=16, loadavg=14.86); serial fallback was required.",
-  "workers": [{"task_id":"DOC-29","worktree":"/home/kara/worktrees/9router-DOC-29","branch":"wt/DOC-29","model":"gpt-5.6-terra","provider":"openai-codex","commits":["4b3053ae053acf19dae733b43f6994be6a43943d","1a0b21a63d5735b4fc03aa124ec926e3e8d72185"]}]
+  "workers": [{"task_id":"DOC-29","worktree":"/home/kara/worktrees/9router-DOC-29","branch":"wt/DOC-29","model":"gpt-5.6-terra","provider":"openai-codex","commits":["4b3053ae053acf19dae733b43f6994be6a43943d","1a0b21a63d5735b4fc03aa124ec926e3e8d72185"]}],
+  "recovery": {"finished_at":"2026-10-25T12:22:48-05:00","task_id":"DOC-29","branch_tip":"1a0b21a63d5735b4fc03aa124ec926e3e8d72185","implementation_landed":"verified: branch tip is an ancestor of federation at 4d4f44009f460f1fb4409912c7b5503349112ff8","merge":"already landed before recovery: board closeout commit 4d4f44009f460f1fb4409912c7b5503349112ff8","focused_gate":"PASS: git diff --check and DOC-29 host-default/exposure grep","gitreins":"verdict da1c74a7 Tier 2 PASS; Tier 1 reports one pre-existing regression, not changed by this docs-only branch","remote_parity":"PASS: origin/federation..HEAD = 0","worktree_disposition":"remove worktree and delete merged branch after this closeout commit"}
 }

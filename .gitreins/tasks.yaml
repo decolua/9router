@@ -36,3 +36,11 @@ tasks:
     reason AND full fresh-machine battery ci-pass cell re-run green'
   status: in_progress
   created_at: '2026-10-25T02:41:26.751923+00:00'
+- id: DOC-32
+  title: Re-evaluate documentation audit findings
+  criteria:
+  - DOC-32 remains open pending DOC-30 and DOC-31; verify the block state only, no
+    implementation.
+  status: complete
+  created_at: '2026-10-25T16:54:51.955995+00:00'
+  completed_at: '2026-10-25T16:54:52.286843+00:00'
