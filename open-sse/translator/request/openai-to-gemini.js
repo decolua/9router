@@ -105,6 +105,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     result.generationConfig.thinkingConfig = {
       thinkingBudget: Number.isFinite(budget) && budget > 0 ? budget : -1
     };
+  } else if (body.thinking && body.thinking.type === "adaptive") {
+    result.generationConfig.thinkingConfig = {
+      thinkingBudget: -1
+    };
   } else if (body.thinking_budget !== undefined) {
     result.generationConfig.thinkingConfig = {
       thinkingBudget: body.thinking_budget
@@ -137,7 +141,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        (toolResponses[msg.tool_call_id] ||= []).push(msg.content);
+        (toolResponses[msg.tool_call_id] ||= []).push({
+          content: msg.content,
+          is_error: !!msg.is_error
+        });
       }
     }
   }
@@ -178,10 +185,13 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             thought: true,
             text: msg.reasoning_content
           });
-          parts.push({
-            thoughtSignature: signature,
-            text: ""
-          });
+          const sigToUse = msg.thought_signature || signature;
+          if (sigToUse) {
+            parts.push({
+              thoughtSignature: sigToUse,
+              text: ""
+            });
+          }
         }
 
         if (content) {
@@ -200,7 +210,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             const args = tryParseJSON(tc.function?.arguments || "{}");
             const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
             // Always backfill fallback signature so Gemini 3+ / Thinking models never reject unsigned calls #2193
-            const callSig = cachedSig || signature || DEFAULT_THINKING_AG_SIGNATURE;
+            const callSig = cachedSig || msg.thought_signature || signature || DEFAULT_THINKING_AG_SIGNATURE;
             firstFunctionCallSeen = true;
 
             // Emitted id is uniquified; the thought-signature lookup above stays
@@ -242,9 +252,16 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               // unconsumed result; only the emitted id is uniquified. #4273 #4532
               const queue = toolResponses[origId];
               const cursor = toolResponseCursor[origId] || 0;
-              let resp;
+              let resp = "";
+              let isError = false;
               if (queue && cursor < queue.length) {
-                resp = queue[cursor];
+                const item = queue[cursor];
+                if (typeof item === "object" && item !== null && "content" in item) {
+                  resp = item.content;
+                  isError = !!item.is_error;
+                } else {
+                  resp = item;
+                }
                 toolResponseCursor[origId] = cursor + 1;
               } else {
                 resp = "";
@@ -269,13 +286,17 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
                 parsedResp = { result: parsedResp };
               }
 
+              const responseObj = isError
+                ? { error: parsedResp?.result !== undefined ? parsedResp.result : parsedResp, is_error: true }
+                : { result: parsedResp };
+
               toolParts.push({
                 functionResponse: {
                   // Matches the functionCall id emitted above, so a response
                   // never points at an id the call does not carry. #4532
                   id: emitId,
                   name: sanitizeGeminiFunctionName(name),
-                  response: { result: parsedResp }
+                  response: responseObj
                 }
               });
             }
@@ -476,6 +497,10 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     envelope.request.generationConfig.thinkingConfig = {
       thinkingBudget: Number.isFinite(budget) && budget > 0 ? budget : -1
     };
+  } else if (claudeRequest.thinking && claudeRequest.thinking.type === "adaptive") {
+    envelope.request.generationConfig.thinkingConfig = {
+      thinkingBudget: -1
+    };
   } else if (claudeRequest.thinking_budget !== undefined) {
     envelope.request.generationConfig.thinkingConfig = {
       thinkingBudget: claudeRequest.thinking_budget
@@ -503,12 +528,14 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
 
       if (Array.isArray(msg.content)) {
         let firstToolUseSeen = false;
+        const thinkingBlock = msg.content.find(b => (b.type === CLAUDE_BLOCK.THINKING || b.type === "thinking") && b.signature);
+        const turnThoughtSignature = thinkingBlock?.signature || msg.thought_signature || "";
         for (const block of msg.content) {
           if (block.type === CLAUDE_BLOCK.TEXT) {
             parts.push({ text: block.text });
           } else if (block.type === CLAUDE_BLOCK.TOOL_USE) {
             const cachedSig = block.id ? getGeminiThoughtSignatureSync(block.id, credentials?._clientSessionId, model) : null;
-            const callSig = cachedSig || signature || DEFAULT_THINKING_AG_SIGNATURE;
+            const callSig = cachedSig || turnThoughtSignature || signature || DEFAULT_THINKING_AG_SIGNATURE;
             firstToolUseSeen = true;
 
             const part = {
@@ -564,11 +591,16 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             const resolvedName = toolUseIdToName[block.tool_use_id]
               ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
               : "tool";
+            const isError = !!block.is_error;
+            const parsedResp = tryParseJSON(content);
+            const responseObj = isError
+              ? { error: parsedResp?.result !== undefined ? parsedResp.result : (parsedResp || content), is_error: true }
+              : { result: parsedResp || content };
             parts.push({
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
+                response: responseObj
               }
             });
           }

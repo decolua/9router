@@ -261,12 +261,16 @@ function resolveToolResultIsError(source) {
 }
 
 function buildToolResultBlock(toolUseId, content, source) {
-  return {
+  const block = {
     type: CLAUDE_BLOCK.TOOL_RESULT,
     tool_use_id: toolUseId,
     content,
     is_error: resolveToolResultIsError(source),
   };
+  if (source && source.cache_control) {
+    block.cache_control = source.cache_control;
+  }
+  return block;
 }
 
 // Get content blocks from single message
@@ -375,7 +379,8 @@ function convertOpenAIToolChoice(choice) {
   // OpenAI string forms: "auto" | "none" | "required"
   if (typeof choice === "string") {
     if (choice === "required") return { type: "any" };
-    return { type: "auto" }; // "auto", "none", or anything unexpected
+    if (choice === "none") return { type: "none" };
+    return { type: "auto" };
   }
 
   if (typeof choice === "object") {
