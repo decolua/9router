@@ -43,8 +43,9 @@ A `/api/*` request is allowed when **any** of the following holds:
    `/api/auth/status`, `/api/auth/oidc*`, `/api/auth/saml*` and
    `/api/settings/require-login`.
 2. Its path is under `/api/federation/*` — the dashboard session is deliberately
-   skipped there so the federation role guard can enforce `FEDERATION_TOKEN`
-   (see [Federation docs](FEDERATION.md)).
+   skipped there so the federation role guard can enforce `FEDERATION_TOKEN` on
+   protected federation handlers. The read-only local config/status surfaces
+   document their token-less exceptions below (see [Federation docs](FEDERATION.md)).
 3. It carries the `auth_token` JWT cookie issued by `POST /api/auth/login`, or
    dashboard login is switched off through the `requireLogin` setting.
 4. It carries the on-host CLI token in the `x-9r-cli-token` header (derived from
@@ -480,6 +481,25 @@ rate limits (e.g. Copilot/Codex subscriptions) are handled internally with
 cooldowns and are reported to clients as `429`/`503`.
 
 ## Dashboard APIs (`/api`)
+
+### Federation configuration and replication API
+
+The federation route set has seven registered handlers. `GET
+/api/federation/config-status` is a **token-less, read-only** endpoint for an
+instance's own dashboard configuration page. It exposes local configuration
+metadata only; the federation token is represented only as configured yes/no
+and its value never leaves the server. `OPTIONS
+/api/federation/config-status` returns `204 No Content` for CORS preflight.
+
+| Endpoint | Purpose | Access |
+|---|---|---|
+| `GET /api/federation/config-status` | Local federation configuration metadata | Token-less, read-only; `OPTIONS` returns `204` |
+| `GET /api/federation/local-status` | Local edge lifecycle and replica status | Token-less local dashboard status |
+| `GET /api/federation/delta?since=<revision>` | Replication changes since a watermark | `FEDERATION_TOKEN` |
+| `POST /api/federation/replay` | Replay a queued edge write | `FEDERATION_TOKEN` + fencing material |
+| `GET /api/federation/snapshot?since=0` | Bootstrap snapshot | `FEDERATION_TOKEN` |
+| `GET /api/federation/status` | Central/edge diagnostic status | `FEDERATION_TOKEN` |
+| `GET /api/federation/verify` | Heartbeat and lease renewal | `FEDERATION_TOKEN` |
 
 | Endpoint | Purpose |
 |---|---|
