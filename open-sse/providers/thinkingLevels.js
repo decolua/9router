@@ -36,6 +36,11 @@ const FORMAT_LEVELS = {
 
 const CODEX_GPT_5_6_LEVELS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
 
+// GPT-5.6 / GPT-6 take the full effort enum including "max" — including on
+// OpenAI Compatible nodes. Without this the openai level set (capped at
+// "xhigh") makes normalizeOpenAILevel silently downgrade max→xhigh (#5186).
+const OPENAI_MAX_EFFORT_MODELS = /gpt-(?:5\.6|6)/;
+
 // Opus/Sonnet 4.6 lack xhigh (Anthropic + Kiro docs) — keep the 4-level+max set.
 const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
@@ -119,7 +124,7 @@ export function getThinkingLevels(provider, model) {
     (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
   );
   let levels = modelLevels || hit?.levels
-    || (isOpenAICompatibleNode(provider) && OPENAI_MAX_EFFORT_MODEL.test(baseId) ? CODEX_GPT_5_6_LEVELS : null)
+    || (isOpenAICompatibleNode(provider) && (OPENAI_MAX_EFFORT_MODEL.test(baseId) || OPENAI_MAX_EFFORT_MODELS.test(baseId)) ? CODEX_GPT_5_6_LEVELS : null)
     || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
