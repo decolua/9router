@@ -19,15 +19,6 @@ tasks:
   status: complete
   created_at: '2026-10-21T21:58:46.877373+00:00'
   completed_at: '2026-10-22T04:56:39.744122+00:00'
-- id: DF-9ROUTER-39-R2
-  title: Fix Gemini usage ledger prompt tokens
-  criteria:
-  - The real Gemini-shaped non-stream and streaming chatCore paths persist usageHistory
-    prompt tokens equal to usageMetadata.promptTokenCount; tests prove both paths
-    and the same request values.
-  status: complete
-  created_at: '2026-10-24T20:49:52.447173+00:00'
-  completed_at: '2026-10-24T21:08:13.198216+00:00'
 - id: DF-9ROUTER-66
   title: Document per-key access control and fix denial code
   criteria:
@@ -36,3 +27,10 @@ tasks:
   status: complete
   created_at: '2026-10-24T20:49:52.951569+00:00'
   completed_at: '2026-10-24T21:11:23.405178+00:00'
+- id: DF-9ROUTER-70
+  title: Fix fresh-machine no-tray headless CI red
+  criteria:
+  - 'PASS: clean-machine no-tray headless test passes deterministically or is baseline-catalogued
+    with reason and fresh clean-machine evidence.'
+  status: in_progress
+  created_at: '2026-10-24T22:16:21.473209+00:00'
