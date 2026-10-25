@@ -66,13 +66,13 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
       },
       {
         type: "function_call",
-        call_id: "call_apply_patch_123",
-        name: "apply_patch",
-        arguments: "*** Begin Patch\n*** End Patch",
+        call_id: "call_grep_123",
+        name: "grep",
+        arguments: "{\"pattern\":\"TODO\"}",
       },
       {
         type: "function_call_output",
-        call_id: "call_apply_patch_123",
+        call_id: "call_grep_123",
         output: originalOutput,
       },
       {
@@ -84,9 +84,10 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
       input: structuredClone(input),
       tools: [
         {
-          type: "custom",
-          name: "apply_patch",
-          format: { type: "grammar", syntax: "lark", definition: "start: /.+/" },
+          type: "function",
+          name: "grep",
+          description: "Search file contents",
+          parameters: { type: "object", properties: { pattern: { type: "string" } } },
         },
       ],
     };
@@ -112,7 +113,7 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     // Only the plain-text leaf is replaced; everything else stays byte-identical.
     expect(body.input[2]).toEqual({
       type: "function_call_output",
-      call_id: "call_apply_patch_123",
+      call_id: "call_grep_123",
       output: "ok",
     });
     expect(body.input[0]).toEqual(input[0]);
@@ -126,9 +127,10 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     ]);
     expect(body.tools).toEqual([
       {
-        type: "custom",
-        name: "apply_patch",
-        format: { type: "grammar", syntax: "lark", definition: "start: /.+/" },
+        type: "function",
+        name: "grep",
+        description: "Search file contents",
+        parameters: { type: "object", properties: { pattern: { type: "string" } } },
       },
     ]);
   });
