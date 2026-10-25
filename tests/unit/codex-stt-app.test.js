@@ -41,3 +41,9 @@ it("enforces model access before OAuth lookup", async () => {
   expect(mocks.policy).toHaveBeenCalledWith({}, "cx/transcribe", { kind: "resolved", provider: "codex", model: "transcribe" });
   expect(mocks.get).not.toHaveBeenCalled(); expect(mocks.usage).not.toHaveBeenCalled();
 });
+it("returns the usage-accounting failure instead of the transcription when recording fails", async () => {
+  mocks.usage.mockResolvedValue(new Response("Unable to record API key usage", { status: 503 }));
+  const response = await handleStt(request());
+  expect(response.status).toBe(503);
+  expect(mocks.core).toHaveBeenCalledTimes(1);
+});
