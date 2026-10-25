@@ -45,12 +45,12 @@ describe("CodeBuddy Intl block backoff (#5024)", () => {
 
   it.each(["openai", "codebuddy-cn", null])("keeps the same text request-scoped for provider %s", (provider) => {
     expect(checkFallbackError(400, "request illegal", 0, provider))
-      .toEqual({ shouldFallback: false, cooldownMs: 0 });
+      .toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true });
   });
 
   it("does not classify every 11128 code as a block", () => {
     expect(checkFallbackError(400, { code: 11128, msg: "first message is not system prompt" }, 0, "codebuddy-intl"))
-      .toEqual({ shouldFallback: false, cooldownMs: 0 });
+      .toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true });
   });
 
   it("persists the account cooldown and incremented backoff level through the cbai alias", async () => {
