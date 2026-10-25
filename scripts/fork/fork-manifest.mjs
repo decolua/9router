@@ -196,8 +196,8 @@ export const PATCHED_FILES = [
   },
   {
     path: "Dockerfile",
-    markers: ["claude-code", "CLI_CLAUDE_BIN"],
-    hint: "Bundles a pinned @anthropic-ai/claude-code so the claude-cli provider works in the image with nothing else installed, and sets CLI_CLAUDE_BIN and CLAUDE_CONFIG_DIR. (The apk/npm mirror build args are NOT on this branch - they were part of the security work that was dropped.)",
+    markers: ["claude-code", "CLI_CLAUDE_BIN", "\"wreq-js@^3.2.0\" \"playwright-core@^1.62.1\""],
+    hint: "Bundles a pinned @anthropic-ai/claude-code so the claude-cli provider works in the image with nothing else installed, and sets CLI_CLAUDE_BIN and CLAUDE_CONFIG_DIR. Also holds upstream's lazy-runtime install (wreq-js, playwright-core) to the package.json ranges instead of bare `latest`. (The apk/npm mirror build args are NOT on this branch - they were part of the security work that was dropped.)",
   },
   {
     path: "docker-compose.yml",

@@ -6,7 +6,7 @@ Kept out of the upstream `CHANGELOG.md` on purpose: upstream rewrites the top of
 that file on every release, so an entry there would conflict on 100% of upgrades.
 See [UPGRADE.md](UPGRADE.md) for how the fork is carried forward.
 
-## Unreleased (on top of v0.5.104)
+## Unreleased (on top of v0.5.112)
 
 ### Features
 
