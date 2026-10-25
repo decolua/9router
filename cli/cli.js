@@ -801,6 +801,26 @@ function startServer(updatePromise) {
   waitForServerReady({ port, child: server }).then(async (result) => {
     if (!result.ok) return failStartup(result);
     serverReady = true;
+
+    // Non-TTY (piped stdin, CI runner, systemd unit): there is no user to
+    // render a menu for — selectMenu() resolves before its first paint when
+    // stdin is not a TTY, i.e. the documented outcome is "exit". Resolve that
+    // HERE, before the interactive menu stack is loaded, so the promised
+    // behavior holds even where that stack cannot be required: a source
+    // checkout that never ran `npm --prefix cli install` has no
+    // cli/node_modules, and showInterfaceMenu() throws
+    // `Cannot find module 'node-machine-id'` (endpoint → api/client) — which
+    // the catch below reported as exit 1, breaking the DF-9ROUTER-64 promise
+    // ("a non-TTY menu resolves to exit and the launcher exits 0") on exactly
+    // the clean box that guard was written for (DF-9ROUTER-70).
+    if (!process.stdin.isTTY) {
+      isShuttingDown = true;
+      console.log("\nExiting...");
+      cleanup();
+      setTimeout(() => process.exit(0), 100);
+      return;
+    }
+
     // Resolve the parallel update check (already running); don't block server start on it.
     const updateOffer = await updateOfferPromise;
     // Start tray icon alongside TUI
@@ -885,6 +905,10 @@ function startServer(updatePromise) {
           console.log("\nExiting...");
           cleanup();
           setTimeout(() => process.exit(0), 100);
+          // Stop the menu loop: without this the loop re-renders and prints a
+          // fresh "Exiting..." on every 100ms tick until the timer fires (the
+          // exit is scheduled, not immediate).
+          return;
         }
       }
     } catch (err) {

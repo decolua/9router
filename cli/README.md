@@ -141,6 +141,15 @@ Every lifecycle exit also writes a timestamped line to stderr —
 `[<ISO time>] [9router] exiting: <reason>` — so a headless death is always
 diagnosable from the logs.
 
+**Non-interactive launches** (stdin is not a TTY: a pipe, a CI runner, a
+systemd unit with no terminal) cannot render the interface menu, so a launch
+without `--no-tray` resolves to "Exit" after the readiness gate and the
+launcher exits 0 — printing `Exiting...` and the `exiting: server-exit` line
+above. That resolution happens *before* the interactive menu stack is loaded,
+so a source checkout that only ran `npm ci` at the repo root (no
+`npm --prefix cli install`) still exits 0 instead of failing on a missing CLI
+dependency.
+
 **Port precedence** (highest first): `--port/-p` → `PORT` env var → `20128`.
 The launcher reads the process environment only (it does not load `.env`), so a
 host that already runs 9router on `20128` can be given a different port either way:

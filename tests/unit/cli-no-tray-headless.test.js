@@ -149,7 +149,7 @@ const STUB_SERVER_JS = [
   "",
 ].join("\n");
 
-function makeCliRoot() {
+function makeCliRoot({ withDeps = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "9router-cli-df64-"));
   for (const rel of ["cli.js", "package.json", "hooks", "src"]) {
     fs.cpSync(path.join(REPO_ROOT, "cli", rel), path.join(root, rel), { recursive: true });
@@ -157,13 +157,20 @@ function makeCliRoot() {
   // The published tarball ships the package files PLUS the production
   // node_modules (npm includes deps automatically), and the launcher's
   // post-readiness default path reaches src/cli/api/client.js →
-  // `node-machine-id`. A worktree checkout has no cli/node_modules, so mirror
-  // the package shape: link the repo's installed cli deps (main clone when the
-  // worktree has none) into the fixture root — READ-ONLY use, temp root.
-  const cliNodeModules = fs.existsSync(path.join(REPO_ROOT, "cli", "node_modules"))
-    ? path.join(REPO_ROOT, "cli", "node_modules")
-    : "/home/kara/9router/cli/node_modules";
-  if (fs.existsSync(cliNodeModules)) {
+  // `node-machine-id`. A checkout that ran `npm --prefix cli install` has
+  // cli/node_modules; a FRESH box only has the ROOT tree (npm ci at the repo
+  // root, whose package.json carries the same cli runtime deps: enquirer,
+  // node-forge, node-machine-id, react, react-dom, confbox). Resolve from
+  // either, in that order — never from a hardcoded developer path, which made
+  // this fixture pass only on the dev host (DF-9ROUTER-70).
+  // `withDeps: false` deliberately withholds both, i.e. the clean-machine
+  // shape where the launcher must still honour its non-TTY promise without
+  // the interactive menu stack.
+  const cliNodeModules = withDeps
+    ? [path.join(REPO_ROOT, "cli", "node_modules"), path.join(REPO_ROOT, "node_modules")]
+        .find((candidate) => fs.existsSync(candidate))
+    : null;
+  if (cliNodeModules) {
     try { fs.symlinkSync(cliNodeModules, path.join(root, "node_modules"), "dir"); } catch {}
   }
   const appDir = path.join(root, "app");
@@ -293,9 +300,12 @@ describe("DF-9ROUTER-64 — --no-tray flag surface", () => {
     const source = fs.readFileSync(path.join(REPO_ROOT, "cli", "cli.js"), "utf8");
     const trayBranch = source.indexOf("if (trayMode && !noTray)");
     const headlessBranch = source.indexOf("if (noTray)");
-    // Search from the headless branch on: the substring also occurs inside the
-    // showInterfaceMenu() DEFINITION far above, which proves nothing.
-    const menuLoop = source.indexOf("showInterfaceMenu(latestVersion)", headlessBranch);
+    // Anchor on the menu LOOP's call shape, not on its argument name: the
+    // literal `showInterfaceMenu(latestVersion)` also occurs in the function
+    // DEFINITION far above (which proves nothing about ordering), and the
+    // argument was renamed to `updateOffer` by DF-9ROUTER-68 — which turned
+    // this assertion red on every host while the real ordering was intact.
+    const menuLoop = source.indexOf("await showInterfaceMenu(", headlessBranch);
 
     // Both branches exist, --no-tray overrides tray mode, and the headless
     // branch is reached BEFORE the interactive menu loop can.
@@ -304,6 +314,13 @@ describe("DF-9ROUTER-64 — --no-tray flag surface", () => {
     expect(menuLoop).toBeGreaterThan(-1);
     expect(trayBranch).toBeLessThan(headlessBranch);
     expect(headlessBranch).toBeLessThan(menuLoop);
+
+    // The default path resolves a non-TTY launch to the documented exit BEFORE
+    // the interactive menu stack is loaded (DF-9ROUTER-70: on a clean box the
+    // menu's `node-machine-id` require threw and the launcher exited 1).
+    const nonTtyResolve = source.indexOf("if (!process.stdin.isTTY)", headlessBranch);
+    expect(nonTtyResolve).toBeGreaterThan(-1);
+    expect(nonTtyResolve).toBeLessThan(menuLoop);
 
     // The non-TTY auto-flip into tray mode honours the flag.
     expect(source).toMatch(/skipUpdate && !trayMode && !noTray && !process\.stdin\.isTTY/);
@@ -415,6 +432,35 @@ describe("DF-9ROUTER-64 CLI launcher — headless vs default lifecycle", () => {
       expect(fs.readFileSync(cli.boundMarker, "utf8")).toBe(String(port));
       expect(spawned.output()).not.toMatch(new RegExp(HEADLESS_BANNER));
       expect(spawned.output()).not.toMatch(new RegExp(TRAY_READY_LINE));
+    },
+    SPAWN_TIMEOUT,
+  );
+
+  it(
+    "clean-box cell: default path exits 0 with NO resolvable cli deps (fresh checkout, no npm --prefix cli install)",
+    async () => {
+      // The DF-9ROUTER-70 defect: the fixture used to link a developer-machine
+      // cli/node_modules, so this promise was only ever proven where the
+      // interactive menu stack happened to be installed. Here the fixture root
+      // has no node_modules at all — the shape of a box that ran `npm ci` at
+      // the repo root and nothing else — and stdin is a pipe (spawn stdio[0]
+      // is "ignore"), so the launcher must resolve the non-TTY default to
+      // "exit" without requiring anything from the menu.
+      const cli = makeCliRoot({ withDeps: false });
+      cliRoots.push(cli.root);
+      const port = await pickFreePort();
+
+      const spawned = spawnCli(cli, ["-p", String(port)]);
+      liveProcs.push(spawned.proc);
+      expect(spawned.proc.stdin).toBeNull(); // explicit non-TTY stdin
+
+      const exit = await waitForExit(spawned.proc, 30000);
+      expect(exit).toEqual({ code: 0, signal: null });
+      expect(spawned.captured.stdout).toContain(EXITING_LINE);
+      // No module-resolution error leaked out of the exit path.
+      expect(spawned.output()).not.toMatch(/Cannot find module/);
+      expect(fs.readFileSync(cli.startedMarker, "utf8")).toBe(String(port));
+      expect(fs.readFileSync(cli.boundMarker, "utf8")).toBe(String(port));
     },
     SPAWN_TIMEOUT,
   );

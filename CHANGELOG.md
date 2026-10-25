@@ -1,5 +1,23 @@
 # Unreleased
 
+- fix(cli): a non-TTY launch resolves to exit 0 without the interactive menu
+  stack, and stops re-printing `Exiting...` (DF-9ROUTER-70). The documented
+  non-TTY outcome ("the menu resolves to exit, the launcher exits 0") was only
+  reachable where the menu's runtime dependencies could be required:
+  `showInterfaceMenu()` pulls `endpoint → api/client → node-machine-id`, so a
+  source checkout that ran `npm ci` at the repo root but never
+  `npm --prefix cli install` died with `Error: Cannot find module
+  'node-machine-id'` and exit 1 — on exactly the clean box the promise was
+  written for, while the dev host passed. The default path now resolves the
+  non-TTY case immediately after the readiness gate, before that stack loads
+  (TTY behavior, including the menu, is untouched), and the menu's `exit`
+  branch returns instead of looping until its 100ms exit timer fired (which
+  printed `Exiting...` three times). Guard: the clean-box arm of
+  `tests/unit/cli-no-tray-headless.test.js` runs the launcher with NO
+  resolvable `node_modules` — the fixture no longer links a developer machine's
+  `cli/node_modules`, and its menu-loop anchor no longer hardcodes the argument
+  name DF-9ROUTER-68 renamed. Documented in `cli/README.md`.
+
 - fix(providers): compatible-node edits now fix existing connections; the
   connection API accepts the node prefix (DF-9ROUTER-63). Connections to
   OpenAI-compatible / Anthropic-compatible / custom-embedding nodes snapshot

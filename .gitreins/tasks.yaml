@@ -28,9 +28,11 @@ tasks:
   created_at: '2026-10-24T20:49:52.951569+00:00'
   completed_at: '2026-10-24T21:11:23.405178+00:00'
 - id: DF-9ROUTER-70
-  title: Fix fresh-machine no-tray headless CI red
+  title: 'Fix CI test failure on fresh machine: cli-no-tray-headless.test.js exits
+    1 on clean Debian 13 / Node 22'
   criteria:
-  - 'PASS: clean-machine no-tray headless test passes deterministically or is baseline-catalogued
-    with reason and fresh clean-machine evidence.'
+  - 'PASS: cd tests && npx vitest run unit/cli-no-tray-headless.test.js exits 0 on
+    a clean Debian-13/node-22 box, or the test is added to known-fails.txt with environment
+    reason AND full fresh-machine battery ci-pass cell re-run green'
   status: in_progress
-  created_at: '2026-10-24T22:16:21.473209+00:00'
+  created_at: '2026-10-25T02:41:26.751923+00:00'
