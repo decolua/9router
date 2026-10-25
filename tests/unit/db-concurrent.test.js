@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
-// saveRequestUsage drops an identical entry saved in the same millisecond as a
-// duplicate write (0d216689). Parallel *distinct* requests get distinct timestamps.
+// saveRequestUsage dedupes only by requestId (b106f32a); requestId-less entries
+// are never collapsed, even when every other field is identical.
 const BASE_TS = Date.now();
 const tsFor = (i) => new Date(BASE_TS - i).toISOString();
 
@@ -177,7 +177,7 @@ describe("DB Concurrency — atomic safety", () => {
     expect(g.completionTokens).toBe(N * 50);
   });
 
-  it("deduplicates parallel requestId-less writes by the upstream usage tuple", async () => {
+  it("keeps parallel identical requestId-less writes as distinct rows (only requestId dedupes)", async () => {
     const entry = () => ({
       timestamp: tsFor(3000), provider: "mistral", model: "dup-model", connectionId: "cD", apiKey: "dup-key",
       tokens: { prompt_tokens: 7, completion_tokens: 3 }, status: "ok",
@@ -185,7 +185,7 @@ describe("DB Concurrency — atomic safety", () => {
     await Promise.all([db.saveRequestUsage(entry()), db.saveRequestUsage(entry())]);
 
     const history = await db.getUsageHistory({ provider: "mistral" });
-    expect(history).toHaveLength(1);
+    expect(history).toHaveLength(2);
   });
 
   it("keeps identical writes with distinct requestIds", async () => {

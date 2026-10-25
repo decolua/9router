@@ -258,14 +258,7 @@ export async function saveRequestUsage(entry) {
     db.transaction(() => {
       const existing = entry.requestId
         ? db.get(`SELECT id, endpoint FROM usageHistory WHERE requestId = ?`, [entry.requestId])
-        : db.get(
-          `SELECT id, endpoint FROM usageHistory WHERE requestId IS NULL AND timestamp = ? AND provider IS ? AND model IS ? AND connectionId IS ? AND apiKey IS ? AND promptTokens = ? AND completionTokens = ?`,
-          [
-            entry.timestamp, entry.provider || null, entry.model || null,
-            entry.connectionId || null, entry.apiKey || null,
-            promptTokens, completionTokens,
-          ]
-        );
+        : null;
 
       if (existing) {
         if (!existing.endpoint && entry.endpoint) {
