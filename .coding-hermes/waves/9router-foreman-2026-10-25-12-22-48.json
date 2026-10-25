@@ -11,5 +11,7 @@
     {"task_id":"DOC-30","worktree":"/home/kara/worktrees/9router-DOC-30","branch":"wt/DOC-30","model":"gpt-5.6-terra","provider":"openai-codex","brief":"/home/kara/.hermes/cache/briefs/9router-2026-10-25-12-22-DOC-30.md","base":"255e2e27973370117079f1f248e37a79bf9fc60f"},
     {"task_id":"DOC-31","worktree":"/home/kara/worktrees/9router-DOC-31","branch":"wt/DOC-31","model":"gpt-5.6-terra","provider":"openai-codex","brief":"/home/kara/.hermes/cache/briefs/9router-2026-10-25-12-22-DOC-31.md","base":"255e2e27973370117079f1f248e37a79bf9fc60f"}
   ],
-  "recovery": {"finished_at":"2026-10-25T12:22:48-05:00","task_id":"DOC-29","branch_tip":"1a0b21a63d5735b4fc03aa124ec926e3e8d72185","merge":"already landed in 4d4f4400 before recovery","remote_parity":"PASS"}
+  "recovery": {"finished_at":"2026-10-25T12:22:48-05:00","task_id":"DOC-29","branch_tip":"1a0b21a63d5735b4fc03aa124ec926e3e8d72185","merge":"already landed in 4d4f4400 before recovery","remote_parity":"PASS"},
+  "finished_at":"2026-10-25T17:43:20-05:00",
+  "closeout":{"landed":["DOC-21-R2:764e72e2","DOC-30:6a583204","DOC-31:c978898b"],"open":["DOC-22-R2","DOC-32"],"remote_parity":"PASS: origin/federation..HEAD=0","tier2_verdicts":["9f3d63cb","d105cc33","7199db73"],"tier1":"FAIL: pre-existing regression/secrets state"}
 }
