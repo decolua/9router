@@ -121,10 +121,20 @@ required by `NSStatusItem`; use the tray **Quit** action there as well.
 ```bash
 9router                    # Start with default settings
 9router --port 8080        # Custom port
+9router --host 127.0.0.1   # Bind the gateway to this machine only
 9router --no-browser       # Don't open browser
 9router --no-tray          # Headless: skip tray/UI, serve in the foreground
 9router --skip-update      # Skip auto-update check
 9router --help             # Show all options
+```
+
+**Host binding**: the launcher binds the gateway to `0.0.0.0` by default. This
+exposes the gateway on every reachable network interface, subject to the host's
+firewall and network configuration. Use `--host 127.0.0.1` when the gateway
+must be reachable only from the local machine:
+
+```bash
+9router --host 127.0.0.1
 ```
 
 **Headless mode** (`--no-tray`): for servers without a display — a VPS, a
