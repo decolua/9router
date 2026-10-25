@@ -75,7 +75,7 @@ Clone and build from GitHub:
 
 ```bash
 git clone https://github.com/decolua/9router.git
-cd 9router/app
+cd 9router
 npm install
 npm run build
 npm start
@@ -132,15 +132,12 @@ Dashboard → Settings → API Keys
 ### Check Server Status
 
 ```bash
-curl http://localhost:20128/health
+curl http://localhost:20128/api/health
 ```
 
 **Expected response:**
 ```json
-{
-  "status": "ok",
-  "version": "1.0.0"
-}
+{"ok":true}
 ```
 
 ### List Available Models
