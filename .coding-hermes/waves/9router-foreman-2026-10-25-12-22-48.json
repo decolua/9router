@@ -1,0 +1,15 @@
+{
+  "tick_id": "9router-foreman-2026-10-25-12-22-48",
+  "project": "9router",
+  "block_id": "DOC-32",
+  "wave_size": 3,
+  "mode": "wave",
+  "selection": ["DOC-21-R2", "DOC-30", "DOC-31"],
+  "reason": "Recovered DOC-29 first. DOC-21-R2, DOC-30, and DOC-31 are ready, mutually independent, and have disjoint documentation files; WAVE_BUDGET=10 and current slots permit a three-worker wave.",
+  "workers": [
+    {"task_id":"DOC-21-R2","worktree":"/home/kara/worktrees/9router-DOC-21-R2","branch":"wt/DOC-21-R2","model":"gpt-5.6-terra","provider":"openai-codex","brief":"/home/kara/.hermes/cache/briefs/9router-2026-10-25-12-22-DOC-21-R2.md","base":"255e2e27973370117079f1f248e37a79bf9fc60f"},
+    {"task_id":"DOC-30","worktree":"/home/kara/worktrees/9router-DOC-30","branch":"wt/DOC-30","model":"gpt-5.6-terra","provider":"openai-codex","brief":"/home/kara/.hermes/cache/briefs/9router-2026-10-25-12-22-DOC-30.md","base":"255e2e27973370117079f1f248e37a79bf9fc60f"},
+    {"task_id":"DOC-31","worktree":"/home/kara/worktrees/9router-DOC-31","branch":"wt/DOC-31","model":"gpt-5.6-terra","provider":"openai-codex","brief":"/home/kara/.hermes/cache/briefs/9router-2026-10-25-12-22-DOC-31.md","base":"255e2e27973370117079f1f248e37a79bf9fc60f"}
+  ],
+  "recovery": {"finished_at":"2026-10-25T12:22:48-05:00","task_id":"DOC-29","branch_tip":"1a0b21a63d5735b4fc03aa124ec926e3e8d72185","merge":"already landed in 4d4f4400 before recovery","remote_parity":"PASS"}
+}

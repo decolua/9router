@@ -44,3 +44,26 @@ tasks:
   status: complete
   created_at: '2026-10-25T16:54:51.955995+00:00'
   completed_at: '2026-10-25T16:54:52.286843+00:00'
+- id: DOC-21-R2-MERGED
+  title: Repair GitBook source install and health check on merged tree
+  criteria:
+  - The merged tree documents the repository-root install, GET /api/health, and the
+    ok true response
+  status: complete
+  created_at: '2026-10-25T17:35:36.307262+00:00'
+  completed_at: '2026-10-25T17:35:36.942636+00:00'
+- id: DOC-30-MERGED
+  title: Define repository traceability doctrine on merged tree
+  criteria:
+  - Merged tree contains docs traceability doctrine and a root-reachable link
+  status: complete
+  created_at: '2026-10-25T17:38:01.369475+00:00'
+  completed_at: '2026-10-25T17:38:01.750337+00:00'
+- id: DOC-31-MERGED
+  title: Document federation config status route on merged tree
+  criteria:
+  - Merged tree documents config-status as token-less read-only with OPTIONS and covers
+    all seven handlers
+  status: complete
+  created_at: '2026-10-25T17:38:54.348715+00:00'
+  completed_at: '2026-10-25T17:38:54.675506+00:00'
