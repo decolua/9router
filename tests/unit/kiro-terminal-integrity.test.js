@@ -718,6 +718,7 @@ describe("Kiro terminal integrity recovery", () => {
     const result = await execute();
     const body = await result.response.text();
 
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result.response.status).toBe(200);
     expect(body).toContain("kiro_integrity_retry_upstream_error");
     expect(body).toContain("unauthorized");
@@ -733,6 +734,7 @@ describe("Kiro terminal integrity recovery", () => {
 
     const body = await (await execute()).response.text();
 
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(body).toContain("error-start-");
     expect(body).not.toContain("error-tail");
     expect(body.length).toBeLessThan(5000);

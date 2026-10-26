@@ -171,7 +171,7 @@ describe("openaiToClaudeRequest", () => {
 describe("openaiToClaudeResponse", () => {
   it("omits empty Read pages tool argument before emitting Claude input deltas", () => {
     const state = { toolCalls: new Map() };
-    const chunk = {
+    const toolCallStart = openaiToClaudeResponse({
       id: "chatcmpl-test",
       model: "gpt-test",
       choices: [{
@@ -179,8 +179,22 @@ describe("openaiToClaudeResponse", () => {
           tool_calls: [{
             index: 0,
             id: "call_read",
+            function: { name: "Read" }
+          }]
+        }
+      }]
+    }, state);
+
+    // Arguments only flush on the terminal chunk; a non-terminal chunk must not
+    // emit input deltas because sanitization runs at finish.
+    const terminal = openaiToClaudeResponse({
+      id: "chatcmpl-test",
+      model: "gpt-test",
+      choices: [{
+        delta: {
+          tool_calls: [{
+            index: 0,
             function: {
-              name: "Read",
               arguments: JSON.stringify({
                 file_path: "/tmp/example.txt",
                 offset: 0,
@@ -189,18 +203,42 @@ describe("openaiToClaudeResponse", () => {
               })
             }
           }]
-        }
+        },
+        finish_reason: "tool_calls"
       }]
-    };
+    }, state);
 
-    const result = openaiToClaudeResponse(chunk, state);
-    const inputDelta = result.find(event => event.delta?.type === "input_json_delta");
+    const toolBlock = toolCallStart.find(event =>
+      event.type === "content_block_start" && event.content_block?.type === "tool_use"
+    );
+    expect(toolBlock).toEqual({
+      type: "content_block_start",
+      index: 0,
+      content_block: {
+        type: "tool_use",
+        id: "call_read",
+        name: "Read",
+        input: {}
+      }
+    });
 
-    expect(inputDelta).toBeDefined();
-    expect(JSON.parse(inputDelta.delta.partial_json)).toEqual({
-      file_path: "/tmp/example.txt",
-      offset: 0,
-      limit: 120
+    const inputDelta = terminal.find(event => event.delta?.type === "input_json_delta");
+    expect(inputDelta).toEqual({
+      type: "content_block_delta",
+      index: toolBlock.index,
+      delta: {
+        type: "input_json_delta",
+        partial_json: JSON.stringify({
+          file_path: "/tmp/example.txt",
+          offset: 0,
+          limit: 120
+        })
+      }
+    });
+    expect(terminal.find(event => event.type === "message_delta")).toEqual({
+      type: "message_delta",
+      delta: { stop_reason: "tool_use" },
+      usage: { input_tokens: 0, output_tokens: 0 }
     });
   });
 });

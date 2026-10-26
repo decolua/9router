@@ -3,7 +3,7 @@ import { describe, it, expect } from "vitest";
 import { normalizeClaudePassthrough } from "../../open-sse/translator/formats/claude.js";
 import { parseDataUri, encodeDataUri } from "../../open-sse/translator/concerns/image.js";
 
-describe("normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1)", () => {
+describe("normalizeClaudePassthrough — haiku thinking + mid-conversation system (docs 11 §1)", () => {
   it("downgrades adaptive thinking to enabled+budget for haiku models", () => {
     const out = normalizeClaudePassthrough({ thinking: { type: "adaptive" } }, "claude-haiku-4-5");
     expect(out.thinking).toEqual({ type: "enabled", budget_tokens: 10000 });
@@ -14,18 +14,32 @@ describe("normalizeClaudePassthrough — haiku adaptive thinking (docs 11 §1)",
     expect(out.thinking).toEqual({ type: "adaptive" });
   });
 
-  // 7e5f5a88 folds these into the neighbouring user turn instead of hoisting them into
-  // body.system: volatile reminders ahead of the conversation broke the prefix cache.
+  // normalizeClaudePassthrough folds a mid-conversation system message into the
+  // preceding user turn instead of hoisting it (claude.js:239-271): hoisting would
+  // move volatile content ahead of the conversation and invalidate the prefix cache
+  // on every request. Text and turn order must survive the fold.
   it("folds mid-conversation system messages into the preceding user turn", () => {
     const out = normalizeClaudePassthrough({
+      system: [{ type: "text", text: "stay terse" }],
       messages: [
         { role: "user", content: "hi" },
         { role: "system", content: "be brief" },
+        { role: "assistant", content: "ok" },
+        { role: "user", content: "more" },
       ],
     });
-    expect(out.system).toBeUndefined();
+    // The leading system prompt stays top-level and is not rewritten by the fold.
+    expect(out.system).toEqual([{ type: "text", text: "stay terse" }]);
     expect(out.messages).toEqual([
-      { role: "user", content: [{ type: "text", text: "hi" }, { type: "text", text: "be brief" }] },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "text", text: "be brief" },
+        ],
+      },
+      { role: "assistant", content: "ok" },
+      { role: "user", content: "more" },
     ]);
     expect(out.messages.every((m) => m.role !== "system")).toBe(true);
   });
