@@ -6,8 +6,10 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity, normalizeGeminiContents, DEFAULT_SAFETY_SETTINGS } from "../translator/formats/gemini.js";
-import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_CLAUDE_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { isGemini4Model } from "../providers/capabilities.js";
+import { isValidClaudeSignature } from "../utils/claudeSignature.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -246,11 +248,18 @@ export class AntigravityExecutor extends BaseExecutor {
       });
       // Gemini 3+ rejects functionCall parts without thoughtSignature. Clients (Claude Code, IDE)
       // don't persist thoughtSignature in their history, so backfill from cache or default signature.
+      const targetModel = body.model || model || "";
+      const isClaudeTarget = targetModel.toLowerCase().includes("claude");
       const modifiedParts = parts?.map(p => {
         if (!p.functionCall) return p;
         const callId = p.functionCall.id;
-        const cachedSig = callId ? getGeminiThoughtSignatureSync(callId, sessionId, body.model || model) : null;
-        const callSig = p.thoughtSignature || cachedSig || DEFAULT_THINKING_AG_SIGNATURE;
+        const cachedSig = callId ? getGeminiThoughtSignatureSync(callId, sessionId, targetModel) : null;
+        const existingSig = p.thoughtSignature;
+        const isSyntheticDefault = existingSig === DEFAULT_THINKING_GEMINI_CLI_SIGNATURE || existingSig === DEFAULT_THINKING_AG_SIGNATURE || existingSig === DEFAULT_THINKING_CLAUDE_SIGNATURE;
+        const isCompatibleExisting = existingSig && (isClaudeTarget ? (existingSig !== DEFAULT_THINKING_GEMINI_CLI_SIGNATURE && !existingSig.startsWith("GEMINI_")) : (existingSig !== DEFAULT_THINKING_CLAUDE_SIGNATURE && !existingSig.startsWith("CLAUDE_") && !isValidClaudeSignature(existingSig)));
+        const callSig = (cachedSig && (!isCompatibleExisting || isSyntheticDefault))
+          ? cachedSig
+          : ((isCompatibleExisting ? existingSig : null) || cachedSig || (isClaudeTarget ? DEFAULT_THINKING_AG_SIGNATURE : DEFAULT_THINKING_GEMINI_CLI_SIGNATURE));
         return { ...p, thoughtSignature: callSig };
       });
 
@@ -326,6 +335,19 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
+    if (isGemini4Model(body.model || model)) {
+      delete generationConfig.temperature;
+      delete generationConfig.topP;
+      delete generationConfig.topK;
+      if (generationConfig.thinkingConfig) {
+        const tc = generationConfig.thinkingConfig;
+        if (tc.thinkingBudget !== undefined || tc.thinkingLevel === "minimal") {
+          const b = Number(tc.thinkingBudget);
+          const lvl = tc.thinkingLevel === "minimal" ? "low" : (Number.isFinite(b) && b > 0 ? (b <= 4096 ? "low" : b <= 16384 ? "medium" : "high") : "high");
+          generationConfig.thinkingConfig = { thinkingLevel: lvl, includeThoughts: true };
+        }
+      }
+    }
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
