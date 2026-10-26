@@ -17,6 +17,10 @@ function getAuthGroup(providerId, connection = null) {
       if (FREE_PROVIDERS[providerId]) return "free";
       return "oauth";
     }
+    // "auth_token" (bearer in apiKey) tests through the same path as an API-key
+    // connection, so it belongs to the "apikey" batch — otherwise it matches no
+    // batch mode and is silently skipped by "Test all API-key connections".
+    if (connection.authType === "auth_token" || connection.authType === "api_key") return "apikey";
     return connection.authType;
   }
   

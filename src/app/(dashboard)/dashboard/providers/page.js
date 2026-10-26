@@ -288,8 +288,11 @@ export default function ProvidersPage() {
       (p) => matchSearch(p.name) && matchStatus(getProviderStats(p.id, "apikey")),
     );
 
-  // Dual-auth providers (oauth + apikey) store API keys as authType "apikey"
-  // (and sometimes "api_key"). Card stats must count both so totals match detail.
+  // Multi-auth providers store one connection per authType: OAuth as "oauth",
+  // API keys as "apikey" (and legacy "api_key"), bearer tokens as "auth_token"
+  // (e.g. CodeBuddy). Card stats must count every mode the registry declares so
+  // the grid total matches the detail page — otherwise an auth_token connection
+  // is invisible here and the card reads "No connections".
   // kiro has no authModes in registry but accepts both (headless uses "api_key").
   const dualAuthTypes = (info, key) => {
     if (key === "kiro") return ["oauth", "apikey", "api_key"];
@@ -302,8 +305,12 @@ export default function ProvidersPage() {
         ? ["oauth", "apikey", "api_key"]
         : "oauth";
     }
-    if (!modes.includes("apikey")) return "oauth";
-    return ["oauth", "apikey", "api_key"];
+    // Build the counted set from declared modes; always include the "api_key"
+    // spelling alias alongside "apikey" so legacy kiro-style rows still count.
+    const types = new Set(modes);
+    if (types.has("apikey")) types.add("api_key");
+    // Preserve the oauth-only fallback when the registry declares no oauth.
+    return types.size > 0 ? Array.from(types) : "oauth";
   };
 
   const oauthEntries = sortByPriority(

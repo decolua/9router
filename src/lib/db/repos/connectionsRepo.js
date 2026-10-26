@@ -138,19 +138,21 @@ export async function createProviderConnection(data) {
   let result;
 
   db.transaction(() => {
-    // apikey connections are deduped by name and need only the current max
-    // priority, so query for those directly instead of loading the whole pool
-    // (O(pool) per key — the other half of the import cost in #4311). The oauth
-    // branch below still scans, because its identity rules compare fields
-    // inside providerSpecificData and have no single-column equivalent.
-    const isApikey = data.authType === "apikey" && !!data.name;
-    const all = isApikey
+    // Key-based connections ("apikey" and the "auth_token" bearer variant) are
+    // deduped by name and need only the current max priority, so query for those
+    // directly instead of loading the whole pool (O(pool) per key — the other
+    // half of the import cost in #4311). The oauth branch below still scans,
+    // because its identity rules compare fields inside providerSpecificData and
+    // have no single-column equivalent.
+    const isKeyBased =
+      (data.authType === "apikey" || data.authType === "auth_token") && !!data.name;
+    const all = isKeyBased
       ? db.all(
           `SELECT * FROM providerConnections WHERE provider = ? AND authType = ? AND name = ?`,
-          [data.provider, "apikey", data.name]
+          [data.provider, data.authType, data.name]
         ).map(rowToConn)
       : db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
-    const poolSize = isApikey
+    const poolSize = isKeyBased
       ? db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [data.provider])?.n ?? all.length
       : all.length;
 
@@ -190,6 +192,10 @@ export async function createProviderConnection(data) {
       });
     } else if (data.authType === "apikey" && data.name) {
       existing = all.find(c => c.authType === "apikey" && c.name === data.name);
+    } else if (data.authType === "auth_token" && data.name) {
+      // Bearer-token connections dedup by name like API keys, but stay in their
+      // own namespace so an apikey and an auth_token sharing a name don't clash.
+      existing = all.find(c => c.authType === "auth_token" && c.name === data.name);
     }
     // access_token: never dedup — user manages duplicates manually
 
