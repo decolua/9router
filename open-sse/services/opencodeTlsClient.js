@@ -136,12 +136,37 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
   if (init.body !== undefined) options.body = init.body;
   if (signal) options.signal = signal;
 
-  const res = await session.fetch(url, options);
+  let res;
+  try {
+    res = await session.fetch(url, options);
+  } catch (error) {
+    // A transport failure is not "wreq-js is not installed", the only case the
+    // caller handles. Rethrown any other way it reaches BaseExecutor, which maps
+    // exceptions to a 502 — the user sees "Bad Gateway" with nothing pointing at
+    // the tunnel. Report it as unavailable so the native-fetch fallback runs.
+    //
+    // The session is dropped because one that failed this way usually keeps
+    // failing; the next call rebuilds it once the address recovers.
+    dropSession(proxyUrl);
+    throw new OpencodeTlsUnavailableError(
+      `wreq-js session failed (${error instanceof Error ? error.message : "unknown"}) — falling back to native fetch`
+    );
+  }
+
   const headers = {};
   res.headers?.forEach?.((value, key) => {
     headers[key] = value;
   });
   return new Response(res.body, { status: res.status, statusText: res.statusText, headers });
+}
+
+/** Drop only this proxy's session, so the next call rebuilds it. */
+function dropSession(proxyUrl = "") {
+  const key = proxyUrl || "";
+  const pending = sessions.get(key);
+  if (!pending) return;
+  sessions.delete(key);
+  pending.then((session) => session.close?.()).catch(() => { });
 }
 
 export const __test__ = { OPENCODE_CIPHER_LIST };
