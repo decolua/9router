@@ -266,6 +266,26 @@ describe("combo fallback ladder (advertised subscription -> cheap -> free)", () 
     // Last status survives the walk (429 from the free tier), not a fabricated success.
     expect(result.status).toBe(429);
     const payload = await result.json();
-    expect(payload.error.message).toContain("opencode free tier quota exhausted");
+    expect(payload.error.message).toContain("anthropic/claude-sonnet-4 (429): Rate limit exceeded: anthropic subscription tier quota exhausted");
+    expect(payload.error.message).toContain("deepseek/deepseek-chat (429): Rate limit exceeded: deepseek cheap tier quota exhausted");
+    expect(payload.error.message).toContain("opencode/gpt-5-nano-free (429): Rate limit exceeded: opencode free tier quota exhausted");
+    expect(payload.error.type).toBe("server_error");
+    expect(payload.error.attempts).toEqual([
+      {
+        seat_id: "anthropic/claude-sonnet-4",
+        status: 429,
+        error_message: "Rate limit exceeded: anthropic subscription tier quota exhausted",
+      },
+      {
+        seat_id: "deepseek/deepseek-chat",
+        status: 429,
+        error_message: "Rate limit exceeded: deepseek cheap tier quota exhausted",
+      },
+      {
+        seat_id: "opencode/gpt-5-nano-free",
+        status: 429,
+        error_message: "Rate limit exceeded: opencode free tier quota exhausted",
+      },
+    ]);
   });
 });

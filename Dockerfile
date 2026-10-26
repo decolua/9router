@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
 ARG NODE_IMAGE=node:22-alpine
+
 FROM ${NODE_IMAGE} AS base
 WORKDIR /app
 
@@ -92,8 +93,11 @@ RUN mkdir -p /app/data /app/data-home && \
   chown node:node /app /app/data /app/data-home && \
   ln -sf /app/data-home /root/.9router 2>/dev/null || true
 
-# Fix permissions at runtime (handles mounted volumes)
-RUN apk --no-cache upgrade && apk --no-cache add su-exec && \
+# Fix permissions at runtime (handles mounted volumes).
+# ffmpeg: required by upstream v0.5.111 runtime handlers (codexSttAudio,
+# ttsProviders/localDevice) — audio transcoding via ffmpeg child process.
+# No dist-upgrade in the runtime image (upstream reproducibility rationale).
+RUN apk add --no-cache su-exec ffmpeg && \
   printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 

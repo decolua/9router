@@ -50,6 +50,13 @@ const PATTERN_THINKING = [
   { provider: "codex", pattern: "*gpt-5.6-terra*", levels: [...CODEX_GPT_5_6_LEVELS, "ultra"] },
   { provider: "codex", pattern: "*gpt-5.6-luna*", levels: CODEX_GPT_5_6_LEVELS },
   { pattern: "*codex*", levels: ["low", "medium", "high", "xhigh"] }, // codex cannot disable thinking
+  // OpenCode Free (oc) MiMo rides the same OpenRouter-backed route as the rest of
+  // that lane and takes the full OpenAI effort enum verbatim (probed live: all
+  // seven values 200, anything else 400 "Invalid option"), so it owns the entry
+  // ahead of the unqualified *mimo*v2.6* one below — that one describes Xiaomi's
+  // own API, and its [none..xhigh] set would make max unreachable here (the
+  // deepseek wire branch clamps max→high when the declared set lacks it).
+  { provider: "opencode", pattern: "*mimo*v2.6*", levels: ["none", "minimal", "low", "medium", "high", "xhigh", "max"] },
   { pattern: "*mimo*v2.6*", levels: ["none", "low", "medium", "high", "xhigh"] },
   // mimo-v2.5-pro on opencode-go rejects reasoning_effort "max" (probed live); v2.5 accepts it.
   { pattern: "*mimo*v2.5-pro*", levels: ["none", "low", "medium", "high", "xhigh"] },
@@ -61,6 +68,12 @@ const PATTERN_THINKING = [
   // would never fire for dotted ids like deepseek-v4.1-flash.
   { provider: "codebuddy-cn", pattern: "deepseek-v4-pro",     levels: ["low", "high", "xhigh"] },
   { provider: "codebuddy-cn", pattern: "deepseek-v4.1-flash", levels: ["low", "high", "max"] },
+  // OpenCode Zen free tier (oc / ocz) — the free id of the same v4.1-flash model
+  // publishes low|high|max as well, and unlike DeepSeek's own API the upstream
+  // forwards the level verbatim (no low→high collapse). The generic
+  // *deepseek-v4.* glob below would advertise medium/xhigh, which the model does
+  // not serve, so this entry MUST stay above it.
+  { pattern: "*deepseek-v4.1-flash-free*", levels: ["low", "high", "max"] },
   { pattern: "*deepseek-v4.*", levels: ["none", "low", "medium", "high", "xhigh", "max"] },
   // codebuddy-cn per-model effort sets — the server's product-config payload
   // publishes `reasoning.supportedEfforts` per model. NOTE: the chat endpoint
@@ -87,6 +100,12 @@ const PATTERN_THINKING = [
   { provider: "minimax-code-global", pattern: "MiniMax-M3", levels: ["none", "high"] },
 ];
 
+// OpenAI documents reasoning.effort "max" for GPT-5.6 and GPT-6 (#5186). The codex rows
+// above already carry it; an OpenAI Compatible node serving the same ids gets the same
+// set, otherwise the "openai" format list (no max) clamps max to xhigh on the wire.
+const OPENAI_MAX_EFFORT_MODEL = /(?:^|\/)gpt-(?:5\.6|6)(?:[.-]|$)/i;
+const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("openai-compatible-");
+
 // Returns valid thinking levels for a model, or null when the model has no reasoning.
 export function getThinkingLevels(provider, model) {
   if (provider === "kiro" && resolveKiroEffortPath(model) === null) return null;
@@ -99,7 +118,9 @@ export function getThinkingLevels(provider, model) {
   const hit = PATTERN_THINKING.find((entry) =>
     (!entry.provider || entry.provider === provider) && matchPattern(entry.pattern, model)
   );
-  let levels = modelLevels || hit?.levels || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
+  let levels = modelLevels || hit?.levels
+    || (isOpenAICompatibleNode(provider) && OPENAI_MAX_EFFORT_MODEL.test(baseId) ? CODEX_GPT_5_6_LEVELS : null)
+    || FORMAT_LEVELS[caps.thinkingFormat] || L.base;
   if (caps.thinkingCanDisable === false) levels = levels.filter((l) => l !== "none");
   return levels;
 }

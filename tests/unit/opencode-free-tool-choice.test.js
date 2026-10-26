@@ -24,8 +24,6 @@ function responsesBody(model, tool_choice) {
   return body;
 }
 
-import { OPENCODE_FINGERPRINT_TOOLS } from "../../open-sse/utils/opencodeFingerprint.js";
-
 // Upstream v0.5.95 contract: on the free tier the fingerprint quartet is
 // APPENDED to the caller's tools (never replacing them — skipping the
 // append triggers 403 FreeTierError). Helper: assert caller tools survived

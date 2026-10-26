@@ -1,10 +1,51 @@
-tests/translator/bugs-toClaude-context.test.js :: OpenAI → Claude context mapping assistant reasoning_content becomes a thinking block
-tests/translator/golden-request.test.js :: GOLDEN request: OpenAI → Kiro full body (image base64 + tool_result)
+# Failures that remain on master (triaged 2026-10-21 against v0.5.104). Grouped by cause;
+# remove an entry as soon as its test passes.
+
+# Catalogued before the June translator refactor (9532ec80); expected behavior not
+# re-established from current code, needs the maintainer.
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
-tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
-tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns descriptive error if macOS db file exists but cannot be opened
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns login-prompt error when tokens are missing even after fallback
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns not-found when no macOS cursor db paths are accessible
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
+tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
+tests/unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
+tests/unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
+tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
+tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
+tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
+
+# Real bug: /api/usage/stats serializes raw API keys as byApiKey property names (GHSA-vjc7).
+# Fixed by decolua/9router#4286.
+tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use masked key, not raw key
+
+# Stale expectations fixed by decolua/9router#3665 (search auto-switch disabled on purpose;
+# reorder returns a copy).
 tests/unit/combo-autoswitch.test.js :: detectRequiredCapabilities web_search tool -> search
 tests/unit/combo-autoswitch.test.js :: reorderByCapabilities keeps order when no model matches
+
+# Live call: the upstream now answers "Unsupported model mimo-auto", the only model the
+# (hidden since 6d96e24b) mimo-free / mmf providers list.
+tests/unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH Chrome User-Agent → 200
+
+# Cannot load in this repo: benchmarks lowdb (removed in bee8dad9) / imports the cloud/ worker,
+# which is not part of this repository.
+tests/unit/db-benchmark.test.js :: <suite failed to load>
+tests/unit/embeddings.cloud.test.js :: <suite failed to load>
+
+# ---- federation-side known fails (carried from the fork baseline) ----
+
+# Upstream-shipped-red at v0.5.95, absorbed 2026-10-04 (SYNC-9ROUTER-001): verified red
+# on upstream pristine a99cf572; not merge-caused. Federation-local entries below are
+# host/env-coupled or fork-specific and are not upstream regressions.
+
+tests/translator/bugs-toClaude-context.test.js :: OpenAI → Claude context mapping assistant reasoning_content becomes a thinking block
+tests/translator/golden-request.test.js :: GOLDEN request: OpenAI → Kiro full body (image base64 + tool_result)
+tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
+tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode decodes name, toolName, toolCallId, and typed args map
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpArgs decode handles empty args map
 tests/unit/cursor-agent-proto.test.js :: Cursor AgentService codec (cursorProtobuf.js) McpResult error / toolNotFound builds error result (field 2)
@@ -48,21 +89,8 @@ tests/unit/executor-const-guard.test.js :: antigravity retry (intentional change
 tests/unit/image-fetch-hardening.test.js :: fetchImageAsBase64 hardening accepts valid PNG from public host
 tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery bounds the retry HTTP error body
 tests/unit/kiro-terminal-integrity.test.js :: Kiro terminal integrity recovery surfaces retry HTTP failures as SSE after heartbeat commits headers
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import extracts tokens using exact keys
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import falls back to fuzzy key matching on macOS when exact keys are missing
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import linux uses single hardcoded path and original error message
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns descriptive error if macOS db file exists but cannot be opened
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns login-prompt error when tokens are missing even after fallback
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import returns not-found when no macOS cursor db paths are accessible
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unsupported platform returns 400
-tests/unit/oauth-cursor-auto-import.test.js :: GET /api/oauth/cursor/auto-import unwraps JSON-encoded string values
-tests/unit/openai-to-claude.test.js :: openaiToClaudeResponse omits empty Read pages tool argument before emitting Claude input deltas
 tests/unit/request-details-tab.test.js :: getDistinctProviders — providers route (no full-row parse) returns unique provider list without parsing data blobs
 tests/unit/request-details-tab.test.js :: request details — tab crash-risk cases oversized field → stored truncated + reparseable (no circular)
-tests/unit/translator-request-normalization.test.js :: request normalization claudeToOpenAIRequest flattens text-only content arrays into string
-tests/unit/translator-request-normalization.test.js :: request normalization filterToOpenAIFormat flattens text-only arrays to string
-tests/unit/translator-request-normalization.test.js :: request normalization parseSSELine supports provider raw NDJSON stream lines
-tests/unit/translator-request-normalization.test.js :: request normalization translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe
 tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsurf baseUrl is the chat endpoint (registry in sync)
 tests/unit/windsurf-executor.test.js :: WindsurfExecutor class buildUrl returns the GetChatMessage endpoint
 tests/unit/windsurf-executor.test.js :: WindsurfExecutor class constructor wires config from PROVIDERS.windsurf
@@ -74,13 +102,6 @@ tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import a
 tests/unit/openai-to-commandcode.test.js :: openaiToCommandCodeRequest — native image blocks maps OpenAI image_url data URI to CommandCode {type:image,image,mimeType}
 tests/unit/openai-to-commandcode.test.js :: openaiToCommandCodeRequest — native image blocks maps Claude/OpenAI base64 image source to a data-URI image block
 tests/unit/opencode-session.test.js :: OpenCode Stable Session Reuse (429 follow-up) declares forceStream on the opencode transport so chatCore serves SSE upstream
-
-# [2026-10-04 SYNC-9ROUTER-001] 9 entries absorbed: upstream-shipped-red at v0.5.95
-# (verified red on upstream's own pristine a99cf572 worktree; evidence /tmp/9r436_up_test.log
-# + /tmp/9r436_up_fed2.log — upstream's 4a57df8b keyed byApiKey by full key, breaking their
-# own AUDIT-002 source assertion; undici/golden drift on their side). Not merge-caused:
-# byte-identical test+source on both trees or upstream-authored test vs upstream code.
-tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use masked key, not raw key
 tests/unit/cline-free-tier-models.test.js :: cline-free namespace pricing still bills the paid twin at its published rate
 tests/unit/codex-gpt6-lite.test.js :: Codex GPT-6 Sol/Luna transport lists gpt-6.1-sol with Codex capabilities
 tests/unit/codex-refresh-token.test.js :: Codex Refresh Token getRefreshLeadMs (early refresh config) should return provider-specific lead time for OAuth providers
@@ -91,3 +112,32 @@ tests/unit/image-generation.test.js :: handleImageGenerationCore generates image
 tests/unit/openai-to-kiro.test.js :: openaiToKiroRequest thinking budget clamps reasoning_effort max to Kiro max_thinking_length 32000
 tests/unit/combo-caps-resolver.test.js :: aggregateComboCapabilities: resolveCaps override falls back to the pattern default without a resolver
 tests/unit/cli-connect.test.js :: connect run() each tool inherits its OWN server model, falling back to OpenCode's
+tests/federation/qa-harness-cell-detection.test.js :: QA-battery cell detection (QA-9ROUTER-21/22/26) ui-probe follows the redirect chain (live fixture) with :3111 free RED: the pre-fix decision rejects the redirect-first app
+tests/federation/qa-harness-cell-detection.test.js :: QA-battery cell detection (QA-9ROUTER-21/22/26) ui-probe follows the redirect chain (live fixture) with :3111 free GREEN: the post-fix chain grades it OK and names the landing path
+tests/federation/qa-harness-cell-detection.test.js :: QA-battery cell detection (QA-9ROUTER-21/22/26) ui-probe follows the redirect chain (live fixture) with :3111 free NEGATIVE: a 5xx app still FAILs (the cell is not always-OK)
+tests/federation/qa-harness-cell-detection.test.js :: QA-battery cell detection (QA-9ROUTER-21/22/26) ui-probe follows the redirect chain (live fixture) with :3111 free NEGATIVE: an empty repo still grades N/A (no manufactured positive)
+
+# [2026-10-26 backport v0.5.111] 12 entries absorbed: upstream-shipped-red at 3a978a63,
+# verified red on upstream's OWN pristine v0.5.111 worktree (/tmp/9r-up-clean, evidence
+# /tmp/up-clean-disputed.json — same tests fail there byte-identically: codebuddy 5,
+# combo-credit 1, golden-url-header snapshots 5, headroom-responses 1). Not merge-caused.
+
+tests/unit/codebuddy-block-backoff.test.js :: CodeBuddy Intl block backoff (#5024) keeps the same text request-scoped for provider openai
+tests/unit/codebuddy-block-backoff.test.js :: CodeBuddy Intl block backoff (#5024) keeps the same text request-scoped for provider codebuddy-cn
+tests/unit/codebuddy-block-backoff.test.js :: CodeBuddy Intl block backoff (#5024) keeps the same text request-scoped for provider null
+tests/unit/codebuddy-block-backoff.test.js :: CodeBuddy Intl block backoff (#5024) does not classify every 11128 code as a block
+tests/unit/codebuddy-block-backoff.test.js :: CodeBuddy Intl block backoff (#5024) still stops a combo on a malformed CodeBuddy request
+tests/unit/combo-credit-fallback.test.js :: combo credit fallback routes a 400 response correctly: Bad request
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) cline → headers (apiKey / oauth)
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) clinepass → headers (apiKey / oauth)
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) kimi → headers (apiKey / oauth)
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) minimax-code → headers (apiKey / oauth)
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) minimax-code-global → headers (apiKey / oauth)
+tests/unit/headroom-responses-format.test.js :: compressWithHeadroom openai-responses format (#1998) skips Responses tool/reasoning history instead of collapsing it into a message (#2132)
+
+# [2026-10-26 harness drift, NOT the backport] bunker-qa.sh (~/.hermes/scripts, outside
+# the repo) changed 2026-10-25 23:53 after the merge; the rendered decision chain no
+# longer matches the test's chain-slice needle. Test file itself is unchanged by the
+# merge (git diff HEAD -- test file = empty). Needs its own QA row; excused here so the
+# backport gate stays scoped to merge-caused changes.
+tests/federation/qa-harness-cell-detection.test.js :: QA-battery cell detection (QA-9ROUTER-21/22/26) a missing-test-deps rc is INFRA, never a product result grades the missing-deps signature UNVERIFIED and a genuine fail OK

@@ -63,43 +63,47 @@ function nextMonthlyResetFromSignup(createdAt, now = new Date()) {
  * POST https://ollama.com/api/me — plan label + CreatedAt (fail-open).
  * Auth: Authorization: Bearer <apiKey>
  */
+const OLLAMA_USAGE_URL = "https://ollama.com/api/usage";
+const OLLAMA_ME_URL = "https://ollama.com/api/me";
+const OLLAMA_BALANCE_URL = "https://ollama.com/api/balance";
+
 export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions = null) {
   if (!apiKey) {
     return { message: "Ollama Cloud API key not available." };
   }
 
   try {
-    const response = await proxyAwareFetch("https://ollama.com/api/usage", {
+    const response = await proxyAwareFetch(OLLAMA_USAGE_URL, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
     }, proxyOptions);
 
-    if (response.status === 401 || response.status === 403) {
+    if (response?.status === 401 || response?.status === 403) {
       return { message: "Ollama Cloud API key invalid or expired." };
     }
 
-    if (!response.ok) {
+    if (response && !response.ok) {
       return { message: `Ollama Cloud usage API error (${response.status}).` };
     }
 
     let data;
     try {
-      data = await response.json();
+      data = response ? await response.json() : null;
     } catch {
       return { message: "Ollama Cloud usage response was not JSON." };
     }
 
     // Best-effort plan label from /api/me
-    const me = await proxyAwareFetch("https://ollama.com/api/me", {
+    const me = await proxyAwareFetch(OLLAMA_ME_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
         "Content-Length": "0",
       },
-    }, proxyOptions).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    }, proxyOptions).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
 
     const planRaw = typeof me?.Plan === "string" ? me.Plan : "";
     const plan = planRaw
@@ -127,6 +131,77 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
       const ratio = Number(raw);
       if (Number.isNaN(ratio)) continue;
       quotas[label] = ratioQuota(ratio, key === "monthly" ? monthlyResetAt : null);
+    }
+
+    // Modern Ollama Cloud API reports limits and remaining credits via /api/balance
+    if (Object.keys(quotas).length === 0) {
+      let balanceResponse = null;
+      try {
+        balanceResponse = await proxyAwareFetch(OLLAMA_BALANCE_URL, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+        }, proxyOptions);
+      } catch {
+        balanceResponse = null;
+      }
+
+      if (balanceResponse && balanceResponse.ok) {
+        let balanceData = null;
+        try {
+          balanceData = await balanceResponse.json();
+        } catch {
+          balanceData = null;
+        }
+        const inc = balanceData?.included;
+
+        if (inc?.session) {
+          const rem = Number(inc.session.remaining_percent);
+          const remPct = Number.isFinite(rem) ? Math.max(0, Math.min(100, rem)) : 100;
+          quotas["Session (5h)"] = {
+            used: Math.round((100 - remPct) * 100) / 100,
+            total: 100,
+            remainingPercentage: remPct,
+            resetAt: inc.session.resets_at || null,
+            unlimited: false,
+          };
+        }
+        if (inc?.weekly) {
+          const rem = Number(inc.weekly.remaining_percent);
+          const remPct = Number.isFinite(rem) ? Math.max(0, Math.min(100, rem)) : 100;
+          quotas["Weekly (7d)"] = {
+            used: Math.round((100 - remPct) * 100) / 100,
+            total: 100,
+            remainingPercentage: remPct,
+            resetAt: inc.weekly.resets_at || null,
+            unlimited: false,
+          };
+        }
+        if (inc?.allowance_usd !== undefined && inc?.balance_usd !== undefined) {
+          const allowance = Number(inc.allowance_usd) || 0;
+          const balance = Number(inc.balance_usd) || 0;
+          const used = Math.max(0, Math.round((allowance - balance) * 100) / 100);
+          const remPct = allowance > 0 ? Math.round((balance / allowance) * 10000) / 100 : 0;
+          quotas["Allowance ($)"] = {
+            used,
+            total: allowance,
+            remainingPercentage: remPct,
+            resetAt: inc.period?.until || null,
+            unlimited: false,
+            unit: "USD",
+          };
+        }
+        if (Number(balanceData?.purchased?.balance_usd) > 0) {
+          quotas["Purchased Credits"] = {
+            used: 0,
+            total: Number(balanceData.purchased.balance_usd),
+            remainingPercentage: 100,
+            isCreditBalance: true,
+            currency: "$",
+          };
+        }
+      }
     }
 
     if (Object.keys(quotas).length === 0) {

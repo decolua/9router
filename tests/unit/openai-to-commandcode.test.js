@@ -197,7 +197,7 @@ describe("openaiToCommandCodeRequest — native image blocks", () => {
 
     expect(out.params.messages[0].content).toEqual([
       { type: "text", text: "what color?" },
-      { type: "image", image: DATA_URI, mimeType: "image/png" },
+      { type: "image", image: DATA_URI, mimeType: "image/png", mediaType: "image/png" },
     ]);
   });
 
@@ -212,7 +212,7 @@ describe("openaiToCommandCodeRequest — native image blocks", () => {
     }, true);
 
     expect(out.params.messages[0].content).toEqual([
-      { type: "image", image: DATA_URI, mimeType: "image/png" },
+      { type: "image", image: DATA_URI, mimeType: "image/png", mediaType: "image/png" },
     ]);
   });
 

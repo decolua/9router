@@ -138,6 +138,21 @@ const CHAT_EMPTY_NO_USAGE = [
   "data: [DONE]\n\n",
 ].join("");
 
+// Native Gemini streamGenerateContent SSE: content chunks, then a terminal
+// chunk carrying `usageMetadata` (no OpenAI `usage` key anywhere) — the shape
+// the DF-9ROUTER-39-R2 dogfood served. `promptTokenCount` is the billed count
+// the upstream reports.
+const geminiEvent = (obj) => line({ modelVersion: MODEL, responseId: "gem-probe", ...obj });
+const GEMINI_STREAM_WITH_USAGE = [
+  geminiEvent({ candidates: [{ content: { role: "model", parts: [{ text: "DOGFOOD_" }] }, index: 0 }] }),
+  geminiEvent({ candidates: [{ content: { role: "model", parts: [{ text: "OK" }] }, index: 0 }] }),
+  geminiEvent({
+    candidates: [{ content: { role: "model", parts: [{ text: "" }] }, finishReason: "STOP", index: 0 }],
+    usageMetadata: { promptTokenCount: 2009, candidatesTokenCount: 2, cachedContentTokenCount: 512, totalTokenCount: 2011 },
+  }),
+  "data: [DONE]\n\n",
+].join("");
+
 // --- driver -----------------------------------------------------------------
 
 async function streamCompletion({ upstreamText, upstreamContentType = "text/event-stream", responseFormat, streamKey = true }) {
@@ -240,6 +255,29 @@ describe("DF-9ROUTER-33 — a streaming completion that produced content is reco
     expect(usageDb.saveRequestUsage).toHaveBeenCalledTimes(1);
     expect(entry.tokens.prompt_tokens).toBe(2592);
     expect(entry.tokens.completion_tokens).toBe(105);
+    expect(entry.tokens.estimated).toBeFalsy();
+  });
+
+  it("records a Gemini stream's usageMetadata as the upstream's own counts (DF-9ROUTER-39-R2)", async () => {
+    // Dogfood 2026-10-23 saw a Gemini stream SERVED with prompt_tokens 2009
+    // while the ledger recorded 9, and read it as the extractor missing
+    // usageMetadata. The real split: stream.js extracts usageMetadata from the
+    // raw chunk (usageTracking.js extractUsage) into state.usage and the ledger
+    // keeps that count — the SERVED chunk carries the 2000-token
+    // context-safety buffer (addBufferToUsage) on top. Pin the ledger side.
+    const { result, text } = await streamCompletion({
+      upstreamText: GEMINI_STREAM_WITH_USAGE,
+      responseFormat: FORMATS.GEMINI,
+    });
+
+    expect(result.success).toBe(true);
+    expect(openaiContent(text)).toBe("DOGFOOD_OK");
+
+    const entry = recordedUsage();
+    expect(usageDb.saveRequestUsage).toHaveBeenCalledTimes(1);
+    expect(entry.tokens.prompt_tokens).toBe(2009);  // promptTokenCount verbatim, not an estimate
+    expect(entry.tokens.completion_tokens).toBe(2); // candidatesTokenCount
+    expect(entry.tokens.cached_tokens).toBe(512);   // cachedContentTokenCount
     expect(entry.tokens.estimated).toBeFalsy();
   });
 

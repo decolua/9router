@@ -19,7 +19,7 @@ describe("Ollama Cloud web fetch provider", () => {
 
     expect(entry).toMatchObject({
       category: "freeTier",
-      serviceKinds: ["llm", "webFetch"],
+      serviceKinds: ["llm", "webFetch", "systemone"],
       fetchConfig: {
         baseUrl: "https://ollama.com/api/web_fetch",
         method: "POST",

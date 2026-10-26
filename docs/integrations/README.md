@@ -36,6 +36,7 @@ the per-tool guides below for anything the page doesn't cover.
 | OpenCode | [opencode.md](opencode.md) |
 | Cline | [cline.md](cline.md) |
 | OpenClaw | [openclaw.md](openclaw.md) |
+| MCP servers | [mcp.md](mcp.md) |
 
 ## Supported tools
 

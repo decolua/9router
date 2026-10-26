@@ -4,15 +4,16 @@
   "note": "Frozen repo-wide eslint debt for 9router. Key = <repo-relative file>|<ruleId>|<severity>. The gate (npm run lint:gate) fails on any NEW or INCREASED key AND on any STALE/orphan key, so paying debt down requires regenerating this file in the same commit.",
   "scope": "Full tree (`eslint .` from the repo root). Gitignored build output (`**/.next-cli-build/**`) is excluded in eslint.config.mjs and never baselined.",
   "totals": {
-    "errors": 140,
-    "warnings": 219,
+    "errors": 141,
+    "warnings": 218,
     "problems": 359,
-    "filesLinted": 1505,
-    "filesWithProblems": 234
+    "filesLinted": 1530,
+    "filesWithProblems": 235
   },
   "issues": {
     "gitbook/postcss.config.mjs|import/no-anonymous-default-export|1": 1,
     "open-sse/handlers/embeddingProviders/gemini.js|import/no-anonymous-default-export|1": 1,
+    "open-sse/handlers/embeddingProviders/github.js|import/no-anonymous-default-export|1": 1,
     "open-sse/handlers/embeddingProviders/openaiCompatNode.js|import/no-anonymous-default-export|1": 1,
     "open-sse/handlers/embeddingProviders/selfhostedEmbedding.js|import/no-anonymous-default-export|1": 1,
     "open-sse/handlers/imageProviders/antigravity.js|import/no-anonymous-default-export|1": 1,
@@ -284,8 +285,8 @@
     "src/shared/components/LanguageSwitcher.js|react-hooks/exhaustive-deps|1": 1,
     "src/shared/components/LanguageSwitcher.js|react-hooks/set-state-in-effect|2": 1,
     "src/shared/components/McpMarketplaceModal.js|react-hooks/exhaustive-deps|1": 1,
-    "src/shared/components/ModelSelectModal.js|react-hooks/exhaustive-deps|1": 3,
-    "src/shared/components/ModelSelectModal.js|react-hooks/set-state-in-effect|2": 5,
+    "src/shared/components/ModelSelectModal.js|react-hooks/exhaustive-deps|1": 1,
+    "src/shared/components/ModelSelectModal.js|react-hooks/set-state-in-effect|2": 6,
     "src/shared/components/OAuthModal.js|react-hooks/set-state-in-effect|2": 1,
     "src/shared/components/PricingModal.js|react-hooks/immutability|2": 1,
     "src/shared/components/ProviderIcon.js|@next/next/no-img-element|1": 1,

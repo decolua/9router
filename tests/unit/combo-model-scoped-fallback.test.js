@@ -156,7 +156,14 @@ describe("combo model-scoped fallback (DF-9ROUTER-34)", () => {
     expect(result.ok).toBe(false);
     // lastStatus is preserved (the 400 is the honest answer to the client).
     expect(result.status).toBe(400);
-    expect((await result.json()).error.message).toBe('Invalid model identifier "two"');
+    const payload = await result.json();
+    expect(payload.error.message).toContain('p/one (400): Invalid model identifier "one"');
+    expect(payload.error.message).toContain('p/two (400): Invalid model identifier "two"');
+    expect(payload.error.type).toBe("server_error");
+    expect(payload.error.attempts).toEqual([
+      { seat_id: "p/one", status: 400, error_message: 'Invalid model identifier "one"' },
+      { seat_id: "p/two", status: 400, error_message: 'Invalid model identifier "two"' },
+    ]);
   });
 
   /**
@@ -168,10 +175,14 @@ describe("combo model-scoped fallback (DF-9ROUTER-34)", () => {
     const modelScoped = 'Invalid model identifier "bad-model"';
 
     // Account scope: unchanged — no cooldown, no credential removed from rotation.
+    // (upstream v0.5.111 adds the informational `requestScoped` flag on the 4xx
+    // tail; a text-rule hit still returns without it. Either way: no cooldown,
+    // no fallback — the guard itself is intact.)
     expect(checkFallbackError(400, modelScoped)).toEqual({ shouldFallback: false, cooldownMs: 0 });
     expect(checkFallbackError(400, "maximum context length exceeded")).toEqual({
       shouldFallback: false,
       cooldownMs: 0,
+      requestScoped: true,
     });
     // ...while the account-scoped statuses and the rate-limit wording still fall back.
     for (const status of [401, 402, 403, 404, 429]) {

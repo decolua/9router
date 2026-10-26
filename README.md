@@ -97,17 +97,23 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 **1. Install globally — upstream build only (no federation):**
 
-> ⚠️ **Prerequisite:** Node.js ≥ 22 is required before running `npm`. On fresh
-> bunker/SSH-only boxes the OS image ships `git` + `docker` but **not** `node` or
-> `npm`. Rescue path — download the Node tarball, extract into `$HOME` and prepend
-> it to your `PATH`:
+> ⚠️ **Prerequisite: Node.js ≥ 22.19.0** (a current 22.x LTS) is required before
+> running `npm`. The floor is not cosmetic: the app loads `undici` 8, whose
+> decompression table is built at module load from `zlib.createZstdDecompress`
+> (Node ≥ 22.15), so an older runtime (Node 20.x, or 22.14) aborts
+> `npm run build` during page-data collection with
+> `TypeError: Cannot read properties of undefined (reading 'bind')` and names no
+> cause. `npm run build` now preflights the version and prints the requirement
+> instead. On fresh bunker/SSH-only boxes the OS image ships `git` + `docker` but
+> **not** `node` or `npm`. Rescue path — download the Node tarball, extract into
+> `$HOME` and prepend it to your `PATH`:
 >
 > ```bash
-> # Example (adjust ARCH=x64 or arm64):
-> curl -fsSL https://nodejs.org/dist/v22.14.0/node-v22.14.0-linux-x64.tar.xz \
+> # Example (adjust ARCH=x64 or arm64; any 22.x >= 22.19.0 works):
+> curl -fsSL https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz \
 >   | tar -xJ -C $HOME
-> export PATH=$HOME/node-v22.14.0-linux-x64/bin:$PATH
-> node -v && npm -v  # verify
+> export PATH=$HOME/node-v22.23.4-linux-x64/bin:$PATH
+> node -v && npm -v  # must print v22.19.0 or newer
 > ```
 >
 > After the toolchain is in place, continue below.
@@ -162,6 +168,11 @@ cp .env.example .env
 npm ci   # reproducible install from the tracked package-lock.json (`npm install` also works)
 PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
 ```
+
+> Node.js **≥ 22.19.0** is required for the source path too — `npm run build`
+> now preflights it (`scripts/check-node-version.mjs`) and prints the required
+> version instead of failing later with the `reading 'bind'` error. See the
+> Quick Start prerequisite above for the no-root toolchain recipe.
 
 Restart the server after adding a provider connection — running config is loaded at boot.
 
@@ -362,6 +373,31 @@ curl -s -b cookies.txt -X POST http://localhost:20129/api/providers \
 curl -s -b cookies.txt -X POST http://localhost:20129/api/keys \
   -H "Content-Type: application/json" -d '{"name":"my-tool"}'
 # → 201 {"key":"sk-…","name":"my-tool","id":"…","machineId":"…"}
+```
+
+#### Restrict an API key to specific combos or models
+
+New keys are unrestricted. To make a key usable only with named combos and/or
+models, send the key `id` returned by `POST /api/keys` to the authenticated
+update route:
+
+```bash
+curl -s -b cookies.txt -X PUT http://localhost:20129/api/keys/<id> \
+  -H "Content-Type: application/json" \
+  -d '{"access":{"restricted":true,"allow":["Main","openai/model-b"]}}'
+```
+
+`allow` entries are exact, case-insensitive combo or resolved model names. An
+allowed combo authorizes the models it routes to only when the client calls the
+combo; calling one of those members directly requires its own `allow` entry.
+Set `{"access":{"restricted":false,"allow":[]}}` to remove the restriction.
+
+A restricted key that requests a target outside its `allow` list receives HTTP
+403 before any provider credential lookup. The OpenAI-style error has
+`type` and `code` both set to `permission_error`, for example:
+
+```json
+{"error":{"message":"This API key is not allowed to use model \"openai/model-a\"","type":"permission_error","code":"permission_error"}}
 ```
 
 `ollama-local` talks to `http://localhost:11434/api/chat` (the registry default), so
@@ -1773,7 +1809,7 @@ docker pull decolua/9router:latest   # update to latest
 | `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                    | Backward-compatible/public dashboard URL fallback (prefer `CLOUD_URL`)             |
 | `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`          | Server-side HMAC secret used to derive and validate generated API keys. **This is not a client credential — never send it as `Authorization: Bearer <API_KEY_SECRET>` to `/v1`.** Remote clients must use an active API key minted in the dashboard (Endpoint → API Keys) or via login + `POST /api/keys` (keys look like `sk-…`). |
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                    | Salt for stable machine ID hashing                                                  |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                  | Enables request/response logs under `logs/`                                         |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                  | Enables request/response logs under `logs/`. **Also the hard override for the in-DB `requestDetails` store** (dashboard → Observability): when the variable is set to any value it supersedes the UI toggle, so `ENABLE_REQUEST_LOGS=false` disables in-DB request-detail capture even when Observability is enabled in the dashboard — and `true` enables it regardless of the UI setting. |
 | `AUTH_COOKIE_SECURE`                                 | `false`                                  | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
 | `REQUIRE_API_KEY`                                    | `false`                                  | API-key enforcement on the public LLM API (`/v1`, `/v1beta`, `/api/v1`, `/api/v1beta`, `/codex`, `/responses`) for remote clients. `true` = a remote client must send a valid key (trusted-local clients still pass the dashboard gate, and the LLM handlers layer their own key check on top while it is `true`); `false` = a remote client may call the LLM API with no key. Unset = the stored setting applies, whose default is `true` (secure). `.env.example` ships `false` for local use — set `true` before exposing the gateway to the internet (recommended for internet-exposed deploys). This opt-out is a deployment setting only — it is never a reason to send `API_KEY_SECRET` as a client key; remote clients still use a minted `sk-…` API key when a key is needed. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
@@ -1992,6 +2028,8 @@ Authorization: Bearer your-api-key
 ## 👥 Contributors
 
 Thanks to all contributors who helped make 9Router better!
+
+For work-item markers, evidence, and close-out expectations, see the [repository traceability doctrine](docs/traceability-doctrine.md).
 
 [![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
 

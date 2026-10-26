@@ -27,6 +27,7 @@ export default {
     refreshUrl: "https://auth.x.ai/oauth2/token",
   },
   models: [
+    { id: "grok-4.7", name: "Grok 4.7" },
     { id: "grok-4.20", name: "Grok 4.20" },
     { id: "grok-4.20-multi-agent", name: "Grok 4.20 Multi-Agent" },
     { id: "grok-4.6", name: "Grok 4.6" },

@@ -121,10 +121,44 @@ required by `NSStatusItem`; use the tray **Quit** action there as well.
 ```bash
 9router                    # Start with default settings
 9router --port 8080        # Custom port
+9router --host 127.0.0.1   # Bind the gateway to this machine only
 9router --no-browser       # Don't open browser
+9router --no-tray          # Headless: skip tray/UI, serve in the foreground
 9router --skip-update      # Skip auto-update check
 9router --help             # Show all options
 ```
+
+**Host binding**: the launcher binds the gateway to `0.0.0.0` by default. This
+exposes the gateway on every reachable network interface, subject to the host's
+firewall and network configuration. Use `--host 127.0.0.1` when the gateway
+must be reachable only from the local machine:
+
+```bash
+9router --host 127.0.0.1
+```
+
+**Headless mode** (`--no-tray`): for servers without a display — a VPS, a
+container, an SSH box. The launcher skips the whole tray/UI lifecycle (no tray
+runtime install, no tray icon, no interface menu, no auto-start registration,
+and `--tray` / the non-TTY tray fallback are ignored) and serves in the
+foreground with normal logging until Ctrl+C:
+
+```bash
+9router --no-tray          # foreground server, e.g. under tmux/systemd/ssh
+```
+
+Every lifecycle exit also writes a timestamped line to stderr —
+`[<ISO time>] [9router] exiting: <reason>` — so a headless death is always
+diagnosable from the logs.
+
+**Non-interactive launches** (stdin is not a TTY: a pipe, a CI runner, a
+systemd unit with no terminal) cannot render the interface menu, so a launch
+without `--no-tray` resolves to "Exit" after the readiness gate and the
+launcher exits 0 — printing `Exiting...` and the `exiting: server-exit` line
+above. That resolution happens *before* the interactive menu stack is loaded,
+so a source checkout that only ran `npm ci` at the repo root (no
+`npm --prefix cli install`) still exits 0 instead of failing on a missing CLI
+dependency.
 
 **Port precedence** (highest first): `--port/-p` → `PORT` env var → `20128`.
 The launcher reads the process environment only (it does not load `.env`), so a
@@ -136,9 +170,36 @@ PORT=20129 9router --skip-update --no-browser   # env fallback
 ```
 
 An unusable `PORT` (empty, non-numeric, `0`, negative, `>65535`) is ignored with a
-one-line warning naming the value and the port actually used; an unusable `--port`
-argument falls back the same way. An occupied port is refused with an
+one-line warning naming the value and the port actually used, written to
+**stderr**. An unusable `--port` argument is not that case: it is **silently
+ignored** — no line on either stream — and resolution simply continues down the
+chain (`PORT`, then `20128`). The port it settled on is reported only in the
+launcher's startup output on **stdout** — the `Server: http://<host>:<port>`
+banner, plus the `Dashboard:` URL printed beside it in headless mode — so a
+typo'd flag is visible there and nowhere else. An occupied port is refused with an
 `EADDRINUSE` message that names both `--port <other port>` and `PORT=<other port>`.
+
+That split is the decision itself: `resolvePort()` (`cli/src/cli/utils/serverStartup.js:74-90`)
+returns a `warning` only for an unusable `PORT` — the unusable-flag path returns
+`{ port, source: "env" | "default" }` with no `warning` — and `cli/cli.js:209-210`
+prints that warning with `console.error` (stderr), while the banner uses
+`console.log` (stdout). Probe (a checkout without a built `cli/app/` stops right
+after port resolution, before anything is spawned):
+
+```bash
+$ PORT=abc node cli/cli.js --no-tray --skip-update --no-browser 2>&1 | grep -i port
+⚠ Ignoring invalid PORT="abc" — using 20128.
+$ node cli/cli.js --no-tray --skip-update --no-browser --port abc 2>&1 | grep -i port
+$ echo $?
+1
+```
+
+The `PORT` case names the offending value and the port used; the `--port` case
+emits no port line at all (`grep` exits 1). On a built launcher the second
+command simply boots on `20128` and its startup output is the only mention of the
+port — dogfooded in `docs/dogfood/2026-10-23-cli-launcher-lifecycle.md` §3.3(3):
+`PORT=20313 node cli/cli.js --port abc` boots on 20313 with the banner naming
+20313, while `abc` appears 0 times on stdout and stderr.
 
 **Dashboard**: `http://localhost:20128/dashboard`
 
@@ -272,7 +333,7 @@ Options:
 | `--resolution <res>` | Resolution: `480p`, `720p`, or `1080p`. |
 | `--image <path-or-url>` | Image input for image-to-video. |
 | `--timeout <seconds>` | Maximum wait (default: 600 seconds). |
-| `--host <host>`, `-H <host>` | Gateway host (default: `127.0.0.1`). |
+| `--host <host>`, `-H <host>` | Gateway host (default: `0.0.0.0`), exposed on all reachable network interfaces; use `--host 127.0.0.1` for local-only access. |
 | `--port <port>`, `-p <port>` | Gateway port (default: `20128`). |
 | `--api-key <key>` | 9Router API key; alternatively set `NINE_ROUTER_API_KEY`. |
 | `--help`, `-h` | Show subcommand help. |

@@ -7,6 +7,7 @@ import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
+import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -53,7 +54,6 @@ function unstableRandom() {
 // Upstream decodes it and rejects a non-small counter with 403 FreeTierError
 // (live probes: counter 0–16 pass, >=100 fail), so the counter must stay real.
 const SESSION_PREFIX_MASK = (1n << 48n) - 1n;
-const SESSION_TIME_MASK = (1n << 36n) - 1n;
 
 function descendingTimeHex(time, counterValue) {
   return (~(BigInt(time) * 0x1000n + BigInt(counterValue)) & SESSION_PREFIX_MASK)
@@ -70,22 +70,40 @@ export function generateSessionId(timestamp = Date.now()) {
   return `ses_${descendingTimeHex(timestamp, counter)}${unstableRandom()}`;
 }
 
+// Upstream decodes the prefix timestamp and refuses sessions whose time is in
+// the future or older than the free-tier window (live probes 2026-10-26: a
+// Date.now() session passed 10/10 while digest-derived ones passed 1/10). A
+// digest is uniform over 2^36 ms, so most translated ids were refused even
+// though their shape matched. Mint with the current time and memoize per
+// conversation so a conversation keeps one stable, valid session.
+const translatedOpencodeSessions = new Map();
+const MAX_TRANSLATED_SESSIONS = 5000;
+const translatedSessionCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of translatedOpencodeSessions) {
+    if (now - entry.lastUsed > MEMORY_CONFIG.sessionTtlMs) {
+      translatedOpencodeSessions.delete(key);
+    }
+  }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (translatedSessionCleanup.unref) translatedSessionCleanup.unref();
+
 export function translateSessionId(sessionId, clientTool = "") {
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
-  const digest = crypto
-    .createHash("sha256")
-    .update(`opencode\0${clientTool || "generic"}\0${sessionId || ""}`)
-    .digest();
-  // Deterministic time field from the digest, counter pinned to 1 (what the CLI sends).
-  const time = BigInt(`0x${digest.subarray(0, 5).toString("hex")}`) & SESSION_TIME_MASK;
-  const timeHex = descendingTimeHex(time, 1);
-  let randomPart = "";
-  for (let i = 6; i < 20; i++) {
-    randomPart += BASE62_CHARS[digest[i] % 62];
+  const key = `${clientTool || "generic"}\0${sessionId || ""}`;
+  const existing = translatedOpencodeSessions.get(key);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    return existing.sessionId;
   }
-  return `ses_${timeHex}${randomPart}`;
+  const translated = `ses_${descendingTimeHex(Date.now(), 1)}${unstableRandom()}`;
+  if (translatedOpencodeSessions.size >= MAX_TRANSLATED_SESSIONS) {
+    translatedOpencodeSessions.delete(translatedOpencodeSessions.keys().next().value);
+  }
+  translatedOpencodeSessions.set(key, { sessionId: translated, lastUsed: Date.now() });
+  return translated;
 }
 
 function normalizeSession(value) {
@@ -319,6 +337,16 @@ function normalizeOpencodeReasoning(model, body) {
   delete body.reasoning_effort;
 }
 
+// Chat Completions lane: the free backend validates reasoning_effort against the
+// plain OpenAI enum (none|minimal|low|medium|high|xhigh|max) and answers 400
+// "Invalid option" for anything else — including "auto", which adaptive thinking
+// (Claude Code's thinking:{type:"adaptive"}) arrives as. Omitting the field lets
+// the upstream pick its own default, which is what adaptive means; same rationale
+// as the Responses path above, which rejects "unknown variant `auto`".
+function dropAdaptiveReasoningEffort(body) {
+  if (body?.reasoning_effort === "auto") delete body.reasoning_effort;
+}
+
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
@@ -368,13 +396,28 @@ export class OpenCodeExecutor extends BaseExecutor {
       // non-empty tool arrays; skipping cloaking here triggers 403 FreeTierError.
       applyFingerprintTools(body, true);
     } else if (body && typeof body === "object") {
-      applyFingerprintTools(body, false);
+      dropAdaptiveReasoningEffort(body);
+      applyFingerprintTools(body, false, { claude: isMessagesModel(model || body?.model) });
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
+  // The free gate keys on the TLS ClientHello, so a native Node fetch is refused
+  // no matter how faithful the body is. Route through the impersonating client
+  // and keep proxy handling on the existing path (proxyAwareFetch delegates to
+  // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
+  // request still goes out on native fetch instead of erroring here.
   async execute(args) {
-    return super.execute({ ...args, credentials: this.prepareRequestCredentials(args) });
+    const credentials = this.prepareRequestCredentials(args);
+    return super.execute({
+      ...args,
+      credentials,
+      directFetch: (url, options) => opencodeTlsFetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+      }, { signal: options.signal }),
+    });
   }
 
   // Free tier moved from /zen/v1 to /inference/v1 (OpenCode v2); /zen/v1 now

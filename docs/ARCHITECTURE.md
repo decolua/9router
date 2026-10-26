@@ -367,7 +367,14 @@ flowchart LR
 
 - `src/app/api/v1/*`, `src/app/api/v1beta/*`: compatibility APIs
 - `src/app/api/providers*`: provider CRUD, validation, testing
-- `src/app/api/provider-nodes*`: custom compatible node management
+- `src/app/api/provider-nodes*`: custom compatible node management. Contract
+  (DF-9ROUTER-63): the node is the source of truth for `baseUrl`/`apiType` —
+  PUT `/api/provider-nodes/<id>` re-syncs existing connections' snapshots, and
+  request-time credential resolution overlays the node's CURRENT values over
+  any stored snapshot, so fixing a node fixes existing connections without
+  recreating them. `POST /api/providers` accepts either the generated node id
+  or the node's prefix (bare or kind-qualified, e.g. `pfx` or
+  `openai-compatible-pfx`); a miss returns 404 naming both accepted forms.
 - `src/app/api/oauth/*`: OAuth/device-code flows
 - `src/app/api/keys*`: local API key lifecycle
 - `src/app/api/models/alias`: alias management
@@ -674,28 +681,146 @@ Related (same lifecycle surface, read directly from the environment):
 
 ## Environment and Runtime Matrix
 
-Environment variables actively used by code:
+The gateway takes its configuration from `.env`, the process environment (compose
+`environment:`, a systemd `Environment=` line) or the CLI launcher. `src/`,
+`open-sse/` and `custom-server.js` touch ~100 distinct `process.env` keys;
+**31 of them are operator-relevant** — keys an operator can set to change gateway
+behaviour. They are tabled below by subsystem, one row per key, with the reading site
+so a value can be traced without searching the tree. Keys that are platform noise,
+wrapper/process-internal, owned by another section's own matrix, or provider-executor
+overrides are enumerated under "Keys outside this matrix" below — nothing read by the
+code is left unlisted.
 
-- App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
-- Storage: `DATA_DIR`
-- Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
-- Logging: `ENABLE_REQUEST_LOGS`, `LOG_LEVEL` (SSE/cloud logger verbosity)
-- Observability bounds: `OBSERVABILITY_MAX_RECORDS`, `OBSERVABILITY_BATCH_SIZE`,
-  `OBSERVABILITY_FLUSH_INTERVAL_MS`, `OBSERVABILITY_MAX_JSON_SIZE` (request-details
-  store; dashboard settings override — see the Observability section above)
-- Process-internal peer proof: `NINEROUTER_PEER_TOKEN` (set by `custom-server.js`,
-  not operator-facing)
-- Video proxy: `VIDEO_FETCH_TIMEOUT_MS` (upstream fetch deadline, `open-sse/handlers/videoCore.js`)
-- Base URL matching: `BASE_URL`, `CLOUD_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
-- Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
-- Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
+### Auth and sessions
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `JWT_SECRET` | unset → a random 32-byte secret is generated once and persisted to `<DATA_DIR>/jwt-secret` (`0600`) | HS256 key that signs/verifies the 24-hour dashboard session cookie. Rotating it logs out every dashboard session. `src/lib/auth/dashboardSession.js:12` |
+| `INITIAL_PASSWORD` | unset → in-code fallback `123456` (`.env.example` placeholder `change-me-to-a-strong-password`) | First-login dashboard password used while no stored hash exists. While the variable is unset the login route also refuses non-loopback logins on the public default. `src/app/api/auth/login/route.js:58`, `src/lib/auth/dashboardSession.js:82` |
+| `API_KEY_SECRET` | `endpoint-proxy-api-key-secret` | HMAC secret for generated local API keys; rotation invalidates existing keys. `src/shared/utils/apiKey.js:3` |
+| `MACHINE_ID_SALT` | `endpoint-proxy-salt` | Salt for the stable machine-id hash behind `x-9r-cli-token`; rotation invalidates CLI tokens. `src/shared/utils/machineId.js:50` |
+| `AUTH_COOKIE_SECURE` | unset (`false`) | `"true"` forces the `Secure` attribute on the dashboard auth cookie. Without it the cookie is secure only when the request reports `x-forwarded-proto: https`. `src/lib/auth/dashboardSession.js:27` |
+
+### API access control
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `REQUIRE_API_KEY` | unset → stored dashboard setting applies (stored default `true`) | Pins API-key enforcement for the public LLM API: only the exact strings `true`/`false` are honoured, anything else counts as unset. `GET /api/settings` reports the pin as `requireApiKeyPinnedBy`. `src/lib/db/repos/settingsRepo.js:82` |
+| `TRUST_PROXY` | unset (untrusted) | `"true"` makes login rate-limiting trust `X-Forwarded-For`. Enable only behind a reverse proxy that overwrites that header — never on direct exposure. `src/lib/auth/loginLimiter.js:57` |
+| `SHUTDOWN_SECRET` | unset (`401`) | Bearer token required by `POST /api/shutdown`; the route answers `403` in production regardless. `src/app/api/shutdown/route.js:9` |
+| `ROUTER_API_KEY` | unset | API key the MITM proxy (`src/mitm/`) presents to the local router when the router requires one. `src/mitm/handlers/base.js:7` |
+
+### Storage
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `DATA_DIR` | `~/.9router` (`%APPDATA%\9router` on Windows) | Base directory for the SQLite database, request logs, `jwt-secret` and updater logs. Created if absent; boot fails fast on `EACCES`/`EPERM`; a Unix-style path is ignored on Windows. Never set the literal `~/.9router` — Node does not expand `~`. `src/lib/dataDir.mjs:15` |
+
+### Logging and request capture
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `LOG_LEVEL` | `INFO` | SSE/cloud logger verbosity: `DEBUG`, `INFO`, `WARN`, `ERROR` (case-insensitive; invalid → `INFO`). Errors print at every level. `src/sse/utils/logger.js:10` |
+| `LOG_USAGE_VERBOSE` | unset (off) | `"1"` re-enables the legacy per-chunk token-usage console line (`logUsage`); off by default because the unified `📊 done` line replaced it. `open-sse/utils/usageTracking.js:8` |
+| `ENABLE_REQUEST_LOGS` | `false` | Two consumers. `"true"` writes file request/response dumps under `./logs/` (`open-sse/utils/requestLogger.js:5`); and when the variable is **defined at all** it becomes the outright on/off switch for the SQLite `requestDetails` store, overriding the dashboard toggle — `=false` disables the store even with observability on (`src/lib/db/repos/requestDetailsRepo.js:18`). |
+| `ENABLE_TRANSLATOR` | `false` | `"true"` makes `GET /api/settings` return `enableTranslator: true`, the only condition that shows the `/dashboard/translator` page in the sidebar. Read-only display flag; nothing is persisted to settings. `src/app/api/settings/route.js:24` (gate at `src/shared/components/Sidebar.js:269`) |
+
+### Observability bounds
+
+Dashboard settings win over these when present; each value is read through `parseInt`
+and config is re-read at most every 5 s (`src/lib/db/repos/requestDetailsRepo.js:4-8`).
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `OBSERVABILITY_ENABLED` | `true` (anything except `"false"`) | Fallback enable flag for the `requestDetails` store, used when the dashboard's `enableObservability` setting is not a boolean. `src/lib/db/repos/requestDetailsRepo.js:31` |
+| `OBSERVABILITY_MAX_RECORDS` | `200` | Retention cap: after each flush the table is trimmed to this many rows, oldest `timestamp` first. `src/lib/db/repos/requestDetailsRepo.js:23` |
+| `OBSERVABILITY_BATCH_SIZE` | `20` | Buffered-record count that triggers an immediate flush. `src/lib/db/repos/requestDetailsRepo.js:24` |
+| `OBSERVABILITY_FLUSH_INTERVAL_MS` | `5000` | Longest time a buffered record waits before flushing anyway. `src/lib/db/repos/requestDetailsRepo.js:25` |
+| `OBSERVABILITY_MAX_JSON_SIZE` | `5` (KB) | Per-field cap for the four stored JSON fields; larger values are stored as `{_truncated, _originalSize, _preview}`. The env value is in **KB** — the code multiplies by 1024. `src/lib/db/repos/requestDetailsRepo.js:26` |
+
+### Provider behaviour
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `STRICT_SSL` | unset (lenient) | `"true"` or `"1"` disables the insecure-TLS retry for self-signed/intercepted certificates: certificate errors surface instead of being retried without verification. `open-sse/utils/proxyFetch.js:340` |
+| `KIRO_TOOL_CALL_REPAIR` | enabled (any value except `"false"`) | `"false"` turns off the Kiro executor's streaming tool-call repair/integrity gate; a connection's own `kiroToolCallRepair: false` disables it too. `open-sse/executors/kiro.js:374` |
+| `MODEL_CATALOG_SYNC` | enabled (unset) | `"off"` (case-insensitive) skips the recurring models.dev catalog sync (60 s startup delay, 24 h interval, 30 min retry). `src/lib/modelCatalog/sync.js:258` |
+| `VIDEO_FETCH_TIMEOUT_MS` | `120000` | Per-round-trip deadline for upstream video job create/poll HTTP calls; it does not bound upstream rendering. See "Video proxy fetch timeout" above. `open-sse/handlers/videoCore.js:9` |
+
+### Background token refresh
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `DISABLE_BACKGROUND_TOKEN_REFRESH` | unset (loop runs) | Any truthy value stops the background provider-token refresh loop from starting — useful in CI, tests and single-shot runs. `src/sse/services/backgroundTokenRefresh.js:148` |
+| `DEBUG_BACKGROUND_TOKEN_REFRESH` | unset | Truthy prints why the background-refresh module failed to import in the standalone wrapper; that failure is otherwise swallowed. `custom-server.js:325` |
+| `BG_REFRESH_DELAY_MS` | `1500` | Delay between sequential refreshes for normal providers (+200 ms jitter), so a batch never bursts an upstream. `src/sse/services/backgroundTokenRefresh.js:104` |
+| `BG_REFRESH_GOOGLE_DELAY_MS` | `12000` | Delay for sensitive providers (`antigravity`, `gemini-cli`) plus 0-4 s jitter — Google Cloud anti-abuse spacing. `src/sse/services/backgroundTokenRefresh.js:103` |
+| `EAGER_PROJECT_ID_REFRESH` | unset (lazy) | `"true"` fetches and persists the provider `projectId` immediately after a token refresh; the lazy default defers to the next request so onboarding does not run across every account at once. `src/sse/services/tokenRefresh.js:137` |
+
+### Project onboarding
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `ONBOARD_MAX_ATTEMPTS` | `2` | Attempts in the `onboardUser` poll loop that resolves a provider `projectId` (30 s per attempt). `open-sse/services/projectId.js:206` |
+| `ONBOARD_RETRY_DELAY_MS` | `12000` | Base delay between onboarding attempts (+0-5 s jitter), used both while the upstream reports "not done yet" and after a failed attempt. `open-sse/services/projectId.js:207` |
+
+### MITM proxy debugging
+
+| Variable | Default | Effect (source) |
+|---|---|---|
+| `DEBUG_MITM` | unset | Truthy logs every SSE line and binary frame written by the MITM proxy handlers. Per-chunk and chatty — use briefly. `src/mitm/handlers/base.js:108` |
+
+Row count: 5 auth + 4 access + 1 storage + 4 logging/capture + 5 observability +
+4 provider + 5 background refresh + 2 onboarding + 1 MITM = **31**.
+
+### Keys outside this matrix
+
+Read by code, but not operator-relevant configuration for the gateway itself:
+
+- Platform and runtime noise: `APPDATA`, `LOCALAPPDATA`, `ProgramFiles`, `SystemRoot`,
+  `COMPUTERNAME`, `HOME`, `PATH`, `XDG_CONFIG_HOME`, `XDG_DATA_HOME`, `NODE_ENV`,
+  `PORT`, `HOSTNAME`, `NEXT_PHASE`, `NEXT_RUNTIME`, `npm_package_version`
+- Wrapper/process-internal: `NINEROUTER_PEER_TOKEN` (generated per process by
+  `custom-server.js` — never operator-set, see "Security-Sensitive Boundaries"),
+  `NINEROUTER_CRASH_TEST`, `NINE_ROUTER_PROXY_MANAGED`, `NINE_ROUTER_PROXY_URL`,
+  `NINE_ROUTER_NO_PROXY`, `MITM_SERVER_PATH`, `MITM_ROUTER_BASE`
+- Desktop updater internals: `UPDATER_*`, `TRAY_MODE` — see "Updater / self-host
+  lifecycle variables" above
+- Federation: `FEDERATION_MODE`, `FEDERATION_TOKEN`, `FEDERATION_CENTRAL_URL`,
+  `FEDERATION_EDGE_ID`, `FEDERATION_REDACT_FIELDS` (and the derived
+  `FEDERATION_SYNC_INTERVAL_MS`, `FEDERATION_HEARTBEAT_INTERVAL_MS`,
+  `FEDERATION_OUTAGE_THRESHOLD_MS`, `FEDERATION_QUEUE_MAX`,
+  `FEDERATION_REPLAY_BATCH_SIZE`) — see `docs/federation-spec.md` §4 and the
+  `docs/FEDERATION.md` env matrix
+- Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and the lowercase
+  `http_proxy`, `https_proxy`, `all_proxy`, `no_proxy` — see "Optional proxy support for
+  upstream calls" above
+- Base-URL matching: `BASE_URL`, `CLOUD_URL`, `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
+- Built-in web search: `SEARXNG_URL` (SearXNG endpoint for the unauthenticated search provider)
+- Control surfaces: `HEADROOM_URL`, `TUNNEL_WORKER_URL`, `TUNNEL_TRANSPORT_PROTOCOL`,
+  `CLOUDFLARED_PROTOCOL` — see "Operator Control Surfaces: pxpipe, Headroom, Tunnel, Shutdown"
+- Auth variables already tabled in "Security environment variables":
+  `KIMI_OAUTH_CLIENT_ID`, `KIMI_CODING_OAUTH_CLIENT_ID`
+- Provider-executor overrides, read at their executor sites: `OPENAI_API_KEY` (Azure
+  fallback), `AZURE_ORGANIZATION`, `AZURE_ENDPOINT`, `AZURE_DEPLOYMENT`,
+  `AZURE_API_VERSION`, `TRAE_STREAM_TIMEOUT_MS`, `MIMO_PLATFORM_URL`,
+  `COMMAND_CODE_API_BASE_URL`, `CURSOR_STREAM_DEBUG`, `CURSOR_PROTOBUF_DEBUG`,
+  `CURSOR_TAIL_ONLY_THRESHOLD`, `CURSOR_EMPTY_TURN_MAX_RETRIES`,
+  `CURSOR_EMPTY_TURN_RETRY_DELAY_MS`, `DEVIN_PERMISSION_MODE`, `DEVIN_MCP_SERVERS`,
+  `DEVIN_MCP_TOOLS`, `DEVIN_MCP_RESULTS`, `CLI_DEVIN_BIN`, `CLI_DEVIN_AGENT_TYPE`,
+  and the Kiro repair tunables `KIRO_TOOL_CALL_REPAIR_BUFFER_MAX_BYTES`,
+  `KIRO_TOOL_CALL_REPAIR_TIMEOUT_MS`, `KIRO_TOOL_CALL_REPAIR_TTFT_TIMEOUT_MS`,
+  `KIRO_TOOL_CALL_REPAIR_STALL_TIMEOUT_MS` (`open-sse/executors/kiro.js:368-371`)
 
 ## Known Architectural Notes
 
-1. `usageDb` currently stores under `~/.9router` and does not follow `DATA_DIR`.
+<!-- ch:trace row=DOC-18 spec=docs/ARCHITECTURE.md#known-architectural-notes test=none:doc-prose-no-test doc=docs/ARCHITECTURE.md prompt=/tmp/9router-DOC-18-brief.txt evidence=none:doc-only-local-grep witness=docs/ARCHITECTURE.md verdict=none:pending-foreman commit=none:pending-foreman-trace memory=none:project-record -->
+
+1. Usage history is stored by the shared SQLite adapter under `DATA_DIR/db` (or the default data directory when `DATA_DIR` is unset), via `src/lib/db/repos/usageRepo.js`.
 2. `/api/v1/route.js` returns a static model list and is not the main models source used by `/v1/models`.
 3. Request logger writes full headers/body when enabled; treat log directory as sensitive.
 4. Base URL matching depends on the configured base URL variables; federation routing uses the dedicated federation configuration described in `docs/federation-spec.md`.
+5. The OpenCode free-tier fingerprint in `open-sse/utils/opencodeFingerprint.js` rewrites `tools` before the upstream call: a caller tool that already uses a fingerprint name (`read`/`shell`) adopts OpenCode's definition when its parameters can carry them, otherwise it is aliased and restored on the response side. The definitions are a frozen capture of the OpenCode CLI, so `shell`'s description embeds the capture platform (`Linux`/`bash`) and is rewritten for clients on any other platform.
 
 ## Operational Verification Checklist
 

@@ -1,9 +1,9 @@
-import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
+import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools, getProviderNodeById } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { getRelayedClientApiKey } from "@/lib/federation/clientAuth.js";
-import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { resolveProviderId, FREE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
@@ -201,6 +201,38 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+
+    // Compatible-node connections snapshot the node's baseUrl/apiType/prefix at
+    // create time. Serving the snapshot made a node fix (PUT
+    // /api/provider-nodes/<id>) invisible to every existing connection until
+    // each was recreated (DF-9ROUTER-63): chat kept dialing the old URL. The
+    // node is authoritative at request time — overlay its CURRENT values onto
+    // the snapshot here, the one seam every request path (chat, image,
+    // embedding, fetch, …) draws credentials through. Fail-open: if the node
+    // row is gone (deleted nodes cascade-delete connections, but never assume)
+    // or the read fails, the stored snapshot still serves.
+    try {
+      if (
+        (isOpenAICompatibleProvider(connection.provider) ||
+          isAnthropicCompatibleProvider(connection.provider) ||
+          isCustomEmbeddingProvider(connection.provider)) &&
+        connection.providerSpecificData &&
+        typeof connection.providerSpecificData === "object"
+      ) {
+        const node = await getProviderNodeById(connection.provider);
+        if (node) {
+          connection.providerSpecificData = {
+            ...connection.providerSpecificData,
+            baseUrl: node.baseUrl,
+            ...(isOpenAICompatibleProvider(connection.provider) && node.apiType ? { apiType: node.apiType } : {}),
+            ...(node.prefix ? { prefix: node.prefix } : {}),
+            ...(node.name ? { nodeName: node.name } : {}),
+          };
+        }
+      }
+    } catch (nodeOverlayError) {
+      log.warn("AUTH", `node overlay failed for ${connection.provider}: ${nodeOverlayError?.message || nodeOverlayError}`);
+    }
 
     return {
       authType: connection.authType,

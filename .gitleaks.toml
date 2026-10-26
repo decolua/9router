@@ -53,4 +53,10 @@ paths = [
   # placeholder Bearer ("sk-def" + "initely-not-a-key", not a credential)
   # as the invalid key the guard must reject with the OpenAI envelope.
   '''tests/unit/guard-error-envelope-56\.test\.js''',
+  # NOUS-OAUTH: nous-provider OAuth refresh tests use a self-describing
+  # FAKE placeholder key ("sk-nous-agent-refr..." — 23-char nous fixture)
+  # as the refreshed agent key returned by the mocked OAuth endpoint — a
+  # fixture value, not a credential (landed in 165f9b90). Same class as
+  # above. (Comment elides the literal so this file itself stays clean.)
+  '''tests/unit/nous-provider\.test\.js''',
 ]

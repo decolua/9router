@@ -99,7 +99,8 @@ dagger.db*
 .gitreins/usage.jsonl
 # Kiro local workspace state (upstream v0.5.69)
 .kiro/
-9router-*
+# CLI pack artifact at repo root (npm pack output); anchored so skills/9router-* stay tracked
+/9router-*
 
 # Local sensitive / temp files
 .engine-token.txt
@@ -113,3 +114,4 @@ start-dev-silent.cjs
 debug.log
 .gitreins/logs/
 .gitreins/*.lock
+.scratch/

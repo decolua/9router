@@ -1,4 +1,4 @@
-import { describe, it, beforeAll } from "vitest";
+import { describe, it, beforeAll as before } from "vitest";
 import assert from "node:assert/strict";
 
 // Load the registry entry once for the suite so a load failure is reported
@@ -7,13 +7,16 @@ import assert from "node:assert/strict";
 let kimchiEntry;
 
 describe("kimchi registry entry", () => {
-  beforeAll(async () => {
+  before(async () => {
     kimchiEntry = (await import("../../open-sse/providers/registry/kimchi.js")).default;
   });
 
-  it("carries the registry's current classification (freeTier, dual-auth)", () => {
+  // 6d96e24b moved kimchi into the freeTier category; it still signs in with OAuth
+  // (and API keys since e02bde4a).
+  it("is a freeTier provider auto-listed via byCategory, with OAuth sign-in", () => {
     assert.equal(kimchiEntry.id, "kimchi");
     assert.equal(kimchiEntry.category, "freeTier");
+    assert.deepEqual(kimchiEntry.authModes, ["oauth", "apikey"]);
   });
 
   it("points at the OpenAI-compatible gateway with an authenticated UA", () => {

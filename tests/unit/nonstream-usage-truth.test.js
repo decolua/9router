@@ -91,6 +91,22 @@ const jsonResponse = (obj, status = 200) => new Response(JSON.stringify(obj), {
   headers: { "content-type": "application/json" },
 });
 
+// Native Gemini generateContent body: `usageMetadata`, no OpenAI `usage` key —
+// the shape the DF-9ROUTER-39-R2 dogfood served. `promptTokenCount` is the
+// billed count the upstream reports; it legitimately differs from anything a
+// client-side estimator can see (Google counts its own steering).
+const geminiCompletionBody = ({ promptTokenCount = 2002, candidatesTokenCount = 1, cachedContentTokenCount = 0, text = "OK" } = {}) => ({
+  candidates: [{ content: { role: "model", parts: [{ text }] }, finishReason: "STOP", index: 0 }],
+  usageMetadata: {
+    promptTokenCount,
+    candidatesTokenCount,
+    totalTokenCount: promptTokenCount + candidatesTokenCount,
+    ...(cachedContentTokenCount > 0 ? { cachedContentTokenCount } : {}),
+  },
+  modelVersion: MODEL,
+  responseId: "gem-probe",
+});
+
 const ndjsonResponse = (text) => {
   const bytes = new TextEncoder().encode(text);
   return new Response(new ReadableStream({
@@ -242,5 +258,72 @@ describe("DF-9ROUTER-39 (d) — the streaming estimate fallback is flagged ident
     expect(entry.tokens.completion_tokens).toBeGreaterThan(0);
     expect(entry.tokens.estimated).toBe(true);
     expect(entry.meta.estimated).toBe(true);
+  });
+});
+
+// --- (e) Gemini usageMetadata is recorded as upstream truth (DF-9ROUTER-39-R2) --
+//
+// Dogfood 2026-10-23 (docs/dogfood/2026-10-23-combos-and-usage-accounting.md)
+// measured a Gemini non-stream request SERVED with usage.prompt_tokens = 2002
+// while the usageHistory row recorded 2, and read the pair as the extraction
+// missing `usageMetadata`. The real split, reproduced here on the wire path:
+// extraction reads `usageMetadata` before translation (requestDetail.js
+// extractUsageFromResponse) and the ledger already holds the upstream count —
+// the SERVED number is the upstream count plus the 2000-token context-safety
+// buffer (addBufferToUsage, usageTracking.js), which is applied to the client
+// response only. These tests pin the ledger side: a Gemini-shaped upstream body
+// (`usageMetadata`, no `usage`) records promptTokenCount verbatim, flagged as
+// upstream truth — never the client-body estimate.
+
+describe("DF-9ROUTER-39-R2 (e) — a Gemini usageMetadata response records the upstream prompt count", () => {
+  it("records usageMetadata.promptTokenCount verbatim, not an estimate of the client body", async () => {
+    const { status, text } = await nonStreamingViaWire({
+      upstream: jsonResponse(geminiCompletionBody({ promptTokenCount: 2002 })),
+      responseFormat: FORMATS.GEMINI,
+    });
+
+    expect(status).toBe(200);
+    const served = JSON.parse(text);
+    expect(served?.choices?.[0]?.message?.content).toBe("OK"); // the call really succeeded
+
+    expect(usageDb.saveRequestUsage).toHaveBeenCalledTimes(1);
+    const entry = recordedUsage();
+    expect(entry.tokens.prompt_tokens).toBe(2002);  // the upstream's count, not the ~25-token body estimate
+    expect(entry.tokens.completion_tokens).toBe(1);
+    expect(entry.tokens.estimated).toBeFalsy();     // upstream truth, not a local estimate
+    expect(entry.meta.estimated).toBe(false);
+    // The served usage may carry the context-safety buffer on top of the
+    // upstream count (addBufferToUsage); the ledger must never inherit it.
+    expect(served?.usage?.prompt_tokens).toBeGreaterThanOrEqual(2002);
+    expect(entry.tokens.prompt_tokens).toBeLessThanOrEqual(served.usage.prompt_tokens);
+  });
+
+  it("keeps the completion count and cached subset from the same metadata", async () => {
+    await nonStreamingViaWire({
+      upstream: jsonResponse(geminiCompletionBody({ promptTokenCount: 1234, candidatesTokenCount: 56, cachedContentTokenCount: 78 })),
+      responseFormat: FORMATS.GEMINI,
+    });
+
+    const entry = recordedUsage();
+    expect(entry.tokens.prompt_tokens).toBe(1234);
+    expect(entry.tokens.completion_tokens).toBe(56);
+    expect(entry.tokens.cached_tokens).toBe(78);
+    expect(entry.meta.estimated).toBe(false);
+  });
+
+  it("tracks the upstream count across magnitudes (a 3-token and a 40k-token prompt)", async () => {
+    await nonStreamingViaWire({
+      upstream: jsonResponse(geminiCompletionBody({ promptTokenCount: 3 })),
+      responseFormat: FORMATS.GEMINI,
+    });
+    expect(recordedUsage().tokens.prompt_tokens).toBe(3);
+
+    vi.clearAllMocks();
+
+    await nonStreamingViaWire({
+      upstream: jsonResponse(geminiCompletionBody({ promptTokenCount: 40000 })),
+      responseFormat: FORMATS.GEMINI,
+    });
+    expect(recordedUsage().tokens.prompt_tokens).toBe(40000);
   });
 });

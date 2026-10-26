@@ -116,6 +116,9 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     for (const m of ["openai/model-a", "openai/model-b", "openai/gpt-4o"]) {
       const r = await chat(m, "sk-combo");
       expect(r.status).toBe(403);
+      const body = await r.json();
+      expect(body.error.type).toBe("permission_error");
+      expect(body.error.code).toBe("permission_error");
     }
     expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.handleChatCore).not.toHaveBeenCalled();

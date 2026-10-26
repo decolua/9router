@@ -42,8 +42,17 @@ export default {
     { id: "qwen3.5:397b", name: "Qwen3.5 397B" },
     { id: "mistral-large-3:675b", name: "Mistral Large 3 675B" },
     { id: "gemma4:31b", name: "Gemma 4 31B" },
+    { id: "deepseek-v4.1-flash:cloud", name: "DeepSeek V4.1 Flash" },
+    { id: "clef", name: "Clef", kind: "systemone" },
+    { id: "clef-flash", name: "Clef Flash", kind: "systemone" },
+    { id: "clef:cloud", name: "Clef (Cloud)", kind: "systemone" },
   ],
-  serviceKinds: ["llm", "webFetch"],
+  serviceKinds: ["llm", "webFetch", "systemone"],
+  systemoneConfig: {
+    baseUrl: "https://ollama.com/v1/systemone",
+    authType: "apikey",
+    authHeader: "bearer",
+  },
   fetchConfig: {
     baseUrl: "https://ollama.com/api/web_fetch",
     method: "POST",
