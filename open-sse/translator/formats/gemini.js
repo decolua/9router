@@ -330,6 +330,7 @@ function ensureObjectType(obj) {
 function convertPrefixItems(obj) {
   if (!obj || typeof obj !== "object") return;
 
+  // Handle draft 2020-12 prefixItems
   if (Array.isArray(obj.prefixItems) && obj.prefixItems.length > 0) {
     const variants = obj.prefixItems.filter(s => s && s.type !== "null");
     if (!obj.items && variants.length === 1) {
@@ -338,6 +339,18 @@ function convertPrefixItems(obj) {
       obj.items = { anyOf: variants };
     }
     delete obj.prefixItems;
+  }
+
+  // Handle draft 4/7 tuple validation where items is an array
+  if (Array.isArray(obj.items)) {
+    const variants = obj.items.filter(s => s && s.type !== "null");
+    if (variants.length === 1) {
+      obj.items = variants[0];
+    } else if (variants.length > 1) {
+      obj.items = { anyOf: variants };
+    } else {
+      obj.items = { type: "string" };
+    }
   }
 
   for (const value of Object.values(obj)) {
@@ -350,10 +363,51 @@ function convertPrefixItems(obj) {
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
 function ensureArrayItems(obj) {
   if (!obj || typeof obj !== "object") return;
-  if (obj.type === "array" && !obj.items) {
-    obj.items = { type: "string" };
+
+  if (Array.isArray(obj)) {
+    for (const v of obj) ensureArrayItems(v);
+    return;
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+
+  // Infer array type if items exists without explicit type
+  if (obj.items && !obj.type) {
+    obj.type = "array";
+  }
+
+  if (obj.type === "array") {
+    // 1. If items is an Array (tuple validation)
+    if (Array.isArray(obj.items)) {
+      const nonNull = obj.items.filter(s => s && s.type !== "null");
+      if (nonNull.length === 0) {
+        obj.items = { type: "string" };
+      } else if (nonNull.length === 1) {
+        obj.items = nonNull[0];
+      } else {
+        const bestIdx = selectBest(nonNull);
+        obj.items = nonNull[bestIdx];
+      }
+    }
+
+    // 2. If items is missing or not an object
+    if (!obj.items || typeof obj.items !== "object") {
+      obj.items = { type: "string" };
+    }
+
+    // 3. If items is an empty object or lacks a type
+    if (!obj.items.type || Object.keys(obj.items).length === 0) {
+      if (obj.items.properties) {
+        obj.items.type = "object";
+      } else if (obj.items.items) {
+        obj.items.type = "array";
+      } else {
+        obj.items.type = "string";
+      }
+    }
+  }
+
+  for (const v of Object.values(obj)) {
+    if (v && typeof v === "object") ensureArrayItems(v);
+  }
 }
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
@@ -379,6 +433,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
 
   // Phase 3: Remove all unsupported keywords at ALL levels (including inside arrays)
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
+
+  // Phase 3.5: Ensure array items again after keywords removal (which may leave items as empty object)
+  ensureArrayItems(cleaned);
 
   // Phase 4: Cleanup required fields recursively
   function cleanupRequired(obj) {
@@ -443,6 +500,9 @@ export function cleanJSONSchemaForAntigravity(schema) {
   }
 
   addPlaceholders(cleaned);
+
+  // Phase 5.5: Final guarantee for array schemas
+  ensureArrayItems(cleaned);
 
   return cleaned;
 }
