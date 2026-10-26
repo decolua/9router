@@ -94,6 +94,7 @@ describe("request details — tab crash-risk cases", () => {
 
     const got = await db.getRequestDetailById("trunc-1");
     expect(got).toBeDefined();
+    expect(got).not.toBeNull();
     // Truncated field is a plain object safe for JSON.stringify in the drawer
     expect(() => JSON.stringify(got)).not.toThrow();
     expect(got.request._truncated).toBe(true);
@@ -125,6 +126,27 @@ function getInputTokens(tokens) {
   return prompt < cache ? cache : prompt;
 }
 
+// better-sqlite3 is an optional native dependency, and the unit runner installs
+// packages with lifecycle scripts disabled. Reopen the backup with whichever
+// SQLite driver the app itself selects at runtime.
+async function openBackupAdapter(filePath) {
+  if (process.versions.bun) {
+    const { createBunSqliteAdapter } = await import("@/lib/db/adapters/bunSqliteAdapter.js");
+    return createBunSqliteAdapter(filePath);
+  }
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  if (major > 22 || (major === 22 && minor >= 5)) {
+    try {
+      const { createNodeSqliteAdapter } = await import("@/lib/db/adapters/nodeSqliteAdapter.js");
+      return await createNodeSqliteAdapter(filePath);
+    } catch {
+      // fall through to the pure-JS driver
+    }
+  }
+  const { createSqlJsAdapter } = await import("@/lib/db/adapters/sqljsAdapter.js");
+  return await createSqlJsAdapter(filePath);
+}
+
 describe("backupDbLite — excludes requestDetails, keeps critical data", () => {
   it("backup file omits requestDetails rows but keeps other tables", async () => {
     const { backupDbLite } = await import("@/lib/db/backup.js");
@@ -134,18 +156,19 @@ describe("backupDbLite — excludes requestDetails, keeps critical data", () => 
     const dest = backupDbLite(adapter, backupDir);
     expect(fs.existsSync(dest)).toBe(true);
 
-    // Open backup and assert requestDetails is empty, settings present
-    const Database = (await import("better-sqlite3")).default;
-    const bak = new Database(dest);
+    // Open backup with the runtime driver and assert requestDetails is empty,
+    // settings present.
+    let bak;
     try {
+      bak = await openBackupAdapter(dest);
       // requestDetails is fully excluded — table must not exist in the backup
-      const rdTable = bak.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='requestDetails'").get();
-      expect(rdTable).toBeUndefined();
+      const rdTable = bak.get("SELECT COUNT(*) c FROM sqlite_master WHERE type='table' AND name='requestDetails'");
+      expect(rdTable.c).toBe(0);
       // Critical data preserved
-      const st = bak.prepare("SELECT COUNT(*) c FROM settings").get();
+      const st = bak.get("SELECT COUNT(*) c FROM settings");
       expect(st.c).toBeGreaterThanOrEqual(1);
     } finally {
-      bak.close();
+      if (bak) bak.close();
       fs.rmSync(backupDir, { recursive: true, force: true });
     }
   });
