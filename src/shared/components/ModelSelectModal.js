@@ -10,6 +10,7 @@ import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
+import { selectNoAuthProviderIds } from "@/shared/utils/modelSelectorProviders";
 
 // Provider order: OAuth first, then Free Tier, then API Key (matches dashboard/providers)
 const PROVIDER_ORDER = [
@@ -19,8 +20,10 @@ const PROVIDER_ORDER = [
   ...Object.keys(APIKEY_PROVIDERS),
 ];
 
-// Providers that need no auth — always show in model selector
-const NO_AUTH_PROVIDER_IDS = Object.keys(FREE_PROVIDERS).filter(id => FREE_PROVIDERS[id].noAuth);
+// Providers that need no auth — always show in model selector.
+// Registry entries marked `hidden` are excluded: they are not offered in the dashboard
+// either, and their upstream catalog can be gone (e.g. `mimo-free`).
+const NO_AUTH_PROVIDER_IDS = selectNoAuthProviderIds(FREE_PROVIDERS);
 
 // Providers with per-account live catalogs via /api/providers/[id]/models.
 // Static registry stays as fallback when live fetch fails or is empty.
@@ -128,7 +131,6 @@ export default function ModelSelectModal({
   const deactivatedProviderIds = useMemo(() => {
     return getDeactivatedProviderIds(effectiveConnections);
   }, [effectiveConnections]);
-
   const { getCaps } = useModelCaps();
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
@@ -269,19 +271,21 @@ export default function ModelSelectModal({
             !deactivatedProviderIds.has(alias)
           );
 
-    // Only show connected providers (including both standard and custom)
+    // Only show providers with a usable connection (plus no-auth and user-added nodes)
     const providerIdsToShow = new Set([
-      ...activeConnectionIds,  // Only connected providers
+      ...activeConnectionIds,  // Connectable providers only (not explicitly disabled)
       ...noAuthIds,            // No-auth providers (kind-filtered)
       ...compatibleNodeIds,    // Compatible nodes with user-added models
     ].filter((id) => !deactivatedProviderIds.has(id)));
 
-    // Sort by PROVIDER_ORDER
-    const sortedProviderIds = [...providerIdsToShow].sort((a, b) => {
-      const indexA = PROVIDER_ORDER.indexOf(a);
-      const indexB = PROVIDER_ORDER.indexOf(b);
-      return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
-    });
+    // Sort by PROVIDER_ORDER, keeping registry-hidden providers out of every source
+    const sortedProviderIds = [...providerIdsToShow]
+      .filter((id) => !AI_PROVIDERS[id]?.hidden)
+      .sort((a, b) => {
+        const indexA = PROVIDER_ORDER.indexOf(a);
+        const indexB = PROVIDER_ORDER.indexOf(b);
+        return (indexA === -1 ? 999 : indexA) - (indexB === -1 ? 999 : indexB);
+      });
 
     sortedProviderIds.forEach((providerId) => {
       const alias = getProviderAlias(providerId);
