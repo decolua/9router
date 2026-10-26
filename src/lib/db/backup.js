@@ -14,7 +14,7 @@ import { timestampSlug, getAppVersion } from "./version.js";
 const KEEP_BACKUPS = 3;
 
 // Tables excluded from safety backups (large, non-critical, reproducible).
-const BACKUP_EXCLUDE_TABLES = ["requestDetails"];
+const BACKUP_EXCLUDE_TABLES = ["requestDetails", "webhookDeliveries"];
 
 export function makeBackupDir(label) {
   ensureDirs();
@@ -53,7 +53,8 @@ export function backupDbLite(adapter, destDir, destName = "data.sqlite") {
         // Recreate table structure in backup DB, then copy rows.
         const createSql = t.sql.replace(/CREATE TABLE\s+/i, "CREATE TABLE bak.");
         adapter.exec(createSql);
-        adapter.exec(`INSERT INTO bak.${t.name} SELECT * FROM main.${t.name}`);
+        const filter = t.name === "kv" ? " WHERE scope <> 'webhookCooldown'" : "";
+        adapter.exec(`INSERT INTO bak.${t.name} SELECT * FROM main.${t.name}${filter}`);
       }
     });
   } finally {

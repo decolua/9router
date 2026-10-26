@@ -3,7 +3,7 @@
 // pre-change safety backup in migrate.js: when the stored version is lower,
 // one lightweight DB backup is taken before applying schema changes. Forgetting
 // to bump only skips that backup — it does NOT break the additive auto-sync.
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 4;
 
 export const PRAGMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -154,6 +154,53 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_rd_provider ON requestDetails(provider)",
       "CREATE INDEX IF NOT EXISTS idx_rd_model ON requestDetails(model)",
       "CREATE INDEX IF NOT EXISTS idx_rd_conn ON requestDetails(connectionId)",
+    ],
+  },
+  // Operational webhook destinations. Credential-bearing config (url, headers,
+  // signingSecret) stays inside `data`; reads go through a redacted DTO and the
+  // raw row is exposed only to internal/export callers.
+  webhookDestinations: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      revision: "INTEGER NOT NULL DEFAULT 1",
+      data: "TEXT NOT NULL",
+      enabled: "INTEGER DEFAULT 1",
+      createdAt: "TEXT NOT NULL",
+      updatedAt: "TEXT NOT NULL",
+    },
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_wd_enabled ON webhookDestinations(enabled)",
+      "CREATE INDEX IF NOT EXISTS idx_wd_created ON webhookDestinations(createdAt)",
+    ],
+  },
+  webhookDeliveries: {
+    columns: {
+      id: "TEXT PRIMARY KEY",
+      eventId: "TEXT NOT NULL",
+      destinationId: "TEXT NOT NULL",
+      destinationRevision: "INTEGER NOT NULL",
+      generation: "INTEGER NOT NULL",
+      deliveryKind: "TEXT NOT NULL DEFAULT 'operational' CHECK (deliveryKind IN ('operational', 'test'))",
+      type: "TEXT NOT NULL",
+      fingerprint: "TEXT NOT NULL",
+      payload: "TEXT NOT NULL",
+      status: "TEXT NOT NULL CHECK (status IN ('pending', 'inflight', 'retry', 'delivered', 'failed', 'cancelled', 'expired'))",
+      attempts: "INTEGER NOT NULL DEFAULT 0",
+      nextAttemptAt: "TEXT NOT NULL",
+      leaseToken: "TEXT",
+      leaseUntil: "TEXT",
+      createdAt: "TEXT NOT NULL",
+      expiresAt: "TEXT NOT NULL",
+      finishedAt: "TEXT",
+      lastStatus: "INTEGER",
+      lastErrorClass: "TEXT",
+      suppressedCount: "INTEGER NOT NULL DEFAULT 0",
+    },
+    indexes: [
+      "CREATE UNIQUE INDEX IF NOT EXISTS idx_wh_pair ON webhookDeliveries(eventId, destinationId)",
+      "CREATE INDEX IF NOT EXISTS idx_wh_due ON webhookDeliveries(status, nextAttemptAt, leaseUntil)",
+      "CREATE INDEX IF NOT EXISTS idx_wh_retention ON webhookDeliveries(status, finishedAt)",
+      "CREATE INDEX IF NOT EXISTS idx_wh_destination ON webhookDeliveries(destinationId, status)",
     ],
   },
 };
