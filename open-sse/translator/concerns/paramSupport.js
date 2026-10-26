@@ -7,7 +7,9 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // A param is removed only when it is present (!== undefined).
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
-  { match: /claude/i, drop: ["temperature"] },
+  // reasoning_effort is OpenAI-specific and rejected by Anthropic Messages API ("Extra inputs are not permitted").
+  { match: /claude/i, drop: ["temperature", "reasoning_effort"] },
+  { provider: "claude", drop: ["reasoning_effort"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713

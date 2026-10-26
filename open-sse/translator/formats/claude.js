@@ -232,6 +232,17 @@ export function normalizeClaudePassthrough(body, model = "") {
     if (Object.keys(body.output_config).length === 0) delete body.output_config;
   }
 
+  // Strip reasoning_effort from passthrough Claude bodies — Anthropic Messages API rejects it
+  if (body.reasoning_effort !== undefined) {
+    if (!body.thinking && body.reasoning_effort !== "none") {
+      const budgetMap = { low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 64000 };
+      body.thinking = { type: "enabled", budget_tokens: budgetMap[body.reasoning_effort] || 8192 };
+    } else if (body.reasoning_effort === "none" && !body.thinking) {
+      body.thinking = { type: "disabled" };
+    }
+    delete body.reasoning_effort;
+  }
+
   const originalLastRole = Array.isArray(body.messages) ? body.messages[body.messages.length - 1]?.role : undefined;
 
   // 3. Wrap bare content-block objects as one-element arrays before folding.
@@ -497,6 +508,9 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   if (PROVIDERS[provider]?.quirks?.dropOutputConfig) {
     delete body.output_config;
   }
+
+  // Anthropic Messages API strictly rejects OpenAI-style reasoning_effort ("Extra inputs are not permitted")
+  delete body.reasoning_effort;
 
   // Claude Code puts a `context_management` block (context-editing strategy) in
   // every request; only Anthropic accepts it — gateways fronting other engines

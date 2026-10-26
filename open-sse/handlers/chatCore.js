@@ -121,6 +121,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       body = { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
     } else if (mode === "off" && !body.thinking) {
       body = { ...body, thinking: { type: "disabled" } };
+    } else if (targetFormat === FORMATS.CLAUDE || provider === "claude") {
+      // Claude Messages API rejects OpenAI reasoning_effort with HTTP 400
+      if (mode === "none") {
+        body = { ...body, thinking: { type: "disabled" } };
+      } else if (!body.thinking) {
+        const budgetMap = { low: 2048, medium: 8192, high: 16384, xhigh: 32768, max: 64000 };
+        body = { ...body, thinking: { type: "enabled", budget_tokens: budgetMap[mode] || 8192 } };
+      }
     } else if (!body.reasoning_effort) {
       body = { ...body, reasoning_effort: mode };
     }
