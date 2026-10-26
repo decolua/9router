@@ -23,7 +23,7 @@ vi.mock("@/lib/localDb", () => ({
 }));
 
 vi.mock("../../src/sse/services/model.js", () => ({
-  getModelInfo: async () => ({ provider: "codex", model: "gpt-5.6-sol-image" }),
+  getModelInfo: async () => ({ provider: "codex", model: "gpt-6-sol-image" }),
   getComboModels: async () => null,
 }));
 
@@ -83,13 +83,13 @@ describe("Codex image usage persistence", () => {
     await handleImageGeneration(new Request("http://localhost/v1/images/generations", {
       method: "POST",
       headers: { Authorization: "Bearer client-key" },
-      body: JSON.stringify({ model: "cx/gpt-5.6-sol-image", prompt: "draw a cat" }),
+      body: JSON.stringify({ model: "cx/gpt-6-sol-image", prompt: "draw a cat" }),
     }));
 
     expect(mocks.saveRequestUsage).toHaveBeenCalledTimes(1);
     expect(mocks.saveRequestUsage).toHaveBeenCalledWith({
       provider: "codex",
-      model: "gpt-5.6-sol-image",
+      model: "gpt-6-sol-image",
       connectionId: "connection-a",
       apiKey: "client-key",
       endpoint: "/v1/images/generations",
@@ -112,7 +112,7 @@ describe("Codex image usage persistence", () => {
 
     await handleImageGeneration(new Request("http://localhost/v1/images/generations", {
       method: "POST",
-      body: JSON.stringify({ model: "cx/gpt-5.6-sol-image", prompt: "draw a cat" }),
+      body: JSON.stringify({ model: "cx/gpt-6-sol-image", prompt: "draw a cat" }),
     }));
 
     expect(mocks.saveRequestUsage).not.toHaveBeenCalled();
