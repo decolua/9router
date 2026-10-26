@@ -216,6 +216,8 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
 
 // ─── Local-specific: proactive token refresh ─────────────────────────────────
 
+const pendingCredentialChecks = new Map();
+
 /**
  * Check whether the provider token (and, for GitHub, the Copilot token) is
  * about to expire and refresh it proactively.
@@ -227,6 +229,25 @@ export async function updateProviderCredentials(connectionId, newCredentials) {
  * @returns {Promise<object>} updated credentials object
  */
 export async function checkAndRefreshToken(provider, credentials, options = {}) {
+  const connectionId = credentials?.connectionId || credentials?.id;
+  if (!connectionId) return checkAndRefreshTokenUnlocked(provider, credentials, options);
+
+  const key = `${provider}:${connectionId}`;
+  const previous = pendingCredentialChecks.get(key) || Promise.resolve();
+  // Serialize the DB reread, refresh and persistence, not just the upstream call.
+  // Each caller keeps its own snapshot/options and rechecks the freshly saved token.
+  const pending = previous.catch(() => {}).then(() =>
+    checkAndRefreshTokenUnlocked(provider, credentials, options)
+  );
+  pendingCredentialChecks.set(key, pending);
+  try {
+    return await pending;
+  } finally {
+    if (pendingCredentialChecks.get(key) === pending) pendingCredentialChecks.delete(key);
+  }
+}
+
+async function checkAndRefreshTokenUnlocked(provider, credentials, options) {
   let creds = { ...credentials };
   if (!creds.connectionId && creds.id) {
     creds.connectionId = creds.id;
@@ -240,7 +261,7 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
     const credsRefreshMs = Date.parse(creds.lastRefreshAt || "");
     const dbIsNewer = Number.isFinite(latestRefreshMs)
       && (!Number.isFinite(credsRefreshMs) || latestRefreshMs > credsRefreshMs);
-    if (dbIsNewer && latest.refreshToken && latest.refreshToken !== creds.refreshToken) {
+    if (dbIsNewer && latest.refreshToken) {
       creds = {
         ...creds,
         refreshToken: latest.refreshToken,
