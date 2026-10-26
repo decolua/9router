@@ -115,7 +115,11 @@ export async function getCodexUsage(accessToken, proxyOptions = null) {
     }, proxyOptions);
 
     if (!response.ok) {
-      return { message: `Codex connected. Usage API temporarily unavailable (${response.status}).` };
+      return {
+        unavailable: true,
+        status: response.status,
+        message: `Codex connected. Usage API temporarily unavailable (${response.status}).`,
+      };
     }
 
     const data = await response.json();

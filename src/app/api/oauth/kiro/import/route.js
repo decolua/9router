@@ -10,7 +10,7 @@ import { createProviderConnection } from "@/models";
  */
 export async function POST(request) {
   try {
-    const { refreshToken, clientId, clientSecret, region, authMethod, profileArn } = await request.json();
+    const { refreshToken, email: requestEmail, clientId, clientSecret, region, authMethod, profileArn } = await request.json();
 
     if (!refreshToken || typeof refreshToken !== "string") {
       return NextResponse.json(
@@ -30,7 +30,8 @@ export async function POST(request) {
 
     const tokenData = await kiroService.refreshToken(refreshToken.trim(), providerSpecificData);
 
-    const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
+    const jwtEmail = kiroService.extractEmailFromJWT(tokenData.accessToken);
+    const email = requestEmail || jwtEmail || null;
     const resolvedAuthMethod = isIdc ? "idc" : "imported";
     const providerLabel = isIdc ? "Enterprise" : "Imported";
     const resolvedProfileArn = profileArn || tokenData.profileArn || null;
@@ -42,6 +43,7 @@ export async function POST(request) {
       refreshToken: tokenData.refreshToken || refreshToken.trim(),
       expiresAt: new Date(Date.now() + (tokenData.expiresIn || 3600) * 1000).toISOString(),
       email: email || null,
+      name: requestEmail || undefined,
       providerSpecificData: {
         profileArn: resolvedProfileArn,
         authMethod: resolvedAuthMethod,

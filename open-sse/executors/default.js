@@ -8,6 +8,7 @@ import { buildClineHeaders } from "../shared/clineAuth.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
+import { refreshXaiToken } from "../services/tokenRefresh/providers.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
@@ -272,6 +273,7 @@ export class DefaultExecutor extends BaseExecutor {
       codex: () => this.refreshFromGrant(credentials, proxyOptions),
       iflow: () => this.refreshIflow(credentials.refreshToken, proxyOptions),
       gemini: () => this.refreshFromGrant(credentials, proxyOptions),
+      xai: () => refreshXaiToken(credentials.refreshToken, log),
       kiro: () => this.refreshKiro(credentials.refreshToken, proxyOptions),
       cline: () => this.refreshCline(credentials.refreshToken, proxyOptions),
       clinepass: () => this.refreshCline(credentials.refreshToken, proxyOptions),
