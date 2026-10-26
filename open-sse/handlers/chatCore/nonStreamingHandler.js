@@ -7,6 +7,7 @@ import { createErrorResult } from "../../utils/error.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
+import { parseClaudeSSEToMessage } from "./claudeSSEToMessage.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
@@ -241,10 +242,18 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   if (contentType.includes("text/event-stream")) {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    // The parser has to match the upstream's own format: parseSSEToOpenAIResponse
+    // reads choices[].delta, which Anthropic SSE never carries.
+    const parsed = targetFormat === FORMATS.CLAUDE
+      ? parseClaudeSSEToMessage(sseText, model)
+      : parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
+    }
+    if (targetFormat === FORMATS.CLAUDE && parsed.error) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, parsed.error.message || "Upstream SSE stream failed");
     }
     responseBody = parsed;
   } else {
