@@ -1,3 +1,4 @@
+import { toNumericSessionId } from "../utils/sessionManager.js";
 import { makeKv } from "../../src/lib/db/helpers/kvStore.js";
 
 const MAX_SIGNATURES = 2000;
@@ -117,6 +118,8 @@ export function storeGeminiThoughtSignature(toolCallId, signature, sessionId = n
   const keys = [];
   if (sessionId && typeof sessionId === "string") {
     keys.push(`${sessionId}:${toolCallId}`);
+    const numSid = toNumericSessionId(sessionId);
+    if (numSid && numSid !== sessionId) keys.push(`${numSid}:${toolCallId}`);
   }
   keys.push(toolCallId);
 
@@ -150,10 +153,12 @@ export async function getGeminiThoughtSignature(toolCallId, sessionId = null, mo
   pruneMemoryExpired();
 
   if (sessionId && typeof sessionId === "string") {
-    const sessionKey = `${sessionId}:${toolCallId}`;
-    const sessionEntry = memorySignatures.get(sessionKey);
-    if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
-      return sessionEntry.signature;
+    const numSid = toNumericSessionId(sessionId);
+    for (const sid of (numSid && numSid !== sessionId ? [sessionId, numSid] : [sessionId])) {
+      const sessionEntry = memorySignatures.get(`${sid}:${toolCallId}`);
+      if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
+        return sessionEntry.signature;
+      }
     }
   }
 
@@ -207,10 +212,12 @@ export function getGeminiThoughtSignatureSync(toolCallId, sessionId = null, mode
   pruneMemoryExpired();
 
   if (sessionId && typeof sessionId === "string") {
-    const sessionKey = `${sessionId}:${toolCallId}`;
-    const sessionEntry = memorySignatures.get(sessionKey);
-    if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
-      return sessionEntry.signature;
+    const numSid = toNumericSessionId(sessionId);
+    for (const sid of (numSid && numSid !== sessionId ? [sessionId, numSid] : [sessionId])) {
+      const sessionEntry = memorySignatures.get(`${sid}:${toolCallId}`);
+      if (sessionEntry && sessionEntry.expiresAt > Date.now() && isCompatible(sessionEntry, family)) {
+        return sessionEntry.signature;
+      }
     }
   }
 
