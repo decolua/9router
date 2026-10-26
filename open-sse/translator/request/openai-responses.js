@@ -238,6 +238,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
+  // Responses text configuration is not valid on Chat Completions.
+  if (result.text?.format) {
+    const { type, name, schema, strict } = result.text.format;
+    result.response_format = type === "json_schema"
+      ? { type, json_schema: { name, schema, strict } }
+      : { type };
+  }
+  delete result.text;
+
   delete result.input;
   delete result.instructions;
   delete result.include;
