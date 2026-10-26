@@ -13,11 +13,13 @@ const SETTINGS_RESPONSE_HEADERS = {
 
 // Secrets must never be mass-assigned from request body (CWE-915)
 const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+const isWebhookKey = (key) => /^webhook/i.test(key);
+const withoutWebhookSettings = (settings) => Object.fromEntries(Object.entries(settings).filter(([key]) => !isWebhookKey(key)));
 
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, ...safeSettings } = withoutWebhookSettings(settings);
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
@@ -38,6 +40,10 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const body = await request.json();
+
+    if (body && typeof body === "object" && Object.keys(body).some(isWebhookKey)) {
+      return NextResponse.json({ ok: false, errors: [{ field: "body", code: "reserved_webhook_key" }] }, { status: 400 });
+    }
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
@@ -108,7 +114,7 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, ...safeSettings } = withoutWebhookSettings(settings);
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
