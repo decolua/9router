@@ -7,7 +7,7 @@ import { filterToOpenAIFormat } from "../../open-sse/translator/formats/openai.j
 import { parseSSELine } from "../../open-sse/utils/streamHelpers.js";
 
 describe("request normalization", () => {
-  it("claudeToOpenAIRequest flattens text-only content arrays into string", () => {
+  it("claudeToOpenAIRequest preserves exact text blocks as an array", () => {
     const body = {
       messages: [
         {
@@ -21,7 +21,10 @@ describe("request normalization", () => {
     };
 
     const result = claudeToOpenAIRequest("gpt-oss:120b", body, true);
-    expect(result.messages[0].content).toBe("hi\nthere");
+    expect(result.messages[0].content).toEqual([
+      { type: "text", text: "hi" },
+      { type: "text", text: "there" },
+    ]);
   });
 
   it("claudeToOpenAIRequest preserves multimodal arrays", () => {
@@ -48,7 +51,7 @@ describe("request normalization", () => {
     expect(Array.isArray(result.messages[0].content)).toBe(true);
   });
 
-  it("filterToOpenAIFormat flattens text-only arrays to string", () => {
+  it("filterToOpenAIFormat preserves exact text blocks as an array", () => {
     const body = {
       messages: [
         {
@@ -62,10 +65,13 @@ describe("request normalization", () => {
     };
 
     const result = filterToOpenAIFormat(JSON.parse(JSON.stringify(body)));
-    expect(result.messages[0].content).toBe("a\nb");
+    expect(result.messages[0].content).toEqual([
+      { type: "text", text: "a" },
+      { type: "text", text: "b" },
+    ]);
   });
 
-  it("translateRequest keeps /v1/messages Claude->OpenAI text payloads string-safe", () => {
+  it("translateRequest keeps /v1/messages Claude->OpenAI text blocks as an exact array", () => {
     const body = {
       model: "ollama/gpt-oss:120b",
       system: [{ type: "text", text: "You are helpful." }],
@@ -92,8 +98,10 @@ describe("request normalization", () => {
     );
 
     const userMessage = result.messages.find((m) => m.role === "user");
-    expect(typeof userMessage.content).toBe("string");
-    expect(userMessage.content).toBe("hello\nworld");
+    expect(userMessage.content).toEqual([
+      { type: "text", text: "hello" },
+      { type: "text", text: "world" },
+    ]);
   });
 
   it("translateRequest strips unsupported Anthropic output_config for MiniMax Claude-compatible endpoints", () => {
@@ -164,14 +172,14 @@ describe("request normalization", () => {
     expect(result.output_config).toEqual(body.output_config);
   });
 
-  it("parseSSELine supports provider raw NDJSON stream lines", () => {
+  it("parseSSELine parses provider raw NDJSON lines with the Ollama format", () => {
     const raw = JSON.stringify({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },
       done: false,
     });
 
-    const parsed = parseSSELine(raw);
+    const parsed = parseSSELine(raw, FORMATS.OLLAMA);
     expect(parsed).toEqual({
       model: "gpt-oss:120b",
       message: { role: "assistant", content: "hello" },

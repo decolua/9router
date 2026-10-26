@@ -116,16 +116,23 @@ describe("commandcode-to-openai — finish", () => {
 });
 
 describe("commandcode-to-openai — error event", () => {
-  // Since 092c84ea an error event throws (so the stream is marked errored and can be
-  // retried) instead of being emitted as fake content with finish_reason "stop".
-  it("stringifies object errors so client sees readable message", () => {
-    let message = "";
+  function captureFeedError(events) {
     try {
-      feed([{ type: "error", error: { type: "server_error", message: "Boom" } }]);
-    } catch (err) {
-      message = err.message;
+      feed(events);
+    } catch (error) {
+      return error;
     }
-    expect(message).toContain("Boom");
-    expect(message).not.toContain("[object Object]");
+    throw new Error("expected commandCodeToOpenAIResponse to throw");
+  }
+
+  it("throws the upstream error instead of emitting fake content", () => {
+    const error = captureFeedError([
+      { type: "error", error: { type: "server_error", message: "Boom" } },
+    ]);
+
+    expect(error).toBeInstanceOf(Error);
+    expect(error.message).toContain("Boom");
+    expect(error.message).toContain("server_error");
+    expect(error.message).not.toContain("[object Object]");
   });
 });
