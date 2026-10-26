@@ -181,12 +181,27 @@ export function formatSSE(data, sourceFormat) {
 //
 // NOTE: non-SSE client formats (Ollama NDJSON) get an SSE frame here — dead in
 // practice because detectFormatByEndpoint never resolves to OLLAMA.
+// Error types the Anthropic API defines. A stall/abort frame for a Claude
+// client must use one of these: unknown types (e.g. the OpenAI-table
+// `server_error`) are handled like a bad request by Claude Code, while
+// `api_error` is retried / keeps the partial answer (part of #5185).
+const ANTHROPIC_ERROR_TYPES = new Set([
+  "invalid_request_error",
+  "authentication_error",
+  "permission_error",
+  "not_found_error",
+  "request_too_large",
+  "rate_limit_error",
+  "api_error",
+  "overloaded_error",
+]);
+
 export function buildStreamErrorBytes(statusCode, message, clientFormat) {
   const { error } = buildErrorBody(statusCode, message);
 
-  const sse = clientFormat === FORMATS.CLAUDE
-    ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
-    : formatSSE({ error }, clientFormat) + SSE_DONE;
-
-  return sharedEncoder.encode(sse);
+  if (clientFormat === FORMATS.CLAUDE) {
+    const type = ANTHROPIC_ERROR_TYPES.has(error.type) ? error.type : "api_error";
+    return sharedEncoder.encode(formatSSE({ type: "error", error: { ...error, type } }, FORMATS.CLAUDE));
+  }
+  return sharedEncoder.encode(formatSSE({ error }, clientFormat) + SSE_DONE);
 }
