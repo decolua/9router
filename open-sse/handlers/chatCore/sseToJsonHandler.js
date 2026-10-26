@@ -8,6 +8,7 @@ import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { claudeMessageFromChatCompletion } from "./clientFormatResponse.js";
 import { ROLE, RESPONSES_ITEM, OPENAI_FINISH } from "../../translator/schema/index.js";
+import { extractReasoningText } from "../../translator/concerns/reasoning.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -161,8 +162,16 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     const choice = chunk?.choices?.[0];
     const delta = choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
+    // Canonical key wins per delta; vendor aliases (`reasoning`,
+    // `reasoning_details[]`) accumulate in a legacy bucket used ONLY when no
+    // canonical content arrived anywhere in the stream — so a stream carrying
+    // both keys cannot double up, while an alias-only lane's thinking is still
+    // kept (upstream v0.5.111 alias coverage, federation precedence semantics).
     if (typeof delta.reasoning_content === "string" && delta.reasoning_content.length > 0) reasoningParts.push(delta.reasoning_content);
-    else if (typeof delta.reasoning === "string" && delta.reasoning.length > 0) legacyReasoningParts.push(delta.reasoning);
+    else {
+      const aliasReasoning = extractReasoningText(delta);
+      if (aliasReasoning.length > 0) legacyReasoningParts.push(aliasReasoning);
+    }
     if (choice?.finish_reason) finishReason = choice.finish_reason;
     if (chunk?.usage && typeof chunk.usage === "object") usage = chunk.usage;
 
@@ -182,6 +191,9 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   }
 
   const message = { role: "assistant", content: contentParts.join("") || (toolCallMap.size > 0 ? null : "") };
+  // Nonstandard `delta.reasoning` (some upstreams/relayers stream the thinking
+  // block under this key). The legacy bucket is used ONLY when no canonical
+  // `delta.reasoning_content` was seen, so a stream carrying both cannot double up.
   const reasoningText = reasoningParts.length > 0 ? reasoningParts.join("") : legacyReasoningParts.join("");
   if (reasoningText.length > 0) message.reasoning_content = reasoningText;
   if (toolCallMap.size > 0) {

@@ -1008,7 +1008,7 @@
   "The unified interface for modern AI infrastructure. Secure, observable, and scalable.": "A interface unificada para infraestrutura de IA moderna. Segura, observável e escalável.",
   "Theme": "Tema",
   "Thinking Process": "Processo de Raciocínio",
-  "This is the only time you will see this key. Store it securely.": "Esta é a única vez que você verá esta chave. Armazene-a com segurança.",
+  "Store this key securely. You can view or copy it later from the API Keys list.": "Armazene esta chave com segurança. Você pode visualizá-la ou copiá-la depois na lista de Chaves de API.",
   "This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.": "Este provedor está pronto para uso. Opcionalmente, envie requisições por um pool de proxy para burlar limites por IP.",
   "This value is write-only after saving.": "Este valor é somente gravação após salvar.",
   "Time": "Hora",

@@ -114,3 +114,4 @@ start-dev-silent.cjs
 debug.log
 .gitreins/logs/
 .gitreins/*.lock
+.scratch/

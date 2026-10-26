@@ -92,7 +92,7 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("adds CodeWhisperer external IdP headers and Amazon Q-first endpoint ordering", async () => {
+  it("adds CodeWhisperer external IdP headers and endpoint ordering", async () => {
     const { KiroExecutor } = await import("../../open-sse/executors/kiro.js");
     const executor = new KiroExecutor();
     const credentials = {
@@ -105,18 +105,11 @@ describe("Kiro external_idp (CLIProxyAPI) import and refresh", () => {
     expect(headers.TokenType).toBe("EXTERNAL_IDP");
     expect(headers.tokentype).toBeUndefined();
 
-    // Upstream 35b950be (#3776) put the Amazon surfaces first for EVERY auth
-    // method, with q.* ahead of codewhisperer.*: the deprecated
-    // runtime.*.kiro.dev path gateway answers modern payloads with 400
-    // REQUEST_BODY_INVALID, and a 400 is terminal in BaseExecutor, while a
-    // foreign token on an Amazon surface gets 401/403 and falls through
-    // (KIRO_ENDPOINT_FALLBACK_STATUSES). external_idp is no exception, so its
-    // TokenType: EXTERNAL_IDP header rides the same q -> codewhisperer order.
+    // The q surface comes first for every auth method since 16cb40fd / 35b950be (#3776):
+    // kiro.dev must never be first, and Amazon surfaces reject foreign tokens with
+    // 401/403, which fall through to the next one.
     expect(executor.buildUrl("claude-sonnet-4.5", true, 0, credentials)).toBe(
       "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
-    );
-    expect(executor.buildUrl("claude-sonnet-4.5", true, 1, credentials)).toBe(
-      "https://codewhisperer.us-east-1.amazonaws.com/generateAssistantResponse"
     );
   });
 

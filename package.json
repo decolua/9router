@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.5.104",
+  "version": "0.5.111",
   "description": "9Router web dashboard",
   "private": true,
   "engines": {
@@ -45,7 +45,7 @@
     "marked": "^18.0.14",
     "material-symbols": "^0.48.0",
     "monaco-editor": "^0.57.0",
-    "next": "^16.3.8",
+    "next": "^16.4.2",
     "node-forge": "^1.3.3",
     "node-machine-id": "^1.1.12",
     "open": "^11.0.4",
@@ -64,21 +64,27 @@
   },
   "optionalDependencies": {
     "@aws-sdk/credential-providers": "^3.1154.0",
-    "better-sqlite3": "^13.0.3"
+    "better-sqlite3": "^13.0.3",
+    "ajv": "^8.17.1",
+    "ws": "^8.18.0"
   },
-  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools — sql.js is used as fallback at runtime",
-  "comment_aws_sdk_credential_providers": "kept in optionalDependencies (npm still installs these by default) and imported lazily in shared/awsCredentials.js — only AWS Bedrock connections using profile/SSO mode need it; static accessKeyId/secretAccessKey connections never load it",
+  "comment_better_sqlite3": "kept in optionalDependencies so npm install doesn't fail on systems without build tools \u2014 sql.js is used as fallback at runtime",
+  "comment_aws_sdk_credential_providers": "kept in optionalDependencies (npm still installs these by default) and imported lazily in shared/awsCredentials.js \u2014 only AWS Bedrock connections using profile/SSO mode need it; static accessKeyId/secretAccessKey connections never load it",
+  "comment_playwright_core": "devDependency only (keeps end-user installs small); open-sse/services/lazyRuntime.js downloads it + wreq-js on first use into <DATA_DIR>/runtime. playwright-core ships no browser binaries (run `npx playwright-core install chromium` or point OBSCURA_CDP_ENDPOINT/cloakbrowser at a stealth engine)",
   "overrides": {
     "dompurify": "3.4.17",
     "@xmldom/xmldom": "0.9.12",
-    "qs": "^6.16.0"
+    "qs": "^6.16.0",
+    "ip-address": "^10.7.4"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
     "esbuild": "^0.28.2",
     "eslint": "^9",
-    "eslint-config-next": "^16.3.8",
+    "eslint-config-next": "16.4.2",
     "postcss": "^8.5.28",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "playwright-core": "^1.62.1",
+    "wreq-js": "^3.2.0"
   }
 }
