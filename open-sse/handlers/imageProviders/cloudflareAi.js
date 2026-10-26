@@ -90,7 +90,7 @@ async function buildJsonBody(body) {
   return req;
 }
 
-function buildMultipartBody(body) {
+async function buildMultipartBody(body) {
   const form = new FormData();
   form.append("prompt", body.prompt);
 
@@ -102,6 +102,17 @@ function buildMultipartBody(body) {
   addOptionalFields(form, body, (target, key, value) => {
     target.append(key, String(value));
   });
+
+  // Flux-2 img2img takes binary reference images as input_image_0..3.
+  // Without this the reference image is silently dropped (part of #5190).
+  const imageInput = await resolveImageInput(body.image);
+  if (imageInput) {
+    form.append(
+      "input_image_0",
+      new Blob([Uint8Array.from(imageInput.bytes)], { type: "image/png" }),
+      "input_image_0.png",
+    );
+  }
 
   return form;
 }
