@@ -31,6 +31,8 @@ const PUBLIC_API_PATHS = [
   "/api/auth/saml",
   "/api/version",
   "/api/settings/require-login",
+  "/api/headroom/status",
+  "/api/headroom/extras",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -86,6 +88,7 @@ const LOCAL_ONLY_PATHS = [
   "/api/auth/reset-password",
   "/api/headroom/start",
   "/api/headroom/stop",
+  "/api/headroom/restart",
   "/api/headroom/proxy",
 ];
 
@@ -188,8 +191,12 @@ async function isAuthenticated(request) {
   return false;
 }
 
-function isPublicApi(pathname) {
+function isPublicApi(pathname, request) {
   if (isPublicLlmApi(pathname)) return true;
+  // Headroom extras install/uninstall via POST/DELETE modify packages on host — require auth (#2965)
+  if (request && request.method && request.method !== "GET" && pathname.startsWith("/api/headroom/extras")) {
+    return false;
+  }
   return PUBLIC_API_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 }
 
@@ -228,7 +235,7 @@ export async function proxy(request) {
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.
   if (pathname.startsWith("/api/")) {
-    if (isPublicApi(pathname)) return NextResponse.next();
+    if (isPublicApi(pathname, request)) return NextResponse.next();
     if (await hasValidCliToken(request) || await isAuthenticated(request))
       return NextResponse.next();
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
