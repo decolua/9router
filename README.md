@@ -546,6 +546,7 @@ a third party under a provider named "Self-hosted".
 | 🔄 **Auto Token Refresh**                                                         | OAuth tokens refresh automatically                                                       | No manual re-login needed                         |
 | 🎨 **Custom Combos**                                                              | Create unlimited model combinations                                                      | Tailor fallback to your needs                     |
 | 📝 **Request Logging**                                                            | Debug mode with full request/response logs                                               | Troubleshoot issues easily                        |
+| 🔔 **Operational Webhooks** ([guide](docs/WEBHOOKS.md))                           | Send final request failures to Discord, Slack, or signed JSON                            | Get alerts without watching the console           |
 | 💾 **Cloud Sync**                                                                 | Sync config across devices                                                               | Same setup everywhere                             |
 | 📊 **Usage Analytics**                                                            | Track tokens, cost, trends over time                                                     | Optimize spending                                 |
 | 🌐 **Deploy Anywhere**                                                            | Localhost, VPS, Docker, Cloudflare Workers                                               | Flexible deployment options                       |
@@ -667,6 +668,17 @@ Seamless translation between formats:
 - Track API calls, headers, and payloads
 - Troubleshoot integration issues
 - Export logs for analysis
+
+### 🔔 Operational Webhooks
+
+Send selected operational alerts to Discord, Slack, or a generic Standard Webhooks endpoint.
+
+- `request.failed` is subscribed by default. Account and token refresh events are opt-in.
+- Deliveries use a persistent outbox with bounded retries and cooldown. Queued does not mean delivered.
+- URLs, signing secrets, and header values are write-only. Logical backups include them, so protect backup files.
+- Delivery is at-least-once, duplicates are possible, and process death is not detected. Run an external uptime monitor.
+
+Setup: Dashboard -> Webhooks. Full behavior, limits, access consequences, and security boundaries: [docs/WEBHOOKS.md](docs/WEBHOOKS.md).
 
 ### 💾 Cloud Sync
 
@@ -1354,6 +1366,7 @@ Notes:
 ### Runtime Files and Storage
 
 - Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
+- Operational webhook destinations and delivery queue: the same SQLite database. Logical export includes destinations with credentials but excludes queue and cooldown state.
 - Auto backups: `${DATA_DIR}/db/backups/`
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
 - Both `${DATA_DIR}` and `~/.9router` resolve to the same location in a Docker container — the symlink `/root/.9router -> /app/data` is created at build time.
