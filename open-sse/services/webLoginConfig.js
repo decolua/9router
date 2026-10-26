@@ -53,8 +53,12 @@ export const WEB_LOGIN_CONFIGS = {
       if (typeof value !== "string" || !value.trim()) return false;
       try {
         const parsed = JSON.parse(value);
-        const token = typeof parsed?.value === "string" ? parsed.value : value;
-        return typeof token === "string" && token.length >= 20;
+        // Anonymous visitors get a `{"value":null,...}` placeholder in the same
+        // key; a JSON wrapper only counts once `value` holds the real token.
+        if (parsed && typeof parsed === "object") {
+          return typeof parsed.value === "string" && parsed.value.length >= 20;
+        }
+        return value.length >= 20;
       } catch {
         return value.length >= 20;
       }

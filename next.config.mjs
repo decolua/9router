@@ -33,6 +33,11 @@ const nextConfig = {
   outputFileTracingExcludes: {
     "*": ["./gitbook/**/*"]
   },
+  // The deepseek-web PoW worker is spawned by a cwd-relative path, so tracing
+  // copies it as a bare asset without following its imports — list them here.
+  outputFileTracingIncludes: {
+    "*": ["./open-sse/lib/deepseek-pow-hash.js"]
+  },
   images: {
     unoptimized: true
   },
