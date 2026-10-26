@@ -5,7 +5,7 @@ import { pingModelByKind } from "@/app/api/models/test/ping";
 
 /**
  * POST /api/combos/[id]/test-models
- * Batch tests all models in a combo (or draft models) to check dead/alive status and latency.
+ * Tests combo models in sequential order to prevent connection saturation, rate-limits, and timeouts.
  */
 export async function POST(request, { params }) {
   try {
@@ -31,20 +31,22 @@ export async function POST(request, { params }) {
     }
 
     const baseUrl = `http://127.0.0.1:${process.env.PORT || UPDATER_CONFIG.appPort}`;
+    const results = [];
 
-    // Warm up with first model to prevent race condition when refreshing provider tokens
-    const [first, ...rest] = models;
-    const firstResult = await pingModelByKind(first, kind, baseUrl);
-    const results = [{ model: first, ...firstResult }];
-
-    if (rest.length > 0) {
-      const restResults = await Promise.all(
-        rest.map(async (model) => {
-          const res = await pingModelByKind(model, kind, baseUrl);
-          return { model, ...res };
-        })
-      );
-      results.push(...restResults);
+    // Test sequentially one by one to avoid connection saturation and timeouts
+    for (const model of models) {
+      try {
+        const res = await pingModelByKind(model, kind, baseUrl);
+        results.push({ model, ...res });
+      } catch (err) {
+        results.push({
+          model,
+          ok: false,
+          latencyMs: 0,
+          error: err?.message || "Model test aborted or timed out",
+          status: 500,
+        });
+      }
     }
 
     const aliveCount = results.filter((r) => r.ok).length;
@@ -60,7 +62,7 @@ export async function POST(request, { params }) {
       results,
     });
   } catch (error) {
-    console.error("Error batch testing combo models:", error);
+    console.error("Error testing combo models:", error);
     return NextResponse.json(
       { error: error?.message || "Failed to test combo models" },
       { status: 500 }

@@ -86,34 +86,71 @@ export default function CombosPage() {
 
   const handleTestCombo = async (combo) => {
     if (!combo?.id || testingCombos[combo.id]) return;
+    const models = combo.models || [];
+    if (models.length === 0) return;
+
     setTestingCombos((prev) => ({ ...prev, [combo.id]: true }));
+    const currentResults = {};
+
     try {
-      const res = await fetch(`/api/combos/${combo.id}/test-models`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ kind: combo.kind }),
-      });
-      const data = await res.json();
-      if (res.ok && data.results) {
-        const resultMap = {};
-        data.results.forEach((r) => {
-          resultMap[r.model] = r;
-        });
+      for (const model of models) {
         setComboTestResults((prev) => ({
           ...prev,
           [combo.id]: {
-            results: resultMap,
-            summary: data.summary,
+            ...prev[combo.id],
+            activeModel: model,
           },
         }));
-      } else {
-        alert(data.error || "Failed to test combo models");
+
+        try {
+          const res = await fetch(`/api/combos/${combo.id}/test-models`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ models: [model], kind: combo.kind }),
+          });
+          const data = await res.json();
+          if (res.ok && data.results?.[0]) {
+            currentResults[model] = data.results[0];
+          } else {
+            currentResults[model] = {
+              model,
+              ok: false,
+              latencyMs: 0,
+              error: data.error || "Failed",
+            };
+          }
+        } catch (err) {
+          currentResults[model] = {
+            model,
+            ok: false,
+            latencyMs: 0,
+            error: err.message || "Network error",
+          };
+        }
+
+        const alive = Object.values(currentResults).filter((r) => r.ok).length;
+        const totalTested = Object.values(currentResults).length;
+        setComboTestResults((prev) => ({
+          ...prev,
+          [combo.id]: {
+            results: { ...currentResults },
+            summary: {
+              total: models.length,
+              alive,
+              dead: totalTested - alive,
+            },
+          },
+        }));
       }
-    } catch (err) {
-      console.error("Error testing combo models:", err);
-      alert("Failed to test combo models");
     } finally {
       setTestingCombos((prev) => ({ ...prev, [combo.id]: false }));
+      setComboTestResults((prev) => ({
+        ...prev,
+        [combo.id]: {
+          ...prev[combo.id],
+          activeModel: null,
+        },
+      }));
     }
   };
 
@@ -756,11 +793,12 @@ function ComboCard({
                       : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 font-medium";
                   }
 
+                  const isModelTesting = isTesting && (testData?.activeModel ? testData.activeModel === model : !testRes);
                   const tooltipTitle = testRes
                     ? testRes.ok
                       ? `Alive · ${testRes.latencyMs}ms`
                       : `Dead · ${testRes.error || "Request failed"}`
-                    : isTesting
+                    : isModelTesting
                     ? "Testing..."
                     : undefined;
 
@@ -770,12 +808,12 @@ function ComboCard({
                       title={tooltipTitle}
                       className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs transition-colors ${statusClasses}`}
                     >
-                      {isTesting && (
+                      {isModelTesting && (
                         <span className="material-symbols-outlined animate-spin text-[12px] text-primary">
                           progress_activity
                         </span>
                       )}
-                      {!isTesting && testRes && (
+                      {!isModelTesting && testRes && (
                         <span className={`material-symbols-outlined text-[13px] ${testRes.ok ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
                           {testRes.ok ? "check_circle" : "cancel"}
                         </span>
@@ -1361,30 +1399,45 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [modelAliases, setModelAliases] = useState({});
   const [testingModels, setTestingModels] = useState(false);
   const [modalTestResults, setModalTestResults] = useState({});
+  const [activeTestingModel, setActiveTestingModel] = useState(null);
 
   const handleTestModalModels = async () => {
     if (testingModels || models.length === 0) return;
     setTestingModels(true);
+    const currentResults = {};
+
     try {
-      const res = await fetch("/api/combos/draft/test-models", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ models, kind: kindFilter }),
-      });
-      const data = await res.json();
-      if (res.ok && data.results) {
-        const resultMap = {};
-        data.results.forEach((r) => {
-          resultMap[r.model] = r;
-        });
-        setModalTestResults(resultMap);
-      } else {
-        alert(data.error || "Failed to test models");
+      for (const model of models) {
+        setActiveTestingModel(model);
+        try {
+          const res = await fetch("/api/combos/draft/test-models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ models: [model], kind: kindFilter }),
+          });
+          const data = await res.json();
+          if (res.ok && data.results?.[0]) {
+            currentResults[model] = data.results[0];
+          } else {
+            currentResults[model] = {
+              model,
+              ok: false,
+              latencyMs: 0,
+              error: data.error || "Failed",
+            };
+          }
+        } catch (err) {
+          currentResults[model] = {
+            model,
+            ok: false,
+            latencyMs: 0,
+            error: err.message || "Network error",
+          };
+        }
+        setModalTestResults({ ...currentResults });
       }
-    } catch (err) {
-      console.error("Error testing models in modal:", err);
-      alert("Failed to test models");
     } finally {
+      setActiveTestingModel(null);
       setTestingModels(false);
     }
   };
@@ -1532,7 +1585,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       onMoveDown={() => handleMoveDown(index)}
                       onRemove={() => handleRemoveModel(index)}
                       testStatus={modalTestResults[model]}
-                      isTesting={testingModels}
+                      isTesting={testingModels && activeTestingModel === model}
                     />
                   ))}
                 </div>
