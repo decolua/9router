@@ -145,6 +145,7 @@ import p144 from "./muse-web.js";
 import p146 from "./chatgpt-web.js";
 import p147 from "./veoaifree-web.js";
 import p151 from "./uc-web.js";
+import p152 from "./runcrate.js";
 export default [
   p0,
   p1,
@@ -290,4 +291,5 @@ export default [
   p146,
   p147,
   p151,
+  p152,
 ];
