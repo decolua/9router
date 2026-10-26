@@ -398,6 +398,7 @@ export async function POST(request) {
         case "assemblyai":
         case "nanobanana":
         case "chutes":
+        case "runcrate":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia": {
