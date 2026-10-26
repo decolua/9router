@@ -22,11 +22,19 @@ const WHICH_CMD = IS_WIN ? "where" : "which";
 // Extra bin dirs often missing from a packaged/launchd PATH (Python installs headroom here).
 const EXTRA_BINS = IS_WIN
   ? [
+      `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python314\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python313\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python312\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python311\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python310\\Scripts`,
+      `${process.env.APPDATA || ""}\\Python\\Python314\\Scripts`,
       `${process.env.APPDATA || ""}\\Python\\Python313\\Scripts`,
+      // Top-level installs (e.g. C:\Python314) — python.exe lives here.
+      `C:\\Python314`,
+      `C:\\Python313`,
+      `C:\\Python312`,
+      `C:\\Python311`,
+      `C:\\Python310`,
     ]
   : [
       "/usr/local/bin",
