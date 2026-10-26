@@ -281,8 +281,10 @@ export function normalizeClaudePassthrough(body, model = "") {
       let hasKeptThinking = false;
       const kept = [];
       for (const block of msg.content) {
+        // redacted_thinking carries `data`, not `signature` — nothing to
+        // validate, keep it (part of #5184).
         if (block.type === CLAUDE_BLOCK.THINKING || block.type === CLAUDE_BLOCK.REDACTED_THINKING) {
-          if (isValidClaudeSignature(block.signature)) {
+          if (block.type === CLAUDE_BLOCK.REDACTED_THINKING || isValidClaudeSignature(block.signature)) {
             hasKeptThinking = true;
             kept.push(block);
           }
@@ -321,16 +323,16 @@ export function normalizeClaudePassthrough(body, model = "") {
   // Anthropic rejects `messages.N.content` blocks with empty text (400
   // "text content blocks must be non-empty"); a message whose blocks were all
   // stripped above must be dropped, not padded with an empty placeholder.
-  // The same applies to thinking blocks: Anthropic rejects a block with no visible
-  // text (400 "each thinking block must contain non-whitespace thinking"), and such
-  // a block rides along in the client's replayed history on every later turn.
+  // Thinking blocks are NOT dropped for blank text: on the first-party API
+  // blank thinking is the normal case (display "omitted"/"updates"), the
+  // signature carries the reasoning, and partially dropping a turn's thinking
+  // risks a 400 while silently losing earlier reasoning (part of #5184).
   if (Array.isArray(body.messages)) {
     body.messages = body.messages.filter(msg => {
       if (typeof msg.content === "string") return msg.content.trim().length > 0;
       if (!Array.isArray(msg.content)) return true;
       msg.content = msg.content.filter(block =>
-        !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim())
-        && !(block?.type === CLAUDE_BLOCK.THINKING && !String(block.thinking ?? "").trim()));
+        !(block?.type === CLAUDE_BLOCK.TEXT && !String(block.text ?? "").trim()));
       return msg.content.length > 0;
     });
     body.messages = ensureTrailingUserTurn(body.messages, originalLastRole);
