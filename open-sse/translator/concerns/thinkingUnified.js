@@ -259,7 +259,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, display, targetFormat) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -327,7 +327,18 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
     case "zai": {
       // Z.ai ignores thinking.disabled → must use enable_thinking:false to turn off.
       if (none && canDisable) { body.enable_thinking = false; delete body.thinking; break; }
-      body.thinking = { type: "enabled" };
+      // Wire-dependent: Anthropic-wire upstreams (z.ai /api/anthropic/v1/messages)
+      // require budget_tokens whenever thinking.type === "enabled" (#4771). The
+      // OpenAI-wire /chat/completions schema only defines thinking.type (+ clear_thinking)
+      // — sending budget_tokens there risks strict-parser 400s, keep the bare marker.
+      if (targetFormat === "claude") {
+        const zaiBudget = toBudget(eff, caps.thinkingRange);
+        body.thinking = zaiBudget === -1 || zaiBudget == null
+          ? { type: "enabled", budget_tokens: 8192 }
+          : { type: "enabled", budget_tokens: Math.max(1024, zaiBudget) };
+      } else {
+        body.thinking = { type: "enabled" };
+      }
       // reasoning_effort is only read by z.ai from GLM-5.2 onward — older GLM ignores it
       // (see thinkingEffortSupported in capabilities.js). Skip on unsupported models so we
       // don't send a field the API doesn't recognize.
@@ -453,6 +464,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display, targetFormat);
   return body;
 }
