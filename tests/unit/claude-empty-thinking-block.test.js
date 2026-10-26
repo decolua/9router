@@ -25,38 +25,47 @@ const claudeRequest = (messages) => ({
   messages,
 });
 
-describe("normalizeClaudePassthrough — blank thinking blocks", () => {
-  it("drops an empty thinking block and keeps its sibling text block", () => {
+// Reversed by #5184: on native passthrough to first-party Anthropic, blank
+// thinking is the normal case (display "omitted"/"updates") and the signature
+// carries the reasoning — dropping it silently loses earlier reasoning every
+// turn and can 400 by partially dropping a turn. First-party live traffic
+// accepts blank-text blocks with valid signatures.
+describe("normalizeClaudePassthrough — blank thinking blocks (kept, #5184)", () => {
+  it("keeps an empty thinking block alongside its sibling text block", () => {
+    const block = thinking("");
     const out = normalizeClaudePassthrough({
       messages: [
         { role: "user", content: "hi" },
-        assistant([thinking(""), { type: "text", text: "kept" }]),
+        assistant([block, { type: "text", text: "kept" }]),
       ],
     });
 
-    expect(out.messages[1].content).toEqual([{ type: "text", text: "kept" }]);
+    expect(out.messages[1].content).toEqual([block, { type: "text", text: "kept" }]);
   });
 
-  it("drops a whitespace-only thinking block", () => {
+  it("keeps a whitespace-only thinking block", () => {
+    const block = thinking("  \n\t ");
     const out = normalizeClaudePassthrough({
       messages: [
         { role: "user", content: "hi" },
-        assistant([thinking("  \n\t "), { type: "text", text: "kept" }]),
+        assistant([block, { type: "text", text: "kept" }]),
       ],
     });
 
-    expect(out.messages[1].content).toEqual([{ type: "text", text: "kept" }]);
+    expect(out.messages[1].content).toEqual([block, { type: "text", text: "kept" }]);
   });
 
-  it("drops the whole message when the blank thinking block was its only content", () => {
+  it("keeps the message when the blank thinking block is its only content", () => {
+    const block = thinking("   ");
     const out = normalizeClaudePassthrough({
       messages: [
         { role: "user", content: "hi" },
-        assistant([thinking("   ")]),
+        assistant([block]),
       ],
     });
 
-    expect(out.messages.some(m => m.role === "assistant")).toBe(false);
+    const asst = out.messages.find(m => m.role === "assistant");
+    expect(asst.content).toEqual([block]);
   });
 
   it("keeps a thinking block that has visible text", () => {

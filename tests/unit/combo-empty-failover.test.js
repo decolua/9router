@@ -199,14 +199,16 @@ describe("inspectSSELine — Anthropic Messages client format", () => {
     expect(inspectSSELine(ev({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "t", name: "f", input: {} } })).content).toBe(true);
     expect(inspectSSELine(ev({ type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"a\":" } })).content).toBe(true);
   });
-  it("message_start, an empty text block start, ping, message_stop, error are NOT content", () => {
+  it("message_start, an empty text block start, ping, message_stop are NOT content", () => {
     for (const o of [
       { type: "message_start", message: { content: [] } },
       { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
       { type: "ping" },
       { type: "message_stop" },
-      { type: "error", error: { type: "api_error", message: "x" } },
     ]) expect(inspectSSELine(ev(o)).content).toBe(false);
+  });
+  it("an in-band error IS content: forward it, do not fail over silently (#5187)", () => {
+    expect(inspectSSELine(ev({ type: "error", error: { type: "api_error", message: "x" } })).content).toBe(true);
   });
   it("message_delta stop_reason maps to the hub vocabulary; refusal → content_filter (no-retry)", () => {
     expect(inspectSSELine(ev({ type: "message_delta", delta: { stop_reason: "end_turn" } })).finishReason).toBe("stop");
@@ -339,6 +341,14 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
         const { out, tried } = await combo([[ROLE, STOP, DONE], [ROLE, STOP, DONE]], fmt);
         expect(tried).toEqual(["openai/m0", "openai/m1"]);
         expect(out).not.toContain("from-m");
+      });
+      it("one-member combo skips the peek and returns the response as-is", async () => {
+        LOG.info.mockClear();
+        const { out, tried } = await combo([[ROLE, C("from-m0"), STOP, DONE]], fmt);
+        expect(tried).toEqual(["openai/m0"]);
+        expect(out).toContain("from-m0");
+        const msgs = LOG.info.mock.calls.map((c) => String(c[1] ?? c[0]));
+        expect(msgs.some((m) => m.includes("skipping peek"))).toBe(true);
       });
       it("a tool call counts as content", async () => {
         const { tried } = await combo([[ROLE, TOOL, DONE], [ROLE, C("from-m1"), STOP, DONE]], fmt);

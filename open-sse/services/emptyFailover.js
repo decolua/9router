@@ -55,6 +55,12 @@ const nonEmptyString = (s) => typeof s === "string" && s.length > 0;
 // Anthropic Messages event.
 function inspectClaudeEvent(obj) {
   let content = false, finishReason = null;
+  if (obj.type === "error") {
+    // An in-band error is a decision, not an empty stream: commit it so the
+    // client sees the upstream error instead of silently failing over to the
+    // next member (part of #5187).
+    return { content: true, finishReason: null };
+  }
   if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
     const d = obj.delta || {};
     if (d.type === CLAUDE_DELTA.TEXT && nonEmptyString(d.text)) content = true;
@@ -158,9 +164,14 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
 
   // Clamp: 0 / NaN / negative would otherwise disable the timeout and let a stalled-but-open
   // upstream hang the request forever in the hot path. There is no "disable" via this value.
-  const validDeadline = Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : EMPTY_PEEK_DEADLINE_MS;
+  // 0 disables the deadline entirely (commit on the first upstream byte).
+  const validDeadline = deadlineMs === 0
+    ? Infinity
+    : (Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : EMPTY_PEEK_DEADLINE_MS);
   let timer = null;
-  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve("__deadline__"), validDeadline); });
+  const deadline = validDeadline === Infinity
+    ? new Promise(() => {}) // never resolves
+    : new Promise((resolve) => { timer = setTimeout(() => resolve("__deadline__"), validDeadline); });
   const settle = (ret) => { if (timer) { clearTimeout(timer); timer = null; } return ret; };
 
   let pendingRead = null;
