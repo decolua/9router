@@ -85,6 +85,13 @@ function configure(options = {}) {
  */
 function makeRequest(method, path, body = null) {
   return new Promise((resolve) => {
+    let settled = false;
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
     const httpModule = config.protocol === "https:" ? https : http;
     
     const options = {
@@ -117,29 +124,45 @@ function makeRequest(method, path, body = null) {
           
           // Check if response indicates error
           if (res.statusCode >= 400 || parsed.error) {
-            resolve({
+            settle({
               success: false,
               error: parsed.error || `HTTP ${res.statusCode}`,
               statusCode: res.statusCode,
             });
           } else {
-            resolve({
+            settle({
               success: true,
               data: parsed,
               statusCode: res.statusCode,
             });
           }
         } catch (err) {
-          resolve({
+          settle({
             success: false,
             error: `Failed to parse response: ${err.message}`,
+          });
+        }
+      });
+
+      res.on("error", (err) => {
+        settle({
+          success: false,
+          error: `Network error: ${err.message}`,
+        });
+      });
+
+      res.on("close", () => {
+        if (!res.complete) {
+          settle({
+            success: false,
+            error: "Network error: response closed before completion",
           });
         }
       });
     });
 
     req.on("error", (err) => {
-      resolve({
+      settle({
         success: false,
         error: `Network error: ${err.message}`,
       });
@@ -147,7 +170,7 @@ function makeRequest(method, path, body = null) {
 
     req.on("timeout", () => {
       req.destroy();
-      resolve({
+      settle({
         success: false,
         error: "Request timeout",
       });
