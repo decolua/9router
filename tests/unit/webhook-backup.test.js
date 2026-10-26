@@ -44,10 +44,10 @@ for (const backend of backends) {
 
     async function open(filePath = file) {
       if (!factory) {
-        const module = backend === "sql.js"
+        const adapterModule = backend === "sql.js"
           ? await import("@/lib/db/adapters/sqljsAdapter.js")
           : await import("@/lib/db/adapters/bunSqliteAdapter.js");
-        factory = module.createSqlJsAdapter || module.createBunSqliteAdapter;
+        factory = adapterModule.createSqlJsAdapter || adapterModule.createBunSqliteAdapter;
       }
       const handle = await factory(filePath);
       handles.push(handle);
@@ -128,9 +128,9 @@ for (const backend of backends) {
       await Promise.allSettled(work);
       vi.restoreAllMocks();
       vi.useRealTimers();
-      for (const module of ["@/lib/webhooks/transport.js", "@/lib/localDb", "@/lib/tunnel", "@/mitm/manager",
+      for (const moduleName of ["@/lib/webhooks/transport.js", "@/lib/localDb", "@/lib/tunnel", "@/mitm/manager",
         "@/lib/mitmAliasCache", "@/lib/mcp/stdioSseBridge", "@/sse/services/backgroundTokenRefresh.js",
-        "@/lib/appUpdater", "next/headers"]) vi.doUnmock(module);
+        "@/lib/appUpdater", "next/headers"]) vi.doUnmock(moduleName);
       for (const handle of handles.splice(0)) { try { handle.close(); } catch { /* already closed */ } }
       for (const [signal, before] of listeners) {
         for (const listener of process.listeners(signal)) {
@@ -522,10 +522,10 @@ for (const backend of backends) {
       vi.useFakeTimers();
       vi.setSystemTime(NOW);
       try {
-        const module = route === "shutdown"
+        const routeModule = route === "shutdown"
           ? await import("@/app/api/shutdown/route.js")
           : await import("@/app/api/version/shutdown/route.js");
-        const response = await module.POST();
+        const response = await routeModule.POST();
         expect(response.status).toBe(200);
         await vi.advanceTimersByTimeAsync(1000);
         expect(exitStates).toEqual([{ running: false, rows: 1 }]);

@@ -31,10 +31,10 @@ for (const backend of backends) {
 
     async function openAdapter() {
       if (!factory) {
-        const module = backend === "sql.js"
+        const adapterModule = backend === "sql.js"
           ? await import("@/lib/db/adapters/sqljsAdapter.js")
           : await import("@/lib/db/adapters/bunSqliteAdapter.js");
-        factory = module.createSqlJsAdapter || module.createBunSqliteAdapter;
+        factory = adapterModule.createSqlJsAdapter || adapterModule.createBunSqliteAdapter;
       }
       const opened = await factory(file);
       handles.push(opened);
