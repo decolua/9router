@@ -1,4 +1,5 @@
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { generateToolCallId } from "../concerns/toolCall.js";
 
 /**
  * Normalize Responses API input to array format.
@@ -94,8 +95,10 @@ export function convertResponsesApiFormat(body) {
 
   // Group items by conversation turn
   let currentAssistantMsg = null;
-  let pendingToolCalls = [];
+  // correlation ids of tool calls whose *_output item has not been seen yet
+  let pendingToolCallIds = [];
   let pendingToolResults = [];
+  let toolCallSeq = 0;
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -144,14 +147,19 @@ export function convertResponsesApiFormat(body) {
       }
       // Skip items with empty/missing name — upstream APIs reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
+      // Keep a usable correlation id for the matching *_output item; serializing
+      // `undefined` drops the key and strict upstreams reject the whole request
+      // with 400 "missing field `tool_call_id`".
+      const callId = item.call_id || generateToolCallId(toolCallSeq++, currentAssistantMsg.tool_calls.length, item.name);
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: callId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
           arguments: item.arguments
         }
       });
+      pendingToolCallIds.push(callId);
     }
     else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT) {
       // Flush assistant message first if exists
@@ -159,12 +167,21 @@ export function convertResponsesApiFormat(body) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
       }
-      // Add tool result
-      pendingToolResults.push({
-        role: ROLE.TOOL,
-        tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
-      });
+      // Add tool result, always with a correlation id (see the note above); an
+      // output with no pending call becomes plain user context instead of a tool
+      // message no upstream can pair.
+      const outputContent = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
+      let outputCallId = typeof item.call_id === "string" && item.call_id ? item.call_id : "";
+      if (outputCallId) {
+        const queued = pendingToolCallIds.indexOf(outputCallId);
+        if (queued >= 0) pendingToolCallIds.splice(queued, 1);
+        pendingToolResults.push({ role: ROLE.TOOL, tool_call_id: outputCallId, content: outputContent });
+      } else {
+        const repaired = pendingToolCallIds.shift();
+        // a repaired id keeps the result; a true orphan (no call to answer) is
+        // dropped, matching the orphan-repair contract tracked in #2236
+        if (repaired) pendingToolResults.push({ role: ROLE.TOOL, tool_call_id: repaired, content: outputContent });
+      }
     }
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Skip reasoning items - they are for display only

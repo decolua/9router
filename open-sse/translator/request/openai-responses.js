@@ -13,6 +13,7 @@ import {
   coerceResponsesOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { generateToolCallId } from "../concerns/toolCall.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -37,6 +38,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
   const customToolNames = new Set();
+  // correlation ids of tool calls that have not received their *_output item yet,
+  // used to repair outputs that arrive without `call_id`
+  const pendingToolCallIds = [];
+  let toolCallSeq = 0;
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
@@ -93,6 +98,18 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         })
         : item.content;
       const msg = { role: item.role, content };
+      // Chat-style tool item that leaked into the Responses endpoint (Droid/OpenCode):
+      // repair its correlation id or downgrade it to user context.
+      if (item.role === ROLE.TOOL && !item.tool_call_id) {
+        const repairedToolId = pendingToolCallIds.shift();
+        if (repairedToolId) {
+          msg.tool_call_id = repairedToolId;
+        } else {
+          // orphaned result: salvage the text instead of sending an unpairable tool message
+          msg.role = ROLE.USER;
+          msg.content = `[Tool result: ${typeof item.content === "string" ? item.content : JSON.stringify(item.content)}]`;
+        }
+      }
       // Attach buffered reasoning to assistant turn (required by xiaomi-mimo + store=false continuity)
       if (item.role === ROLE.ASSISTANT) attachPendingReasoning(msg);
       else {
@@ -117,14 +134,20 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
+      // Correlation id must survive to the matching *_output item (#37xx): keep the
+      // client's `call_id`, else mint one here instead of serializing `undefined`
+      // (JSON.stringify drops the key, and strict upstreams then reject the whole
+      // request with 400 "missing field `tool_call_id`").
+      const callId = item.call_id || generateToolCallId(toolCallSeq++, currentAssistantMsg.tool_calls.length, item.name);
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: callId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
+      pendingToolCallIds.push(callId);
     }
     else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
       // Flush assistant message first if exists
@@ -139,12 +162,29 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         }
         pendingToolResults = [];
       }
-      // Add tool result immediately
-      result.messages.push({
-        role: ROLE.TOOL,
-        tool_call_id: item.call_id,
-        content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
-      });
+      // Add tool result immediately, always carrying a usable correlation id:
+      // an output whose `call_id` was dropped by the client used to serialize a
+      // `role:"tool"` message without `tool_call_id`, which every strict upstream
+      // rejects (NVIDIA 400 "missing field `tool_call_id`", OpenAI "must be a
+      // response to a message with tool_calls").
+      const outputContent = typeof item.output === "string" ? item.output : JSON.stringify(item.output);
+      let outputCallId = typeof item.call_id === "string" && item.call_id ? item.call_id : "";
+      if (outputCallId) {
+        const queued = pendingToolCallIds.indexOf(outputCallId);
+        if (queued >= 0) pendingToolCallIds.splice(queued, 1);
+      } else {
+        outputCallId = pendingToolCallIds.shift() || "";
+      }
+      if (outputCallId) {
+        result.messages.push({
+          role: ROLE.TOOL,
+          tool_call_id: outputCallId,
+          content: outputContent
+        });
+      }
+      // else: orphaned output (no pending call to answer) is dropped, matching the
+      // orphan-repair contract tracked in #2236 — a tool message without a call is
+      // rejected by every strict upstream.
     }
     else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
       if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
