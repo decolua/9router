@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { parseModel } from "open-sse/services/model.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -284,9 +285,32 @@ export async function deleteProviderConnection(id) {
     if (!row) return;
     db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
     reorderInTx(db, row.provider);
+    // Only the last connection of a provider orphans its combo members: with
+    // another account left, the provider still serves those models (#4915).
+    const left = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [row.provider]);
+    if (!left?.n) pruneComboMembersInTx(db, row.provider);
     ok = true;
   });
   return ok;
+}
+
+// Drop explicit "<provider>/<model>" members of a provider that no longer has
+// any connection. Bare aliases are left alone: resolving them needs the alias
+// map, and guessing would delete members that belong to another provider.
+// An emptied combo is kept (it is the user's config), just without members.
+function pruneComboMembersInTx(db, provider) {
+  for (const row of db.all(`SELECT id, models FROM combos`)) {
+    const models = parseJson(row.models, []);
+    if (!Array.isArray(models)) continue;
+    const kept = models.filter((m) => {
+      if (typeof m !== "string" || !m.includes("/")) return true;
+      const parsed = parseModel(m);
+      return parsed.isAlias || parsed.provider !== provider;
+    });
+    if (kept.length === models.length) continue;
+    db.run(`UPDATE combos SET models = ?, updatedAt = ? WHERE id = ?`,
+      [stringifyJson(kept), new Date().toISOString(), row.id]);
+  }
 }
 
 export async function deleteProviderConnectionsByProvider(providerId) {
