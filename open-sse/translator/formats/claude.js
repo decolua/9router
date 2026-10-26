@@ -527,9 +527,20 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
   // declare a higher maxOutput (e.g. Opus 4.8 / Sonnet 4.6 = 128000) are allowed
   // up to it, so max-effort thinking gets full budget; others fall back to the
   // conservative 64000 default.
-  if (body.max_tokens) {
-    const ceiling = modelCaps.maxOutput || DEFAULT_MAX_TOKENS;
-    if (body.max_tokens > ceiling) body.max_tokens = ceiling;
+  const wasExplicitMaxTokens = body.max_tokens !== undefined;
+  if (!wasExplicitMaxTokens) {
+    // Provider requires max_tokens (e.g., Anthropic) - inject default
+    if (isAnthropicServing) {
+      body.max_tokens = DEFAULT_MAX_TOKENS;
+    }
+  }
+  
+  if (body.max_tokens !== undefined) {
+    const ceiling = modelCaps.maxOutput || (wasExplicitMaxTokens ? undefined : DEFAULT_MAX_TOKENS);
+    // Only clamp if we have a real model ceiling (not the conservative default for unknown models)
+    if (ceiling !== undefined && ceiling !== DEFAULT_MAX_TOKENS && body.max_tokens > ceiling) {
+      body.max_tokens = ceiling;
+    }
 
     // Reconcile against thinking budget. applyThinking (thinkingUnified.js) runs
     // AFTER adjustMaxTokens capped max_tokens, and the claude-budget format maps
@@ -539,7 +550,8 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     // budget alone meets/exceeds the ceiling, cap output and shrink the budget so
     // some tokens remain for the answer.
     if (body.thinking?.type === "enabled" && body.thinking.budget_tokens && body.thinking.budget_tokens >= body.max_tokens) {
-      body.max_tokens = Math.min(body.thinking.budget_tokens + 1024, ceiling);
+      const effectiveCeiling = ceiling !== undefined ? ceiling : DEFAULT_MAX_TOKENS;
+      body.max_tokens = Math.min(body.thinking.budget_tokens + 1024, effectiveCeiling);
       if (body.thinking.budget_tokens >= body.max_tokens) {
         body.thinking.budget_tokens = Math.max(1024, body.max_tokens - 1024);
       }

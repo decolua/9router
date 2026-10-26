@@ -101,9 +101,17 @@ export function stripUnsupportedParams(provider, model, body) {
       }
       if (candidates.length > 0) {
         const ceiling = Math.min(...candidates);
-        clampNumber(body, "max_tokens", ceiling);
-        clampNumber(body, "max_completion_tokens", ceiling);
-        clampNumber(body, "max_output_tokens", ceiling);
+        // Only clamp if client value exceeds the known ceiling
+        // Don't silently reduce client values for unknown models
+        if (typeof body.max_tokens === "number" && Number.isFinite(body.max_tokens) && body.max_tokens > ceiling) {
+          body.max_tokens = ceiling;
+        }
+        if (typeof body.max_completion_tokens === "number" && Number.isFinite(body.max_completion_tokens) && body.max_completion_tokens > ceiling) {
+          body.max_completion_tokens = ceiling;
+        }
+        if (typeof body.max_output_tokens === "number" && Number.isFinite(body.max_output_tokens) && body.max_output_tokens > ceiling) {
+          body.max_output_tokens = ceiling;
+        }
       }
     }
   }

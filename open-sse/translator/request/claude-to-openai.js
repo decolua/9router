@@ -19,8 +19,9 @@ export function claudeToOpenAIRequest(model, body, stream) {
   };
 
   // Max tokens
-  if (body.max_tokens) {
-    result.max_tokens = adjustMaxTokens(body);
+  if (body.max_tokens !== undefined) {
+    const { maxTokens } = adjustMaxTokens(body);
+    result.max_tokens = maxTokens;
   }
 
   // Temperature

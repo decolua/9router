@@ -20,9 +20,10 @@ export function openaiToClaudeRequest(model, body, stream) {
   // not the conservative 64000 default — otherwise a high-output model is
   // pre-clamped here before prepareClaudeRequest's model-aware step runs.
   const modelCeiling = getCapabilitiesForModel(null, model).maxOutput || undefined;
+  const { maxTokens } = adjustMaxTokens(body, modelCeiling);
   const result = {
     model: model,
-    max_tokens: adjustMaxTokens(body, modelCeiling),
+    max_tokens: maxTokens,
     stream: stream
   };
 
