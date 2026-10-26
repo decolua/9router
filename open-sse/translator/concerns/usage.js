@@ -56,6 +56,10 @@ const USAGE_EXTRACTORS = {
       // prompt_eval_cached_count is a cache-read subset of prompt_eval_count
       // (Ollama reports prompt tokens cache-INCLUSIVE, matching OpenAI/Gemini).
       cached = n(raw.prompt_eval_cached_count);
+    // Return null if no real usage data (both prompt_eval_count and eval_count absent)
+    if (raw.prompt_eval_count === undefined && raw.eval_count === undefined) {
+      return null;
+    }
     return { promptTokens: input, completionTokens: output, totalTokens: input + output, cachedTokens: cached };
   },
   commandcode(raw) {
@@ -69,5 +73,7 @@ const USAGE_EXTRACTORS = {
 export function toOpenAIUsage(raw, kind) {
   const extract = USAGE_EXTRACTORS[kind];
   if (!extract || !raw || typeof raw !== "object") return null;
-  return buildUsage(extract(raw));
+  const extracted = extract(raw);
+  if (!extracted) return null;
+  return buildUsage(extracted);
 }

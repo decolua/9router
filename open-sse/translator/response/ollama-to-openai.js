@@ -106,6 +106,23 @@ function convertToolCalls(toolCalls) {
  * Convert Ollama non-streaming response body to OpenAI chat.completion format
  */
 export function ollamaBodyToOpenAI(body) {
+  // Validate that this is actually an Ollama response format
+  // Ollama non-streaming responses have either:
+  // - { message: {...}, done: true, prompt_eval_count: N, eval_count: M }
+  // - { message: {...}, done: false } (though non-stream should always have done=true)
+  // If body has neither 'message' nor 'done', it's not an Ollama response
+  if (!body || typeof body !== "object") {
+    throw new Error("Invalid Ollama response: body is not an object");
+  }
+  if (!body.message && body.done !== true) {
+    throw new Error("Invalid Ollama response: missing 'message' and 'done' fields");
+  }
+  // Propagate upstream error if present
+  if (body.error) {
+    const msg = body.error?.message || body.error || "Ollama upstream error";
+    throw new Error(msg);
+  }
+
   const msg = body.message || {};
   const content = msg.content || "";
   const thinking = msg.thinking || "";
@@ -120,14 +137,19 @@ export function ollamaBodyToOpenAI(body) {
   let finishReason = toOpenAIFinish(body.done_reason, "ollama");
   if (toolCalls.length > 0) finishReason = OPENAI_FINISH.TOOL_CALLS;
 
-  return {
+  const usage = extractUsage(body);
+
+  const result = {
     id: `chatcmpl-${Date.now()}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model: body.model || "ollama",
-    choices: [{ index: 0, message, finish_reason: finishReason }],
-    usage: extractUsage(body)
+    choices: [{ index: 0, message, finish_reason: finishReason }]
   };
+  // Omit usage rather than sending null: the OpenAI schema allows a missing
+  // `usage`, but consumers that read `usage.prompt_tokens` crash on null.
+  if (usage) result.usage = usage;
+  return result;
 }
 
 // Register translator
