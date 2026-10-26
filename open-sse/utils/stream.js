@@ -44,6 +44,18 @@ const PENDING_COMPLETION_FLUSH_MS = 3000;
  * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
  * @param {string} options.apiKey - API key for usage tracking
  */
+// A cold upstream can sit silent for a minute before the first token. Proxies
+// (Cloudflare, nginx) close an idle SSE response as a 524/timeout, and the client
+// never sees the answer that was about to arrive. An SSE comment keeps the
+// connection warm without producing an event any parser can mistake for data.
+// NDJSON (Ollama) has no comment syntax, so it is excluded.
+function resolveKeepAliveMs(explicit) {
+  if (typeof explicit === "number") return Math.max(0, explicit);
+  const fromEnv = Number(process.env.SSE_KEEPALIVE_MS);
+  if (Number.isFinite(fromEnv) && fromEnv >= 0) return fromEnv;
+  return 15000;
+}
+
 export function createSSEStream(options = {}) {
   const {
     mode = STREAM_MODE.TRANSLATE,
@@ -60,6 +72,8 @@ export function createSSEStream(options = {}) {
     apiKey = null,
     credentials = null
   } = options;
+
+  const keepAliveMs = resolveKeepAliveMs(options.keepAliveMs);
 
   let buffer = "";
   let usage = null;
@@ -98,6 +112,7 @@ export function createSSEStream(options = {}) {
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
   let finalized = false;
   let completionFlushTimer = null;
+  let keepAliveTimer = null;
 
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
@@ -108,6 +123,7 @@ export function createSSEStream(options = {}) {
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
+    if (keepAliveTimer) { clearInterval(keepAliveTimer); keepAliveTimer = null; }
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     if (finalized) return;
     finalized = true;
@@ -149,6 +165,23 @@ export function createSSEStream(options = {}) {
   };
 
   return new TransformStream({
+    start(controller) {
+      // Only SSE has comments. An unknown format is left alone: guessing wrong
+      // would inject ": ping" into NDJSON and break the parse.
+      if (!keepAliveMs || !sourceFormat || sourceFormat === FORMATS.OLLAMA) return;
+      keepAliveTimer = setInterval(() => {
+        // Only until the first byte reaches the client: after that the connection
+        // carries data and a heartbeat would be noise.
+        if (finalized || sseEmittedCount > 0) return;
+        try {
+          controller.enqueue(sharedEncoder.encode(": ping\n\n"));
+        } catch {
+          // Stream already closed — nothing left to keep alive.
+        }
+      }, keepAliveMs);
+      // A heartbeat must never be the reason the process stays up.
+      if (typeof keepAliveTimer.unref === "function") keepAliveTimer.unref();
+    },
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
@@ -582,7 +615,7 @@ export function createSSEStream(options = {}) {
   });
 }
 
-export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
+export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null, keepAliveMs = undefined) {
   return createSSEStream({
     mode: STREAM_MODE.TRANSLATE,
     targetFormat,
@@ -596,11 +629,12 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
     body,
     onStreamComplete,
     apiKey,
-    credentials
+    credentials,
+    keepAliveMs
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null, sourceFormat = null, keepAliveMs = undefined) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
@@ -610,6 +644,8 @@ export function createPassthroughStreamWithLogger(provider = null, reqLogger = n
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    sourceFormat,
+    keepAliveMs
   });
 }
