@@ -59,6 +59,21 @@ function clampNumber(body, key, ceiling) {
 // Remove unsupported params from body in place; returns body.
 export function stripUnsupportedParams(provider, model, body) {
   if (!model || !body || typeof body !== "object") return body;
+
+  // Normalize reasoning/reasoning_content alias collision (#4841).
+  // When an assistant message contains both reasoning_content and reasoning,
+  // upstreams with Rust/serde schemas (z-ai GLM, Moonshot Kimi) fail with
+  // HTTP 400 "duplicate field reasoning_content". Keep reasoning_content and drop reasoning.
+  if (Array.isArray(body.messages)) {
+    for (const msg of body.messages) {
+      if (msg && msg.role === "assistant") {
+        if (msg.reasoning_content !== undefined && msg.reasoning !== undefined) {
+          delete msg.reasoning;
+        }
+      }
+    }
+  }
+
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;
