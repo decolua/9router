@@ -11,7 +11,6 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
-import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 
@@ -30,9 +29,60 @@ function isModuleMissing(error) {
   return code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND";
 }
 
+function getNativeRequire(dir) {
+  let cr;
+  try {
+    if (typeof process !== "undefined" && typeof process.getBuiltinModule === "function") {
+      cr = process.getBuiltinModule("node:module")?.createRequire;
+    }
+  } catch {}
+  if (!cr) {
+    try {
+      cr = eval("require")("node:module")?.createRequire;
+    } catch {}
+  }
+  return cr ? cr(path.join(dir, "package.json")) : null;
+}
+
+function resolvePackagePath(pkg, dir) {
+  const req = getNativeRequire(dir);
+  if (req) {
+    try {
+      return req.resolve(pkg);
+    } catch {}
+  }
+  const pkgDir = path.join(dir, "node_modules", pkg);
+  const pjPath = path.join(pkgDir, "package.json");
+  if (fs.existsSync(pjPath)) {
+    try {
+      const pj = JSON.parse(fs.readFileSync(pjPath, "utf-8"));
+      const entry = (typeof pj.exports === "string" ? pj.exports : null)
+        || pj.exports?.["."]?.import
+        || pj.exports?.["."]?.default
+        || pj.exports?.default
+        || pj.main
+        || "index.js";
+      return path.resolve(pkgDir, entry);
+    } catch {}
+  }
+  return null;
+}
+
+async function dynamicImport(specifier) {
+  // Use new Function to bypass webpack static import interception
+  const importer = new Function("u", "return import(u)");
+  return importer(specifier);
+}
+
 function npmInstall(pkg, version) {
   const cwd = getRuntimeDir();
   fs.mkdirSync(cwd, { recursive: true });
+  const pj = path.join(cwd, "package.json");
+  if (!fs.existsSync(pj)) {
+    try {
+      fs.writeFileSync(pj, JSON.stringify({ name: "9router-runtime", private: true }, null, 2));
+    } catch {}
+  }
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const args = ["install", "--no-audit", "--no-fund", "--prefer-online", `${pkg}@${version}`];
   return new Promise((resolve) => {
@@ -49,29 +99,35 @@ const inflight = new Map();
 async function load(pkg) {
   // 1) Resolvable from the app install (dev machine / traced standalone).
   try {
-    return await import(/* webpackIgnore: true */ pkg);
+    return await dynamicImport(pkg);
   } catch (error) {
     if (!isModuleMissing(error)) throw error;
   }
   // 2) Already present in the runtime dir from a previous install.
-  const runtimeRequire = createRequire(path.join(getRuntimeDir(), "package.json"));
-  try {
-    return await import(pathToFileURL(runtimeRequire.resolve(pkg)).href);
-  } catch (error) {
-    if (!isModuleMissing(error)) throw error;
+  const runtimeDir = getRuntimeDir();
+  const existingPath = resolvePackagePath(pkg, runtimeDir);
+  if (existingPath) {
+    try {
+      return await dynamicImport(pathToFileURL(existingPath).href);
+    } catch (error) {
+      if (!isModuleMissing(error)) throw error;
+    }
   }
   // 3) Download on demand, then import from the runtime dir.
   const version = LAZY_DEP_VERSIONS[pkg] || "latest";
-  const dir = getRuntimeDir();
   const res = await npmInstall(pkg, version);
   if (!res.ok) {
     const reason = (res.stderr.match(/npm ERR! ?(.+)/) || [])[1] || res.stderr.split("\n").filter(Boolean).pop() || "unknown npm error";
     throw new Error(
       `${pkg} is missing and the on-demand install failed (${String(reason).slice(0, 160)}) — ` +
-      `install it manually: cd "${dir}" && npm install ${pkg}@${version}`
+      `install it manually: cd "${runtimeDir}" && npm install ${pkg}@${version}`
     );
   }
-  return import(pathToFileURL(createRequire(path.join(dir, "package.json")).resolve(pkg)).href);
+  const installedPath = resolvePackagePath(pkg, runtimeDir);
+  if (installedPath) {
+    return dynamicImport(pathToFileURL(installedPath).href);
+  }
+  throw new Error(`${pkg} was installed in ${runtimeDir} but its entry point could not be resolved`);
 }
 
 export function loadRuntimeDep(pkg) {
