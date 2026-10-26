@@ -18,6 +18,7 @@ export default function LoginPage() {
   const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [remoteBlocked, setRemoteBlocked] = useState(false);
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -68,6 +69,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     setResetHint("");
+    setRemoteBlocked(false);
 
     try {
       const res = await fetch("/api/auth/login", {
@@ -85,8 +87,15 @@ export default function LoginPage() {
         window.location.assign("/dashboard");
       } else {
         const data = await res.json();
-        setError(data.error || "Invalid password");
-        if (data.resetHint) setResetHint(data.resetHint);
+        if (data.mustChangePassword) {
+          // Fresh install + remote address: the API deliberately issues no
+          // session (default password is public). Point at the supported
+          // paths instead of a dead-end error.
+          setRemoteBlocked(true);
+        } else {
+          setError(data.error || "Invalid password");
+        }
+        setResetHint(data.resetHint || "");
         if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
       }
     } catch (err) {
@@ -219,6 +228,13 @@ export default function LoginPage() {
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-medium">Password</label>
+                  {remoteBlocked && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                      Fresh installs can&rsquo;t sign in with the default password from a remote
+                      address. Open the dashboard on the machine running 9router to set a
+                      password, or restart with a non-empty INITIAL_PASSWORD.
+                    </p>
+                  )}
                   <Input
                     type="password"
                     placeholder="Enter password"
