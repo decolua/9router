@@ -50,6 +50,7 @@ function normalizeCapEntry(entry) {
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "fastest", label: "Fastest — lowest measured latency first" },
   { value: "smart", label: "Smart Router — System One" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];

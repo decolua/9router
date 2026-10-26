@@ -110,6 +110,41 @@ export function reorderByCapabilities(models, required) {
  */
 const comboRotationState = new Map();
 
+// "fastest" strategy (#5083): exponentially weighted time-to-first-content per
+// combo member, measured where the combo already waits for it (the peek).
+// ponytail: in-memory and per-process — resets on restart and is not shared
+// across instances; persist it (usageHistory has ttft) if that ever matters.
+const comboLatencyMs = new Map();
+const LATENCY_ALPHA = 0.3;
+// A failed or empty attempt counts as this slow, so a broken member sinks
+// instead of being tried first on every request; one good sample lifts it.
+export const COMBO_FAILURE_LATENCY_MS = 30000;
+
+export function recordComboLatency(modelStr, ms) {
+  if (!modelStr || !Number.isFinite(ms) || ms < 0) return;
+  const prev = comboLatencyMs.get(modelStr);
+  comboLatencyMs.set(modelStr, prev === undefined ? ms : prev + LATENCY_ALPHA * (ms - prev));
+}
+
+export function getComboLatency(modelStr) {
+  return comboLatencyMs.get(modelStr);
+}
+
+export function resetComboLatency() {
+  comboLatencyMs.clear();
+}
+
+// Unmeasured members first (in configured order) so they get measured, then
+// measured ones fastest first. Only reorders; never drops a member.
+export function orderByLatency(models) {
+  const unmeasured = models.filter((m) => !comboLatencyMs.has(m));
+  const measured = models.filter((m) => comboLatencyMs.has(m))
+    .map((m, i) => ({ m, i, ms: comboLatencyMs.get(m) }))
+    .sort((a, b) => a.ms - b.ms || a.i - b.i)
+    .map((x) => x.m);
+  return [...unmeasured, ...measured];
+}
+
 // Trailing run of items after the last assistant/model turn = the current user
 // turn. It may span several messages (e.g. text + image split across blocks),
 // so we return all of them. History media (older turns) must not pin the combo
@@ -224,11 +259,14 @@ function rotateModelsFromIndex(models, currentIndex) {
  * Get rotated model list based on strategy
  * @param {string[]} models - Array of model strings
  * @param {string} comboName - Name of the combo
- * @param {string} strategy - "fallback" or "round-robin"
+ * @param {string} strategy - "fallback", "round-robin" or "fastest"
  * @param {number|string} [stickyLimit=1] - Requests per combo model before switching
  * @returns {string[]} Rotated models array
  */
 export function getRotatedModels(models, comboName, strategy, stickyLimit = 1) {
+  if (strategy === "fastest" && models && models.length > 1) {
+    return orderByLatency(models);
+  }
   if (!models || models.length <= 1 || strategy !== "round-robin") {
     return models;
   }
@@ -472,6 +510,8 @@ export async function handleComboChat({
     const modelStr = rotatedModels[i];
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
+    const attemptStart = Date.now();
+    const trackLatency = comboStrategy === "fastest";
     try {
       const result = await handleSingleModel(body, modelStr);
       
@@ -506,6 +546,7 @@ export async function handleComboChat({
                 const peekBody = await result.clone().json();
                 if (isZeroContentResponse(peekBody)) {
                   log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
+                  if (trackLatency) recordComboLatency(modelStr, COMBO_FAILURE_LATENCY_MS);
                   if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
                     clearStickyComboSession(comboName, sessionId);
                   }
@@ -520,11 +561,13 @@ export async function handleComboChat({
           }
 
           log.info("COMBO", `Model ${modelStr} succeeded`);
+          if (trackLatency) recordComboLatency(modelStr, Date.now() - attemptStart);
           return result;
         }
 
         if (peeked.outcome === "content") {
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
+          if (trackLatency) recordComboLatency(modelStr, Date.now() - attemptStart);
           return peeked.response;
         }
 
@@ -539,6 +582,7 @@ export async function handleComboChat({
         }
 
         log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — falling through to next candidate`);
+        if (trackLatency) recordComboLatency(modelStr, COMBO_FAILURE_LATENCY_MS);
         if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
           clearStickyComboSession(comboName, sessionId);
         }
@@ -609,6 +653,7 @@ export async function handleComboChat({
       }
 
       // Fallback to next model
+      if (trackLatency) recordComboLatency(modelStr, COMBO_FAILURE_LATENCY_MS);
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
@@ -617,6 +662,7 @@ export async function handleComboChat({
       if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
         clearStickyComboSession(comboName, sessionId);
       }
+      if (trackLatency) recordComboLatency(modelStr, COMBO_FAILURE_LATENCY_MS);
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
