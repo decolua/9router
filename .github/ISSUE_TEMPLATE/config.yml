@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and setup help
+    url: https://github.com/decolua/9router/discussions
+    about: How-to questions, configuration help and general discussion.

@@ -1,0 +1,20 @@
+name: Feature request
+description: Propose a new provider, model or behaviour.
+title: "[Feature] "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can you not do today? Concrete beats abstract — a real request that fails is worth more than a design.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Workaround you use today
+      description: Combos, custom models and per-provider settings cover many cases already.

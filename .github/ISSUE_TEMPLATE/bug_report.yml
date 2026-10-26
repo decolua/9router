@@ -1,0 +1,62 @@
+name: Bug report
+description: Something routes, translates or displays incorrectly.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The fields below are what a maintainer needs to reproduce the problem — a report without them usually waits until someone asks.
+
+        **Before filing**, please search open issues: many provider outages (especially OpenCode free / Zen rate limits) already have a thread.
+        **Never paste API keys, OAuth tokens or cookies.** Replace them with `***`.
+  - type: input
+    id: version
+    attributes:
+      label: 9router version
+      description: Shown at the bottom of the dashboard Profile page, or run `9router --version`.
+      placeholder: "0.5.109"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run it?
+      options:
+        - npm (global CLI)
+        - Docker
+        - Desktop / tray app
+        - From source
+    validations:
+      required: true
+  - type: input
+    id: model
+    attributes:
+      label: Provider and model
+      description: The exact id you sent, as it appears in the request (for example `ds/deepseek-flash` or a combo name).
+      placeholder: "nvidia/z-ai/glm-5.3-flash"
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: Client
+      description: What sent the request (Claude Code, Codex, Cursor, Cline, OpenWebUI, curl...) and which API shape it uses.
+      placeholder: "Claude Code 2.x → /v1/messages"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log lines
+      description: The console lines for the failing request (the `▶ POST`, `✗ ERROR` and `[FALLBACK]` lines are the useful ones). Remove secrets.
+      render: text
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: A `curl` that reproduces it is ideal. Otherwise the smallest steps you know.
+      render: shell
