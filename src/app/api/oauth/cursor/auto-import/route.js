@@ -13,6 +13,11 @@ const MACHINE_ID_KEYS = [
   "storage.machineId",
   "telemetry.machineId",
 ];
+const SUPPORTED_PLATFORMS = new Set(["darwin", "win32", "linux"]);
+const ACCESS_TOKEN_KEY_PATTERN = /accessToken|token/i;
+const MACHINE_ID_KEY_PATTERN = /machineId/i;
+const FUZZY_ROW_LIMIT = 25;
+const SAFE_SQLITE_CODE = /^SQLITE_[A-Z0-9_]{1,40}$/;
 
 /** Get candidate db paths by platform */
 function getCandidatePaths(platform) {
@@ -73,44 +78,90 @@ const normalize = (value) => {
 };
 
 /**
+ * Pick the first bounded fuzzy match for a token field.
+ * Only key/value rows are read; rows are never echoed in errors or responses.
+ */
+function firstFuzzyValue(db, patterns, keyPattern) {
+  const where = patterns.map(() => "key LIKE ?").join(" OR ");
+  const rows = db
+    .prepare(
+      `SELECT key, value FROM itemTable WHERE ${where} ORDER BY rowid LIMIT ${FUZZY_ROW_LIMIT}`,
+    )
+    .all(...patterns);
+
+  for (const row of rows) {
+    if (row && keyPattern.test(row.key) && row.value) {
+      return normalize(row.value);
+    }
+  }
+
+  return null;
+}
+
+/**
  * Extract tokens via better-sqlite3 (bundled dependency).
  * This is the preferred strategy — no external CLI required.
  */
-function extractTokensViaBetterSqlite(dbPath) {
+function extractTokensViaBetterSqlite(dbPath, platform) {
   // Dynamic require so the route stays importable even if native bindings fail
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require("better-sqlite3");
   const db = new Database(dbPath, { readonly: true, fileMustExist: true });
 
-  const query = (key) => {
-    const row = db.prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1").get(key);
-    return row?.value || null;
-  };
+  try {
+    const query = (key) => {
+      const row = db
+        .prepare("SELECT value FROM itemTable WHERE key=? LIMIT 1")
+        .get(key);
+      return row?.value || null;
+    };
 
-  const normalize = (value) => {
-    if (typeof value !== "string") return value;
-    try {
-      const parsed = JSON.parse(value);
-      return typeof parsed === "string" ? parsed : value;
-    } catch {
-      return value;
+    let accessToken = null;
+    for (const key of ACCESS_TOKEN_KEYS) {
+      const raw = query(key);
+      if (raw) { accessToken = normalize(raw); break; }
     }
-  };
 
-  let accessToken = null;
-  for (const key of ACCESS_TOKEN_KEYS) {
-    const raw = query(key);
-    if (raw) { accessToken = normalize(raw); break; }
+    let machineId = null;
+    for (const key of MACHINE_ID_KEYS) {
+      const raw = query(key);
+      if (raw) { machineId = normalize(raw); break; }
+    }
+
+    if (platform === "darwin") {
+      if (!accessToken) {
+        accessToken = firstFuzzyValue(
+          db,
+          ["%accessToken%", "%token%"],
+          ACCESS_TOKEN_KEY_PATTERN,
+        );
+      }
+      if (!machineId) {
+        machineId = firstFuzzyValue(
+          db,
+          ["%machineId%"],
+          MACHINE_ID_KEY_PATTERN,
+        );
+      }
+    }
+
+    return { accessToken, machineId };
+  } finally {
+    db.close();
   }
+}
 
-  let machineId = null;
-  for (const key of MACHINE_ID_KEYS) {
-    const raw = query(key);
-    if (raw) { machineId = normalize(raw); break; }
-  }
+/**
+ * Bounded, token-free database error code for diagnostics.
+ * Never returns the raw error message, which can contain database contents.
+ */
+function getSafeDatabaseErrorCode(error) {
+  const code = typeof error?.code === "string" ? error.code : "";
+  if (SAFE_SQLITE_CODE.test(code)) return code;
 
-  db.close();
-  return { accessToken, machineId };
+  const message = typeof error?.message === "string" ? error.message : "";
+  const match = message.match(/^(SQLITE_[A-Z0-9_]{1,40})/);
+  return match ? match[1] : null;
 }
 
 /**
@@ -177,6 +228,14 @@ async function extractTokensViaCLI(dbPath) {
 export async function GET() {
   try {
     const platform = process.platform;
+
+    if (!SUPPORTED_PLATFORMS.has(platform)) {
+      return NextResponse.json(
+        { found: false, error: "Unsupported platform" },
+        { status: 400 },
+      );
+    }
+
     const candidates = getCandidatePaths(platform);
 
     let dbPath = null;
@@ -219,8 +278,9 @@ export async function GET() {
     }
 
     // Strategy 1: better-sqlite3 (bundled — no external tools required)
+    let databaseErrorCode = null;
     try {
-      const tokens = extractTokensViaBetterSqlite(dbPath);
+      const tokens = extractTokensViaBetterSqlite(dbPath, platform);
       if (tokens.accessToken && tokens.machineId) {
         return NextResponse.json({
           found: true,
@@ -228,8 +288,10 @@ export async function GET() {
           machineId: tokens.machineId,
         });
       }
-    } catch {
-      // Native bindings unavailable — try CLI fallback
+    } catch (error) {
+      // Native bindings unavailable or the database could not be opened.
+      // Keep only a bounded SQLite code; never echo the raw error.
+      databaseErrorCode = getSafeDatabaseErrorCode(error);
     }
 
     // Strategy 2: sqlite3 CLI
@@ -246,8 +308,22 @@ export async function GET() {
       // sqlite3 CLI not available either
     }
 
-    // Strategy 3: ask user to paste manually
-    return NextResponse.json({ found: false, windowsManual: true, dbPath });
+    if (databaseErrorCode) {
+      return NextResponse.json({
+        found: false,
+        error: `Cursor database was found but could not open it (${databaseErrorCode}). Paste the access token and machine ID manually to continue.`,
+      });
+    }
+
+    if (platform === "win32") {
+      // Strategy 3: ask Windows users to paste manually
+      return NextResponse.json({ found: false, windowsManual: true, dbPath });
+    }
+
+    return NextResponse.json({
+      found: false,
+      error: "Please login to Cursor IDE first, then try auto-import again.",
+    });
   } catch (error) {
     console.log("Cursor auto-import error:", error);
     return NextResponse.json(
