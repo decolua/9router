@@ -480,14 +480,17 @@ export async function handleComboChat({
       // otherwise be delivered as a successful empty answer with no failover.
       // Peek the stream for real content before committing to this candidate.
       if (result.ok) {
+        const isLastModel = i === rotatedModels.length - 1;
         let peeked = null;
+        if (isLastModel) {
+          // Skip the peek on the last member (incl. one-member combos): it
+          // cannot change the result and only delays headers (part of #5187).
+          log.info("COMBO", `Model ${modelStr} succeeded (last candidate, skipping peek)`);
+          return result;
+        }
         try {
           peeked = await peekComboResponse(result, log);
         } catch (peekErr) {
-          // peekStreamForContent is written not to throw; if reconstruction/Response
-          // construction ever does, result.body is already locked by getReader() and can no
-          // longer be streamed. Returning `result` would hand the client a locked, unreadable
-          // body. Degrade to a clean, valid (empty) SSE stream instead.
           log.warn("COMBO", `empty-peek error on ${modelStr}, returning empty SSE: ${peekErr?.message || peekErr}`);
           return new Response("data: [DONE]\n\n", {
             status: 200,
