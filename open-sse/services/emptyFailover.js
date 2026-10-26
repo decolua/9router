@@ -55,6 +55,12 @@ const nonEmptyString = (s) => typeof s === "string" && s.length > 0;
 // Anthropic Messages event.
 function inspectClaudeEvent(obj) {
   let content = false, finishReason = null;
+  if (obj.type === "error") {
+    // An in-band error is a decision, not an empty stream: commit it so the
+    // client sees the upstream error instead of silently failing over to the
+    // next member (part of #5187).
+    return { content: true, finishReason: null };
+  }
   if (obj.type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
     const d = obj.delta || {};
     if (d.type === CLAUDE_DELTA.TEXT && nonEmptyString(d.text)) content = true;
