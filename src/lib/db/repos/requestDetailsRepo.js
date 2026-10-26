@@ -96,6 +96,7 @@ async function flushToDatabase() {
       const db = await getAdapter();
       const config = await getObservabilityConfig();
 
+      // Insert batch inside transaction (fast)
       db.transaction(() => {
         for (const item of items) {
           if (!item.id) item.id = generateDetailId(item.model);
@@ -123,20 +124,32 @@ async function flushToDatabase() {
             [record.id, record.timestamp, record.provider, record.model, record.connectionId, record.status, stringifyJson(record)]
           );
         }
+      });
 
-        const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
-        if (cnt && cnt.c > config.maxRecords) {
-          db.run(
-            `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
-            [cnt.c - config.maxRecords]
-          );
-        }
+      // Prune old records ASYNC (outside transaction) — non-blocking
+      // Uses setImmediate to yield event loop; safe to run after transaction commits.
+      setImmediate(() => {
+        pruneOldRecords(db, config.maxRecords).catch((e) => console.error("[requestDetailsRepo] async prune failed:", e));
       });
     }
   } catch (e) {
     console.error("[requestDetailsRepo] Batch write failed:", e);
   } finally {
     isFlushing = false;
+  }
+}
+
+async function pruneOldRecords(db, maxRecords) {
+  try {
+    const cnt = db.get(`SELECT COUNT(*) as c FROM requestDetails`);
+    if (cnt && cnt.c > maxRecords) {
+      db.run(
+        `DELETE FROM requestDetails WHERE id IN (SELECT id FROM requestDetails ORDER BY timestamp ASC LIMIT ?)`,
+        [cnt.c - maxRecords]
+      );
+    }
+  } catch (e) {
+    console.error("[requestDetailsRepo] pruneOldRecords error:", e);
   }
 }
 
