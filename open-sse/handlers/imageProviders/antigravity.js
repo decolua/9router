@@ -12,6 +12,11 @@ function resolveImageInput(input) {
     input = input.image_url?.url || input.url || input.data || input.b64_json;
   }
   if (!input || typeof input !== "string") return null;
+  if (/^https?:\/\//i.test(input)) {
+    throw new Error(
+      "Remote image URLs are not fetched automatically; pass the image as a data URI or base64 string instead"
+    );
+  }
   // data:image/png;base64,... format
   const dataUriMatch = input.match(/^data:(image\/[^;]+);base64,(.+)$/);
   if (dataUriMatch) {

@@ -6,6 +6,11 @@ const BASE_URL = PROVIDER_MEDIA["gemini"]?.imageConfig?.baseUrl;
 
 function resolveImageInput(input) {
   if (!input || typeof input !== "string") return null;
+  if (/^https?:\/\//i.test(input)) {
+    throw new Error(
+      "Remote image URLs are not fetched automatically; pass the image as a data URI or base64 string instead"
+    );
+  }
   const dataUriMatch = input.match(/^data:(image\/[^;]+);base64,(.+)$/);
   if (dataUriMatch) {
     return { inlineData: { mimeType: dataUriMatch[1], data: dataUriMatch[2] } };
