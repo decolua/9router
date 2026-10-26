@@ -1,6 +1,7 @@
 import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { isSocksProxyUrl, socksFetch } from "./socksTunnel.js";
 
 const originalFetch = globalThis.fetch;
 const proxyDispatchers = new Map();
@@ -251,11 +252,22 @@ async function getDispatcher(proxyUrl, insecure = false) {
   return proxyDispatchers.get(key);
 }
 
+function socksOptions(init, insecure) {
+  return {
+    servername: init?.servername,
+    rejectUnauthorized: !insecure,
+  };
+}
+
 async function fetchWithTlsFallback(url, options, proxyUrl) {
   try {
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
+    // undici's ProxyAgent only speaks http(s); a SOCKS URL needs its own path.
+    if (proxyUrl && isSocksProxyUrl(proxyUrl)) {
+      return await socksFetch(url, options, proxyUrl, socksOptions(options, false));
+    }
     const dispatcher = proxyUrl ? await getDispatcher(proxyUrl) : undefined;
     return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
@@ -266,6 +278,9 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
       }
       // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
       console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
+      if (proxyUrl && isSocksProxyUrl(proxyUrl)) {
+        return await socksFetch(url, options, proxyUrl, socksOptions(options, true));
+      }
       const insecureDispatcher = await getDispatcher(proxyUrl, true);
       return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
     }

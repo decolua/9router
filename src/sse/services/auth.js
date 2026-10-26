@@ -1,5 +1,5 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
-import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
+import { resolveConnectionProxyConfig, pickProxyPoolId, proxyConfigFromPool } from "@/lib/network/connectionProxy";
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
@@ -49,12 +49,34 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       const override = (settings.providerStrategies || {})[providerId] || {};
       const strategy = override.rotateStrategy || "none";
       let pickedId = override.proxyPoolId || null;
+      // The free OpenCode lane is refused per egress, so it needs the rest of
+      // the pool as standbys.
+      const isOpencode = providerId === "opencode";
+      let allPools = [];
       if (strategy !== "none") {
-        const allPools = await getProxyPools({ isActive: true });
+        allPools = await getProxyPools({ isActive: true });
         const poolIds = allPools.filter(p => p.proxyUrl).map(p => p.id);
         pickedId = pickProxyPoolId(poolIds, strategy, providerId);
+      } else if (isOpencode && pickedId && pickedId !== "__none__") {
+        allPools = await getProxyPools({ isActive: true });
       }
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
+
+      const connectionProxyAlternates = isOpencode
+        ? allPools
+          .filter(p => p.id !== resolvedProxy.proxyPoolId)
+          .map(proxyConfigFromPool)
+          .filter(Boolean)
+          .map(cfg => ({
+            proxyPoolId: cfg.proxyPoolId,
+            connectionProxyEnabled: cfg.connectionProxyEnabled,
+            connectionProxyUrl: cfg.connectionProxyUrl,
+            connectionNoProxy: cfg.connectionNoProxy,
+            vercelRelayUrl: cfg.vercelRelayUrl || "",
+            strictProxy: cfg.strictProxy === true,
+          }))
+        : [];
+
       return {
         id: "noauth",
         connectionName: "Public",
@@ -67,6 +89,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
           vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
           strictProxy: resolvedProxy.strictProxy === true,
+          ...(isOpencode ? { connectionProxyAlternates } : {}),
         },
       };
     }
@@ -93,9 +116,12 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       if (isAntigravity && model && antigravityQuotaCache) {
         const connQuotas = antigravityQuotaCache.get(c.id);
         const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
-        if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
+        // The effective deadline is the capped one; past it the reading must be
+        // re-confirmed upstream instead of blocking the pair indefinitely.
+        const until = quota?.effectiveResetAt || quota?.resetAt;
+        if (quota && quota.remainingPercentage <= 0 && until && new Date(until).getTime() > Date.now()) {
           const account = c.id?.slice(0, 8) || "unknown";
-          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
+          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${until}`);
           return false;
         }
       }
@@ -120,7 +146,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         connections.forEach((c) => {
           const connQuotas = antigravityQuotaCache.get(c.id);
           const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
-          const resetAt = quota?.resetAt;
+          // Report the capped deadline, not the advertised reset: the client
+          // should retry when the next upstream reading can change the answer.
+          const resetAt = quota?.effectiveResetAt || quota?.resetAt;
           if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
         });
       }
@@ -261,10 +289,12 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
     newBackoffLevel = 0;
   } else if (resetsAtMs && resetsAtMs > Date.now()) {
     shouldFallback = true;
-    // Antigravity quota API provides exact per-model resetAt. Do not truncate it.
-    cooldownMs = resolveProviderId(provider) === "antigravity"
-      ? resetsAtMs - Date.now()
-      : Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
+    // Cap every provider at MAX_RATE_LIMIT_COOLDOWN_MS, antigravity included.
+    // Its quota reading is the reset of the window it sampled, which can be days
+    // out — a persisted lock that long keeps a working account out of rotation
+    // with nothing able to prove it recovered. The quota cache re-reads upstream
+    // on its own interval; this lock only has to bridge that gap.
+    cooldownMs = Math.min(resetsAtMs - Date.now(), MAX_RATE_LIMIT_COOLDOWN_MS);
     newBackoffLevel = 0;
   } else {
     ({ shouldFallback, cooldownMs, newBackoffLevel } = checkFallbackError(status, errorText, backoffLevel, resolveProviderId(provider)));

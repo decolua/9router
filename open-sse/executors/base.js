@@ -84,6 +84,11 @@ export class BaseExecutor {
     return status === HTTP_STATUS.RATE_LIMITED && urlIndex + 1 < this.getFallbackCount();
   }
 
+  // Override in subclass for a provider-specific transport.
+  fetchUpstream(url, options, proxyOptions = null) {
+    return proxyAwareFetch(url, options, proxyOptions);
+  }
+
   // Override in subclass for provider-specific refresh
   async refreshCredentials(credentials, log, proxyOptions = null) {
     return null;
@@ -143,13 +148,11 @@ export class BaseExecutor {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
-        const response = await proxyAwareFetch(url, {
+        const response = await this.fetchUpstream(url, {
           method: "POST",
           headers,
           body: bodyStr,
           signal: mergedSignal,
-          // Protocol adapters that need their own transport (opencode's TLS
-          // fingerprint) override the direct path; proxies still take priority.
           ...(directFetch ? { directFetch } : {}),
         }, proxyOptions);
         clearTimeout(connectTimer);

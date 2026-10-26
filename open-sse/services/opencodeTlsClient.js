@@ -37,7 +37,9 @@ const OPENCODE_CIPHER_LIST = [
 
 const DEFAULT_TIMEOUT_MS = 120000;
 
-let sessionPromise = null;
+// A session fixes its proxy at creation, so one session per egress.
+const sessions = new Map();
+const MAX_SESSIONS = 16;
 
 export class OpencodeTlsUnavailableError extends Error {
   constructor(message) {
@@ -46,29 +48,64 @@ export class OpencodeTlsUnavailableError extends Error {
   }
 }
 
-async function loadSession() {
+// A failed on-demand install fails the same way on the next call, so remember
+// it for a while instead of paying for it every request.
+const UNAVAILABLE_RECHECK_MS = 60 * 60 * 1000;
+let unavailableUntil = 0;
+
+async function loadSession(proxyUrl = "") {
+  if (unavailableUntil > Date.now()) {
+    throw new OpencodeTlsUnavailableError("wreq-js install failed recently — retrying later");
+  }
+  const key = proxyUrl || "";
+  let sessionPromise = sessions.get(key);
   if (!sessionPromise) {
+    if (sessions.size >= MAX_SESSIONS) {
+      const oldest = sessions.keys().next().value;
+      const stale = sessions.get(oldest);
+      sessions.delete(oldest);
+      stale?.then((session) => session.close?.()).catch(() => {});
+    }
     sessionPromise = (async () => {
       const wreq = await loadRuntimeDep("wreq-js");
       if (typeof wreq.createSession !== "function") {
         throw new Error("wreq-js runtime is missing createSession");
       }
+      // An empty proxy means direct. The native layer handles http(s) CONNECT
+      // and SOCKS4/4a/5/5h itself.
       return wreq.createSession({
+        ...(key ? { proxy: key } : {}),
         emulation: { tlsOptions: { cipherList: OPENCODE_CIPHER_LIST } },
       });
     })().catch((error) => {
-      sessionPromise = null;
+      sessions.delete(key);
       throw error;
     });
+    sessions.set(key, sessionPromise);
   }
   return sessionPromise;
 }
 
-/** Drop the cached session so the next call builds a fresh one. */
+/**
+ * True when the impersonating client can be built, i.e. wreq-js is installed.
+ * Fail-open: any load problem reports "not available".
+ */
+export async function isOpencodeTlsAvailable(proxyUrl = "") {
+  try {
+    await loadSession(proxyUrl);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Drop every cached session so the next call builds a fresh one. */
 export function resetOpencodeTlsSession() {
-  const pending = sessionPromise;
-  sessionPromise = null;
-  pending?.then((session) => session.close?.()).catch(() => {});
+  const pending = [...sessions.values()];
+  sessions.clear();
+  for (const promise of pending) {
+    promise.then((session) => session.close?.()).catch(() => {});
+  }
 }
 
 /**
@@ -78,11 +115,13 @@ export function resetOpencodeTlsSession() {
  * Streaming is preserved: the response body is handed over as the live
  * ReadableStream, never buffered.
  */
-export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS, proxyUrl = "" } = {}) {
   let session;
   try {
-    session = await loadSession();
+    session = await loadSession(proxyUrl);
   } catch (error) {
+    if (error instanceof OpencodeTlsUnavailableError) throw error;
+    unavailableUntil = Date.now() + UNAVAILABLE_RECHECK_MS;
     throw new OpencodeTlsUnavailableError(
       `wreq-js unavailable (${error instanceof Error ? error.message : "unknown"}) — install the optional wreq-js dependency to reach the OpenCode free tier`
     );
