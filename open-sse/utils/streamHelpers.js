@@ -9,17 +9,19 @@ const sharedEncoder = new TextEncoder();
 export function parseSSELine(line, format = null) {
   if (!line) return null;
 
-  // NDJSON format (Ollama): raw JSON lines without "data:" prefix
-  if (format === FORMATS.OLLAMA) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith("{")) {
-      try {
-        return JSON.parse(trimmed);
-      } catch (error) {
-        return null;
-      }
+  const trimmed = line.trim();
+  const isRawJson = trimmed.startsWith("{");
+
+  // NDJSON format (Ollama): raw JSON lines without "data:" prefix. A caller that
+  // does not pass a format still gets a raw JSON line parsed — the SSE branch
+  // below would drop it, silently losing every chunk of an Ollama-shaped stream.
+  if (format === FORMATS.OLLAMA || (!format && isRawJson)) {
+    if (!isRawJson) return null;
+    try {
+      return JSON.parse(trimmed);
+    } catch (error) {
+      return null;
     }
-    return null;
   }
 
   // Standard SSE format: "data: {...}"

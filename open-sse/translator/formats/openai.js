@@ -53,8 +53,15 @@ export function filterToOpenAIFormat(body, opts = {}) {
       if (filteredContent.length === 0) {
         filteredContent.push({ type: OPENAI_BLOCK.TEXT, text: "" });
       }
-      
-      return { ...msg, content: filteredContent };
+
+      // A text-only array is not multimodal content: providers that branch on
+      // `typeof content === "string"` mis-parse it, so flatten it here. Skip when
+      // cache_control must survive — that marker lives on a block, not on a string.
+      const content = !keepCache && filteredContent.every((b) => b.type === OPENAI_BLOCK.TEXT)
+        ? filteredContent.map((b) => (typeof b.text === "string" ? b.text : "")).join("\n")
+        : filteredContent;
+
+      return { ...msg, content };
     }
     
     return msg;
