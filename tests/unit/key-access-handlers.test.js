@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/localDb", () => ({
+  getApiKeyByValue: async (key) => fx.keys[key] || null,
   getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback" }),
   getModelAliases: async () => ({}),
   getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
@@ -133,6 +134,27 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     for (const m of ["Main", "openai/model-a", "openai/model-b"]) expect((await chat(m, "sk-empty")).status).toBe(403);
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
+  it("requires both provider permissions and the upstream model allow-list", async () => {
+    fx.keys["sk-b"].permissions = { providerIds: ["openai"] };
+    expect((await chat("openai/model-b", "sk-b")).status).toBe(200);
+    vi.clearAllMocks();
+    // Provider permission alone cannot widen the exact upstream allow-list.
+    expect((await chat("openai/model-a", "sk-b")).status).toBe(403);
+    fx.keys["sk-b"].permissions = { providerIds: ["deepseek"] };
+    // Conversely, an upstream grant cannot override provider permissions.
+    expect((await chat("openai/model-b", "sk-b")).status).toBe(403);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
+  it("checks the forced route against the upstream model allow-list", async () => {
+    fx.keys["sk-b"].permissions = { forceModel: "openai/model-b" };
+    expect((await chat("other/ignored", "sk-b")).status).toBe(200);
+    vi.clearAllMocks();
+    fx.keys["sk-b"].permissions = { forceModel: "openai/model-a" };
+    expect((await chat("openai/model-b", "sk-b")).status).toBe(403);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
   it("restricted key on an allowed combo still fails over from an erroring member to the next", async () => {
     const r = await chat("Main", "sk-combo");
     expect(r.status).toBe(200);
@@ -230,5 +252,18 @@ describe("/v1/models routes filter by key", () => {
     const one = all.find((m) => m.owned_by !== "combo").id;
     expect((await kind("sk-open", one.split("/"))).status).toBe(200);
     expect((await kind("sk-empty", one.split("/"))).status).toBe(404);
+  });
+  it("exposes only the intersection of permissions and upstream access", async () => {
+    const all = await list("sk-open");
+    const one = all.find((id) => id.startsWith("openai/"));
+    expect(one).toBeTruthy();
+    fx.keys["sk-intersection"] = {
+      id: "intersection", name: "intersection", isActive: true,
+      permissions: { providerIds: ["openai"] },
+      access: { restricted: true, allow: ["Main", one] },
+    };
+    expect(await list("sk-intersection")).toEqual([one]);
+    fx.keys["sk-intersection"].permissions = { providerIds: ["deepseek"] };
+    expect(await list("sk-intersection")).toEqual([]);
   });
 });

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("../../src/app/api/v1/models/route.js", () => ({
   buildModelsList: mocks.buildModelsList,
+  filterModelsForApiKey: async (models) => models,
 }));
 
 const { GET } = await import("../../src/app/api/v1/models/[...model]/route.js");

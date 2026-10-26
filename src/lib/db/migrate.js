@@ -7,6 +7,8 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { keyAccessToColumns, validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -141,9 +143,16 @@ function importLegacyMain(adapter, data) {
   }, (p) => ({ id: p.id ?? null }));
 
   importWithAssertion(adapter, "apiKeys", data.apiKeys || [], (k) => {
+    let access = KEY_ACCESS_UNRESTRICTED;
+    if (k.access !== undefined) {
+      const checked = validateKeyAccessInput(k.access);
+      if (!checked.ok) throw new Error(`apiKeys ${k.id}: ${checked.error}`);
+      access = checked.value;
+    }
+    const cols = keyAccessToColumns(access);
     adapter.run(
-      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt) VALUES(?, ?, ?, ?, ?, ?)`,
-      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString()]
+      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, permissions, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, stringifyJson(k.permissions || {}), k.createdAt || new Date().toISOString(), cols.accessRestricted, cols.accessAllow]
     );
   }, (k) => ({ id: k.id ?? null, name: k.name ?? null }));
 
