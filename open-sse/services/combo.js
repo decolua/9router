@@ -323,7 +323,7 @@ export function isZeroContentResponse(data) {
 
   // Anthropic messages format
   if (Array.isArray(data.content)) {
-    const hasContent = data.content.some((c) => (c.type === "text" && c.text?.trim().length > 0) || c.type === "tool_use");
+    const hasContent = data.content.some((c) => (c.type === "text" && c.text?.trim().length > 0) || c.type === "tool_use" || (c.type === "thinking" && c.thinking?.trim().length > 0));
     const stopReason = data.stop_reason;
     if (!hasContent && (!stopReason || stopReason === "in_progress" || stopReason === "incomplete")) {
       return true;

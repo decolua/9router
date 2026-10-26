@@ -158,9 +158,14 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
 
   // Clamp: 0 / NaN / negative would otherwise disable the timeout and let a stalled-but-open
   // upstream hang the request forever in the hot path. There is no "disable" via this value.
-  const validDeadline = Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : EMPTY_PEEK_DEADLINE_MS;
+  // 0 disables the deadline entirely (commit on the first upstream byte).
+  const validDeadline = deadlineMs === 0
+    ? Infinity
+    : (Number.isFinite(deadlineMs) && deadlineMs > 0 ? deadlineMs : EMPTY_PEEK_DEADLINE_MS);
   let timer = null;
-  const deadline = new Promise((resolve) => { timer = setTimeout(() => resolve("__deadline__"), validDeadline); });
+  const deadline = validDeadline === Infinity
+    ? new Promise(() => {}) // never resolves
+    : new Promise((resolve) => { timer = setTimeout(() => resolve("__deadline__"), validDeadline); });
   const settle = (ret) => { if (timer) { clearTimeout(timer); timer = null; } return ret; };
 
   let pendingRead = null;
