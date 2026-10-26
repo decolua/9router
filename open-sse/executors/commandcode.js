@@ -1,14 +1,16 @@
-import { randomUUID } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+import { commandCodeThreadId, isCommandCodeThreadId } from "../utils/commandCodeSession.js";
 
 /**
  * CommandCodeExecutor — talks to https://api.commandcode.ai/alpha/generate
  *
  * Auth: Bearer <user_xxx> API key (stored as the connection's apiKey).
- * Adds the per-request `x-session-id` header expected by CommandCode upstream.
+ * Adds the per-conversation `x-session-id` header expected by CommandCode
+ * upstream — the same id the envelope carries as `threadId`, because the
+ * upstream prompt cache is keyed on it (see utils/commandCodeSession.js).
  *
  * Upstream returns AI SDK v5 NDJSON (one JSON event per line, no `data:` prefix).
  * We translate each event to an OpenAI chat.completion.chunk and emit it as SSE so
@@ -25,11 +27,18 @@ export class CommandCodeExecutor extends BaseExecutor {
     return body;
   }
 
-  buildHeaders(credentials, stream = true) {
+  buildHeaders(credentials, stream = true, _url = null, _model = null, body = null) {
+    // The header must carry the SAME identity as the envelope `threadId` (which
+    // arrives here as the transformed body) — one conversation, one id, so the
+    // upstream prefix cache can be reused across turns. Never randomize per
+    // request: that is what kept CommandCode cache reads at 0.
+    const sessionId =
+      body && isCommandCodeThreadId(body.threadId) ? body.threadId : commandCodeThreadId(body);
+
     const headers = {
       "Content-Type": "application/json",
       ...(this.config.headers || {}),
-      "x-session-id": randomUUID(),
+      "x-session-id": sessionId,
     };
 
     const token = credentials?.apiKey || credentials?.accessToken;

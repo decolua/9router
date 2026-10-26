@@ -61,7 +61,11 @@ const USAGE_EXTRACTORS = {
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
     const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
-    return { promptTokens: input, completionTokens: output, totalTokens: total };
+    // AI SDK v5 usage carries the cache read as `cachedInputTokens` (nested
+    // `inputTokenDetails.cacheReadTokens` in some builds). Without this the
+    // upstream cache hit is recorded as 0 and billed at the full input rate.
+    const cached = n(raw.cachedInputTokens ?? raw.inputTokenDetails?.cacheReadTokens);
+    return { promptTokens: input, completionTokens: output, totalTokens: total, cachedTokens: cached };
   },
 };
 
