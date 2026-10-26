@@ -1,5 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
+import { toOpenAIUsage } from "../../translator/concerns/usage.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
@@ -214,11 +215,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     };
 
     if (responseBody.usage) {
-      result.usage = {
-        prompt_tokens: responseBody.usage.input_tokens || 0,
-        completion_tokens: responseBody.usage.output_tokens || 0,
-        total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
-      };
+      // Same Claude -> OpenAI usage math as the streaming path: prompt includes
+      // cache read/write and the cache split rides in prompt_tokens_details.
+      result.usage = toOpenAIUsage(responseBody.usage, "claude");
     }
     return result;
   }

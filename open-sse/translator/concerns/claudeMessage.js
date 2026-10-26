@@ -37,6 +37,19 @@ export function openAICompletionToClaudeMessage(responseBody) {
   if (content.length === 0) content.push({ type: CLAUDE_BLOCK.TEXT, text: "" });
 
   const usage = responseBody.usage || {};
+  // OpenAI prompt_tokens includes cached and cache-write tokens; Claude reports
+  // them apart. Split them the same way the streaming translator does
+  // (openai-to-claude.js), otherwise a non-stream /v1/messages client sees no
+  // cache hit at all even when the upstream served one.
+  const prompt = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+  const cacheRead = usage.prompt_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? 0;
+  const cacheWrite = usage.prompt_tokens_details?.cache_creation_tokens ?? usage.cache_creation_input_tokens ?? 0;
+  const claudeUsage = {
+    input_tokens: usage.prompt_tokens !== undefined ? Math.max(0, prompt - cacheRead - cacheWrite) : prompt,
+    output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+  };
+  if (cacheRead > 0) claudeUsage.cache_read_input_tokens = cacheRead;
+  if (cacheWrite > 0) claudeUsage.cache_creation_input_tokens = cacheWrite;
   return {
     id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
     type: RESPONSES_ITEM.MESSAGE,
@@ -45,9 +58,6 @@ export function openAICompletionToClaudeMessage(responseBody) {
     content,
     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
     stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-    },
+    usage: claudeUsage,
   };
 }

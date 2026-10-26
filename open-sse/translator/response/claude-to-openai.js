@@ -45,6 +45,9 @@ export function claudeToOpenAIResponse(chunk, state) {
         };
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
         if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
+        // prompt_tokens above already includes cache; cached_tokens marks it as
+        // cache-inclusive so canonicalizeUsage() does not fold cache in again (#4673).
+        state.usage.cached_tokens = cacheReadTokens;
       }
       results.push(createChunk(state, { role: ROLE.ASSISTANT }));
       break;
@@ -139,6 +142,7 @@ export function claudeToOpenAIResponse(chunk, state) {
 
         if (cacheReadTokens > 0) state.usage.cache_read_input_tokens = cacheReadTokens;
         if (cacheCreationTokens > 0) state.usage.cache_creation_input_tokens = cacheCreationTokens;
+        state.usage.cached_tokens = cacheReadTokens; // cache-inclusive marker, see message_start
       }
 
       if (chunk.delta?.stop_reason) {
