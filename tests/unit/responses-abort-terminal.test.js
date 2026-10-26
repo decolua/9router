@@ -100,6 +100,11 @@ describe("buildStreamErrorBytes", () => {
     });
   });
 
+  it("uses a valid Anthropic error type for Claude clients (api_error, not server_error)", () => {
+    const out = textOf(buildStreamErrorBytes(504, "stream stall timeout", FORMATS.CLAUDE));
+    expect(jsonOf(out).error.type).toBe("api_error");
+  });
+
   it("emits event: error (no [DONE]) for Claude clients", () => {
     const out = textOf(buildStreamErrorBytes(504, "stream stall timeout", FORMATS.CLAUDE));
 

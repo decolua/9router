@@ -340,6 +340,14 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
         expect(tried).toEqual(["openai/m0", "openai/m1"]);
         expect(out).not.toContain("from-m");
       });
+      it("one-member combo skips the peek and returns the response as-is", async () => {
+        LOG.info.mockClear();
+        const { out, tried } = await combo([[ROLE, C("from-m0"), STOP, DONE]], fmt);
+        expect(tried).toEqual(["openai/m0"]);
+        expect(out).toContain("from-m0");
+        const msgs = LOG.info.mock.calls.map((c) => String(c[1] ?? c[0]));
+        expect(msgs.some((m) => m.includes("skipping peek"))).toBe(true);
+      });
       it("a tool call counts as content", async () => {
         const { tried } = await combo([[ROLE, TOOL, DONE], [ROLE, C("from-m1"), STOP, DONE]], fmt);
         expect(tried).toEqual(["openai/m0"]);
