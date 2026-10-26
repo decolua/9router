@@ -15,6 +15,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
+import { markWebhookFailure, withWebhookRoot } from "@/lib/webhooks/handlerRoot.js";
 
 /**
  * Handle web fetch (URL extraction) request for the SSE/Next.js server.
@@ -23,6 +24,12 @@ import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
  * @param {Request} request
  */
 export async function handleFetch(request) {
+  return withWebhookRoot(request, "fetch", (webhook) => (
+    handleFetchRequest(request, webhook)
+  ));
+}
+
+async function handleFetchRequest(request, webhook) {
   let body;
   try {
     body = await request.json();
@@ -97,6 +104,9 @@ export async function handleFetch(request) {
   // restricted key needs the provider id (or the combo) on its list.
   const keyAccessDenied = await enforceKeyAccessProvider(await getKeyAccessContext(request), providerInput, comboModels);
   if (keyAccessDenied) return keyAccessDenied;
+
+  webhook.admit();
+
   if (comboModels) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
@@ -178,14 +188,23 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("FETCH", `[${providerId}] ${errorMsg} (${credentials.retryAfterHuman})`);
-        return unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return markWebhookFailure(
+          unavailableResponse(status, `[${providerId}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman),
+          "all_unavailable",
+        );
       }
       if (excludeConnectionIds.size === 0) {
         log.error("AUTH", `No credentials for provider: ${providerId}`);
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${providerId}`);
+        return markWebhookFailure(
+          errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${providerId}`),
+          "no_credentials",
+        );
       }
       log.warn("FETCH", "No more accounts available", { provider: providerId });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return markWebhookFailure(
+        errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable"),
+        "all_unavailable",
+      );
     }
 
     log.info("AUTH", `\x1b[32mUsing ${providerId} account: ${credentials.connectionName}\x1b[0m`);

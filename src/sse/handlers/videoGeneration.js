@@ -15,6 +15,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 
 const NO_AUTH_VIDEO_PROVIDERS = new Set(["veoaifree-web"]);
 import * as log from "../utils/logger.js";
+import { markWebhookFailure, withWebhookRoot } from "@/lib/webhooks/handlerRoot.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
 // (bare model id, or multipart bodies we deliberately don't parse) land here.
@@ -110,6 +111,12 @@ function withConnectionHeader(response, connectionId) {
  * POST /v1/videos/{generations|edits|extensions} — async job creation proxy.
  */
 export async function handleVideoCreate(request, action) {
+  return withWebhookRoot(request, "video", (webhook) => (
+    handleVideoCreateRequest(request, action, webhook)
+  ));
+}
+
+async function handleVideoCreateRequest(request, action, webhook) {
   const authError = await requireValidApiKey(request);
   if (authError) return authError;
 
@@ -126,6 +133,8 @@ export async function handleVideoCreate(request, action) {
     await getKeyAccessContext(request), bodyInfo.parsed?.model ? String(bodyInfo.parsed.model) : "", provider, model
   );
   if (keyAccessDenied) return keyAccessDenied;
+
+  webhook.admit();
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.
@@ -164,12 +173,21 @@ export async function handleVideoCreate(request, action) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        return unavailableResponse(status, `[${provider}/${model || "video"}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return markWebhookFailure(
+          unavailableResponse(status, `[${provider}/${model || "video"}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman),
+          "all_unavailable",
+        );
       }
       if (excludeConnectionIds.size === 0) {
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        return markWebhookFailure(
+          errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`),
+          "no_credentials",
+        );
       }
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return markWebhookFailure(
+        errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable"),
+        "all_unavailable",
+      );
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
@@ -223,6 +241,12 @@ export async function handleVideoCreate(request, action) {
  * caller pins the creating account via `x-connection-id` (returned on create).
  */
 export async function handleVideoGet(request, requestId) {
+  return withWebhookRoot(request, "video", (webhook) => (
+    handleVideoGetRequest(request, requestId, webhook)
+  ));
+}
+
+async function handleVideoGetRequest(request, requestId, webhook) {
   const authError = await requireValidApiKey(request);
   if (authError) return authError;
 
@@ -231,9 +255,14 @@ export async function handleVideoGet(request, requestId) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
 
+  webhook.admit();
+
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {
-    return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+    return markWebhookFailure(
+      errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`),
+      credentials?.allRateLimited ? "all_unavailable" : "no_credentials",
+    );
   }
 
   const refreshedCredentials = await checkAndRefreshToken(provider, credentials);

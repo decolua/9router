@@ -1,3 +1,5 @@
+import { createStreamTerminalObserver } from "../utils/streamHandler.js";
+
 /**
  * Stream-to-JSON Converter
  * Converts Responses API SSE stream to single JSON response
@@ -21,6 +23,11 @@ function processSSEMessage(msg, state) {
   let parsed;
   try { parsed = JSON.parse(dataStr); }
   catch { return; }
+  if (eventType === "response.failed" || eventType === "response.incomplete" || eventType === "error" || parsed.error) {
+    state.terminalOutcome = "failed";
+  } else if ((eventType === "response.completed" || eventType === "response.done") && !state.terminalOutcome) {
+    state.terminalOutcome = "completed";
+  }
 
   if (eventType === "response.created") {
     state.responseId = parsed.response?.id || state.responseId;
@@ -46,8 +53,10 @@ const EMPTY_RESPONSE = { input_tokens: 0, output_tokens: 0, total_tokens: 0 };
  * @param {ReadableStream} stream - SSE stream from provider
  * @returns {Promise<Object>} Final JSON response in Responses API format
  */
-export async function convertResponsesStreamToJson(stream) {
+export async function convertResponsesStreamToJson(stream, onStreamTerminal) {
+  const observeTerminal = createStreamTerminalObserver(onStreamTerminal);
   if (!stream || typeof stream.getReader !== "function") {
+    observeTerminal({ outcome: "failed", partialResponse: false });
     return { id: `resp_${Date.now()}`, object: "response", created_at: Math.floor(Date.now() / 1000), status: "failed", output: [], usage: { ...EMPTY_RESPONSE } };
   }
 
@@ -81,6 +90,10 @@ export async function convertResponsesStreamToJson(stream) {
     if (buffer.trim()) {
       processSSEMessage(buffer, state);
     }
+    observeTerminal({ outcome: state.terminalOutcome || "failed", partialResponse: false });
+  } catch (error) {
+    observeTerminal({ outcome: "failed", partialResponse: false });
+    throw error;
   } finally {
     reader.releaseLock();
   }

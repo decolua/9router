@@ -16,6 +16,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { markWebhookFailure, withWebhookRoot } from "@/lib/webhooks/handlerRoot.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
@@ -45,6 +46,12 @@ function recordImageRequestUsage({ provider, model, connectionId, apiKey, endpoi
  * @param {Request} request
  */
 export async function handleImageGeneration(request) {
+  return withWebhookRoot(request, "image_generation", (webhook) => (
+    handleImageGenerationRequest(request, webhook)
+  ));
+}
+
+async function handleImageGenerationRequest(request, webhook) {
   let body;
   try {
     body = await request.json();
@@ -72,6 +79,8 @@ export async function handleImageGeneration(request) {
   // Per-key access control: requested target, before combo expansion.
   const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
   if (keyAccessDenied) return keyAccessDenied;
+
+  webhook.admit();
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
@@ -124,12 +133,21 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return markWebhookFailure(
+          unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman),
+          "all_unavailable",
+        );
       }
       if (excludeConnectionIds.size === 0) {
-        return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
+        return markWebhookFailure(
+          errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`),
+          "no_credentials",
+        );
       }
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      return markWebhookFailure(
+        errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable"),
+        "all_unavailable",
+      );
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
