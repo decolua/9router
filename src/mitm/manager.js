@@ -151,14 +151,17 @@ function killProcess(pid, force = false, sudoPassword = null) {
   }
 }
 
+let cachedMitmKey = null;
 function deriveKey() {
+  if (cachedMitmKey) return cachedMitmKey;
   try {
     const { machineIdSync } = require("node-machine-id");
     const raw = machineIdSync();
-    return crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
+    cachedMitmKey = crypto.createHash("sha256").update(raw + ENCRYPT_SALT).digest();
   } catch {
-    return crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
+    cachedMitmKey = crypto.createHash("sha256").update(ENCRYPT_SALT).digest();
   }
+  return cachedMitmKey;
 }
 
 function encryptPassword(plaintext) {
