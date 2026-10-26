@@ -56,6 +56,24 @@ import { resolveQoderContextTier, applyQoderContextTier } from "../shared/qoder/
  * system in messages) and flatten multipart content arrays — EXCEPT image
  * blocks, which are preserved (see normalizeContent).
  */
+/**
+ * Prepend a hoisted system prompt to the first user message, in place.
+ * Providers whose upstream ignores the top-level `system` field (Qoder CN)
+ * still read user content, so this is how the prompt reaches the model.
+ *
+ * @returns {boolean} true when something was folded
+ */
+export function foldSystemIntoFirstUser(messages, systemText) {
+  const text = typeof systemText === "string" ? systemText.trim() : "";
+  if (!text || !Array.isArray(messages)) return false;
+  const firstUser = messages.find((m) => m && m.role === "user");
+  if (!firstUser) return false;
+  firstUser.content = Array.isArray(firstUser.content)
+    ? [{ type: "text", text }, ...firstUser.content]
+    : `${text}\n\n${typeof firstUser.content === "string" ? firstUser.content : ""}`;
+  return true;
+}
+
 function normalizeMessages(messages) {
   if (!Array.isArray(messages) || messages.length === 0) {
     return { messages: [], systemText: "" };
@@ -291,6 +309,15 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
   }
 
   const { messages, systemText } = normalizeMessages(incoming);
+
+  // Qoder CN ignores payload.system (#4995): the same rule placed in a user
+  // message is honoured, so fold it into the first user turn instead. Region
+  // scoped — the intl endpoint keeps the original behaviour.
+  let effectiveSystem = systemText;
+  if (region === "cn" && systemText.trim()) {
+    const folded = foldSystemIntoFirstUser(messages, systemText);
+    if (folded) effectiveSystem = "";
+  }
   const tools = body.tools;
   const isReasoning = !!modelConfig.is_reasoning;
   const maxOutputTokens = Number(modelConfig.max_output_tokens) || 0;
@@ -313,7 +340,7 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
   // qodercli-style requests default to the smallest. Escalate when the prompt no longer fits.
   const tierChoice = resolveQoderContextTier(
     modelConfig,
-    { system: systemText, messages, tools },
+    { system: effectiveSystem, messages, tools },
     { preference: process.env[QODER_CONTEXT_TIER_ENV] },
   );
   if (tierChoice) {
@@ -343,7 +370,7 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
       chat_prompt: "",
       image_urls: null,
       aliyun_user_type: "",
-      system: systemText,
+      system: effectiveSystem,
       messages,
       tools: Array.isArray(tools) ? tools : [],
       parameters: { max_tokens: maxTokens },
