@@ -1,6 +1,21 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_CLAUDE_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { isValidClaudeSignature } from "../../utils/claudeSignature.js";
+
+function isGeminiCompatibleSignature(sig) {
+  if (typeof sig !== "string" || !sig) return false;
+  if (sig === DEFAULT_THINKING_CLAUDE_SIGNATURE || sig.startsWith("CLAUDE_")) return false;
+  if (isValidClaudeSignature(sig)) return false;
+  return true;
+}
+
+function isClaudeCompatibleSignature(sig) {
+  if (typeof sig !== "string" || !sig) return false;
+  if (sig === DEFAULT_THINKING_GEMINI_CLI_SIGNATURE || sig.startsWith("GEMINI_")) return false;
+  if (sig === DEFAULT_THINKING_AG_SIGNATURE || sig === DEFAULT_THINKING_CLAUDE_SIGNATURE || sig.startsWith("CLAUDE_")) return true;
+  return isValidClaudeSignature(sig);
+}
 import { openaiToClaudeRequestForAntigravity } from "./openai-to-claude.js";
 import { getGeminiThoughtSignatureSync } from "../../services/thoughtSignatureStore.js";
 function generateUUID() {
@@ -185,7 +200,8 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
             thought: true,
             text: msg.reasoning_content
           });
-          const sigToUse = msg.thought_signature || signature;
+          const validMsgSig = isGeminiCompatibleSignature(msg.thought_signature) ? msg.thought_signature : null;
+          const sigToUse = validMsgSig || signature;
           if (sigToUse) {
             parts.push({
               thoughtSignature: sigToUse,
@@ -209,8 +225,9 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
 
             const args = tryParseJSON(tc.function?.arguments || "{}");
             const cachedSig = tc.id ? getGeminiThoughtSignatureSync(tc.id, sessionId, model) : null;
+            const validMsgSig = isGeminiCompatibleSignature(msg.thought_signature) ? msg.thought_signature : null;
             // Always backfill fallback signature so Gemini 3+ / Thinking models never reject unsigned calls #2193
-            const callSig = cachedSig || msg.thought_signature || signature || DEFAULT_THINKING_AG_SIGNATURE;
+            const callSig = cachedSig || validMsgSig || signature || DEFAULT_THINKING_AG_SIGNATURE;
             firstFunctionCallSeen = true;
 
             // Emitted id is uniquified; the thought-signature lookup above stays
@@ -693,11 +710,11 @@ export function openaiToAntigravityRequest(model, body, stream, credentials = nu
     return wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials);
   }
 
-  const geminiCLI = openaiToGeminiCLIRequest(model, body, stream);
+  const geminiCLI = openaiToGeminiCLIRequest(model, body, stream, credentials);
   return wrapInCloudCodeEnvelope(model, geminiCLI, credentials, true);
 }
 
 // Register
 register(FORMATS.OPENAI, FORMATS.GEMINI, openaiToGeminiRequest, null);
-register(FORMATS.OPENAI, FORMATS.GEMINI_CLI, (model, body, stream, credentials) => wrapInCloudCodeEnvelope(model, openaiToGeminiCLIRequest(model, body, stream), credentials), null);
+register(FORMATS.OPENAI, FORMATS.GEMINI_CLI, (model, body, stream, credentials) => wrapInCloudCodeEnvelope(model, openaiToGeminiCLIRequest(model, body, stream, credentials), credentials), null);
 register(FORMATS.OPENAI, FORMATS.ANTIGRAVITY, openaiToAntigravityRequest, null);

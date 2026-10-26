@@ -3,14 +3,64 @@ import { fromOpenAIFinish } from "./finishReason.js";
 import { CLAUDE_BLOCK, MODEL_FALLBACK, RESPONSES_ITEM, ROLE } from "../schema/index.js";
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
-function parseToolArguments(value) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  try {
-    return JSON.parse(value);
-  } catch {
-    return {};
+export function findToolSchema(toolName, tools) {
+  if (!tools || !Array.isArray(tools)) return null;
+  const cleanName = typeof toolName === "string" && toolName.startsWith("proxy_") ? toolName.slice("proxy_".length) : toolName;
+  for (const t of tools) {
+    const name = t?.name || t?.function?.name;
+    if (name === toolName || name === cleanName) {
+      return t.input_schema || t.parameters || t?.function?.parameters || t?.function?.input_schema;
+    }
   }
+  return null;
+}
+
+export function stripUnexpectedReasonArg(toolName, args, tools) {
+  if (!args || typeof args !== "object" || !("reason" in args)) return;
+
+  if (Array.isArray(tools)) {
+    const schema = findToolSchema(toolName, tools);
+    if (schema) {
+      const props = schema.properties;
+      if (props && typeof props === "object" && !("reason" in props)) {
+        delete args.reason;
+      }
+      return;
+    }
+  }
+
+  const knownZeroArgTools = new Set([
+    "CronList",
+    "TaskList",
+    "preview_list",
+    "tabs_context",
+    "get_settings",
+    "list_terminal_tabs",
+    "capabilities",
+    "model_profile"
+  ]);
+  const cleanName = typeof toolName === "string" && toolName.startsWith("proxy_") ? toolName.slice("proxy_".length) : toolName;
+  if (knownZeroArgTools.has(cleanName) || knownZeroArgTools.has(toolName)) {
+    delete args.reason;
+  }
+}
+
+function parseToolArguments(value, toolName = "", options = {}) {
+  let args = {};
+  if (!value) args = {};
+  else if (typeof value === "object") args = { ...value };
+  else {
+    try {
+      args = JSON.parse(value);
+    } catch {
+      args = {};
+    }
+  }
+  if (toolName) {
+    const tools = options?.body?.tools || options?.tools;
+    stripUnexpectedReasonArg(toolName, args, tools);
+  }
+  return args;
 }
 
 export function openAICompletionToClaudeMessage(responseBody, options = {}) {
@@ -39,7 +89,7 @@ export function openAICompletionToClaudeMessage(responseBody, options = {}) {
       type: CLAUDE_BLOCK.TOOL_USE,
       id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
       name: fn.name || toolCall.name || "",
-      input: parseToolArguments(fn.arguments || toolCall.arguments),
+      input: parseToolArguments(fn.arguments || toolCall.arguments, fn.name || toolCall.name || "", options),
     });
   }
   if (content.length === 0) content.push({ type: CLAUDE_BLOCK.TEXT, text: "" });

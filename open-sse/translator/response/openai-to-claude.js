@@ -5,6 +5,7 @@ import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { projectGroundingToAnthropicBlocks } from "../formats/claude.js";
+import { stripUnexpectedReasonArg } from "../concerns/claudeMessage.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -13,13 +14,14 @@ import { projectGroundingToAnthropicBlocks } from "../formats/claude.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
-function sanitizeToolArgs(toolName, argsJson) {
+function sanitizeToolArgs(toolName, argsJson, state = null) {
   try {
     const args = JSON.parse(argsJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
+    stripUnexpectedReasonArg(name, args, state?.body?.tools);
     return JSON.stringify(args);
   } catch {
     return argsJson;
@@ -347,7 +349,7 @@ export function openaiToClaudeResponse(chunk, state) {
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+        const sanitized = sanitizeToolArgs(toolInfo.name, buffered, state);
         results.push({
           type: "content_block_delta",
           index: toolInfo.blockIndex,
