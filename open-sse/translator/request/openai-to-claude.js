@@ -232,10 +232,44 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
+    // Convert OpenAI content parts (text/image_url/...) inside a tool result
+    // into Claude content blocks, so multimodal tool results (e.g. screenshots)
+    // are not forwarded verbatim as OpenAI `image_url` parts (which Anthropic
+    // rejects with 400 "Input tag 'image_url' ... does not match").
+    let toolContent = msg.content;
+    if (Array.isArray(msg.content)) {
+      const converted = [];
+      for (const part of msg.content) {
+        if (!part || typeof part !== "object") continue;
+        if (part.type === OPENAI_BLOCK.TEXT && part.text) {
+          converted.push({ type: CLAUDE_BLOCK.TEXT, text: part.text });
+        } else if (part.type === OPENAI_BLOCK.IMAGE_URL) {
+          const url = part.image_url && part.image_url.url;
+          const parsed = url ? parseDataUri(url) : null;
+          if (parsed) {
+            converted.push({
+              type: CLAUDE_BLOCK.IMAGE,
+              source: { type: "base64", media_type: parsed.mimeType, data: parsed.base64 },
+            });
+          } else if (url && (url.startsWith("http://") || url.startsWith("https://"))) {
+            converted.push({
+              type: CLAUDE_BLOCK.IMAGE,
+              source: { type: "url", url },
+            });
+          }
+        } else if (part.type === OPENAI_BLOCK.IMAGE && part.source) {
+          converted.push({ type: CLAUDE_BLOCK.IMAGE, source: part.source });
+        } else {
+          // Pass through already-Claude-shaped blocks (text/image/etc.) unchanged.
+          converted.push(part);
+        }
+      }
+      toolContent = converted.length ? converted : msg.content;
+    }
     blocks.push({
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
-      content: convertToolResultContent(msg.content)
+      content: toolContent,
     });
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
