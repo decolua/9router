@@ -8,6 +8,9 @@ import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
+import { PROVIDER_QUOTA_WINDOWS, QUOTA_WINDOWS, normalizeQuotaReserve } from "@/shared/constants/quotaWindows";
+
+const RESERVE_GRID = { 1: "grid-cols-1", 2: "grid-cols-2", 3: "grid-cols-3" };
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -25,6 +28,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
+  const [quotaReserve, setQuotaReserve] = useState({});
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -38,6 +42,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
         priority: connection.priority || 1,
         apiKey: "",
       });
+      const savedReserve = normalizeQuotaReserve(connection.providerSpecificData?.quotaReserve);
+      setQuotaReserve(Object.fromEntries(Object.entries(savedReserve).map(([k, v]) => [k, String(v)])));
       // Load Azure-specific data if present
       if (connection.provider === "azure" && connection.providerSpecificData) {
         setAzureData({
@@ -79,6 +85,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
   const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+  const reserveWindows = QUOTA_WINDOWS.filter((w) => (PROVIDER_QUOTA_WINDOWS[connection?.provider] || []).includes(w.id));
 
   // Build providerSpecificData for region-aware providers
   const buildRegionSpecificData = () => {
@@ -198,6 +205,10 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (providerRegions && region) {
         updates.providerSpecificData = buildRegionSpecificData();
       }
+      // The server merges providerSpecificData, so only the reserve key is sent; {} clears it.
+      if (reserveWindows.length) {
+        updates.providerSpecificData = { ...(updates.providerSpecificData || {}), quotaReserve: normalizeQuotaReserve(quotaReserve) };
+      }
       
       await onSave(updates);
     } finally {
@@ -228,6 +239,30 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           value={formData.priority}
           onChange={(e) => setFormData({ ...formData, priority: Number.parseInt(e.target.value, 10) || 1 })}
         />
+
+        {reserveWindows.length > 0 && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold text-sm">Quota reserve</h3>
+            <p className="text-xs text-text-muted mt-1 mb-3">
+              Move on to the next account once this one is down to this share of a window. If every account is at its reserve, they are used anyway.
+            </p>
+            <div className={`grid gap-3 ${RESERVE_GRID[reserveWindows.length]}`}>
+              {reserveWindows.map((w) => (
+                <Input
+                  key={w.id}
+                  label={`${w.label} window`}
+                  type="number"
+                  min={0}
+                  max={99}
+                  value={quotaReserve[w.id] ?? ""}
+                  onChange={(e) => setQuotaReserve({ ...quotaReserve, [w.id]: e.target.value })}
+                  placeholder="Off"
+                  hint="% to keep"
+                />
+              ))}
+            </div>
+          </div>
+        )}
 
         {!isOAuth && (
           <>

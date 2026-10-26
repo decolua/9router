@@ -6,9 +6,12 @@ import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/c
 import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
+import { QUOTA_WINDOWS, normalizeQuotaReserve } from "@/shared/constants/quotaWindows";
 
 export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
+  const reserve = normalizeQuotaReserve(connection.providerSpecificData?.quotaReserve);
+  const reserveText = QUOTA_WINDOWS.filter((w) => reserve[w.id]).map((w) => `${w.label} ${reserve[w.id]}%`).join(" · ");
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
   const proxyBtnRef = useRef(null);
@@ -228,6 +231,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </span>
             )}
             <span className="text-xs text-text-muted">#{connection.priority}</span>
+            {reserveText && (
+              <Tooltip text="Quota kept in reserve: requests move to the next account at this share">
+                <Badge variant="default" size="sm" icon="savings">{reserveText}</Badge>
+              </Tooltip>
+            )}
             {connection.globalPriority && (
               <span className="text-xs text-text-muted">Auto: {connection.globalPriority}</span>
             )}
