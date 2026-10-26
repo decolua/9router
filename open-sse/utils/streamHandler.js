@@ -1,11 +1,16 @@
 // Stream handler with disconnect detection - shared for all providers
 import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
+import { envMs } from "../config/runtimeConfig.js";
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
   return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 }
+
+// Configurable disconnect abort delay (ms). Default 0 = immediate abort to prevent token/socket leaks.
+// Env: STREAM_DISCONNECT_ABORT_DELAY_MS
+const STREAM_DISCONNECT_ABORT_DELAY_MS = envMs("STREAM_DISCONNECT_ABORT_DELAY_MS", 0);
 
 /**
  * Create stream controller with abort and disconnect detection
@@ -45,10 +50,11 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
       // socket on every completed request. "📊 done" is the authoritative outcome line.
       dbg("CTRL", `${provider}/${model} | disconnect=${reason} | dur=${Date.now() - startTime}ms`);
 
-      // Delay abort to allow cleanup
+      // Abort with configurable delay (default 0ms) to prevent upstream token/socket leaks.
+      // Non-zero values allow cleanup but risk leaking resources on high-traffic disconnects.
       abortTimeout = setTimeout(() => {
         abortController.abort();
-      }, 500);
+      }, STREAM_DISCONNECT_ABORT_DELAY_MS);
 
       onDisconnect?.({ reason, duration: Date.now() - startTime });
     },
