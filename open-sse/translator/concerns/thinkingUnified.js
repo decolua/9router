@@ -351,7 +351,12 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
     }
     case "deepseek": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      body.thinking = { type: "enabled" };
+      // An explicit client budget survives translation: strict OpenAI-compatible
+      // upstreams reject {type:"enabled"} with "missing field `budget_tokens`",
+      // and that 400 takes the first combo entry — and the whole combo — down (#5108).
+      body.thinking = cfg.mode === "budget" && Number.isFinite(cfg.budget) && cfg.budget > 0
+        ? { type: "enabled", budget_tokens: cfg.budget }
+        : { type: "enabled" };
       // DeepSeek's own API collapses low/medium→high and xhigh/max→max, so the wire
       // stays on {high,max} for it. The declared levels win where they disagree:
       // zen's free deepseek-v4.1-flash publishes low|high|max and its upstream takes
