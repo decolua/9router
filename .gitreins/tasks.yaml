@@ -67,3 +67,12 @@ tasks:
   status: complete
   created_at: '2026-10-25T17:38:54.348715+00:00'
   completed_at: '2026-10-25T17:38:54.675506+00:00'
+- id: REL-9ROUTER-018
+  title: Record release readiness NO-GO evidence
+  criteria:
+  - Fresh report records exact HEAD CI, local gate, current GitReins or equivalent
+    gate, named blocker dispositions, deployment parity, tag safety, range census,
+    and honest GO/NO-GO without release side effects.
+  status: complete
+  created_at: '2026-10-26T10:25:59.134152+00:00'
+  completed_at: '2026-10-26T10:41:19.949235+00:00'

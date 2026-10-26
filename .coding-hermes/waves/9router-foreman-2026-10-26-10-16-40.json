@@ -1,0 +1,57 @@
+{
+  "tick_id": "9router-foreman-2026-10-26-10-16-40",
+  "project": "9router",
+  "block_id": "REL-9ROUTER-018",
+  "wave_size": 1,
+  "mode": "serial-fallback",
+  "selection": [
+    "REL-9ROUTER-018"
+  ],
+  "reason": "Recovery completed first: inherited DOC-29 was already complete and its manifest closed. block_drive found REL-9ROUTER-018 as the only DRIVE block; REL-9ROUTER-017 is a same-scope rolling duplicate. Host nproc=16, loadavg=10.86 gives slots=5, but the two rows touch the same release-readiness seam and cannot be independent; selected one row per block policy.",
+  "workers": [
+    {
+      "task_id": "REL-9ROUTER-018",
+      "worktree": "/home/kara/worktrees/9router-REL-9ROUTER-018",
+      "branch": "wt/REL-9ROUTER-018",
+      "model": "gpt-5.6-terra",
+      "provider": "openai-codex",
+      "brief": "/tmp/9router-rel-018-worker-20261026.md",
+      "base": "f307d9e763f96c3e6850fe99c8d072919637ac28",
+      "commits": [
+        "9d0e5e06f73bba6eaa52dd526c18dc0a4c87f693"
+      ],
+      "status": "merged",
+      "implementation_landed": "merged fast-forward into federation",
+      "guard": "PASS: merged-tree gitreins guard --full; tests were deferred because tests/node_modules is absent, so not full test evidence",
+      "gitreins": "task complete reached status complete at 2026-10-26T10:41:19.949235Z; verdict artifact not located in the immediate history scan and must not be overstated",
+      "remote_parity": "PASS: origin/federation..HEAD=0"
+    }
+  ],
+  "recovery": {
+    "finished_at": "2026-10-26T05:20:00-05:00",
+    "task_id": "DOC-29",
+    "implementation_landed": "already landed before this tick; board row complete with commit 1a0b21a63d5735b4fc03aa124ec926e3e8d72185",
+    "merge": "not needed; recorded branch/worktree absent",
+    "focused_gate": "PASS per prior recovery events: host-default grep and git diff --check",
+    "remote_parity": "PASS: origin/federation..HEAD=0"
+  },
+  "finished_at": "2026-10-26T05:45:00-05:00",
+  "result": {
+    "status": "BLOCKED",
+    "block_advanced": "REL-9ROUTER-018 evidence report landed; release remains NO-GO",
+    "landed": [
+      "9d0e5e06f73bba6eaa52dd526c18dc0a4c87f693"
+    ],
+    "open": [
+      "REL-9ROUTER-017 (rolling duplicate, same release seam)",
+      "BRANCH-9ROUTER-001",
+      "IDLE-9ROUTER-001",
+      "SUP-CRED-20261020-9R",
+      "FED-PR-005-R2",
+      "QA-9ROUTER-RELENG-2"
+    ],
+    "local_gate": "PASS: git diff --check; merged-tree gitreins guard --full PASS with tests deferred due missing tests/node_modules; docs report validation PASS",
+    "remote_ci": "blocked/stale: latest observed run 37797138767 is green on older 53144d1f; no exact-HEAD run for 9d0e5e06",
+    "release_decision": "NO-GO; no tag, release, Docker publish, or deployment mutation performed"
+  }
+}
