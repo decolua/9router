@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   applyFingerprintTools,
+  applyEnvFingerprint,
   concealFingerprintToolNames,
   appendMissingFingerprintTools,
   fingerprintToolKey,
@@ -13,6 +14,7 @@ const CC_TOOLS = ["Task", "Bash", "Glob", "Grep", "Read", "Edit", "Write", "WebF
 const flat = (names) => names.map((name) => ({ type: "function", name }));
 const chat = (names) => names.map((name) => ({ type: "function", function: { name } }));
 const namesOf = (tools) => tools.map((tool) => tool.name ?? tool.function?.name);
+const ENV_PROBE = "Here is some useful information about the environment you are running in:";
 
 describe("opencodeFingerprint — request side", () => {
   it("appends exact read/shell definitions and leaves case variants untouched", () => {
@@ -53,7 +55,7 @@ describe("opencodeFingerprint — request side", () => {
     const map = applyFingerprintTools(body, true);
     expect(namesOf(body.tools)).toEqual(OPENCODE_FINGERPRINT_TOOLS);
     expect(map.size).toBe(0);
-    expect(body.instructions).toBeUndefined();
+    expect(body.instructions).toContain("<env>");
   });
 
   it("drops duplicate declarations of one fingerprint name", () => {
@@ -194,5 +196,212 @@ describe("fingerprintToolKey", () => {
     expect(fingerprintToolKey("bash")).toBe("");
     expect(fingerprintToolKey("terminal")).toBe("");
     expect(fingerprintToolKey(null)).toBe("");
+  });
+});
+
+describe("opencodeFingerprint — env marker", () => {
+  const inBlock = (text) => {
+    const start = text.indexOf("<env>");
+    expect(start).toBeGreaterThanOrEqual(0);
+    const end = text.indexOf("</env>", start);
+    expect(end).toBeGreaterThan(start);
+    return text.slice(start, end);
+  };
+
+  it("appends the marker to Responses instructions", () => {
+    const body = { instructions: "Be terse.", tools: [] };
+    applyFingerprintTools(body, true);
+
+    expect(body.instructions.startsWith("Be terse.\n\n")).toBe(true);
+    expect(body.instructions).toContain("Here is some useful information about the environment you are running in:");
+    const block = inBlock(body.instructions);
+    expect(block).toMatch(/\n  Working directory: \S/);
+    expect(block).toMatch(/\n  Workspace root folder: \S/);
+    expect(block).toMatch(/\n  Platform: [a-z0-9_]+/);
+  });
+
+  it("creates Responses instructions that lack one", () => {
+    const body = { tools: [] };
+    applyFingerprintTools(body, true);
+    expect(body.instructions).toContain(ENV_PROBE);
+  });
+
+  it("appends the marker to an existing chat system message", () => {
+    const body = { messages: [{ role: "system", content: "Be brief." }, { role: "user", content: "hi" }] };
+    applyFingerprintTools(body, false);
+
+    expect(body.messages).toHaveLength(2);
+    expect(body.messages[0].content).toContain("Be brief.");
+    expect(body.messages[0].content).toContain(ENV_PROBE);
+    expect(body.messages[1]).toEqual({ role: "user", content: "hi" });
+  });
+
+  it("prepends a system message when chat has none", () => {
+    const body = { messages: [{ role: "user", content: "hi" }] };
+    applyFingerprintTools(body, false);
+
+    expect(body.messages[0]).toEqual({
+      role: "system",
+      content: expect.stringContaining(ENV_PROBE),
+    });
+    expect(body.messages[1]).toEqual({ role: "user", content: "hi" });
+  });
+
+  it("appends a text block to a chat system message with array content", () => {
+    const body = {
+      messages: [{ role: "system", content: [{ type: "text", text: "Rules here." }] }, { role: "user", content: "hi" }],
+    };
+    applyFingerprintTools(body, false);
+
+    // The placeholder note goes into its own prepended system message and the
+    // marker lands in the first system message; the caller's array content is
+    // preserved untouched.
+    expect(body.messages).toHaveLength(3);
+    expect(body.messages[0].content).toContain(ENV_PROBE);
+    expect(body.messages[1].content[0].text).toBe("Rules here.");
+    expect(body.messages[2]).toEqual({ role: "user", content: "hi" });
+  });
+
+  it("appends the marker to a claude-shaped body.system string", () => {
+    const body = { system: "Be brief.", messages: [{ role: "user", content: "hi" }] };
+    applyFingerprintTools(body, false);
+
+    expect(body.system).toContain("Be brief.");
+    expect(body.system).toContain(ENV_PROBE);
+    expect(body.messages).toHaveLength(1);
+  });
+
+  it("creates a claude top-level system instead of a role:system message", () => {
+    const body = {
+      max_tokens: 1024,
+      messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+    };
+    applyFingerprintTools(body, false, { claude: true });
+
+    // /messages rejects messages with role:"system"; the marker (and the
+    // placeholder note) must live on the optional top-level `system`.
+    const systemText = typeof body.system === "string"
+      ? body.system
+      : body.system.map((block) => block?.text ?? "").join("\n");
+    expect(systemText).toContain(ENV_PROBE);
+    expect(systemText).toMatch(/Do not call the `read` or `shell` tools;/);
+    if (Array.isArray(body.messages)) {
+      expect(body.messages.some((msg) => msg?.role === "system")).toBe(false);
+    }
+    expect(body.messages.filter((msg) => msg?.role === "user")).toHaveLength(1);
+  });
+
+  it("appends the marker to the last text block of a claude-shaped system array", () => {
+    const body = {
+      system: [{ type: "text", text: "sys one" }, { type: "text", text: "sys two" }],
+      messages: [{ role: "user", content: "hi" }],
+    };
+    applyFingerprintTools(body, false);
+
+    expect(body.system[0].text).toBe("sys one");
+    expect(body.system[1].text).toContain("sys two");
+    expect(body.system[1].text).toContain(ENV_PROBE);
+  });
+
+  it("stays byte-for-byte for a body that already carries its own <env> block", () => {
+    const instructions = "You are OpenCode.\n\nHere is some useful information about the environment you are running in:\n<env>\n  Working directory: /home/dev/proj\n  Workspace root folder: /home/dev\n</env>";
+    const chatContent = "Be brief.\n\n<env>\n  Working directory: /home/dev/proj\n</env>";
+    // A genuine client also ships its own tools, so nothing gets appended.
+    const passthroughTools = (flat) => {
+      const seed = { tools: [] };
+      applyFingerprintTools(seed, flat);
+      return JSON.parse(JSON.stringify(seed.tools));
+    };
+
+    const flatBody = { instructions, tools: passthroughTools(true) };
+    applyFingerprintTools(flatBody, true);
+    expect(flatBody.instructions).toBe(instructions);
+
+    const chatBody = {
+      messages: [{ role: "system", content: chatContent }, { role: "user", content: "hi" }],
+      tools: passthroughTools(false),
+    };
+    applyFingerprintTools(chatBody, false);
+    expect(chatBody.messages[0].content).toBe(chatContent);
+  });
+
+  it("applyEnvFingerprint is idempotent across calls", () => {
+    const body = { messages: [{ role: "system", content: "Once.", }, { role: "user", content: "hi" }] };
+    expect(applyEnvFingerprint(body, false)).toBe(true);
+    const once = body.messages[0].content;
+    expect(applyEnvFingerprint(body, false)).toBe(false);
+    expect(body.messages[0].content).toBe(once);
+  });
+
+  it("never throws on malformed bodies", () => {
+    expect(() => applyEnvFingerprint(null, false)).not.toThrow();
+    expect(() => applyEnvFingerprint(undefined, true)).not.toThrow();
+    expect(() => applyEnvFingerprint("nope", false)).not.toThrow();
+    expect(applyEnvFingerprint(null, false)).toBe(false);
+  });
+});
+
+describe("opencodeFingerprint — platform shell wordings", () => {
+  const SHELL_TAIL = "Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.";
+
+  const canonicalShellParameters = () => {
+    const body = { tools: [] };
+    applyFingerprintTools(body, true);
+    return body.tools.find((tool) => tool.name === "shell").parameters;
+  };
+
+  const callerShellWith = (wording, parameters) => ({
+    type: "function",
+    function: {
+      name: "shell",
+      description: `Execute a shell command and return its output. Commands run on ${wording}. ${SHELL_TAIL}`,
+      parameters: parameters ?? canonicalShellParameters(),
+    },
+  });
+
+  const officialShellTool = (flat) => {
+    const seed = { tools: [] };
+    applyFingerprintTools(seed, flat);
+    return JSON.parse(JSON.stringify(
+      flat ? seed.tools.find((tool) => tool.name === "shell") : seed.tools.find((tool) => tool.function?.name === "shell")
+    ));
+  };
+
+  it("keeps a caller shell whose definition matches the current form", () => {
+    const body = { tools: [officialShellTool(false)] };
+    const map = applyFingerprintTools(body, false);
+
+    // The regenerated fingerprint wording matches whatever platform this host
+    // claims, so nothing is renamed and nothing needs restoring.
+    expect(map.size).toBe(0);
+    expect(namesOf(body.tools).sort().join()).toBe(OPENCODE_FINGERPRINT_TOOLS.slice().sort().join());
+  });
+
+  it("keeps a Windows-worded caller shell in place, without a shell note", () => {
+    const body = { messages: [{ role: "system", content: "Be brief." }], tools: [callerShellWith("Windows using powershell"), { type: "function", function: { name: "Edit" } }] };
+    const map = applyFingerprintTools(body, false);
+
+    expect(map.size).toBe(0);
+    expect(namesOf(body.tools)).toEqual(["shell", "Edit", "read"]);
+    const note = body.messages[0].content;
+    expect(note).toMatch(/^Be brief\.\n\nDo not call the `read` tool;/);
+    expect(note).not.toContain("shell_client");
+  });
+
+  it("keeps a macOS-worded caller shell in place", () => {
+    const body = { tools: [callerShellWith("macOS using zsh")] };
+    const map = applyFingerprintTools(body, false);
+    expect(map.size).toBe(0);
+    expect(namesOf(body.tools)).toEqual(["shell", "read"]);
+  });
+
+  it("renames a caller shell whose parameters differ, whatever the wording", () => {
+    const alien = callerShellWith("Windows using powershell", { type: "object", properties: { cmd: { type: "string" } }, required: ["cmd"] });
+    const body = { tools: [alien] };
+    const map = applyFingerprintTools(body, false);
+
+    expect(namesOf(body.tools)).toEqual(["shell_client", "read", "shell"]);
+    expect(map.get("shell_client")).toBe("shell");
+    expect(body.tools[0].function.description).toMatch(/Commands run on Windows using powershell\./);
   });
 });

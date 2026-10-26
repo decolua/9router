@@ -102,3 +102,6 @@ graphify-out/*
 start-dev-silent.cjs
 debug.log
 .scratch/
+# local runtime state
+.local/
+

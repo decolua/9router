@@ -97,6 +97,23 @@ export class BaseExecutor {
     return { status: response.status, message: bodyText || `HTTP ${response.status}` };
   }
 
+  /**
+   * Send the transformed request upstream.
+   *
+   * Subclasses override this when the upstream gate cares about the transport
+   * itself rather than the payload (the OpenCode free lane fingerprints the
+   * TLS/HTTP stack, so it has to leave through the Bun sidecar). Default is the
+   * proxy-aware in-process fetch.
+   *
+   * @param {string} url
+   * @param {RequestInit} options
+   * @param {object|null} proxyOptions
+   * @returns {Promise<Response>}
+   */
+  async fetchUpstream(url, options, proxyOptions = null) {
+    return proxyAwareFetch(url, options, proxyOptions);
+  }
+
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null }) {
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
@@ -143,7 +160,7 @@ export class BaseExecutor {
         const bodyStr = JSON.stringify(transformedBody);
         const fetchT0 = Date.now();
         dbg("FETCH", `${this.provider.toUpperCase()} → ${url} | body=${bodyStr.length}B | connectTimeout=${timeoutMs}ms`);
-        const response = await proxyAwareFetch(url, {
+        const response = await this.fetchUpstream(url, {
           method: "POST",
           headers,
           body: bodyStr,

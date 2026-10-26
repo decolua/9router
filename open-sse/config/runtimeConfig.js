@@ -31,6 +31,18 @@ export const MEMORY_CONFIG = {
   proxyDispatchersMaxSize: 20,
 };
 
+// Bun sidecar that replays free-lane requests through Bun's fetch.
+// The opencode free-tier gate fingerprints the TLS/HTTP stack: an identical
+// request that streams 200 under Bun is answered 429 FreeUsageLimitError from
+// Node/undici, so the free lane has to leave the process to survive.
+export const OPENCODE_TRANSPORT_CONFIG = {
+  mode: (process.env.OPENCODE_TRANSPORT || "auto").toLowerCase(),
+  bunBin: process.env.OPENCODE_BUN_BIN || "bun",
+  readyTimeoutMs: envMs("OPENCODE_TRANSPORT_READY_TIMEOUT_MS", 15000),
+  forwardTimeoutMs: envMs("OPENCODE_TRANSPORT_FORWARD_TIMEOUT_MS", 300000),
+  failureBackoffMs: envMs("OPENCODE_TRANSPORT_FAILURE_BACKOFF_MS", 60000),
+};
+
 // Parse a positive integer env override, falling back to a default.
 function envMs(name, def) {
   const raw = process.env[name];
