@@ -1,8 +1,10 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
+import { PROVIDERS } from "../config/providers.js";
+import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, canonicalizeUsage, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, buildStreamErrorBytes } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds, buildStreamErrorBytes } from "./streamHelpers.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure, formatOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 import { OPENCODE_GUARD_LIMITS, restoreToolNames } from "./opencodeFingerprint.js";
@@ -93,6 +95,12 @@ export function createSSEStream(options = {}) {
     }
     return null;
   };
+
+  // Tool-call ids already sent to the client, keyed by the tool-call index.
+  // A late fragment that opens a NEW index without an id must not reach the
+  // client as-is: strict OpenAI-compatible SDKs abort the turn on a
+  // tool_call without a string id (#4992).
+  const seenToolCallIds = new Map();
 
   // Per-stream decoder with stream:true to correctly handle multi-byte chars split across chunks
   const decoder = new TextDecoder("utf-8", { fatal: false });
@@ -355,6 +363,12 @@ export function createSSEStream(options = {}) {
   };
   let completionFlushTimer = null;
 
+  // Lane quirk: upstream streams thinking under the OpenRouter aliases
+  // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
+  // Free's MiMo route does. Lift it on every passthrough delta so OpenAI-shaped
+  // clients, the thinking accumulation below and usage accounting see the text.
+  const liftAliases = mode === STREAM_MODE.PASSTHROUGH && !!PROVIDERS[provider]?.quirks?.reasoningAliasFields;
+
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
@@ -458,54 +472,33 @@ export function createSSEStream(options = {}) {
         }
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
-          if (!toolResponseGuard) {
-            const isDataLine = trimmed.startsWith("data:");
-            const parsed = parseSSELine(trimmed, targetFormat);
-            if (!parsed) {
-              // A data: line that failed JSON parsing carries upstream garbage
-              // (HTML, rate-limit text) — drop it silently, matching committed
-              // passthrough behavior. Non-data lines (event:, comments) still forward.
-              if (isDataLine && trimmed.slice(5).trim() !== "[DONE]") return;
-              queueGuardedOutput(controller, line.startsWith("data:") && !line.startsWith("data: ")
-                ? `data: ${line.slice(5)}\n`
-                : `${line}\n`);
-              return;
+          const releasedEvents = toolResponseGuard
+            ? consumeToolResponse(controller, event)
+            : [{ ...event, record: null }];
+          if (releasedEvents === null) return;
+
+          for (const released of releasedEvents) {
+            const releasedLine = released.line;
+            const original = released.payload ?? parseSSELine(released.trimmed, targetFormat);
+            if (!original) {
+              if (released.record) {
+                queueGuardedOutput(controller, replayRawRecord(released));
+                continue;
+              }
+              if (released.trimmed.startsWith("data:") && released.trimmed.slice(5).trim() !== "[DONE]") continue;
+              if (released.trimmed === "data: [DONE]") markDoneSent();
+              queueGuardedOutput(controller, releasedLine.startsWith("data:") && !releasedLine.startsWith("data: ")
+                ? `data: ${releasedLine.slice(5)}\n`
+                : `${releasedLine}\n`);
+              continue;
             }
-            captureSemanticFailure(currentOpenAIResponsesEvent, parsed);
-            markResponsesTerminal(currentOpenAIResponsesEvent, parsed);
-            if (parsed.done && targetFormat !== FORMATS.OLLAMA) {
-              const isResponsesPassthrough = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
-              if (isResponsesPassthrough && openAIResponsesStreamSeen && !openAIResponsesTerminalSeen) emitIncompleteResponsesFailure(controller);
-              markDoneSent();
-              queueGuardedOutput(controller, line.startsWith("data:") && !line.startsWith("data: ")
-                ? `data: ${line.slice(5)}\n`
-                : `${line}\n`);
-              return;
-            }
-            const text = parsed.delta?.text || parsed.choices?.[0]?.delta?.content;
-            const thinking = parsed.delta?.thinking || parsed.choices?.[0]?.delta?.reasoning_content;
-            if (typeof text === "string") {
-              totalContentLength += text.length;
-              accumulatedContent += text;
-            }
-            if (typeof thinking === "string") {
-              totalContentLength += thinking.length;
-              accumulatedThinking += thinking;
-            }
-            for (const part of parsed.candidates?.[0]?.content?.parts || []) {
-              if (typeof part?.text !== "string") continue;
-              totalContentLength += part.text.length;
-              if (part.thought === true) accumulatedThinking += part.text;
-              else accumulatedContent += part.text;
-            }
-            const extracted = extractUsage(parsed);
-            if (extracted) usage = mergeUsage(usage, extracted);
-            if (trimmed === "data: [DONE]") {
-              const isResponsesPassthrough = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
-              if (isResponsesPassthrough && openAIResponsesStreamSeen && !openAIResponsesTerminalSeen) emitIncompleteResponsesFailure(controller);
-              markDoneSent();
-            }
+
+            let parsed = restoreToolNames(original, toolNameMap?.renameMap || toolNameMap);
+            const rawChanged = parsed !== original;
+            captureSemanticFailure(released.eventName || currentOpenAIResponsesEvent, parsed);
+            markResponsesTerminal(released.eventName || currentOpenAIResponsesEvent, parsed);
             const idFixed = fixInvalidId(parsed);
+            const toolCallIdFixed = ensureStreamToolCallIds(parsed, seenToolCallIds);
             let fieldsInjected = false;
             if (parsed.choices !== undefined) {
               if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
@@ -521,13 +514,32 @@ export function createSSEStream(options = {}) {
                   delete choice.content_filter_results;
                   fieldsInjected = true;
                 }
+                if (liftAliases && choice.delta) {
+                  const lifted = liftReasoningAliases(choice.delta);
+                  if (lifted !== choice.delta) {
+                    choice.delta = lifted;
+                    fieldsInjected = true;
+                  }
+                }
                 if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length === 0) {
                   delete choice.delta.tool_calls;
                   fieldsInjected = true;
                 }
               }
             }
-            if (!hasValuableContent(parsed, FORMATS.OPENAI)) return;
+            const text = parsed.delta?.text || parsed.choices?.[0]?.delta?.content;
+            const thinking = parsed.delta?.thinking || parsed.choices?.[0]?.delta?.reasoning_content;
+            if (typeof text === "string") { totalContentLength += text.length; accumulatedContent += text; }
+            if (typeof thinking === "string") { totalContentLength += thinking.length; accumulatedThinking += thinking; }
+            const extracted = extractUsage(parsed);
+            if (extracted) usage = mergeUsage(usage, extracted);
+            const isResponsesPassthrough = targetFormat === FORMATS.OPENAI_RESPONSES && sourceFormat === FORMATS.OPENAI_RESPONSES;
+            if (isResponsesPassthrough) {
+              const eventName = released.eventName || currentOpenAIResponsesEvent || parsed.type;
+              queueGuardedOutput(controller, formatSSE({ event: eventName, data: parsed }, sourceFormat));
+              continue;
+            }
+            if (!hasValuableContent(parsed, FORMATS.OPENAI)) continue;
             const isFinishChunk = parsed.choices?.[0]?.finish_reason;
             if (isFinishChunk && !hasValidUsage(parsed.usage)) {
               const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
@@ -536,61 +548,13 @@ export function createSSEStream(options = {}) {
             } else if (isFinishChunk && usage) {
               parsed.usage = filterUsageForFormat(addBufferToUsage(usage), FORMATS.OPENAI);
             }
-            queueGuardedOutput(controller, idFixed || fieldsInjected || isFinishChunk
-              ? `data: ${JSON.stringify(parsed)}\n`
-              : (line.startsWith("data:") && !line.startsWith("data: ") ? `data: ${line.slice(5)}\n` : `${line}\n`));
-            return;
-          }
-          const releasedEvents = consumeToolResponse(controller, event);
-          if (releasedEvents === null) return;
-          for (const released of releasedEvents) {
-            const releasedLine = released.line;
-            let output;
-            let injectedUsage = false;
-            const { parsed, rawChanged } = processReleasedRecord(controller, released);
-            if (parsed) {
-              const idFixed = fixInvalidId(parsed);
-              let fieldsInjected = false;
-              if (parsed.choices !== undefined) {
-                if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
-                if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
-              }
-              if (parsed.prompt_filter_results !== undefined) {
-                delete parsed.prompt_filter_results;
-                fieldsInjected = true;
-              }
-              if (parsed.choices) {
-                for (const choice of parsed.choices) {
-                  if (choice.content_filter_results !== undefined) {
-                    delete choice.content_filter_results;
-                    fieldsInjected = true;
-                  }
-                  if (choice.delta?.tool_calls && Array.isArray(choice.delta.tool_calls) && choice.delta.tool_calls.length === 0) {
-                    delete choice.delta.tool_calls;
-                    fieldsInjected = true;
-                  }
-                }
-              }
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) continue;
-              const isFinishChunk = parsed.choices?.[0]?.finish_reason;
-              if (isFinishChunk && !hasValidUsage(parsed.usage)) {
-                const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
-                parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
-                usage = estimated;
-                injectedUsage = true;
-              } else if (isFinishChunk && usage) {
-                parsed.usage = filterUsageForFormat(addBufferToUsage(usage), FORMATS.OPENAI);
-                injectedUsage = true;
-              } else if (idFixed || fieldsInjected) {
-                injectedUsage = true;
-              }
-              if (injectedUsage || rawChanged) output = serializeRecord(released, parsed);
-            }
-            if (!output) {
-              output = released.record ? replayRawRecord(released) : (releasedLine.startsWith("data:") && !releasedLine.startsWith("data: ")
+            if (parsed.done && targetFormat !== FORMATS.OLLAMA) markDoneSent();
+            const changed = rawChanged || idFixed || toolCallIdFixed || fieldsInjected || isFinishChunk;
+            const output = changed
+              ? (released.record ? serializeRecord(released, parsed) : `data: ${JSON.stringify(parsed)}\n`)
+              : (released.record || (releasedLine.startsWith("data:") && !releasedLine.startsWith("data: ")
                 ? `data: ${releasedLine.slice(5)}\n`
-                : `${releasedLine}\n`);
-            }
+                : `${releasedLine}\n`));
             queueGuardedOutput(controller, output);
           }
           return;

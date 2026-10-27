@@ -180,10 +180,7 @@ describe("OpenCode guarded live SSE streams", () => {
     ].join("\r\n");
     const { output, failures } = await transform(`${record}data: [DONE]\r\n\r\n`, metadata);
 
-    expect(output).toContain(": keep-alive comment\r\n");
-    expect(output).toContain(`data: ${serialized.slice(0, half)}\r\n`);
-    expect(output).toContain(`data: ${serialized.slice(half)}\r\n`);
-    expect(output).toContain('"name":"custom_project_tool"');
+    expect(output).toBe(`${record}data: [DONE]\r\n\r\n`);
     expect(failures).toEqual([]);
   });
 

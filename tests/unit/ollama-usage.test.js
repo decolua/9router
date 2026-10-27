@@ -219,6 +219,7 @@ describe("getUsageForProvider(ollama)", () => {
     expect(usage.message).toMatch(/api key/i);
     expect(proxyAwareFetch).not.toHaveBeenCalled();
   });
+
 });
 
 describe("parseQuotaData(ollama)", () => {
@@ -256,25 +257,19 @@ describe("parseQuotaData(ollama)", () => {
     });
   });
 
-  it("forwards a Monthly row the same way (2026-09 upstream shape)", () => {
+  it("forwards credit and purchased balance rows for dashboard display", () => {
     const rows = parseQuotaData("ollama", {
       plan: "Free",
       quotas: {
-        Monthly: {
-          used: 24,
-          total: 100,
-          remainingPercentage: 76,
-          resetAt: null,
-        },
+        Monthly: { used: 24, total: 100, remainingPercentage: 76, resetAt: null },
+        "Allowance ($)": { used: 1.25, total: 2.5, remainingPercentage: 50, resetAt: "2026-11-01T00:00:00Z", unlimited: false, unit: "USD" },
+        "Purchased Credits": { used: 0, total: 10, remainingPercentage: 100, isCreditBalance: true, currency: "$" },
       },
     });
 
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
-      name: "Monthly",
-      used: 24,
-      total: 100,
-      remainingPercentage: 76,
-    });
+    expect(rows).toHaveLength(3);
+    expect(rows[0]).toMatchObject({ name: "Monthly", used: 24, total: 100, remainingPercentage: 76 });
+    expect(rows[1]).toMatchObject({ name: "Allowance ($)", used: 1.25, total: 2.5, remainingPercentage: 50, unit: "USD" });
+    expect(rows[2]).toMatchObject({ name: "Purchased Credits", used: 0, total: 10, remainingPercentage: 100, isCreditBalance: true, currency: "$" });
   });
 });

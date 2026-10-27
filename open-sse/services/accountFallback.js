@@ -41,7 +41,13 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
- * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number }}
+ * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number, requestScoped?: boolean }}
+ *
+ * `shouldFallback` answers "is the CREDENTIAL at fault?" (account rotation).
+ * `requestScoped` answers "is the REQUEST itself what this member rejected?"
+ * (combo rotation). They are different questions: a context overflow or a
+ * validation 400 means the credential is healthy but this member cannot serve
+ * this request, so combo rotation must still try the next member.
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0, provider = null) {
   const lowerError = errorText
@@ -80,7 +86,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   // Account-scoped statuses keep their rules above (401/402/403/404/429), and the
   // text rules still win for rate-limit / quota / capacity wording.
   if (status >= 400 && status < 500 && status !== 401 && status !== 402 && status !== 403 && status !== 429) {
-    return { shouldFallback: false, cooldownMs: 0 };
+    return { shouldFallback: false, cooldownMs: 0, requestScoped: true };
   }
 
   // Default: transient cooldown for any unmatched error

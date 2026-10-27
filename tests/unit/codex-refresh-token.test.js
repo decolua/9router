@@ -147,8 +147,6 @@ describe("Codex Refresh Token", () => {
     it("should return provider-specific lead time for OAuth providers", async () => {
       const { getRefreshLeadMs } = await import("../../open-sse/services/tokenRefresh.js");
 
-      // codex is intentionally short: a multi-day lead rotated the refresh token on every call,
-      // and reuse of a rotated token revokes the whole OpenAI session.
       expect(getRefreshLeadMs("codex")).toBe(10 * 60 * 1000);            // 10 minutes
       expect(getRefreshLeadMs("claude")).toBe(4 * 60 * 60 * 1000);       // 4 hours
       expect(getRefreshLeadMs("iflow")).toBe(24 * 60 * 60 * 1000);       // 24 hours

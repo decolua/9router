@@ -15,7 +15,7 @@
  * re-trigger upstream complaints about missing reasoning on the next
  * turn.
  */
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import assert from "node:assert/strict";
 
 import KimchiExecutor, { stripReasoningContent } from "../../open-sse/executors/kimchi.js";

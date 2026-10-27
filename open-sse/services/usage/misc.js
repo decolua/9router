@@ -45,43 +45,46 @@ const OLLAMA_LEGACY_WINDOWS = {
  * POST https://ollama.com/api/me — plan label (fail-open).
  * Auth: Authorization: Bearer <apiKey>
  */
+const OLLAMA_ME_URL = "https://ollama.com/api/me";
+const OLLAMA_BALANCE_URL = "https://ollama.com/api/balance";
+
 export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions = null) {
   if (!apiKey) {
     return { message: "Ollama Cloud API key not available." };
   }
 
   try {
-    const response = await proxyAwareFetch("https://ollama.com/api/balance", {
+    const response = await proxyAwareFetch(OLLAMA_BALANCE_URL, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
     }, proxyOptions);
 
-    if (response.status === 401 || response.status === 403) {
+    if (response?.status === 401 || response?.status === 403) {
       return { message: "Ollama Cloud API key invalid or expired." };
     }
 
-    if (!response.ok) {
+    if (response && !response.ok) {
       return { message: `Ollama Cloud usage API error (${response.status}).` };
     }
 
     let data;
     try {
-      data = await response.json();
+      data = response ? await response.json() : null;
     } catch {
       return { message: "Ollama Cloud usage response was not JSON." };
     }
 
     // Best-effort plan label from /api/me
-    const me = await proxyAwareFetch("https://ollama.com/api/me", {
+    const me = await proxyAwareFetch(OLLAMA_ME_URL, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
         "Content-Length": "0",
       },
-    }, proxyOptions).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+    }, proxyOptions).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
 
     const planRaw = typeof me?.Plan === "string" ? me.Plan : "";
     const plan = planRaw
