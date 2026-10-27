@@ -20,7 +20,8 @@ ARG NPM_REGISTRY
 RUN apk add --no-cache python3 make g++ linux-headers
 
 COPY package.json ./
-RUN npm install \
+RUN --mount=type=cache,target=/root/.npm \
+    npm install \
       --registry="${NPM_REGISTRY}" \
       --fetch-retries=5 \
       --fetch-retry-factor=2 \
@@ -66,11 +67,6 @@ COPY --from=builder /app/node_modules/next ./node_modules/next
 COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
 # node-machine-id is createRequire-loaded at runtime; tracing omits it.
 COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machine-id
-# wreq-js is only reached through a dynamic import() that tracing cannot follow, so
-# the OpenCode free lane would fall back to Node's TLS fingerprint and be refused.
-# The native binding is resolved by relative path from the package, so it ships too.
-COPY --from=builder /app/node_modules/wreq-js ./node_modules/wreq-js
-COPY --from=builder /app/node_modules/@wreq-js ./node_modules/@wreq-js
 
 RUN mkdir -p /app/data && chown -R node:node /app && \
   mkdir -p /app/data-home && chown node:node /app/data-home && \
