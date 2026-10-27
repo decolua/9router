@@ -267,6 +267,77 @@ describe("buildEmbeddingsUrl", () => {
     expect(url).toBe("https://myhost.ai/v1/embeddings");
   });
 
+  it("ollama-local default host → http://localhost:11434/v1/embeddings", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: {},
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://localhost:11434/v1/embeddings",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ model: "nomic-embed-text", input: "Hello world", encoding_format: "float" }),
+      })
+    );
+  });
+
+  it("ollama-local custom host → respects baseUrl from providerSpecificData", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "bge-m3" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
+  it("ollama-local custom host with trailing slashes → strips trailing slashes cleanly", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "bge-m3" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434///" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
+  it("ollama-local custom host with /v1 or /v1/embeddings suffix → normalizes without duplication", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "qwen3-embedding" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434/v1" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "qwen3-embedding" },
+      credentials: { providerSpecificData: { baseUrl: "http://192.168.1.100:11434/v1/embeddings" } },
+    }));
+
+    expect(fetch).toHaveBeenCalledWith(
+      "http://192.168.1.100:11434/v1/embeddings",
+      expect.anything()
+    );
+  });
+
   it("openai-compatible-* without baseUrl → falls back to api.openai.com", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
 
@@ -382,6 +453,30 @@ describe("buildEmbeddingsHeaders", () => {
     expect(init.headers["Authorization"]).toBe("Bearer local-key");
     expect(init.headers["HTTP-Referer"]).toBeUndefined();
     expect(init.headers["X-Title"]).toBeUndefined();
+  });
+
+  it("ollama-local → Content-Type only by default, Authorization when apiKey is present", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: {},
+    }));
+
+    const [, initDefault] = vi.mocked(fetch).mock.calls[0];
+    expect(initDefault.headers["Content-Type"]).toBe("application/json");
+    expect(initDefault.headers["Authorization"]).toBeUndefined();
+
+    vi.mocked(fetch).mockResolvedValueOnce(makeProviderResponse(VALID_EMBEDDING_RESPONSE));
+
+    await handleEmbeddingsCore(makeOptions({
+      modelInfo: { provider: "ollama-local", model: "nomic-embed-text" },
+      credentials: { apiKey: "ollama-proxy-secret" },
+    }));
+
+    const [, initAuth] = vi.mocked(fetch).mock.calls[1];
+    expect(initAuth.headers["Content-Type"]).toBe("application/json");
+    expect(initAuth.headers["Authorization"]).toBe("Bearer ollama-proxy-secret");
   });
 });
 
