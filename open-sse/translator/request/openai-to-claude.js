@@ -31,6 +31,29 @@ export function openaiToClaudeRequest(model, body, stream) {
     result.temperature = body.temperature;
   }
 
+  // Generation controls
+  if (body.stop) {
+    result.stop_sequences = Array.isArray(body.stop) ? body.stop : [body.stop];
+  } else if (body.stop_sequences) {
+    result.stop_sequences = body.stop_sequences;
+  }
+
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  if (body.top_k !== undefined) {
+    result.top_k = body.top_k;
+  }
+
+  if (body.thinking) {
+    result.thinking = body.thinking;
+  }
+
+  if (body.thinking_budget !== undefined) {
+    result.thinking_budget = body.thinking_budget;
+  }
+
   // Messages
   result.messages = [];
   const systemParts = [];
@@ -232,11 +255,18 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
   const blocks = [];
 
   if (msg.role === ROLE.TOOL) {
-    blocks.push({
+    const block = {
       type: CLAUDE_BLOCK.TOOL_RESULT,
       tool_use_id: msg.tool_call_id,
       content: convertToolResultContent(msg.content)
-    });
+    };
+    if (msg.is_error) {
+      block.is_error = true;
+    }
+    if (msg.cache_control) {
+      block.cache_control = msg.cache_control;
+    }
+    blocks.push(block);
   } else if (msg.role === ROLE.USER) {
     if (typeof msg.content === "string") {
       if (msg.content) {
@@ -283,6 +313,14 @@ function getContentBlocksFromMessage(msg, toolNameMap = new Map()) {
       }
     }
   } else if (msg.role === ROLE.ASSISTANT) {
+    if (msg.reasoning_content) {
+      blocks.push({
+        type: CLAUDE_BLOCK.THINKING,
+        thinking: msg.reasoning_content,
+        ...(msg.thought_signature && { signature: msg.thought_signature })
+      });
+    }
+
     if (Array.isArray(msg.content)) {
       for (const part of msg.content) {
         if (part.type === OPENAI_BLOCK.TEXT && part.text) {
@@ -334,7 +372,8 @@ function convertOpenAIToolChoice(choice) {
   // OpenAI string forms: "auto" | "none" | "required"
   if (typeof choice === "string") {
     if (choice === "required") return { type: "any" };
-    return { type: "auto" }; // "auto", "none", or anything unexpected
+    if (choice === "none") return { type: "none" };
+    return { type: "auto" };
   }
 
   if (typeof choice === "object") {

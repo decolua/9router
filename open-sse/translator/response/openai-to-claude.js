@@ -3,6 +3,9 @@ import { FORMATS } from "../formats.js";
 import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
+import { projectGroundingToAnthropicBlocks } from "../formats/claude.js";
+import { stripUnexpectedReasonArg } from "../concerns/claudeMessage.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -11,13 +14,14 @@ import { extractReasoningText } from "../concerns/reasoning.js";
 const CLAUDE_OAUTH_TOOL_PREFIX = "proxy_";
 
 // Sanitize tool call arguments to fix bad params from non-Anthropic models
-function sanitizeToolArgs(toolName, argsJson) {
+function sanitizeToolArgs(toolName, argsJson, state = null) {
   try {
     const args = JSON.parse(argsJson);
     const name = toolName.startsWith(CLAUDE_OAUTH_TOOL_PREFIX)
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
+    stripUnexpectedReasonArg(name, args, state?.body?.tools);
     return JSON.stringify(args);
   } catch {
     return argsJson;
@@ -49,6 +53,18 @@ function isValidPdfPagesArg(filePath, pages) {
 // Helper: stop thinking block if started
 function stopThinkingBlock(state, results) {
   if (!state.thinkingBlockStarted) return;
+  const sig = state.thinkingSignature || DEFAULT_THINKING_CLAUDE_SIGNATURE;
+  if (sig && !state.signatureDeltaSent) {
+    state.signatureDeltaSent = true;
+    results.push({
+      type: "content_block_delta",
+      index: state.thinkingBlockIndex,
+      delta: {
+        type: "signature_delta",
+        signature: sig
+      }
+    });
+  }
   results.push({
     type: "content_block_stop",
     index: state.thinkingBlockIndex
@@ -67,9 +83,95 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Helper: project and emit Google search grounding metadata as Anthropic server tools
+function emitGroundingBlocks(groundingMeta, state, results) {
+  if (!groundingMeta || state.groundingBlocksEmitted) return;
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  const { serverToolBlock, toolResultBlock, usageExtra } = projectGroundingToAnthropicBlocks(groundingMeta);
+  if (serverToolBlock) {
+    const srvToolIndex = state.nextBlockIndex++;
+    results.push({
+      type: "content_block_start",
+      index: srvToolIndex,
+      content_block: serverToolBlock
+    });
+    results.push({
+      type: "content_block_stop",
+      index: srvToolIndex
+    });
+
+    const srvResultIndex = state.nextBlockIndex++;
+    results.push({
+      type: "content_block_start",
+      index: srvResultIndex,
+      content_block: toolResultBlock
+    });
+    results.push({
+      type: "content_block_stop",
+      index: srvResultIndex
+    });
+
+    state.groundingBlocksEmitted = true;
+    state.webSearchUsage = usageExtra;
+  }
+}
+
+// Helper: flush any buffered text deltas once grounding blocks have been emitted (or at finish)
+function flushBufferedText(state, results) {
+  if (!state.bufferedTextDeltas || state.bufferedTextDeltas.length === 0) return;
+  const buffered = state.bufferedTextDeltas;
+  state.bufferedTextDeltas = [];
+
+  if (!state.textBlockStarted) {
+    state.textBlockIndex = state.nextBlockIndex++;
+    state.textBlockStarted = true;
+    state.textBlockClosed = false;
+    results.push({
+      type: "content_block_start",
+      index: state.textBlockIndex,
+      content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+    });
+  }
+
+  for (const piece of buffered) {
+    results.push({
+      type: "content_block_delta",
+      index: state.textBlockIndex,
+      delta: { type: "text_delta", text: piece }
+    });
+  }
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk) {
+    // Flush call: if message_start was sent but finish_reason was never reached
+    // (e.g. upstream stream truncated or closed prematurely), synthesize a clean
+    // terminal sequence (flushBufferedText, stopThinkingBlock, stopTextBlock, message_delta, message_stop)
+    // so the client receives a properly-framed message instead of stream_truncated.
+    if (state?.messageStartSent && !state?.finishReason) {
+      const results = [];
+      flushBufferedText(state, results);
+      stopThinkingBlock(state, results);
+      stopTextBlock(state, results);
+      state.finishReason = "stop";
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: {
+          stop_reason: "end_turn",
+          stop_sequence: null
+        },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+      return results;
+    }
+    return null;
+  }
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -112,14 +214,18 @@ export function openaiToClaudeResponse(chunk, state) {
   // First chunk - ALWAYS send message_start first
   if (!state.messageStartSent) {
     state.messageStartSent = true;
-    state.messageId = chunk.id?.replace("chatcmpl-", "") || `msg_${Date.now()}`;
-    if (!state.messageId || state.messageId === "chat" || state.messageId.length < 8) {
-      state.messageId = chunk.extend_fields?.requestId ||
+    let rawId = String(chunk.id || "").replace(/^chatcmpl-/, "");
+    if (!rawId || rawId === "chat" || rawId.length < 8) {
+      rawId = chunk.extend_fields?.requestId ||
         chunk.extend_fields?.traceId ||
-        `msg_${Date.now()}`;
+        `${Date.now()}`;
     }
+    state.messageId = rawId.startsWith("msg_") ? rawId : `msg_${rawId}`;
     state.model = chunk.model || MODEL_FALLBACK;
     state.nextBlockIndex = 0;
+    state.groundingBlocksEmitted = false;
+    state.bufferedTextDeltas = [];
+    state.hasWebSearch = state.body?.tools?.some(t => t?.type?.startsWith("web_search") || t?.name === "web_search");
     results.push({
       type: "message_start",
       message: {
@@ -135,62 +241,96 @@ export function openaiToClaudeResponse(chunk, state) {
     });
   }
 
+  // Check for grounding metadata (Google Search / Antigravity web search results)
+  const groundingMeta = chunk.groundingMetadata || chunk.grounding_metadata || delta?.groundingMetadata || delta?.grounding_metadata;
+  if (groundingMeta && !state.groundingBlocksEmitted) {
+    emitGroundingBlocks(groundingMeta, state, results);
+  }
+
   // Handle reasoning (thinking) across vendor shapes - GLM/DeepSeek/Qwen/MiniMax/etc.
   const reasoningContent = extractReasoningText(delta);
   if (reasoningContent) {
     stopTextBlock(state, results);
 
+    const sig = delta?.thought_signature || delta?.thoughtSignature || delta?.signature || chunk.thought_signature || chunk.thoughtSignature;
+    if (sig) {
+      state.thinkingSignature = sig;
+    }
+
+    const isOmitted = state.thinkingDisplay === "omitted";
+
     if (!state.thinkingBlockStarted) {
       state.thinkingBlockIndex = state.nextBlockIndex++;
       state.thinkingBlockStarted = true;
+      state.signatureDeltaSent = false;
       results.push({
         type: "content_block_start",
         index: state.thinkingBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "" }
+        content_block: { type: CLAUDE_BLOCK.THINKING, thinking: "", signature: "" }
       });
+      if (isOmitted) {
+        results.push({
+          type: "content_block_delta",
+          index: state.thinkingBlockIndex,
+          delta: { type: "thinking_delta", thinking: "" }
+        });
+      }
     }
 
-    results.push({
-      type: "content_block_delta",
-      index: state.thinkingBlockIndex,
-      delta: { type: "thinking_delta", thinking: reasoningContent }
-    });
+    if (!isOmitted) {
+      results.push({
+        type: "content_block_delta",
+        index: state.thinkingBlockIndex,
+        delta: { type: "thinking_delta", thinking: reasoningContent }
+      });
+    }
   }
 
   // Handle regular content
   if (delta?.content) {
     stopThinkingBlock(state, results);
 
-    if (!state.textBlockStarted) {
-      state.textBlockIndex = state.nextBlockIndex++;
-      state.textBlockStarted = true;
-      state.textBlockClosed = false;
+    // If this turn requested web search and grounding metadata has not arrived yet,
+    // buffer text deltas so server tool blocks can be emitted before the grounded text.
+    if (state.hasWebSearch && !state.groundingBlocksEmitted && !choice.finish_reason) {
+      if (!state.bufferedTextDeltas) state.bufferedTextDeltas = [];
+      state.bufferedTextDeltas.push(delta.content);
+    } else {
+      flushBufferedText(state, results);
+
+      if (!state.textBlockStarted) {
+        state.textBlockIndex = state.nextBlockIndex++;
+        state.textBlockStarted = true;
+        state.textBlockClosed = false;
+        results.push({
+          type: "content_block_start",
+          index: state.textBlockIndex,
+          content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        });
+      }
+
       results.push({
-        type: "content_block_start",
+        type: "content_block_delta",
         index: state.textBlockIndex,
-        content_block: { type: CLAUDE_BLOCK.TEXT, text: "" }
+        delta: { type: "text_delta", text: delta.content }
       });
     }
-
-    results.push({
-      type: "content_block_delta",
-      index: state.textBlockIndex,
-      delta: { type: "text_delta", text: delta.content }
-    });
   }
 
   // Tool calls
   if (delta?.tool_calls) {
+    flushBufferedText(state, results);
     for (const tc of delta.tool_calls) {
       const idx = tc.index ?? 0;
 
       // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
-      if (tc.id && !state.toolCalls.has(idx)) {
+      if ((tc.id || tc.function?.name) && !state.toolCalls.has(idx)) {
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);
 
+        const toolId = tc.id || `toolu_${Date.now()}_${idx}`;
         const toolBlockIndex = state.nextBlockIndex++;
-        state.toolCalls.set(idx, { id: tc.id, name: tc.function?.name || "", blockIndex: toolBlockIndex });
+        state.toolCalls.set(idx, { id: toolId, name: tc.function?.name || "", blockIndex: toolBlockIndex });
 
         // Strip prefix from tool name for response
         let toolName = tc.function?.name || "";
@@ -203,7 +343,7 @@ export function openaiToClaudeResponse(chunk, state) {
           index: toolBlockIndex,
           content_block: {
             type: CLAUDE_BLOCK.TOOL_USE,
-            id: tc.id,
+            id: toolId,
             name: toolName,
             input: {}
           }
@@ -223,6 +363,10 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
+    if (groundingMeta && !state.groundingBlocksEmitted) {
+      emitGroundingBlocks(groundingMeta, state, results);
+    }
+    flushBufferedText(state, results);
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
@@ -230,7 +374,7 @@ export function openaiToClaudeResponse(chunk, state) {
       // Emit buffered + sanitized args as single delta before stop
       const buffered = state.toolArgBuffers?.get(idx);
       if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+        const sanitized = sanitizeToolArgs(toolInfo.name, buffered, state);
         results.push({
           type: "content_block_delta",
           index: toolInfo.blockIndex,
@@ -246,11 +390,22 @@ export function openaiToClaudeResponse(chunk, state) {
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
 
+    let stopReason = convertFinishReason(choice.finish_reason);
+    if (state.toolCalls.size > 0) {
+      stopReason = "tool_use";
+    }
+
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+    if (state.webSearchUsage?.server_tool_use) {
+      finalUsage.server_tool_use = state.webSearchUsage.server_tool_use;
+    }
     results.push({
       type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
+      delta: {
+        stop_reason: stopReason,
+        stop_sequence: null
+      },
       usage: finalUsage
     });
     results.push({ type: "message_stop" });

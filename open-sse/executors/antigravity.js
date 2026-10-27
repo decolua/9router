@@ -5,9 +5,11 @@ import { OAUTH_ENDPOINTS, ANTIGRAVITY_HEADERS, AG_DEFAULT_TOOLS, AG_TOOL_SUFFIX,
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
-import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
-import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { cleanJSONSchemaForAntigravity, normalizeGeminiContents, DEFAULT_SAFETY_SETTINGS } from "../translator/formats/gemini.js";
+import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_CLAUDE_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../config/defaultThinkingSignature.js";
 import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { isGemini4Model } from "../providers/capabilities.js";
+import { isValidClaudeSignature } from "../utils/claudeSignature.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -246,23 +248,19 @@ export class AntigravityExecutor extends BaseExecutor {
       });
       // Gemini 3+ rejects functionCall parts without thoughtSignature. Clients (Claude Code, IDE)
       // don't persist thoughtSignature in their history, so backfill from cache or default signature.
-      // In parallel function calls, only the first call needs a signature; siblings stay unsigned.
-      let firstFunctionCallSeen = false;
+      const targetModel = body.model || model || "";
+      const isClaudeTarget = targetModel.toLowerCase().includes("claude");
       const modifiedParts = parts?.map(p => {
         if (!p.functionCall) return p;
         const callId = p.functionCall.id;
-        const cachedSig = callId ? getGeminiThoughtSignatureSync(callId, sessionId, body.model || model) : null;
-        const callSig = p.thoughtSignature || cachedSig || (!firstFunctionCallSeen ? DEFAULT_THINKING_AG_SIGNATURE : undefined);
-        firstFunctionCallSeen = true;
-        if (callSig) {
-          return { ...p, thoughtSignature: callSig };
-        }
-        if (p.thoughtSignature && !cachedSig) {
-          // Unsigned sibling call
-          const { thoughtSignature: _, ...rest } = p;
-          return rest;
-        }
-        return p;
+        const cachedSig = callId ? getGeminiThoughtSignatureSync(callId, sessionId, targetModel) : null;
+        const existingSig = p.thoughtSignature;
+        const isSyntheticDefault = existingSig === DEFAULT_THINKING_GEMINI_CLI_SIGNATURE || existingSig === DEFAULT_THINKING_AG_SIGNATURE || existingSig === DEFAULT_THINKING_CLAUDE_SIGNATURE;
+        const isCompatibleExisting = existingSig && (isClaudeTarget ? (existingSig !== DEFAULT_THINKING_GEMINI_CLI_SIGNATURE && !existingSig.startsWith("GEMINI_")) : (existingSig !== DEFAULT_THINKING_CLAUDE_SIGNATURE && !existingSig.startsWith("CLAUDE_") && !isValidClaudeSignature(existingSig)));
+        const callSig = (cachedSig && (!isCompatibleExisting || isSyntheticDefault))
+          ? cachedSig
+          : ((isCompatibleExisting ? existingSig : null) || cachedSig || (isClaudeTarget ? DEFAULT_THINKING_AG_SIGNATURE : DEFAULT_THINKING_GEMINI_CLI_SIGNATURE));
+        return { ...p, thoughtSignature: callSig };
       });
 
       return {
@@ -275,12 +273,17 @@ export class AntigravityExecutor extends BaseExecutor {
 
     // Sanitize tool schemas and function names before sending to Antigravity.
     let tools = body.request?.tools;
+    let hasGoogleSearch = false;
+    const allDeclarations = [];
 
     if (tools && tools.length > 0) {
       // Merge all groups into a single functionDeclarations group (Gemini expects 1 group)
       const seenToolNames = new Set();
-      const allDeclarations = [];
       for (const group of tools) {
+        if (group.googleSearch || group.google_search) {
+          hasGoogleSearch = true;
+          continue;
+        }
         for (const fn of group.functionDeclarations || []) {
           const name = sanitizeFunctionName(fn.name);
           if (seenToolNames.has(name)) continue;
@@ -290,17 +293,36 @@ export class AntigravityExecutor extends BaseExecutor {
             name,
             parameters: fn.parameters
               ? cleanJSONSchemaForAntigravity(structuredClone(fn.parameters))
-              : { type: "object", properties: { reason: { type: "string", description: "Brief explanation" } }, required: ["reason"] }
+              : { type: "object", properties: {} }
           });
         }
       }
-      tools = allDeclarations.length > 0 ? [{ functionDeclarations: allDeclarations }] : [];
+      tools = [];
+      if (allDeclarations.length > 0) {
+        tools.push({ functionDeclarations: allDeclarations });
+      }
+      if (hasGoogleSearch) {
+        tools.push({ googleSearch: {} });
+      }
     }
 
     // Strip tools/toolConfig (handled separately) and blacklisted fields that Google rejects
     const { tools: _originalTools, toolConfig: _originalToolConfig, ...requestWithoutTools } = body.request || {};
     stripBlacklisted(requestWithoutTools);
-    
+
+    let toolConfig = undefined;
+    const baseCallingConfig = _originalToolConfig?.functionCallingConfig || { mode: "VALIDATED" };
+    if (allDeclarations.length > 0 && hasGoogleSearch) {
+      toolConfig = {
+        functionCallingConfig: baseCallingConfig,
+        includeServerSideToolInvocations: true,
+      };
+    } else if (allDeclarations.length > 0) {
+      toolConfig = {
+        functionCallingConfig: baseCallingConfig,
+      };
+    }
+
     // Rewrite competing-client branding in system prompts (e.g. Zed's Claude prompt,
     // OpenCode naming) so Antigravity doesn't flag the request with a 429 Quota Exhausted.
     if (requestWithoutTools.systemInstruction?.parts) {
@@ -313,6 +335,19 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const generationConfig = { ...(requestWithoutTools.generationConfig || {}) };
+    if (isGemini4Model(body.model || model)) {
+      delete generationConfig.temperature;
+      delete generationConfig.topP;
+      delete generationConfig.topK;
+      if (generationConfig.thinkingConfig) {
+        const tc = generationConfig.thinkingConfig;
+        if (tc.thinkingBudget !== undefined || tc.thinkingLevel === "minimal") {
+          const b = Number(tc.thinkingBudget);
+          const lvl = tc.thinkingLevel === "minimal" ? "low" : (Number.isFinite(b) && b > 0 ? (b <= 4096 ? "low" : b <= 16384 ? "medium" : "high") : "high");
+          generationConfig.thinkingConfig = { thinkingLevel: lvl, includeThoughts: true };
+        }
+      }
+    }
     if (generationConfig.maxOutputTokens > MAX_ANTIGRAVITY_OUTPUT_TOKENS) {
       generationConfig.maxOutputTokens = MAX_ANTIGRAVITY_OUTPUT_TOKENS;
     }
@@ -321,10 +356,10 @@ export class AntigravityExecutor extends BaseExecutor {
       ...requestWithoutTools,
       generationConfig,
       ...(contents && { contents }),
-      ...(tools && { tools }),
+      ...(tools?.length > 0 && { tools }),
       sessionId,
-      safetySettings: undefined,
-      ...(tools?.length > 0 && { toolConfig: { functionCallingConfig: { mode: "VALIDATED" } } })
+      safetySettings: DEFAULT_SAFETY_SETTINGS,
+      ...(toolConfig && { toolConfig }),
     };
 
     // Strip blacklisted thinking fields from top-level body (set by thinkingUnified.js at root, not body.request)
@@ -340,12 +375,17 @@ export class AntigravityExecutor extends BaseExecutor {
     // `search` buckets are unaffected and keep their own requestType.
     delete body.requestType;
 
+    let cleanModel = (body.model || model).replace(/\([^()]+\)\s*$/, "").trim();
+    if (cleanModel.startsWith("gemini-3.8-flash")) {
+      cleanModel = "gemini-3.8-flash-tiered";
+    }
+
     return {
       ...body,
       project: projectId,
-      model: body.model || model,
+      model: cleanModel,
       userAgent: "antigravity",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
+      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model: cleanModel, requestType: "agent" }),
       request: transformedRequest
     };
   }

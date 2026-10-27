@@ -33,12 +33,19 @@ export function claudeToOpenAIRequest(model, body, stream) {
     const systemContent = Array.isArray(body.system)
       ? body.system.map(s => stripAnthropicBillingHeader(s.text || "")).filter(Boolean).join("\n")
       : stripAnthropicBillingHeader(body.system);
-    
+
     if (systemContent) {
-      result.messages.push({
+      const systemMsg = {
         role: ROLE.SYSTEM,
         content: systemContent
-      });
+      };
+      const cacheControl = Array.isArray(body.system)
+        ? body.system.find(s => s?.cache_control)?.cache_control
+        : body.system?.cache_control;
+      if (cacheControl) {
+        systemMsg.cache_control = cacheControl;
+      }
+      result.messages.push(systemMsg);
     }
   }
 
@@ -65,19 +72,68 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Tools
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => ({
-      type: OPENAI_BLOCK.FUNCTION,
-      function: {
-        name: tool.name,
-        description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
+    result.tools = body.tools.map(tool => {
+      if (tool?.type?.startsWith("web_search") || tool?.name === "web_search") {
+        return {
+          type: "web_search",
+          name: "web_search",
+          ...tool,
+        };
       }
-    }));
+      const fnObj = {
+        type: OPENAI_BLOCK.FUNCTION,
+        function: {
+          name: tool.name,
+          description: String(tool.description || ""),
+          parameters: tool.input_schema || { type: "object", properties: {} }
+        }
+      };
+      if (tool.cache_control) {
+        fnObj.cache_control = tool.cache_control;
+      }
+      return fnObj;
+    });
   }
 
   // Tool choice
   if (body.tool_choice) {
     result.tool_choice = convertToolChoice(body.tool_choice);
+    if (typeof body.tool_choice === "object" && body.tool_choice.disable_parallel_tool_use) {
+      result.parallel_tool_calls = false;
+    }
+  }
+
+  // Generation controls (Anthropic -> OpenAI intermediate)
+  if (body.stop_sequences && Array.isArray(body.stop_sequences)) {
+    result.stop = body.stop_sequences;
+  } else if (body.stop) {
+    result.stop = Array.isArray(body.stop) ? body.stop : [body.stop];
+  }
+
+  if (body.top_p !== undefined) {
+    result.top_p = body.top_p;
+  }
+
+  if (body.top_k !== undefined) {
+    result.top_k = body.top_k;
+  }
+
+  // Extended thinking / reasoning controls
+  if (body.thinking && typeof body.thinking === "object") {
+    result.thinking = body.thinking;
+    if (body.thinking.type === "enabled" && body.thinking.budget_tokens !== undefined) {
+      result.thinking_budget = Number(body.thinking.budget_tokens);
+    } else if (body.thinking.type === "adaptive") {
+      result.thinking_budget = -1;
+    }
+  }
+
+  if (body.output_config && typeof body.output_config === "object") {
+    result.output_config = body.output_config;
+  }
+
+  if (body.metadata?.user_id) {
+    result.user = body.metadata.user_id;
   }
 
   if (body.reasoning_effort !== undefined) {
@@ -159,7 +215,10 @@ function convertClaudeMessage(msg) {
   
   // Simple string content
   if (typeof msg.content === "string") {
-    return { role, content: msg.content };
+    const res = { role, content: msg.content };
+    if (msg.reasoning_content) res.reasoning_content = msg.reasoning_content;
+    if (msg.thought_signature) res.thought_signature = msg.thought_signature;
+    return res;
   }
 
   // Array content
@@ -167,12 +226,17 @@ function convertClaudeMessage(msg) {
     const parts = [];
     const toolCalls = [];
     const toolResults = [];
+    let reasoningContent = "";
+    let thoughtSignature = "";
 
     for (const block of msg.content) {
       switch (block.type) {
-        case CLAUDE_BLOCK.TEXT:
-          parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
+        case CLAUDE_BLOCK.TEXT: {
+          const textPart = { type: OPENAI_BLOCK.TEXT, text: block.text };
+          if (block.cache_control) textPart.cache_control = block.cache_control;
+          parts.push(textPart);
           break;
+        }
 
         case CLAUDE_BLOCK.IMAGE:
           if (block.source?.type === "base64") {
@@ -182,6 +246,35 @@ function convertClaudeMessage(msg) {
                 url: encodeDataUri(block.source.media_type, block.source.data)
               }
             });
+          }
+          break;
+
+        case CLAUDE_BLOCK.DOCUMENT:
+        case "document":
+          if (block.source?.type === "base64" && block.source.data) {
+            parts.push({
+              type: OPENAI_BLOCK.FILE,
+              file: {
+                file_data: encodeDataUri(block.source.media_type || "application/pdf", block.source.data)
+              }
+            });
+          }
+          break;
+
+        case CLAUDE_BLOCK.THINKING:
+        case "thinking":
+          if (block.thinking) {
+            reasoningContent = block.thinking;
+            if (block.signature) {
+              thoughtSignature = block.signature;
+            }
+          }
+          break;
+
+        case CLAUDE_BLOCK.REDACTED_THINKING:
+        case "redacted_thinking":
+          if (block.data) {
+            reasoningContent = `[Redacted thinking: ${block.data}]`;
           }
           break;
 
@@ -196,6 +289,37 @@ function convertClaudeMessage(msg) {
           });
           break;
 
+        case CLAUDE_BLOCK.SERVER_TOOL_USE:
+          toolCalls.push({
+            id: block.id,
+            type: OPENAI_BLOCK.FUNCTION,
+            function: {
+              name: block.name || "web_search",
+              arguments: JSON.stringify(block.input || {})
+            }
+          });
+          break;
+
+        case CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT: {
+          let searchContent = "";
+          if (Array.isArray(block.content)) {
+            searchContent = block.content
+              .map(r => `${r.title || ""} (${r.url || ""})`)
+              .filter(Boolean)
+              .join("\n");
+          } else if (typeof block.content === "string") {
+            searchContent = block.content;
+          } else if (block.content) {
+            searchContent = JSON.stringify(block.content);
+          }
+          toolResults.push({
+            role: ROLE.TOOL,
+            tool_call_id: block.tool_use_id,
+            content: searchContent || "Web search completed"
+          });
+          break;
+        }
+
         case CLAUDE_BLOCK.TOOL_RESULT: {
           let resultContent = "";
           const resultImages = [];
@@ -208,6 +332,11 @@ function convertClaudeMessage(msg) {
                   type: OPENAI_BLOCK.IMAGE_URL,
                   image_url: { url: encodeDataUri(c.source.media_type, c.source.data) }
                 });
+              } else if ((c?.type === CLAUDE_BLOCK.DOCUMENT || c?.type === "document") && c.source?.type === "base64") {
+                resultImages.push({
+                  type: OPENAI_BLOCK.FILE,
+                  file: { file_data: encodeDataUri(c.source.media_type || "application/pdf", c.source.data) }
+                });
               }
             }
             const textOnly = block.content.filter(c => c?.type === CLAUDE_BLOCK.TEXT);
@@ -217,21 +346,45 @@ function convertClaudeMessage(msg) {
             resultContent = JSON.stringify(block.content);
           }
 
-          toolResults.push({
+          const toolResultMsg = {
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
             content: resultContent
-          });
+          };
+          if (block.is_error) {
+            toolResultMsg.is_error = true;
+          }
+          if (block.cache_control) {
+            toolResultMsg.cache_control = block.cache_control;
+          }
+          toolResults.push(toolResultMsg);
           // The OpenAI tool role is text-only, so a screenshot or any other image a
           // tool returned would otherwise vanish. Hand it to the model in the user
           // turn that follows the tool messages, tagged with the call it came from.
           if (resultImages.length) {
-            parts.push({ type: OPENAI_BLOCK.TEXT, text: `[Image from tool result ${block.tool_use_id}]` });
+            parts.push({ type: OPENAI_BLOCK.TEXT, text: `[Content from tool result ${block.tool_use_id}]` });
             parts.push(...resultImages);
           }
           break;
         }
       }
+    }
+
+    // If an assistant message contains both server tool calls and server tool results,
+    // split into OpenAI sequence: assistant tool_calls -> tool messages -> assistant text
+    if (toolCalls.length > 0 && toolResults.length > 0) {
+      const msgs = [];
+      const asstCallMsg = { role: ROLE.ASSISTANT, tool_calls: toolCalls };
+      if (reasoningContent) {
+        asstCallMsg.reasoning_content = reasoningContent;
+        if (thoughtSignature) asstCallMsg.thought_signature = thoughtSignature;
+      }
+      msgs.push(asstCallMsg);
+      msgs.push(...toolResults);
+      if (parts.length > 0) {
+        msgs.push({ role: ROLE.ASSISTANT, content: collapseTextParts(parts) });
+      }
+      return msgs;
     }
 
     // If has tool results, return array of tool messages
@@ -249,15 +402,24 @@ function convertClaudeMessage(msg) {
         result.content = collapseTextParts(parts);
       }
       result.tool_calls = toolCalls;
+      if (reasoningContent) {
+        result.reasoning_content = reasoningContent;
+        if (thoughtSignature) result.thought_signature = thoughtSignature;
+      }
       return result;
     }
 
     // Return content
-    if (parts.length > 0) {
-      return {
+    if (parts.length > 0 || reasoningContent) {
+      const res = {
         role,
-        content: collapseTextParts(parts)
+        content: parts.length > 0 ? collapseTextParts(parts) : ""
       };
+      if (reasoningContent && role === ROLE.ASSISTANT) {
+        res.reasoning_content = reasoningContent;
+        if (thoughtSignature) res.thought_signature = thoughtSignature;
+      }
+      return res;
     }
     
     // Empty content array
@@ -277,6 +439,7 @@ function convertToolChoice(choice) {
   switch (choice.type) {
     case "auto": return "auto";
     case "any": return "required";
+    case "none": return "none";
     case "tool": return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
     default: return "auto";
   }

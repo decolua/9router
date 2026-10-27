@@ -43,7 +43,20 @@ export function geminiToOpenAIResponse(chunk, state) {
   
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+  if (!response || !response.candidates?.[0]) {
+    if (response?.promptFeedback?.blockReason) {
+      const blockReason = response.promptFeedback.blockReason;
+      const msgText = `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`;
+      if (!state.messageId) {
+        state.messageId = response.responseId || `msg_${Date.now()}`;
+        state.model = response.modelVersion || state.model || "gemini";
+      }
+      return [
+        buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT, content: msgText }, OPENAI_FINISH.CONTENT_FILTER)
+      ];
+    }
+    return null;
+  }
 
   const results = [];
   const candidate = response.candidates[0];
@@ -134,22 +147,39 @@ export function geminiToOpenAIResponse(chunk, state) {
   const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
   if (geminiUsage) state.usage = geminiUsage;
 
+  // Grounding metadata (web search)
+  const groundingMeta = candidate.groundingMetadata || response.groundingMetadata;
+  if (groundingMeta) {
+    state.groundingMetadata = groundingMeta;
+  }
+
   // Finish reason - include usage in final chunk
   if (candidate.finishReason) {
     let finishReason = toOpenAIFinish(candidate.finishReason, "gemini");
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
     }
-    
+
     const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
-    
+
     // Include usage in final chunk for downstream translators
     if (state.usage) {
       finalChunk.usage = state.usage;
     }
-    
+    if (state.groundingMetadata) {
+      finalChunk.groundingMetadata = state.groundingMetadata;
+    }
+
     results.push(finalChunk);
     state.finishReason = finishReason;
+  }
+
+  if (state.groundingMetadata) {
+    for (const r of results) {
+      if (!r.groundingMetadata) {
+        r.groundingMetadata = state.groundingMetadata;
+      }
+    }
   }
 
   return results.length > 0 ? results : null;

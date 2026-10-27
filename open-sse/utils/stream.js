@@ -80,8 +80,44 @@ export function createSSEStream(options = {}) {
         // hop of a pivot, and on the terminal null chunk the pivot drops it — so a
         // translator that defers closing events until flush needs to know which case
         // it is in. Absent/undefined means "unknown", i.e. do not defer.
-        targetFormat }
+        targetFormat,
+        thinkingDisplay: body?.thinking?.display || null,
+        body }
     : null;
+
+  // SSE keep-alive ping for Claude client format (Anthropic spec: periodic ping events)
+  const PING_INTERVAL_MS = 15000;
+  let pingTimer = null;
+  let lastChunkTime = Date.now();
+  let streamClosed = false;
+
+  const startPingTimer = (controller) => {
+    if (sourceFormat !== FORMATS.CLAUDE || pingTimer) return;
+    pingTimer = setInterval(() => {
+      if (streamClosed) {
+        clearInterval(pingTimer);
+        pingTimer = null;
+        return;
+      }
+      if (Date.now() - lastChunkTime >= PING_INTERVAL_MS) {
+        try {
+          const pingBytes = sharedEncoder.encode("event: ping\ndata: {\"type\":\"ping\"}\n\n");
+          controller.enqueue(pingBytes);
+        } catch {
+          clearInterval(pingTimer);
+          pingTimer = null;
+        }
+      }
+    }, PING_INTERVAL_MS);
+  };
+
+  const stopPingTimer = () => {
+    streamClosed = true;
+    if (pingTimer) {
+      clearInterval(pingTimer);
+      pingTimer = null;
+    }
+  };
 
   let totalContentLength = 0;
   let accumulatedContent = "";
@@ -108,6 +144,7 @@ export function createSSEStream(options = {}) {
   // Usage/logging tail, callable from transform() as well as flush(): a client that
   // closes right after the terminal event cancels the reader, and flush() never runs.
   const finalizeStream = () => {
+    stopPingTimer();
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     if (finalized) return;
     finalized = true;
@@ -149,7 +186,11 @@ export function createSSEStream(options = {}) {
   };
 
   return new TransformStream({
+    start(controller) {
+      startPingTimer(controller);
+    },
     transform(chunk, controller) {
+      lastChunkTime = Date.now();
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
@@ -447,6 +488,11 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
+            if (state.webSearchUsage?.server_tool_use && item.type === "message_delta") {
+              if (!item.usage) item.usage = {};
+              item.usage.server_tool_use = state.webSearchUsage.server_tool_use;
+            }
+
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
@@ -469,6 +515,7 @@ export function createSSEStream(options = {}) {
     },
 
     flush(controller) {
+      stopPingTimer();
       const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
       dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
       trackPendingRequest(model, provider, connectionId, false);

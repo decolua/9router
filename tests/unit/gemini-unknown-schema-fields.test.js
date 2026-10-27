@@ -102,4 +102,33 @@ describe("cleanJSONSchemaForAntigravity strips errorMessage recursively (#4283)"
     expect(result.description).toBe("A valid tool");
     expect(result.properties.n.description).toBe("A number");
   });
+
+  it("does not corrupt empty properties dictionaries or inject fake reason parameter", () => {
+    const schema = {
+      type: "object",
+      properties: {
+        answers: {
+          type: "object",
+          properties: {},
+          required: ["reason"]
+        }
+      }
+    };
+    const result = cleanJSONSchemaForAntigravity(structuredClone(schema));
+    expect(result.properties.answers.type).toBe("object");
+    expect(result.properties.answers.properties).toEqual({});
+    expect(result.properties.answers).not.toHaveProperty("required");
+  });
+
+  it("keeps empty parameter tools clean without synthetic reason injection", () => {
+    const schema = {
+      type: "object",
+      properties: {}
+    };
+    const result = cleanJSONSchemaForAntigravity(structuredClone(schema));
+    expect(result.type).toBe("object");
+    expect(result.properties).toEqual({});
+    expect(result).not.toHaveProperty("required");
+    expect(result.properties).not.toHaveProperty("reason");
+  });
 });

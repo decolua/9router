@@ -1,6 +1,7 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
+export { openAICompletionToClaudeMessage };
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
@@ -13,6 +14,7 @@ import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -94,7 +96,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 /**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null, body = null) {
   if (targetFormat === sourceFormat) return responseBody;
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
@@ -102,14 +104,46 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
     return openAICompletionToResponses(responseBody, customToolNames);
   }
   if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.CLAUDE) {
-    return openAICompletionToClaudeMessage(responseBody);
+    return openAICompletionToClaudeMessage(responseBody, { thinkingDisplay: body?.thinking?.display, body });
   }
   if (targetFormat === FORMATS.OPENAI) return responseBody;
 
   // Gemini / Antigravity
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
     const response = responseBody.response || responseBody;
-    if (!response?.candidates?.[0]) return responseBody;
+    if (!response?.candidates?.[0]) {
+      const isBlocked = !!response?.promptFeedback?.blockReason;
+      const blockReason = response?.promptFeedback?.blockReason;
+      const msgText = isBlocked
+        ? `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`
+        : "";
+      const finishReason = isBlocked ? "content_filter" : "stop";
+      const usage = response.usageMetadata || responseBody.usageMetadata;
+
+      const result = {
+        id: `chatcmpl-${response.responseId || Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
+        model: response.modelVersion || "gemini",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: msgText },
+          finish_reason: finishReason
+        }],
+        usage: {
+          prompt_tokens: (usage?.promptTokenCount || 0) + (usage?.thoughtsTokenCount || 0),
+          completion_tokens: usage?.candidatesTokenCount || 0,
+          total_tokens: usage?.totalTokenCount || 0
+        }
+      };
+      if (usage?.thoughtsTokenCount > 0) {
+        result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
+      }
+      if (sourceFormat === FORMATS.CLAUDE) {
+        return openAICompletionToClaudeMessage(result, { thinkingDisplay: body?.thinking?.display, body });
+      }
+      return result;
+    }
 
     const candidate = response.candidates[0];
     const content = candidate.content;
@@ -163,6 +197,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
+    }
+    if (sourceFormat === FORMATS.CLAUDE) {
+      return openAICompletionToClaudeMessage(result, { thinkingDisplay: body?.thinking?.display, body });
     }
     return result;
   }
@@ -262,6 +299,12 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
 
+  if (responseBody?.error && !responseBody?.choices) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_REQUEST}` });
+    const errMsg = responseBody.error.message || (typeof responseBody.error === "string" ? responseBody.error : JSON.stringify(responseBody.error));
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, errMsg);
+  }
+
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
     Promise.resolve()
@@ -279,9 +322,49 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
-  const translatedResponse = needsTranslation(targetFormat, sourceFormat)
-    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames)
+  let translatedResponse = needsTranslation(targetFormat, sourceFormat)
+    ? translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames, body)
     : responseBody;
+
+  // Ensure Claude client receives Anthropic Messages shape even if upstream returned OpenAI completion directly
+  if (sourceFormat === FORMATS.CLAUDE && translatedResponse?.choices && translatedResponse.type !== "message") {
+    translatedResponse = openAICompletionToClaudeMessage(translatedResponse, { thinkingDisplay: body?.thinking?.display, body });
+  }
+
+  // Ensure Claude client receives valid Message envelope even on raw promptFeedback blocks or unexpected payloads
+  if (sourceFormat === FORMATS.CLAUDE && translatedResponse?.type !== "message") {
+    if (translatedResponse?.promptFeedback?.blockReason) {
+      const blockReason = translatedResponse.promptFeedback.blockReason;
+      const msgText = `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`;
+      translatedResponse = {
+        id: `msg_${Date.now()}`,
+        type: "message",
+        role: "assistant",
+        model: model || "unknown",
+        content: [{ type: "text", text: msgText }],
+        stop_reason: "refusal",
+        stop_sequence: null,
+        stop_details: { type: "refusal", category: "general_harms" },
+        usage: { input_tokens: 0, output_tokens: 0 }
+      };
+    } else {
+      const usage = extractUsageFromResponse(responseBody);
+      translatedResponse = {
+        id: `msg_${Date.now()}`,
+        type: "message",
+        role: "assistant",
+        model: model || "unknown",
+        content: [{ type: "text", text: "" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: usage?.prompt_tokens || usage?.input_tokens || 0,
+          output_tokens: usage?.completion_tokens || usage?.output_tokens || 0
+        }
+      };
+    }
+  }
+
   const isClaudeMessageResponse = sourceFormat === FORMATS.CLAUDE && translatedResponse?.type === "message";
   // Responses-format translation produces a `object:"response"` body with no
   // `choices`; skip the Chat-Completions-specific post-processing below for it.
