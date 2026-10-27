@@ -285,6 +285,24 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
+    socket.setKeepAlive(true, 15000);
+    socket.setNoDelay(true);
+
+    let req = null;
+    if (options.signal) {
+      const onAbort = () => {
+        const abortErr = new Error("The operation was aborted");
+        abortErr.name = "AbortError";
+        try { req?.destroy(abortErr); } catch { /* noop */ }
+        try { socket.destroy(abortErr); } catch { /* noop */ }
+        reject(abortErr);
+      };
+      if (options.signal.aborted) {
+        onAbort();
+        return;
+      }
+      options.signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     socket.connect(HTTPS_PORT, realIP, () => {
       const reqOptions = {
@@ -304,7 +322,7 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         },
       };
 
-      const req = https.request(reqOptions, (res) => {
+      req = https.request(reqOptions, (res) => {
         const response = {
           ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
           status: res.statusCode,

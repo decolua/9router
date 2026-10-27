@@ -136,4 +136,83 @@ describe("Antigravity executor", () => {
     expect(system).not.toContain(ANTIGRAVITY_DEFAULT_SYSTEM);
     expect(system).not.toContain("Please ignore the following [ignore]");
   });
+
+  it("defers assistant role chunk on empty prefill thought part and synthesizes finish_reason on premature EOF after content", () => {
+    const state = initState(FORMATS.OPENAI);
+    // 1. Empty prefill chunk (thought: true, text: "") should NOT emit a standalone role chunk
+    const prefill = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, {
+      response: {
+        responseId: "resp-prefill",
+        modelVersion: "gemini-4-argon",
+        candidates: [{ content: { role: "model", parts: [{ thought: true, text: "" }] } }],
+        usageMetadata: { promptTokenCount: 173600, cachedContentTokenCount: 171551, totalTokenCount: 173600 },
+      },
+    }, state);
+    expect(prefill).toEqual([]);
+    expect(state.messageId).toBe("resp-prefill");
+
+    // 2. Real content chunk emits role chunk + content chunk
+    const delta = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, {
+      response: {
+        responseId: "resp-prefill",
+        modelVersion: "gemini-4-argon",
+        candidates: [{ content: { role: "model", parts: [{ text: "Hello world" }] } }],
+      },
+    }, state);
+    expect(delta).toHaveLength(2);
+    expect(delta[0].choices[0].delta).toEqual({ role: "assistant" });
+    expect(delta[1].choices[0].delta).toEqual({ content: "Hello world" });
+
+    // 3. Premature EOF (chunk = null) without finishReason synthesizes finish_reason: "stop"
+    const flushed = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.OPENAI, null, state);
+    expect(flushed).toHaveLength(1);
+    expect(flushed[0].choices[0].finish_reason).toBe("stop");
+  });
+
+  it("peeks Antigravity SSE stream and fails over / rotates trajectory when stream ends with only empty prefill chunk", async () => {
+    const executor = new AntigravityExecutor();
+    const encoder = new TextEncoder();
+    const emptyPrefillSse = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          'data: {"response":{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"text":""}]}}],"usageMetadata":{"promptTokenCount":100,"totalTokenCount":100},"modelVersion":"gemini-4-argon","responseId":"r1"}}\n\n'
+        ));
+        controller.close();
+      },
+    });
+    const peek = await executor._peekSseFirstContent(new Response(emptyPrefillSse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+    expect(peek.ok).toBe(false);
+    expect(peek.status).toBe(502);
+    expect(peek.message).toContain("without content or finishReason");
+  });
+
+  it("peeks Antigravity SSE stream and passes through when real thinking or text arrives after prefill", async () => {
+    const executor = new AntigravityExecutor();
+    const encoder = new TextEncoder();
+    const validSse = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          'data: {"response":{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"text":""}]}}],"modelVersion":"gemini-4-argon","responseId":"r2"}}\n\n'
+        ));
+        controller.enqueue(encoder.encode(
+          'data: {"response":{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"text":"Thinking..."}]}}],"modelVersion":"gemini-4-argon","responseId":"r2"}}\n\n'
+        ));
+        controller.enqueue(encoder.encode(
+          'data: {"response":{"candidates":[{"content":{"role":"model","parts":[{"text":"Done"}]},"finishReason":"STOP"}],"modelVersion":"gemini-4-argon","responseId":"r2"}}\n\n'
+        ));
+        controller.close();
+      },
+    });
+    const peek = await executor._peekSseFirstContent(new Response(validSse, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    }));
+    expect(peek.ok).toBe(true);
+    const replayedText = await new Response(peek.replacementBody).text();
+    expect(replayedText).toContain("Thinking...");
+    expect(replayedText).toContain('"finishReason":"STOP"');
+  });
 });

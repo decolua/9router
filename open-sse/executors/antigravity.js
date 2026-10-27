@@ -21,6 +21,71 @@ const MAX_RETRY_AFTER_MS = 10000;
 const ANTIGRAVITY_TRANSIENT_RETRY_MAX_MS = 15000;
 const MAX_ANTIGRAVITY_OUTPUT_TOKENS = 64000;
 const ANTIGRAVITY_IDE_REQUEST_ID_RE = /^agent\/[^/]+\/\d+\/[^/]+\/\d+$/;
+const ANTIGRAVITY_SSE_PEEK_MAX_BYTES = 256 * 1024;
+const ANTIGRAVITY_EMPTY_STREAM_RETRIES = 1;
+const failedTrajectoryNonces = new Map();
+
+function getTrajectoryNonce(key) {
+  return failedTrajectoryNonces.get(key) || "";
+}
+
+function rotateTrajectoryNonce(key) {
+  if (!key) return "";
+  if (failedTrajectoryNonces.size >= 1000) {
+    failedTrajectoryNonces.delete(failedTrajectoryNonces.keys().next().value);
+  }
+  const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  failedTrajectoryNonces.set(key, nonce);
+  return nonce;
+}
+
+function clearTrajectoryNonce(key) {
+  if (key) failedTrajectoryNonces.delete(key);
+}
+
+function hasMeaningfulAntigravityCandidate(parsed) {
+  const response = parsed?.response || parsed;
+  if (!response || typeof response !== "object") return false;
+  if (response.promptFeedback?.blockReason) return true;
+  const candidate = response.candidates?.[0];
+  if (!candidate) return false;
+  if (candidate.finishReason) return true;
+  const parts = candidate.content?.parts;
+  if (!Array.isArray(parts)) return false;
+  for (const part of parts) {
+    if (!part || typeof part !== "object") continue;
+    if (typeof part.text === "string" && part.text.length > 0) return true;
+    if (part.functionCall) return true;
+    if (part.inlineData?.data || part.inline_data?.data) return true;
+  }
+  return false;
+}
+
+function extractAntigravitySseError(parsed) {
+  const err = parsed?.error || parsed?.response?.error;
+  if (!err) return null;
+  if (typeof err === "string") {
+    return { status: HTTP_STATUS.BAD_GATEWAY, message: err };
+  }
+  const code = Number(err.code || err.status);
+  const status = Number.isInteger(code) && code >= 400 && code <= 599 ? code : HTTP_STATUS.BAD_GATEWAY;
+  const message = err.message || err.status || JSON.stringify(err);
+  return { status, message };
+}
+
+function antigravitySseErrorResponse(status, message) {
+  const httpStatus = Number.isInteger(status) && status >= 400 && status <= 599 ? status : HTTP_STATUS.BAD_GATEWAY;
+  return new Response(JSON.stringify({
+    error: {
+      code: httpStatus,
+      message: message || "Antigravity stream ended without content or finishReason",
+      status: httpStatus === HTTP_STATUS.RATE_LIMITED ? "RESOURCE_EXHAUSTED" : "UNAVAILABLE",
+    },
+  }), {
+    status: httpStatus,
+    headers: { "Content-Type": "application/json" },
+  });
+}
 
 const ANTIGRAVITY_TRANSIENT_ERROR_PATTERNS = [
   /high\s+traffic/i,
@@ -97,12 +162,13 @@ function uuidFromSeed(seed) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function buildIdeRequestId({ body, request, credentials, model, requestType }) {
-  if (ANTIGRAVITY_IDE_REQUEST_ID_RE.test(body?.requestId || "")) {
+function buildIdeRequestId({ body, request, credentials, model, requestType, retryNonce = "" }) {
+  if (!retryNonce && ANTIGRAVITY_IDE_REQUEST_ID_RE.test(body?.requestId || "")) {
     return body.requestId;
   }
 
-  const sessionId = request?.sessionId || body?.request?.sessionId || credentials?._clientSessionId || credentials?.connectionId || credentials?.email || "anonymous";
+  const baseSessionId = request?.sessionId || body?.request?.sessionId || credentials?._clientSessionId || credentials?.connectionId || credentials?.email || "anonymous";
+  const sessionId = retryNonce ? `${baseSessionId}:${retryNonce}` : baseSessionId;
   const conversationId = uuidFromSeed(`antigravity:conversation:${sessionId}`);
   const trajectoryId = uuidFromSeed(`antigravity:trajectory:${sessionId}:${model}:${requestType}`);
   const contentCount = Array.isArray(request?.contents) ? request.contents.length : 1;
@@ -228,7 +294,14 @@ export class AntigravityExecutor extends BaseExecutor {
     }
 
     const rawSessionId = body.request?.sessionId || resolveSessionId({ headers: credentials?.rawHeaders, body, connectionId: credentials?.email || credentials?.connectionId, scope: "antigravity" });
-    const sessionId = toNumericSessionId(rawSessionId) || rawSessionId;
+    const baseSessionId = toNumericSessionId(rawSessionId) || rawSessionId;
+    const rawContentCount = Array.isArray(body.request?.contents) ? body.request.contents.length : 1;
+    const trajectoryKey = `${baseSessionId}:${model}:${rawContentCount}`;
+    const retryNonce = body._antigravityRetryNonce || getTrajectoryNonce(trajectoryKey);
+    const sessionId = retryNonce
+      ? (toNumericSessionId(`${rawSessionId}:${retryNonce}`) || `${baseSessionId}-${retryNonce}`)
+      : baseSessionId;
+    this._lastTrajectoryKey = trajectoryKey;
 
     // ─── Standard (non-image) request ───
     // Fix contents for Claude models via Antigravity
@@ -339,15 +412,178 @@ export class AntigravityExecutor extends BaseExecutor {
     // with quota available. `image_gen` and
     // `search` buckets are unaffected and keep their own requestType.
     delete body.requestType;
+    const explicitNonce = body._antigravityRetryNonce || retryNonce || "";
+    delete body._antigravityRetryNonce;
 
     return {
       ...body,
       project: projectId,
       model: body.model || model,
       userAgent: "antigravity",
-      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent" }),
+      requestId: buildIdeRequestId({ body, request: transformedRequest, credentials, model, requestType: "agent", retryNonce: explicitNonce }),
       request: transformedRequest
     };
+  }
+
+  async execute(args) {
+    const isStreaming = Boolean(args?.stream && !isImageModel(args?.model));
+    if (!isStreaming) {
+      return super.execute(args);
+    }
+
+    let attempt = 0;
+    while (true) {
+      const attemptBody = attempt > 0 && args.body && typeof args.body === "object"
+        ? { ...args.body, _antigravityRetryNonce: `${Date.now().toString(36)}-${attempt}` }
+        : args.body;
+      const result = await super.execute({ ...args, body: attemptBody });
+      const contentType = (result.response?.headers?.get?.("content-type") || "").toLowerCase();
+      if (!result.response?.ok || !result.response?.body || !contentType.includes("text/event-stream")) {
+        return result;
+      }
+
+      const peek = await this._peekSseFirstContent(result.response);
+      if (peek.ok) {
+        clearTrajectoryNonce(this._lastTrajectoryKey);
+        if (peek.replacementBody) {
+          result.response = new Response(peek.replacementBody, {
+            status: result.response.status,
+            statusText: result.response.statusText,
+            headers: result.response.headers,
+          });
+        }
+        return result;
+      }
+
+      rotateTrajectoryNonce(this._lastTrajectoryKey);
+      const canRetry = !args.signal?.aborted
+        && attempt < ANTIGRAVITY_EMPTY_STREAM_RETRIES
+        && peek.status !== HTTP_STATUS.RATE_LIMITED
+        && this.isTransientAntigravityError(peek.status, peek.message);
+
+      if (!canRetry) {
+        args.log?.warn?.("RETRY", `ANTIGRAVITY | SSE stream failed (${peek.status}): ${peek.message}`);
+        result.response = antigravitySseErrorResponse(peek.status, peek.message);
+        return result;
+      }
+
+      attempt++;
+      const delayMs = 1500 * attempt;
+      args.log?.warn?.("RETRY", `ANTIGRAVITY | empty/aborted SSE stream ("${peek.message}") → retry ${attempt}/${ANTIGRAVITY_EMPTY_STREAM_RETRIES} with fresh trajectory after ${delayMs}ms`);
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+
+  async _peekSseFirstContent(response) {
+    if (!response?.ok || !response?.body) {
+      return { ok: true, replacementBody: null };
+    }
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const chunks = [];
+    let buffer = "";
+    let totalBytes = 0;
+    let sawMeaningful = false;
+    let sseError = null;
+
+    const inspectLines = (lines) => {
+      for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line.startsWith("data:")) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        try {
+          const parsed = JSON.parse(payload);
+          const err = extractAntigravitySseError(parsed);
+          if (err) {
+            sseError = err;
+            return true;
+          }
+          if (hasMeaningfulAntigravityCandidate(parsed)) {
+            sawMeaningful = true;
+            return true;
+          }
+        } catch {
+          // Ignore partial or non-JSON lines while peeking
+        }
+      }
+      return false;
+    };
+
+    try {
+      while (totalBytes < ANTIGRAVITY_SSE_PEEK_MAX_BYTES) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          if (buffer.trim()) inspectLines(buffer.split(/\r?\n/));
+          break;
+        }
+        chunks.push(value);
+        totalBytes += value?.byteLength || value?.length || 0;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() || "";
+        if (inspectLines(lines)) break;
+      }
+    } catch (err) {
+      try { await reader.cancel(); } catch { /* noop */ }
+      try { reader.releaseLock(); } catch { /* noop */ }
+      return {
+        ok: false,
+        status: HTTP_STATUS.BAD_GATEWAY,
+        message: `Antigravity stream read error before first token: ${err?.message || String(err)}`,
+        replacementBody: null,
+      };
+    }
+
+    if (sseError) {
+      try { await reader.cancel(); } catch { /* noop */ }
+      try { reader.releaseLock(); } catch { /* noop */ }
+      return {
+        ok: false,
+        status: sseError.status,
+        message: sseError.message,
+        replacementBody: null,
+      };
+    }
+
+    if (!sawMeaningful && totalBytes < ANTIGRAVITY_SSE_PEEK_MAX_BYTES) {
+      try { await reader.cancel(); } catch { /* noop */ }
+      try { reader.releaseLock(); } catch { /* noop */ }
+      return {
+        ok: false,
+        status: HTTP_STATUS.BAD_GATEWAY,
+        message: "Antigravity stream ended without content or finishReason",
+        replacementBody: null,
+      };
+    }
+
+    reader.releaseLock();
+    const upstream = response.body;
+    let upstreamReader = null;
+    const replacementBody = new ReadableStream({
+      start(controller) {
+        for (const c of chunks) controller.enqueue(c);
+        upstreamReader = upstream.getReader();
+      },
+      async pull(controller) {
+        try {
+          const { done, value } = await upstreamReader.read();
+          if (done) {
+            controller.close();
+            return;
+          }
+          controller.enqueue(value);
+        } catch (e) {
+          controller.error(e);
+        }
+      },
+      cancel(reason) {
+        try { upstreamReader?.cancel(reason); } catch { /* noop */ }
+      },
+    });
+
+    return { ok: true, replacementBody };
   }
 
   async refreshCredentials(credentials, log, proxyOptions = null) {

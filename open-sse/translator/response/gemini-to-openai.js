@@ -39,23 +39,69 @@ function emitFunctionCall(functionCall, state, signature = null) {
 
 // Convert Gemini response chunk to OpenAI format
 export function geminiToOpenAIResponse(chunk, state) {
-  if (!chunk) return null;
-  
+  if (!chunk) {
+    if (state?.messageId && !state.finishReason && (state.hasEmittedContent || state.geminiToolCallCount > 0)) {
+      const finishReason = state.geminiToolCallCount > 0 ? OPENAI_FINISH.TOOL_CALLS : OPENAI_FINISH.STOP;
+      const results = [];
+      if (!state.roleSent) {
+        state.roleSent = true;
+        results.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
+      }
+      const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
+      if (state.usage) {
+        finalChunk.usage = state.usage;
+      }
+      results.push(finalChunk);
+      state.finishReason = finishReason;
+      return results;
+    }
+    return null;
+  }
+
   // Handle Antigravity wrapper
   const response = chunk.response || chunk;
-  if (!response || !response.candidates?.[0]) return null;
+  if (!response || typeof response !== "object") return null;
+
+  // Usage metadata - extract before candidate check so usage-only or blockReason chunks still record usage
+  const usageMeta = response.usageMetadata || chunk.usageMetadata;
+  const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
+  if (geminiUsage) state.usage = geminiUsage;
+
+  if (!response.candidates?.[0]) {
+    if (response.promptFeedback?.blockReason && !state.finishReason) {
+      if (!state.messageId) {
+        state.messageId = response.responseId || `msg_${Date.now()}`;
+        state.model = response.modelVersion || state.model || "gemini";
+        state.functionIndex = 0;
+        state.geminiToolCallCount = 0;
+      }
+      const results = [];
+      if (!state.roleSent) {
+        state.roleSent = true;
+        results.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
+      }
+      const finalChunk = buildChunk(chunkMeta(state), {}, OPENAI_FINISH.CONTENT_FILTER);
+      if (state.usage) {
+        finalChunk.usage = state.usage;
+      }
+      results.push(finalChunk);
+      state.finishReason = OPENAI_FINISH.CONTENT_FILTER;
+      return results;
+    }
+    return null;
+  }
 
   const results = [];
+  const partChunks = [];
   const candidate = response.candidates[0];
   const content = candidate.content;
 
-  // Initialize state
+  // Initialize state metadata (defer role chunk until meaningful output or finishReason is ready)
   if (!state.messageId) {
     state.messageId = response.responseId || `msg_${Date.now()}`;
     state.model = response.modelVersion || state.model || "gemini";
     state.functionIndex = 0;
     state.geminiToolCallCount = 0;
-    results.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
   }
 
   // Process parts
@@ -78,7 +124,7 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
 
         if (hasTextContent) {
-          results.push(buildChunk(
+          partChunks.push(buildChunk(
             chunkMeta(state),
             isThought ? reasoningDelta(part.text) : { content: part.text },
             null
@@ -86,7 +132,7 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
 
         if (hasFunctionCall) {
-          results.push(emitFunctionCall(part.functionCall, state, hasThoughtSig));
+          partChunks.push(emitFunctionCall(part.functionCall, state, hasThoughtSig));
           state.pendingThoughtSignature = null;
         }
         continue;
@@ -97,7 +143,7 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
-        results.push(buildChunk(
+        partChunks.push(buildChunk(
           chunkMeta(state),
           isThought ? reasoningDelta(part.text) : { content: part.text },
           null
@@ -107,7 +153,7 @@ export function geminiToOpenAIResponse(chunk, state) {
       // Function call
       if (part.functionCall) {
         const sig = state.pendingThoughtSignature || null;
-        results.push(emitFunctionCall(part.functionCall, state, sig));
+        partChunks.push(emitFunctionCall(part.functionCall, state, sig));
         state.pendingThoughtSignature = null;
       }
 
@@ -115,7 +161,7 @@ export function geminiToOpenAIResponse(chunk, state) {
       const inlineData = part.inlineData || part.inline_data;
       if (inlineData?.data) {
         const mimeType = inlineData.mimeType || inlineData.mime_type || DEFAULT_IMAGE_MIME;
-        results.push(buildChunk(
+        partChunks.push(buildChunk(
           chunkMeta(state),
           {
             images: [{
@@ -129,27 +175,36 @@ export function geminiToOpenAIResponse(chunk, state) {
     }
   }
 
-  // Usage metadata - extract before finish reason so we can include it
-  const usageMeta = response.usageMetadata || chunk.usageMetadata;
-  const geminiUsage = toOpenAIUsage(usageMeta, "gemini");
-  if (geminiUsage) state.usage = geminiUsage;
-
+  let finalChunk = null;
   // Finish reason - include usage in final chunk
   if (candidate.finishReason) {
     let finishReason = toOpenAIFinish(candidate.finishReason, "gemini");
     if (finishReason === OPENAI_FINISH.STOP && state.geminiToolCallCount > 0) {
       finishReason = OPENAI_FINISH.TOOL_CALLS;
     }
-    
-    const finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
-    
+
+    finalChunk = buildChunk(chunkMeta(state), {}, finishReason);
+
     // Include usage in final chunk for downstream translators
     if (state.usage) {
       finalChunk.usage = state.usage;
     }
-    
-    results.push(finalChunk);
+
     state.finishReason = finishReason;
+  }
+
+  if (partChunks.length > 0 || finalChunk) {
+    if (!state.roleSent) {
+      state.roleSent = true;
+      results.push(buildChunk(chunkMeta(state), { role: ROLE.ASSISTANT }, null));
+    }
+    if (partChunks.length > 0) {
+      state.hasEmittedContent = true;
+      results.push(...partChunks);
+    }
+    if (finalChunk) {
+      results.push(finalChunk);
+    }
   }
 
   return results.length > 0 ? results : null;
