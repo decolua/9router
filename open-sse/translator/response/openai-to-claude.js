@@ -146,7 +146,32 @@ function flushBufferedText(state, results) {
 
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  if (!chunk) {
+    // Flush call: if message_start was sent but finish_reason was never reached
+    // (e.g. upstream stream truncated or closed prematurely), synthesize a clean
+    // terminal sequence (flushBufferedText, stopThinkingBlock, stopTextBlock, message_delta, message_stop)
+    // so the client receives a properly-framed message instead of stream_truncated.
+    if (state?.messageStartSent && !state?.finishReason) {
+      const results = [];
+      flushBufferedText(state, results);
+      stopThinkingBlock(state, results);
+      stopTextBlock(state, results);
+      state.finishReason = "stop";
+      const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+      results.push({
+        type: "message_delta",
+        delta: {
+          stop_reason: "end_turn",
+          stop_sequence: null
+        },
+        usage: finalUsage
+      });
+      results.push({ type: "message_stop" });
+      return results;
+    }
+    return null;
+  }
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];

@@ -112,27 +112,37 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
   if (targetFormat === FORMATS.GEMINI || targetFormat === FORMATS.ANTIGRAVITY || targetFormat === FORMATS.GEMINI_CLI || targetFormat === FORMATS.VERTEX) {
     const response = responseBody.response || responseBody;
     if (!response?.candidates?.[0]) {
-      if (response?.promptFeedback?.blockReason) {
-        const blockReason = response.promptFeedback.blockReason;
-        const msgText = `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`;
-        const result = {
-          id: `chatcmpl-${response.responseId || Date.now()}`,
-          object: "chat.completion",
-          created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
-          model: response.modelVersion || "gemini",
-          choices: [{
-            index: 0,
-            message: { role: "assistant", content: msgText },
-            finish_reason: "content_filter"
-          }],
-          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 }
-        };
-        if (sourceFormat === FORMATS.CLAUDE) {
-          return openAICompletionToClaudeMessage(result);
+      const isBlocked = !!response?.promptFeedback?.blockReason;
+      const blockReason = response?.promptFeedback?.blockReason;
+      const msgText = isBlocked
+        ? `The model could not generate output because the input violates Google's Generative AI Prohibited Use policy (${blockReason}).`
+        : "";
+      const finishReason = isBlocked ? "content_filter" : "stop";
+      const usage = response.usageMetadata || responseBody.usageMetadata;
+
+      const result = {
+        id: `chatcmpl-${response.responseId || Date.now()}`,
+        object: "chat.completion",
+        created: Math.floor(new Date(response.createTime || Date.now()).getTime() / 1000),
+        model: response.modelVersion || "gemini",
+        choices: [{
+          index: 0,
+          message: { role: "assistant", content: msgText },
+          finish_reason: finishReason
+        }],
+        usage: {
+          prompt_tokens: (usage?.promptTokenCount || 0) + (usage?.thoughtsTokenCount || 0),
+          completion_tokens: usage?.candidatesTokenCount || 0,
+          total_tokens: usage?.totalTokenCount || 0
         }
-        return result;
+      };
+      if (usage?.thoughtsTokenCount > 0) {
+        result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
-      return responseBody;
+      if (sourceFormat === FORMATS.CLAUDE) {
+        return openAICompletionToClaudeMessage(result, { thinkingDisplay: body?.thinking?.display, body });
+      }
+      return result;
     }
 
     const candidate = response.candidates[0];
@@ -338,8 +348,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         usage: { input_tokens: 0, output_tokens: 0 }
       };
     } else {
-      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
-      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Malformed upstream response: expected Message");
+      const usage = extractUsageFromResponse(responseBody);
+      translatedResponse = {
+        id: `msg_${Date.now()}`,
+        type: "message",
+        role: "assistant",
+        model: model || "unknown",
+        content: [{ type: "text", text: "" }],
+        stop_reason: "end_turn",
+        stop_sequence: null,
+        usage: {
+          input_tokens: usage?.prompt_tokens || usage?.input_tokens || 0,
+          output_tokens: usage?.completion_tokens || usage?.output_tokens || 0
+        }
+      };
     }
   }
 
