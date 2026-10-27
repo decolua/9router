@@ -383,10 +383,9 @@ export const PROVIDER_CAPABILITIES = {
   // the library page publishes for this model (text+image in, 1M context).
   // ponytail: thinkingFormat stays "deepseek" to preserve today's body shape;
   // Ollama's native toggle is the top-level `think` field (bool or
-  // low/medium/high/max), which no format in thinkingUnified.js emits yet —
-  // openai-to-ollama.js drops it. Wire a "think" format when thinking on
-  // Ollama Cloud is actually needed.
+  // low/medium/high/max). Gemma 4 uses the native Ollama format below.
   "ollama": {
+    "gemma4:cloud": { reasoning: true, thinkingFormat: "ollama", contextWindow: 128000 },
     "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   },
   // MiniMax Code (mcode) credits lane — Anthropic messages on mavis; thinking

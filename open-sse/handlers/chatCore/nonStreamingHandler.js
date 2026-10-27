@@ -12,6 +12,7 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
+import { stripIncompatibleReasoningContent } from "../../translator/concerns/reasoning.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
 
 /**
@@ -318,13 +319,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // Strip reasoning_content only when content is non-empty.
   // When content is empty (e.g. thinking models that used all tokens for reasoning),
   // reasoning_content is the only useful output and must be preserved.
-  if (!isClaudeMessageResponse && !isResponsesResponse && translatedResponse?.choices) {
-    for (const choice of translatedResponse.choices) {
-      if (choice?.message?.reasoning_content && choice.message.content) {
-        delete choice.message.reasoning_content;
-      }
-    }
-  }
+  stripIncompatibleReasoningContent(translatedResponse, provider, { isClaudeMessageResponse, isResponsesResponse });
 
   reqLogger.logConvertedResponse(translatedResponse);
 
