@@ -36,3 +36,15 @@ export function extractReasoningText(delta) {
   }
   return "";
 }
+
+export function stripIncompatibleReasoningContent(translatedResponse, provider, { isClaudeMessageResponse = false, isResponsesResponse = false } = {}) {
+  if (provider === "ollama" || isClaudeMessageResponse || isResponsesResponse || !translatedResponse?.choices) {
+    return translatedResponse;
+  }
+  for (const choice of translatedResponse.choices) {
+    if (choice?.message?.reasoning_content && choice.message.content) {
+      delete choice.message.reasoning_content;
+    }
+  }
+  return translatedResponse;
+}

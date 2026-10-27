@@ -20,6 +20,7 @@ const FORMAT_TO_NATIVE = {
   antigravity: "gemini-budget",
   kiro: "kiro",
   commandcode: "commandcode",
+  ollama: "ollama",
 };
 
 // Strip a trailing thinking suffix "model(value)" → "model" (no-op when absent).
@@ -66,6 +67,17 @@ export function extractThinking(body) {
     if (e === "none" || e === "off") return { mode: "none" };
     if (e === "auto") return { mode: "auto" };
     return { mode: "level", level: e };
+  }
+
+  // Ollama native shape. Accept it directly or under the common OpenAI
+  // extra_body extension; the target formatter writes it top-level.
+  const ollamaThink = body.think ?? body.extra_body?.think;
+  if (typeof ollamaThink === "boolean") return { mode: ollamaThink ? "auto" : "none" };
+  if (typeof ollamaThink === "string" && ollamaThink) {
+    const level = ollamaThink.toLowerCase();
+    if (level === "none" || level === "off") return { mode: "none" };
+    if (level === "auto") return { mode: "auto" };
+    return { mode: "level", level };
   }
 
   // Claude shape
@@ -246,6 +258,7 @@ function stripAll(body) {
   delete body.thinking;
   delete body.reasoning_effort;
   delete body.reasoning;
+  delete body.think;
   delete body.thinkingConfig;
   delete body.enable_thinking;
   delete body.thinking_budget;
@@ -398,6 +411,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
         enabled: true,
         ...(level ? { effort: level } : {}),
       };
+      break;
+    }
+    case "ollama": {
+      body.think = none && canDisable
+        ? false
+        : ["low", "medium", "high", "max"].includes(toLevel(eff))
+          ? toLevel(eff)
+          : true;
       break;
     }
     case "tokenrouter": {

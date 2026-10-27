@@ -25,6 +25,13 @@ export function openaiToOllamaRequest(model, body, stream) {
     stream: stream
   };
 
+  // Preserve an explicitly supplied Ollama-native switch. Unified thinking
+  // normalization will also write this field for reasoning_effort/thinking.
+  const think = body.think ?? body.extra_body?.think;
+  if (typeof think === "boolean" || (typeof think === "string" && think)) {
+    result.think = think;
+  }
+
   // Temperature
   if (body.temperature !== undefined) {
     result.options = result.options || {};
