@@ -53,3 +53,14 @@ describe("guardStream", () => {
     expect(await readAll(guarded)).toBe("");
   });
 });
+
+describe("buildStreamErrorBytes for Messages-API clients", () => {
+  it("reports a transient upstream failure as a retryable overloaded_error", async () => {
+    const { buildStreamErrorBytes } = await import("../../open-sse/utils/streamHelpers.js");
+    const { FORMATS } = await import("../../open-sse/translator/formats.js");
+    const text = new TextDecoder().decode(buildStreamErrorBytes(504, "upstream connection lost", FORMATS.CLAUDE));
+    expect(text).toContain("event: error");
+    expect(text).toContain('"type":"overloaded_error"');
+    expect(text).toContain("upstream connection lost");
+  });
+});
