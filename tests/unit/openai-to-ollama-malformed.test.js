@@ -41,14 +41,42 @@ describe("Ollama native thinking", () => {
     }, false).think).toBe(true);
   });
 
-  it("maps OpenAI effort to Ollama think level for Gemma 4", () => {
-    const body = { reasoning_effort: "high" };
+  it.each(["minimal", "low", "medium", "high", "xhigh", "max", "auto"])(
+    "maps reasoning_effort=%s to boolean think for Gemma 4",
+    (effort) => {
+      const body = { reasoning_effort: effort };
+      applyThinking("ollama", "gemma4:cloud", body, "ollama");
+      expect(body.think).toBe(true);
+      expect(getCapabilitiesForModel("ollama", "gemma4:cloud")).toMatchObject({
+        reasoning: true,
+        thinkingFormat: "ollama",
+      });
+    }
+  );
+
+  it.each([
+    { thinking: { type: "enabled", budget_tokens: 4096 } },
+    { reasoning: { effort: "high" } },
+    { think: true },
+    { extra_body: { think: true } },
+  ])("maps %j to boolean think for Gemma 4", (intent) => {
+    const body = { ...intent };
     applyThinking("ollama", "gemma4:cloud", body, "ollama");
-    expect(body.think).toBe("high");
-    expect(getCapabilitiesForModel("ollama", "gemma4:cloud")).toMatchObject({
-      reasoning: true,
-      thinkingFormat: "ollama",
-    });
+    expect(body.think).toBe(true);
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.extra_body?.think).toBeUndefined();
+  });
+
+  it("only explicit disable sends think=false", () => {
+    const body = { thinking: { type: "disabled" } };
+    applyThinking("ollama", "gemma4:cloud", body, "ollama");
+    expect(body.think).toBe(false);
+  });
+
+  it("leaves think untouched when the client sends no thinking intent", () => {
+    const body = { messages: [] };
+    applyThinking("ollama", "gemma4:cloud", body, "ollama");
+    expect(body.think).toBeUndefined();
   });
 
   it("maps Ollama thinking in non-streaming and streaming responses", () => {

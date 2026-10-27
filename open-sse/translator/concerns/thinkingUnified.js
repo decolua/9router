@@ -414,11 +414,15 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
       break;
     }
     case "ollama": {
-      body.think = none && canDisable
-        ? false
-        : ["low", "medium", "high", "max"].includes(toLevel(eff))
-          ? toLevel(eff)
-          : true;
+      // Ollama Cloud's Gemma 4 accepts only the boolean switch. Every effort
+      // level maps to "on"; only an explicit disable sends false.
+      body.think = !(none && canDisable);
+      // The native switch supersedes the OpenAI extra_body spelling; never
+      // forward both, and keep unrelated extra_body fields intact.
+      if (body.extra_body && typeof body.extra_body === "object") {
+        delete body.extra_body.think;
+        if (Object.keys(body.extra_body).length === 0) delete body.extra_body;
+      }
       break;
     }
     case "tokenrouter": {
