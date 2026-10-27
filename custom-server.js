@@ -5,6 +5,9 @@ const crypto = require("crypto");
 const { pathToFileURL } = require("url");
 
 const origCreate = http.createServer.bind(http);
+// Keep pooled connections alive beyond common 60-second client/proxy idle
+// windows. Next's explicit timeout can still override this after creation.
+const DEFAULT_KEEP_ALIVE_TIMEOUT_MS = 65000;
 
 // Per-process secret proving x-9r-real-ip was stamped below rather than sent by the client.
 // A bare `next start` / `next dev` never loads this file, so it cannot produce a matching
@@ -73,6 +76,12 @@ http.createServer = (...args) => {
     return handler(req, res);
   };
   const server = origCreate(...rest, wrapped);
+  if (!rest.some((options) => options && Object.hasOwn(options, "keepAliveTimeout"))) {
+    const configured = Number.parseInt(process.env.KEEP_ALIVE_TIMEOUT, 10);
+    server.keepAliveTimeout = Number.isFinite(configured) && configured >= 0
+      ? configured
+      : DEFAULT_KEEP_ALIVE_TIMEOUT_MS;
+  }
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });
