@@ -1,0 +1,74 @@
+name: Sync Upstream
+
+# Fork-only helper: merge decolua/9router master into this fork, then push.
+# The push to master triggers fork-docker.yml, so following upstream needs no
+# manual tag juggling. Local commits (like the Ollama thinking fix) are kept;
+# on a real conflict the job fails loudly instead of dropping changes.
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only check, do not push"
+        type: boolean
+        default: false
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Merge upstream master
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Never run on the upstream repository itself.
+    if: github.repository != 'decolua/9router'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: master
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/decolua/9router.git
+          git fetch upstream master --depth=50
+
+      - name: Check for updates
+        id: check
+        run: |
+          set -euo pipefail
+          behind="$(git rev-list --count HEAD..upstream/master)"
+          echo "behind=${behind}" >> "$GITHUB_OUTPUT"
+          echo "Commits behind upstream: ${behind}"
+
+      - name: Merge upstream
+        if: steps.check.outputs.behind != '0'
+        run: |
+          set -euo pipefail
+          git merge --no-edit upstream/master
+
+      - name: Push
+        if: steps.check.outputs.behind != '0' && inputs.dry_run != true
+        run: git push origin master
+
+      - name: Summary
+        run: |
+          if [[ "${{ steps.check.outputs.behind }}" == "0" ]]; then
+            echo "Already up to date with upstream." >> "$GITHUB_STEP_SUMMARY"
+          elif [[ "${{ inputs.dry_run }}" == "true" ]]; then
+            echo "Dry run: merge succeeded locally, not pushed." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Merged and pushed ${{ steps.check.outputs.behind }} upstream commit(s)." >> "$GITHUB_STEP_SUMMARY"
+          fi

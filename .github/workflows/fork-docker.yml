@@ -1,0 +1,215 @@
+name: Fork Docker Build
+
+# Fork-only workflow: build and publish a multi-platform image on every push to
+# master. The upstream docker-publish.yml stays untouched (it still runs on v*
+# tags), so syncing with upstream never conflicts with this file.
+#
+# Published tags on ghcr.io/<owner>/9router:
+#   latest        – newest master build
+#   <version>     – package.json version (e.g. 0.5.111)
+#   sha-<short>   – immutable per-commit tag
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+concurrency:
+  group: fork-docker-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GHCR_IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  prepare:
+    name: Read version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      short_sha: ${{ steps.meta.outputs.short_sha }}
+      ghcr_image: ${{ steps.meta.outputs.ghcr_image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Resolve image metadata
+        id: meta
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./package.json').version")"
+          short_sha="$(git rev-parse --short=7 HEAD)"
+          image="$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          {
+            echo "version=${version}"
+            echo "short_sha=${short_sha}"
+            echo "ghcr_image=ghcr.io/${image}"
+          } >> "$GITHUB_OUTPUT"
+          echo "Building ${version} (${short_sha})"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            suffix: amd64
+            runner: ubuntu-24.04
+          - platform: linux/arm64
+            suffix: arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: ${{ matrix.platform }}
+          outputs: type=image,name=${{ needs.prepare.outputs.ghcr_image }},push-by-digest=true,name-canonical=true,push=true
+          build-args: |
+            APP_VERSION=${{ needs.prepare.outputs.version }}
+            ALPINE_MIRROR=${{ vars.ALPINE_MIRROR || 'dl-cdn.alpinelinux.org' }}
+            NPM_REGISTRY=${{ vars.NPM_REGISTRY || 'https://registry.npmjs.org/' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.version }}
+          cache-from: type=gha,scope=fork-${{ matrix.suffix }}
+          cache-to: type=gha,mode=max,scope=fork-${{ matrix.suffix }}
+          provenance: false
+          sbom: false
+
+      - name: Smoke-test image
+        env:
+          IMAGE: ${{ needs.prepare.outputs.ghcr_image }}@${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -Eeuo pipefail
+          container="9router-smoke-${GITHUB_RUN_ID}-${{ matrix.suffix }}"
+          trap 'docker rm -f "$container" >/dev/null 2>&1 || true' EXIT
+
+          docker run --detach \
+            --name "$container" \
+            --platform "$PLATFORM" \
+            --publish 20128:20128 \
+            "$IMAGE"
+
+          for attempt in {1..45}; do
+            if curl --fail --silent --show-error http://127.0.0.1:20128/api/health; then
+              echo "${PLATFORM} health check passed"
+              exit 0
+            fi
+            sleep 2
+          done
+
+          echo "${PLATFORM} health check failed; logs:" >&2
+          docker logs "$container" || true
+          exit 1
+
+      - name: Save digest
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/digests"
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/digests/${{ matrix.suffix }}.txt"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.suffix }}
+          path: ${{ runner.temp }}/digests/${{ matrix.suffix }}.txt
+          if-no-files-found: error
+
+  publish:
+    name: Publish manifest
+    needs:
+      - prepare
+      - build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push tags
+        env:
+          IMAGE: ${{ needs.prepare.outputs.ghcr_image }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          SHORT_SHA: ${{ needs.prepare.outputs.short_sha }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/digests/*.txt)
+          if [[ "${#files[@]}" -ne 2 ]]; then
+            echo "Expected 2 platform digests, found ${#files[@]}" >&2
+            exit 1
+          fi
+
+          sources=()
+          for f in "${files[@]}"; do
+            digest="$(tr -d '\n' < "$f")"
+            [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "bad digest: $digest" >&2; exit 1; }
+            sources+=("${IMAGE}@${digest}")
+          done
+
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${VERSION}" \
+            --tag "${IMAGE}:sha-${SHORT_SHA}" \
+            "${sources[@]}"
+
+          docker buildx imagetools create \
+            --tag "${IMAGE}:latest" \
+            "${IMAGE}:${VERSION}"
+
+          docker buildx imagetools inspect "${IMAGE}:${VERSION}"
+          docker buildx imagetools inspect "${IMAGE}:latest"
+
+      - name: Summary
+        run: |
+          {
+            echo "### Published"
+            echo "- \`${{ needs.prepare.outputs.ghcr_image }}:${{ needs.prepare.outputs.version }}\`"
+            echo "- \`${{ needs.prepare.outputs.ghcr_image }}:sha-${{ needs.prepare.outputs.short_sha }}\`"
+            echo "- \`${{ needs.prepare.outputs.ghcr_image }}:latest\`"
+          } >> "$GITHUB_STEP_SUMMARY"
