@@ -3,6 +3,8 @@ import { openAICompletionToClaudeMessage, translateNonStreamingResponse } from "
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { stripModelContextMarker } from "../../open-sse/utils/modelMarkers.js";
 import { resolveModelAliasFromMap } from "../../open-sse/services/model.js";
+import { openaiToClaudeResponse } from "../../open-sse/translator/response/openai-to-claude.js";
+import { translateResponse } from "../../open-sse/translator/index.js";
 
 describe("Claude non-streaming response projection & classifier compatibility", () => {
   it("projects OpenAI completion to official Anthropic Message format", () => {
@@ -174,5 +176,59 @@ describe("Claude non-streaming response projection & classifier compatibility", 
       provider: "antigravity",
       model: "gemini-3.8-flash"
     });
+  });
+
+  it("handles empty candidates non-streaming response without crashing with 'JSON but not a Message'", () => {
+    const emptyGeminiResponse = {
+      response: {
+        candidates: [],
+        usageMetadata: {
+          promptTokenCount: 239010,
+          candidatesTokenCount: 0,
+          totalTokenCount: 239010
+        },
+        responseId: "gemini-truncated-retry-123"
+      }
+    };
+
+    const translated = translateNonStreamingResponse(
+      emptyGeminiResponse,
+      FORMATS.ANTIGRAVITY,
+      FORMATS.CLAUDE
+    );
+
+    // Guaranteed to be a valid Anthropic Message envelope
+    expect(translated.type).toBe("message");
+    expect(translated.role).toBe("assistant");
+    expect(translated.id).toContain("msg_");
+    expect(translated.stop_reason).toBe("end_turn");
+    expect(Array.isArray(translated.content)).toBe(true);
+    expect(translated.content[0]).toEqual({ type: "text", text: "" });
+    expect(translated.usage.input_tokens).toBe(239010);
+    expect(translated.usage.output_tokens).toBe(0);
+  });
+
+  it("synthesizes clean terminal message_stop when stream truncates prematurely before finish_reason", () => {
+    const state = {
+      messageStartSent: true,
+      finishReason: null,
+      usage: { input_tokens: 100, output_tokens: 0 }
+    };
+
+    // First, verify openaiToClaudeResponse flushes properly on null chunk
+    const flushEvents = openaiToClaudeResponse(null, state);
+    expect(Array.isArray(flushEvents)).toBe(true);
+    expect(flushEvents.some(e => e.type === "message_delta" && e.delta.stop_reason === "end_turn")).toBe(true);
+    expect(flushEvents.some(e => e.type === "message_stop")).toBe(true);
+
+    // Second, verify translateResponse propagates null chunk through the 2-hop pipeline
+    const streamState = {
+      messageStartSent: true,
+      finishReason: null,
+      usage: { input_tokens: 150, output_tokens: 0 }
+    };
+    const pipelineFlush = translateResponse(FORMATS.ANTIGRAVITY, FORMATS.CLAUDE, null, streamState);
+    expect(Array.isArray(pipelineFlush)).toBe(true);
+    expect(pipelineFlush.some(e => e.type === "message_stop")).toBe(true);
   });
 });
