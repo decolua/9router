@@ -8,6 +8,52 @@ import { resolveOpenAICompatibleApiType } from "../services/provider.js";
 /**
  * BaseExecutor - Base class for provider executors
  */
+
+// A stalled upstream SSE stream (events stop mid-answer, socket stays open) leaves the client
+// waiting for its own timeout and then falling back to a non-streaming retry. Bound the silence:
+// before the first chunk we retry upstream transparently, after it we end the stream with an
+// error so the client retries a clean stream.
+const FIRST_CHUNK_TIMEOUT_MS = Number(process.env.UPSTREAM_FIRST_CHUNK_TIMEOUT_MS) || 45000;
+const STREAM_IDLE_TIMEOUT_MS = Number(process.env.UPSTREAM_STREAM_IDLE_TIMEOUT_MS) || 60000;
+
+export async function guardStream(response, { firstChunkMs = FIRST_CHUNK_TIMEOUT_MS, idleMs = STREAM_IDLE_TIMEOUT_MS } = {}) {
+  const reader = response.body.getReader();
+  const readWithin = (ms, what) => new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`upstream stream stalled: no ${what} for ${ms}ms`)), ms);
+    reader.read().then(
+      (r) => { clearTimeout(timer); resolve(r); },
+      (e) => { clearTimeout(timer); reject(e); }
+    );
+  });
+  let first;
+  try {
+    first = await readWithin(firstChunkMs, "first chunk");
+  } catch (error) {
+    reader.cancel(error).catch(() => {});
+    throw error;
+  }
+  let sentFirst = false;
+  const body = new ReadableStream({
+    async pull(controller) {
+      try {
+        if (!sentFirst) {
+          sentFirst = true;
+          if (first.done) { controller.close(); return; }
+          controller.enqueue(first.value);
+          return;
+        }
+        const r = await readWithin(idleMs, "chunk");
+        if (r.done) controller.close(); else controller.enqueue(r.value);
+      } catch (error) {
+        reader.cancel(error).catch(() => {});
+        controller.error(error);
+      }
+    },
+    cancel(reason) { return reader.cancel(reason); }
+  });
+  return new Response(body, { status: response.status, statusText: response.statusText, headers: response.headers });
+}
+
 export class BaseExecutor {
   constructor(provider, config) {
     this.provider = provider;
@@ -165,7 +211,8 @@ export class BaseExecutor {
           continue;
         }
 
-        return { response, url, headers, transformedBody };
+        const guarded = stream && response.ok && response.body ? await guardStream(response) : response;
+        return { response: guarded, url, headers, transformedBody };
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;
