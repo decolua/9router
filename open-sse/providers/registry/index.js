@@ -142,6 +142,7 @@ import p153 from "./kenari.js";
 import p154 from "./dahl.js";
 import p155 from "./agnes.js";
 import p156 from "./nous.js";
+import p157 from "./runcrate.js";
 import p143 from "./gemini-web.js";
 import p144 from "./muse-web.js";
 import p146 from "./chatgpt-web.js";
@@ -294,4 +295,5 @@ export default [
   p154,
   p155,
   p156,
+  p157,
 ];
