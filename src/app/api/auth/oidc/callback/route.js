@@ -5,6 +5,7 @@ import {
   fetchOidcDiscovery,
   getOidcRuntimeConfig,
   getPublicOrigin,
+  isOidcIdentityAllowed,
   pickOidcDisplayName,
   pickOidcEmail,
   verifyOidcIdToken,
@@ -70,6 +71,11 @@ export async function GET(request) {
       jwksUri: discovery.jwks_uri,
       nonce: storedNonce,
     });
+
+    if (!isOidcIdentityAllowed(payload, config.allowedSubjects)) {
+      clearOidcCookies(cookieStore);
+      return NextResponse.redirect(new URL("/login?error=oidc_subject_not_allowed", getPublicOrigin(request)));
+    }
 
     clearOidcCookies(cookieStore);
     await setDashboardAuthCookie(cookieStore, request, {

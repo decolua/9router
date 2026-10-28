@@ -40,6 +40,7 @@ export default function ProfilePage() {
     oidcClientId: "",
     oidcScopes: "openid profile email",
     oidcLoginLabel: "Sign in with OIDC",
+    oidcAllowedSubjects: "",
   });
   const [oidcClientSecret, setOidcClientSecret] = useState("");
   const [oidcStatus, setOidcStatus] = useState({ type: "", message: "" });
@@ -98,6 +99,7 @@ export default function ProfilePage() {
           oidcClientId: data?.oidcClientId || "",
           oidcScopes: data?.oidcScopes || "openid profile email",
           oidcLoginLabel: data?.oidcLoginLabel || "Sign in with OIDC",
+          oidcAllowedSubjects: (data?.oidcAllowedSubjects || []).join("\n"),
         });
         setOidcClientSecret("");
         setSsoTypeTab(data?.ssoType || "saml");
@@ -353,6 +355,12 @@ export default function ProfilePage() {
     const scopes = oidcForm.oidcScopes.trim();
     const loginLabel = oidcForm.oidcLoginLabel.trim();
     const secret = oidcClientSecret.trim();
+    const allowedSubjects = oidcForm.oidcAllowedSubjects.split("\n").map((entry) => entry.trim()).filter(Boolean);
+
+    if (authMode !== "password" && allowedSubjects.length === 0) {
+      setOidcStatus({ type: "error", message: "Add at least one exact OIDC subject or email: prefixed verified email before enabling OIDC." });
+      return;
+    }
 
     if (authMode !== "password" && (!issuerUrl || !clientId || !secret) && !settings.oidcConfigured) {
       setOidcStatus({ type: "error", message: "Issuer URL, client ID, and client secret are required to enable OIDC." });
@@ -371,6 +379,7 @@ export default function ProfilePage() {
         oidcClientId: clientId,
         oidcScopes: scopes || "openid profile email",
         oidcLoginLabel: loginLabel || "Sign in with OIDC",
+        oidcAllowedSubjects: allowedSubjects,
       };
       if (secret) {
         payload.oidcClientSecret = secret;
@@ -391,6 +400,7 @@ export default function ProfilePage() {
           oidcClientId: data?.oidcClientId || clientId,
           oidcScopes: data?.oidcScopes || scopes || "openid profile email",
           oidcLoginLabel: data?.oidcLoginLabel || loginLabel || "Sign in with OIDC",
+          oidcAllowedSubjects: (data?.oidcAllowedSubjects || allowedSubjects).join("\n"),
         });
         setOidcClientSecret("");
         setOidcStatus({
@@ -437,6 +447,7 @@ export default function ProfilePage() {
           oidcClientId: clientId,
           oidcScopes: scopes || "openid profile email",
           oidcLoginLabel: oidcForm.oidcLoginLabel.trim() || "Sign in with OIDC",
+          oidcAllowedSubjects: oidcForm.oidcAllowedSubjects.split("\n").map((entry) => entry.trim()).filter(Boolean),
           ...(secret ? { oidcClientSecret: secret } : {}),
         }),
       });
@@ -1389,6 +1400,22 @@ export default function ProfilePage() {
                         onChange={(e) => updateOidcForm("oidcLoginLabel", e.target.value)}
                         disabled={loading || oidcLoading}
                       />
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <label htmlFor="oidc-allowed-subjects" className="font-medium text-sm sm:text-base">Allowed Subjects or Verified Emails (email:)</label>
+                      <textarea
+                        id="oidc-allowed-subjects"
+                        rows={4}
+                        placeholder={"exact-case-sensitive-subject\nemail:admin@example.com"}
+                        value={oidcForm.oidcAllowedSubjects}
+                        onChange={(e) => updateOidcForm("oidcAllowedSubjects", e.target.value)}
+                        className="w-full p-2.5 rounded-lg border border-border bg-bg text-sm font-mono text-text-main focus:outline-none focus:border-primary"
+                        disabled={loading || oidcLoading}
+                      />
+                      <p className="text-xs sm:text-sm text-text-muted">
+                        One entry per line. Bare entries match exact, case-sensitive subjects. The email: prefix is reserved for case-insensitive verified email matching and never matches a subject. An empty list blocks all OIDC logins.
+                      </p>
                     </div>
                   </div>
 
