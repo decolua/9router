@@ -74,4 +74,24 @@ describe("pingModelByKind reasoning models (#3010)", () => {
     const result = await pingModelByKind("openai/gpt-4o", "llm", "http://127.0.0.1:20127");
     expect(result.ok).toBe(true);
   });
+
+  it("handles probe timeout gracefully with 504 status and informative error", async () => {
+    const timeoutErr = new Error("The operation was aborted due to timeout");
+    timeoutErr.name = "TimeoutError";
+    fetchMock.mockRejectedValue(timeoutErr);
+
+    const result = await pingModelByKind("gemini/gemini-3.8-flash", "llm", "http://127.0.0.1:20127");
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(504);
+    expect(result.error).toMatch(/timed out after \d+s/i);
+  });
+
+  it("handles general network probe failures gracefully", async () => {
+    fetchMock.mockRejectedValue(new Error("connect ECONNREFUSED 127.0.0.1:20127"));
+
+    const result = await pingModelByKind("gemini/gemini-3.8-flash", "llm", "http://127.0.0.1:20127");
+    expect(result.ok).toBe(false);
+    expect(result.status).toBe(500);
+    expect(result.error).toMatch(/Model probe failed:/);
+  });
 });
