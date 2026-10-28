@@ -1,5 +1,6 @@
 // Helpers for OpenAI Responses API streaming termination + event framing
 import { FORMATS } from "../translator/formats.js";
+import { RESPONSES_EVENT, RESPONSES_STATUS } from "../translator/schema/index.js";
 import { formatSSE } from "./streamHelpers.js";
 
 // Responses API events that signal the stream has reached a terminal state
@@ -32,18 +33,22 @@ export function buildAbortedResponsesTerminalBytes() {
 
 // Synthesize a response.failed event for streams that close without a terminal event
 export function formatIncompleteOpenAIResponsesStreamFailure() {
+  return formatOpenAIResponsesStreamFailure({
+    type: "stream_error",
+    code: "stream_disconnected",
+    message: "stream closed before response.completed",
+  });
+}
+
+export function formatOpenAIResponsesStreamFailure(error) {
   return formatSSE({
-    event: "response.failed",
+    event: RESPONSES_EVENT.FAILED,
     data: {
-      type: "response.failed",
+      type: RESPONSES_EVENT.FAILED,
       response: {
         id: `resp_${Date.now()}`,
-        status: "failed",
-        error: {
-          type: "stream_error",
-          code: "stream_disconnected",
-          message: "stream closed before response.completed"
-        }
+        status: RESPONSES_STATUS.FAILED,
+        error,
       }
     }
   }, FORMATS.OPENAI_RESPONSES);

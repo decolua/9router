@@ -1,4 +1,6 @@
 // OpenAI-compatible error types mapping (client-facing)
+export const CONTEXT_LENGTH_EXCEEDED_CODE = "context_length_exceeded";
+
 export const ERROR_TYPES = {
   400: { type: "invalid_request_error", code: "bad_request" },
   401: { type: "authentication_error", code: "invalid_api_key" },
