@@ -17,6 +17,19 @@ services:
       HEADROOM_URL: http://headroom:8787
     depends_on:
       - headroom
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:20128/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s
+    labels:
+      freshdock.enable: "true"
+      freshdock.mode: nightly
 
   headroom:
     image: ghcr.io/chopratejas/headroom:latest
@@ -24,6 +37,17 @@ services:
     restart: always
     ports:
       - "127.0.0.1:8787:8787"
+
+  # Opt-in: holds the Docker socket (host-level access) and redeploys :latest unattended.
+  # Enable with `docker compose --profile auto-update up -d`; see DOCKER.md.
+  freshdock:
+    image: ghcr.io/turbootzz/freshdock:1.4.1@sha256:e1700a73bc50cf35c271c2cc86b0969dd3f5ecf4655fd8f18ae8cdc7e130fc76
+    profiles: ["auto-update"]
+    container_name: freshdock
+    restart: unless-stopped
+    command: ["run"]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
 
 volumes:
   9router-data:
