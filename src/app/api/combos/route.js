@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { normalizeComboModelIds } from "./modelIds.js";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,11 @@ export async function POST(request) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const normalizedModels = normalizeComboModelIds(models ?? []);
+    if (!normalizedModels) {
+      return NextResponse.json({ error: "Models must contain valid model IDs" }, { status: 400 });
+    }
+    const combo = await createCombo({ name, models: normalizedModels, kind: kind || null });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {
