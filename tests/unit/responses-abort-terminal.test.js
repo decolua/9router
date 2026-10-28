@@ -93,10 +93,11 @@ describe("buildStreamErrorBytes", () => {
     expect(out).toContain('data: {"error"');
     expect(out.indexOf("data: [DONE]")).toBeGreaterThan(out.indexOf('data: {"error"'));
 
+    // Numeric code + no `type`: the shape Kilo/opencode harness classifiers
+    // accept as retryable (a string `type` yields a non-retryable UnknownError).
     expect(jsonOf(out).error).toEqual({
       message: "stream stall timeout",
-      type: "server_error",
-      code: "gateway_timeout",
+      code: 504,
     });
   });
 

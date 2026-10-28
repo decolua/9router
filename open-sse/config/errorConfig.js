@@ -45,6 +45,7 @@ export const MAX_RATE_LIMIT_COOLDOWN_MS = 30 * 60 * 1000;
 const COOLDOWN = {
   long: 2 * 60 * 1000,
   short: 5 * 1000,
+  cloudflareTimeout: 2 * 1000,
 };
 
 /**
@@ -78,6 +79,7 @@ export const ERROR_RULES = [
   { status: 402, cooldownMs: COOLDOWN.long },
   { status: 403, cooldownMs: COOLDOWN.long },
   { status: 404, cooldownMs: COOLDOWN.long },
+  { status: 524, cooldownMs: COOLDOWN.cloudflareTimeout },
   { status: 429, backoff: true },
 ];
 
@@ -89,3 +91,63 @@ export const COOLDOWN_MS = {
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
 };
+
+/**
+ * In-band stream/transport failures: the upstream hop dropped mid-request, not a
+ * problem with the request or credential. Providers report these inside 200-OK
+ * SSE bodies (or as error bodies) with provider-specific codes, so the patterns
+ * stay provider-agnostic — matched case-insensitively against the raw error text.
+ * Treating them as transient lets the router retry (and keeps them out of the
+ * client's "unknown error" bucket).
+ */
+export const TRANSIENT_STREAM_ERROR_PATTERNS = [
+  "server_is_overloaded",
+  "service_unavailable_error",
+  "http2_stream_error",
+  "stream_error",
+  "stream_failed",
+  "stream_disconnected",
+  "stream_closed",
+  "upstream_disconnected",
+  "connection_reset",
+  "connection_error",
+  "econnreset",
+  "socket_hang_up",
+  "premature_close",
+  "network_error",
+  "transport_error",
+  // Human-readable transport phrasings (upstream bodies/events use prose too).
+  // Deliberately narrow: this list is also scanned against the first bytes of a
+  // 200-OK SSE body, so only phrasings that cannot appear as normal prose qualify.
+  "http/2 stream failed",
+  "http2 stream failed",
+  "socket hang up",
+  "temporarily overloaded",
+];
+
+/**
+ * Extra phrasings that make a stream failure worth an in-router retry. Only
+ * consulted before any content reached the client, so broader wording is safe.
+ */
+export const PRE_CONTENT_RETRY_PATTERNS = [
+  "overload",
+  "unavailable",
+  "timeout",
+  "timed out",
+  "connection",
+  "upstream",
+  "try again",
+  "capacity",
+  "server_error",
+  "internal error",
+  "rate_limit",
+  "rate limit",
+  "too many requests",
+  "terminated",
+];
+
+/** In-band errors that mean the account/model is saturated → rotate accounts. */
+export const ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS = [
+  "selected model is at capacity",
+  "model_at_capacity",
+];

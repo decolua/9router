@@ -10,13 +10,17 @@ import { fetchImageAsBase64 } from "../translator/concerns/image.js";
 import { getModelUpstreamId, getProviderModels } from "../config/providerModels.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { DEFAULT_RETRY_CONFIG, HTTP_STATUS, resolveRetryEntry } from "../config/runtimeConfig.js";
+import { TRANSIENT_STREAM_ERROR_PATTERNS, ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS } from "../config/errorConfig.js";
 import { dbg } from "../utils/debugLog.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { stripCodexUnsupportedPatterns } from "../utils/codexToolSchema.js";
 
 // SSE error patterns inside 200-OK bodies. Some retry same account first; capacity rotates accounts.
-const CODEX_SSE_RETRY_PATTERNS = ["server_is_overloaded", "service_unavailable_error"];
-const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ["selected model is at capacity", "model_at_capacity"];
+// The lists are shared with the rest of the router (config/errorConfig.js) so a
+// transport failure reported with any provider's wording is still classified as
+// transient instead of streaming through to the client as an unknown error.
+const CODEX_SSE_RETRY_PATTERNS = TRANSIENT_STREAM_ERROR_PATTERNS;
+const CODEX_SSE_ACCOUNT_FALLBACK_PATTERNS = ACCOUNT_SCOPE_STREAM_ERROR_PATTERNS;
 const CODEX_SSE_USER_OUTPUT_PATTERNS = [
   "event: response.output_text.delta",
   "event: response.function_call_arguments.delta",

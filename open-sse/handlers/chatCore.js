@@ -8,9 +8,10 @@ import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
 import { getModelTargetFormat, getModelSupportedFormats, getModelStrip, getModelUpstreamId, getModelType, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { PROVIDERS } from "../config/providers.js";
-import { createErrorResult, parseUpstreamError, formatProviderError } from "../utils/error.js";
+import { createErrorResult, getClientErrorStatus, parseUpstreamError, formatProviderError } from "../utils/error.js";
 import { upstreamResponseHeaders } from "../utils/upstreamHeaders.js";
-import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, TOKEN_SAVER_HEADER, STREAM_PRECONTENT_RETRY_ATTEMPTS, STREAM_PRECONTENT_RETRY_DELAY_MS } from "../config/runtimeConfig.js";
+import { withPreContentRetry } from "../utils/preContentRetry.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
@@ -30,6 +31,7 @@ import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadr
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
+import { stripUnsupportedResponsesContentFields } from "../translator/formats/responsesApi.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
@@ -108,7 +110,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // whose wire format has no supported transport (for example MiniMax-M3:
   // OpenAI clients should stay on /chat/completions; other clients can fall
   // back to its declared Claude target).
-  const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
+  const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials, sourceFormat);
+  if (credentials) credentials.runtimeFormat = targetFormat;
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
 
@@ -283,13 +286,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Headroom: optional external proxy compression; fail open if proxy is absent.
   const headroomDiagnostics = {};
+  const preHeadroomBody = tokenSaverEnabled && headroomEnabled ? structuredClone(translatedBody) : null;
   const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
+  let headroomFallbackBody = null;
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
   if (headroomLine) {
     log?.info?.("HEADROOM", `${headroomLine}${headroomSizeLine ? ` | ${headroomSizeLine}` : ""}`);
     if (isHeadroomPhantomSavings(headroomStats, headroomDiagnostics)) {
-      log?.warn?.("HEADROOM", `reported token delta, but messages and outbound JSON shrank <5% | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
+      translatedBody = preHeadroomBody;
+      log?.warn?.("HEADROOM", `discarded rewrite because outbound JSON shrank <5%; preserving provider prompt cache | ${formatHeadroomSizeLog(headroomDiagnostics)}`);
+    } else if (finalFormat === FORMATS.OPENAI_RESPONSES
+      && preHeadroomBody
+      && JSON.stringify(translatedBody) !== JSON.stringify(preHeadroomBody)) {
+      headroomFallbackBody = preHeadroomBody;
     }
   } else if (tokenSaverEnabled && headroomEnabled) log?.warn?.("HEADROOM", `skipped: ${headroomDiagnostics.reason || "compression unavailable"}${headroomDiagnostics.endpoint ? ` (${headroomDiagnostics.endpoint})` : ""}`);
 
@@ -301,17 +311,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Caveman: inject terse-style system prompt
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
     injectCaveman(translatedBody, finalFormat, cavemanLevel);
+    if (headroomFallbackBody) injectCaveman(headroomFallbackBody, finalFormat, cavemanLevel);
     xf.push(`CAVEMAN:${cavemanLevel}`);
   }
 
   // Ponytail: inject lazy-senior-dev system prompt
   if (tokenSaverEnabled && ponytailEnabled && ponytailLevel) {
     injectPonytail(translatedBody, finalFormat, ponytailLevel);
+    if (headroomFallbackBody) injectPonytail(headroomFallbackBody, finalFormat, ponytailLevel);
     xf.push(`PONYTAIL:${ponytailLevel}`);
   }
 
   // Custom prompt: user-authored instruction, independent of the savers above
   if (customPromptEnabled && injectCustomPrompt(translatedBody, finalFormat, customPrompt)) {
+    if (headroomFallbackBody) injectCustomPrompt(headroomFallbackBody, finalFormat, customPrompt);
     xf.push(`CUSTOMPROMPT:${customPrompt.trim().length}c`);
   }
 
@@ -326,6 +339,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (pxpipeResult.body) translatedBody = pxpipeResult.body;
     if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
     try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+  }
+
+  if (finalFormat === FORMATS.OPENAI_RESPONSES) {
+    stripUnsupportedResponsesContentFields(translatedBody);
+  }
+  if (finalFormat === FORMATS.OPENAI_RESPONSES && headroomFallbackBody) {
+    stripUnsupportedResponsesContentFields(headroomFallbackBody);
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
@@ -392,6 +412,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
+  // Body of the attempt that produced providerResponse (pre-content retries resend it).
+  let sentBody = translatedBody;
   try {
     const result = await executor.execute({
       model,
@@ -415,6 +437,23 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       toolNameMap = new Map([...(toolNameMap || []), ...renamedToolNames]);
     }
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+
+    if (providerResponse.status === HTTP_STATUS.BAD_REQUEST && headroomFallbackBody) {
+      log?.warn?.("HEADROOM", "upstream rejected compressed Responses payload with 400; retrying once without Headroom");
+      try { await providerResponse.body?.cancel?.(); } catch { /* retry uses the uncompressed snapshot */ }
+      translatedBody = headroomFallbackBody;
+      const fallbackResult = await executor.execute({
+        model, body: translatedBody, stream, credentials, providerSessionId: sessionSeed,
+        clientTool, signal: streamController.signal, log, proxyOptions, providerOverrides,
+      });
+      sentBody = headroomFallbackBody;
+      providerResponse = fallbackResult.response;
+      providerUrl = fallbackResult.url;
+      providerHeaders = fallbackResult.headers;
+      finalBody = fallbackResult.transformedBody;
+      providerResponseFormat = fallbackResult.responseFormat || targetFormat;
+      reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
+    }
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
     appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
@@ -510,7 +549,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       log.errorLine(reqTag, "✗", `ERROR ${statusCode} · ${provider}/${model} · ${Date.now() - requestStartTime}ms${urlStr}\n    ${errMsg}`);
     }
     reqLogger.logError(new Error(message), finalBody || translatedBody);
-    return createErrorResult(statusCode, errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers));
+    return createErrorResult(getClientErrorStatus(statusCode, message), errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers), statusCode);
   }
 
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
@@ -533,7 +572,33 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return result;
   }
 
-  // Streaming response
+  // Streaming response. Failures before any content (in-band overload/HTTP2
+  // frames, dropped sockets, empty EOF) are retried here with backoff, so the
+  // client never sees them; after content starts the stream is committed.
+  const upstreamIsSse = (providerResponse.headers.get("content-type") || "").toLowerCase().includes("text/event-stream");
+  // Codex already peeks and retries its own SSE (executors/codex.js); stacking
+  // this layer would multiply attempts.
+  if (upstreamIsSse && provider !== "codex") {
+    providerResponse = withPreContentRetry(providerResponse, {
+      attempts: STREAM_PRECONTENT_RETRY_ATTEMPTS,
+      delayMs: STREAM_PRECONTENT_RETRY_DELAY_MS,
+      signal: streamController.signal,
+      reexecute: async () => (await executor.execute({
+        model,
+        body: sentBody,
+        stream,
+        credentials,
+        providerSessionId: sessionSeed,
+        clientTool,
+        signal: streamController.signal,
+        log,
+        proxyOptions,
+        providerOverrides,
+      })).response,
+      onRetry: (msg) => log?.warn?.("STREAM", `${provider}/${model} · pre-content failure: ${msg}`),
+    });
+  }
+
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
   return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, credentials });
 }

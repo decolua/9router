@@ -39,6 +39,14 @@ function envMs(name, def) {
   return Number.isFinite(n) && n > 0 ? n : def;
 }
 
+// Like envMs but accepts 0, for watchdogs that can be disabled outright.
+function envMsAllowingZero(name, def) {
+  const raw = process.env[name];
+  if (raw == null || raw === "") return def;
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? n : def;
+}
+
 function envUrl(name, def) {
   const raw = process.env[name]?.trim();
   return raw || def;
@@ -63,6 +71,21 @@ export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000)
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Pre-flight SSE peek for openai-compatible providers: wait up to this long for
+// the first event. An error frame in it (relays/gateways stream one instead of a
+// response when overloaded) becomes a retryable 502, so account fallback and
+// client retry run before any bytes are sent. 0 disables the peek.
+// Env: SSE_PREFLIGHT_PEEK_TIMEOUT_MS.
+export const SSE_PREFLIGHT_PEEK_TIMEOUT_MS = envMsAllowingZero("SSE_PREFLIGHT_PEEK_TIMEOUT_MS", 1500);
+
+// In-router retry for streams that fail before any content reached the client
+// (in-band overload/HTTP2 frames, dropped connections, EOF with no output).
+// Pre-content events are held back, so a retry is invisible to the client.
+// Delay doubles per attempt. Env: STREAM_PRECONTENT_RETRY_ATTEMPTS (0 disables),
+// STREAM_PRECONTENT_RETRY_DELAY_MS.
+export const STREAM_PRECONTENT_RETRY_ATTEMPTS = envMsAllowingZero("STREAM_PRECONTENT_RETRY_ATTEMPTS", 3);
+export const STREAM_PRECONTENT_RETRY_DELAY_MS = envMsAllowingZero("STREAM_PRECONTENT_RETRY_DELAY_MS", 2000);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
@@ -82,6 +105,8 @@ export const RETRY_CONFIG = {
 // Backward compat: if value is a number, treated as attempts with RETRY_CONFIG.delayMs
 export const DEFAULT_RETRY_CONFIG = {
   429: { attempts: 0, delayMs: 0 },
+  400: { attempts: 1, delayMs: 1000 },
+  500: { attempts: 3, delayMs: 2000 },
   502: { attempts: 3, delayMs: 3000 },
   503: { attempts: 3, delayMs: 2000 },
   504: { attempts: 2, delayMs: 3000 }
