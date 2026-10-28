@@ -74,10 +74,15 @@ export default {
       maxOutputTokens: 64000,
     },
     { id: "grok-4.7", name: "Grok 4.7" },
+    // Same Grok 4.7 on the faster lane Grok Build uses (about 2x output speed). Accepted by
+    // cli-chat-proxy but not advertised by its /models, so discovery never surfaces it.
+    { id: "grok-4.7-build-fast", name: "Grok 4.7 Build Fast" },
+    { id: "grok-4.6", name: "Grok 4.6" },
     { id: "grok-4.5", name: "Grok 4.5" },
-    { id: "grok-4.5-high", name: "Grok 4.5 (High)", upstreamModelId: "grok-4.5" },
-    { id: "grok-4.5-medium", name: "Grok 4.5 (Medium)", upstreamModelId: "grok-4.5" },
-    { id: "grok-4.5-low", name: "Grok 4.5 (Low)", upstreamModelId: "grok-4.5" },
+    // Accepted by cli-chat-proxy, not advertised by /models.
+    { id: "grok-code-fast-1", name: "Grok Code Fast 1" },
+    // No "-low/-medium/-high" entries: the executor strips any effort suffix and sends it as
+    // reasoning.effort (resolveEffortFromModel), so "grok-4.7-high" works without a listing.
   ],
   features: {
     usage: true,
