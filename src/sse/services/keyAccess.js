@@ -22,7 +22,13 @@
 // does not grant calling a member directly by name — that needs its own entry.
 // The check runs before any credential lookup, so a denied request never
 // touches a provider account.
-import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
+//
+// The same context also enforces per-key limits (any key, restricted or not):
+// an expired key gets 401 and a key over any of its daily / weekly / monthly
+// USD budgets gets 429, both in a shape Claude Code / Anthropic SDKs stop
+// retrying on.
+import { getApiKeyByKey, getApiKeyPeriodSpend } from "@/lib/db/repos/apiKeysRepo.js";
+import { isKeyExpired, keyBudgets } from "@/shared/utils/keyQuota.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
 import { getModelInfo, getComboModels } from "./model.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
@@ -61,21 +67,58 @@ export function extractClientApiKey(request) {
   }
 }
 
+// Anthropic-shaped error body (also has OpenAI's error.message/type/code).
+// x-should-retry:false stops the Anthropic SDK (Claude Code) from retrying.
+function keyLimitResponse(status, type, code, message, retryAfterSec) {
+  const headers = { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", "x-should-retry": "false" };
+  if (retryAfterSec) headers["retry-after"] = String(retryAfterSec);
+  return new Response(JSON.stringify({ type: "error", error: { type, code, message } }), { status, headers });
+}
+
+/** 401/429 Response when the key is expired or over its period budget, else null. */
+export async function checkKeyLimits(record, now = new Date()) {
+  const name = record.name || record.id;
+  if (isKeyExpired(record, now)) {
+    log.warn("AUTH", `key-limits: key "${name}" expired at ${record.expiresAt}`);
+    return keyLimitResponse(HTTP_STATUS.UNAUTHORIZED, "authentication_error", "key_expired",
+      `API key "${name}" expired at ${record.expiresAt}.`);
+  }
+  const budgets = keyBudgets(record);
+  if (!budgets.length) return null;
+  // ponytail: spend is summed after each request completes, so concurrent in-flight requests can overshoot the budget slightly.
+  const spend = await getApiKeyPeriodSpend(record.key, now);
+  const hit = budgets
+    .filter((b) => spend[b.id].spent >= b.limit)
+    .sort((a, b) => spend[b.id].end - spend[a.id].end)[0]; // the one blocking longest
+  if (!hit) return null;
+  const { spent, end } = spend[hit.id];
+  log.warn("AUTH", `key-limits: key "${name}" spent $${spent.toFixed(4)} of $${hit.limit} (${hit.id})`);
+  return keyLimitResponse(HTTP_STATUS.RATE_LIMITED, "rate_limit_error", "quota_exceeded",
+    `API key "${name}" reached its ${hit.label.toLowerCase()} budget of $${hit.limit} ($${spent.toFixed(2)} used). Resets at ${end.toISOString()}.`,
+    Math.max(1, Math.ceil((end - now) / 1000)));
+}
+
 /**
  * Access context for the request's key, or null when the request is
- * unrestricted (no key, unknown key, or a key whose access is unrestricted).
- * Keys are only authenticated elsewhere (middleware / requireApiKey); this only
- * decides what an identified key may call.
+ * unrestricted and within limits (no key, unknown key, or an unrestricted key
+ * that is neither expired nor over quota). `denied` holds the limit Response
+ * every enforce* gate returns first. Keys are only authenticated elsewhere
+ * (middleware / requireApiKey); this decides what an identified key may call.
  */
 export async function getKeyAccessContext(request) {
   const apiKey = extractClientApiKey(request);
   if (!apiKey) return null;
   const record = await getApiKeyByKey(apiKey);
-  if (!record?.access?.restricted) return null;
+  if (!record) return null;
+  const denied = await checkKeyLimits(record);
+  const restricted = !!record.access?.restricted;
+  if (!restricted && !denied) return null;
   return {
     keyId: record.id,
     keyName: record.name || record.id,
-    allow: record.access.allow || [],
+    restricted,
+    denied,
+    allow: record.access?.allow || [],
     _sets: null,
   };
 }
@@ -122,6 +165,8 @@ export function keyAccessDeniedResponse(ctx, requested) {
  */
 export async function enforceKeyAccess(ctx, requested) {
   if (!ctx) return null;
+  if (ctx.denied) return ctx.denied;
+  if (!ctx.restricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const comboModels = await getComboModels(requested);
@@ -139,6 +184,8 @@ export async function enforceKeyAccess(ctx, requested) {
  */
 export async function enforceKeyAccessResolved(ctx, requested, provider, model) {
   if (!ctx) return null;
+  if (ctx.denied) return ctx.denied;
+  if (!ctx.restricted) return null;
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
@@ -151,6 +198,8 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
  */
 export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx) return null;
+  if (ctx.denied) return ctx.denied;
+  if (!ctx.restricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const allowed = comboModels
@@ -166,7 +215,7 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
  * model just shortens the fallback list, so combo failover is unaffected.
  */
 export async function filterAdapterModels(ctx, augmented, original) {
-  if (!ctx || !Array.isArray(augmented)) return augmented;
+  if (!ctx?.restricted || !Array.isArray(augmented)) return augmented;
   const keep = new Set(original || []);
   const out = [];
   for (const m of augmented) {
@@ -178,7 +227,7 @@ export async function filterAdapterModels(ctx, augmented, original) {
 
 /** /v1/models: a restricted key sees only the combos and models it may call. */
 export async function filterModelsListForKey(ctx, list) {
-  if (!ctx || !Array.isArray(list)) return list;
+  if (!ctx?.restricted || !Array.isArray(list)) return list;
   const sets = await getAllowSets(ctx);
   const out = [];
   for (const entry of list) {

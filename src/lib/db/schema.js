@@ -87,6 +87,12 @@ export const TABLES = {
       // syncSchemaFromTables() on boot; existing rows read as unrestricted (0).
       accessRestricted: "INTEGER DEFAULT 0",
       accessAllow: "TEXT",
+      // Per-key limits (additive, null = none): hard expiry + independent USD
+      // budgets per rolling 5h / calendar week / month, enforced in keyAccess.js.
+      expiresAt: "TEXT",
+      quota5hUsd: "REAL",
+      quotaWeeklyUsd: "REAL",
+      quotaMonthlyUsd: "REAL",
     },
     indexes: ["CREATE INDEX IF NOT EXISTS idx_ak_key ON apiKeys(key)"],
   },
@@ -131,6 +137,7 @@ export const TABLES = {
       "CREATE INDEX IF NOT EXISTS idx_uh_provider ON usageHistory(provider)",
       "CREATE INDEX IF NOT EXISTS idx_uh_model ON usageHistory(model)",
       "CREATE INDEX IF NOT EXISTS idx_uh_conn ON usageHistory(connectionId)",
+      "CREATE INDEX IF NOT EXISTS idx_uh_key_ts ON usageHistory(apiKey, timestamp)",
     ],
   },
   usageDaily: {
