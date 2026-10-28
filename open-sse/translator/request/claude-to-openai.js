@@ -70,7 +70,8 @@ export function claudeToOpenAIRequest(model, body, stream) {
       function: {
         name: tool.name,
         description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
+        parameters: tool.input_schema || { type: "object", properties: {} },
+        strict: false
       }
     }));
   }

@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
+import { isRequestLoggingEnabled } from "open-sse/utils/requestLogging.js";
 import bcrypt from "bcryptjs";
 
 export const dynamic = "force-dynamic";
@@ -20,12 +21,14 @@ export async function GET() {
     const { password, oidcClientSecret, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
     
-    const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
+    const enableRequestLogs = isRequestLoggingEnabled(false);
+    const requestLogsEnvConfigured = process.env.ENABLE_REQUEST_LOGS !== undefined;
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
     return NextResponse.json({ 
       ...safeSettings, 
       enableRequestLogs,
+      requestLogsEnvConfigured,
       enableTranslator,
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });

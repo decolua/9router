@@ -1,8 +1,10 @@
 // Check if running in Node.js environment (has fs module)
 const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
-// Check if logging is enabled via environment variable (default: false)
-const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === 'true';
+import { isRequestLoggingEnabled } from "./requestLogging.js";
+
+// Deep request files remain opt-in when the environment override is absent.
+const LOGGING_ENABLED = isRequestLoggingEnabled(false);
 
 let fs = null;
 let path = null;

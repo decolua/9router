@@ -158,6 +158,9 @@ async function resolveRealIP(hostname) {
  */
 function shouldBypassMitmDns(url) {
   try {
+    if (process.env.MITM_DNS_BYPASS === "false") {
+      return false;
+    }
     const hostname = new URL(url).hostname;
     return MITM_BYPASS_HOSTS.some(host => hostname.includes(host));
   } catch { return false; }
