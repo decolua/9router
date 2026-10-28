@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { commandCodeToOpenAIResponse } from "../translator/response/commandcode-to-openai.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
 
@@ -22,7 +23,7 @@ export class CommandCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     body.stream = true;
-    return body;
+    return injectReasoningContent({ provider: this.provider, model, body });
   }
 
   buildHeaders(credentials, stream = true) {
