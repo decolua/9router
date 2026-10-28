@@ -8,6 +8,10 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
   { match: /claude/i, drop: ["temperature"] },
+  // All Claude models: newer Claude Code clients send a top-level `diagnostics`
+  // telemetry field gated behind a beta this provider does not advertise, so
+  // Anthropic 400s with `diagnostics: Extra inputs are not permitted`.
+  { match: /claude/i, drop: ["diagnostics"] },
   // GitHub Copilot gpt-5.4: temperature unsupported.
   { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
