@@ -8,6 +8,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
 import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
+import { initProxySessionStore, pinnedSessionForProxy, burnSessionId } from "../services/opencodeProxySessions.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -26,6 +27,14 @@ const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+
+// Proxy-pinned upstream session identities (v5, 2026-10-29): each connection-pool
+// proxy owns ONE stable x-opencode-session, reused for every request egressing
+// through it and rotated only when upstream rejects it (FreeUsageLimitError).
+// Per-request fresh ids (SESSION_FRESH) read as identity churn upstream: bursts
+// of never-seen sessions that exhaust the 30x5s retry budget (~150s) and surface
+// 429s to the client. Minting is local, so a rotation never blocks on upstream.
+initProxySessionStore({ sessionIdFactory: generateSessionId });
 
 function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
@@ -305,6 +314,8 @@ async function pooledSessionIdAsync(credentials, hint) {
 // Rare synchronous fallback (header rebuild without prepared credentials):
 // reuse any live lane; mint unpaced only when nothing exists at all.
 function pooledSessionIdSync(credentials) {
+  const forced = pinnedSessionForProxy(credentials?.providerSpecificData?.connectionProxyUrl);
+  if (forced) return forced;
   if (SESSION_FRESH) return generateSessionId();
   const key = identityKey(credentials);
   const now = Date.now();
@@ -397,6 +408,10 @@ function isMessagesModel(model) {
 }
 
 async function resolveOpencodeSession(body, credentials, providerSessionId, clientTool) {
+  // Proxy-pinned identity wins over every hint path: the egress proxy decides
+  // the session, not the downstream conversation.
+  const forced = pinnedSessionForProxy(credentials?.providerSpecificData?.connectionProxyUrl);
+  if (forced) return forced;
   const headers = credentials?.rawHeaders || {};
   const native = nativeSession(headers);
   if (native) return await pooledSessionIdAsync(credentials, native);
@@ -606,6 +621,17 @@ export class OpenCodeExecutor extends BaseExecutor {
       ...args,
       credentials,
       directFetch: async (url, options, { proxyUrl } = {}) => {
+        // Authoritative per-attempt pinning: retries may hop pool entries, so
+        // stamp THIS proxy's pinned identity onto the session headers right
+        // before the impersonated fetch goes out. SESSION_USED_PROP below then
+        // records the identity actually sent, which is what gets burned.
+        const pinned = pinnedSessionForProxy(proxyUrl);
+        if (pinned && options && options.headers) {
+          options.headers["x-opencode-session"] = pinned;
+          options.headers["x-opencode-session-id"] = pinned;
+          options.headers["x-session-affinity"] = pinned;
+          options.headers["x-session-id"] = pinned;
+        }
         const response = await opencodeTlsFetch(url, {
           method: options.method,
           headers: options.headers,
@@ -663,7 +689,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     try {
       if (result.status === 429 && typeof bodyText === "string" && bodyText.includes("FreeUsageLimitError")) {
         const used = response ? response[SESSION_USED_PROP] : null;
-        if (used) markSessionLimited(used);
+        if (used) burnSessionId(used);
       }
     } catch { }
     return result;
