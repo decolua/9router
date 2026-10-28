@@ -128,6 +128,25 @@ export class BaseExecutor {
       const url = this.buildUrl(model, stream, urlIndex, credentials);
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
+      if (this.provider === "opencode") {
+        try {
+          const msgs = Array.isArray(transformedBody && transformedBody.messages) ? transformedBody.messages : [];
+          const roles = msgs.map((m) => m && m.role).join(",");
+          const sysMsgs = msgs.filter((m) => m && m.role === "system");
+          const sysText = sysMsgs.map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))).join("\n");
+          const userLen = msgs.filter((m) => m && m.role === "user").reduce((n, m) => n + (typeof m.content === "string" ? m.content.length : JSON.stringify(m.content || "").length), 0);
+          const tools = Array.isArray(transformedBody && transformedBody.tools) ? transformedBody.tools : [];
+          const toolFacts = tools.map((t) => {
+            const n = t && (t.name || (t.function && t.function.name)) || "?";
+            const def = t && (t.parameters || (t.function && t.function.parameters)) || {};
+            const desc = (t && (t.description || (t.function && t.function.description))) || "";
+            return `${n}:${desc.length}:${JSON.stringify(def).length}`;
+          }).join(" ");
+          console.log(`[OC-BODY] env=${sysText.includes("<env>")} sysLen=${sysText.length} userLen=${userLen} roles=${roles} tools=${toolFacts} stream=${transformedBody && transformedBody.stream} bytes=${JSON.stringify(transformedBody).length}`);
+        } catch (e) {
+          console.log(`[OC-BODY] log failed: ${e.message}`);
+        }
+      }
       // User per-provider override wins over registry headers (blocked names filtered at the API)
       if (providerOverrides?.headers) Object.assign(headers, providerOverrides.headers);
 

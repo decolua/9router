@@ -171,6 +171,185 @@ export function stableSessionId(credentials) {
   return sessionId;
 }
 
+// Free-tier session pool v3 (observed 2026-10-28): upstream answers freshly
+// minted x-opencode-session values with 429 FreeUsageLimitError when minted
+// too soon after the previous one (17s gap rejected, 48s+ accepted), while
+// long-lived sessions keep working and even tolerate parallel requests on the
+// same session. The real CLI mints one session per human conversation, but
+// agent swarms mint one per subagent task, which reads as churn. Strategy:
+// - keep a small pool of upstream sessions per downstream identity
+// - map each conversation/subagent onto a slot by stable hash (stable lanes)
+// - pace mints at least MIN_MINT_GAP_MS apart (single-flight per identity);
+//   a request that would need a mint before the window opens WAITS (the CLI
+//   tolerates slow first tokens) or shares a live lane — never fires a mint
+//   that upstream is guaranteed to reject
+// - a session rejected with FreeUsageLimitError is marked poisoned and the
+//   identity enters an exponential mint backoff (60s * 2^failures, cap 10min)
+// - repeat failures on an already-poisoned session do not extend the backoff
+const SESSION_POOL_SIZE = 8;
+const SESSION_USED_PROP = Symbol("opencode.sessionUsed");
+const MIN_MINT_GAP_MS = 45 * 1000;
+const SESSION_WAIT_CAP_MS = 120 * 1000;
+const MINT_BACKOFF_BASE_MS = 60 * 1000;
+const MINT_BACKOFF_MAX_MS = 10 * 60 * 1000;
+const stableSessionPools = new Map(); // identityKey -> { pool, mintFailures, backoffUntil, lastMintAt }
+const mintInflight = new Map(); // identityKey -> Promise<entry>
+
+const sleepMs = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const stablePoolCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, state] of stableSessionPools) {
+    let alive = false;
+    for (let i = 0; i < state.pool.length; i++) {
+      if (state.pool[i] && now - state.pool[i].lastUsed > MEMORY_CONFIG.sessionTtlMs) state.pool[i] = null;
+      if (state.pool[i]) alive = true;
+    }
+    if (!alive && now >= (state.backoffUntil || 0)) stableSessionPools.delete(key);
+  }
+}, MEMORY_CONFIG.sessionCleanupIntervalMs);
+if (stablePoolCleanup.unref) stablePoolCleanup.unref();
+
+function poolSlotIndex(hint) {
+  if (!hint) return 0;
+  return crypto.createHash("sha256").update(String(hint)).digest()[0] % SESSION_POOL_SIZE;
+}
+
+function ensureSessionState(key) {
+  let state = stableSessionPools.get(key);
+  if (!state) {
+    if (stableSessionPools.size >= MAX_STABLE_SESSIONS) {
+      stableSessionPools.delete(stableSessionPools.keys().next().value);
+    }
+    state = { pool: new Array(SESSION_POOL_SIZE).fill(null), mintFailures: 0, backoffUntil: 0, lastMintAt: 0 };
+    stableSessionPools.set(key, state);
+  }
+  return state;
+}
+
+function mintSessionOnce(key, index) {
+  let inflight = mintInflight.get(key);
+  if (inflight) return inflight;
+  inflight = (async () => {
+    const fresh = { sessionId: generateSessionId(), lastUsed: Date.now(), poisoned: false };
+    const state = stableSessionPools.get(key);
+    if (state) {
+      state.pool[index] = fresh;
+      state.lastMintAt = Date.now();
+    }
+    console.log(`[OC-SESSION] MINT identity=…${key.slice(-12)} slot=${index} session=${fresh.sessionId}`);
+    return fresh;
+  })().finally(() => mintInflight.delete(key));
+  mintInflight.set(key, inflight);
+  return inflight;
+}
+
+// OPENCODE_SESSION_FRESH=1 (2026-10-29): issue a brand-new x-opencode-session
+// per request instead of pooling lanes. The v3 pool paced mints against
+// same-IP observations; with rotating proxy egress every request already
+// presents from a different IP, and sharing one session ID across a swarm
+// funnels all traffic into a single upstream quota bucket (observed:
+// 10-request burst sharing one session -> 4 pass, 6x 429 FreeUsageLimitError
+// after ~150s of futile same-session retries). Fresh IDs are free - the CLI
+// model is one session per task anyway.
+const SESSION_FRESH = process.env.OPENCODE_SESSION_FRESH === "1" || process.env.OPENCODE_SESSION_FRESH === "true";
+
+async function pooledSessionIdAsync(credentials, hint) {
+  if (SESSION_FRESH) return generateSessionId();
+  const key = identityKey(credentials);
+  const deadline = Date.now() + SESSION_WAIT_CAP_MS;
+  for (;;) {
+    const now = Date.now();
+    const state = ensureSessionState(key);
+    const index = poolSlotIndex(hint);
+    const entry = state.pool[index];
+
+    // Healthy hashed lane: the common path.
+    if (entry && now - entry.lastUsed <= MEMORY_CONFIG.sessionTtlMs && !entry.poisoned) {
+      entry.lastUsed = now;
+      console.log(`[OC-SESSION] REUSE identity=…${key.slice(-12)} slot=${index} session=${entry.sessionId}`);
+      return entry.sessionId;
+    }
+
+    // Mint window open: replace the dead/poisoned slot (single-flight).
+    const mintReadyAt = Math.max(state.backoffUntil || 0, (state.lastMintAt || 0) + MIN_MINT_GAP_MS);
+    if (now >= mintReadyAt) {
+      const fresh = await mintSessionOnce(key, index);
+      return fresh.sessionId;
+    }
+
+    // Window closed: share a live lane rather than fire a doomed mint.
+    let bestHealthy = null;
+    let bestAny = null;
+    for (const e of state.pool) {
+      if (!e || now - e.lastUsed > MEMORY_CONFIG.sessionTtlMs) continue;
+      if (!bestAny || e.lastUsed > bestAny.lastUsed) bestAny = e;
+      if (!e.poisoned && (!bestHealthy || e.lastUsed > bestHealthy.lastUsed)) bestHealthy = e;
+    }
+    const pick = bestHealthy || bestAny;
+    if (pick) {
+      pick.lastUsed = now;
+      console.log(`[OC-SESSION] SHARE identity=…${key.slice(-12)} slot=${index} session=${pick.sessionId}${pick.poisoned ? " (poisoned)" : ""}`);
+      return pick.sessionId;
+    }
+
+    // No live lane at all (cold start): wait for the mint window.
+    if (now >= deadline) {
+      const fresh = await mintSessionOnce(key, index);
+      return fresh.sessionId;
+    }
+    await sleepMs(Math.min(mintReadyAt - now, 2500));
+  }
+}
+
+// Rare synchronous fallback (header rebuild without prepared credentials):
+// reuse any live lane; mint unpaced only when nothing exists at all.
+function pooledSessionIdSync(credentials) {
+  if (SESSION_FRESH) return generateSessionId();
+  const key = identityKey(credentials);
+  const now = Date.now();
+  const state = ensureSessionState(key);
+  for (const e of state.pool) {
+    if (e && !e.poisoned && now - e.lastUsed <= MEMORY_CONFIG.sessionTtlMs) {
+      e.lastUsed = now;
+      return e.sessionId;
+    }
+  }
+  for (const e of state.pool) {
+    if (e && now - e.lastUsed <= MEMORY_CONFIG.sessionTtlMs) {
+      e.lastUsed = now;
+      return e.sessionId;
+    }
+  }
+  const fresh = { sessionId: generateSessionId(), lastUsed: now, poisoned: false };
+  state.pool[0] = fresh;
+  state.lastMintAt = now;
+  return fresh.sessionId;
+}
+
+// Called when upstream rejects a request with 429 FreeUsageLimitError: poison
+// the slot that served it and put the identity into mint backoff.
+function markSessionLimited(sessionId) {
+  const now = Date.now();
+  for (const [key, state] of stableSessionPools) {
+    for (let i = 0; i < state.pool.length; i++) {
+      const entry = state.pool[i];
+      if (entry && entry.sessionId === sessionId) {
+        if (!entry.poisoned) {
+          entry.poisoned = true;
+          state.mintFailures += 1;
+          const backoff = Math.min(MINT_BACKOFF_BASE_MS * 2 ** (state.mintFailures - 1), MINT_BACKOFF_MAX_MS);
+          state.backoffUntil = now + backoff;
+          console.log(`[OC-SESSION] LIMITED identity=…${key.slice(-12)} slot=${i} backoff=${Math.round(backoff / 1000)}s failures=${state.mintFailures}`);
+        } else {
+          entry.lastUsed = now;
+        }
+        return;
+      }
+    }
+  }
+}
+
 function bodyHasSessionHints(body) {
   try {
     if (!body || typeof body !== "object") return false;
@@ -217,10 +396,10 @@ function isMessagesModel(model) {
   return MESSAGES_MODELS.has(baseModelId(model));
 }
 
-function resolveOpencodeSession(body, credentials, providerSessionId, clientTool) {
+async function resolveOpencodeSession(body, credentials, providerSessionId, clientTool) {
   const headers = credentials?.rawHeaders || {};
   const native = nativeSession(headers);
-  if (native) return native;
+  if (native) return await pooledSessionIdAsync(credentials, native);
 
   let incoming = null;
   for (const [key, value] of Object.entries(headers)) {
@@ -231,7 +410,7 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
   }
 
   const hinted = incoming || normalizeSession(providerSessionId);
-  if (hinted) return translateSessionId(hinted, clientTool);
+  if (hinted) return await pooledSessionIdAsync(credentials, hinted);
 
   if (credentials?.connectionId || bodyHasSessionHints(body)) {
     let viaManager = null;
@@ -245,10 +424,10 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
     } catch {
       viaManager = null;
     }
-    if (viaManager) return translateSessionId(viaManager, clientTool);
+    if (viaManager) return await pooledSessionIdAsync(credentials, viaManager);
   }
 
-  return stableSessionId(credentials);
+  return await pooledSessionIdAsync(credentials, null);
 }
 
 function normalizeResponsesTools(body) {
@@ -350,11 +529,25 @@ function dropAdaptiveReasoningEffort(body) {
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
+    // Bounded 429 retry: upstream free capacity congests in waves (tens of
+    // seconds to a few minutes) that answer 429 FreeUsageLimitError to every
+    // request regardless of session/IP/model/size. Each attempt re-rotates
+    // to a fresh connection-pool IP and re-checks after delayMs; a ~150s
+    // window rides out typical waves instead of killing the CLI mission on
+    // the first hit. parseError/slot poisoning only fires when every attempt
+    // is exhausted, so poisoning still means truly-stuck conditions.
+    this.config = {
+      ...this.config,
+      retry: {
+        ...((this.config && this.config.retry) || {}),
+        429: { attempts: 30, delayMs: 5000 },
+      },
+    };
   }
 
-  prepareRequestCredentials({ body, credentials, providerSessionId, clientTool } = {}) {
+  async prepareRequestCredentials({ body, credentials, providerSessionId, clientTool } = {}) {
     const sourceCredentials = credentials || {};
-    const session = resolveOpencodeSession(body, sourceCredentials, providerSessionId, clientTool);
+    const session = await resolveOpencodeSession(body, sourceCredentials, providerSessionId, clientTool);
 
     return {
       ...sourceCredentials,
@@ -408,15 +601,22 @@ export class OpenCodeExecutor extends BaseExecutor {
   // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
   // request still goes out on native fetch instead of erroring here.
   async execute(args) {
-    const credentials = this.prepareRequestCredentials(args);
+    const credentials = await this.prepareRequestCredentials(args);
     return super.execute({
       ...args,
       credentials,
-      directFetch: (url, options, { proxyUrl } = {}) => opencodeTlsFetch(url, {
-        method: options.method,
-        headers: options.headers,
-        body: options.body,
-      }, { signal: options.signal, proxyUrl }),
+      directFetch: async (url, options, { proxyUrl } = {}) => {
+        const response = await opencodeTlsFetch(url, {
+          method: options.method,
+          headers: options.headers,
+          body: options.body,
+        }, { signal: options.signal, proxyUrl });
+        try {
+          const used = options && options.headers ? options.headers["x-opencode-session"] : null;
+          if (used && response) Object.defineProperty(response, SESSION_USED_PROP, { value: used, configurable: true });
+        } catch { }
+        return response;
+      },
       directFetchProxy: true,
     });
   }
@@ -438,7 +638,7 @@ export class OpenCodeExecutor extends BaseExecutor {
     const downstreamUa = lower["user-agent"] || "";
     const isOpencodeDownstream = hasValidOpencodeVersion(downstreamUa);
 
-    const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
+    const session = credentials?.[SESSION_FIELD] || pooledSessionIdSync(credentials);
 
     // Mirrors the v2 CLI. Upstream needs x-opencode-session-id next to
     // x-opencode-session, and rejects any x-opencode-request (v1 only) with 403.
@@ -456,5 +656,16 @@ export class OpenCodeExecutor extends BaseExecutor {
     };
     if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     return headers;
+  }
+
+  parseError(response, bodyText) {
+    const result = super.parseError(response, bodyText) || { status: response ? response.status : undefined, message: bodyText };
+    try {
+      if (result.status === 429 && typeof bodyText === "string" && bodyText.includes("FreeUsageLimitError")) {
+        const used = response ? response[SESSION_USED_PROP] : null;
+        if (used) markSessionLimited(used);
+      }
+    } catch { }
+    return result;
   }
 }
