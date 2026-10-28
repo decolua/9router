@@ -11,6 +11,7 @@ import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { refreshAndUpdateCredentials } from "@/app/api/usage/[connectionId]/route.js";
 import { QUOTA_AUTOPING_CONFIG } from "@/shared/constants/config";
 import { getDuePingSlot, normalizePingSchedule } from "@/shared/services/quotaPingSchedule";
+import { emitTokenRefreshFailed } from "@/sse/services/webhookTransient.js";
 
 const C = QUOTA_AUTOPING_CONFIG;
 const CLAUDE_PING_URL = "https://api.anthropic.com/v1/messages?beta=true";
@@ -212,6 +213,13 @@ async function pingConnection(conn, provider, providerConfig, handler, deps, sta
   } catch (e) {
     state.failureCache[key] = Date.now();
     console.warn(`[AutoPing] ${provider}:${conn.id}: refresh failed: ${e.message}`);
+    if (provider && conn?.id) {
+      emitTokenRefreshFailed({
+        provider,
+        connectionId: conn.id,
+        errorClass: "refresh_failed",
+      });
+    }
     return;
   }
 

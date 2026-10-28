@@ -27,6 +27,7 @@ import {
   refreshProviderCredentials as _refreshProviderCredentials,
   shouldRefreshCredentials as _shouldRefreshCredentials,
 } from "open-sse/services/oauthCredentialManager.js";
+import { emitTokenRefreshFailed } from "./webhookTransient.js";
 
 export const TOKEN_EXPIRY_BUFFER_MS = BUFFER_MS;
 
@@ -266,7 +267,17 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
       lastRefreshAt: creds.lastRefreshAt || null,
     });
 
-    const newCreds = await _refreshProviderCredentials(provider, creds, log);
+    let newCreds;
+    try {
+      newCreds = await _refreshProviderCredentials(provider, creds, log);
+    } catch (refreshError) {
+      emitTokenRefreshFailed({
+        provider,
+        connectionId: creds.connectionId,
+        errorClass: "refresh_failed",
+      });
+      throw refreshError;
+    }
     if (newCreds?.accessToken || newCreds?.apiKey || newCreds?.copilotToken) {
       const mergedCreds = {
         ...newCreds,
@@ -289,6 +300,12 @@ export async function checkAndRefreshToken(provider, credentials, options = {}) 
 
       // Non-blocking: refresh projectId with the new access token
       _refreshProjectId(provider, creds.connectionId, creds.accessToken);
+    } else {
+      emitTokenRefreshFailed({
+        provider,
+        connectionId: creds.connectionId,
+        errorClass: "refresh_failed",
+      });
     }
   }
 

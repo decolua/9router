@@ -810,6 +810,7 @@ export default function ProfilePage() {
               <Button
                 variant="secondary"
                 icon="download"
+                aria-describedby="webhook-backup-warning"
                 onClick={() => setDbAuth({ open: true, mode: "export", password: "" })}
                 loading={dbLoading}
                 className="w-full sm:w-auto"
@@ -825,6 +826,9 @@ export default function ProfilePage() {
               >
                 Import Backup
               </Button>
+              <p id="webhook-backup-warning" className="text-sm text-text-muted">
+                Backups include webhook URLs, signing secrets and header credentials. Store them securely. Webhook delivery history is excluded.
+              </p>
               <input
                 ref={importFileRef}
                 type="file"
@@ -1622,7 +1626,7 @@ export default function ProfilePage() {
         </Card>
 
         {/* Account actions */}
-        <div className="flex flex-col sm:flex-row gap-2">
+            <div className="flex flex-col sm:flex-row gap-2">
           <Button
             variant="outline"
             fullWidth

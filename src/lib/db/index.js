@@ -3,6 +3,9 @@ import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { keyAccessFromColumns, keyAccessToColumns, validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
+import { validateDestinationInput, checkDestinationCapacity } from "@/lib/webhooks/validation.js";
+import { exportWebhookDestinationsRaw } from "./repos/webhooksRepo.js";
+import { resetWebhookOutboxSync } from "./repos/webhookDeliveriesRepo.js";
 
 // Settings
 export {
@@ -69,6 +72,19 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Webhook destinations
+export {
+  listWebhookDestinations, getWebhookDestinationById, getWebhookDestinationRawById,
+  exportWebhookDestinationsRaw, createWebhookDestination, updateWebhookDestination,
+  deleteWebhookDestination,
+} from "./repos/webhooksRepo.js";
+
+export {
+  enqueueWebhookEvent, enqueueWebhookTest, claimNextWebhookDelivery,
+  getWebhookDeliveryDestination, completeWebhookDelivery, cancelWebhookDeliveries,
+  pruneWebhookDeliveries, resetWebhookOutbox, listWebhookDeliveries,
+} from "./repos/webhookDeliveriesRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();
@@ -85,6 +101,7 @@ export async function exportDb() {
     customModels: [],
     mitmAlias: {},
     pricing: {},
+    webhooks: await exportWebhookDestinationsRaw(),
   };
 
   for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
@@ -99,81 +116,158 @@ export async function importDb(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw new Error("Invalid database payload");
   }
+  validateImportSections(payload);
+  const webhooks = validateImportedWebhooks(payload.webhooks);
+  // Prepare every binding (including JSON and API-key access) before any write.
+  const statements = [];
+  const add = (sql, params) => {
+    if (params.some((value) => value !== null && typeof value !== "string"
+      && !(typeof value === "number" && Number.isFinite(value)))) {
+      throw new Error("Invalid database field");
+    }
+    statements.push([sql, params]);
+  };
+
+  if (payload.settings) {
+    add(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(payload.settings)]);
+  }
+
+  for (const c of payload.providerConnections || []) {
+    const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
+    add(
+      `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    );
+  }
+  for (const n of payload.providerNodes || []) {
+    const { id, type, name, createdAt, updatedAt, ...rest } = n;
+    add(
+      `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    );
+  }
+  for (const p of payload.proxyPools || []) {
+    const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
+    add(
+      `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
+    );
+  }
+  for (const k of payload.apiKeys || []) {
+    // Legacy backups without access retain unrestricted API-key behavior.
+    let access = KEY_ACCESS_UNRESTRICTED;
+    if (k.access !== undefined) {
+      const checked = validateKeyAccessInput(k.access);
+      if (!checked.ok) throw new Error(`apiKeys ${k.id}: ${checked.error}`);
+      access = checked.value;
+    }
+    const cols = keyAccessToColumns(access);
+    add(
+      `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
+      [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString(), cols.accessRestricted, cols.accessAllow]
+    );
+  }
+  for (const c of payload.combos || []) {
+    add(
+      `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
+    );
+  }
+  for (const [a, m] of Object.entries(payload.modelAliases || {})) {
+    add(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [a, stringifyJson(m)]);
+  }
+  for (const m of payload.customModels || []) {
+    const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
+    add(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
+  }
+  for (const [tool, mappings] of Object.entries(payload.mitmAlias || {})) {
+    add(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
+  }
+  for (const [provider, models] of Object.entries(payload.pricing || {})) {
+    add(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
+  }
+  for (const { id, revision, createdAt, updatedAt, value } of webhooks) {
+    const { enabled, ...data } = value;
+    add(`INSERT INTO webhookDestinations(id, revision, data, enabled, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
+      [id, revision, stringifyJson(data), enabled === false ? 0 : 1, createdAt, updatedAt]);
+  }
+
   const db = await getAdapter();
-
-  db.transaction(() => {
-    // Wipe all tables (keep _meta)
-    db.run(`DELETE FROM settings`);
-    db.run(`DELETE FROM providerConnections`);
-    db.run(`DELETE FROM providerNodes`);
-    db.run(`DELETE FROM proxyPools`);
-    db.run(`DELETE FROM apiKeys`);
-    db.run(`DELETE FROM combos`);
-    db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
-
-    // Settings
-    if (payload.settings) {
-      db.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(payload.settings)]);
-    }
-
-    for (const c of payload.providerConnections || []) {
-      const { id, provider, authType, name, email, priority, isActive, createdAt, updatedAt, ...rest } = c;
-      db.run(
-        `INSERT OR REPLACE INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [id, provider, authType || "oauth", name || null, email || null, priority || null, isActive === false ? 0 : 1, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
-      );
-    }
-    for (const n of payload.providerNodes || []) {
-      const { id, type, name, createdAt, updatedAt, ...rest } = n;
-      db.run(
-        `INSERT OR REPLACE INTO providerNodes(id, type, name, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [id, type || null, name || null, stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
-      );
-    }
-    for (const p of payload.proxyPools || []) {
-      const { id, isActive, testStatus, createdAt, updatedAt, ...rest } = p;
-      db.run(
-        `INSERT OR REPLACE INTO proxyPools(id, isActive, testStatus, data, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [id, isActive === false ? 0 : 1, testStatus || "unknown", stringifyJson(rest), createdAt || new Date().toISOString(), updatedAt || new Date().toISOString()]
-      );
-    }
-    for (const k of payload.apiKeys || []) {
-      // Per-key access: a backup without `access` (older version) restores
-      // unrestricted, exactly as before; a malformed `access` is refused.
-      let access = KEY_ACCESS_UNRESTRICTED;
-      if (k.access !== undefined) {
-        const checked = validateKeyAccessInput(k.access);
-        if (!checked.ok) throw new Error(`apiKeys ${k.id}: ${checked.error}`);
-        access = checked.value;
+  const { getWebhookDispatcher } = await import("@/lib/webhooks/dispatcher.js");
+  const controller = getWebhookDispatcher();
+  const running = controller?.isRunning() === true;
+  const paused = controller?.isPaused() === true;
+  try {
+    if (running) {
+      controller.pause();
+      // Abort sockets synchronously; a sender ignoring abort cannot delay import.
+      for (const { id } of db.all(`SELECT id FROM webhookDestinations UNION SELECT destinationId AS id FROM webhookDeliveries`)) {
+        controller.abortDestination(id);
       }
-      const cols = keyAccessToColumns(access);
-      db.run(
-        `INSERT OR REPLACE INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-        [k.id, k.key, k.name || null, k.machineId || null, k.isActive === false ? 0 : 1, k.createdAt || new Date().toISOString(), cols.accessRestricted, cols.accessAllow]
-      );
     }
-    for (const c of payload.combos || []) {
-      db.run(
-        `INSERT OR REPLACE INTO combos(id, name, kind, models, createdAt, updatedAt) VALUES(?, ?, ?, ?, ?, ?)`,
-        [c.id, c.name, c.kind || null, stringifyJson(c.models || []), c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString()]
-      );
-    }
-    for (const [a, m] of Object.entries(payload.modelAliases || {})) {
-      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('modelAliases', ?, ?)`, [a, stringifyJson(m)]);
-    }
-    for (const m of payload.customModels || []) {
-      const k = `${m.providerAlias}|${m.id}|${m.type || "llm"}`;
-      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, stringifyJson(m)]);
-    }
-    for (const [tool, mappings] of Object.entries(payload.mitmAlias || {})) {
-      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('mitmAlias', ?, ?)`, [tool, stringifyJson(mappings || {})]);
-    }
-    for (const [provider, models] of Object.entries(payload.pricing || {})) {
-      db.run(`INSERT OR REPLACE INTO kv(scope, key, value) VALUES('pricing', ?, ?)`, [provider, stringifyJson(models || {})]);
-    }
-  });
-
+    db.transaction(() => {
+      resetWebhookOutboxSync(db);
+      db.run(`DELETE FROM webhookDestinations WHERE id IS NOT NULL`);
+      for (const table of ["settings", "providerConnections", "providerNodes", "proxyPools", "apiKeys", "combos"]) {
+        db.run(`DELETE FROM ${table}`);
+      }
+      db.run(`DELETE FROM kv WHERE scope IN ('modelAliases', 'customModels', 'mitmAlias', 'pricing')`);
+      for (const [sql, params] of statements) db.run(sql, params);
+    });
+    db.flush();
+  } finally {
+    if (running && !paused) controller.resume();
+  }
   return await exportDb();
+}
+
+function validateImportSections(payload) {
+  const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
+  const text = (value) => typeof value === "string" && value.trim().length > 0;
+  for (const section of ["settings", "modelAliases", "mitmAlias", "pricing"]) {
+    if (payload[section] !== undefined && !record(payload[section])) throw new Error(`Invalid ${section}`);
+  }
+  for (const section of ["providerConnections", "providerNodes", "proxyPools", "apiKeys", "combos", "customModels"]) {
+    const rows = payload[section];
+    if (rows === undefined) continue;
+    if (!Array.isArray(rows)) throw new Error(`Invalid ${section}`);
+    const ids = new Set();
+    for (const row of rows) {
+      if (!record(row) || !text(row.id)) throw new Error(`Invalid ${section} id`);
+      const id = section === "customModels" ? `${row.providerAlias}|${row.id}|${row.type || "llm"}` : row.id;
+      if (ids.has(id)) throw new Error(`Invalid ${section} id`);
+      ids.add(id);
+      if (section === "providerConnections" && !text(row.provider)) throw new Error("Invalid provider");
+      if (section === "apiKeys" && !text(row.key)) throw new Error("Invalid API key");
+      if (section === "combos" && (!text(row.name) || (row.models !== undefined && !Array.isArray(row.models)))) {
+        throw new Error("Invalid combo");
+      }
+      if (section === "customModels" && !text(row.providerAlias)) throw new Error("Invalid custom model provider");
+      if (row.isActive !== undefined && typeof row.isActive !== "boolean") throw new Error("Invalid isActive");
+    }
+  }
+}
+
+function validateImportedWebhooks(input = []) {
+  if (!Array.isArray(input) || !checkDestinationCapacity(input.length).ok) throw new Error("Invalid webhooks");
+  const ids = new Set();
+  return input.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Invalid webhook destination");
+    const { id, revision, createdAt, updatedAt, ...config } = raw;
+    if (typeof id !== "string" || !id.trim() || ids.has(id)
+      || !Number.isSafeInteger(revision) || revision < 1
+      || typeof createdAt !== "string" || !Number.isFinite(Date.parse(createdAt))
+      || typeof updatedAt !== "string" || !Number.isFinite(Date.parse(updatedAt))) {
+      throw new Error("Invalid webhook metadata");
+    }
+    ids.add(id);
+    if (config.signingSecret === null && config.kind !== "generic") delete config.signingSecret;
+    const checked = validateDestinationInput(config, { mode: "create" });
+    if (!checked.ok || (config.kind === "generic" && !checked.value.signingSecret)) {
+      throw new Error("Invalid webhook configuration");
+    }
+    return { id, revision, createdAt, updatedAt, value: checked.value };
+  });
 }
 
 // Eager init helper (optional)

@@ -99,6 +99,14 @@ export async function createSqlJsAdapter(filePath) {
     }
   }
 
+  function flush() {
+    if (saveTimer) {
+      clearTimeout(saveTimer);
+      saveTimer = null;
+    }
+    if (dirty) persist();
+  }
+
   function close() {
     if (saveTimer) clearTimeout(saveTimer);
     if (dirty) persist();
@@ -106,10 +114,10 @@ export async function createSqlJsAdapter(filePath) {
   }
 
   // Flush on shutdown
-  const flush = () => { if (dirty) try { persist(); } catch {} };
-  process.on("beforeExit", flush);
-  process.on("SIGINT", flush);
-  process.on("SIGTERM", flush);
+  const flushOnShutdown = () => { try { flush(); } catch {} };
+  process.on("beforeExit", flushOnShutdown);
+  process.on("SIGINT", flushOnShutdown);
+  process.on("SIGTERM", flushOnShutdown);
 
-  return { driver: "sql.js", run, get, all, exec, transaction, close, raw: db };
+  return { driver: "sql.js", run, get, all, exec, transaction, flush, close, raw: db };
 }

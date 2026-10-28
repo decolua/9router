@@ -17,5 +17,8 @@ export {
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  listWebhookDestinations, getWebhookDestinationById, getWebhookDestinationRawById,
+  exportWebhookDestinationsRaw, createWebhookDestination, updateWebhookDestination,
+  deleteWebhookDestination,
   exportDb, importDb,
 } from "@/lib/db/index.js";

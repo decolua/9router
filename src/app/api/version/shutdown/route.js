@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { killAppProcesses } from "@/lib/appUpdater";
+import { stopWebhookDispatcher } from "@/lib/webhooks/dispatcher.js";
 
 // Shutdown app to release file locks for manual update
 export async function POST() {
+  stopWebhookDispatcher();
   try {
     await killAppProcesses();
   } catch { /* best effort */ }

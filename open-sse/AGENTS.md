@@ -22,6 +22,7 @@ Provider-agnostic SSE engine: one OpenAI-style request → any provider (LLM cha
 ## Conventions
 
 - Config-driven, DRY, camelCase. NEVER hardcode values, models, or block/role strings — use `config/` + `schema/` constants.
+- Optional observer callbacks (`onStreamTerminal`, `onRefreshFailure`) are app-side telemetry seams. The engine must not import `src/lib/webhooks`, and telemetry callbacks must not introduce app or webhook DB dependencies. Existing engine-owned DB helpers such as `thoughtSignatureStore.js` are unrelated. Callback failures must not alter response bytes, fallback, or translation.
 - Translator pipeline pivots through OpenAI as the intermediate format. A translator registered on the exact `source:target` pair (e.g. `claude:kiro`) runs as a **direct route**, skipping the lossy double-hop.
 - Translators self-register via `register(from, to, reqFn, resFn)` as an import side-effect — new files MUST be imported in `translator/index.js`.
 

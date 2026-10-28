@@ -331,6 +331,19 @@ export default function Sidebar({ onClose }) {
 
             {/* Settings */}
             <Link
+              href="/dashboard/webhooks"
+              onClick={onClose}
+              className={cn(
+                "flex items-center gap-3 px-3 py-1 rounded-lg transition-all group",
+                isActive("/dashboard/webhooks")
+                  ? "bg-primary/10 text-primary"
+                  : "text-text-muted hover:bg-surface-2 hover:text-text-main"
+              )}
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">webhook</span>
+              <span className="text-[13px] font-medium">Webhooks</span>
+            </Link>
+            <Link
               href="/dashboard/profile"
               onClick={onClose}
               className={cn(

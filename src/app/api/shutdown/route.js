@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
+import { stopWebhookDispatcher } from "@/lib/webhooks/dispatcher.js";
 
 export async function POST() {
   if (process.env.NODE_ENV === "production") {
@@ -13,6 +14,7 @@ export async function POST() {
     return NextResponse.json({ success: false, message: "Unauthorized" }, { status: 401 });
   }
 
+  stopWebhookDispatcher();
   const response = NextResponse.json({ success: true, message: "Shutting down..." });
 
   setTimeout(() => {
@@ -21,4 +23,3 @@ export async function POST() {
 
   return response;
 }
-

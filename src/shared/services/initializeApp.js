@@ -16,6 +16,7 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import { startWebhookDispatcher, stopWebhookDispatcher } from "@/lib/webhooks/dispatcher.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -55,6 +56,8 @@ export async function initializeApp() {
     // unexpected cloudflared exits are handled even during the deferred window.
     if (!g.signalHandlersRegistered) {
       const cleanup = () => {
+        clearTimeout(g.startupTimer);
+        stopWebhookDispatcher();
         try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
         try { killAllBridges(); } catch { /* best effort */ }
         killCloudflared();
@@ -62,7 +65,10 @@ export async function initializeApp() {
       };
       process.on("SIGINT", cleanup);
       process.on("SIGTERM", cleanup);
-      process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
+      process.on("exit", () => {
+        stopWebhookDispatcher();
+        try { removeAllDNSEntriesSync(); } catch { /* ignore */ }
+      });
       g.signalHandlersRegistered = true;
     }
 
@@ -71,9 +77,16 @@ export async function initializeApp() {
     });
 
     // Defer the heavy work — nothing here blocks incoming requests.
-    setTimeout(() => {
-      runHeavyStartup().catch((e) => console.error("[InitApp] deferred startup failed:", e.message));
-    }, STARTUP_DEFER_MS);
+    if (!g.startupScheduled) {
+      g.startupScheduled = true;
+      g.startupTimer = setTimeout(() => {
+        g.startupTimer = null;
+        runHeavyStartup().catch((e) => {
+          g.startupScheduled = false;
+          console.error("[InitApp] deferred startup failed:", e.message);
+        });
+      }, STARTUP_DEFER_MS);
+    }
   } catch (error) {
     console.error("[InitApp] Error:", error);
   }
@@ -82,6 +95,7 @@ export async function initializeApp() {
 async function runHeavyStartup() {
   await cleanupProviderConnections();
   const settings = await getSettings();
+  startWebhookDispatcher();
 
   // Auto-resume tunnel (once per process)
   if (settings.tunnelEnabled && !g.tunnelAutoResumed) {

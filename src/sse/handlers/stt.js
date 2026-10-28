@@ -10,6 +10,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
+import { markWebhookFailure, withWebhookRoot } from "@/lib/webhooks/handlerRoot.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy.js";
 
@@ -38,6 +39,12 @@ async function resolveCustomModelTransport(provider, model) {
 }
 
 export async function handleStt(request) {
+  return withWebhookRoot(request, "stt", (webhook) => (
+    handleSttRequest(request, webhook)
+  ));
+}
+
+async function handleSttRequest(request, webhook) {
   let formData;
   try {
     formData = await request.formData();
@@ -69,6 +76,8 @@ export async function handleStt(request) {
   const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
   if (keyAccessDenied) return keyAccessDenied;
 
+  webhook.admit();
+
   log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
 
   const modelTransport = await resolveCustomModelTransport(provider, model);
@@ -92,10 +101,21 @@ export async function handleStt(request) {
       if (credentials?.allRateLimited) {
         const msg = lastError || credentials.lastError || "Unavailable";
         const status = lastStatus || Number(credentials.lastErrorCode) || HTTP_STATUS.SERVICE_UNAVAILABLE;
-        return unavailableResponse(status, `[${provider}/${model}] ${msg}`, credentials.retryAfter, credentials.retryAfterHuman);
+        return markWebhookFailure(
+          unavailableResponse(status, `[${provider}/${model}] ${msg}`, credentials.retryAfter, credentials.retryAfterHuman),
+          "all_unavailable",
+        );
       }
-      if (excludeConnectionIds.size === 0) return errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`);
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable");
+      if (excludeConnectionIds.size === 0) {
+        return markWebhookFailure(
+          errorResponse(HTTP_STATUS.BAD_REQUEST, `No credentials for provider: ${provider}`),
+          "no_credentials",
+        );
+      }
+      return markWebhookFailure(
+        errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable"),
+        "all_unavailable",
+      );
     }
 
     log.info("AUTH", `\x1b[32mUsing ${provider} account: ${credentials.connectionName}\x1b[0m`);

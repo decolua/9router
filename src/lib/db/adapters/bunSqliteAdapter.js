@@ -54,6 +54,7 @@ export async function createBunSqliteAdapter(filePath) {
       return tx();
     },
     checkpoint() { try { db.exec("PRAGMA wal_checkpoint(TRUNCATE)"); } catch {} },
+    flush() {},
     close() {
       clearInterval(checkpointTimer);
       gracefulClose();
