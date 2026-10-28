@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
+import { shutdownProcess } from "@/lib/shutdown.js";
 
 export async function POST() {
   if (process.env.NODE_ENV === "production") {
@@ -16,9 +17,8 @@ export async function POST() {
   const response = NextResponse.json({ success: true, message: "Shutting down..." });
 
   setTimeout(() => {
-    process.exit(0);
+    shutdownProcess(0);
   }, 500);
 
   return response;
 }
-
