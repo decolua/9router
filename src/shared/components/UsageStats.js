@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { FREE_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
+import { addUsedFreeProviders } from "./usageTopologyProviders";
 
 // Keep providers without serviceKinds (default LLM) or with "llm" in serviceKinds
 function isLLMProvider(id) {
@@ -222,8 +223,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
   const period = periodProp ?? periodLocal;
   const setPeriod = setPeriodProp ?? setPeriodLocal;
 
-  // Fetch connected providers once, deduplicate by provider type
-  // Always include noAuth free providers (e.g. opencode) regardless of connections
+  // Fetch connected providers once, deduplicate by provider type.
   useEffect(() => {
     Promise.all([
       fetch("/api/providers").then((r) => r.ok ? r.json() : null),
@@ -247,13 +247,15 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           ...c,
           nodeName: nodeNameMap[c.provider] || null,
         }));
-        const noAuthProviders = Object.values(FREE_PROVIDERS)
-          .filter((p) => p.noAuth && !p.hidden && !seen.has(p.id) && isLLMProvider(p.id))
-          .map((p) => ({ provider: p.id, name: p.name }));
-        setProviders([...unique, ...noAuthProviders]);
+        setProviders(unique);
       })
       .catch(() => {});
   }, []);
+
+  const topologyProviders = useMemo(
+    () => addUsedFreeProviders(providers, FREE_PROVIDERS, stats?.byProvider, isLLMProvider),
+    [providers, stats?.byProvider]
+  );
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
@@ -475,7 +477,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
       {loading ? spinner : (
         <div className="grid min-w-0 grid-cols-1 items-stretch gap-2 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ProviderTopology
-            providers={providers}
+            providers={topologyProviders}
             activeRequests={stats.activeRequests || []}
             lastProvider={stats.recentRequests?.[0]?.provider || ""}
             errorProvider={stats.errorProvider || ""}
