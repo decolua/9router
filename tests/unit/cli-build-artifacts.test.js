@@ -15,6 +15,7 @@ const { afterEach, describe, it } = testApi;
 
 const require = createRequire(import.meta.url);
 const {
+  assertNoBuildHomeArtifacts,
   assertRequiredApiArtifacts,
   copyStandaloneBuild,
   mergeServerArtifacts,
@@ -136,6 +137,110 @@ describe("CLI build server artifacts", () => {
         cliAppDir,
         ".next-cli-build/server/app/api/v1/messages/route.js",
       )),
+    );
+  });
+});
+
+// The CLI build points HOME/USERPROFILE at cli/.build-home so the dashboard build
+// cannot touch the operator's real ~/.9router. With NEXT_TRACING_ROOT_MODE=workspace
+// the tracing root is the repo's parent, so that fake home sits INSIDE the trace
+// scope and Next.js lists its files in .nft.json — which is how a build-machine
+// jwt-secret, machine-id and data.sqlite ended up in the published tarball.
+describe("CLI build never ships the build-machine home", () => {
+  const LEAK_PATHS = [
+    "cli/.build-home/AppData/Roaming/9router/jwt-secret",
+    "cli/.build-home/AppData/Roaming/9router/machine-id",
+    "cli/.build-home/AppData/Roaming/9router/db/data.sqlite",
+    "cli/.build-home/AppData/Roaming/9router/db/data.sqlite-wal",
+  ];
+
+  it("drops a traced .build-home tree while copying the standalone build", () => {
+    const root = createTempDir();
+    const appDir = path.join(root, "9router");
+    const buildDistDir = path.join(appDir, ".next-cli-build");
+    const cliAppDir = path.join(root, "cli-app");
+    const standaloneDir = path.join(buildDistDir, "standalone", path.basename(appDir));
+
+    writeFixture(standaloneDir, "server.js", "standalone server");
+    writeFixture(standaloneDir, "server.js.nft.json", '{"files":[]}');
+    writeFixture(
+      standaloneDir,
+      ".next-cli-build/server/app/api/v1/chat/completions/route.js",
+      "standalone chat route",
+    );
+    // Exactly the layout Next.js produced: the fake home nested under the bundle root.
+    for (const leakPath of LEAK_PATHS) {
+      writeFixture(path.join(standaloneDir, "cli"), leakPath.slice("cli/".length), "secret");
+    }
+
+    copyStandaloneBuild(appDir, buildDistDir, cliAppDir);
+
+    assert.equal(fs.existsSync(path.join(cliAppDir, "server.js")), true, "server.js must survive");
+    for (const leakPath of LEAK_PATHS) {
+      const copied = path.join(cliAppDir, leakPath);
+      assert.equal(fs.existsSync(copied), false, `${leakPath} must not be copied into the bundle`);
+    }
+  });
+
+  it("scrubs .nft.json entries that point at the build-machine home", () => {
+    const root = createTempDir();
+    const appDir = path.join(root, "9router");
+    const buildDistDir = path.join(appDir, ".next-cli-build");
+    const cliAppDir = path.join(root, "cli-app");
+    const standaloneDir = path.join(buildDistDir, "standalone", path.basename(appDir));
+
+    writeFixture(standaloneDir, "server.js", "standalone server");
+    writeFixture(
+      standaloneDir,
+      "server.js.nft.json",
+      JSON.stringify({
+        version: 1,
+        files: [
+          "../../../../../../cli/.build-home/AppData/Roaming/9router/jwt-secret",
+          "server.js",
+        ],
+      }),
+    );
+
+    copyStandaloneBuild(appDir, buildDistDir, cliAppDir);
+
+    const trace = JSON.parse(fs.readFileSync(path.join(cliAppDir, "server.js.nft.json"), "utf8"));
+    assert.deepEqual(trace.files, ["server.js"], "leaked trace entries are removed, real ones kept");
+  });
+
+  it("leaves an unrelated home directory alone", () => {
+    const root = createTempDir();
+    const appDir = path.join(root, "9router");
+    const buildDistDir = path.join(appDir, ".next-cli-build");
+    const cliAppDir = path.join(root, "cli-app");
+    const standaloneDir = path.join(buildDistDir, "standalone", path.basename(appDir));
+
+    writeFixture(standaloneDir, "server.js", "standalone server");
+    writeFixture(standaloneDir, "home/notes.md", "keep");
+
+    copyStandaloneBuild(appDir, buildDistDir, cliAppDir);
+
+    assert.equal(
+      fs.readFileSync(path.join(cliAppDir, "home/notes.md"), "utf8"),
+      "keep",
+      "only .build-home is scrubbed, not every folder named home",
+    );
+  });
+
+  it("fails the build when a stray .build-home survives", () => {
+    const root = createTempDir();
+    const cliAppDir = path.join(root, "cli-app");
+    writeFixture(cliAppDir, "server.js", "standalone server");
+
+    assert.doesNotThrow(() => assertNoBuildHomeArtifacts(cliAppDir));
+
+    writeFixture(cliAppDir, "cli/.build-home/AppData/Roaming/9router/jwt-secret", "secret");
+
+    assert.throws(
+      () => assertNoBuildHomeArtifacts(cliAppDir),
+      (error) =>
+        error.message.includes("build-machine home") &&
+        error.message.includes("jwt-secret"),
     );
   });
 });

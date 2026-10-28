@@ -8,7 +8,12 @@ const cliDir = path.resolve(__dirname, "..");
 const appDir = path.resolve(cliDir, "..");
 const rootDir = path.resolve(appDir, "..");
 const cliAppDir = process.env.NINEROUTER_CLI_APP_DIR || path.join(cliDir, "app");
-const buildHomeDir = path.join(cliDir, ".build-home");
+// Fake HOME for the build so the dashboard build can never read or write the
+// operator's real ~/.9router. It lives INSIDE the repo on purpose (so a build
+// machine needs no extra writable path), which is also why it must be scrubbed
+// afterwards — see scrubTracedBuildHome().
+const BUILD_HOME_NAME = ".build-home";
+const buildHomeDir = path.join(cliDir, BUILD_HOME_NAME);
 const buildDistDirName = ".next-cli-build";
 const buildDistDir = path.join(appDir, buildDistDirName);
 
@@ -23,6 +28,7 @@ const EXCLUDE_PATTERNS = [
   "*.log",          // Log files
   "tmp",            // Temp files
   ".DS_Store",      // macOS files
+  BUILD_HOME_NAME,  // Fake HOME used during the build (see below)
 ];
 
 function shouldExclude(name) {
@@ -110,6 +116,78 @@ function resolveStandaloneBuild(appDir, buildDistDir) {
   return { standaloneApp, standaloneRoot };
 }
 
+// Next.js traces the fake HOME because NEXT_TRACING_ROOT_MODE=workspace lifts the
+// tracing root to the repo's parent, which contains cli/.build-home. The directory
+// itself is dropped by EXCLUDE_PATTERNS, but every .nft.json still lists its files
+// (jwt-secret, machine-id, data.sqlite). Those entries are dead weight in the
+// published package and name paths from the build machine, so strip them.
+function scrubTracedBuildHome(dir) {
+  if (!fs.existsSync(dir)) return 0;
+
+  let scrubbed = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const entryPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (shouldExclude(entry.name)) continue;
+      scrubbed += scrubTracedBuildHome(entryPath);
+      continue;
+    }
+    if (!entry.name.endsWith(".nft.json")) continue;
+
+    let trace;
+    try {
+      trace = JSON.parse(fs.readFileSync(entryPath, "utf8"));
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(trace.files)) continue;
+
+    const kept = trace.files.filter((file) => !hasBuildHomeSegment(file));
+    if (kept.length === trace.files.length) continue;
+
+    trace.files = kept;
+    fs.writeFileSync(entryPath, JSON.stringify(trace));
+    scrubbed++;
+  }
+  return scrubbed;
+}
+
+// True when any segment of a traced relative path is the fake HOME folder.
+function hasBuildHomeSegment(relativePath) {
+  return String(relativePath)
+    .split(/[\\/]+/)
+    .some((segment) => segment === BUILD_HOME_NAME);
+}
+
+// Last line of defence before `npm pack`: the fake HOME carries a jwt-secret, a
+// machine-id and a SQLite copy of whatever the build touched. Shipping it would
+// hand every installer the same secret, so a stray one fails the build loudly
+// instead of silently reaching the registry.
+function assertNoBuildHomeArtifacts(cliAppDir) {
+  const leaks = [];
+
+  const walk = (dir) => {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const entryPath = path.join(dir, entry.name);
+      if (entry.name === BUILD_HOME_NAME) {
+        leaks.push(path.relative(cliAppDir, entryPath));
+        continue;
+      }
+      if (entry.isDirectory()) walk(entryPath);
+    }
+  };
+  walk(cliAppDir);
+
+  if (leaks.length > 0) {
+    throw new Error(
+      `CLI package contains the build-machine home (${BUILD_HOME_NAME}) — it holds a ` +
+        "jwt-secret, machine-id and a SQLite copy of the build's data:\n" +
+        leaks.join("\n"),
+    );
+  }
+}
+
 function copyStandaloneBuild(appDir, buildDistDir, cliAppDir) {
   const { standaloneApp, standaloneRoot } = resolveStandaloneBuild(appDir, buildDistDir);
   copyRecursive(standaloneApp, cliAppDir);
@@ -119,6 +197,8 @@ function copyStandaloneBuild(appDir, buildDistDir, cliAppDir) {
   if (standaloneApp !== standaloneRoot && fs.existsSync(standaloneNodeModules)) {
     copyRecursive(standaloneNodeModules, path.join(cliAppDir, "node_modules"));
   }
+
+  scrubTracedBuildHome(cliAppDir);
 }
 
 function mergeServerArtifacts(buildDistDir, cliAppDir) {
@@ -128,6 +208,7 @@ function mergeServerArtifacts(buildDistDir, cliAppDir) {
     throw new Error(`Complete Next.js server build not found: ${serverSrc}`);
   }
   copyRecursive(serverSrc, serverDest);
+  scrubTracedBuildHome(serverDest);
 }
 
 function assertRequiredApiArtifacts(cliAppDir) {
@@ -331,6 +412,13 @@ function buildCliPackage() {
     process.exit(1);
   }
 
+  // Step 9: Fail before `npm pack` if the fake HOME reached the bundle. It holds a
+  // jwt-secret, a machine-id and a SQLite copy of the build's data — shipping it
+  // would give every installer the same session secret.
+  console.log("9️⃣  Checking for build-machine home leaks...");
+  assertNoBuildHomeArtifacts(cliAppDir);
+  console.log("✅ No build-machine home in the bundle\n");
+
   console.log("✨ CLI package build completed!");
   console.log(`📁 Output: ${cliAppDir}`);
 
@@ -344,6 +432,7 @@ function buildCliPackage() {
 }
 
 module.exports = {
+  assertNoBuildHomeArtifacts,
   assertRequiredApiArtifacts,
   copyStandaloneBuild,
   mergeServerArtifacts,
