@@ -74,20 +74,33 @@ function collectAppPids() {
       } catch { /* not running */ }
     }
   } else {
+    // macOS/Linux: use `ps -eo pid,comm,args` which outputs a fixed
+    // PID column (no USER prefix) so parts[0] is reliably the PID,
+    // avoiding the ps aux wrapping/truncation risk noted in #4295.
+    // We still parse the raw numeric PID from parts[0] and verify it
+    // with isNaN() rather than using the "second whitespace token" of
+    // ps aux (where a long USER name can shift columns).
     try {
-      const output = execSync("ps aux 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
-      output.split("\n").forEach(line => {
-        const isAppProcess = line.includes("9router") ||
-          line.includes("next-server") ||
-          line.includes("cloudflared") ||
-          line.includes("/bin/app/") ||
-          line.includes("tray_darwin") ||
-          line.includes("tray_linux");
-        if (isAppProcess) {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[1];
-          if (pid && !isNaN(pid) && pid !== process.pid.toString()) pids.push(pid);
-        }
+      const output = execSync("ps -eo pid,comm,args 2>/dev/null", { encoding: "utf8", timeout: KILL_TIMEOUT_MS });
+      output.split("\n").slice(1).forEach(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        const parts = trimmed.split(/\s+/);
+        const pid = parts[0];
+        if (!pid || isNaN(pid) || pid === process.pid.toString()) return;
+        const cmd = trimmed.toLowerCase();
+        // Narrow whitelist: only kill processes we actually own.
+        // Broad substring matches (just "9router") also match grep, editors, and
+        // shells with that word in their argv — which caused unrelated SIGKILL (#4295).
+        const isAppProcess =
+          (cmd.includes("node") && cmd.includes("9router") &&
+            (cmd.includes("cli.js") || cmd.includes("/9router"))) ||
+          cmd.includes("next-server") ||
+          (cmd.includes("cloudflared") && cmd.includes("9router")) ||
+          cmd.includes("/bin/app/") ||
+          cmd.includes("tray_darwin") ||
+          cmd.includes("tray_linux");
+        if (isAppProcess) pids.push(pid);
       });
     } catch { /* no processes */ }
   }
