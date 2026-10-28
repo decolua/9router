@@ -25,6 +25,7 @@ exports[`GOLDEN request: OpenAI → Claude > full body (system/image/tool/tool_r
       "content": [
         {
           "cache_control": {
+            "ttl": "1h",
             "type": "ephemeral",
           },
           "id": "call_1",
@@ -41,6 +42,7 @@ exports[`GOLDEN request: OpenAI → Claude > full body (system/image/tool/tool_r
       "content": [
         {
           "cache_control": {
+            "ttl": "1h",
             "type": "ephemeral",
           },
           "content": "sunny",
