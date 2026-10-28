@@ -1,16 +1,17 @@
 // Regression test: claude → claude streaming passthrough must still decloak
-// tool names. translateRequest() cloaks client tool names with CLAUDE_TOOL_SUFFIX
-// for OAuth-cloaked Claude providers (cloakToolsOnOAuth) even when source and
+// tool names. translateRequest() remaps client tool names to TitleCase for
+// OAuth-cloaked Claude providers (cloakToolsOnOAuth) even when source and
 // target formats match; the same-format fast path in translateResponse() used
-// to return chunks untouched, leaking the suffixed name (e.g. "run_code_ide")
-// to the client, which then rejected the call as an unknown tool.
+// to return chunks untouched, leaking the cloaked name (e.g. "RunCode") to
+// the client, which then rejected the call as an unknown tool.
 import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateResponse } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { CLAUDE_TOOL_SUFFIX } from "../../open-sse/config/appConstants.js";
 
-const CLOAKED = "run_code" + CLAUDE_TOOL_SUFFIX;
+const CLOAKED = "RunCode";
+const LEGACY_CLOAKED = "run_code" + CLAUDE_TOOL_SUFFIX;
 
 const toolUseStart = (name) => ({
   type: "content_block_start",
@@ -36,8 +37,14 @@ describe("Claude → Claude streaming passthrough (OAuth tool cloak)", () => {
     expect(outText).toBe(textChunk);
   });
 
-  it("falls back to suffix-stripping when no cloak map is present", () => {
+  it("is a no-op for TitleCase names when no cloak map is present", () => {
     const chunk = toolUseStart(CLOAKED);
+    const [out] = translateResponse(FORMATS.CLAUDE, FORMATS.CLAUDE, chunk, {});
+    expect(out).toBe(chunk);
+  });
+
+  it("falls back to stripping legacy *_ide suffix when no cloak map is present", () => {
+    const chunk = toolUseStart(LEGACY_CLOAKED);
     const [out] = translateResponse(FORMATS.CLAUDE, FORMATS.CLAUDE, chunk, {});
     expect(out.content_block.name).toBe("run_code");
   });
