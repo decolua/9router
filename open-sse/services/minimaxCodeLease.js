@@ -2,7 +2,8 @@
 // lease cache. Adapted from MiniMax-AI/minimax-code, packages/oauth-lease-protocol
 // (src/contracts.ts, src/codec.ts, src/endpoints.ts), Copyright (c) 2026
 // MiniMax Code, MIT License — ported to plain JavaScript, client-side subset.
-// See also NOTICE in syxscott/minimax-code2api.
+// A complete, working standalone build of this exact client (frame codec, pipe
+// resolution, lease cache) ships open source at github.com/syxscott/minimax-code2api.
 //
 // Wire protocol: each request/response is a JSON payload prefixed with a 4-byte
 // big-endian length, carried over a local named pipe (Windows) or a unix domain
