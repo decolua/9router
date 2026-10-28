@@ -1903,7 +1903,7 @@ export default function ProviderDetailPage() {
           onClose={() => setShowIFlowCookieModal(false)}
         />
       )}
-      <AddApiKeyModal
+      {showAddApiKeyModal && <AddApiKeyModal
         isOpen={showAddApiKeyModal}
         provider={providerId}
         providerName={providerInfo.name}
@@ -1921,7 +1921,7 @@ export default function ProviderDetailPage() {
           setAddConnectionError("");
           setShowAddApiKeyModal(false);
         }}
-      />
+      />}
       <EditConnectionModal
         isOpen={showEditModal}
         connection={selectedConnection}
