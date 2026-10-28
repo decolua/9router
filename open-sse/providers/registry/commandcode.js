@@ -26,6 +26,7 @@ export default {
       "x-command-code-version": "0.25.7",
       "x-cli-environment": "cli",
     },
+    reasoningInject: { scope: "all" },
   },
   models: [
     { id: "deepseek/deepseek-v4-pro", name: "DeepSeek V4 Pro" },
