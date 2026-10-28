@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { KiroService } from "@/lib/oauth/services/kiro";
 import { createProviderConnection } from "@/models";
+import { resolveKiroCredentialsFromCache } from "@/lib/oauth/kiroSsoCache";
+import { normalizeKiroExternalIdpAuth } from "@/lib/oauth/kiroExternalIdp";
 
 /**
  * POST /api/oauth/kiro/import
@@ -22,18 +24,30 @@ export async function POST(request) {
     const kiroService = new KiroService();
     const isIdc = !!(clientId && clientSecret);
 
-    // For IDC tokens, refresh via the regional OIDC endpoint with client credentials.
-    // For social/builder-id tokens, use the standard social refresh endpoint.
-    const providerSpecificData = isIdc
+    let resolvedProviderData = isIdc
       ? { clientId, clientSecret, region: region || "us-east-1", authMethod: "idc" }
       : {};
 
-    const tokenData = await kiroService.refreshToken(refreshToken.trim(), providerSpecificData);
+    let resolvedProfileArn = profileArn || null;
+
+    // Try to resolve the token from local SSO cache.
+    try {
+      const cacheResult = await resolveKiroCredentialsFromCache(refreshToken.trim());
+      if (cacheResult.authMethod === "external_idp" && cacheResult.rawAuth) {
+        const tokenData = normalizeKiroExternalIdpAuth(cacheResult.rawAuth);
+        resolvedProviderData = tokenData.providerSpecificData;
+        resolvedProfileArn = tokenData.providerSpecificData.profileArn;
+      }
+    } catch (cacheError) {
+      // Ignore cache errors and proceed with standard flow
+    }
+
+    const tokenData = await kiroService.refreshToken(refreshToken.trim(), resolvedProviderData);
 
     const email = kiroService.extractEmailFromJWT(tokenData.accessToken);
-    const resolvedAuthMethod = isIdc ? "idc" : "imported";
-    const providerLabel = isIdc ? "Enterprise" : "Imported";
-    const resolvedProfileArn = profileArn || tokenData.profileArn || null;
+    const resolvedAuthMethod = tokenData.providerSpecificData?.authMethod || (isIdc ? "idc" : "imported");
+    const providerLabel = tokenData.providerSpecificData?.provider || (isIdc ? "Enterprise" : "Imported");
+    resolvedProfileArn = resolvedProfileArn || tokenData.providerSpecificData?.profileArn || tokenData.profileArn || null;
 
     const connection = await createProviderConnection({
       provider: "kiro",
@@ -47,6 +61,7 @@ export async function POST(request) {
         authMethod: resolvedAuthMethod,
         provider: providerLabel,
         ...(isIdc ? { clientId, clientSecret, region: region || "us-east-1" } : {}),
+        ...(tokenData.providerSpecificData?.authMethod === "external_idp" ? tokenData.providerSpecificData : {})
       },
       testStatus: "active",
     });
