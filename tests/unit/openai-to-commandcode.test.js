@@ -233,3 +233,29 @@ describe("openaiToCommandCodeRequest — native image blocks", () => {
     expect(texts).not.toContain("[image omitted]");
   });
 });
+
+describe("openaiToCommandCodeRequest — token limits", () => {
+  it("clamps max_tokens to 200000 when client requests oversized max_output_tokens", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      max_output_tokens: 384000,
+    }, true);
+    expect(out.params.max_tokens).toBe(200000);
+  });
+
+  it("clamps max_tokens to 200000 when client requests oversized max_tokens", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 1000000,
+    }, true);
+    expect(out.params.max_tokens).toBe(200000);
+  });
+
+  it("preserves max_tokens within upstream 200000 limit", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 8192,
+    }, true);
+    expect(out.params.max_tokens).toBe(8192);
+  });
+});

@@ -23,6 +23,9 @@ export class CommandCodeExecutor extends BaseExecutor {
 
   transformRequest(model, body, stream, credentials) {
     body.stream = true;
+    if (body?.params && typeof body.params.max_tokens === "number" && body.params.max_tokens > 200000) {
+      body.params.max_tokens = 200000;
+    }
     return body;
   }
 
