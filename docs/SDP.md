@@ -220,3 +220,32 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Container siap di-rebuild dengan image mandiri).
 - **Catatan untuk AI selanjutnya (Handoff Note):** `wreq-js` dan binary musl Rust `@wreq-js/binding-linux-x64-musl` kini disalin otomatis ke runner stage Dockerfile. Provider OpenCode Free dan Grok Web dapat langsung melakukan TLS client impersonation tanpa perlu runtime npm install.
+
+### 2026-10-28 — Upstream Sync to v0.5.112 & Model Test Timeout Resilience
+- **Tugas:** 
+  1. Mengatasi error `"The operation was aborted due to timeout"` saat pengujian model di halaman dashboard provider (terutama Gemini model reasoning seperti Gemini 3.8 Flash, 3.7 Flash, dan model dengan chain-of-thought/multi-account fallback).
+  2. Melakukan sinkronisasi pembaruan resmi upstream v0.5.112 (commit `1fe586bb`).
+- **Masalah:**
+  1. Fungsi pengujian model `pingModelByKind` di `src/app/api/models/test/ping.js` menetapkan batas waktu hardcoded 15 detik (`signal: AbortSignal.timeout(15000)`). Model reasoning modern (seperti Gemini 3.8 Flash yang membutuhkan ~40.5 detik untuk deep thinking, atau Gemini 3.5 Flash Lite yang memakan waktu 22.7 detik) otomatis diaborsi di detik ke-15.
+  2. Ketika abort terjadi, `fetch` melempar `TimeoutError` yang tidak ditangani secara lokal di `ping.js`, sehingga merambat ke `route.js` dan memunculkan error HTTP 500 mentah `"The operation was aborted due to timeout"`.
+  3. Upstream merilis v0.5.112 yang membawa pembaruan Minimax Code lease, Nace Drex provider, serta bundel resmi lazy-runtime deps di Dockerfile.
+- **Penyelesaian:**
+  1. Melakukan sync `origin/master` (v0.5.112) ke branch `master`.
+  2. Menggabungkan `master` ke `vnot-production` dan menyelesaikan merge conflict pada `Dockerfile` dan `lazyRuntime.js` dengan mengadopsi standar lazy-runtime upstream yang lebih bersih.
+  3. Membuat branch fitur `feat/model-test-timeout-resilience`.
+  4. Meningkatkan timeout probe di `src/app/api/models/test/ping.js` menjadi 60 detik (`DEFAULT_MODEL_TEST_TIMEOUT_MS = 60000`, configurable via `process.env.MODEL_TEST_TIMEOUT_MS`) untuk seluruh jenis model (`llm`, `image`, `embedding`, `stt`, `systemone`).
+  5. Menambahkan penanganan error tangguh (try/catch) di `pingModelByKind` yang mengembalikan format respons terstruktur:
+     - Status 504 pada timeout dengan penjelasan spesifik bahwa upstream model membutuhkan waktu lebih lama untuk reasoning atau rantai fallback akun sedang berjalan.
+     - Status 502/500 pada network/probe error.
+  6. Menambahkan `export const maxDuration = 60` di `src/app/api/models/test/route.js`.
+  7. Menambahkan pengujian unit di `tests/unit/ping-reasoning-models-3010.test.js`.
+  8. Membuat dokumentasi fitur lengkap di `docs/model-test-timeout-resilience/README.md`.
+  9. Menggabungkan `feat/model-test-timeout-resilience` ke dalam `vnot-production`.
+- **File yang diubah/dibuat:**
+  - `src/app/api/models/test/ping.js`
+  - `src/app/api/models/test/route.js`
+  - `tests/unit/ping-reasoning-models-3010.test.js`
+  - `docs/model-test-timeout-resilience/README.md`
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Branch `vnot-production` siap di-build dan di-restart).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Model test probe sekarang memiliki toleransi hingga 60 detik dengan error reporting yang informatif. Bind mount `./data:/app/data` tetap terjaga utuh.
