@@ -115,10 +115,18 @@ describe("response.completed output (issue #4307)", () => {
     expect(response.output[1].content[0]).toMatchObject({ type: "output_text", text: "answer" });
   });
 
+  // A stream that never started (no chunk with choices) flushes NOTHING, so the
+  // empty-stream guard's response.failed is the terminal; the empty output array
+  // is asserted on a stream that started.
   it("reports an empty output array when nothing was produced", () => {
     const state = newState();
+    openaiToOpenAIResponsesResponse({ id: "chatcmpl-1", choices: [{ index: 0, delta: { role: "assistant" } }] }, state);
     const response = completedResponse(openaiToOpenAIResponsesResponse(null, state));
     expect(response.output).toEqual([]);
+  });
+
+  it("a stream that never started flushes no events", () => {
+    expect(openaiToOpenAIResponsesResponse(null, newState())).toEqual([]);
   });
 
   it("keeps the usage block alongside output", () => {

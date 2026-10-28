@@ -479,6 +479,11 @@ function sendCompleted(state, emit) {
 
 function flushEvents(state) {
   if (state.completedSent) return [];
+  // A stream that never started (the upstream sent no choices at all) produced
+  // nothing. Emitting a lone response.completed here handed Codex an empty
+  // "successful" turn and hid the empty stream from the empty-stream guard;
+  // emit nothing so the guard's response.failed terminal is what the client gets.
+  if (!state.started) return [];
   
   const events = [];
   const nextSeq = () => ++state.seq;
