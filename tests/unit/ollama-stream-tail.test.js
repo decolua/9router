@@ -93,4 +93,31 @@ describe("SSE providers keep their sentinel handling", () => {
     // The sentinel is a framing marker, not a chunk — it must not be translated.
     expect(text).not.toContain('"done":true');
   });
+
+  it("terminates translated OpenAI-compatible streams with data: [DONE]", async () => {
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode(
+          `data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "hi" }] } }] })}\n`,
+        ));
+        controller.close();
+      },
+    });
+    const output = stream.pipeThrough(
+      createSSETransformStreamWithLogger(FORMATS.GEMINI, FORMATS.OPENAI, "gemini", null, null, "gemini-3.8-flash"),
+    );
+    const reader = output.getReader();
+    const decoder = new TextDecoder();
+    let text = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+    text += decoder.decode();
+
+    expect(text.match(/data: \[DONE\]/g)).toHaveLength(1);
+    expect(text.endsWith("data: [DONE]\n\n")).toBe(true);
+  });
 });
