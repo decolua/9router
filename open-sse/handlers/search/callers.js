@@ -88,6 +88,24 @@ export function resolveBaseUrl(config, params) {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       throw new Error(`Invalid baseUrl protocol: ${parsed.protocol}`);
     }
+
+    // A request-supplied override must not redirect a server-held provider credential
+    // to an arbitrary public origin. The SSRF guard blocks private destinations, but
+    // public HTTPS attacker hosts are still valid URLs and would receive params.token
+    // in the provider-specific Authorization/X-API-Key header.
+    const clientOverride = params.providerOptions?.baseUrl;
+    if (typeof clientOverride === "string" && clientOverride.trim() && params.token) {
+      let configuredOrigin;
+      try {
+        configuredOrigin = new URL(config.baseUrl).origin;
+      } catch {
+        throw new Error("Configured provider baseUrl must be a valid URL");
+      }
+      if (parsed.origin !== configuredOrigin) {
+        throw new Error("Credentialed search provider baseUrl override must use the configured origin");
+      }
+    }
+
     assertPublicUrl(override);
   }
   return (override || config.baseUrl).replace(/\/+$/, "");

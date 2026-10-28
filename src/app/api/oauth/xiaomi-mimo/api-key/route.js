@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
+import { fetchPublic } from "@/shared/utils/ssrfGuard.js";
+import { isLocalRequest } from "@/dashboardGuard";
 
 /**
  * POST /api/oauth/xiaomi-mimo/api-key
@@ -30,13 +32,16 @@ export async function POST(request) {
     }
 
     const effectiveBaseUrl = (baseUrl || "https://api.xiaomimimo.com/v1").replace(/\/+$/, "");
+    // This URL comes from the request body. Keep local self-hosted endpoints available,
+    // but validate DNS and every redirect for remote callers to prevent blind SSRF.
+    const fetchImpl = isLocalRequest(request) ? fetch : fetchPublic;
 
     // Validate the key against the models endpoint (skipped for session-only)
     let validated = false;
     let modelCount = 0;
     if (key) {
       try {
-        const resp = await fetch(`${effectiveBaseUrl}/models`, {
+        const resp = await fetchImpl(`${effectiveBaseUrl}/models`, {
           method: "GET",
           headers: {
             Authorization: `Bearer ${key}`,

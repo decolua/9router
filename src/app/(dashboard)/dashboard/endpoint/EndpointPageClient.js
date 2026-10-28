@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
 import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useReauthFetch } from "@/shared/hooks/useReauthFetch";
 import {
   TUNNEL_BENEFITS,
   TUNNEL_PING_INTERVAL_MS,
@@ -20,6 +21,7 @@ import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
 export default function APIPageClient({ machineId }) {
+  const { reauthFetch, reauthModal } = useReauthFetch();
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -230,7 +232,7 @@ export default function APIPageClient({ machineId }) {
 
   const handleTunnelDashboardAccess = async (value) => {
     try {
-      const updated = await useSettingsStore.getState().patchSettings({ tunnelDashboardAccess: value });
+      const updated = await useSettingsStore.getState().patchSettings({ tunnelDashboardAccess: value }, { fetchImpl: reauthFetch });
       if (updated) setTunnelDashboardAccess(value);
     } catch (error) {
       console.log("Error updating tunnelDashboardAccess:", error);
@@ -239,7 +241,7 @@ export default function APIPageClient({ machineId }) {
 
   const handleRequireApiKey = async (value) => {
     try {
-      const updated = await useSettingsStore.getState().patchSettings({ requireApiKey: value });
+      const updated = await useSettingsStore.getState().patchSettings({ requireApiKey: value }, { fetchImpl: reauthFetch });
       if (updated) setRequireApiKey(value);
     } catch (error) {
       console.log("Error updating requireApiKey:", error);
@@ -1326,6 +1328,7 @@ export default function APIPageClient({ machineId }) {
         message={confirmState?.message}
         variant="danger"
       />
+      {reauthModal}
     </div>
   );
 }

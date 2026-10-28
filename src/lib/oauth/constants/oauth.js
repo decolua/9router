@@ -4,6 +4,7 @@
 import { platform, arch } from "os";
 import { ANTIGRAVITY_OAUTH_CLIENT, GOOGLE_OAUTH_CLIENT } from "open-sse/providers/shared.js";
 import { PROVIDER_OAUTH, PROVIDERS as REGISTRY_PROVIDERS } from "open-sse/providers/index.js";
+import { AWS_REGION_PATTERN, isValidAwsRegion } from "open-sse/config/awsRegion.js";
 
 /**
  * Get the platform enum value based on the current OS.
@@ -68,11 +69,11 @@ export const GITHUB_CONFIG = { ...PROVIDER_OAUTH["github"] };
 export const KIRO_CONFIG = { ...PROVIDER_OAUTH["kiro"] };
 
 // AWS region allowlist pattern — prevents SSRF via region injection into upstream URLs (GHSA-6mwv-4mrm-5p3m)
-export const AWS_REGION_PATTERN = /^[a-z]{2}-[a-z]+-\d{1,2}$/;
+export { AWS_REGION_PATTERN };
 
 // Reject any region that is not a valid AWS region before interpolating it into a URL
 export function assertValidAwsRegion(region) {
-  if (typeof region !== "string" || !AWS_REGION_PATTERN.test(region)) {
+  if (!isValidAwsRegion(region)) {
     throw new Error("Invalid region");
   }
   return region;

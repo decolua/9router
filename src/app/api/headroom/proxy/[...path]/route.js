@@ -35,10 +35,18 @@ function buildTargetUrl(base, path, search) {
   return target;
 }
 
-function forwardedHeaders(request, target) {
+const INTERNAL_AUTH_HEADERS = new Set([
+  "x-9r-cli-token",
+  "x-9r-peer-token",
+  "x-9r-real-ip",
+  "x-9r-via-proxy",
+]);
+
+export function forwardedHeaders(request, target) {
   const headers = new Headers(request.headers);
   for (const header of headers.keys()) {
-    if (HOP_BY_HOP_HEADERS.has(header.toLowerCase())) headers.delete(header);
+    const name = header.toLowerCase();
+    if (HOP_BY_HOP_HEADERS.has(name) || INTERNAL_AUTH_HEADERS.has(name)) headers.delete(header);
   }
   headers.delete("host");
   // Never leak viewer credentials to a non-loopback Headroom host

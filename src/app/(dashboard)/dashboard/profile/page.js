@@ -5,6 +5,7 @@ import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
 import { useTheme } from "@/shared/hooks/useTheme";
+import { useReauthFetch } from "@/shared/hooks/useReauthFetch";
 import { cn } from "@/shared/utils/cn";
 import { APP_CONFIG } from "@/shared/constants/config";
 import { LOCALE_COOKIE, normalizeLocale } from "@/i18n/config";
@@ -33,6 +34,7 @@ export default function ProfilePage() {
   const [dbLoading, setDbLoading] = useState(false);
   const [dbStatus, setDbStatus] = useState({ type: "", message: "" });
   const [dbAuth, setDbAuth] = useState({ open: false, mode: "", password: "" });
+  const { reauthFetch, reauthModal } = useReauthFetch();
   const pendingImportRef = useRef(null);
   const [oidcForm, setOidcForm] = useState({
     authMode: "password",
@@ -137,7 +139,7 @@ export default function ProfilePage() {
     setProxyStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -203,7 +205,7 @@ export default function ProfilePage() {
     setProxyStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ outboundProxyEnabled }),
@@ -238,7 +240,7 @@ export default function ProfilePage() {
     setPassStatus({ type: "", message: "" });
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -264,7 +266,7 @@ export default function ProfilePage() {
 
   const updateFallbackStrategy = async (strategy) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fallbackStrategy: strategy }),
@@ -279,7 +281,7 @@ export default function ProfilePage() {
 
   const updateComboStrategy = async (strategy) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStrategy: strategy }),
@@ -297,7 +299,7 @@ export default function ProfilePage() {
     if (isNaN(numLimit) || numLimit < 1) return;
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ stickyRoundRobinLimit: numLimit }),
@@ -315,7 +317,7 @@ export default function ProfilePage() {
     if (isNaN(numLimit) || numLimit < 1) return;
 
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ comboStickyRoundRobinLimit: numLimit }),
@@ -330,7 +332,7 @@ export default function ProfilePage() {
 
   const updateRequireLogin = async (requireLogin) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ requireLogin }),
@@ -376,7 +378,7 @@ export default function ProfilePage() {
         payload.oidcClientSecret = secret;
       }
 
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -428,7 +430,7 @@ export default function ProfilePage() {
     setOidcTestStatus({ type: "", message: "" });
 
     try {
-      const saveRes = await fetch("/api/settings", {
+      const saveRes = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -569,7 +571,7 @@ export default function ProfilePage() {
         samlAttributeName: samlForm.samlAttributeName.trim() || "name",
       };
 
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -636,7 +638,7 @@ export default function ProfilePage() {
 
   const updateObservabilityEnabled = async (enabled) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await reauthFetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enableObservability: enabled }),
@@ -1697,6 +1699,7 @@ export default function ProfilePage() {
           autoFocus
         />
       </Modal>
+      {reauthModal}
     </div>
   );
 }

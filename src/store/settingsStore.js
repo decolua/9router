@@ -40,9 +40,11 @@ const useSettingsStore = create((set, get) => ({
   },
 
   // PATCH server + merge into local cache (no extra fetch needed)
-  patchSettings: async (patch) => {
+  // fetchImpl: pass useReauthFetch's reauthFetch for security-downgrade settings, which
+  // the server rejects with REAUTH_REQUIRED until the current password is supplied.
+  patchSettings: async (patch, { fetchImpl = fetch } = {}) => {
     try {
-      const res = await fetch("/api/settings", {
+      const res = await fetchImpl("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(patch),

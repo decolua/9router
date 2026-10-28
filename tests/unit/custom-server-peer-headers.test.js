@@ -61,11 +61,34 @@ describe("custom-server peer header sanitizing", () => {
   });
 
   it("marks via-proxy and adopts the forwarded IP for a loopback proxy hop", async () => {
-    const headers = await get({ "x-forwarded-for": "203.0.113.9, 10.0.0.1" });
+    const headers = await get({ "x-forwarded-for": "203.0.113.9" });
 
     expect(headers["x-9r-via-proxy"]).toBe("1");
     expect(headers["x-9r-real-ip"]).toBe("203.0.113.9");
     expect(headers["x-forwarded-for"]).toBeUndefined();
+  });
+
+  // A loopback proxy (cloudflared/tailscale funnel/nginx) appends the peer it saw to the
+  // client's own XFF, so every hop left of the last one is attacker-chosen (GHSA-7cfm).
+  it("keys a proxied request on the proxy-appended XFF hop, not the client-supplied one", async () => {
+    const first = await get({ "x-forwarded-for": "10.0.0.1, 198.51.100.7" });
+    expect(first["x-9r-real-ip"]).toBe("198.51.100.7");
+
+    const rotated = await get({ "x-forwarded-for": "10.0.0.2, 198.51.100.7" });
+    expect(rotated["x-9r-real-ip"]).toBe("198.51.100.7");
+  });
+
+  it("ignores a client X-Real-IP that a proxy passed through alongside XFF", async () => {
+    const headers = await get({ "x-real-ip": "10.9.9.9", "x-forwarded-for": "198.51.100.7" });
+
+    expect(headers["x-9r-real-ip"]).toBe("198.51.100.7");
+  });
+
+  it("falls back to X-Real-IP when the proxy sets only that header", async () => {
+    const headers = await get({ "x-real-ip": "198.51.100.8" });
+
+    expect(headers["x-9r-via-proxy"]).toBe("1");
+    expect(headers["x-9r-real-ip"]).toBe("198.51.100.8");
   });
 
   // chat.js snapshots every client header into the request detail. Anything that grants

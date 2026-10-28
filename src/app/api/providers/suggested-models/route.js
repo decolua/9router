@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { FILTERS } from "./filters.js";
+import { fetchPublic } from "@/shared/utils/ssrfGuard.js";
+import { isLocalRequest } from "@/dashboardGuard";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +20,9 @@ export async function GET(request) {
   }
 
   try {
-    const res = await fetch(url);
+    // url is caller-supplied: remote callers get DNS + redirect-checked fetch (same policy
+    // as provider-nodes/validate); the catalog URLs the dashboard sends are all public.
+    const res = await (isLocalRequest(request) ? fetch : fetchPublic)(url);
     if (!res.ok) {
       return NextResponse.json({ data: [] });
     }

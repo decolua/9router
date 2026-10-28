@@ -3,6 +3,9 @@ import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
+import { verifyDashboardPassword } from "@/lib/auth/dashboardSession";
+import { hasValidCliToken } from "@/dashboardGuard";
+import { reauthRequiredKeys, REAUTH_REQUIRED_CODE } from "@/lib/auth/settingsReauth";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -42,9 +45,20 @@ export async function PATCH(request) {
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
 
+    const currentSettings = await getSettings();
+    const reauthKeys = reauthRequiredKeys(body, currentSettings);
+    if (reauthKeys.length && !(await hasValidCliToken(request))) {
+      if (!(await verifyDashboardPassword(body.currentPassword))) {
+        return NextResponse.json(
+          { error: "Enter your current dashboard password to change these security settings.", code: REAUTH_REQUIRED_CODE, fields: reauthKeys },
+          { status: 401, headers: SETTINGS_RESPONSE_HEADERS }
+        );
+      }
+    }
+
     // If updating password, hash it
     if (body.newPassword) {
-      const settings = await getSettings();
+      const settings = currentSettings;
       const currentHash = settings.password;
 
       // Verify current password if it exists
@@ -69,6 +83,9 @@ export async function PATCH(request) {
       delete body.newPassword;
       delete body.currentPassword;
     }
+
+    // Re-authentication is an input only; never persist it as a setting.
+    delete body.currentPassword;
 
     if (Object.prototype.hasOwnProperty.call(body, "oidcClientSecret")) {
       if (!body.oidcClientSecret || !String(body.oidcClientSecret).trim()) {

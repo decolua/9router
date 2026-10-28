@@ -14,6 +14,7 @@ import {
   getNousApiKeyValidationError,
   isNousApiKeyAccepted,
 } from "open-sse/services/nous.js";
+import { safeAwsRegion } from "open-sse/config/awsRegion.js";
 import {
   refreshProviderCredentials,
   shouldRefreshCredentials,
@@ -309,7 +310,7 @@ async function refreshOAuthToken(connection) {
       const clientSecret = psd.clientSecret || connection.clientSecret;
       const region = psd.region || connection.region;
       if (clientId && clientSecret) {
-        const endpoint = `https://oidc.${region || "us-east-1"}.amazonaws.com/token`;
+        const endpoint = `https://oidc.${safeAwsRegion(region)}.amazonaws.com/token`;
         const response = await fetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

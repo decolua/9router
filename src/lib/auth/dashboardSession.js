@@ -9,8 +9,28 @@ import { getSettings } from "@/lib/localDb";
 const DEFAULT_PASSWORD = "123456";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
 
+// Example values shipped in .env.example / README / gitbook. `cp .env.example .env` would
+// otherwise sign sessions with a key anyone can read, i.e. forgeable auth_token cookies (GHSA-jphh).
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  "change-me-to-a-long-random-secret",
+  "your-secure-secret-change-this",
+  "your-secure-secret-change-this-to-random-string",
+  "your-secure-secret",
+  "your-secret",
+  "generated-secret-here",
+  "tu-secreto-seguro-cámbialo",
+  "votre-secret-sécurisé-changez-le",
+]);
+
+export function isPlaceholderJwtSecret(secret) {
+  return PLACEHOLDER_JWT_SECRETS.has(String(secret).trim());
+}
+
 function loadJwtSecret() {
-  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (process.env.JWT_SECRET) {
+    if (!isPlaceholderJwtSecret(process.env.JWT_SECRET)) return process.env.JWT_SECRET;
+    console.warn("[auth] JWT_SECRET is a published example value; ignoring it and using the generated secret in DATA_DIR. Set a unique random JWT_SECRET to share sessions across instances.");
+  }
   const file = path.join(DATA_DIR, "jwt-secret");
   try {
     return fs.readFileSync(file, "utf8").trim();

@@ -18,6 +18,24 @@ describe("resolveBaseUrl SSRF guard", () => {
     expect(resolveBaseUrl(CONFIG, params)).toBe("http://searxng.example.net");
   });
 
+  it("allows a credentialed override only on the configured provider origin", () => {
+    const config = { id: "serper", baseUrl: "https://google.serper.dev/search" };
+    expect(resolveBaseUrl(config, {
+      token: "server-held-secret",
+      providerOptions: { baseUrl: "https://google.serper.dev/custom-path" },
+    })).toBe("https://google.serper.dev/custom-path");
+
+    expect(() => resolveBaseUrl(config, {
+      token: "server-held-secret",
+      providerOptions: { baseUrl: "https://attacker.example/collect" },
+    })).toThrow(/must use the configured origin/);
+  });
+
+  it("still allows public endpoint overrides for providers without credentials", () => {
+    const params = { providerOptions: { baseUrl: "https://my-public-search.example" } };
+    expect(resolveBaseUrl(CONFIG, params)).toBe("https://my-public-search.example");
+  });
+
   it("rejects loopback override", () => {
     const params = { providerOptions: { baseUrl: "http://127.0.0.1:18999" } };
     expect(() => resolveBaseUrl(CONFIG, params)).toThrow();

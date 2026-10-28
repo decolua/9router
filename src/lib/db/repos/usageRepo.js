@@ -1,4 +1,5 @@
 import { EventEmitter } from "events";
+import { createHash } from "crypto";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
@@ -9,6 +10,14 @@ function maskApiKey(key) {
   if (trimmed.length <= 12) return trimmed.charAt(0) + "***";
   // Keep the tail: keys sharing a machine-id prefix (team keys) must not collide.
   return trimmed.slice(0, 8) + "***" + trimmed.slice(-4);
+}
+
+// byApiKey property names are serialized to /api/usage/stats, so they must never be the
+// raw key (GHSA-vjc7, #2918). The masked prefix alone is shared by every key one install
+// generates (sk-{machineId}-…), so a digest suffix keeps distinct keys in distinct rows.
+function apiKeyStatsId(key) {
+  const trimmed = key.trim();
+  return `${maskApiKey(trimmed)}#${createHash("sha256").update(trimmed).digest("hex").slice(0, 12)}`;
 }
 
 const PENDING_TIMEOUT_MS = 60 * 1000;
@@ -504,11 +513,17 @@ export async function getUsageStats(period = "all") {
         if (dateKey > (stats.byAccount[accountKey].lastUsed || "")) stats.byAccount[accountKey].lastUsed = dateKey;
       }
 
-      for (const [akKey, ak] of Object.entries(day.byApiKey || {})) {
+      for (const [storedKey, ak] of Object.entries(day.byApiKey || {})) {
         const rawModel = ak.rawModel || "";
         const provider = ak.provider || "";
         const providerDisplayName = providerNodeNameMap[provider] || provider;
-        const apiKeyVal = ak.apiKey ? ak.apiKey.trim() : null;
+        const storedKeyPart = storedKey.split("|")[0];
+        const apiKeyVal = (typeof ak.apiKey === "string" && ak.apiKey.trim())
+          || (storedKeyPart && storedKeyPart !== "local-no-key" ? storedKeyPart.trim() : null);
+        // storedKey embeds the raw key; re-key before it reaches the response.
+        const akKey = apiKeyVal
+          ? `${apiKeyStatsId(apiKeyVal)}|${rawModel}|${provider || "unknown"}`
+          : storedKey;
         const keyInfo = apiKeyVal ? apiKeyMap[apiKeyVal] : null;
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const keyName = keyInfo?.name || (apiKeyVal ? (apiKeyMasked || apiKeyVal.slice(0, 8) + "...") : "Local (No API Key)");
@@ -566,7 +581,7 @@ export async function getUsageStats(period = "all") {
       }
 
       const apiKeyKey = (e.apiKey && typeof e.apiKey === "string")
-        ? `${e.apiKey}|${e.model}|${e.provider || "unknown"}`
+        ? `${apiKeyStatsId(e.apiKey)}|${e.model}|${e.provider || "unknown"}`
         : "local-no-key";
       if (stats.byApiKey[apiKeyKey] && new Date(ts) > new Date(stats.byApiKey[apiKeyKey].lastUsed)) stats.byApiKey[apiKeyKey].lastUsed = ts;
 
@@ -639,9 +654,10 @@ export async function getUsageStats(period = "all") {
         const keyInfo = apiKeyMap[apiKeyVal];
         const apiKeyMasked = maskApiKey(apiKeyVal);
         const keyName = keyInfo?.name || apiKeyMasked || r.apiKey.slice(0, 8) + "...";
-        // Key by the FULL api key (same as the daily rollup + lastUsed overlay)
-        // — masking here collided all keys sharing a prefix into one bucket.
-        const akKey = `${r.apiKey}|${r.model}|${r.provider || "unknown"}`;
+        // One bucket per distinct key (same id as the daily rollup + lastUsed overlay) —
+        // masking alone collided keys sharing a prefix — but never the raw key itself,
+        // because these property names are serialized to the client.
+        const akKey = `${apiKeyStatsId(apiKeyVal)}|${r.model}|${r.provider || "unknown"}`;
         if (!stats.byApiKey[akKey]) {
           stats.byApiKey[akKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, rawModel: r.model, provider: providerDisplayName, apiKeyMasked, keyName, apiKeyKey: apiKeyMasked, lastUsed: r.timestamp };
         }
