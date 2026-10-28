@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Models**: collect models.dev context/output limits for every model a gateway lists upstream instead of only the ones the static registry enumerates, so a model outside that curated subset (one the registry has not caught up on, or one a user added by hand) no longer falls back to the generic pattern tables — `nvidia/stepfun-ai/step-5-preview` advertised 128K against upstream's 1M and dragged the whole combo's window down with it. Limits stay scoped to gateways 9router actually registers, and `build()` now detaches the installed catalog while resolving so a repeated run cannot drop its own deltas.
+
 # v0.5.112 (2026-10-28)
 
 ## Features
