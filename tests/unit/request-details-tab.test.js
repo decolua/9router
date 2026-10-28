@@ -173,6 +173,77 @@ describe("getDistinctProviders — providers route (no full-row parse)", () => {
   });
 });
 
+describe("getDistinctModels — model filter source", () => {
+  // Rows are inserted directly: saveRequestDetail() batches through an
+  // async flush, which makes assertions timing-dependent.
+  function insert(id, provider, model) {
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      [id, new Date().toISOString(), provider, model, null, "ok", JSON.stringify({ id, provider, model })]
+    );
+  }
+
+  it("returns unique, sorted models and honours the provider scope", async () => {
+    insert("dm-1", "openai", "gpt-4o");
+    insert("dm-2", "openai", "gpt-4o");
+    insert("dm-3", "openai", "gpt-5");
+    insert("dm-4", "anthropic", "claude-3");
+
+    const all = await db.getDistinctModels();
+    expect(new Set(all).size).toBe(all.length);
+    expect(all).toEqual([...all].sort());
+    expect(all).toEqual(expect.arrayContaining(["gpt-4o", "gpt-5", "claude-3"]));
+
+    const openaiOnly = await db.getDistinctModels("openai");
+    expect(openaiOnly).toEqual(expect.arrayContaining(["gpt-4o", "gpt-5"]));
+    expect(openaiOnly).not.toContain("claude-3");
+  });
+
+  it("skips rows with a null model", async () => {
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      ["dm-null", new Date().toISOString(), "openai", null, null, "ok", JSON.stringify({ id: "dm-null" })]
+    );
+
+    const list = await db.getDistinctModels("openai");
+    expect(list.every((m) => m !== null)).toBe(true);
+  });
+
+  it("model filter selects only matching rows", async () => {
+    const res = await db.getRequestDetails({ model: "gpt-5" });
+    expect(res.details.length).toBeGreaterThanOrEqual(1);
+    expect(res.details.every((d) => d.model === "gpt-5")).toBe(true);
+  });
+});
+
+describe("API route contract — /api/usage/models", () => {
+  let GET;
+  beforeAll(async () => {
+    ({ GET } = await import("@/app/api/usage/models/route.js"));
+  });
+
+  it("no provider → every distinct model", async () => {
+    const res = await GET(new Request("http://localhost/api/usage/models"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.models).toEqual(expect.arrayContaining(["gpt-4o", "gpt-5", "claude-3"]));
+  });
+
+  it("provider scope narrows the list", async () => {
+    const res = await GET(new Request("http://localhost/api/usage/models?provider=anthropic"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.models).toEqual(["claude-3"]);
+  });
+
+  it("unknown provider → empty list, still 200", async () => {
+    const res = await GET(new Request("http://localhost/api/usage/models?provider=nope"));
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.models).toEqual([]);
+  });
+});
+
 describe("token helpers — render-time crash safety", () => {
   it("undefined/null tokens → 0, no throw", () => {
     expect(getInputTokens(undefined)).toBe(0);

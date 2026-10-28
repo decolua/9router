@@ -111,9 +111,11 @@ export default function RequestDetailsTab() {
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
+  const [models, setModels] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
+    model: "",
     startDate: "",
     endDate: ""
   });
@@ -131,6 +133,23 @@ export default function RequestDetailsTab() {
     }
   }, []);
 
+  const fetchModels = useCallback(async (provider) => {
+    try {
+      const params = new URLSearchParams();
+      if (provider) params.append("provider", provider);
+
+      const res = await fetch(`/api/usage/models?${params.toString()}`);
+      const data = await res.json();
+      const list = Array.isArray(data.models) ? data.models : [];
+      setModels(list);
+      return list;
+    } catch (error) {
+      console.error("Failed to fetch models:", error);
+      setModels([]);
+      return [];
+    }
+  }, []);
+
   const fetchDetails = useCallback(async () => {
     setLoading(true);
     try {
@@ -139,6 +158,7 @@ export default function RequestDetailsTab() {
         pageSize: pagination.pageSize.toString()
       });
       if (filters.provider) params.append("provider", filters.provider);
+      if (filters.model) params.append("model", filters.model);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
 
@@ -158,6 +178,24 @@ export default function RequestDetailsTab() {
     fetchProviders();
   }, [fetchProviders]);
 
+  // Model options follow the selected provider: a model that is not offered by
+  // the new provider would produce an empty table, so it is cleared instead.
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const list = await fetchModels(filters.provider);
+      if (cancelled) return;
+      setFilters((prev) =>
+        prev.model && !list.includes(prev.model) ? { ...prev, model: "" } : prev
+      );
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [filters.provider, fetchModels]);
+
   useEffect(() => {
     fetchDetails();
   }, [fetchDetails]);
@@ -176,13 +214,13 @@ export default function RequestDetailsTab() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ provider: "", startDate: "", endDate: "" });
+    setFilters({ provider: "", model: "", startDate: "", endDate: "" });
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Card padding="md">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
             <select
@@ -200,6 +238,28 @@ export default function RequestDetailsTab() {
               {providers.map((provider) => (
                 <option key={provider.id} value={provider.id}>
                   {provider.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex min-w-0 flex-col gap-2">
+            <label htmlFor="model-filter" className="text-sm font-medium text-text-main">Model</label>
+            <select
+              id="model-filter"
+              value={filters.model}
+              onChange={(e) => setFilters({ ...filters, model: e.target.value })}
+              className={cn(
+                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "w-full min-w-0 cursor-pointer"
+              )}
+              style={{ colorScheme: 'auto' }}
+            >
+              <option value="">All Models</option>
+              {models.map((model) => (
+                <option key={model} value={model}>
+                  {model}
                 </option>
               ))}
             </select>
@@ -238,7 +298,7 @@ export default function RequestDetailsTab() {
             <Button 
               variant="ghost" 
               onClick={handleClearFilters}
-              disabled={!filters.provider && !filters.startDate && !filters.endDate}
+              disabled={!filters.provider && !filters.model && !filters.startDate && !filters.endDate}
               className="w-full"
             >
               Clear Filters

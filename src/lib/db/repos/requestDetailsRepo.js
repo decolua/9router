@@ -198,6 +198,19 @@ export async function getDistinctProviders() {
   return rows.map((r) => r.provider);
 }
 
+/**
+ * Unique model ids seen in request details, sorted. Pass a provider to narrow
+ * the list to the models that provider actually served, so the model filter
+ * only ever offers values that can match rows.
+ */
+export async function getDistinctModels(provider = null) {
+  const db = await getAdapter();
+  const rows = provider
+    ? db.all(`SELECT DISTINCT model FROM requestDetails WHERE model IS NOT NULL AND provider = ? ORDER BY model ASC`, [provider])
+    : db.all(`SELECT DISTINCT model FROM requestDetails WHERE model IS NOT NULL ORDER BY model ASC`);
+  return rows.map((r) => r.model);
+}
+
 export async function getRequestDetailById(id) {
   const db = await getAdapter();
   const row = db.get(`SELECT data FROM requestDetails WHERE id = ?`, [id]);
