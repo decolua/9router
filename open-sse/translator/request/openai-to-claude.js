@@ -12,6 +12,54 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 // Previously "proxy_" was used but this is a detectable fingerprint difference.
 const CLAUDE_OAUTH_TOOL_PREFIX = "";
 
+// JSON Schema Draft 2020-12 requires these keywords to be numbers. Some clients
+// serialize them as strings; normalize before sending tools to Anthropic.
+const CLAUDE_NUMERIC_SCHEMA_KEYS = new Set([
+  "minLength",
+  "maxLength",
+  "minItems",
+  "maxItems",
+  "minProperties",
+  "maxProperties",
+  "minimum",
+  "maximum",
+  "exclusiveMinimum",
+  "exclusiveMaximum",
+  "multipleOf"
+]);
+
+function normalizeClaudeToolSchema(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeClaudeToolSchema);
+  }
+
+  if (!value || typeof value !== "object") {
+    return value;
+  }
+
+  const normalized = {};
+  for (const [key, child] of Object.entries(value)) {
+    // These client-side hints are not valid JSON Schema keywords for Anthropic.
+    if (key === "optional" || key === "nullable") {
+      continue;
+    }
+
+    if (
+      CLAUDE_NUMERIC_SCHEMA_KEYS.has(key) &&
+      typeof child === "string" &&
+      child.trim() !== "" &&
+      Number.isFinite(Number(child))
+    ) {
+      normalized[key] = Number(child);
+      continue;
+    }
+
+    normalized[key] = normalizeClaudeToolSchema(child);
+  }
+
+  return normalized;
+}
+
 // Convert OpenAI request to Claude format
 export function openaiToClaudeRequest(model, body, stream) {
   // Tool name mapping for Claude OAuth (capitalizedName → originalName)
@@ -146,22 +194,29 @@ Respond ONLY with the JSON object, no other text.`);
   if (body.tools && Array.isArray(body.tools)) {
     result.tools = [];
     for (const tool of body.tools) {
-      // Pass-through built-in tools (e.g. web_search_20250305) without prefix or conversion
+      // Pass-through built-in tools (e.g. web_search_20250305) without prefix or conversion.
+      // OpenAI custom tools need conversion too, because Anthropic validates their
+      // input_schema as JSON Schema Draft 2020-12.
       const toolType = tool.type;
+      let toolSource = tool;
       if (toolType && toolType !== OPENAI_BLOCK.FUNCTION) {
-        result.tools.push(tool);
-        continue;
+        if (toolType !== "custom") {
+          result.tools.push(tool);
+          continue;
+        }
+        toolSource = tool.custom ?? tool;
       }
 
       // Function-shaped tools arrive in two flavors from real clients:
       //   (a) openai-spec: { type: "function", function: { name, ... } }
       //   (b) legacy/loose: { function: { name, ... } }   (no parent `type`)
-      // Both must yield toolData.name = "echo". Treat the bare-function shape
+      // Custom tools may also wrap the same data under `custom`.
+      // All must yield toolData.name = "echo". Treat the bare-function shape
       // as a function tool too — Anthropic-compatible gateways (notably
       // MiniMax M3 at api.minimaxi.com) reject payloads where this branch
       // falls through with `toolData.name === undefined`, returning their
       // upstream code (2013) "invalid tool type". See #2435.
-      const toolData = tool.function ?? tool;
+      const toolData = toolSource.function ?? toolSource;
       const originalName = toolData.name;
 
       // Claude OAuth requires prefixed tool names to avoid conflicts
@@ -173,7 +228,9 @@ Respond ONLY with the JSON object, no other text.`);
       result.tools.push({
         name: toolName,
         description: toolData.description || "",
-        input_schema: toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] }
+        input_schema: normalizeClaudeToolSchema(
+          toolData.parameters || toolData.input_schema || { type: "object", properties: {}, required: [] }
+        )
       });
     }
 
@@ -410,4 +467,3 @@ export { openaiToClaudeRequestForAntigravity };
 
 // Register
 register(FORMATS.OPENAI, FORMATS.CLAUDE, openaiToClaudeRequest, null);
-
