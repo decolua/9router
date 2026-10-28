@@ -1,6 +1,6 @@
 const { err } = require("../logger");
 const { IS_DEV } = require("../config");
-const { fetchRouter, pipeTransformedEventStream } = require("./base");
+const { fetchRouter, pipeSSE, pipeTransformedEventStream } = require("./base");
 const fs = require("fs");
 const path = require("path");
 
@@ -523,7 +523,21 @@ async function intercept(req, res, bodyBuffer, mappedModel) {
       // that don't contain model info - pass them through directly to avoid JSON.parse crash
       throw new Error(`Binary EventStream format detected (${bodyBuffer.length}B) - request should use passthrough instead of intercept`);
     }
-    
+
+    const isResponsesApi = (req.url && req.url.includes("/responses")) ||
+      String(req.headers?.["x-amz-target"] || "").includes("CreateResponse");
+
+    if (isResponsesApi) {
+      const body = JSON.parse(bodyBuffer.toString());
+      if (mappedModel) {
+        body.model = mappedModel;
+      }
+      dbg(`[Kiro MITM] /responses forwarded to router with model ${body.model}`);
+      const routerRes = await fetchRouter(body, "/v1/responses", req.headers);
+      await pipeSSE(routerRes, res);
+      return;
+    }
+
     const body = JSON.parse(bodyBuffer.toString());
 
     // 1 + 2: CodeWhisperer → OpenAI messages + tools
