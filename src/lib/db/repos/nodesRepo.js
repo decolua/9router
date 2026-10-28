@@ -65,7 +65,18 @@ export async function createProviderNode(data) {
     createdAt: now,
     updatedAt: now,
   };
-  upsert(db, node);
+  const row = nodeToRow(node);
+  const result = db.run(
+    `INSERT INTO providerNodes(id, type, name, data, createdAt, updatedAt)
+     VALUES(?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO NOTHING`,
+    [row.id, row.type, row.name, row.data, row.createdAt, row.updatedAt]
+  );
+  if ((result?.changes ?? 0) === 0) {
+    const error = new Error(`Provider node ID "${node.id}" already exists`);
+    error.code = "PROVIDER_NODE_ID_CONFLICT";
+    throw error;
+  }
   return node;
 }
 

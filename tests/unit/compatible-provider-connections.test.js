@@ -21,21 +21,33 @@ async function setupTestContext(nodeData) {
   }));
 
   const { POST } = await import("@/app/api/providers/route.js");
+  const { POST: createProviderNodeRoute } = await import("@/app/api/provider-nodes/route.js");
   const {
     createProviderNode,
     getProviderConnections,
+    getProviderNodeById,
   } = await import("@/models/index.js");
 
-  const node = await createProviderNode(nodeData);
+  const node = nodeData ? await createProviderNode(nodeData) : null;
 
   return {
     node,
     POST,
+    createProviderNodeRoute,
     getProviderConnections,
+    getProviderNodeById,
     cleanup() {
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
   };
+}
+
+function makeNodeRequest(data) {
+  return new Request("https://9router.local/api/provider-nodes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
 }
 
 function makeRequest(provider, name = "Test Connection") {
@@ -165,5 +177,104 @@ describe("compatible provider connections API", () => {
     expect(storedConnections).toHaveLength(2);
     expectCompatibleConnection(storedConnections[0], ctx.node, { apiType: "chat" });
     expectCompatibleConnection(storedConnections[1], ctx.node, { apiType: "chat" });
+  });
+
+  it("creates compatible provider IDs with optional suffixes and the UUID fallback", async () => {
+    const ctx = await setupTestContext();
+    cleanup = ctx.cleanup;
+
+    const chatResponse = await ctx.createProviderNodeRoute(makeNodeRequest({
+      type: "openai-compatible",
+      apiType: "chat",
+      name: "OpenAI Chat",
+      prefix: "oc",
+      baseUrl: "https://openai-chat.test/v1",
+      providerIdSuffix: "  Team.Proxy_1-Prod  ",
+    }));
+    const chatBody = await chatResponse.json();
+    expect(chatResponse.status).toBe(201);
+    expect(chatBody.node.id).toBe("openai-compatible-chat-Team.Proxy_1-Prod");
+
+    const connectionResponse = await ctx.POST(makeRequest(chatBody.node.id));
+    const connectionBody = await connectionResponse.json();
+    expect(connectionResponse.status).toBe(201);
+    expect(connectionBody.connection.provider).toBe(chatBody.node.id);
+    expect(connectionBody.connection.providerSpecificData.apiType).toBe("chat");
+
+    const responsesResponse = await ctx.createProviderNodeRoute(makeNodeRequest({
+      type: "openai-compatible",
+      apiType: "responses",
+      name: "OpenAI Responses",
+      prefix: "or",
+      baseUrl: "https://openai-responses.test/v1",
+      providerIdSuffix: "responses_node",
+    }));
+    const responsesBody = await responsesResponse.json();
+    expect(responsesResponse.status).toBe(201);
+    expect(responsesBody.node.id).toBe("openai-compatible-responses-responses_node");
+
+    const anthropicResponse = await ctx.createProviderNodeRoute(makeNodeRequest({
+      type: "anthropic-compatible",
+      name: "Anthropic",
+      prefix: "ac",
+      baseUrl: "https://anthropic.test/v1",
+      providerIdSuffix: "ac-prod",
+    }));
+    const anthropicBody = await anthropicResponse.json();
+    expect(anthropicResponse.status).toBe(201);
+    expect(anthropicBody.node.id).toBe("anthropic-compatible-ac-prod");
+
+    for (const providerIdSuffix of [undefined, "", "   "]) {
+      const fallbackResponse = await ctx.createProviderNodeRoute(makeNodeRequest({
+        type: "openai-compatible",
+        apiType: "chat",
+        name: "OpenAI Fallback",
+        prefix: "fallback",
+        baseUrl: "https://fallback.test/v1",
+        ...(providerIdSuffix === undefined ? {} : { providerIdSuffix }),
+      }));
+      const fallbackBody = await fallbackResponse.json();
+      expect(fallbackResponse.status).toBe(201);
+      expect(fallbackBody.node.id).toMatch(
+        /^openai-compatible-chat-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i
+      );
+    }
+  });
+
+  it("rejects invalid and duplicate suffixes without overwriting a node", async () => {
+    const ctx = await setupTestContext();
+    cleanup = ctx.cleanup;
+
+    const original = {
+      type: "openai-compatible",
+      apiType: "chat",
+      name: "Original",
+      prefix: "original",
+      baseUrl: "https://original.test/v1",
+      providerIdSuffix: "shared",
+    };
+    const firstResponse = await ctx.createProviderNodeRoute(makeNodeRequest(original));
+    expect(firstResponse.status).toBe(201);
+
+    const invalidResponse = await ctx.createProviderNodeRoute(makeNodeRequest({
+      ...original,
+      providerIdSuffix: "invalid/suffix",
+    }));
+    expect(invalidResponse.status).toBe(400);
+
+    const duplicateResponse = await ctx.createProviderNodeRoute(makeNodeRequest({
+      ...original,
+      name: "Replacement",
+      prefix: "replacement",
+      baseUrl: "https://replacement.test/v1",
+    }));
+    expect(duplicateResponse.status).toBe(409);
+
+    const storedNode = await ctx.getProviderNodeById("openai-compatible-chat-shared");
+    expect(storedNode).toMatchObject({
+      name: "Original",
+      prefix: "original",
+      baseUrl: "https://original.test/v1",
+    });
   });
 });
