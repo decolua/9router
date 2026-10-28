@@ -87,7 +87,24 @@ export class GithubExecutor extends BaseExecutor {
       return msg;
     });
 
+    // GitHub Copilot's /chat/completions rejects a conversation that ends with an
+    // assistant message ("does not support assistant message prefill. The conversation
+    // must end with a user message."). Anthropic clients such as Claude Desktop send a
+    // trailing assistant turn as a prefill seed, which the Anthropic API honors but
+    // Copilot does not — drop it so the request is accepted.
+    sanitized.messages = this.dropTrailingAssistantPrefill(sanitized.messages);
+
     return sanitized;
+  }
+
+  // Remove trailing assistant message(s). Copilot's chat endpoint can't honor prefill
+  // and 400s unless the conversation ends with a user/tool message. Never empties the
+  // array. No-op when the conversation already ends with a non-assistant message.
+  dropTrailingAssistantPrefill(messages) {
+    if (!Array.isArray(messages) || messages.length === 0) return messages;
+    let end = messages.length;
+    while (end > 1 && messages[end - 1]?.role === "assistant") end--;
+    return end === messages.length ? messages : messages.slice(0, end);
   }
 
   // Newer OpenAI models (gpt-5+, o1, o3, o4) require max_completion_tokens instead of max_tokens
