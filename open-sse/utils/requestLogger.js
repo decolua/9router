@@ -1,8 +1,15 @@
 // Check if running in Node.js environment (has fs module)
 const isNode = typeof process !== "undefined" && process.versions?.node && typeof window === "undefined";
 
-// Check if logging is enabled via environment variable (default: false)
-const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === 'true';
+/**
+ * Request logging is disabled by default.
+ * When enabled, logs are retained for 24h by default, then deleted automatically.
+ */
+const LOGGING_ENABLED = typeof process !== "undefined" && process.env?.ENABLE_REQUEST_LOGS === "true";
+const LOG_RETENTION_HOURS = Number(process?.env?.REQUEST_LOG_RETENTION_HOURS || 24);
+const LOG_RETENTION_MS = Math.max(1, LOG_RETENTION_HOURS) * 60 * 60 * 1000;
+const LOG_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;
+let lastLogCleanupAt = 0;
 
 let fs = null;
 let path = null;
@@ -33,23 +40,51 @@ function formatTimestamp(date = new Date()) {
   return `${y}${m}${d}_${h}${min}${s}_${ms}`;
 }
 
+// Delete request logs older than configured retention.
+function cleanupExpiredLogs() {
+  if (!fs || !LOGS_DIR) return;
+
+  const now = Date.now();
+  if (now - lastLogCleanupAt < LOG_CLEANUP_INTERVAL_MS) return;
+  lastLogCleanupAt = now;
+
+  try {
+    if (!fs.existsSync(LOGS_DIR)) return;
+
+    for (const entry of fs.readdirSync(LOGS_DIR, { withFileTypes: true })) {
+      const entryPath = path.join(LOGS_DIR, entry.name);
+
+      if (!entry.isDirectory()) continue;
+
+      const stat = fs.statSync(entryPath);
+      if (now - stat.mtimeMs > LOG_RETENTION_MS) {
+        fs.rmSync(entryPath, { recursive: true, force: true });
+      }
+    }
+  } catch (err) {
+    console.log("[LOG] Failed to cleanup expired logs:", err.message);
+  }
+}
+
 // Create log session folder: {sourceFormat}_{targetFormat}_{model}_{timestamp}
 async function createLogSession(sourceFormat, targetFormat, model) {
   await ensureNodeModules();
   if (!fs || !LOGS_DIR) return null;
-  
+
   try {
     if (!fs.existsSync(LOGS_DIR)) {
       fs.mkdirSync(LOGS_DIR, { recursive: true });
     }
-    
+
+    cleanupExpiredLogs();
+
     const timestamp = formatTimestamp();
     const safeModel = (model || "unknown").replace(/[/:]/g, "-");
     const folderName = `${sourceFormat}_${targetFormat}_${safeModel}_${timestamp}`;
     const sessionPath = path.join(LOGS_DIR, folderName);
-    
+
     fs.mkdirSync(sessionPath, { recursive: true });
-    
+
     return sessionPath;
   } catch (err) {
     console.log("[LOG] Failed to create log session:", err.message);
@@ -60,7 +95,7 @@ async function createLogSession(sourceFormat, targetFormat, model) {
 // Write JSON file
 function writeJsonFile(sessionPath, filename, data) {
   if (!fs || !sessionPath) return;
-  
+
   try {
     const filePath = path.join(sessionPath, filename);
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
@@ -69,25 +104,22 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
+// Mask sensitive data in headers before writing to disk.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+
+  const masked = { ...headers };
+  const sensitiveKeys = ["authorization", "x-api-key", "cookie", "set-cookie", "token", "secret"];
+
+  for (const key of Object.keys(masked)) {
+    const lowerKey = key.toLowerCase();
+    if (sensitiveKeys.some((sk) => lowerKey.includes(sk))) {
+      const value = String(masked[key] || "");
+      masked[key] = value.length > 16 ? `${value.slice(0, 8)}...${value.slice(-4)}` : "***";
+    }
+  }
+
+  return masked;
 }
 
 // No-op logger when logging is disabled
@@ -119,13 +151,13 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
   if (!LOGGING_ENABLED) {
     return createNoOpLogger();
   }
-  
+
   // Wait for session to be created before returning logger
   const sessionPath = await createLogSession(sourceFormat, targetFormat, model);
-  
+
   return {
     get sessionPath() { return sessionPath; },
-    
+
     // 1. Log client raw request (before any conversion)
     logClientRawRequest(endpoint, body, headers = {}) {
       writeJsonFile(sessionPath, "1_req_client.json", {
@@ -135,7 +167,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         body
       });
     },
-    
+
     // 2. Log raw request from client (after initial conversion like responsesApi)
     logRawRequest(body, headers = {}) {
       writeJsonFile(sessionPath, "2_req_source.json", {
@@ -144,7 +176,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         body
       });
     },
-    
+
     // 3. Log OpenAI intermediate format (source → openai)
     logOpenAIRequest(body) {
       writeJsonFile(sessionPath, "3_req_openai.json", {
@@ -152,7 +184,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         body
       });
     },
-    
+
     // 4. Log target format request (openai → target)
     logTargetRequest(url, headers, body) {
       writeJsonFile(sessionPath, "4_req_target.json", {
@@ -162,7 +194,7 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         body
       });
     },
-    
+
     // 5. Log provider response (for non-streaming or error)
     logProviderResponse(status, statusText, headers, body) {
       const filename = "5_res_provider.json";
@@ -174,29 +206,29 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         body
       });
     },
-    
+
     // 5. Append streaming chunk to provider response
     appendProviderChunk(chunk) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "5_res_provider.txt");
         fs.appendFileSync(filePath, chunk);
-      } catch (err) {
+      } catch {
         // Ignore append errors
       }
     },
-    
+
     // 6. Append OpenAI intermediate chunks (target → openai)
     appendOpenAIChunk(chunk) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "6_res_openai.txt");
         fs.appendFileSync(filePath, chunk);
-      } catch (err) {
+      } catch {
         // Ignore append errors
       }
     },
-    
+
     // 7. Log converted response to client (for non-streaming)
     logConvertedResponse(body) {
       writeJsonFile(sessionPath, "7_res_client.json", {
@@ -204,18 +236,18 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         body
       });
     },
-    
+
     // 7. Append streaming chunk to converted response
     appendConvertedChunk(chunk) {
       if (!fs || !sessionPath) return;
       try {
         const filePath = path.join(sessionPath, "7_res_client.txt");
         fs.appendFileSync(filePath, chunk);
-      } catch (err) {
+      } catch {
         // Ignore append errors
       }
     },
-    
+
     // 6. Log error
     logError(error, requestBody = null) {
       writeJsonFile(sessionPath, "6_error.json", {
@@ -233,15 +265,15 @@ export function logRequest() {}
 export function logResponse() {}
 export function logError(provider, { error, url, model, requestBody }) {
   if (!fs || !LOGS_DIR) return;
-  
+
   try {
     if (!fs.existsSync(LOGS_DIR)) {
       fs.mkdirSync(LOGS_DIR, { recursive: true });
     }
-    
+
     const date = new Date().toISOString().split("T")[0];
     const logPath = path.join(LOGS_DIR, `${provider}-${date}.log`);
-    
+
     const logEntry = {
       timestamp: new Date().toISOString(),
       type: "error",
@@ -252,7 +284,7 @@ export function logError(provider, { error, url, model, requestBody }) {
       stack: error?.stack,
       requestBody
     };
-    
+
     fs.appendFileSync(logPath, JSON.stringify(logEntry) + "\n");
   } catch (err) {
     console.log("[LOG] Failed to write error log:", err.message);
