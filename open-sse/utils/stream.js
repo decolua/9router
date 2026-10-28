@@ -31,6 +31,26 @@ const STREAM_MODE = {
 const PENDING_COMPLETION_FLUSH_MS = 3000;
 
 /**
+ * Overlay the buffered accounting usage onto the usage a translator already
+ * attached to the finish chunk. Flat counts come from the overlay (they carry
+ * the context buffer); nested *_details objects are merged key-by-key so a
+ * translator-built prompt_tokens_details.cached_tokens is not lost when the
+ * accounting record only has the flat cached_tokens.
+ */
+function mergeClientUsage(base, overlay) {
+  if (!base || typeof base !== "object") return overlay;
+  if (!overlay || typeof overlay !== "object") return base;
+  const merged = { ...base, ...overlay };
+  for (const key of Object.keys(base)) {
+    const b = base[key], o = overlay[key];
+    if (b && typeof b === "object" && !Array.isArray(b) && o && typeof o === "object" && !Array.isArray(o)) {
+      merged[key] = { ...b, ...o };
+    }
+  }
+  return merged;
+}
+
+/**
  * Create unified SSE transform stream
  * @param {object} options
  * @param {string} options.mode - Stream mode: translate, passthrough
@@ -442,9 +462,18 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
               state.usage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
-              // Add buffer and filter usage for client (but keep original in state.usage for logging)
+              // Add buffer and filter usage for client (but keep original in state.usage for logging).
+              // state.usage is the flat accounting record; the translator may already have built a
+              // richer client usage on this chunk (e.g. toOpenAIUsage(..., "claude") puts the cache
+              // read under prompt_tokens_details.cached_tokens). Keep those fields underneath the
+              // buffered counts instead of replacing the whole object — otherwise OpenAI-format
+              // clients never see their cache hits.
+              const translatedUsage = item.usage;
               const buffered = addBufferToUsage(state.usage);
-              item.usage = filterUsageForFormat(buffered, sourceFormat);
+              item.usage = mergeClientUsage(
+                filterUsageForFormat(translatedUsage, sourceFormat),
+                filterUsageForFormat(buffered, sourceFormat)
+              );
             }
 
             const output = formatSSE(item, sourceFormat);
