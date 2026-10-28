@@ -18,6 +18,7 @@ import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
 import ConnectionRow from "./ConnectionRow";
+import Pagination from "@/shared/components/Pagination";
 import AddApiKeyModal from "./AddApiKeyModal";
 import EditCompatibleNodeModal from "./EditCompatibleNodeModal";
 import AddCustomModelModal from "./AddCustomModelModal";
@@ -48,6 +49,10 @@ export default function ProviderDetailPage() {
   const providerId = params.id;
   const { getCaps } = useModelCaps();
   const [connections, setConnections] = useState([]);
+  const [page, setPage] = useState(1);
+  const [totalConns, setTotalConns] = useState(0);
+  const [searchQ, setSearchQ] = useState("");
+  const PAGE_SIZE = 20;
   const [loading, setLoading] = useState(true);
   const [providerNode, setProviderNode] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -312,7 +317,7 @@ export default function ProviderDetailPage() {
   const fetchConnections = useCallback(async () => {
     try {
       const [connectionsRes, nodesRes, proxyPoolsRes, settingsRes] = await Promise.all([
-        fetch("/api/providers", { cache: "no-store" }),
+        fetch(`/api/providers?provider=${encodeURIComponent(providerId)}&page=${page}&pageSize=${PAGE_SIZE}&q=${encodeURIComponent(searchQ)}`, { cache: "no-store" }),
         fetch("/api/provider-nodes", { cache: "no-store" }),
         fetch("/api/proxy-pools?isActive=true", { cache: "no-store" }),
         fetch("/api/settings", { cache: "no-store" }),
@@ -322,8 +327,8 @@ export default function ProviderDetailPage() {
       const proxyPoolsData = await proxyPoolsRes.json();
       const settingsData = settingsRes.ok ? await settingsRes.json() : {};
       if (connectionsRes.ok) {
-        const filtered = (connectionsData.connections || []).filter(c => c.provider === providerId);
-        setConnections(filtered);
+        setConnections(connectionsData.connections || []);
+        setTotalConns(connectionsData.total || 0);
       }
       if (proxyPoolsRes.ok) {
         setProxyPools(proxyPoolsData.proxyPools || []);
@@ -361,7 +366,7 @@ export default function ProviderDetailPage() {
     } finally {
       setLoading(false);
     }
-  }, [providerId, isCompatible]);
+  }, [providerId, isCompatible, page, searchQ]);
 
   const handleUpdateNode = async (formData) => {
     try {
@@ -1688,7 +1693,26 @@ export default function ProviderDetailPage() {
                   </label>
                 </div>
               )}
+              {totalConns > PAGE_SIZE && (
+                <div className="mb-3 flex items-center gap-2 border-b border-black/[0.03] pb-2 dark:border-white/[0.03]">
+                  <Input
+                    type="search"
+                    value={searchQ}
+                    onChange={(e) => { setSearchQ(e.target.value); setPage(1); }}
+                    placeholder="Search email / id…"
+                    className="h-9 w-48 sm:w-64"
+                  />
+                </div>
+              )}
               {connectionsList}
+              {totalConns > PAGE_SIZE && (
+                <Pagination
+                  currentPage={page}
+                  pageSize={PAGE_SIZE}
+                  totalItems={totalConns}
+                  onPageChange={setPage}
+                />
+              )}
               {!isCompatible && (
                 <div className="mt-4 grid grid-cols-1 gap-2 sm:flex">
                   {WEB_LOGIN_PROVIDERS.has(providerId) && (
