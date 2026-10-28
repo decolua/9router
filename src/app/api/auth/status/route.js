@@ -35,7 +35,7 @@ export async function GET() {
       oidcLoginLabel: (settings.oidcLoginLabel || "Sign in with OIDC").trim() || "Sign in with OIDC",
       samlConfigured: isSamlConfigured(settings),
       samlLoginLabel: (settings.samlLoginLabel || "Sign in with SAML SSO").trim() || "Sign in with SAML SSO",
-      hasPassword: !!settings.password,
+      hasPassword: !!(settings.password || process.env.INITIAL_PASSWORD),
       displayName,
       loginMethod,
       authenticated: !!session,

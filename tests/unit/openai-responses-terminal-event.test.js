@@ -1,9 +1,17 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+const usageDbMocks = vi.hoisted(() => ({
+  trackPendingRequest: vi.fn(),
+  appendRequestLog: vi.fn(() => Promise.resolve()),
+  saveRequestUsage: vi.fn(() => Promise.resolve()),
+}));
+
+vi.mock("@/lib/usageDb.js", () => usageDbMocks);
 
 import { FORMATS } from "../../open-sse/translator/formats.js";
 import { createSSETransformStreamWithLogger } from "../../open-sse/utils/stream.js";
 
-async function runTransform(input) {
+async function runTransform(input, onStreamComplete) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     start(controller) {
@@ -20,6 +28,9 @@ async function runTransform(input) {
       null,
       null,
       "gpt-5.5",
+      null,
+      null,
+      onStreamComplete,
     ),
   );
 
@@ -34,6 +45,39 @@ async function runTransform(input) {
   }
 
   text += decoder.decode();
+  return text;
+}
+
+async function runTransformUntilClientClose(input, onStreamComplete) {
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(input));
+    },
+  });
+  const output = stream.pipeThrough(
+    createSSETransformStreamWithLogger(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.OPENAI_RESPONSES,
+      "codex",
+      null,
+      null,
+      "gpt-5.5",
+      null,
+      null,
+      onStreamComplete,
+    ),
+  );
+
+  const reader = output.getReader();
+  const decoder = new TextDecoder();
+  let text = "";
+  while (!text.includes("event: response.completed")) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    text += decoder.decode(value, { stream: true });
+  }
+  await reader.cancel("client closed after terminal event");
   return text;
 }
 
@@ -65,6 +109,25 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("event: response.failed");
     expect(output).not.toContain("data: null");
     expect(output).toContain("data: [DONE]");
+  });
+
+  it("hands terminal usage to completion callback exactly once", async () => {
+    const onStreamComplete = vi.fn();
+    await runTransformUntilClientClose([
+      `event: response.output_text.delta`,
+      `data: ${JSON.stringify({ type: "response.output_text.delta", delta: "done" })}`,
+      "",
+      `event: response.completed`,
+      `data: ${JSON.stringify({ type: "response.completed", response: { id: "resp_test", status: "completed", usage: { input_tokens: 12, output_tokens: 3, total_tokens: 15 } } })}`,
+      "",
+    ].join("\n"), onStreamComplete);
+
+    expect(onStreamComplete).toHaveBeenCalledTimes(1);
+    expect(onStreamComplete.mock.calls[0][1]).toMatchObject({
+      prompt_tokens: 12,
+      completion_tokens: 3,
+      total_tokens: 15,
+    });
   });
 
   it("does not add response.failed when a Responses stream sends response.done", async () => {
