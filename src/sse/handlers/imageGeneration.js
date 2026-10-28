@@ -14,6 +14,7 @@ import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat } from "open-sse/services/combo.js";
+import { applyOpenRouterRouting } from "open-sse/services/openrouterRouting.js";
 import * as log from "../utils/logger.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
 
@@ -83,7 +84,7 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname }),
+      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname, settings }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -91,14 +92,21 @@ export async function handleImageGeneration(request) {
     });
   }
 
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname });
+  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname, settings });
 }
 
-async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint } = {}) {
+async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint, settings } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
+  if (provider === "openrouter") {
+    try {
+      body = applyOpenRouterRouting(body, settings.providerOverrides?.openrouter?.routing, "image");
+    } catch (error) {
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
+    }
+  }
 
   // noAuth providers — no credential needed
   if (NO_AUTH_PROVIDERS.has(provider)) {

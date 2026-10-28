@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { PROVIDERS } from "open-sse/config/providers.js";
 import { resolveProviderAlias } from "open-sse/services/model.js";
+import { normalizeOpenRouterRouting } from "open-sse/services/openrouterRouting.js";
 
 export const dynamic = "force-dynamic";
 
@@ -77,6 +78,7 @@ export async function GET(request, { params }) {
     return NextResponse.json({
       headers: override.headers || {},
       builtinHeaders: PROVIDERS[canonical]?.headers || {},
+      ...(canonical === "openrouter" ? { routing: override.routing || null } : {}),
     });
   } catch (error) {
     console.log("Error getting provider overrides:", error);
@@ -86,23 +88,48 @@ export async function GET(request, { params }) {
 
 /**
  * PUT /api/providers/[id]/overrides — body: { headers: {name: value} }
- * Empty payload clears the override.
+ * Omitted fields are preserved; explicit empty headers/null routing clear only that field.
  */
 export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const canonical = resolveProviderAlias(id);
-    const body = await request.json().catch(() => ({}));
+    let body;
+    try { body = await request.json(); } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return NextResponse.json({ error: "Override must be an object" }, { status: 400 });
+    }
+    if (Object.hasOwn(body, "routing") && canonical !== "openrouter") {
+      return NextResponse.json({ error: "Routing policy is supported only for OpenRouter" }, { status: 400 });
+    }
     const { override, error } = normalizeOverride(body);
     if (error) {
       return NextResponse.json({ error }, { status: 400 });
     }
     const current = await readOverrides();
     const next = { ...current };
-    if (override) next[canonical] = override;
+    const updated = { ...(current[canonical] || {}) };
+    if (Object.hasOwn(body, "headers")) {
+      if (override?.headers) updated.headers = override.headers;
+      else delete updated.headers;
+    }
+    if (Object.hasOwn(body, "routing")) {
+      let routing;
+      try { routing = normalizeOpenRouterRouting(body.routing); } catch (error) {
+        return NextResponse.json({ error: error.message }, { status: 400 });
+      }
+      if (routing) updated.routing = routing;
+      else delete updated.routing;
+    }
+    if (Object.keys(updated).length) next[canonical] = updated;
     else delete next[canonical];
     await updateSettings({ providerOverrides: next });
-    return NextResponse.json({ headers: override?.headers || {} });
+    return NextResponse.json({
+      headers: updated.headers || {},
+      ...(canonical === "openrouter" ? { routing: updated.routing || null } : {}),
+    });
   } catch (error) {
     console.log("Error saving provider overrides:", error);
     return NextResponse.json({ error: "Failed to save overrides" }, { status: 500 });

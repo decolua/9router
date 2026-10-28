@@ -3,6 +3,7 @@ import { HTTP_STATUS, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.j
 import { getExecutor } from "../executors/index.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { getEmbeddingAdapter } from "./embeddingProviders/index.js";
+import { applyOpenRouterRouting } from "../services/openrouterRouting.js";
 
 /**
  * Core embeddings handler — orchestrator only. Provider-specific URL/headers/body/normalize
@@ -14,6 +15,7 @@ export async function handleEmbeddingsCore({
   body,
   modelInfo,
   credentials,
+  routingPolicy,
   log,
   onCredentialsRefreshed,
   onRequestSuccess,
@@ -52,6 +54,9 @@ export async function handleEmbeddingsCore({
       encoding_format: body.encoding_format || "float",
       dimensions: body.dimensions,
     });
+    if (provider === "openrouter") {
+      requestBody = applyOpenRouterRouting({ ...requestBody, provider: body.provider }, routingPolicy, "embedding");
+    }
   } catch (error) {
     log?.debug?.("EMBEDDINGS", `Request build failed: ${error.message}`);
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `[${provider}/${model}] ${error.message}`);

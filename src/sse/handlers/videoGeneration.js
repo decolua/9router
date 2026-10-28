@@ -12,6 +12,7 @@ import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { applyOpenRouterRouting } from "open-sse/services/openrouterRouting.js";
 
 const NO_AUTH_VIDEO_PROVIDERS = new Set(["veoaifree-web"]);
 import * as log from "../utils/logger.js";
@@ -44,9 +45,9 @@ const CREATE_ROTATION_STATUSES = new Set([
   HTTP_STATUS.RATE_LIMITED,
 ]);
 
-async function requireValidApiKey(request) {
+async function requireValidApiKey(request, settings = null) {
   const apiKey = extractApiKey(request);
-  const settings = await getSettings();
+  settings ||= await getSettings();
   if (settings.requireApiKey) {
     if (!apiKey) return errorResponse(HTTP_STATUS.UNAUTHORIZED, "Missing API key");
     const valid = await isValidApiKey(apiKey);
@@ -110,7 +111,8 @@ function withConnectionHeader(response, connectionId) {
  * POST /v1/videos/{generations|edits|extensions} — async job creation proxy.
  */
 export async function handleVideoCreate(request, action) {
-  const authError = await requireValidApiKey(request);
+  const settings = await getSettings();
+  const authError = await requireValidApiKey(request, settings);
   if (authError) return authError;
 
   const bodyInfo = await readForwardableBody(request);
@@ -127,11 +129,20 @@ export async function handleVideoCreate(request, action) {
   );
   if (keyAccessDenied) return keyAccessDenied;
 
+  let routedBody = bodyInfo.parsed;
+  if (provider === "openrouter") {
+    try {
+      routedBody = applyOpenRouterRouting(bodyInfo.parsed || {}, settings.providerOverrides?.openrouter?.routing, "video");
+    } catch (error) {
+      return errorResponse(HTTP_STATUS.BAD_REQUEST, error.message);
+    }
+  }
+
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.
   let forwardBody = bodyInfo.raw;
-  if (bodyInfo.parsed && model && bodyInfo.parsed.model !== model) {
-    forwardBody = JSON.stringify({ ...bodyInfo.parsed, model });
+  if (bodyInfo.parsed && (routedBody !== bodyInfo.parsed || (model && bodyInfo.parsed.model !== model))) {
+    forwardBody = JSON.stringify({ ...routedBody, ...(model ? { model } : {}) });
   }
 
   const preferredConnectionId = request.headers.get("x-connection-id") || null;

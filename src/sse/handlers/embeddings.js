@@ -124,6 +124,7 @@ export async function handleEmbeddings(request) {
 
     const result = await handleEmbeddingsCore({
       body: { ...body, model: `${provider}/${model}` },
+      routingPolicy: settings.providerOverrides?.openrouter?.routing,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,

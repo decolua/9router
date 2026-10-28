@@ -3,6 +3,7 @@ import { HTTP_STATUS, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.j
 import { PROVIDER_MEDIA } from "../providers/index.js";
 import { getModelUpstreamId } from "../config/providerModels.js";
 import { generateSessionId } from "../executors/opencode-zen.js";
+import { applyOpenRouterRouting } from "../services/openrouterRouting.js";
 
 const OPENCODE_PROVIDERS = new Set(["opencode", "opencode-zen"]);
 
@@ -34,6 +35,7 @@ export async function handleSystemoneCore({
   body,
   modelInfo,
   credentials,
+  routingPolicy,
   log,
   onRequestSuccess,
 }) {
@@ -79,7 +81,14 @@ export async function handleSystemoneCore({
     ...(OPENCODE_PROVIDERS.has(provider) ? { "x-opencode-session": generateSessionId() } : {}),
   };
   // Cloudflare validates the body model as a short selector (e.g. "clef-flash"), not the full id.
-  const requestBody = { ...body, model: getModelUpstreamId(provider, model) || model };
+  let requestBody = { ...body, model: getModelUpstreamId(provider, model) || model };
+  if (provider === "openrouter") {
+    try {
+      requestBody = applyOpenRouterRouting(requestBody, routingPolicy, "systemone");
+    } catch (error) {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, error.message);
+    }
+  }
 
   log?.debug?.("SYSTEMONE", `${provider.toUpperCase()} | ${model}`);
 
