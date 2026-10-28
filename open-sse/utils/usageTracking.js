@@ -17,8 +17,42 @@ export const COLORS = {
   cyan: "\x1b[36m"
 };
 
-// Buffer tokens to prevent context errors
-const BUFFER_TOKENS = 2000;
+// Buffer tokens to prevent context errors.
+//
+// This margin is added only to the usage a *client* is shown, so its own context
+// arithmetic compacts slightly early rather than slightly late; the recorded turn
+// keeps the provider's figure. That padding is wrong for a client that keeps its own
+// token statistics, since the figure it stores is then 2000 too high on every turn and
+// it has no way to tell. USAGE_BUFFER_TOKENS sets the margin, and 0 turns it off.
+export const DEFAULT_BUFFER_TOKENS = 2000;
+
+let warnedInvalidBufferTokens = false;
+
+/**
+ * The configured client-side context margin, in tokens.
+ *
+ * Read per call rather than once at import: the module is loaded while the process is
+ * still starting, so a value set later (a .env read, a test) would otherwise be
+ * ignored with no way to see why.
+ *
+ * @returns {number} a non-negative integer; DEFAULT_BUFFER_TOKENS when unset or unusable
+ */
+export function getBufferTokens() {
+  const raw = process.env.USAGE_BUFFER_TOKENS;
+  if (raw === undefined || raw.trim() === "") return DEFAULT_BUFFER_TOKENS;
+
+  const parsed = Number(raw.trim());
+  // A typo must not silently disable the margin, nor set a fractional one: reporting a
+  // non-integer token count to a client is worse than reporting a padded one.
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    if (!warnedInvalidBufferTokens) {
+      warnedInvalidBufferTokens = true;
+      console.warn(`${COLORS.yellow}[Usage] USAGE_BUFFER_TOKENS=${JSON.stringify(raw)} is not a non-negative integer — using ${DEFAULT_BUFFER_TOKENS}${COLORS.reset}`);
+    }
+    return DEFAULT_BUFFER_TOKENS;
+  }
+  return parsed;
+}
 
 // Get HH:MM:SS timestamp
 function getTimeString() {
@@ -33,21 +67,23 @@ function getTimeString() {
 export function addBufferToUsage(usage) {
   if (!usage || typeof usage !== "object") return usage;
 
+  const bufferTokens = getBufferTokens();
   const result = { ...usage };
 
   // Claude format
   if (result.input_tokens !== undefined) {
-    result.input_tokens += BUFFER_TOKENS;
+    result.input_tokens += bufferTokens;
   }
 
   // OpenAI format
   if (result.prompt_tokens !== undefined) {
-    result.prompt_tokens += BUFFER_TOKENS;
+    result.prompt_tokens += bufferTokens;
   }
 
-  // Calculate or update total_tokens
+  // Calculate or update total_tokens. The derivation below is normalization, not
+  // padding, so it still runs when the margin is 0.
   if (result.total_tokens !== undefined) {
-    result.total_tokens += BUFFER_TOKENS;
+    result.total_tokens += bufferTokens;
   } else if (result.prompt_tokens !== undefined && result.completion_tokens !== undefined) {
     // Calculate total_tokens if not exists
     result.total_tokens = result.prompt_tokens + result.completion_tokens;
