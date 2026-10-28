@@ -25,6 +25,10 @@ describe("getClientErrorStatus", () => {
     expect(getClientErrorStatus(524)).toBe(502);
   });
 
+  it("maps upstream request rejections to retryable 502", () => {
+    expect(getClientErrorStatus(400)).toBe(502);
+  });
+
   it("preserves standard upstream statuses", () => {
     expect(getClientErrorStatus(429)).toBe(429);
     expect(getClientErrorStatus(503)).toBe(503);
@@ -84,6 +88,18 @@ describe("detectErrorBody", () => {
       .toEqual({ message: "quota exhausted", code: "rate_limit_error", type: undefined });
     expect(detectErrorBody({ message: JSON.stringify({ message: "boom", code: "upstream_error" }) }))
       .toMatchObject({ message: "boom", code: "upstream_error" });
+  });
+
+  it.each([429, 503])("preserves numeric error code %i", (code) => {
+    expect(detectErrorBody({ message: "boom", code })).toEqual({ message: "boom", code });
+    expect(detectErrorBody({ error: { message: "boom", code } })).toEqual({ message: "boom", code });
+    expect(detectErrorBody({ message: JSON.stringify({ message: "boom", code }) }))
+      .toEqual({ message: "boom", code });
+  });
+
+  it("preserves structured upstream status for account fallback", () => {
+    expect(detectErrorBody({ error: { message: "boom", status: 524, code: "timeout" } }))
+      .toEqual({ message: "boom", status: 524, code: "timeout" });
   });
 
   it("never mistakes a completion for an error", () => {

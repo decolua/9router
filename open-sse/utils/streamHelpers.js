@@ -223,7 +223,7 @@ export function parseFirstSseError(text) {
 /** Error descriptor of one parsed SSE event (flat, nested or Responses `response.failed`), else null. */
 export function detectSseEventError(parsed) {
   if (parsed?.type === "response.failed") {
-    return detectErrorBody(parsed.response?.error) || { message: "response failed" };
+    return detectErrorBody({ error: parsed.response?.error }) || { message: "response failed" };
   }
   return detectErrorBody(parsed);
 }

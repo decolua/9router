@@ -1,6 +1,7 @@
 import { convertResponsesStreamToJson } from "../../transformer/streamToJsonConverter.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createErrorResult, getClientErrorStatus } from "../../utils/error.js";
+import { detectSseEventError } from "../../utils/streamHelpers.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
@@ -123,7 +124,13 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
     if (!payload || payload === "[DONE]") continue;
     try {
       const chunk = JSON.parse(payload);
-      if (chunk?.error) streamError = chunk.error;
+      const detectedError = detectSseEventError(chunk);
+      if (detectedError) {
+        streamError = chunk?.error && typeof chunk.error === "object"
+          ? { ...chunk.error, ...detectedError }
+          : detectedError;
+      }
+      else if (chunk?.error) streamError = chunk.error;
       else chunks.push(chunk);
     } catch { /* ignore malformed lines */ }
   }
@@ -182,6 +189,19 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
   return result;
 }
 
+export function mapSseErrorStatus(error) {
+  const candidates = [error?.status, error?.code];
+  const upstreamStatus = candidates
+    .map((value) => Number(value))
+    .find((value) => Number.isInteger(value) && value >= 400 && value <= 599)
+    ?? HTTP_STATUS.BAD_GATEWAY;
+
+  return {
+    status: getClientErrorStatus(upstreamStatus, error?.message || ""),
+    accountStatus: upstreamStatus,
+  };
+}
+
 /**
  * Handle case: provider forced streaming but client wants JSON.
  * Supports both Codex/Responses API SSE and standard Chat Completions SSE.
@@ -206,6 +226,18 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   const isCodexResponsesApi = isResponsesProvider(provider) || targetFormat === FORMATS.OPENAI_RESPONSES;
   if (isCodexResponsesApi) {
     try {
+      const parsedError = parseSSEToOpenAIResponse(await providerResponse.clone().text(), model)?.error;
+      if (parsedError) {
+        const { status, accountStatus } = mapSseErrorStatus(parsedError);
+        return createErrorResult(
+          status,
+          parsedError.message || "Upstream SSE stream failed",
+          undefined,
+          null,
+          accountStatus
+        );
+      }
+
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
       if (onRequestSuccess) await onRequestSuccess();
 
@@ -305,17 +337,13 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     const parsed = parseSSEToOpenAIResponse(sseText, model);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {
-      // Structured error chunks may carry the real upstream status (e.g. the
-      // Qoder executor emits status 403 for billing envelopes). Preserve it so
-      // the account loop locks/falls back on the right status instead of a
-      // generic 502. Anything outside 400-599 still maps to 502.
-      const upstreamStatus = Number(parsed.error.status);
-      const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
-        ? upstreamStatus
-        : HTTP_STATUS.BAD_GATEWAY;
+      const { status, accountStatus } = mapSseErrorStatus(parsed.error);
       return createErrorResult(
         status,
-        parsed.error.message || "Upstream SSE stream failed"
+        parsed.error.message || "Upstream SSE stream failed",
+        undefined,
+        null,
+        accountStatus
       );
     }
 

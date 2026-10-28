@@ -52,6 +52,11 @@ describe("classifyPreContent", () => {
     expect(classifyPreContent('data: {"error":{"message":"context_length_exceeded","type":"invalid_request_error"}}\n\n'))
       .toEqual({ state: "content" });
   });
+
+  it("keeps message-only Responses failures recognizable", () => {
+    expect(classifyPreContent('data: {"type":"response.failed","response":{"error":{"message":"temporarily overloaded"}}}\n\n'))
+      .toEqual({ state: "error", message: "temporarily overloaded" });
+  });
 });
 
 describe("isRetryablePreContentError", () => {
@@ -70,6 +75,20 @@ describe("withPreContentRetry", () => {
     expect(text).toBe(ROLE_ONLY + CONTENT);
     expect(calls()).toBe(1);
     expect(logs[0]).toContain("Upstream HTTP/2 stream failed");
+  });
+
+  it.each([429, 503])("retries numeric code %i without transient wording", async (code) => {
+    const failure = `data: ${JSON.stringify({ message: "boom", code })}\n\n`;
+    const { response, calls } = wrap(sse(ROLE_ONLY, failure), [sse(CONTENT)]);
+    expect(await response.text()).toBe(CONTENT);
+    expect(calls()).toBe(1);
+  });
+
+  it("retries a Responses failure carrying a numeric code", async () => {
+    const failure = 'data: {"type":"response.failed","response":{"error":{"message":"boom","code":503}}}\n\n';
+    const { response, calls } = wrap(sse(failure), [sse(CONTENT)]);
+    expect(await response.text()).toBe(CONTENT);
+    expect(calls()).toBe(1);
   });
 
   it("retries a socket drop before content", async () => {

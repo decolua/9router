@@ -138,7 +138,7 @@ const ERROR_TYPE_HINTS = new Set([
  * `UnknownError` with a JSON blob in `message`).
  *
  * @param {unknown} payload - Parsed response body
- * @returns {{ message: string, code?: string, type?: string } | null}
+ * @returns {{ message: string, code?: string|number, status?: string|number, type?: string } | null}
  */
 export function detectErrorBody(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
@@ -172,11 +172,13 @@ export function detectErrorBody(payload) {
   const message = normalizeErrorMessage(nested ?? candidate.message ?? candidate.error);
   if (!message) return null;
 
-  const code = nested?.code || candidate.code;
+  const code = nested?.code ?? candidate.code;
+  const status = nested?.status ?? candidate.status;
   const type = nested?.type || candidate.type;
   return {
     message,
-    ...(typeof code === "string" ? { code } : {}),
+    ...(typeof code === "string" || typeof code === "number" ? { code } : {}),
+    ...(typeof status === "string" || typeof status === "number" ? { status } : {}),
     ...(typeof type === "string" ? { type } : {}),
   };
 }

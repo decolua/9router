@@ -11,6 +11,7 @@ import { parseFirstSseError, peekSseErrorFrame } from "../../open-sse/utils/stre
 import { detectErrorBody } from "../../open-sse/utils/error.js";
 import { handleStreamingResponse } from "../../open-sse/handlers/chatCore/streamingHandler.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { withPreContentRetry } from "../../open-sse/utils/preContentRetry.js";
 
 const encoder = new TextEncoder();
 
@@ -153,8 +154,10 @@ describe("handleStreamingResponse pre-flight peek", () => {
   });
 
   it("turns an error-first SSE body into a retryable 502 before any bytes flow", async () => {
+    const onRequestSuccess = vi.fn();
     const result = await handleStreamingResponse({
       ...base,
+      onRequestSuccess,
       streamController: makeController(),
       providerResponse: sse('data: {"message":"The service is temporarily overloaded.","type":"upstream_error"}\n\n'),
     });
@@ -163,17 +166,103 @@ describe("handleStreamingResponse pre-flight peek", () => {
     expect(result.status).toBe(502);
     expect(result.accountStatus).toBe(502);
     expect(await result.response.text()).toContain("The service is temporarily overloaded.");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
   });
 
   it("streams a healthy SSE body unchanged", async () => {
+    const onRequestSuccess = vi.fn();
     const result = await handleStreamingResponse({
       ...base,
+      onRequestSuccess,
       streamController: makeController(),
       providerResponse: sse('data: {"choices":[{"delta":{"role":"assistant","content":"hi"}}]}\n\ndata: [DONE]\n\n'),
     });
 
     expect(result.success).toBe(true);
     expect(await readAll(result.response.body)).toContain('"content":"hi"');
+    expect(onRequestSuccess).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["text/html", "<title>Upstream failed</title>"],
+    ["application/json", JSON.stringify({ error: { message: "Upstream failed" } })],
+  ])("does not mark rejected %s responses healthy", async (contentType, body) => {
+    const onRequestSuccess = vi.fn();
+    const result = await handleStreamingResponse({
+      ...base,
+      onRequestSuccess,
+      streamController: makeController(),
+      providerResponse: new Response(body, { headers: { "content-type": contentType } }),
+    });
+
+    expect(result.success).toBe(false);
+    expect(await result.response.text()).toContain("Upstream failed");
+    expect(onRequestSuccess).not.toHaveBeenCalled();
+  });
+
+  it("waits for pending SSE preflight before marking the account healthy", async () => {
+    let upstream;
+    const onRequestSuccess = vi.fn();
+    const pending = handleStreamingResponse({
+      ...base,
+      onRequestSuccess,
+      streamController: makeController(),
+      providerResponse: new Response(new ReadableStream({
+        start(controller) { upstream = controller; },
+      }), { headers: { "content-type": "text/event-stream" } }),
+    });
+
+    await Promise.resolve();
+    const callsBeforeAcceptance = onRequestSuccess.mock.calls.length;
+    upstream.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n'));
+    upstream.close();
+    const result = await pending;
+
+    expect(await result.response.text()).toContain('"content":"hi"');
+    expect(callsBeforeAcceptance).toBe(0);
+    expect(onRequestSuccess).toHaveBeenCalledOnce();
+  });
+
+  it.each([false, true])("marks healthy only when pre-content retry recovers: %s", async (recovers) => {
+    const failure = 'data: {"error":{"message":"temporarily overloaded","code":503}}\n\n';
+    const healthy = 'data: {"choices":[{"delta":{"content":"recovered"}}]}\n\ndata: [DONE]\n\n';
+    const onRequestSuccess = vi.fn();
+    let callsDuringRetry;
+    const reexecute = vi.fn(async () => {
+      callsDuringRetry = onRequestSuccess.mock.calls.length;
+      return sse(recovers ? healthy : failure);
+    });
+    const result = await handleStreamingResponse({
+      ...base,
+      onRequestSuccess,
+      streamController: makeController(),
+      providerResponse: withPreContentRetry(sse(failure), { attempts: 1, delayMs: 0, reexecute }),
+    });
+
+    expect(await result.response.text()).toContain(recovers ? "recovered" : "temporarily overloaded");
+    expect(reexecute).toHaveBeenCalledOnce();
+    expect(callsDuringRetry).toBe(0);
+    expect(result.success).toBe(recovers);
+    expect(onRequestSuccess).toHaveBeenCalledTimes(recovers ? 1 : 0);
+  });
+
+  it("keeps tool names and IDs restored after successful preflight", async () => {
+    const onRequestSuccess = vi.fn();
+    const result = await handleStreamingResponse({
+      ...base,
+      onRequestSuccess,
+      toolNameMap: new Map([["read_client", "read"]]),
+      streamController: makeController(),
+      providerResponse: sse('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"read_client","arguments":"{}"}}]}}]}\n\ndata: [DONE]\n\n'),
+    });
+
+    const text = await result.response.text();
+    const chunk = JSON.parse(text.split("\n").find((line) => line.startsWith("data: ")).slice(6));
+    const toolCall = chunk.choices[0].delta.tool_calls[0];
+    expect(toolCall.function.name).toBe("read");
+    expect(toolCall.id).toEqual(expect.any(String));
+    expect(toolCall.id.length).toBeGreaterThan(0);
+    expect(onRequestSuccess).toHaveBeenCalledOnce();
   });
 
   it("does not peek non-compatible providers", async () => {
