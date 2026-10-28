@@ -37,7 +37,7 @@ export default {
   //  4) Devin auth1_... → self-serve chain → ide_token used as apiKey on server.self-serve.windsurf.com
   oauth: {
     clientId: "3GUryQ7ldAeKEuD2obYnppsnmj58eP5u",
-    firebaseApiKey: "REMOVED_LEAKED_KEY",
+    firebaseApiKey: process.env.WINDSURF_FIREBASE_API_KEY || "",
     firebaseSignInUrl: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword",
     registerUrl: "https://register.windsurf.com/exa.seat_management_pb.SeatManagementService/RegisterUser",
     apiServerUrl: "https://server.codeium.com",
