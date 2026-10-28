@@ -5,6 +5,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { compressWithHeadroom } from "../../open-sse/rtk/headroom.js";
 
+const TEST_MODEL = "test-model";
+
 describe("compressWithHeadroom openai-responses format (#1998)", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -72,7 +74,7 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
       {
         type: "function_call_output",
         call_id: "call_apply_patch_123",
-        output: "ok",
+        output: "{\"ok\":true}",
       },
       {
         type: "reasoning",
@@ -102,6 +104,74 @@ describe("compressWithHeadroom openai-responses format (#1998)", () => {
     expect(data).toBeNull();
     expect(global.fetch).not.toHaveBeenCalled();
     expect(body.input).toEqual(input);
-    expect(diagnostics.reason).toBe("skipped: openai-responses tool/reasoning input is not safe to compress");
+    expect(diagnostics.reason).toBe("no eligible plain-text tool output");
+  });
+
+  it("preserves native message metadata and skips multipart content", async () => {
+    global.fetch = vi.fn(async () => Response.json({
+        messages: [
+          { role: "system", content: "Keep this instruction" },
+          { role: "user", content: "compressed text" },
+        ],
+        tokens_saved: 10,
+      }));
+
+    const body = {
+      instructions: "Keep this instruction",
+      store: false,
+      include: ["reasoning.encrypted_content"],
+      input: [{
+        id: "msg_original",
+        type: "message",
+        role: "user",
+        status: "completed",
+        content: [{ type: "input_text", text: "a long original message ".repeat(20) }],
+      }],
+    };
+
+    const data = await compressWithHeadroom(body, {
+      enabled: true,
+      url: "http://headroom.test",
+      model: TEST_MODEL,
+      format: "openai-responses",
+    });
+
+    expect(data).not.toBeNull();
+    expect(body).toMatchObject({
+      instructions: "Keep this instruction",
+      store: false,
+      include: ["reasoning.encrypted_content"],
+      input: [{
+        id: "msg_original",
+        type: "message",
+        role: "user",
+        status: "completed",
+        content: [{ type: "input_text", text: "compressed text" }],
+      }],
+    });
+
+    const multipart = {
+      input: [{
+        type: "message",
+        role: "user",
+        content: [
+          { type: "input_text", text: "describe this" },
+          { type: "input_image", image_url: "https://example.com/image.png" },
+        ],
+      }],
+    };
+    const original = structuredClone(multipart);
+    global.fetch = vi.fn();
+
+    const skipped = await compressWithHeadroom(multipart, {
+      enabled: true,
+      url: "http://headroom.test",
+      model: TEST_MODEL,
+      format: "openai-responses",
+    });
+
+    expect(skipped).toBeNull();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(multipart).toEqual(original);
   });
 });

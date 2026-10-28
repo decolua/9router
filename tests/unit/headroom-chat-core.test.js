@@ -33,6 +33,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
+  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
@@ -335,7 +336,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(JSON.stringify(log.info.mock.calls)).not.toContain(tools[0].function.description);
   });
 
-  it("warns when Headroom reports savings but messages barely shrink", async () => {
+  it("discards Headroom rewrites when the outbound body barely shrinks", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const original = "x".repeat(1000);
     const nearlySame = "x".repeat(990);
@@ -373,7 +374,88 @@ describe("handleChatCore Headroom diagnostics", () => {
 
     expect(log.warn).toHaveBeenCalledWith(
       "HEADROOM",
-      expect.stringContaining("reported token delta, but messages and outbound JSON shrank <5%")
+      expect.stringContaining("discarded rewrite because outbound JSON shrank <5%; preserving provider prompt cache")
+    );
+    expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
+      body: expect.objectContaining({
+        messages: [{ role: "user", content: original }],
+      }),
+    }));
+  });
+
+  it("retries rejected compressed Responses with the saved original body and provider overrides", async () => {
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    const original = "large original Responses context ".repeat(100);
+    const compressed = "compressed context";
+    const providerOverrides = { reasoningEffort: "high" };
+
+    global.fetch = vi.fn(async (_url, init) => {
+      const { messages } = JSON.parse(init.body);
+      return Response.json({
+        messages: messages.map((message) => ({ ...message, content: compressed })),
+        tokens_before: 1000,
+        tokens_after: 100,
+        tokens_saved: 900,
+      });
+    });
+    executeMock
+      .mockResolvedValueOnce({
+        response: new Response(JSON.stringify({ error: { message: "Bad Request" } }), { status: 400 }),
+        url: "https://compatible.test/v1/responses",
+        headers: {},
+        transformedBody: null,
+      })
+      .mockResolvedValueOnce({
+        response: Response.json({
+          id: "resp_test",
+          object: "response",
+          status: "completed",
+          output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "OK" }] }],
+          usage: { input_tokens: 10, output_tokens: 1, total_tokens: 11 },
+        }),
+        url: "https://compatible.test/v1/responses",
+        headers: {},
+        transformedBody: null,
+      });
+
+    const request = {
+      body: {
+        model: "test-model",
+        stream: false,
+        input: [{ type: "message", role: "user", content: [{ type: "input_text", text: original }] }],
+      },
+      modelInfo: { provider: "openai-compatible-chat-test", model: "test-model" },
+      credentials: {
+        apiKey: "test-key",
+        providerSpecificData: { apiType: "auto", baseUrl: "https://compatible.test/v1" },
+      },
+      providerOverrides,
+      log,
+      connectionId: "test-conn",
+      headroomEnabled: true,
+      headroomUrl: "http://localhost:8787",
+      headroomCompressUserMessages: true,
+      rtkEnabled: false,
+      cavemanEnabled: false,
+      ponytailEnabled: false,
+      customPromptEnabled: true,
+      customPrompt: "Keep Responses instructions intact",
+      sourceFormatOverride: "openai-responses",
+      clientRawRequest: { endpoint: "/v1/responses", body: {}, headers: { accept: "application/json" } },
+    };
+
+    await handleChatCore(request);
+
+    expect(executeMock).toHaveBeenCalledTimes(2);
+    const [compressedRequest, fallbackRequest] = executeMock.mock.calls.map(([args]) => args);
+    expect(compressedRequest.body.input.find((item) => item.role === "user").content[0].text).toBe(compressed);
+    expect(fallbackRequest.body.input.find((item) => item.role === "user").content[0].text).toBe(original);
+    expect(fallbackRequest.body.input.some((item) => item.role === "system"
+      && item.content[0].text === "Keep Responses instructions intact")).toBe(true);
+    expect(fallbackRequest.providerOverrides).toBe(providerOverrides);
+    expect(log.warn).toHaveBeenCalledWith(
+      "HEADROOM",
+      "upstream rejected compressed Responses payload with 400; retrying once without Headroom"
     );
   });
 
