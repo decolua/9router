@@ -68,7 +68,7 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
     });
   });
 
-  it("compresses role:tool git diffs before openai→cursor rewrite, then injects Headroom/Caveman/Ponytail", async () => {
+  it.each([true, false])("respects resolved saver flags before Cursor translation (enabled=%s)", async (enabled) => {
     const diff = makeLongDiff();
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), line: vi.fn() };
 
@@ -92,12 +92,12 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log,
       connectionId: "test-conn",
-      rtkEnabled: true,
-      headroomEnabled: true,
+      rtkEnabled: enabled,
+      headroomEnabled: enabled,
       headroomUrl: "http://localhost:8787",
-      cavemanEnabled: true,
+      cavemanEnabled: enabled,
       cavemanLevel: "full",
-      ponytailEnabled: true,
+      ponytailEnabled: enabled,
       ponytailLevel: "full",
       clientRawRequest: {
         endpoint: "/v1/chat/completions",
@@ -112,6 +112,13 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
 
     expect(dispatched.messages.some((m) => m.role === "tool")).toBe(false);
     expect(blob).toContain("<tool_result>");
+    if (!enabled) {
+      expect(blob).toContain("UNIQUE_PADDING_150");
+      expect(blob).not.toContain("lazy senior developer");
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(log.line.mock.calls.some((c) => c[1] === "⚙")).toBe(false);
+      return;
+    }
     expect(blob).toContain("lines truncated");
     expect(blob).not.toContain("UNIQUE_PADDING_150");
     expect(blob).toContain("lazy senior developer");

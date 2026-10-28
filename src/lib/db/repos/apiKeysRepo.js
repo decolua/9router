@@ -2,6 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { keyAccessFromColumns, keyAccessToColumns } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
+import { tokenSaverFromColumn, validateTokenSaverInput } from "@/shared/utils/tokenSaver.js";
 
 function rowToKey(row) {
   if (!row) return null;
@@ -13,6 +14,7 @@ function rowToKey(row) {
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
     access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
+    tokenSaver: tokenSaverFromColumn(row.tokenSaver),
   };
 }
 
@@ -49,6 +51,7 @@ export async function createApiKey(name, machineId) {
     isActive: true,
     createdAt: new Date().toISOString(),
     access: { restricted: false, allow: [] },
+    tokenSaver: null,
   };
   const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);
   db.run(
@@ -59,6 +62,11 @@ export async function createApiKey(name, machineId) {
 }
 
 export async function updateApiKey(id, data) {
+  if (Object.hasOwn(data, "tokenSaver")) {
+    const checked = validateTokenSaverInput(data.tokenSaver);
+    if (!checked.ok) throw new Error(checked.error);
+    data = { ...data, tokenSaver: checked.value };
+  }
   const db = await getAdapter();
   let result = null;
   db.transaction(() => {
@@ -67,8 +75,8 @@ export async function updateApiKey(id, data) {
     const merged = { ...rowToKey(row), ...data };
     const cols = keyAccessToColumns(merged.access);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ?, tokenSaver = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, merged.tokenSaver === null ? null : JSON.stringify(merged.tokenSaver), id]
     );
     result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });
