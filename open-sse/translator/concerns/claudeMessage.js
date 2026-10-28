@@ -37,17 +37,32 @@ export function openAICompletionToClaudeMessage(responseBody) {
   if (content.length === 0) content.push({ type: CLAUDE_BLOCK.TEXT, text: "" });
 
   const usage = responseBody.usage || {};
+  const rawId = String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, "");
+  const messageId = rawId.startsWith("msg_") ? rawId : (rawId ? `msg_${rawId}` : `msg_${Date.now()}`);
+
+  const promptTokens = typeof usage.prompt_tokens === "number" ? usage.prompt_tokens : (typeof usage.input_tokens === "number" ? usage.input_tokens : 0);
+  const outputTokens = typeof usage.completion_tokens === "number" ? usage.completion_tokens : (typeof usage.output_tokens === "number" ? usage.output_tokens : 0);
+  const cachedTokens = usage.prompt_tokens_details?.cached_tokens ?? usage.cached_tokens ?? usage.cache_read_input_tokens;
+  const cacheCreationTokens = usage.prompt_tokens_details?.cache_creation_tokens ?? usage.cache_creation_input_tokens;
+  const cacheRead = typeof cachedTokens === "number" ? cachedTokens : 0;
+  const cacheCreate = typeof cacheCreationTokens === "number" ? cacheCreationTokens : 0;
+  const inputTokens = Math.max(0, promptTokens - cacheRead - cacheCreate);
+
+  const claudeUsage = {
+    input_tokens: inputTokens,
+    output_tokens: outputTokens,
+  };
+  if (cacheRead > 0) claudeUsage.cache_read_input_tokens = cacheRead;
+  if (cacheCreate > 0) claudeUsage.cache_creation_input_tokens = cacheCreate;
+
   return {
-    id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+    id: messageId,
     type: RESPONSES_ITEM.MESSAGE,
     role: ROLE.ASSISTANT,
     model: responseBody.model || MODEL_FALLBACK,
     content,
     stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
     stop_sequence: null,
-    usage: {
-      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
-      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
-    },
+    usage: claudeUsage,
   };
 }

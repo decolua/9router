@@ -245,6 +245,8 @@ export function openaiToClaudeResponse(chunk, state) {
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
+    state.finishReasonSent = true;
+    state.messageStopSent = true;
 
     // Use tracked usage (will be estimated in stream.js if not valid)
     const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };

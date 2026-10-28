@@ -127,9 +127,11 @@ export function createSSEStream(options = {}) {
     }
 
     if (onStreamComplete) {
+      const isTruncated = sourceFormat === FORMATS.CLAUDE && state?.messageStartSent && !state?.messageStopSent;
       onStreamComplete({
         content: accumulatedContent,
-        thinking: accumulatedThinking
+        thinking: accumulatedThinking,
+        truncated: isTruncated
       }, finalUsage, ttftAt);
     }
   };
@@ -554,6 +556,11 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
           }
+        }
+
+        // Detect and log premature stream truncation for Claude format (stream EOF before terminal finish_reason)
+        if (sourceFormat === FORMATS.CLAUDE && state?.messageStartSent && !state?.messageStopSent) {
+          dbg("SSE", `premature stream EOF: ${provider}/${model} closed without terminal finish_reason`);
         }
 
         // Synthesize response.failed if a Responses passthrough stream never reached a terminal event

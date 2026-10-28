@@ -140,7 +140,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
       providerResponse: safeContent,
       response: { content: safeContent, thinking: safeThinking, type: "streaming" },
       pxpipe,
-      status: "success"
+      status: contentObj?.truncated ? "truncated" : "success"
     }, { id: streamDetailId })).catch(err => {
       console.error("[RequestDetail] Failed to update streaming content:", err.message);
     });
