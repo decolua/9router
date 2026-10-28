@@ -28,6 +28,11 @@ export function _clearWeeklyCache() {
 // — Group-name and window to stable key mapping ——————————————————————
 const GROUP_CONFIGS = [
   {
+    pattern: /argon/i,
+    weekly: { key: "argon_weekly", displayName: "Gemini 4 Argon (Weekly)" },
+    session: { key: "argon_session", displayName: "Gemini 4 Argon (5h)" },
+  },
+  {
     pattern: /gemini/i,
     weekly: { key: "gemini_weekly", displayName: "Gemini (Weekly)" },
     session: { key: "gemini_session", displayName: "Gemini (5h)" },

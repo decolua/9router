@@ -190,4 +190,44 @@ describe("Antigravity dashboard normalization with weekly quotas", () => {
     expect(quotas).toHaveLength(1);
     expect(quotas[0].name).toBe("Gemini (Flash / Pro)");
   });
+
+  it("normalizes dedicated Gemini 4 Argon weekly row in dashboard", () => {
+    const argonData = {
+      quotas: {
+        "gemini-4-argon-high": {
+          displayName: "Gemini 4 Argon (High)",
+          used: 50,
+          total: 1000,
+          resetAt: "2026-10-23T09:42:31Z",
+          remainingPercentage: 95,
+        },
+        argon_weekly: {
+          displayName: "Gemini 4 Argon (Weekly)",
+          used: 20,
+          total: 1000,
+          resetAt: "2026-10-23T09:42:31Z",
+          remainingPercentage: 98,
+        },
+        gemini_weekly: {
+          displayName: "Gemini (Weekly)",
+          used: 250,
+          total: 1000,
+          resetAt: "2026-10-23T09:42:31Z",
+          remainingPercentage: 75,
+        },
+      },
+    };
+    const quotas = parseQuotaData("antigravity", argonData);
+    const keys = quotas.map((q) => q.modelKey);
+    expect(keys).toContain("argon_weekly");
+    expect(keys).toContain("gemini_weekly");
+
+    const argonWeekly = quotas.find((q) => q.modelKey === "argon_weekly");
+    expect(argonWeekly).toMatchObject({
+      name: "Gemini 4 Argon (Weekly)",
+      used: 20,
+      total: 1000,
+      remainingPercentage: 98,
+    });
+  });
 });

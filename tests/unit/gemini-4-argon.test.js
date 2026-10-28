@@ -75,4 +75,18 @@ describe("Gemini 4 Argon Antigravity tier", () => {
     expect(finalBody.model).toBe(modelId);
     expect(finalBody.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: expectedLevel, includeThoughts: true });
   });
+
+  it.each([
+    ["high effort", { reasoning_effort: "high" }, "gemini-4-argon-high(high)"],
+    ["low effort", { reasoning_effort: "low" }, "gemini-4-argon-low(low)"],
+    ["medium effort", { reasoning_effort: "medium" }, "gemini-4-argon-medium(medium)"],
+    ["default medium when omitted", {}, "gemini-4-argon-medium(medium)"],
+    ["high via budget tokens", { thinking: { budget_tokens: 24576 } }, "gemini-4-argon-high(high)"],
+    ["low via budget tokens", { thinking: { budget_tokens: 2048 } }, "gemini-4-argon-low(low)"],
+    ["medium via budget tokens", { thinking: { budget_tokens: 8192 } }, "gemini-4-argon-medium(medium)"],
+    ["output_config effort", { output_config: { effort: "low" } }, "gemini-4-argon-low(low)"],
+  ])("resolves unadorned gemini-4-argon to %s based on client request", (_, body, expectedUpstream) => {
+    const upstreamModel = getModelUpstreamId("ag", "gemini-4-argon", body);
+    expect(upstreamModel).toBe(expectedUpstream);
+  });
 });

@@ -359,4 +359,26 @@ describe("Antigravity quota-aware routing", () => {
     } finally {
       vi.useRealTimers();
     }
+  
+  it("checks dedicated family summary quota for argon models independently of gemini", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getAntigravityUsage.mockResolvedValue({
+      quotas: {
+        argon_weekly: { remainingPercentage: 0, resetAt: FUTURE_RESET },
+        gemini_weekly: { remainingPercentage: 100, resetAt: FUTURE_RESET },
+      }
+    });
+
+    try {
+      const reset = await handleAntigravityQuotaError("ag-argon", 429, "gemini-4-argon-high", "token", {});
+      expect(reset).toBe(Date.parse(FUTURE_RESET));
+      expect(getAntigravityQuotaCache().get("ag-argon")["gemini-4-argon-high"]).toMatchObject({
+        remainingPercentage: 0,
+        resetAt: FUTURE_RESET,
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
+});

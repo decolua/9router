@@ -382,10 +382,11 @@ export function parseQuotaData(provider, data) {
       case "antigravity":
         if (data.quotas) {
           const entries = Object.entries(data.quotas);
-          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly"]);
-          const sessionKeys = new Set(["gemini_session", "claude_gpt_session"]);
+          const weeklyKeys = new Set(["gemini_weekly", "claude_gpt_weekly", "argon_weekly"]);
+          const sessionKeys = new Set(["gemini_session", "claude_gpt_session", "argon_session"]);
           const summaryKeys = new Set([...weeklyKeys, ...sessionKeys]);
-          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
+          const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image") && !k.includes("argon"));
+          const argonModels = entries.filter(([k]) => k.includes("argon"));
           const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
           const imageModels = entries.filter(([k]) => k.includes("image"));
           const summaryModels = entries.filter(([k]) => summaryKeys.has(k));
@@ -394,6 +395,8 @@ export function parseQuotaData(provider, data) {
           // Summary keys from retrieveUserQuotaSummary
           const hasGeminiWeekly = Boolean(data.quotas.gemini_weekly);
           const hasGeminiSession = Boolean(data.quotas.gemini_session);
+          const hasArgonWeekly = Boolean(data.quotas.argon_weekly);
+          const hasArgonSession = Boolean(data.quotas.argon_session);
           const hasClaudeWeekly = Boolean(data.quotas.claude_gpt_weekly);
           const hasClaudeSession = Boolean(data.quotas.claude_gpt_session);
 
@@ -443,7 +446,52 @@ export function parseQuotaData(provider, data) {
             });
           }
 
-          // 2. Claude & GPT Family:
+          // 2. Gemini 4 Argon Family:
+          if (hasArgonSession) {
+            summaryModels.filter(([k]) => k === "argon_session").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          } else if (argonModels.length > 0) {
+            const rep = argonModels.reduce((min, cur) =>
+              (cur[1].remainingPercentage ?? 100) < (min[1].remainingPercentage ?? 100) ? cur : min
+            )[1];
+            const weeklyResetAt = data.quotas.argon_weekly?.resetAt;
+            const isDuplicateOfWeekly = hasArgonWeekly && rep.resetAt === weeklyResetAt && (rep.remainingPercentage ?? 0) === 0;
+
+            if (!isDuplicateOfWeekly) {
+              normalizedQuotas.push({
+                name: "Gemini 4 Argon",
+                modelKey: "gemini-4-argon",
+                used: rep.used || 0,
+                total: rep.total || 0,
+                resetAt: rep.resetAt || null,
+                remainingPercentage: rep.remainingPercentage,
+              });
+            }
+          }
+
+          // Show Argon weekly row if present
+          if (hasArgonWeekly) {
+            summaryModels.filter(([k]) => k === "argon_weekly").forEach(([modelKey, quota]) => {
+              normalizedQuotas.push({
+                name: quota.displayName || modelKey,
+                modelKey,
+                used: quota.used || 0,
+                total: quota.total || 0,
+                resetAt: quota.resetAt || null,
+                remainingPercentage: quota.remainingPercentage,
+              });
+            });
+          }
+
+          // 3. Claude & GPT Family:
           if (hasClaudeSession) {
             summaryModels.filter(([k]) => k === "claude_gpt_session").forEach(([modelKey, quota]) => {
               normalizedQuotas.push({

@@ -55,6 +55,9 @@ function applyActiveStrikeBlocks(connectionId, quotas) {
 export function getAntigravityModelFamily(model) {
   if (!model || typeof model !== "string") return null;
   const clean = (model.includes("/") ? model.slice(model.indexOf("/") + 1) : model).toLowerCase();
+  if (clean.includes("argon")) {
+    return "argon";
+  }
   if (clean.startsWith("claude-") || clean.startsWith("gpt-") || clean === "claude") {
     return "claude_gpt";
   }
@@ -85,6 +88,10 @@ export function getAntigravityModelQuota(quotas, model) {
   }
 
   // 2. Direct tier aliases if base model was passed
+  if (cleanModel === "gemini-4-argon") {
+    if (quotas["gemini-4-argon-medium"]) candidates.push(quotas["gemini-4-argon-medium"]);
+    if (quotas["gemini-4-argon-high"]) candidates.push(quotas["gemini-4-argon-high"]);
+  }
   if (cleanModel === "claude-sonnet-5-5" && quotas["claude-sonnet-5-5-high"]) {
     candidates.push(quotas["claude-sonnet-5-5-high"]);
   }
@@ -102,7 +109,10 @@ export function getAntigravityModelQuota(quotas, model) {
   }
 
   // 3. Shared family summary buckets (5h session & Weekly)
-  if (family === "claude_gpt") {
+  if (family === "argon") {
+    if (quotas.argon_session) candidates.push(quotas.argon_session);
+    if (quotas.argon_weekly) candidates.push(quotas.argon_weekly);
+  } else if (family === "claude_gpt") {
     if (quotas.claude_gpt_session) candidates.push(quotas.claude_gpt_session);
     if (quotas.claude_gpt_weekly) candidates.push(quotas.claude_gpt_weekly);
   } else if (family === "gemini") {
