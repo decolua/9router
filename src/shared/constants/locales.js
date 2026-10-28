@@ -20,6 +20,7 @@ export const LOCALE_FLAGS = {
   "tr": "🇹🇷",
   "uk": "🇺🇦",
   "tl": "🇵🇭",
+  "ms": "🇲🇾",
   "id": "🇮🇩",
   "th": "🇹🇭",
   "km": "🇰🇭",
