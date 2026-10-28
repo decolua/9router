@@ -107,7 +107,6 @@ async function bootstrapJwt(proxyOptions = null) {
 export class MimoFreeExecutor extends BaseExecutor {
   constructor() {
     super("mimo-free", PROVIDERS["mimo-free"]);
-    this.sessionId = generateSessionId();
   }
 
   buildUrl() {
@@ -115,11 +114,12 @@ export class MimoFreeExecutor extends BaseExecutor {
   }
 
   buildHeaders(credentials, stream = true) {
+    const sessionId = credentials?.connectionId || generateSessionId();
     return {
       "Content-Type": "application/json",
       "X-Mimo-Source": "mimocode-cli-free",
       "User-Agent": USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)],
-      "x-session-affinity": this.sessionId,
+      "x-session-affinity": sessionId,
       "Accept": stream ? "text/event-stream" : "application/json",
     };
   }
