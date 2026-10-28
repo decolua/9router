@@ -332,6 +332,59 @@ async function createBypassRequest(parsedUrl, realIP, options) {
   });
 }
 
+// OpenCode's free-tier gate answers 403 `FreeTierError` when the request
+// exits from an IP it has flagged — the transport itself succeeded, so the
+// proxy-failure fallback below never sees it and every retry keeps leaving
+// through the same flagged proxy. Live measurement (#4983): identical body and
+// headers in the same minute — flagged pool egress → 403 FreeTierError,
+// direct egress → 200.
+const FREE_TIER_ERROR_MARKER = "FreeTierError";
+
+/** Rebuild a response whose body we buffered while inspecting it. */
+function bufferedResponse(text, original) {
+  const headers = new Headers(original.headers);
+  // The body was decoded while reading, so upstream framing no longer applies.
+  headers.delete("content-length");
+  headers.delete("content-encoding");
+  return new Response(text, { status: original.status, statusText: original.statusText, headers });
+}
+
+/**
+ * After a proxied attempt, replay once on the direct egress when upstream
+ * rejected the *proxy's IP* (403 FreeTierError). A body already consumed by
+ * the first attempt cannot be resent, and strictProxy keeps its contract of
+ * never leaving over another path — both return the rejection as-is.
+ */
+async function replayFreeTierRejectionDirect(url, options, proxied) {
+  if (proxied.status !== 403) return proxied;
+  let text;
+  try {
+    text = await proxied.text();
+  } catch {
+    return proxied;
+  }
+  if (!text.includes(FREE_TIER_ERROR_MARKER)) return bufferedResponse(text, proxied);
+  if (options?.body && typeof options.body.getReader === "function" && options.body.locked) {
+    return bufferedResponse(text, proxied);
+  }
+  console.warn(`[ProxyFetch] Proxy egress rejected by the OpenCode free-tier gate (403 FreeTierError); replaying direct: ${targetHost(url)}`);
+  try {
+    return await fetchWithTlsFallback(url, options, null);
+  } catch (directError) {
+    // The direct replay failed outright — surface the original rejection.
+    console.warn(`[ProxyFetch] Direct replay failed: ${directError.message}`);
+    return bufferedResponse(text, proxied);
+  }
+}
+
+function targetHost(url) {
+  try {
+    return new URL(typeof url === "string" ? url : url.toString()).host;
+  } catch {
+    return String(url);
+  }
+}
+
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
 
@@ -379,7 +432,10 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 
   if (proxyUrl) {
     try {
-      return await fetchWithTlsFallback(url, options, proxyUrl);
+      const proxied = await fetchWithTlsFallback(url, options, proxyUrl);
+      // strictProxy never leaves the configured path — pass the rejection through.
+      if (proxyOptions?.strictProxy === true) return proxied;
+      return await replayFreeTierRejectionDirect(url, options, proxied);
     } catch (proxyError) {
       // If strictProxy is enabled, fail hard instead of falling back to direct
       if (proxyOptions?.strictProxy === true) {
