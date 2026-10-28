@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CodexExecutor } from "../../open-sse/executors/codex.js";
+import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
 function streamFromText(text) {
   const encoder = new TextEncoder();
@@ -36,6 +37,10 @@ describe("Codex fast tier and capacity handling", () => {
     expect(headers["ChatGPT-Account-ID"]).toBe("acct_1");
   });
 
+  it("classifies ChatGPT unsupported-model HTTP 400 as combo fallback", () => {
+    expect(checkFallbackError(400, "The 'gpt-5.6-sol' model is not supported when using Codex with a ChatGPT account.").shouldFallback).toBe(true);
+  });
+
   it("classifies 200-SSE model capacity as account fallback", async () => {
     const executor = new CodexExecutor();
     const response = new Response(streamFromText([
@@ -50,6 +55,42 @@ describe("Codex fast tier and capacity handling", () => {
     const peek = await executor._peekSseTransientError(response);
     expect(peek.accountFallback).toBe(true);
     expect(peek.message).toBe("Selected model is at capacity. Please try a different model.");
+  });
+
+  it("classifies 200-SSE unavailable-model guidance as account fallback", async () => {
+    const executor = new CodexExecutor();
+    const response = new Response(streamFromText([
+      "event: error",
+      'data: {"error":{"message":"The configured model is unavailable from the provider — it may have been renamed, retired, or is not offered on this account."}}',
+      "",
+    ].join("\n")), {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+
+    const peek = await executor._peekSseTransientError(response);
+    expect(peek.accountFallback).toBe(true);
+    expect(peek.message).toContain("configured model is unavailable");
+  });
+
+  it("detects unavailable-model error after empty delta (response.failed bypass)", async () => {
+    const executor = new CodexExecutor();
+    const text = [
+      "event: response.output_text.delta",
+      'data: {"type":"response.output_text.delta","delta":""}',
+      "",
+      "event: response.failed",
+      'data: {"error":{"message":"The configured model is unavailable from the provider — it may have been renamed, retired, or is not offered on this account."}}',
+      "",
+    ].join("\n");
+    const response = new Response(streamFromText(text), {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+
+    const peek = await executor._peekSseTransientError(response);
+    expect(peek.accountFallback).toBe(true);
+    expect(peek.message).toContain("configured model is unavailable");
   });
 
   it("reassembles normal SSE after peeking", async () => {
