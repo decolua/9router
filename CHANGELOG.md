@@ -1,3 +1,9 @@
+# Unreleased
+
+## Fixes
+- **Codex**: add Responses beta/routing headers; keep compaction retries on `/compact`; preserve requested includes; sanitize call IDs and repair interrupted tool histories; inline native remote images; parse structured SSE errors before visible output; use a Codex model by default in CLI quick setup
+- **Models**: collect models.dev context/output limits for every model a gateway lists upstream instead of only the ones the static registry enumerates, so a model outside that curated subset (one the registry has not caught up on, or one a user added by hand) no longer falls back to the generic pattern tables — `nvidia/stepfun-ai/step-5-preview` advertised 128K against upstream's 1M and dragged the whole combo's window down with it. Limits stay scoped to gateways 9router actually registers, and `build()` now detaches the installed catalog while resolving so a repeated run cannot drop its own deltas.
+
 # v0.5.112 (2026-10-28)
 
 ## Features
@@ -15,7 +21,6 @@
 - **Providers**: keep full `LLM|id|secret` (Muse) key strings opaque in bulk-add instead of splitting on the first pipe into name/key, auto-naming them LLM 1, LLM 2, …
 - **DeepSeek**: replace the vendored PoW hash implementation with a noble-hashes keccak port (DeepSeekHashV1, SHA3-256 with round 0 skipped), shrinking `deepseek-pow-hash.js` by ~430 lines
 - **GitHub Copilot**: apply Claude 5.5 thinking rules to Copilot's dotted model ids (`claude-opus-5.5*`, `claude-sonnet-5.5`) and make `claude-haiku-5.5` adaptive-only on its Anthropic-native shim, whose budget-shaped thinking comes back 400
-
 # v0.5.111 (2026-10-26)
 
 ## Features

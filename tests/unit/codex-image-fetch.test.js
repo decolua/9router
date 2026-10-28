@@ -161,4 +161,24 @@ describe("CodexExecutor image handling", () => {
     const imgBlock = parsed.input[0].content.find((c) => c.type === "input_image");
     expect(imgBlock.image_url.startsWith("data:image/jpeg;base64,")).toBe(true);
   });
+  it("fetches remote URLs in native Responses input_image parts", async () => {
+    global.fetch = vi.fn(async () => mockImageFetch(IMAGE_1MB_BYTES));
+
+    const body = {
+      input: [{
+        type: "message",
+        role: "user",
+        content: [{ type: "input_image", image_url: REMOTE_URL, detail: "high" }],
+      }],
+    };
+
+    await new CodexExecutor().prefetchImages(body);
+
+    const image = body.input[0].content[0];
+    expect(image.type).toBe("input_image");
+    expect(image.image_url.startsWith("data:image/jpeg;base64,")).toBe(true);
+    expect(image.detail).toBe("high");
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
 });

@@ -6,6 +6,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { getCapabilitiesForModel, getCatalogSource, setCatalogSource } from "open-sse/providers/capabilities.js";
 import { CATALOG_FILE, CATALOG_RAW_FILE, CATALOG_VERSION, invalidateCatalog, installCatalogSource } from "open-sse/providers/catalogOverride.js";
 
 const CATALOG_URL = "https://models.dev/api.json";
@@ -92,33 +93,75 @@ export function build(catalog, entries) {
     if (!locals.includes(provider)) locals.push(provider);
   }
 
-  // Index once: the raw upstream record per provider+model for limits, and the
-  // modalities each gateway declares for it.
-  const byProvider = {};
+  // The registry snapshot's own answer per provider+model, so a limit the tables
+  // already agree with upstream is still recognised as "no change" and dropped
+  // from the file. Only registry models are keyed here, so a model absent from
+  // the snapshot is resolved against the tables right here.
+  const snapshot = new Map();
+  for (const { provider, model, current } of entries) {
+    snapshot.set(`${provider}:${baseId(model)}`, current);
+  }
+
+  // A registry entry can declare its window outright (contextLength). Upstream
+  // must not override that declaration — it is the gateway's own number — but it
+  // may still correct the output limit, which the declaration says nothing about.
+  const declaredLength = new Set();
+  for (const { provider, model, contextLength } of entries) {
+    if (contextLength) declaredLength.add(`${provider}:${baseId(model)}`);
+  }
+
+  // Models outside the registry are resolved against the tables here, and that
+  // must read the tables alone: with the catalog this run replaces still
+  // installed, a value it already carries looks like "no change" and its delta
+  // is dropped, so the file erases itself over two runs. The sync detaches
+  // before calling; build() enforces it too so a direct caller cannot corrupt
+  // its own output.
+  const detach = getCatalogSource();
+  setCatalogSource(null);
+  try {
+    return buildLimits(catalog, localIds, snapshot, declaredLength);
+  } finally {
+    setCatalogSource(detach);
+  }
+}
+
+function buildLimits(catalog, localIds, snapshot, declaredLength) {
   // Modalities are recorded per gateway upstream and gateways disagree about the
   // same weights — some do not proxy images at all — so the key is provider +
   // model. Keying by model id alone let short ids collide across vendors: "auto",
   // "free" and "efficient" are router modes in one catalog and model names in
   // another, so a router mode inherited a stranger's vision.
   const models = {};
+  // Limits belong to the gateway — each truncates differently — so only the
+  // matching provider's own numbers are used, keyed by provider + model.
+  const providers = {};
   for (const [providerId, provider] of Object.entries(catalog)) {
+    // Modalities may be filed under the upstream name as well (a custom provider
+    // node can carry it), and they only ever turn a capability on.
     const locals = localIds.get(providerId) || [providerId];
-    const modelsById = {};
+    // Limits replace a number instead of adding to one, so they get the local
+    // ids requests arrive with and nothing else: models.dev's view of a gateway
+    // 9router does not register is not this router's answer.
+    const limitLocals = localIds.get(providerId);
     const seen = new Set();
     for (const [modelId, model] of Object.entries(provider?.models || {})) {
       const id = baseId(modelId);
-      modelsById[id] = model;
       // One entry per provider+model: several upstream ids can normalize to the
       // same model (claude-opus-4-thinking:1024, :8192, :32768 …) and must not
-      // stack their modalities.
-      if (seen.has(id)) continue;
-      seen.add(id);
+      // stack their modalities. This guard is for the modality pass only — the
+      // limits pass below must still see every record, so the last one carrying
+      // a limit for a baseId keeps the pick the old per-entry index made
+      // (openrouter's .../gemma-4-31b-it:free and .../gemma-4-31b-it normalize
+      // to one id and carry different windows, so first-vs-last is a choice that
+      // has to stay the one it was).
+      const firstForId = !seen.has(id);
+      if (firstForId) seen.add(id);
       const declared = {};
       for (const input of model?.modalities?.input || []) {
         const key = MODALITY_BY_INPUT[input];
         if (key) declared[key] = true;
       }
-      if (Object.keys(declared).length) {
+      if (firstForId && Object.keys(declared).length) {
         // Filed under every local id requests arrive with, and under the upstream
         // id too: a custom provider node can carry the upstream name without
         // appearing in the registry snapshot, and nothing else would resolve for
@@ -126,30 +169,39 @@ export function build(catalog, entries) {
         for (const local of locals) models[`${local}:${id}`] = declared;
         if (!locals.includes(providerId)) models[`${providerId}:${id}`] = declared;
       }
-    }
-    byProvider[providerId] = modelsById;
-  }
 
-  // Limits belong to the gateway — each truncates differently — so only the
-  // matching provider's own numbers are used, keyed by provider + model.
-  const providers = {};
-  for (const { provider, model, contextLength, current } of entries) {
-    const alias = PROVIDER_ALIASES[provider];
-    const upstream = catalog[provider] ? provider : (alias && catalog[alias] ? alias : null);
-    const entry = upstream && byProvider[upstream]?.[baseId(model)];
-    if (!entry) continue;
-
-    const delta = {};
-    const { context, output } = entry.limit || {};
-    if (context > 0 && !contextLength
-      && Math.abs(context - current.contextWindow) / current.contextWindow > LIMIT_TOLERANCE) {
-      delta.contextWindow = context;
+      // Limits are collected for every model the gateway lists upstream, not
+      // just the ones the static registry enumerates. The registry is a curated
+      // subset — nvidia lists 11 of models.dev's 52 — and a model outside it
+      // (one the registry has not caught up on, or one a user added by hand) is
+      // still routable, so its real window has to reach the reader. Without this
+      // the hand-written patterns decide alone, and a generic row publishes a
+      // fraction of the true window: nvidia's stepfun-ai/step-5-preview read
+      // 128000 from `*step-*` against upstream's 1048576, and the combo page
+      // showed the smaller of its seats.
+      const { context, output } = model?.limit || {};
+      // A record with no limit cannot overwrite one before it, so a baseId's
+      // published window comes from the last record that carries a limit. The
+      // old index kept the last record outright, so it dropped the window when
+      // that record had none; keeping the limit is the better half of the two.
+      if (!(context > 0 || output > 0) || !limitLocals) continue;
+      for (const local of limitLocals) {
+        const current = snapshot.get(`${local}:${id}`)
+          || getCapabilitiesForModel(local, modelId);
+        const delta = {};
+        if (context > 0 && !declaredLength.has(`${local}:${id}`) && current.contextWindow > 0
+          && Math.abs(context - current.contextWindow) / current.contextWindow > LIMIT_TOLERANCE) {
+          delta.contextWindow = context;
+        }
+        if (output > 0 && current.maxOutput > 0
+          && Math.abs(output - current.maxOutput) / current.maxOutput > LIMIT_TOLERANCE) {
+          delta.maxOutput = output;
+        }
+        if (Object.keys(delta).length) {
+          (providers[local] || (providers[local] = {}))[id] = delta;
+        }
+      }
     }
-    if (output > 0
-      && Math.abs(output - current.maxOutput) / current.maxOutput > LIMIT_TOLERANCE) {
-      delta.maxOutput = output;
-    }
-    if (Object.keys(delta).length) (providers[provider] || (providers[provider] = {}))[model] = delta;
   }
 
   return { models, providers };
@@ -161,11 +213,10 @@ export function build(catalog, entries) {
 // The previous catalog MUST be detached first. Leaving it installed makes each
 // delta relative to the last one, so a value that still agrees with upstream
 // looks like "no change" and is dropped — the file erases itself over two runs.
+// build() detaches around its own resolution too, but this snapshot runs before
+// it, so it has to do the same.
 async function collectEntries() {
-  const [{ default: registry }, { getCapabilitiesForModel, setCatalogSource }] = await Promise.all([
-    import("open-sse/providers/registry/index.js"),
-    import("open-sse/providers/capabilities.js"),
-  ]);
+  const { default: registry } = await import("open-sse/providers/registry/index.js");
   setCatalogSource(null);
 
   const entries = [];

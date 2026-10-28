@@ -222,4 +222,86 @@ describe("CodexExecutor tool normalization", () => {
       },
     ]);
   });
+  it("preserves caller include fields when requiring encrypted reasoning", () => {
+    const executor = new CodexExecutor();
+    const body = {
+      model: "gpt-5.6-terra",
+      input: "Return a tool result",
+      include: ["code_interpreter_call.outputs"],
+      reasoning: { effort: "low" },
+    };
+
+    executor.transformRequest("gpt-5.6-terra", body, true, {});
+
+    expect(body.include).toEqual([
+      "code_interpreter_call.outputs",
+      "reasoning.encrypted_content",
+    ]);
+  });
+
+  it("normalizes long native call IDs consistently across calls and results", () => {
+    const shared = "provider:call_".repeat(8);
+    const originalIds = [`${shared}alpha`, `${shared}beta`];
+    const body = {
+      model: "gpt-5.6-terra",
+      input: originalIds.flatMap((call_id) => [
+        { type: "function_call", call_id, name: "run", arguments: "{}" },
+        { type: "function_call_output", call_id, output: "done" },
+      ]),
+    };
+
+    new CodexExecutor().transformRequest("gpt-5.6-terra", body, true, {});
+
+    const [callA, outputA, callB, outputB] = body.input;
+    expect(callA.call_id).toBe(outputA.call_id);
+    expect(callB.call_id).toBe(outputB.call_id);
+    expect(callA.call_id).not.toBe(callB.call_id);
+    for (const item of body.input) {
+      expect(item.call_id.length).toBeLessThanOrEqual(64);
+      expect(item.call_id).toMatch(/^[a-zA-Z0-9_-]+$/);
+    }
+  });
+
+  it("correlates composite call IDs by their canonical prefix", () => {
+    const body = {
+      model: "gpt-5.6-terra",
+      input: [
+        { type: "function_call", call_id: "call_123|assistant_item", name: "run", arguments: "{}" },
+        { type: "function_call_output", call_id: "call_123|output_item", output: "done" },
+      ],
+    };
+
+    new CodexExecutor().transformRequest("gpt-5.6-terra", body, true, {});
+
+    expect(body.input[0].call_id).toBe("call_123");
+    expect(body.input[1].call_id).toBe(body.input[0].call_id);
+  });
+
+  it("repairs interrupted calls and orphaned tool results in native Responses history", () => {
+    const body = {
+      model: "gpt-5.6-terra",
+      input: [
+        { type: "function_call", call_id: "pending_fn", name: "run", arguments: "{}" },
+        { type: "function_call_output", call_id: "orphan_output", output: "prior result" },
+        { type: "custom_tool_call", call_id: "pending_custom", name: "apply_patch", input: "patch" },
+        { type: "computer_call", call_id: "pending_computer" },
+      ],
+    };
+
+    new CodexExecutor().transformRequest("gpt-5.6-terra", body, true, {});
+
+    expect(body.input.map((item) => item.type)).toEqual([
+      "function_call",
+      "function_call_output",
+      "message",
+      "custom_tool_call",
+      "custom_tool_call_output",
+      "message",
+    ]);
+    expect(body.input[1].output).toContain("tool call was interrupted");
+    expect(body.input[2].content).toContain("prior result");
+    expect(body.input[4].output).toContain("tool call was interrupted");
+    expect(body.input[5].content).toContain("Computer call interrupted");
+  });
+
 });

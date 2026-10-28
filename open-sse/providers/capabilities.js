@@ -10,7 +10,10 @@
 //   • the synced catalog — modalities keyed by model, limits keyed by provider
 //     + model, refreshed from models.dev in the background. It reads a file, so
 //     the server installs it via setCatalogSource(); this module stays free of
-//     node:fs because the dashboard bundles it into the browser too.
+//     node:fs because the dashboard bundles it into the browser too. The sync
+//     builder (src/lib/modelCatalog/sync.js) detaches it while it resolves, so
+//     a delta is measured against the tables alone and not against the file it
+//     is about to replace.
 //   • visionPatterns.js — name-based vision detection, last resort so a model
 //     nobody has catalogued yet still accepts images.
 // Modalities only ever turn a capability ON. Limits from the catalog overlay
@@ -745,7 +748,12 @@ export function setCatalogSource(source) {
   if (typeof globalThis !== "undefined") globalThis.__9rCatalogSource = source;
 }
 
-function getCatalogSource() {
+/**
+ * The installed catalog reader, or null when none is.
+ * @returns {{ getModalities: (provider: string, model: string) => object|null,
+ *             getLimits: (provider: string, model: string) => object|null } | null} source
+ */
+export function getCatalogSource() {
   if (typeof globalThis === "undefined") return catalogSource;
   return globalThis.__9rCatalogSource || null;
 }
