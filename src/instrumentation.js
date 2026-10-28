@@ -2,6 +2,7 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     const { initConsoleLogCapture } = await import("@/lib/consoleLogBuffer");
     initConsoleLogCapture();
+    await import("@/shared/services/bootstrap");
 
     // Server-only: lets capabilities.js read the synced catalog without pulling
     // node:fs into the dashboard's browser bundle.
