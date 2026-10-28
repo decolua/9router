@@ -10,6 +10,7 @@ import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatInco
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
 import { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER } from "./sseConstants.js";
+import { createDeltaCoalescer } from "./sseDeltaCoalesce.js";
 
 export { COLORS, formatSSE };
 export { SSE_DONE, SSE_HEADERS, SSE_HEADERS_NO_BUFFER };
@@ -133,6 +134,26 @@ export function createSSEStream(options = {}) {
       }, finalUsage, ttftAt);
     }
   };
+
+  // Optional debouncer for Anthropic content_block_delta runs. Active only
+  // when the CLIENT speaks Claude (sourceFormat is the client's wire format)
+  // AND one SSE_COALESCE_* env var opts in — otherwise the coalescer's
+  // enabled() is false and every event passes straight through.
+  // Off by default per the feature's off-by-default design (#4558).
+  const coalesceDeltas = sourceFormat === FORMATS.CLAUDE
+    ? createDeltaCoalescer((evts) => {
+        for (const item of evts) {
+          const output = formatSSE(item, sourceFormat);
+          reqLogger?.appendConvertedChunk?.(output);
+          const c = controllerRef.current;
+          if (c) c.enqueue(sharedEncoder.encode(output));
+        }
+      })
+    : null;
+  // The coalescer can flush on a timer (after a same-type burst) when the
+  // transform loop is idle, so it needs the latest controller. stream.js keeps
+  // one in scope per chunk; stash it for timer-driven flushes.
+  const controllerRef = { current: null };
 
   // Emit the deferred response.completed now — at [DONE], or when the watchdog
   // below gives up on a usage trailer that never arrives.
@@ -427,6 +448,9 @@ export function createSSEStream(options = {}) {
           }
         }
 
+                // Pass through the coalescer only when it is actually enabled and the
+        // client speaks Claude; otherwise the item goes straight through.
+        const useCoalesce = coalesceDeltas && coalesceDeltas.enabled();
         if (translated?.length > 0) {
           for (const item of translated) {
             if (item === null || item === undefined) continue;
@@ -447,10 +471,25 @@ export function createSSEStream(options = {}) {
               item.usage = filterUsageForFormat(buffered, sourceFormat);
             }
 
+            if (useCoalesce && item.type === "content_block_delta") {
+              coalesceDeltas.feed(item);
+              controllerRef.current = controller;
+              continue;
+            }
+            controllerRef.current = controller;
             const output = formatSSE(item, sourceFormat);
             reqLogger?.appendConvertedChunk?.(output);
             controller.enqueue(sharedEncoder.encode(output));
             sseEmittedCount++;
+          }
+        }
+
+        // Flush any pending coalesced deltas before a boundary or stream end.
+        if (useCoalesce && translated?.length > 0) {
+          const last = translated[translated.length - 1];
+          if (last && last.type !== "content_block_delta") {
+            controllerRef.current = controller;
+            coalesceDeltas.flush();
           }
         }
 
