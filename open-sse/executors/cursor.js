@@ -21,6 +21,7 @@ import { ROLE, OPENAI_BLOCK } from "../translator/schema/index.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
 import crypto from "crypto";
+import { createRequire } from "module";
 
 // Detect cloud environment
 const isCloudEnv = () => {
@@ -29,11 +30,15 @@ const isCloudEnv = () => {
   return false;
 };
 
-// Lazy import http2 (only in Node.js environment)
+// Lazy require http2 (only in Node.js environment). Uses synchronous
+// createRequire instead of a top-level await import so this module stays
+// compatible with CJS-mode transpilation (e.g. tsx/esbuild in the 9router-api
+// standalone server).
 let http2 = null;
 if (!isCloudEnv()) {
   try {
-    http2 = await import("http2");
+    const require = createRequire(import.meta.url);
+    http2 = require("http2");
   } catch {
     // http2 not available
   }
