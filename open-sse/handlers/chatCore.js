@@ -110,6 +110,19 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // back to its declared Claude target).
   const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
+  // When the model pins a targetFormat but the sourceFormat-matched transport
+  // did not win (e.g. an OpenAI client asking for a model whose declared lane is
+  // openai-responses only), the executor still needs to know WHICH endpoint that
+  // lane uses. Otherwise buildUrl falls back to the provider's default
+  // (chat/completions) while the body is translated to the Responses shape
+  // (`input: [...]`) — and the upstream rejects the mismatch with
+  // 400 "unknown parameter \"input\"" (#4624). resolveTransport matches on
+  // t.format, so look the winning targetFormat up there.
+  if (!useTransport && credentials && modelTargetFormat) {
+    const providerTransports = Array.isArray(PROVIDERS[provider]?.transports) ? PROVIDERS[provider].transports : null;
+    const lane = providerTransports?.find((t) => t.format === modelTargetFormat);
+    if (lane) credentials.runtimeTransport = lane;
+  }
   const stripList = getModelStrip(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
