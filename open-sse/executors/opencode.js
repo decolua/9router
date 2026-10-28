@@ -1,4 +1,5 @@
 import crypto from "crypto";
+import { MAX_TOOL_NAME_LEN } from "../config/appConstants.js";
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
@@ -21,7 +22,6 @@ import {
 const OPENCODE_UA = "opencode/latest/2.0.26/cli";
 const OPENCODE_CLIENT = "cli";
 const MAX_SESSION_LENGTH = 256;
-const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
@@ -276,7 +276,12 @@ function normalizeResponsesTools(body) {
   if (body.tool_choice && typeof body.tool_choice === "object" && !Array.isArray(body.tool_choice)) {
     if (body.tool_choice.type === "function") {
       const n = typeof body.tool_choice.name === "string" ? body.tool_choice.name.trim() : "";
-      if (!n || !validNames.has(n)) delete body.tool_choice;
+      // validNames holds the CLAMPED names, so a tool_choice still carrying the
+      // original would not match and would be dropped — silently turning a forced
+      // tool call into an unforced one. Compare against the same clamped form.
+      const clamped = n.slice(0, MAX_TOOL_NAME_LEN);
+      if (!n || !validNames.has(n) && !validNames.has(clamped)) delete body.tool_choice;
+      else body.tool_choice.name = clamped;
     }
   }
 }
