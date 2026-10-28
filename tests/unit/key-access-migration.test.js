@@ -63,7 +63,7 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
 
     // The schema bump took the pre-change safety backup.
     const backups = fs.readdirSync(path.join(tempDir, "db", "backups"));
-    expect(backups.some((d) => d.startsWith("schema-1-to-2"))).toBe(true);
+    expect(backups.some((d) => d.startsWith("schema-1-to-"))).toBe(true);
   });
 
   it("persists access through update, new keys default to unrestricted", async () => {

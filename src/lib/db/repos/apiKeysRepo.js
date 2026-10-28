@@ -12,6 +12,7 @@ function rowToKey(row) {
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
+    expiresAt: row.expiresAt || null,
     access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
   };
 }
@@ -36,7 +37,7 @@ export async function getApiKeyByKey(key) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, expiresAt = null) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
@@ -48,12 +49,13 @@ export async function createApiKey(name, machineId) {
     machineId,
     isActive: true,
     createdAt: new Date().toISOString(),
+    expiresAt: expiresAt || null,
     access: { restricted: false, allow: [] },
   };
   const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);
   db.run(
-    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
-    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, cols.accessRestricted, cols.accessAllow]
+    `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, expiresAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, apiKey.expiresAt, cols.accessRestricted, cols.accessAllow]
   );
   return apiKey;
 }
@@ -67,8 +69,8 @@ export async function updateApiKey(id, data) {
     const merged = { ...rowToKey(row), ...data };
     const cols = keyAccessToColumns(merged.access);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, expiresAt = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, merged.expiresAt || null, cols.accessRestricted, cols.accessAllow, id]
     );
     result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });
@@ -83,7 +85,9 @@ export async function deleteApiKey(id) {
 
 export async function validateApiKey(key) {
   const db = await getAdapter();
-  const row = db.get(`SELECT isActive FROM apiKeys WHERE key = ?`, [key]);
+  const row = db.get(`SELECT isActive, expiresAt FROM apiKeys WHERE key = ?`, [key]);
   if (!row) return false;
-  return row.isActive === 1 || row.isActive === true;
+  if (row.isActive !== 1 && row.isActive !== true) return false;
+  if (row.expiresAt && new Date(row.expiresAt).getTime() <= Date.now()) return false;
+  return true;
 }
