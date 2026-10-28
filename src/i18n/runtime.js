@@ -1,6 +1,6 @@
 "use client";
 
-import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale } from "./config";
+import { DEFAULT_LOCALE, LOCALE_COOKIE, normalizeLocale, isRTL } from "./config";
 
 let translationMap = {};
 let currentLocale = DEFAULT_LOCALE;
@@ -132,6 +132,9 @@ export async function initRuntimeI18n() {
   if (typeof window === "undefined") return;
   
   currentLocale = getLocaleFromCookie();
+  const rtl = isRTL(currentLocale);
+  document.documentElement.dir = rtl ? "rtl" : "ltr";
+  document.documentElement.lang = currentLocale;
   await loadTranslations(currentLocale);
   
   // Process existing DOM
@@ -167,6 +170,9 @@ export async function initRuntimeI18n() {
 // Reload translations when locale changes
 export async function reloadTranslations() {
   currentLocale = getLocaleFromCookie();
+  const rtl = isRTL(currentLocale);
+  document.documentElement.dir = rtl ? "rtl" : "ltr";
+  document.documentElement.lang = currentLocale;
   await loadTranslations(currentLocale);
   
   // Notify all registered callbacks
