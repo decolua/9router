@@ -63,6 +63,10 @@ export function createSSEStream(options = {}) {
 
   let buffer = "";
   let usage = null;
+  // Body-size estimate kept apart from the provider-reported usage: it is a
+  // fallback for providers that report no usage at all, never a candidate to
+  // be merged with it (see mergeUsage).
+  let estimatedUsage = null;
 
   // Tool-call ids already sent to the client, keyed by the tool-call index.
   // A late fragment that opens a NEW index without an id must not reach the
@@ -116,7 +120,9 @@ export function createSSEStream(options = {}) {
     let finalUsage = isPassthrough ? usage : state?.usage;
 
     if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
-      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
+      // The provider reported no usage at all: fall back to the body-size
+      // estimate, if one was already computed for the finish chunk.
+      finalUsage = estimatedUsage || estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
 
@@ -280,7 +286,11 @@ export function createSSEStream(options = {}) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
                 output = `data: ${JSON.stringify(parsed)}\n`;
-                usage = estimated;
+                // Keep the estimate out of the accumulator: a provider that
+                // reports its usage in a trailing chunk (stream_options
+                // include_usage) sends it AFTER this chunk, and merging the
+                // two by max would let the guess outvote the real number.
+                estimatedUsage = estimated;
                 injectedUsage = true;
               } else if (isFinishChunk && usage) {
                 const buffered = addBufferToUsage(usage);
@@ -440,7 +450,9 @@ export function createSSEStream(options = {}) {
             if (state.finishReason && isFinishChunk && !hasValidUsage(item.usage) && totalContentLength > 0) {
               const estimated = estimateUsage(body, totalContentLength, sourceFormat);
               item.usage = filterUsageForFormat(estimated, sourceFormat); // Filter + already has buffer
-              state.usage = estimated;
+              // Same rule as the passthrough path: the estimate is a fallback,
+              // not something to merge with the provider's own usage.
+              estimatedUsage = estimated;
             } else if (state.finishReason && isFinishChunk && state.usage) {
               // Add buffer and filter usage for client (but keep original in state.usage for logging)
               const buffered = addBufferToUsage(state.usage);
