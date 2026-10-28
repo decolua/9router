@@ -27,10 +27,16 @@ function baseBody() {
   };
 }
 
-// Khử field động: toolNameMap, kiro conversationId (uuid), timestamp trong content.
+// Khử field động: toolNameMap, uuid phiên (kiro), timestamp trong content.
+// conversationId và agentContinuationId đều là crypto.randomUUID() cho một request
+// ephemeral (utils/sessionManager.js:224) — đổi mỗi lần chạy. Thay bằng placeholder
+// thay vì xoá hẳn, để golden vẫn bắt được nếu một field biến mất.
+const UUID_KEYS = new Set(["conversationId", "agentContinuationId"]);
+
 function clean(body) {
   const s = JSON.stringify(body, (k, v) => {
-    if (k === "_toolNameMap" || k === "conversationId") return undefined;
+    if (k === "_toolNameMap") return undefined;
+    if (UUID_KEYS.has(k)) return "<UUID>";
     return v;
   }).replace(/Current time is [^"\\]+/g, "Current time is <TS>");
   return JSON.parse(s);
@@ -99,5 +105,31 @@ describe("GOLDEN request: OpenAI → Kiro", () => {
   it("full body (image base64 + tool_result)", () => {
     const out = translateRequest(FORMATS.OPENAI, FORMATS.KIRO, "claude-sonnet-4.5", baseBody(), true, { accessToken: "t" }, "kiro");
     expect(clean(out)).toMatchSnapshot();
+  });
+});
+
+// Một golden chỉ là golden nếu cùng input cho ra cùng output ở hai lần chạy.
+// Kiro đóng dấu hai uuid mới vào mọi request ephemeral; clean() trước đây chỉ khử
+// một, nên snapshot của "OpenAI → Kiro" không thể khớp ở bất kỳ lần chạy nào —
+// regenerate chỉ đẩy lỗi sang lần sau với một uuid khác.
+describe("GOLDEN request: reproducibility", () => {
+  const CASES = [
+    ["OpenAI → Claude", FORMATS.CLAUDE, "claude-opus-4-6", { apiKey: "sk-x" }, "claude"],
+    ["OpenAI → Gemini", FORMATS.GEMINI, "gemini-3-pro", { apiKey: "k" }, "gemini"],
+    ["OpenAI → Kiro", FORMATS.KIRO, "claude-sonnet-4.5", { accessToken: "t" }, "kiro"],
+  ];
+
+  for (const [name, to, model, creds, provider] of CASES) {
+    it(`${name} → identical output on two runs`, () => {
+      const once = clean(translateRequest(FORMATS.OPENAI, to, model, baseBody(), true, creds, provider));
+      const twice = clean(translateRequest(FORMATS.OPENAI, to, model, baseBody(), true, creds, provider));
+      expect(JSON.stringify(twice)).toBe(JSON.stringify(once));
+    });
+  }
+
+  it("cleaned Kiro body carries no raw uuid", () => {
+    const out = clean(translateRequest(FORMATS.OPENAI, FORMATS.KIRO, "claude-sonnet-4.5", baseBody(), true, { accessToken: "t" }, "kiro"));
+    const raw = JSON.stringify(out).match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g);
+    expect(raw).toBeNull();
   });
 });
