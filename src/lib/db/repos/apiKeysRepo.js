@@ -36,7 +36,7 @@ export async function getApiKeyByKey(key) {
   return rowToKey(row);
 }
 
-export async function createApiKey(name, machineId) {
+export async function createApiKey(name, machineId, access = KEY_ACCESS_UNRESTRICTED) {
   if (!machineId) throw new Error("machineId is required");
   const db = await getAdapter();
   const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
@@ -48,9 +48,9 @@ export async function createApiKey(name, machineId) {
     machineId,
     isActive: true,
     createdAt: new Date().toISOString(),
-    access: { restricted: false, allow: [] },
   };
-  const cols = keyAccessToColumns(KEY_ACCESS_UNRESTRICTED);
+  const cols = keyAccessToColumns(access);
+  apiKey.access = keyAccessFromColumns(cols.accessRestricted, cols.accessAllow);
   db.run(
     `INSERT INTO apiKeys(id, key, name, machineId, isActive, createdAt, accessRestricted, accessAllow) VALUES(?, ?, ?, ?, ?, ?, ?, ?)`,
     [apiKey.id, apiKey.key, apiKey.name, apiKey.machineId, 1, apiKey.createdAt, cols.accessRestricted, cols.accessAllow]
