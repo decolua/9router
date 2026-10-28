@@ -166,7 +166,10 @@ export function canonicalizeUsage(usage) {
 
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const completion = num(usage.completion_tokens ?? usage.output_tokens);
-  const reasoning = num(usage.reasoning_tokens);
+  // Reasoning lives either flat (extractUsage output) or nested in
+  // completion_tokens_details / output_tokens_details (buildUsage +
+  // raw Responses-API usage), so read all three shapes.
+  const reasoning = num(usage.reasoning_tokens ?? usage.completion_tokens_details?.reasoning_tokens ?? usage.output_tokens_details?.reasoning_tokens);
   // Fall back to the nested prompt_tokens_details.cache_creation_tokens shape
   // (buildUsage()'s OpenAI-forwarding format) when the top-level field is
   // absent, so callers that pass a buildUsage() object through don't silently

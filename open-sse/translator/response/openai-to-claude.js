@@ -105,8 +105,13 @@ export function openaiToClaudeResponse(chunk, state) {
       state.usage.cache_creation_input_tokens = cacheCreateTokens;
     }
 
-    // Note: completion_tokens_details.reasoning_tokens is already included in output_tokens
-    // No need to add separately as Claude expects total output_tokens
+    // Preserve reasoning tokens for usage tracking: Claude clients ignore the
+    // extra field, but saveUsageStats/canonicalizeUsage need it populated or
+    // the pivot drops every reasoning count for translated streams.
+    const reasoningTokens = chunk.usage.completion_tokens_details?.reasoning_tokens;
+    if (typeof reasoningTokens === "number" && reasoningTokens > 0) {
+      state.usage.reasoning_tokens = reasoningTokens;
+    }
   }
 
   // First chunk - ALWAYS send message_start first
