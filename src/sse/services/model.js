@@ -83,10 +83,13 @@ export async function getModelInfo(modelStr) {
  * @returns {Promise<string[]|null>} Array of models or null if not a combo
  */
 export async function getComboModels(modelStr) {
-  // Only check if it's not in provider/model format
-  if (modelStr.includes("/")) return null;
-
-  const combo = await getComboByName(modelStr);
+  // Resolve combo by full name first, then by basename (part after the last
+  // slash) so client configs like `provider/combo-name` still hit the combo
+  // instead of forwarding the raw string to the upstream provider.
+  let combo = await getComboByName(modelStr);
+  if (!combo && modelStr.includes("/")) {
+    combo = await getComboByName(modelStr.split("/").pop());
+  }
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }
