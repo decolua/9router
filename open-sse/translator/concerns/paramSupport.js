@@ -46,6 +46,15 @@ const STRIP_RULES = [
   // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
   // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
   { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
+  // Azure OpenAI reasoning deployments (gpt-5.x / gpt-6.x / o1 / o3 / o4) reject
+  // `max_tokens` the same way. Matched by model id because Azure also hosts
+  // non-OpenAI deployments. Measured 2026-10-29 on a gpt-6-luna deployment
+  // (api-version 2025-04-01-preview): max_tokens 400, max_completion_tokens 200.
+  {
+    provider: "azure",
+    match: /(?:^|[^a-z0-9.])(?:gpt-(?:[5-9]|[1-9]\d)(?:\.\d+)?|o[134])(?![a-z0-9])/i,
+    renameParams: { max_tokens: "max_completion_tokens" },
+  },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
