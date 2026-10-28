@@ -96,6 +96,9 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let passthroughFinishSeen = false;  // passthrough: duplicate finish chunks from upstream
+  let passthroughDoneSent = false;    // passthrough: upstream already sent [DONE]
+  let passthroughToolCallsSeen = false;
   let finalized = false;
   let completionFlushTimer = null;
 
@@ -179,6 +182,13 @@ export function createSSEStream(options = {}) {
           let injectedUsage = false;
           let responsesTerminal = false;
 
+          // Dedup terminators: some upstreams (e.g. stealth/ox-alpha) send the
+          // finish chunk twice and/or their own [DONE]; clients like AI SDK
+          // treat anything after the first finish_reason as a protocol error.
+          const isDoneLine = trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]";
+          if (isDoneLine && passthroughDoneSent) continue;
+          if (isDoneLine) passthroughDoneSent = true;
+
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
               let parsed = JSON.parse(trimmed.slice(5).trim());
@@ -252,11 +262,18 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
-                continue;
-              }
-
               const delta = parsed.choices?.[0]?.delta;
+              // OpenRouter-style gateways (e.g. stealth/ox-alpha) stream
+              // reasoning under `delta.reasoning`, but OpenAI-compatible
+              // clients (Cursor, OpenCode, pi) expect `delta.reasoning_content`.
+              // Normalize so clients render reasoning instead of an empty answer.
+              if (delta && typeof delta.reasoning === "string" && delta.reasoning_content === undefined) {
+                delta.reasoning_content = delta.reasoning;
+                delete delta.reasoning;
+                fieldsInjected = true; // force output from the mutated parsed
+              }
+              if (!hasValuableContent(parsed, FORMATS.OPENAI)) continue;
+              if (delta?.tool_calls?.length) passthroughToolCallsSeen = true;
               const content = delta?.content;
               const reasoning = delta?.reasoning_content;
               if (content && typeof content === "string") {
@@ -270,12 +287,27 @@ export function createSSEStream(options = {}) {
 
               const extracted = extractUsage(parsed);
               if (extracted) {
-                usage = mergeUsage(usage, extracted);
+                usage = mergeUsage(usage?.estimated ? null : usage, extracted);
               }
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);
 
               const isFinishChunk = parsed.choices?.[0]?.finish_reason;
+              const nativeReason = parsed.choices?.[0]?.native_finish_reason;
+              // Detect upstream gateway errors masked as HTTP 200 (e.g. OpenRouter
+              // sending finish_reason:"stop" with native_finish_reason:"network_error"
+              // and empty content). Error out so the stream aborts and combo fallbacks.
+              if (isFinishChunk && nativeReason && ["network_error", "error", "server_error", "timeout"].includes(nativeReason) && totalContentLength === 0 && !passthroughToolCallsSeen) {
+                controller.error(new Error(`Upstream stream failed: ${nativeReason}`));
+                return;
+              }
+              if (isFinishChunk && passthroughFinishSeen) {
+                if (!hasValidUsage(parsed.usage)) continue;
+                // Retain the provider's final counts as an OpenAI usage-only trailer.
+                parsed.choices = [];
+                fieldsInjected = true;
+              }
+              if (isFinishChunk) passthroughFinishSeen = true;
               if (isFinishChunk && !hasValidUsage(parsed.usage)) {
                 const estimated = estimateUsage(body, totalContentLength, FORMATS.OPENAI);
                 parsed.usage = filterUsageForFormat(estimated, FORMATS.OPENAI);
@@ -478,12 +510,8 @@ export function createSSEStream(options = {}) {
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (buffer) {
-            let output = buffer;
-            if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
-              output = "data: " + buffer.slice(5);
-            }
-            reqLogger?.appendConvertedChunk?.(output);
-            controller.enqueue(sharedEncoder.encode(output));
+            // Apply the same normalization/dedup to an unterminated final frame.
+            this.transform(sharedEncoder.encode("\n\n"), controller);
           }
 
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
@@ -492,7 +520,7 @@ export function createSSEStream(options = {}) {
           // Without it they can hang until timeout and trigger failover.
           // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
-          if (!streamDoneSent && !isGeminiFamily) {
+          if (!streamDoneSent && !passthroughDoneSent && !isGeminiFamily) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
