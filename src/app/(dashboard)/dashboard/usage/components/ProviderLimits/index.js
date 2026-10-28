@@ -45,6 +45,22 @@ import AutoPingScheduleModal from "@/app/(dashboard)/dashboard/providers/[id]/Au
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
 import { USAGE_SUPPORTED_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  rectSortingStrategy,
+  sortableKeyboardCoordinates,
+} from "@dnd-kit/sortable";
+import { restrictToParentElement } from "@dnd-kit/modifiers";
+import { ProviderDragHandle, SortableProviderCard } from "./SortableProviderCard";
+import { moveProviderBlock, providerSequence } from "@/shared/utils/providerOrder";
 
 // Maps the stored providerSpecificData.authMethod to a human label for Kiro.
 // Values come from the Kiro connect flows: builder-id/idc (device code),
@@ -791,6 +807,58 @@ export default function ProviderLimits() {
     [connections, quotaData, expiringFirst, providerFilter, quotaSortMode],
   );
 
+  // ─── Provider drag-and-drop ordering ────────────────────────────────────────
+  // Dragging a card moves its whole provider block (a provider's connections are
+  // contiguous) and persists the resulting provider sequence to
+  // settings.providerOrder. Dropping inside the same provider is a no-op: that
+  // order is the account-selection order at request time, so a provider-level
+  // drag must not reshuffle accounts. Expiring-first is an explicit sort, so
+  // dragging is disabled while it is on.
+  const [orderSaving, setOrderSaving] = useState(false);
+  const dragDisabled = expiringFirst || orderSaving;
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const sortableIds = useMemo(
+    () => sortedConnections.map((conn) => conn.id),
+    [sortedConnections],
+  );
+
+  const handleProviderDragEnd = useCallback(
+    async (event) => {
+      const { active, over } = event;
+      if (!over || active.id === over.id) return;
+
+      const from = sortedConnections.find((conn) => conn.id === active.id);
+      const to = sortedConnections.find((conn) => conn.id === over.id);
+      if (!from || !to || from.provider === to.provider) return;
+
+      const nextConnections = moveProviderBlock(sortedConnections, from.provider, to.provider);
+      if (nextConnections === sortedConnections) return;
+
+      setConnections(nextConnections);
+      setOrderSaving(true);
+      try {
+        const res = await fetch("/api/settings/provider-order", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order: providerSequence(nextConnections) }),
+        });
+        if (!res.ok) throw new Error(`Provider order save failed (${res.status})`);
+      } catch (error) {
+        console.error("Error saving provider order:", error);
+        // Re-read the server's order so the UI never shows an unsaved layout.
+        await fetchConnections();
+      } finally {
+        setOrderSaving(false);
+      }
+    },
+    [sortedConnections, fetchConnections],
+  );
+
   // Connection is depleted when any quota entry hit the threshold
   const isConnectionDepleted = (conn) => {
     const quotas = quotaData[conn.id]?.quotas;
@@ -1115,6 +1183,13 @@ export default function ProviderLimits() {
         </div>
       )}
 
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragEnd={handleProviderDragEnd}
+        modifiers={[restrictToParentElement]}
+      >
+      <SortableContext items={sortableIds} strategy={rectSortingStrategy}>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         {sortedConnections.map((conn) => {
           const quota = quotaData[conn.id];
@@ -1134,14 +1209,21 @@ export default function ProviderLimits() {
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
 
           return (
+            <SortableProviderCard key={conn.id} id={conn.id} disabled={dragDisabled}>
             <Card
-              key={conn.id}
               padding="none"
               className={`min-w-0 ${isInactive ? "opacity-60" : ""}`}
             >
               <div className="px-3 py-2 border-b border-black/10 dark:border-white/10">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2 min-w-0">
+                    <ProviderDragHandle
+                      title={
+                        expiringFirst
+                          ? "Provider order is disabled while “Expiring first” is on"
+                          : `Drag to move ${providerLabel(conn.provider)} up or down`
+                      }
+                    />
                     <div className="w-8 h-8 shrink-0 rounded-md flex items-center justify-center overflow-hidden">
                       <ProviderIcon
                         src={`/providers/${conn.provider}.png`}
@@ -1412,9 +1494,12 @@ export default function ProviderLimits() {
                 )}
               </div>
             </Card>
+            </SortableProviderCard>
           );
         })}
       </div>
+      </SortableContext>
+      </DndContext>
 
       <div className="rounded-xl border border-black/10 bg-black/[0.02] px-3 py-2 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="flex flex-wrap items-center justify-between gap-2">

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getProviderConnections } from "@/lib/localDb";
+import { getProviderConnections, getSettings } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
+import { sanitizeProviderOrder, sortConnectionsByProviderOrder } from "@/shared/utils/providerOrder";
 
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
@@ -54,23 +55,15 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sortConnections(connections, sort) {
-  const list = [...connections];
-
-  if (sort === "provider") {
-    return list.sort((a, b) => {
-      const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
-      const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
-      if (orderA !== orderB) return orderA - orderB;
-      return a.provider.localeCompare(b.provider);
-    });
-  }
-
-  return list.sort((a, b) => {
-    const priorityA = a.priority ?? Number.MAX_SAFE_INTEGER;
-    const priorityB = b.priority ?? Number.MAX_SAFE_INTEGER;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    return (a.provider || "").localeCompare(b.provider || "");
+// Sorting lives in src/shared/utils/providerOrder.js so it can be unit-tested
+// without pulling the Next.js route runtime in. The user's saved provider order
+// (settings.providerOrder) is the primary key when it has an opinion; an empty
+// order leaves both branches exactly as they were.
+function sortConnections(connections, sort, providerOrder) {
+  return sortConnectionsByProviderOrder(connections, {
+    sort,
+    providerOrder,
+    usageOrder: USAGE_SUPPORTED_PROVIDERS,
   });
 }
 
@@ -89,6 +82,11 @@ export async function GET(request) {
     const eligibleConnections = allConnections.filter(isUsageEligible);
     const providerOptions = Array.from(new Set(eligibleConnections.map((conn) => conn.provider))).sort();
 
+    // Display-only provider order set by dragging cards in the Quota Tracker.
+    // Never derived from `priority`, which is a per-provider routing rank.
+    const settings = await getSettings();
+    const providerOrder = sanitizeProviderOrder(settings.providerOrder);
+
     const providerFilteredConnections = eligibleConnections.filter((conn) => (
       provider === "all" || conn.provider === provider
     ));
@@ -99,7 +97,7 @@ export async function GET(request) {
       return true;
     });
 
-    const sortedConnections = sortConnections(accountFilteredConnections, sort);
+    const sortedConnections = sortConnections(accountFilteredConnections, sort, providerOrder);
     const total = sortedConnections.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const currentPage = Math.min(page, totalPages);
@@ -109,6 +107,7 @@ export async function GET(request) {
     return NextResponse.json({
       connections: pageConnections,
       providerOptions,
+      providerOrder,
       pagination: {
         page: currentPage,
         pageSize,
