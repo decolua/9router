@@ -94,13 +94,12 @@ export function stripUnsupportedParams(provider, model, body) {
     }
     // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
     if (rule.flattenContent && Array.isArray(body.messages)) {
-      for (const msg of body.messages) {
-        if (msg && Array.isArray(msg.content)) {
-          msg.content = msg.content
-            .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
-            .join("");
-        }
-      }
+      body.messages = body.messages.filter((msg) => msg && typeof msg.role === "string").map((msg) => {
+        const content = Array.isArray(msg.content)
+          ? msg.content.map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "").join("")
+          : msg.content;
+        return { ...msg, content: typeof content === "string" ? content : "" };
+      });
     }
     if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {
       const modelCeiling = getCapabilitiesForModel(provider, model).maxOutput;
