@@ -37,6 +37,18 @@ export function isDeepSeekModel(modelId) {
   return /^deepseek-/i.test(base);
 }
 
+// Claude family by the model component only ("cc/claude-…", "anthropic/claude-…",
+// Bedrock-style "us.anthropic.claude-…"); a namespace such as "claude-gw/glm-5.3"
+// or a Claude-format alias such as "mimo-v2.5-pro-claude" does not count. Thinking
+// signatures are family-bound: only a Claude upstream accepts Claude's, so an
+// unknown family classifies as non-Claude.
+export function isClaudeModel(modelId) {
+  if (!modelId || typeof modelId !== "string") return false;
+  const clean = modelId.replace(/\([^()]+\)\s*$/, "").trim();
+  const base = clean.includes("/") ? clean.split("/").pop() : clean;
+  return /(?:^|\.)claude-/i.test(base);
+}
+
 // OpenCode Zen free-tier ids all carry the "-free" suffix (e.g.
 // "mimo-v2.6-flash-free", "muse-spark-1.3-contributor-free"). Upstream gates
 // these behind the attested free-tier identity even on the keyed lane, so the

@@ -63,7 +63,7 @@ describe("normalizeClaudePassthrough — blank thinking blocks", () => {
     const block = thinking("considered it");
     const out = normalizeClaudePassthrough({
       messages: [{ role: "user", content: "hi" }, assistant([block, { type: "text", text: "kept" }])],
-    });
+    }, "claude-sonnet-5-5");
 
     expect(out.messages[1].content).toEqual([block, { type: "text", text: "kept" }]);
   });
