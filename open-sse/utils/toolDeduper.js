@@ -27,6 +27,17 @@ const DEDUP_RULES = [
   },
 ];
 
+// ponytail: RANK_* thresholds are fixed at module scope; promote to settingsRepo only if measurement shows they are wrong for real traffic.
+const RANK_MIN_TOOLS  = 16;
+const RANK_KEEP_RATIO = 0.5;
+const RANK_DROP_CAP   = 0.4;
+const RANK_QUERY_MSGS = 3;
+const RANK_QUERY_MAX  = 8000;
+
+const RANK_STOPWORDS = new Set(
+  "the,a,an,and,or,of,to,in,is,it,for,on,with,this,that,you,your,be,are,as,at,by,from,if,not".split(",")
+);
+
 function getToolName(t) {
   return t?.name || t?.function?.name || "";
 }
@@ -79,4 +90,71 @@ function dedupeTools(tools, opts = {}) {
   return { tools: out, stripped };
 }
 
-export { dedupeTools };
+function rankTokenize(text) {
+  return String(text || "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((tok) => tok.length >= 2 && !RANK_STOPWORDS.has(tok));
+}
+
+function rankQueryText(messages, maxMsgs, maxChars) {
+  if (!Array.isArray(messages)) return "";
+  const parts = [];
+  for (const m of messages.slice(-maxMsgs)) {
+    const content = m?.content;
+    if (typeof content === "string") parts.push(content);
+    else if (Array.isArray(content)) {
+      for (const p of content) if (p && p.type === "text" && typeof p.text === "string") parts.push(p.text);
+    }
+  }
+  return parts.join(" ").toLowerCase().slice(0, maxChars);
+}
+
+/**
+ * Lexical relevance ranking: drop tool definitions that share zero words with
+ * the recent messages. Fail-open: never throws, returns the input untouched on
+ * any error, on a small tool set, or on an empty query.
+ * @param {Array} tools - translated tools array
+ * @param {Object} [opts]
+ * @param {Array} [opts.messages] - recent request messages (last 3 used)
+ * @returns {{ tools: Array, stripped: Array<string> }}
+ */
+function rankTools(tools, opts = {}) {
+  try {
+    if (!Array.isArray(tools) || tools.length < RANK_MIN_TOOLS) return { tools, stripped: [] };
+
+    const queryText = rankQueryText(opts.messages, RANK_QUERY_MSGS, RANK_QUERY_MAX);
+    if (!queryText) return { tools, stripped: [] };
+    const queryTokens = new Set(rankTokenize(queryText));
+
+    const scored = tools.map((t, i) => {
+      const name = getToolName(t);
+      const desc = t?.description || t?.function?.description || "";
+      const tokens = rankTokenize(`${name} ${desc}`);
+      let score = 0;
+      for (const tok of tokens) if (queryTokens.has(tok)) score++;
+      const forceKeep = !!name && queryText.includes(name.toLowerCase());
+      return { i, name, score, forceKeep };
+    });
+
+    const keepFloor = Math.ceil(tools.length * RANK_KEEP_RATIO);
+    const maxDrop = Math.floor(tools.length * RANK_DROP_CAP);
+    const allowable = Math.min(maxDrop, tools.length - keepFloor);
+
+    const candidates = scored
+      .filter((s) => s.score === 0 && !s.forceKeep)
+      .map((s) => ({ ...s, size: JSON.stringify(tools[s.i]).length }))
+      .sort((a, b) => b.size - a.size)
+      .slice(0, Math.max(0, allowable));
+
+    if (candidates.length === 0) return { tools, stripped: [] };
+
+    const dropIdx = new Set(candidates.map((c) => c.i));
+    const kept = tools.filter((_, i) => !dropIdx.has(i));
+    return { tools: kept, stripped: candidates.map((c) => c.name) };
+  } catch {
+    return { tools, stripped: [] };
+  }
+}
+
+export { dedupeTools, rankTools };

@@ -45,6 +45,7 @@ export default function TokenSaverClient() {
   const [cavemanLevel, setCavemanLevel] = useState("full");
   const [ponytailEnabled, setPonytailEnabled] = useState(false);
   const [ponytailLevel, setPonytailLevel] = useState("full");
+  const [toolRankEnabled, setToolRankEnabled] = useState(false);
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
@@ -365,6 +366,11 @@ export default function TokenSaverClient() {
     patchSetting({ customPrompt });
   };
 
+  const handleToolRankEnabled = (value) => {
+    setToolRankEnabled(value);
+    patchSetting({ toolRankEnabled: value });
+  };
+
   const refreshPxpipeStatus = useCallback(async () => {
     setPxpipeStatus((s) => ({ ...s, loading: true }));
     try {
@@ -441,6 +447,7 @@ export default function TokenSaverClient() {
           setCavemanLevel(data.cavemanLevel || "full");
           setPonytailEnabled(!!data.ponytailEnabled);
           setPonytailLevel(data.ponytailLevel || "full");
+          setToolRankEnabled(!!data.toolRankEnabled);
           setCustomPromptEnabled(!!data.customPromptEnabled);
           setCustomPrompt(data.customPrompt || "");
           setPxpipeEnabled(!!data.pxpipeEnabled);
@@ -753,6 +760,21 @@ export default function TokenSaverClient() {
               onChange={() => handlePonytailEnabled(!ponytailEnabled)}
             />
           </div>
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Tool relevance ranking</p>
+            <p className="text-sm text-text-muted">
+              Drop tool definitions that share no word with your recent messages.
+              Only affects requests with many tools; keeps at least half.
+            </p>
+          </div>
+          <Toggle
+            checked={toolRankEnabled}
+            onChange={() => handleToolRankEnabled(!toolRankEnabled)}
+          />
         </div>
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
