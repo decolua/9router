@@ -93,6 +93,13 @@ export default function ProviderDetailPage() {
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const [importingClineModels, setImportingClineModels] = useState(false);
+  // Bulk model testing state
+  const [bulkTestRunning, setBulkTestRunning] = useState(false);
+  const [bulkTestStopping, setBulkTestStopping] = useState(false);
+  const [bulkTestCurrentModelId, setBulkTestCurrentModelId] = useState(null);
+  const [bulkTestResults, setBulkTestResults] = useState({});
+  const [bulkTestSummary, setBulkTestSummary] = useState(null);
+  const stopBulkTestRef = useRef(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -261,6 +268,27 @@ export default function ProviderDetailPage() {
           if (res.ok) await fetchDisabledModels();
         } catch (error) {
           console.log("Error disabling all models:", error);
+        }
+      }
+    });
+  };
+
+  const handleDisableFailed = async (ids) => {
+    if (!ids.length) return;
+    setConfirmState({
+      title: translate("Disable Failed Models"),
+      message: `${ids.length} model(s) failed testing. Disable them?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch("/api/models/disabled", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ providerAlias: providerStorageAlias, ids }),
+          });
+          if (res.ok) await fetchDisabledModels();
+        } catch (error) {
+          console.log("Error disabling failed models:", error);
         }
       }
     });
@@ -790,6 +818,154 @@ export default function ProviderDetailPage() {
     if (!oneByOneRunning) return;
     stopOneByOneRef.current = true;
     setOneByOneStopping(true);
+  };
+
+  const handleTestAllModels = async () => {
+    if (bulkTestRunning) return;
+    // Need at least one active connection or free no-auth provider
+    const hasActiveConnection = connections.some((c) => c.isActive !== false);
+    if (!hasActiveConnection && !isFreeNoAuth) {
+      alert(translate("No active connection available for testing"));
+      return;
+    }
+
+    // Build list of enabled models to test (exclude disabled)
+    const allModels = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ].filter((m) => {
+      const k = getModelKind(m);
+      return !k || k === "llm";
+    });
+    const disabledSet = new Set(disabledModelIds);
+    const modelsToTest = allModels.filter((m) => !disabledSet.has(m.id));
+
+    if (modelsToTest.length === 0) {
+      alert(translate("No enabled models to test"));
+      return;
+    }
+
+    stopBulkTestRef.current = false;
+    setBulkTestRunning(true);
+    setBulkTestStopping(false);
+    setBulkTestCurrentModelId(null);
+    setBulkTestResults({});
+    setBulkTestSummary({ total: modelsToTest.length, completed: 0, passed: 0, failed: 0, stopped: false });
+
+    let passed = 0;
+    let failed = 0;
+    const failedModelIds = [];
+
+    try {
+      for (let index = 0; index < modelsToTest.length; index += 1) {
+        if (stopBulkTestRef.current) {
+          setBulkTestSummary({
+            total: modelsToTest.length,
+            completed: index,
+            passed,
+            failed,
+            stopped: true,
+          });
+          break;
+        }
+
+        const model = modelsToTest[index];
+        setBulkTestCurrentModelId(model.id);
+        setBulkTestResults((prev) => ({
+          ...prev,
+          [model.id]: { state: "testing", error: null },
+        }));
+
+        try {
+          const res = await fetch("/api/models/test", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ model: `${providerStorageAlias}/${model.id}` }),
+          });
+          const data = await res.json();
+          const success = res.ok && data.ok === true;
+
+          if (success) {
+            passed += 1;
+          } else {
+            failed += 1;
+            failedModelIds.push(model.id);
+          }
+
+          setBulkTestResults((prev) => ({
+            ...prev,
+            [model.id]: {
+              state: success ? "passed" : "failed",
+              error: success ? null : (data.error || "Model not reachable"),
+            },
+          }));
+
+          // Also update individual model test status for UI feedback
+          setModelTestResults((prev) => ({ ...prev, [model.id]: success ? "ok" : "error" }));
+          setModelsTestError(success ? "" : (data.error || "Model not reachable"));
+        } catch (error) {
+          failed += 1;
+          failedModelIds.push(model.id);
+          setBulkTestResults((prev) => ({
+            ...prev,
+            [model.id]: {
+              state: "failed",
+              error: error.message || "Test failed",
+            },
+          }));
+          setModelTestResults((prev) => ({ ...prev, [model.id]: "error" }));
+          setModelsTestError(error.message || "Network error");
+        }
+
+        setBulkTestSummary({
+          total: modelsToTest.length,
+          completed: index + 1,
+          passed,
+          failed,
+          stopped: false,
+        });
+
+        // Delay between tests (1 second)
+        if (index < modelsToTest.length - 1) {
+          await sleep(ONE_BY_ONE_DELAY_MS);
+        }
+      }
+    } finally {
+      const wasStopped = stopBulkTestRef.current;
+      setBulkTestCurrentModelId(null);
+      setBulkTestRunning(false);
+      setBulkTestStopping(false);
+      stopBulkTestRef.current = false;
+
+      // Auto-disable failed models with confirmation
+      if (failedModelIds.length > 0) {
+        setConfirmState({
+          title: translate("Disable Failed Models"),
+          message: `${failedModelIds.length} model(s) failed testing. Disable them?`,
+          onConfirm: async () => {
+            setConfirmState(null);
+            try {
+              const res = await fetch("/api/models/disabled", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ providerAlias: providerStorageAlias, ids: failedModelIds }),
+              });
+              if (res.ok) await fetchDisabledModels();
+            } catch (error) {
+              console.log("Error disabling failed models:", error);
+            }
+          },
+        });
+      } else if (!wasStopped) {
+        alert(translate("All models passed testing!"));
+      }
+    }
+  };
+
+  const handleStopBulkTest = () => {
+    if (!bulkTestRunning) return;
+    stopBulkTestRef.current = true;
+    setBulkTestStopping(true);
   };
 
   const handleDelete = async (id) => {
@@ -1799,11 +1975,40 @@ export default function ProviderDetailPage() {
               ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
             ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
             const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+            const failedIds = activeIds.filter(
+              (id) => bulkTestResults[id]?.state === "failed" || modelTestResults[id] === "error"
+            );
             return (
               <div className="flex gap-2">
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
+                  </Button>
+                )}
+                {failedIds.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant="danger"
+                    icon="block"
+                    onClick={() => handleDisableFailed(failedIds)}
+                  >
+                    {translate("Disable Failed")} ({failedIds.length})
+                  </Button>
+                )}
+                {activeIds.length > 0 && (
+                  <Button
+                    size="sm"
+                    variant={bulkTestRunning ? "secondary" : "primary"}
+                    icon={bulkTestRunning ? "stop" : "play_circle"}
+                    onClick={bulkTestRunning ? handleStopBulkTest : handleTestAllModels}
+                    disabled={!connections.some((c) => c.isActive !== false) && !isFreeNoAuth}
+                    className="flex items-center gap-1.5"
+                  >
+                    {bulkTestRunning
+                      ? bulkTestStopping
+                        ? translate("Stopping...")
+                        : translate("Testing...")
+                      : translate("Test All")}
                   </Button>
                 )}
                 {activeIds.length > 0 && (
