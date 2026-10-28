@@ -7,7 +7,7 @@ import { FORMATS } from "../formats.js";
 import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
-import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
+import { reasoningDelta, extractReasoningText, REASONING_PART_SEPARATOR } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
 
 /**
@@ -689,13 +689,23 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
     return null;
   }
 
+  // Each summary part is a separate thought; without a break between parts the
+  // client sees "…constraints.Applying…" as one run-on sentence.
+  if (eventType === "response.reasoning_summary_part.added") {
+    if (state.respReasoningEmitted) state.respReasoningNeedsBreak = true;
+    return null;
+  }
+
   // Reasoning summary delta → emit as reasoning_content for client thinking display
   if (eventType === "response.reasoning_summary_text.delta") {
     const delta = data.delta || "";
     if (!delta) return null;
+    const text = state.respReasoningNeedsBreak ? REASONING_PART_SEPARATOR + delta : delta;
+    state.respReasoningNeedsBreak = false;
+    state.respReasoningEmitted = true;
     return buildChunk(
       { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
-      reasoningDelta(delta)
+      reasoningDelta(text)
     );
   }
 
