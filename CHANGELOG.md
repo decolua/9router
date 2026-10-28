@@ -119,6 +119,7 @@
 # v0.5.99 (2026-10-08)
 
 ## Features
+- **Usage**: `ENABLE_PROMPT_LOGGING=true` opt-in returns full request/response payloads in Usage → Request Details (default stays redacted; stored auth headers are stripped at write time either way) (#4728, #4812)
 - **Antigravity**: refresh model catalog with Gemini 3.8 Flash (High/Medium/Low), Gemini 3.6 Flash, and Gemini 3.1 Pro High; remove deprecated 3.5/3-flash models; update MITM default to `gemini-3.8-flash-medium`
 - **Antigravity**: add Claude Sonnet 5.5 and Opus 5.5 support with reasoning effort variants, pricing, and family quota routing
 - **Bedrock**: add Amazon Bedrock (`bedrock` and `bedrock-xai`) provider with static keys, AWS SSO profiles, native SigV4 signer, and shared EventStream decoder (#4157)
