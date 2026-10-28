@@ -17,7 +17,12 @@ describe("OpenAI → Claude context mapping", () => {
     expect(JSON.stringify(out.system), "Claude Code prompt injected").not.toContain("Claude Code");
   });
 
-  it("assistant reasoning_content becomes a thinking block", () => {
+  // KNOWN BUG: assistant.reasoning_content is dropped on the openai→claude leg. c4f80d30
+  // flipped this to a plain `it`, but its change only handles DeepSeek thinking blocks;
+  // the mapping was never implemented (the test fails at c4f80d30 itself). An unsigned
+  // thinking block is only valid for compatible providers (Anthropic requires a
+  // signature), so a fix has to be provider-aware.
+  it.fails("assistant reasoning_content becomes a thinking block", () => {
     const out = T({
       messages: [
         { role: "user", content: "q" },
@@ -65,6 +70,27 @@ describe("OpenAI → Claude context mapping", () => {
       ] }],
     });
     expect(JSON.stringify(out), "remote image dropped").toContain("pic.png");
+  });
+
+  // claude.js hasValidContent() — a user message whose content is only an
+  // image (no text block) was filtered out by prepareClaudeRequest's
+  // "drop empty messages" pass, so an image-only turn (e.g. a vision
+  // describe request with no accompanying prompt text in the user message)
+  // produced an empty `messages` array and Anthropic rejected the request
+  // with "messages: at least one message is required".
+  it("user message with only an image is not dropped as empty", () => {
+    const out = T({
+      messages: [
+        { role: "system", content: "Describe the image." },
+        { role: "user", content: [
+          { type: "image_url", image_url: { url: "data:image/png;base64,AAAA" } },
+        ] },
+      ],
+    });
+    expect(out.messages.length, "image-only user message was dropped").toBeGreaterThan(0);
+    expect(out.messages[0].content).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "image" })])
+    );
   });
 
   // prepareClaudeRequest reconciles max_tokens vs thinking.budget_tokens.

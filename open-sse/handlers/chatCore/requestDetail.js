@@ -25,10 +25,16 @@ export function extractUsageFromResponse(responseBody) {
   if (!responseBody || typeof responseBody !== "object") return null;
 
   // Claude format
+  // Note: OpenAI Responses usage ({input_tokens, input_tokens_details:{cached_tokens}})
+  // also matches this branch. Its prompt is cache-INCLUSIVE and its cache rides in
+  // input_tokens_details, so emit it as cached_tokens — the convention
+  // canonicalizeUsage() passes through without folding. Reading it here keeps
+  // cache accounting correct for /v1/responses and codex traffic.
   if (responseBody.usage?.input_tokens !== undefined) {
     return {
       prompt_tokens: responseBody.usage.input_tokens || 0,
       completion_tokens: responseBody.usage.output_tokens || 0,
+      cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.input_tokens_details?.cached_tokens,
       cache_read_input_tokens: responseBody.usage.cache_read_input_tokens,
       cache_creation_input_tokens: responseBody.usage.cache_creation_input_tokens
     };
@@ -39,18 +45,34 @@ export function extractUsageFromResponse(responseBody) {
     return {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
-      cached_tokens: responseBody.usage.prompt_tokens_details?.cached_tokens,
+      cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.prompt_tokens_details?.cached_tokens,
       reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
     };
   }
 
-  // Gemini format
-  if (responseBody.usageMetadata) {
+  // Gemini format. Antigravity / gemini-cli wrap the payload in { response: {...} }.
+  const usageMetadata = responseBody.usageMetadata || responseBody.response?.usageMetadata;
+  if (usageMetadata) {
     return {
-      prompt_tokens: responseBody.usageMetadata.promptTokenCount || 0,
-      completion_tokens: responseBody.usageMetadata.candidatesTokenCount || 0,
-      cached_tokens: responseBody.usageMetadata.cachedContentTokenCount || 0,
-      reasoning_tokens: responseBody.usageMetadata.thoughtsTokenCount || 0
+      prompt_tokens: usageMetadata.promptTokenCount || 0,
+      completion_tokens: usageMetadata.candidatesTokenCount || 0,
+      cached_tokens: usageMetadata.cachedContentTokenCount || 0,
+      reasoning_tokens: usageMetadata.thoughtsTokenCount || 0
+    };
+  }
+
+  // Ollama format: prompt_eval_count/eval_count at top level (not nested under usage).
+  // prompt_eval_cached_count is a cache-read subset of prompt_eval_count (cache-INCLUSIVE).
+  if (responseBody.done === true &&
+      (responseBody.prompt_eval_count !== undefined || responseBody.eval_count !== undefined)) {
+    const prompt = responseBody.prompt_eval_count || 0;
+    const completion = responseBody.eval_count || 0;
+    const cached = responseBody.prompt_eval_cached_count || 0;
+    return {
+      prompt_tokens: prompt,
+      completion_tokens: completion,
+      total_tokens: prompt + completion,
+      cached_tokens: cached
     };
   }
 

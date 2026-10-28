@@ -1,4 +1,9 @@
 import { FORMATS } from "../translator/formats.js";
+import { fallbackToolCallId } from "../translator/concerns/toolCall.js";
+import { buildErrorBody } from "./error.js";
+import { SSE_DONE } from "./sseConstants.js";
+
+const sharedEncoder = new TextEncoder();
 
 // Parse SSE data line
 export function parseSSELine(line, format = null) {
@@ -61,6 +66,50 @@ export function hasValuableContent(chunk, format) {
   return true; // Other formats: keep all chunks
 }
 
+// Ensure every streamed tool_call carries an id.
+//
+// OpenAI's streaming contract: the id and function.name arrive on the FIRST
+// fragment of a tool call; later fragments carry only `index` + argument
+// deltas. Some providers instead open a brand-new `index` in a late fragment
+// and omit the id entirely. Strict OpenAI-compatible clients
+// (@ai-sdk/openai-compatible) then throw
+// "AI_InvalidResponseDataError: Expected 'id' to be a string." and abort the
+// whole turn.
+//
+// Fix: remember the id per tool-call index, and mint one when a fragment
+// opens an index the client has not seen yet. The id must be stable for the
+// rest of the call, so a later fragment with the same index reuses it.
+//
+// Returns true when a chunk was modified.
+export function ensureStreamToolCallIds(chunk, seenIds) {
+  if (!chunk?.choices?.length) return false;
+  let changed = false;
+
+  for (const choice of chunk.choices) {
+    const calls = choice?.delta?.tool_calls;
+    if (!Array.isArray(calls)) continue;
+
+    for (const tc of calls) {
+      if (!tc || typeof tc !== "object") continue;
+
+      if (typeof tc.id === "string" && tc.id.length > 0) {
+        if (tc.index !== undefined) seenIds.set(tc.index, tc.id);
+        continue;
+      }
+
+      // No id on this fragment. Reuse the one already seen for this index, or
+      // mint one when the index is new to the client.
+      const known = tc.index !== undefined ? seenIds.get(tc.index) : undefined;
+      const id = known || fallbackToolCallId(tc.index);
+      tc.id = id;
+      if (tc.index !== undefined) seenIds.set(tc.index, id);
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 // Fix invalid id (generic or too short)
 export function fixInvalidId(parsed) {
   if (parsed.id && (parsed.id === "chat" || parsed.id === "completion" || parsed.id.length < 8)) {
@@ -119,4 +168,25 @@ export function formatSSE(data, sourceFormat) {
   }
 
   return `data: ${JSON.stringify(data)}\n\n`;
+}
+
+// Terminal frames for a stream that aborted after HTTP 200 was already sent, so
+// the status code can no longer change. OpenAI-compatible clients (openai-python
+// raises APIError on any `data:` payload carrying an `error` key, checked before
+// [DONE]) need the error frame first, then [DONE]; Anthropic clients need
+// `event: error`. Never fabricate a successful finish_reason instead.
+//
+// Returns encoded bytes: onAbortTerminal callbacks are enqueued verbatim, same
+// as buildAbortedResponsesTerminalBytes.
+//
+// NOTE: non-SSE client formats (Ollama NDJSON) get an SSE frame here — dead in
+// practice because detectFormatByEndpoint never resolves to OLLAMA.
+export function buildStreamErrorBytes(statusCode, message, clientFormat) {
+  const { error } = buildErrorBody(statusCode, message);
+
+  const sse = clientFormat === FORMATS.CLAUDE
+    ? formatSSE({ type: "error", error }, FORMATS.CLAUDE)
+    : formatSSE({ error }, clientFormat) + SSE_DONE;
+
+  return sharedEncoder.encode(sse);
 }

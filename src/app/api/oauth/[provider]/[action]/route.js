@@ -1,12 +1,16 @@
+import crypto from "crypto";
 import { NextResponse } from "next/server";
-import { 
-  getProvider, 
-  generateAuthData, 
-  exchangeTokens, 
-  requestDeviceCode, 
-  pollForToken 
+import {
+  getProvider,
+  generateAuthData,
+  exchangeTokens,
+  requestDeviceCode,
+  pollForToken
 } from "@/lib/oauth/providers";
 import { createProviderConnection } from "@/models";
+import { getProviderConnections } from "@/lib/localDb";
+import { requestLease, requestStatus, resolveLeaseEndpoint, resolveMcodeDataDir, AuthLeaseError } from "open-sse/services/minimaxCodeLease.js";
+import { readDesktopPassToken } from "open-sse/shared/mimoAccount.js";
 import {
   startCodexProxy,
   stopCodexProxy,
@@ -18,7 +22,29 @@ import {
   registerXaiSession,
   getXaiSessionStatus,
   clearXaiSession,
+  startTraeProxy,
+  stopTraeProxy,
+  registerTraeSession,
+  getTraeSessionStatus,
+  clearTraeSession,
+  startWindsurfProxy,
+  stopWindsurfProxy,
+  registerWindsurfSession,
+  getWindsurfSessionStatus,
+  clearWindsurfSession,
+  startZedProxy,
+  stopZedProxy,
+  registerZedSession,
+  getZedSessionStatus,
+  clearZedSession,
+  startXiaomiMimoProxy,
+  stopXiaomiMimoProxy,
+  registerXiaomiMimoSession,
+  getXiaomiMimoSessionStatus,
+  clearXiaomiMimoSession,
 } from "@/lib/oauth/utils/server";
+import { detectIdeInstalled } from "@/lib/oauth/utils/ideDetect";
+import { ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 
 async function completeXaiManualCode(code, state) {
   const session = state ? getXaiSessionStatus(state) : null;
@@ -72,18 +98,69 @@ export async function GET(request, { params }) {
     const { searchParams } = new URL(request.url);
 
     if (action === "authorize") {
+      // Xiaomi Desktop: custom ECDH flow — generate keypair, start proxy, return authorize URL
+      if (provider === "xiaomi-mimo") {
+        const { generateKeyPair, buildAuthorizeUrl, getKeyName } = await import("@/lib/oauth/providers/xiaomi-mimo");
+        const { publicKey, privateKeyDer } = generateKeyPair();
+        const state = searchParams.get("state") || crypto.randomUUID();
+
+        // Start the callback proxy (or reuse if already running)
+        const proxyResult = await startXiaomiMimoProxy();
+        if (!proxyResult.success) {
+          return NextResponse.json({ error: `Failed to start callback server: ${proxyResult.reason}` }, { status: 500 });
+        }
+
+        // Register the session with the private key for decryption
+        registerXiaomiMimoSession({ state, privateKeyDer });
+
+        const redirectUri = proxyResult.callbackUrl;
+        const authorizeUrl = buildAuthorizeUrl(publicKey, redirectUri, getKeyName());
+
+        return NextResponse.json({
+          state,
+          authorizeUrl,
+          redirectUri,
+          port: proxyResult.port,
+        });
+      }
+
       const redirectUri = searchParams.get("redirect_uri") || "http://localhost:8080/callback";
       // Collect provider-specific meta params (e.g. gitlab passes baseUrl, clientId, clientSecret)
       const reservedParams = new Set(["redirect_uri"]);
       const meta = {};
       searchParams.forEach((value, key) => { if (!reservedParams.has(key)) meta[key] = value; });
+      // Zed: derive native_app_port from the local callback URL so the RSA keypair
+      // is bound to the port the proxy is actually listening on.
+      if (provider === "zed") {
+        try { const p = new URL(redirectUri).port; if (p) meta.nativeAppPort = p; } catch { /* ignore */ }
+      }
       const authData = await generateAuthData(provider, redirectUri, Object.keys(meta).length ? meta : undefined);
       return NextResponse.json(authData);
     }
 
     if (action === "start-proxy") {
+      // Trae/Windsurf/Zed use a dynamic-port local callback server (singleton session,
+      // state is registered separately via /register-session after /authorize).
+      if (provider === "trae") {
+        const result = await startTraeProxy();
+        return NextResponse.json(result);
+      }
+      if (provider === "windsurf") {
+        const result = await startWindsurfProxy();
+        return NextResponse.json(result);
+      }
+      if (provider === "zed") {
+        // Prefer ZED_HOSTED_CONFIG.defaultNativeAppPort (58443) so the browser redirect
+        // matches what Zed expects; falls back to a random port if it's busy.
+        const result = await startZedProxy(searchParams.get("native_app_port") || ZED_HOSTED_CONFIG.defaultNativeAppPort);
+        return NextResponse.json(result);
+      }
+      if (provider === "xiaomi-mimo") {
+        const result = await startXiaomiMimoProxy();
+        return NextResponse.json(result);
+      }
       if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
+        return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed" }, { status: 400 });
       }
       const appPort = searchParams.get("app_port");
       if (!appPort) {
@@ -105,18 +182,35 @@ export async function GET(request, { params }) {
     }
 
     if (action === "poll-status") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Poll only supported for codex/xai" }, { status: 400 });
-      }
       const state = searchParams.get("state");
       if (!state) {
         return NextResponse.json({ error: "Missing state" }, { status: 400 });
       }
-      const session = provider === "xai" ? getXaiSessionStatus(state) : getCodexSessionStatus(state);
+      let session;
+      if (provider === "trae") session = getTraeSessionStatus(state);
+      else if (provider === "windsurf") session = getWindsurfSessionStatus(state);
+      else if (provider === "zed") session = getZedSessionStatus(state);
+      else if (provider === "xai") session = getXaiSessionStatus(state);
+      else if (provider === "codex") session = getCodexSessionStatus(state);
+      else if (provider === "xiaomi-mimo") session = getXiaomiMimoSessionStatus(state);
+      else return NextResponse.json({ error: "Poll only supported for codex/xai/trae/windsurf/zed/xiaomi-mimo" }, { status: 400 });
       if (!session) return NextResponse.json({ status: "unknown" });
       if (session.status === "done" || session.status === "error") {
         const payload = { ...session };
-        if (provider === "xai") clearXaiSession(state);
+        if (provider === "xiaomi-mimo") {
+          // Unlike the others this does not auto-exchange server-side, so a
+          // finished session must survive until the client POSTs /exchange —
+          // that call clears it. A failed one is cleared here instead.
+          if (session.status === "error") {
+            clearXiaomiMimoSession(state);
+            stopXiaomiMimoProxy();
+          }
+          return NextResponse.json(payload);
+        }
+        if (provider === "trae") clearTraeSession(state);
+        else if (provider === "windsurf") clearWindsurfSession(state);
+        else if (provider === "zed") clearZedSession(state);
+        else if (provider === "xai") clearXaiSession(state);
         else clearCodexSession(state);
         return NextResponse.json(payload);
       }
@@ -124,12 +218,23 @@ export async function GET(request, { params }) {
     }
 
     if (action === "stop-proxy") {
-      if (!["codex", "xai"].includes(provider)) {
-        return NextResponse.json({ error: "Proxy only supported for codex/xai" }, { status: 400 });
-      }
-      if (provider === "xai") stopXaiProxy();
-      else stopCodexProxy();
+      if (provider === "trae") stopTraeProxy();
+      else if (provider === "windsurf") stopWindsurfProxy();
+      else if (provider === "zed") stopZedProxy();
+      else if (provider === "xai") stopXaiProxy();
+      else if (provider === "codex") stopCodexProxy();
+      else if (provider === "xiaomi-mimo") stopXiaomiMimoProxy();
+      else return NextResponse.json({ error: "Proxy only supported for codex/xai/trae/windsurf/zed/xiaomi-mimo" }, { status: 400 });
       return NextResponse.json({ success: true });
+    }
+
+    if (action === "ide-status") {
+      // Detect whether the IDE is installed locally (used by import-token UX).
+      if (provider !== "trae" && provider !== "windsurf") {
+        return NextResponse.json({ error: "ide-status only supported for trae/windsurf" }, { status: 400 });
+      }
+      const status = await detectIdeInstalled(provider);
+      return NextResponse.json(status);
     }
 
     if (action === "device-code") {
@@ -154,11 +259,17 @@ export async function GET(request, { params }) {
       const noPkceDeviceProviders = [
         "github",
         "kiro",
+        "kimi",
         "kimi-coding",
         "kilocode",
         "codebuddy-cn",
+        "codebuddy-intl",
         "qoder",
+        "qoder-cn",
         "grok-cli",
+        "muse",
+        "glm",
+        "nous",
       ];
       let deviceData;
       if (noPkceDeviceProviders.includes(provider)) {
@@ -174,6 +285,24 @@ export async function GET(request, { params }) {
         // itself (qoder rolls its own PKCE pair); fall back to the generic one.
         codeVerifier: deviceData.codeVerifier || authData.codeVerifier,
       });
+    }
+
+    if (action === "lease-status") {
+      // MiniMax Code desktop broker probe: is the desktop app installed,
+      // running and signed in on this machine? Read-only — leases nothing.
+      const MCODE_LEASE_PROVIDERS = ["minimax-code", "minimax-code-global"];
+      if (!MCODE_LEASE_PROVIDERS.includes(provider)) {
+        return NextResponse.json({ error: "lease-status only supported for minimax-code/minimax-code-global" }, { status: 400 });
+      }
+      const override = searchParams.get("data_dir");
+      const dataDir = override ? String(override).trim() : resolveMcodeDataDir(null);
+      try {
+        const status = await requestStatus(dataDir);
+        return NextResponse.json({ found: true, dataDir, ...status });
+      } catch (error) {
+        const code = error instanceof AuthLeaseError ? error.code : "INTERNAL_ERROR";
+        return NextResponse.json({ found: false, dataDir, error: code, message: error.message });
+      }
     }
 
     return NextResponse.json({ error: "Unknown action" }, { status: 400 });
@@ -195,8 +324,152 @@ export async function POST(request, { params }) {
       return NextResponse.json({ error: "Invalid or empty request body" }, { status: 400 });
     }
 
+    if (action === "lease-connect") {
+      // MiniMax Code: create a connection that borrows the desktop app's
+      // sign-in over the local auth-lease pipe (authType "mcode-lease"). The
+      // router stores no tokens for it — the desktop broker owns refresh.
+      const MCODE_LEASE_PROVIDERS = ["minimax-code", "minimax-code-global"];
+      if (!MCODE_LEASE_PROVIDERS.includes(provider)) {
+        return NextResponse.json({ error: "lease-connect only supported for minimax-code/minimax-code-global" }, { status: 400 });
+      }
+      const dataDir = body?.dataDir ? String(body.dataDir).trim() : resolveMcodeDataDir(null);
+      try {
+        // Validate availability up front so the user gets the broker's exact
+        // failure reason instead of a dead connection.
+        await requestLease(dataDir);
+      } catch (error) {
+        const code = error instanceof AuthLeaseError ? error.code : "INTERNAL_ERROR";
+        return NextResponse.json({ error: error.message, code }, { status: 409 });
+      }
+
+      // Idempotent: one lease connection per (provider, data dir).
+      resolveLeaseEndpoint(dataDir); // throws INVALID_REQUEST on a non-absolute override
+      const existing = (await getProviderConnections({ provider }))
+        .find((c) => c.authType === "mcode-lease" && resolveMcodeDataDir(c) === dataDir);
+      if (existing) {
+        return NextResponse.json({ success: true, connection: { id: existing.id, provider: existing.provider }, reused: true });
+      }
+
+      const connection = await createProviderConnection({
+        provider,
+        authType: "mcode-lease",
+        name: provider === "minimax-code-global" ? "MiniMax Desktop (Lease, Global)" : "MiniMax Desktop (Lease)",
+        providerSpecificData: { mcodeDataDir: dataDir },
+        testStatus: "active",
+      });
+      return NextResponse.json({ success: true, connection: { id: connection.id, provider: connection.provider } });
+    }
+
+    if (action === "register-session") {
+      // Register proxy session out of URL query (state) + body (codeVerifier).
+      // Zed's codeVerifier encodes the RSA private key — must stay out of URL/logs.
+      const searchParams = new URL(request.url).searchParams;
+      const state = searchParams.get("state") || body?.state;
+      if (!state) return NextResponse.json({ error: "Missing state" }, { status: 400 });
+      let ok = false;
+      if (provider === "trae") ok = registerTraeSession({ state });
+      else if (provider === "windsurf") ok = registerWindsurfSession({ state });
+      else if (provider === "zed") ok = registerZedSession({ state, codeVerifier: body?.codeVerifier, systemId: body?.systemId });
+      else return NextResponse.json({ error: "register-session only supported for trae/windsurf/zed" }, { status: 400 });
+      return NextResponse.json({ success: ok });
+    }
+
     if (action === "exchange") {
-      const { code, redirectUri, codeVerifier, state, meta } = body;
+      const { code, redirectUri, codeVerifier, state, meta, systemId } = body;
+
+      // Xiaomi MiMo: no token exchange needed — the callback already decrypted the sk.
+      // Just read the session result and create the connection.
+      if (provider === "xiaomi-mimo") {
+        if (!state) {
+          return NextResponse.json({ error: "Missing state" }, { status: 400 });
+        }
+        const session = getXiaomiMimoSessionStatus(state);
+        if (!session || session.status !== "done" || !session.result) {
+          return NextResponse.json(
+            { error: session?.error || "OAuth session not completed. Please restart the login flow." },
+            { status: 400 },
+          );
+        }
+        const { uid, accessToken, baseUrl } = session.result;
+
+        // Desktop-exclusive Preview models authenticate with the account-session
+        // passToken, which only lives in MiMo Desktop's cookie store — attach it
+        // to the connection so those models work right after OAuth.
+        let passToken = null;
+        try {
+          passToken = await readDesktopPassToken();
+        } catch {
+          // Desktop not installed / cookie DB locked — preview models stay unavailable.
+        }
+
+        try {
+          const connection = await createProviderConnection({
+            provider: "xiaomi-mimo",
+            authType: "oauth",
+            accessToken,
+            refreshToken: null,
+            expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+            email: uid ? `${uid}@xiaomi` : null,
+            displayName: uid ? `Xiaomi ${uid}` : "Xiaomi MiMo",
+            providerSpecificData: {
+              uid: uid || null,
+              baseUrl: baseUrl || "https://api.xiaomimimo.com/v1",
+              authMethod: "oauth",
+              mimoPassToken: passToken?.passToken || null,
+              mimoUserId: passToken?.userId || null,
+              mimoCUserId: passToken?.cUserId || null,
+            },
+            testStatus: "active",
+          });
+          clearXiaomiMimoSession(state);
+          stopXiaomiMimoProxy();
+          return NextResponse.json({
+            success: true,
+            connection: {
+              id: connection.id,
+              provider: connection.provider,
+              email: connection.email,
+              displayName: connection.displayName,
+            },
+          });
+        } catch (err) {
+          clearXiaomiMimoSession(state);
+          stopXiaomiMimoProxy();
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
+
+      // Trae/Windsurf: code is either a raw callback URL or a pasted token.
+      // exchangeTokens() handles both paths; no PKCE, skip codex JWT extraction.
+      if (provider === "trae" || provider === "windsurf") {
+        const token = typeof code === "string" ? code.trim() : "";
+        if (!token) {
+          return NextResponse.json({ error: "Missing token or callback URL" }, { status: 400 });
+        }
+        try {
+          const tokenData = await exchangeTokens(provider, token, null, null, state);
+          const connection = await createProviderConnection({
+            provider,
+            authType: provider === "windsurf" ? "api_key" : "oauth",
+            ...tokenData,
+            expiresAt: tokenData.expiresIn
+              ? new Date(Date.now() + tokenData.expiresIn * 1000).toISOString()
+              : null,
+            testStatus: "active",
+          });
+          return NextResponse.json({
+            success: true,
+            connection: {
+              id: connection.id,
+              provider: connection.provider,
+              email: connection.email,
+              displayName: connection.displayName,
+            }
+          });
+        } catch (err) {
+          return NextResponse.json({ error: err.message }, { status: 500 });
+        }
+      }
 
       // Detect if "code" is actually a raw JWT access token (starts with eyJ)
       if (code && code.startsWith("eyJ") && code.includes(".")) {
@@ -246,8 +519,13 @@ export async function POST(request, { params }) {
         return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
       }
 
-      // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl)
-      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, meta);
+      // Exchange code for tokens (meta carries provider-specific params, e.g. gitlab clientId/baseUrl).
+      // systemId (Zed) is merged into meta so the login attempt's own id is
+      // used instead of a freshly prepared one. Ignored by other providers.
+      const tokenData = await exchangeTokens(provider, code, redirectUri, codeVerifier, state, {
+        ...(meta || {}),
+        ...(systemId ? { systemId } : {}),
+      });
 
       // Save to database
       const connection = await createProviderConnection({
@@ -279,14 +557,15 @@ export async function POST(request, { params }) {
       }
 
       // Providers that don't use PKCE for device code
-      const noPkceProviders = ["github", "kimi-coding", "kilocode", "codebuddy-cn"];
+      const noPkceProviders = ["github", "kimi", "kimi-coding", "kilocode", "codebuddy-cn", "codebuddy-intl", "glm", "nous"];
       let result;
       if (noPkceProviders.includes(provider)) {
-        result = await pollForToken(provider, deviceCode);
+        // kimi needs extraData._kimiDeviceId for stable X-Msh-Device-Id (CLIProxyAPI parity)
+        result = await pollForToken(provider, deviceCode, null, extraData);
       } else if (provider === "kiro") {
         // Kiro needs extraData (clientId, clientSecret) from device code response
         result = await pollForToken(provider, deviceCode, null, extraData);
-      } else if (provider === "qoder") {
+      } else if (provider === "qoder" || provider === "qoder-cn") {
         // Qoder needs both the PKCE verifier (codeVerifier) and the machineId
         // captured at device-code time (extraData._qoderMachineId) so
         // mapTokens can persist it for COSY signing.
@@ -303,9 +582,10 @@ export async function POST(request, { params }) {
       }
 
       if (result.success) {
-        // Save to database
+        // Save to database (legacy kimi-coding OAuth → dual-auth kimi)
+        const providerId = provider === "kimi-coding" ? "kimi" : provider;
         const connection = await createProviderConnection({
-          provider,
+          provider: providerId,
           authType: "oauth",
           ...result.tokens,
           expiresAt: result.tokens.expiresIn 
@@ -325,12 +605,14 @@ export async function POST(request, { params }) {
 
       // Still pending or error - don't create connection for pending states
       const isPending = result.pending || result.error === "authorization_pending" || result.error === "slow_down";
-      
+
       return NextResponse.json({
         success: false,
         error: result.error,
         errorDescription: result.errorDescription,
         pending: isPending,
+        // fatal: unrecoverable (e.g. post-exchange failure) — client must stop polling and show it
+        ...(result.fatal ? { fatal: true } : {}),
       });
     }
 

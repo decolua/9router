@@ -1,18 +1,26 @@
 import { BaseExecutor } from "./base.js";
-import { PROVIDERS } from "../config/providers.js";
+import { PROVIDERS, PROVIDER_OAUTH } from "../config/providers.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import {
   generateCursorBody,
+  encodeField,
+  wrapConnectRPCFrame,
+  decodeMessage,
   parseConnectRPCFrame,
-  extractTextFromResponse
+  extractTextFromResponse,
+  encodeMcpTools,
+  decodeMcpArgs,
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
+import { resolveCursorModels, resolveAutoModelSelection } from "../services/cursorModels.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
-import { chatChunkSse } from "../utils/sse.js";
+import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
+import { ROLE, OPENAI_BLOCK } from "../translator/schema/index.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import zlib from "zlib";
+import crypto from "crypto";
 
 // Detect cloud environment
 const isCloudEnv = () => {
@@ -36,6 +44,229 @@ const COMPRESS_FLAG = {
   GZIP: 0x01,
   TRAILER: 0x02,
   GZIP_TRAILER: 0x03
+};
+
+const AGENT_RUN_PATH = "/agent.v1.AgentService/Run";
+const PROTOBUF_LEN = 2;
+const PROTOBUF_VARINT = 0;
+
+function concatBuffers(...parts) {
+  const length = parts.reduce((total, part) => total + part.length, 0);
+  const result = new Uint8Array(length);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+const agentString = (field, value) => encodeField(field, PROTOBUF_LEN, value);
+const agentMessage = (field, value) => encodeField(field, PROTOBUF_LEN, value);
+const agentBool = (field, value) => encodeField(field, PROTOBUF_VARINT, value ? 1 : 0);
+
+function textFromContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return "";
+  return content
+    .filter((part) => part?.type === OPENAI_BLOCK.TEXT && typeof part.text === "string")
+    .map((part) => part.text)
+    .join("\n");
+}
+
+function isTextPart(part) {
+  return !part || part.type === OPENAI_BLOCK.TEXT || typeof part === "string";
+}
+
+export function isAgentCapableRequest(body) {
+  // ChatService rejects auto/composer and most thinking variants. AgentService
+  // can answer text turns (including declared tool schemas) and tool-call
+  // history. Image parts still need the legacy protobuf path.
+  if (!Array.isArray(body?.messages) || body.messages.length === 0) return false;
+  return body.messages.every((message) => {
+    if (Array.isArray(message?.content)) return message.content.every(isTextPart);
+    return message?.content == null || typeof message.content === "string";
+  });
+}
+
+function encodeHistoryMessage(message) {
+  const content = textFromContent(message?.content);
+  const extras = [];
+  if (message?.role === ROLE.ASSISTANT && message.tool_calls?.length) {
+    for (const tc of message.tool_calls) {
+      extras.push(`[tool_call id=${tc.id || ""} name=${tc.function?.name || "tool"} args=${tc.function?.arguments || "{}"}]`);
+    }
+  }
+  if (message?.role === ROLE.TOOL) {
+    extras.push(`[tool_result id=${message.tool_call_id || ""}]`);
+  }
+  const textBody = [content, ...extras].filter(Boolean).join("\n");
+  if (!textBody) return null;
+
+  // ConversationHistoryMessage.user / .assistant -> repeated content -> text.
+  const text = agentString(1, textBody);
+  if (message.role === ROLE.ASSISTANT) {
+    return agentMessage(2, agentMessage(1, agentMessage(1, text)));
+  }
+  return agentMessage(1, agentMessage(1, agentMessage(1, text)));
+}
+
+export function buildAgentRunFrame(messages, model, tools = [], reasoningEffort = null) {
+  // custom_system_prompt (RunRequest field 8) makes AgentService return an
+  // empty turn. Fold system text into the current user message instead.
+  const system = messages
+    .filter((message) => message?.role === ROLE.SYSTEM)
+    .map((message) => textFromContent(message.content))
+    .filter(Boolean)
+    .join("\n\n");
+  const chatMessages = messages.filter((message) => message?.role !== ROLE.SYSTEM);
+  const currentIndex = [...chatMessages].map((message) => message?.role).lastIndexOf(ROLE.USER);
+  const current = currentIndex >= 0 ? chatMessages[currentIndex] : chatMessages.at(-1);
+  const history = chatMessages
+    .slice(0, currentIndex >= 0 ? currentIndex : -1)
+    .map(encodeHistoryMessage)
+    .filter(Boolean);
+  const rawUser = textFromContent(current?.content) || "Continue.";
+  const userText = system ? `${system}\n\n${rawUser}` : rawUser;
+
+  // agent.v1.UserMessageAction.user_message and its optional history.
+  // selected_context (3) + mode=1 (4) match cursor-agent's wire format; without
+  // them the server may accept the RPC and stream an empty turn.
+  const userMessage = concatBuffers(
+    agentString(1, userText),
+    agentString(2, crypto.randomUUID()),
+    agentMessage(3, new Uint8Array()),
+    encodeField(4, PROTOBUF_VARINT, 1),
+  );
+  const conversationHistory = history.length
+    ? concatBuffers(...history.map((entry) => agentMessage(1, entry)))
+    : null;
+  const userAction = concatBuffers(
+    agentMessage(1, userMessage),
+    ...(conversationHistory ? [agentMessage(7, conversationHistory)] : []),
+  );
+  const conversationAction = agentMessage(1, userAction);
+  const effort = String(reasoningEffort || "").toLowerCase();
+  const effortValue = effort === "ultra" ? "max" : effort === "minimal" ? "low" : effort;
+  const parameter = effortValue && effortValue !== "none"
+    ? agentMessage(3, concatBuffers(
+      agentString(1, /gpt-/i.test(model) ? "reasoning" : "effort"),
+      agentString(2, effortValue),
+    ))
+    : null;
+  const requestedModel = concatBuffers(
+    agentString(1, model), agentBool(7, true),
+    ...(parameter ? [parameter] : []),
+  );
+  // ModelDetails (field 3): thinking variants (Composer, Grok, *-thinking)
+  // return an empty turn when only RequestedModel (field 9) is set.
+  const modelDetails = concatBuffers(
+    agentString(1, model),
+    agentString(3, model),
+    agentString(4, model),
+  );
+  const mcpTools = encodeMcpTools(tools);
+  const runRequest = concatBuffers(
+    // An empty ConversationStateStructure starts a fresh local agent session.
+    agentMessage(1, new Uint8Array()),
+    agentMessage(2, conversationAction),
+    agentMessage(3, modelDetails),
+    ...(mcpTools.length ? [agentMessage(4, mcpTools)] : []),
+    agentMessage(9, requestedModel),
+  );
+
+  // agent.v1.AgentClientMessage.run_request.
+  return wrapConnectRPCFrame(agentMessage(1, runRequest));
+}
+
+function extractAgentString(message, field) {
+  const value = message?.get(field)?.[0]?.value;
+  return value ? Buffer.from(value).toString("utf8") : "";
+}
+
+function decodeAgentFrames(buffer, onFrame) {
+  let pending = Buffer.from(buffer || []);
+  while (pending.length >= 5) {
+    const flags = pending[0];
+    const length = pending.readUInt32BE(1);
+    if (pending.length < 5 + length) break;
+    let payload = pending.subarray(5, 5 + length);
+    pending = pending.subarray(5 + length);
+    if (flags & COMPRESS_FLAG.GZIP) {
+      payload = zlib.gunzipSync(payload);
+    }
+    if (!(flags & COMPRESS_FLAG.TRAILER)) onFrame(payload);
+  }
+  return pending;
+}
+
+function execIds(execRequest) {
+  const id = Number(execRequest?.get(1)?.[0]?.value || 0);
+  const execId = extractAgentString(execRequest, 15);
+  return { id, execId };
+}
+
+function wrapExecClientMessage(execMsgId, execId, resultField, resultPayload) {
+  const parts = [];
+  if (execMsgId) parts.push(encodeField(1, PROTOBUF_VARINT, execMsgId));
+  parts.push(agentString(15, execId || ""));
+  parts.push(encodeField(resultField, PROTOBUF_LEN, resultPayload || new Uint8Array()));
+  return wrapConnectRPCFrame(agentMessage(2, concatBuffers(...parts)));
+}
+
+function createRequestContextResponse(execRequest) {
+  // Tools already go out on AgentRunRequest.mcp_tools. Echoing them again on
+  // this ack makes AgentService stall silently (0 SSE bytes until abort).
+  const { id, execId } = execIds(execRequest);
+  const requestContextSuccess = agentMessage(1, new Uint8Array());
+  const requestContextResult = agentMessage(1, requestContextSuccess);
+  return wrapExecClientMessage(id, execId, 10, requestContextResult);
+}
+
+// ExecServerMessage variant → ExecClientMessage result field (same numbers).
+const EXEC_RESULT_FIELD = {
+  2: 2, 3: 3, 4: 4, 5: 5, 7: 7, 8: 8, 9: 9, 16: 16, 20: 20, 23: 23,
+};
+
+function rejectExecRequest(execRequest) {
+  const { id, execId } = execIds(execRequest);
+  const variant = [...(execRequest?.keys?.() || [])].find((field) => field !== 1 && field !== 15);
+  const resultField = EXEC_RESULT_FIELD[variant];
+  if (!resultField) return null;
+  // Diagnostics has no rejected variant — empty success unblocks the stream.
+  if (variant === 9) return wrapExecClientMessage(id, execId, 9, new Uint8Array());
+  const rejected = agentMessage(2, agentString(2, "Tool not available in this environment. Use the MCP tools provided instead."));
+  return wrapExecClientMessage(id, execId, resultField, rejected);
+}
+
+export function encodeKvClientMessage(kvId, resultField, resultPayload, metadata) {
+  const parts = [];
+  if (kvId) parts.push(encodeField(1, PROTOBUF_VARINT, kvId));
+  parts.push(encodeField(resultField, PROTOBUF_LEN, resultPayload || new Uint8Array()));
+  if (metadata && metadata.length) parts.push(encodeField(4, PROTOBUF_LEN, metadata));
+  return wrapConnectRPCFrame(agentMessage(3, concatBuffers(...parts)));
+}
+
+// The AgentService h2 path bypasses proxyAwareFetch (Node http2 duplex, no
+// dispatcher), so the strict-proxy guarantee that proxyFetch enforces for
+// regular fetch never applies here. Until h2 proxying lands (see #3276),
+// honor just the policy side: when a proxy is intended AND strict AND cannot
+// be resolved for this request, fail closed instead of silently opening a
+// direct socket that exposes the host's real IP — the exact leak strict mode
+// exists to prevent (#4333). Non-strict callers keep today's direct behavior.
+const proxyIntentFailed = (proxyOptions) => {
+  if (proxyOptions?.strictProxy !== true) return false;
+  const proxyIntended = Boolean(
+    proxyOptions?.proxyPoolId
+    || proxyOptions?.enabled === true
+    || proxyOptions?.connectionProxyEnabled === true
+    || (proxyOptions?.url || proxyOptions?.connectionProxyUrl || "").trim().length > 0,
+  );
+  if (!proxyIntended) return false;
+  // A vercel/cloudflare-style relay rides on plain fetch, not this h2 path.
+  if (proxyOptions?.vercelRelayUrl) return false;
+  // Proxy intended and strict: the h2 transport below cannot carry it.
+  return true;
 };
 
 const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
@@ -146,6 +377,57 @@ function createErrorResponse(jsonError) {
   });
 }
 
+// Long-session empty-turn recovery: Cursor occasionally answers a long
+// history replay with HTTP 200 and zero deltas (empty turn). One retry on a
+// tail-only frame recovers the session instead of failing the client turn.
+const CURSOR_EMPTY_TURN_MAX_RETRIES = (() => {
+  const value = Number(process.env.CURSOR_EMPTY_TURN_MAX_RETRIES);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 1;
+})();
+
+const CURSOR_TAIL_ONLY_THRESHOLD = (() => {
+  const value = Number(process.env.CURSOR_TAIL_ONLY_THRESHOLD);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 80;
+})();
+
+const CURSOR_EMPTY_TURN_RETRY_DELAY_MS = (() => {
+  const value = Number(process.env.CURSOR_EMPTY_TURN_RETRY_DELAY_MS);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 400;
+})();
+
+/** Minimal tail for wedged long sessions — drops bulk history and tool XML. */
+export function tailOnlyCursorMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages || [];
+  const systemMessages = messages.filter(
+    (message) => message?.role === ROLE.SYSTEM && !String(message?.content || "").includes("[9router]"),
+  );
+  const chatMessages = messages.filter((message) => message?.role !== ROLE.SYSTEM);
+  let anchor = chatMessages.length - 1;
+  for (let i = chatMessages.length - 1; i >= 0; i--) {
+    if (chatMessages[i]?.role === ROLE.USER || chatMessages[i]?.role === ROLE.TOOL) {
+      anchor = i;
+      break;
+    }
+  }
+  const tailStart = anchor > 0 && chatMessages[anchor - 1]?.role === ROLE.ASSISTANT ? anchor - 1 : anchor;
+  const tail = chatMessages.slice(Math.max(0, tailStart));
+  const note = {
+    role: ROLE.SYSTEM,
+    content: `[9router] Long session: ${messages.length} messages trimmed to the latest turn. Answer the current request; re-read files if needed.`,
+  };
+  return [...systemMessages, note, ...tail];
+}
+
+/**
+ * Retry an empty AgentService turn only when a long-session replay is the
+ * likely cause: upstream accepts the request, streams HTTP 200, and closes
+ * with zero deltas. A first-message empty turn is a protocol condition, not
+ * a wedged replay, and must surface to the client without retry.
+ */
+function shouldRetryEmptyTurn(messageCount) {
+  return messageCount >= CURSOR_TAIL_ONLY_THRESHOLD;
+}
+
 export class CursorExecutor extends BaseExecutor {
   constructor() {
     super("cursor", PROVIDERS.cursor);
@@ -253,7 +535,496 @@ export class CursorExecutor extends BaseExecutor {
     });
   }
 
+  /**
+   * AgentService (agent.api5.cursor.sh) is HTTP/2-only. Node's fetch/undici speaks
+   * HTTP/1.1 and fails with HTTPParserError on the h2 preface — use http2 duplex.
+   */
+  openAgentHttp2Stream(url, headers, signal) {
+    if (!http2) {
+      throw new Error("HTTP/2 is required for Cursor AgentService (endpoint is h2-only)");
+    }
+
+    const urlObj = new URL(url);
+    const client = http2.connect(`https://${urlObj.host}`);
+    const chunkQueue = [];
+    let waiting = null;
+    let ended = false;
+    let streamError = null;
+    let req = null;
+
+    const wake = (result) => {
+      if (!waiting) return;
+      const resolve = waiting;
+      waiting = null;
+      resolve(result);
+    };
+
+    const fail = (error) => {
+      if (streamError) return;
+      streamError = error;
+      ended = true;
+      wake(null);
+    };
+
+    const close = () => {
+      try { req?.destroy(); } catch {}
+      try { client.close(); } catch {}
+    };
+
+    client.on("error", fail);
+
+    req = client.request({
+      ":method": "POST",
+      ":path": urlObj.pathname,
+      ":authority": urlObj.host,
+      ":scheme": "https",
+      ...headers,
+    });
+
+    req.on("error", fail);
+    req.on("data", (chunk) => {
+      if (waiting) wake({ value: chunk, done: false });
+      else chunkQueue.push(chunk);
+    });
+    req.on("end", () => {
+      ended = true;
+      wake({ value: undefined, done: true });
+    });
+
+    if (signal) {
+      const onAbort = () => {
+        fail(new Error("Request aborted"));
+        close();
+      };
+      if (signal.aborted) onAbort();
+      else signal.addEventListener("abort", onAbort, { once: true });
+    }
+
+    const responseHeaders = new Promise((resolve, reject) => {
+      const onEarlyError = (error) => reject(error);
+      client.once("error", onEarlyError);
+      req.once("error", onEarlyError);
+      req.once("response", (hdrs) => {
+        client.off("error", onEarlyError);
+        req.off("error", onEarlyError);
+        resolve(hdrs);
+      });
+    });
+
+    return {
+      responseHeaders,
+      write(frame) {
+        if (req && !req.destroyed) req.write(Buffer.from(frame));
+      },
+      end() {
+        try { if (req && !req.destroyed) req.end(); } catch {}
+      },
+      close,
+      async read() {
+        if (chunkQueue.length) return { value: chunkQueue.shift(), done: false };
+        if (ended) {
+          if (streamError) throw streamError;
+          return { value: undefined, done: true };
+        }
+        const result = await new Promise((resolve) => { waiting = resolve; });
+        if (streamError) throw streamError;
+        return result || { value: undefined, done: true };
+      },
+    };
+  }
+
+  async executeAgent({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
+    if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
+
+    // Policy guard: the h2 duplex stream below cannot ride a proxy, so a
+    // strict proxy configuration must fail closed here rather than leak the
+    // real IP on a direct socket (see proxyIntentFailed above).
+    if (proxyIntentFailed(proxyOptions)) {
+      throw new Error(
+        "Cursor AgentService requires a strict proxy that this HTTP/2 transport cannot honor; refusing to open a direct connection"
+      );
+    }
+
+    const url = `${agentEndpoint}${AGENT_RUN_PATH}`;
+    const headers = this.buildHeaders(credentials);
+    const requestController = new AbortController();
+    if (signal?.addEventListener) {
+      signal.addEventListener("abort", () => requestController.abort(signal.reason), { once: true });
+    }
+
+    // Empty-turn recovery works on the original client history so each retry
+    // re-derives its own frame from a clean base (original vs tail-only).
+    const originalMessages = body.messages || [];
+    let workingMessages = originalMessages;
+    const tools = body.tools || [];
+    // "Auto (Server Picks)" / "default" is a picker alias, not an AgentService
+    // model id — sending it verbatim yields an empty turn. Resolve it to the
+    // account's default agent-capable model from the live catalog before Run.
+    let runModel = model;
+    if (model === "default" || model === "auto") {
+      const catalog = await resolveCursorModels(credentials, { signal, log });
+      const selection = resolveAutoModelSelection(catalog?.models);
+      if (selection) {
+        log?.info?.("CURSOR", `auto model resolved: ${model} → ${selection.modelId} (${selection.matchedBy})`);
+        runModel = selection.modelId;
+      }
+    }
+
+    const openAgentSession = (frameMessages) => {
+      const session = this.openAgentHttp2Stream(url, headers, requestController.signal);
+      session.write(buildAgentRunFrame(frameMessages, runModel, tools, body.reasoning_effort || body.reasoning?.effort));
+      return session;
+    };
+
+    let session;
+    try {
+      session = openAgentSession(workingMessages);
+    } catch (error) {
+      throw new Error(`Cursor AgentService request failed: ${error.message}`);
+    }
+    let responseHeaders;
+    try {
+      responseHeaders = await session.responseHeaders;
+    } catch (error) {
+      session.close();
+      throw new Error(`Cursor AgentService request failed: ${error.message}`);
+    }
+
+    const status = Number(responseHeaders[":status"] || 0);
+    if (status !== 200) {
+      let errorText = "";
+      try {
+        while (true) {
+          const { done, value } = await session.read();
+          if (done) break;
+          errorText += Buffer.from(value).toString("utf8");
+        }
+      } catch {}
+      session.close();
+      return {
+        response: new Response(JSON.stringify({
+          error: { message: `Cursor AgentService ${status}: ${errorText || "request failed"}`, type: "api_error" },
+        }), { status: status || HTTP_STATUS.SERVER_ERROR, headers: { "Content-Type": "application/json" } }),
+        url,
+        headers,
+        transformedBody: body,
+        responseFormat: FORMATS.OPENAI,
+      };
+    }
+
+    // The Claude SSE translator derives Anthropic's message ID by stripping
+    // `chatcmpl-`. Keep the remaining ID in Anthropic's required `msg_` form
+    // so strict clients such as Claude Code accept the completed stream.
+    const responseId = `chatcmpl-msg_${Date.now()}`;
+    const created = Math.floor(Date.now() / 1000);
+    const composerModel = isComposerModel(model);
+    let pending = Buffer.alloc(0);
+    let finished = false;
+    let thinkingAcc = "";
+    let emittedVisible = 0;
+    let emittedText = false;
+
+    const flushThinkingFallback = (onEvent) => {
+      if (emittedText || !thinkingAcc) return;
+      const fallback = composerModel
+        ? visibleComposerContentFromThinking(thinkingAcc)
+        : thinkingAcc.trim();
+      if (fallback) {
+        emittedText = true;
+        onEvent({ type: "text", value: fallback });
+      }
+    };
+
+    const consume = async (onEvent) => {
+      const finishTurn = () => {
+        flushThinkingFallback(onEvent);
+        finished = true;
+        if (emittedText) onEvent({ type: "done" });
+        else onEvent({ type: "error", value: "Cursor AgentService returned an empty turn" });
+      };
+      try {
+        while (!finished) {
+          const { done, value } = await session.read();
+          if (done) break;
+          pending = Buffer.concat([pending, Buffer.from(value)]);
+          pending = decodeAgentFrames(pending, (payload) => {
+            // A single read can carry several frames; once the turn is over the
+            // rest of the batch must not reach the already-closed controller.
+            if (finished) return;
+            const serverMessage = decodeMessage(payload);
+
+            // agent.v1.AgentServerMessage.interaction_update
+            if (serverMessage.has(1)) {
+              const update = decodeMessage(serverMessage.get(1)[0].value);
+              if (update.has(1)) {
+                const textDelta = extractAgentString(decodeMessage(update.get(1)[0].value), 1);
+                if (textDelta) {
+                  emittedText = true;
+                  onEvent({ type: "text", value: textDelta });
+                }
+              }
+              // thinking_delta (field 4). Composer (and some Grok variants) put
+              // the visible answer after </think> here and never send text_delta.
+              if (update.has(4)) {
+                const thinkingDelta = extractAgentString(decodeMessage(update.get(4)[0].value), 1);
+                if (thinkingDelta) {
+                  thinkingAcc += thinkingDelta;
+                  if (composerModel) {
+                    const visible = visibleComposerContentFromThinking(thinkingAcc);
+                    if (visible.length > emittedVisible) {
+                      const deltaContent = visible.slice(emittedVisible);
+                      emittedVisible = visible.length;
+                      emittedText = true;
+                      onEvent({ type: "text", value: deltaContent });
+                    }
+                  }
+                }
+              }
+              // Keep unsigned reasoning upstream-only for Anthropic clients.
+              if (update.has(14)) {
+                finishTurn();
+              }
+            }
+
+            // KvServerMessage (field 4): get/set blob. Ack so the stream proceeds.
+            if (serverMessage.has(4)) {
+              const kv = decodeMessage(serverMessage.get(4)[0].value);
+              const kvId = kv.get(1)?.[0]?.value || 0;
+              const metadata = kv.get(4)?.[0]?.value || null;
+              if (kv.has(2)) {
+                session.write(encodeKvClientMessage(kvId, 2, agentMessage(1, new Uint8Array()), metadata));
+              } else if (kv.has(3)) {
+                session.write(encodeKvClientMessage(kvId, 3, new Uint8Array(), metadata));
+              }
+            }
+
+            // AgentService requests IDE context before producing a response.
+            if (serverMessage.has(2)) {
+              const execRequest = decodeMessage(serverMessage.get(2)[0].value);
+              if (execRequest.has(10)) {
+                log?.info?.("CURSOR", "AgentService request_context ack");
+                session.write(createRequestContextResponse(execRequest));
+              } else if (execRequest.has(11)) {
+                const mcp = decodeMcpArgs(execRequest.get(11)[0].value);
+                const name = mcp.toolName || mcp.name;
+                if (name) {
+                  log?.info?.("CURSOR", `AgentService MCP tool_call ${name}`);
+                  finished = true;
+                  onEvent({
+                    type: "tool_call",
+                    value: {
+                      id: mcp.toolCallId || `call_${crypto.randomUUID()}`,
+                      name,
+                      arguments: JSON.stringify(mcp.args || {}),
+                    },
+                  });
+                  onEvent({ type: "done", finishReason: "tool_calls" });
+                } else {
+                  debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
+                  finished = true;
+                  onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
+                }
+              } else {
+                // Auto/Composer often probe IDE builtins (shell/read/…). Reject
+                // them so the model can continue with MCP tools or a text answer
+                // instead of stalling the h2 stream.
+                const rejection = rejectExecRequest(execRequest);
+                if (rejection) {
+                  log?.info?.("CURSOR", `AgentService rejected IDE exec fields=${[...execRequest.keys()].join(",")}`);
+                  session.write(rejection);
+                } else {
+                  debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
+                  finished = true;
+                  onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
+                }
+              }
+            }
+          });
+        }
+        if (!finished) finishTurn();
+      } finally {
+        try { session.end(); } catch {}
+        try { session.close(); } catch {}
+      }
+    };
+
+    // One AgentService attempt on the current working frame. Returns sawContent
+    // so the retry policy can tell a wedged long replay from a protocol empty.
+    const runAgentTurn = async (onEvent) => {
+      finished = false;
+      emittedText = false;
+      thinkingAcc = "";
+      emittedVisible = 0;
+      pending = Buffer.alloc(0);
+      await consume(onEvent);
+      return { sawContent: emittedText };
+    };
+
+    // Wrap events so we never retry once real output has reached the client.
+    let outputStarted = false;
+    const makeWrappedEvent = (onEvent) => (event) => {
+      if (event.type === "text" || event.type === "thinking" || event.type === "tool_call") outputStarted = true;
+      onEvent(event);
+    };
+
+    // Retry loop: fresh h2 session per attempt. An empty turn on a long replay
+    // swaps to a tail-only frame; any other failure surfaces immediately.
+    // While a retry is still available the empty-turn error event is withheld:
+    // emitting it would close the SSE stream before recovery can run.
+    const runWithRetry = async (onEvent) => {
+      outputStarted = false;
+      const wrapped = makeWrappedEvent(onEvent);
+      let attempt = 0;
+      for (;;) {
+        let turnError = null;
+        const result = await runAgentTurn((event) => {
+          if (event.type === "error") turnError = event;
+          else wrapped(event);
+        });
+        if (turnError && shouldRetryEmptyTurn(originalMessages.length) && !outputStarted && attempt < CURSOR_EMPTY_TURN_MAX_RETRIES && !requestController.signal.aborted) {
+          attempt++;
+          log?.info?.("CURSOR", `empty_turn on ${originalMessages.length}-message session; retry ${attempt}/${CURSOR_EMPTY_TURN_MAX_RETRIES} with tail-only frame`);
+          workingMessages = tailOnlyCursorMessages(originalMessages);
+          session = openAgentSession(workingMessages);
+          const retryHeaders = await session.responseHeaders;
+          const retryStatus = Number(retryHeaders[":status"] || 0);
+          if (retryStatus !== 200) {
+            wrapped(turnError);
+            return result;
+          }
+          await new Promise((resolve) => setTimeout(resolve, CURSOR_EMPTY_TURN_RETRY_DELAY_MS));
+          continue;
+        }
+        if (turnError) wrapped(turnError);
+        return result;
+      }
+    };
+
+    if (stream === false) {
+      let content = "";
+      let reasoning = "";
+      let agentError = null;
+      const toolCalls = [];
+      let finishReason = "stop";
+      await runWithRetry((event) => {
+        if (event.type === "text") content += event.value;
+        else if (event.type === "thinking") reasoning += event.value;
+        else if (event.type === "tool_call") {
+          toolCalls.push({
+            id: event.value.id,
+            type: "function",
+            function: { name: event.value.name, arguments: event.value.arguments },
+          });
+          finishReason = "tool_calls";
+        }
+        else if (event.type === "error") agentError = event.value;
+        else if (event.type === "done" && event.finishReason) finishReason = event.finishReason;
+      });
+      if (agentError) {
+        return {
+          response: new Response(JSON.stringify({ error: { message: agentError, type: "api_error" } }), {
+            status: HTTP_STATUS.BAD_REQUEST,
+            headers: { "Content-Type": "application/json" },
+          }),
+          url,
+          headers,
+          transformedBody: body,
+          responseFormat: FORMATS.OPENAI,
+        };
+      }
+      const message = {
+        role: "assistant",
+        content: content || null,
+        ...(reasoning ? { reasoning_content: reasoning } : {}),
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      };
+      return {
+        response: new Response(JSON.stringify({
+          id: responseId,
+          object: "chat.completion",
+          created,
+          model,
+          choices: [{ index: 0, message, finish_reason: finishReason }],
+          usage: estimateUsage(body, content.length, FORMATS.OPENAI),
+        }), { headers: { "Content-Type": "application/json" } }),
+        url,
+        headers,
+        transformedBody: body,
+        responseFormat: FORMATS.OPENAI,
+      };
+    }
+
+    const encoder = new TextEncoder();
+    const responseStream = new ReadableStream({
+      start(controller) {
+        // Defer terminal SSE until runWithRetry settles. Emitting stop on the
+        // first empty upstream turn wedges Cursor before the tail-only retry
+        // can recover the session.
+        runWithRetry((event) => {
+          if (event.type === "text") {
+            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: event.value } })));
+          } else if (event.type === "thinking") {
+            controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { reasoning_content: event.value } })));
+          } else if (event.type === "tool_call") {
+            controller.enqueue(encoder.encode(chatChunkSse({
+              id: responseId, created, model,
+              delta: {
+                tool_calls: [{
+                  index: 0,
+                  id: event.value.id,
+                  type: "function",
+                  function: { name: event.value.name, arguments: event.value.arguments },
+                }],
+              },
+            })));
+          } else if (event.type === "error") {
+            // An SSE error frame, not a content delta: a protocol failure must not
+            // be rendered to the user as the assistant's reply, and downstream
+            // usage tracking must not record the turn as a success.
+            controller.enqueue(encoder.encode(sseChunk({ error: { message: event.value, type: "api_error" } })));
+            controller.enqueue(encoder.encode(SSE_DONE));
+            controller.close();
+          } else if (event.type === "done") {
+            controller.enqueue(encoder.encode(chatChunkSse({
+              id: responseId, created, model, delta: {},
+              finishReason: event.finishReason || "stop",
+            })));
+            controller.enqueue(encoder.encode(SSE_DONE));
+            controller.close();
+          }
+        }).catch((error) => controller.error(error));
+      },
+      cancel() {
+        requestController.abort();
+      },
+    });
+
+    return {
+      response: new Response(responseStream, { headers: SSE_HEADERS }),
+      url,
+      headers,
+      transformedBody: body,
+      responseFormat: FORMATS.OPENAI,
+    };
+  }
+
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    if (isAgentCapableRequest(body)) {
+      try {
+        return await this.executeAgent({ model, body, stream, credentials, signal, log, proxyOptions });
+      } catch (error) {
+        return {
+          response: new Response(JSON.stringify({
+            error: { message: error.message, type: "connection_error", code: "" },
+          }), { status: HTTP_STATUS.SERVER_ERROR, headers: { "Content-Type": "application/json" } }),
+          url: `${PROVIDER_OAUTH.cursor?.agentEndpoint || ""}${AGENT_RUN_PATH}`,
+          headers: {},
+          transformedBody: body,
+        };
+      }
+    }
+
     const url = this.buildUrl();
     const headers = this.buildHeaders(credentials);
     const transformedBody = this.transformRequest(model, body, stream, credentials);

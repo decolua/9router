@@ -239,8 +239,8 @@ export async function spawnCloudflared(tunnelToken) {
     });
 
     child.on("exit", (code, signal) => {
-      cloudflaredProcess = null;
-      clearPid();
+      if (cloudflaredProcess === child) cloudflaredProcess = null;
+      clearPid(child.pid);
       const wasConnected = resolved; // true = already connected successfully
       if (!resolved) {
         resolved = true;
@@ -372,8 +372,8 @@ export async function spawnQuickTunnel(localPort, onUrlUpdate) {
     });
 
     child.on("exit", (code, signal) => {
-      cloudflaredProcess = null;
-      clearPid();
+      if (cloudflaredProcess === child) cloudflaredProcess = null;
+      clearPid(child.pid);
       // Deliberate kill (restart/disable) — exit silently, no error noise
       if (intentionalKill) {
         intentionalKill = false;

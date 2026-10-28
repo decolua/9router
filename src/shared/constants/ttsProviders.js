@@ -48,6 +48,28 @@ export const TTS_PROVIDER_CONFIG = {
     hasBrowseButton: true,
     voiceSource: "api-language", // from API with language picker
   },
+  "selfhosted-tts": {
+    hasModelSelector: true,
+    hasVoiceIdInput: true,
+    hasBrowseButton: false,
+    voiceSource: "manual", // model and voice depend on the connected server
+  },
+  "ollama-local": {
+    hasLanguageDropdown: false,
+    hasModelSelector: true,
+    hasBrowseButton: false,
+    hasVoiceIdInput: true,
+    voiceSource: "hardcoded",
+    modelKey: "ollama-local-tts-models",
+    voiceKey: "ollama-local-tts-voices",
+    voicesPerModel: true,
+    defaultVoiceId: "default",
+    defaultFormat: "wav",
+    formatOptions: [
+      { value: "wav", label: "WAV (Binary)" },
+      { value: "pcm", label: "PCM (Raw)" },
+    ],
+  },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──
   "nvidia": {
     hasModelSelector: true,
@@ -133,6 +155,18 @@ export const TTS_PROVIDER_CONFIG = {
     voiceSource: "hardcoded",
     modelKey: "gemini-tts-models",
     voiceKey: "gemini-tts-voices",
+    voicesPerModel: true,
+  },
+  "xiaomi-mimo": {
+    hasLanguageDropdown: false,
+    hasModelSelector: true,
+    hasBrowseButton: false,
+    hasVoiceIdInput: false,
+    hasStyleInput: true, // style/voice instructions (role: user)
+    hasLanguageHint: true, // language dropdown (Auto-detect default); voices are language-independent
+    languageOptions: ["Chinese", "English"],
+    voiceSource: "hardcoded",
+    modelKey: "xiaomi-mimo-tts-models",
     voicesPerModel: true,
   },
 };

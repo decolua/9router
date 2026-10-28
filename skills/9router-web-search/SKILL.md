@@ -1,6 +1,6 @@
 ---
 name: 9router-web-search
-description: Web search via 9Router /v1/search using Tavily / Exa / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity. Use when the user wants to search the web, look up information, find articles, or query a search engine.
+description: Web and X search via 9Router /v1/search using Tavily / Exa / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity / Xquik. Use when the user wants to search the web, find articles, or search public X posts.
 ---
 
 # 9Router — Web Search
@@ -26,7 +26,7 @@ IDs end in `/search` (e.g. `tavily/search`). Combos (`owned_by:"combo"`) chain p
 | `model` (or `provider`) | yes | from `/v1/models/web` (e.g. `tavily` or `brave`) |
 | `query` | yes | search query |
 | `max_results` | no | default 5 |
-| `search_type` | no | `web` (default) / `news` |
+| `search_type` | no | `web` (default) / `news` / `x` for Xquik |
 | `country`, `language`, `time_range`, `domain_filter` | no | provider-dependent |
 
 ## Examples
@@ -47,6 +47,26 @@ const r = await fetch(`${process.env.NINEROUTER_URL}/v1/search`, {
   body: JSON.stringify({ model: "search-combo", query: "latest LLM benchmarks", max_results: 10 }),
 });
 console.log(await r.json());
+```
+
+X search with Xquik:
+
+```bash
+curl -X POST $NINEROUTER_URL/v1/search \
+  -H "Authorization: Bearer $NINEROUTER_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"xquik","query":"from:github release","max_results":10,"provider_options":{"queryType":"Latest"}}'
+```
+
+Add the Xquik API key in 9Router's provider settings. Xquik charges 1 credit per returned post. Continue a search by passing `pagination.next_cursor` as `provider_options.cursor`.
+
+Xquik responses include provider pagination and credit usage:
+
+```json
+{
+  "pagination": { "has_more": true, "next_cursor": "cursor-2" },
+  "usage": { "queries_used": 1, "search_cost_usd": null, "provider_credits_used": 10 }
+}
 ```
 
 ## Response shape
@@ -87,5 +107,6 @@ All accept `query` + `max_results`. Optional fields vary:
 | `searchapi` | country, language, pagination | — |
 | `youcom` | country, language, time_range, domain_filter, full_page | — |
 | `searxng` | language, time_range | Self-hosted, **noAuth** |
+| `xquik` | X/Twitter search operators, language, cursor pagination | `queryType: Latest/Top`, `cursor` (options) |
 
 Provider IS the model — `"provider":"tavily" ≡ "model":"tavily"`.

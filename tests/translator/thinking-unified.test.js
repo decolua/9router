@@ -18,6 +18,12 @@ describe("parseSuffix", () => {
   it("parses level suffix", () => {
     expect(parseSuffix("gpt-5(high)")).toEqual({ cleanModel: "gpt-5", override: { mode: "level", level: "high" } });
   });
+  it("parses ultra suffix", () => {
+    expect(parseSuffix("gpt-5.6-sol(ultra)")).toEqual({
+      cleanModel: "gpt-5.6-sol",
+      override: { mode: "level", level: "ultra" },
+    });
+  });
   it("parses numeric budget suffix", () => {
     expect(parseSuffix("model(8192)")).toEqual({ cleanModel: "model", override: { mode: "budget", budget: 8192 } });
   });
@@ -52,6 +58,18 @@ describe("extractThinking", () => {
   it("no intent → null", () => {
     expect(extractThinking({ messages: [] })).toBeNull();
   });
+  it("reasoning_effort wins over thinking:{type:enabled} (no budget)", () => {
+    expect(extractThinking({
+      thinking: { type: "enabled" },
+      reasoning_effort: "high",
+    })).toEqual({ mode: "level", level: "high" });
+  });
+  it("reasoning.effort wins over thinking:{type:enabled} (no budget)", () => {
+    expect(extractThinking({
+      thinking: { type: "enabled" },
+      reasoning: { effort: "medium" },
+    })).toEqual({ mode: "level", level: "medium" });
+  });
 });
 
 describe("applyThinking per provider format", () => {
@@ -63,6 +81,21 @@ describe("applyThinking per provider format", () => {
     // enough (and Anthropic-compatible shims like Copilot default off even on
     // Sonnet 5). Both fields together are the documented adaptive shape.
     expect(out.thinking).toEqual({ type: "adaptive" });
+  });
+  it("claude adaptive thinking maps auto effort to a supported level", () => {
+    const out = apply("claude", "claude-opus-4.7", { thinking: { type: "adaptive" } }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toEqual({ type: "adaptive" });
+  });
+  it("permanently adaptive Claude maps auto effort without adding a thinking switch", () => {
+    const out = apply("claude", "claude-fable-5-1", { thinking: { type: "adaptive" } }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toBeUndefined();
+  });
+  it("Fable 5.1 → effort without a redundant thinking switch", () => {
+    const out = apply("claude", "claude-fable-5-1", { reasoning_effort: "high" }, "claude");
+    expect(out.output_config).toEqual({ effort: "high" });
+    expect(out.thinking).toBeUndefined();
   });
   it("claude haiku → enabled+budget", () => {
     const out = apply("claude", "claude-haiku-4.5", { reasoning_effort: "high" }, "claude");
@@ -107,6 +140,27 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "glm-4.6", { reasoning_effort: "none" }, "glm");
     expect(out.enable_thinking).toBe(false);
     expect(out.thinking).toBeUndefined();
+  });
+  it.each([
+    ["high", "high"],
+    ["max", "max"],
+    ["xhigh", "max"],
+    ["low", "low"],
+    ["medium", "high"],
+    ["minimal", "low"],
+  ])("GLM-5.3 %s → reasoning_effort=%s (low|high|max only, per z.ai docs)", (input, expected) => {
+    const out = apply("openai", "glm-5.3", { reasoning_effort: input }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe(expected);
+  });
+  it("GLM-5.2 also gets reasoning_effort (supported from 5.2 onward)", () => {
+    const out = apply("openai", "glm-5.2", { reasoning_effort: "low" }, "glm-cn");
+    expect(out.reasoning_effort).toBe("low");
+  });
+  it("GLM-4.7 (pre-5.2) does not get reasoning_effort — z.ai ignores it", () => {
+    const out = apply("openai", "glm-4.7", { reasoning_effort: "low" }, "glm-cn");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBeUndefined();
   });
   it("Qwen on → enable_thinking + thinking_budget", () => {
     const out = apply("openai", "qwen3-max", { reasoning_effort: "medium" }, "qwen");
@@ -157,6 +211,68 @@ describe("applyThinking per provider format", () => {
     const out = apply("openai", "gpt-5.3-codex", { reasoning_effort: "xhigh" }, "codex");
     expect(out.reasoning_effort).toBe("xhigh");
   });
+  it.each([
+    ["gpt-5.6-sol", "max", "max"],
+    ["gpt-5.6-sol", "ultra", "ultra"],
+    ["gpt-5.6-terra", "max", "max"],
+    ["gpt-5.6-terra", "ultra", "ultra"],
+    ["gpt-5.6-luna", "max", "max"],
+    ["gpt-5.6-luna", "ultra", "max"],
+  ])("normalizes Codex %s effort %s to %s", (model, effort, expected) => {
+    const out = apply("openai-responses", model, { reasoning: { effort } }, "codex");
+    expect(out.reasoning_effort).toBe(expected);
+  });
+  it("applies a supported Codex Ultra suffix", () => {
+    const out = apply("openai-responses", "gpt-5.6-sol(ultra)", {}, "codex");
+    expect(out.reasoning_effort).toBe("ultra");
+  });
+  it("keeps Codex-only GPT-5.6 levels out of Kiro translation", () => {
+    const out = apply("openai", "gpt-5.6-sol", { reasoning_effort: "max" }, "kiro");
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
+  it.each([
+    ["gemini-3.5-flash-lite"],
+    ["gemini-3.7-flash"],
+    ["gemini-3-pro"],
+  ])("Gemini 3.x model %s (gemini-level) over a custom OpenAI-compatible provider → reasoning_effort, not generationConfig (regression: #3718)", (model) => {
+    const out = apply("openai", model, { reasoning_effort: "medium" }, "my-custom-gemini-openai");
+    expect(out.reasoning_effort).toBe("medium");
+    expect(out.generationConfig).toBeUndefined();
+    expect(out.thinkingConfig).toBeUndefined();
+  });
+  it("Gemini 2.5 model (gemini-budget) over a custom OpenAI-compatible provider → reasoning_effort, not generationConfig (regression: #3718)", () => {
+    const out = apply("openai", "gemini-2.5-flash", { reasoning_effort: "high" }, "my-custom-gemini-openai");
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.generationConfig).toBeUndefined();
+    expect(out.thinkingConfig).toBeUndefined();
+  });
+  it("Gemini model over its native format (antigravity/gemini-cli/vertex) still gets generationConfig", () => {
+    const out = apply("gemini-cli", "gemini-3.5-flash-lite", { reasoning_effort: "medium" }, "gemini-cli");
+    expect(out.generationConfig.thinkingConfig.thinkingLevel).toBe("medium");
+  });
+  it("commandcode envelope writes params.reasoning_effort, not wrapper fields", () => {
+    const out = apply("commandcode", "deepseek/deepseek-v4.1-flash", {
+      params: { model: "deepseek/deepseek-v4.1-flash", messages: [] },
+      reasoning_effort: "high",
+    }, "commandcode");
+    expect(out.params.reasoning_effort).toBe("high");
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+  it("commandcode preserves low effort instead of remapping to high", () => {
+    const out = apply("commandcode", "deepseek/deepseek-v4.1-flash", {
+      params: { messages: [] },
+      reasoning_effort: "low",
+    }, "commandcode");
+    expect(out.params.reasoning_effort).toBe("low");
+  });
+  it("commandcode preserves max effort", () => {
+    const out = apply("commandcode", "deepseek/deepseek-v4.1-flash", {
+      params: { messages: [] },
+      reasoning_effort: "max",
+    }, "commandcode");
+    expect(out.params.reasoning_effort).toBe("max");
+  });
 });
 
 describe("extractReasoningText (response shapes)", () => {
@@ -171,5 +287,70 @@ describe("extractReasoningText (response shapes)", () => {
   });
   it("no reasoning → empty", () => {
     expect(extractReasoningText({ content: "hello" })).toBe("");
+  });
+});
+
+describe("OpenCode Free ids with no capabilities entry (#2690)", () => {
+  const bunny = (effort) => ({
+    model: "oc/space-bunny-free",
+    messages: [{ role: "user", content: "hi" }],
+    reasoning_effort: effort,
+  });
+
+  it("keeps the client reasoning_effort for space-bunny-free", () => {
+    for (const level of ["low", "medium", "high", "xhigh", "none"]) {
+      expect(apply("openai", "oc/space-bunny-free", bunny(level), "oc").reasoning_effort).toBe(level);
+      expect(apply("openai-responses", "oc/space-bunny-free", bunny(level), "oc").reasoning_effort).toBe(level);
+    }
+  });
+
+  it("clamps max to xhigh (openai format has no max)", () => {
+    expect(apply("openai", "oc/space-bunny-free", bunny("max"), "oc").reasoning_effort).toBe("xhigh");
+    expect(apply("openai-responses", "oc/space-bunny-free", bunny("max"), "oc").reasoning_effort).toBe("xhigh");
+  });
+
+  it("still strips it for a model that has no entry at all (control)", () => {
+    expect(apply("openai", "oc/no-such-model-xyz", bunny("high"), "oc").reasoning_effort).toBeUndefined();
+  });
+});
+
+// Refs #3014. A multi-endpoint provider declares, per transports[] entry, the thinking shape that
+// endpoint accepts. OpenCode Go's /responses 503s ("Endpoint is unavailable") on the Chat-shaped
+// fields the deepseek format emits (thinking:{type} + reasoning_effort), while its /chat/completions
+// needs exactly those. Muse (Meta) used to be a hardcoded special case of the same rule.
+describe("transport-declared thinkingFormat (Responses endpoints)", () => {
+  const responsesBody = (effort) => ({ input: [{ role: "user", content: "hi" }], reasoning: { effort } });
+  const chatBody = (effort) => ({ messages: [{ role: "user", content: "hi" }], reasoning_effort: effort });
+
+  it("opencode-go /responses nests reasoning:{effort,summary} and drops Chat-shaped fields", () => {
+    const out = apply("openai-responses", "deepseek-v4.1-flash", responsesBody("high"), "opencode-go");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+
+  it("opencode-go /chat/completions still gets the model's own (deepseek) shape", () => {
+    const out = apply("openai", "deepseek-v4.1-flash", chatBody("high"), "opencode-go");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning).toBeUndefined();
+  });
+
+  it("opencode-go /responses expresses 'none' by omitting reasoning", () => {
+    const out = apply("openai-responses", "deepseek-v4.1-flash", responsesBody("none"), "opencode-go");
+    expect(out.reasoning).toBeUndefined();
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+
+  it("muse /responses keeps the nested shape now that it is declared on the transport", () => {
+    const out = apply("openai-responses", "muse-spark-1.3", responsesBody("high"), "muse");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("a provider without the declaration keeps its existing Responses behaviour (control)", () => {
+    const out = apply("openai-responses", "oc/space-bunny-free", chatBody("high"), "oc");
+    expect(out.reasoning_effort).toBe("high");
   });
 });

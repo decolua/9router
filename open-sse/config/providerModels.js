@@ -1,11 +1,13 @@
-import { PROVIDERS } from "./providers.js";
 import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
-import { modelQuotaFamily, modelStrip, modelTargetFormat, normalizeModelId } from "../providers/models/schema.js";
-import { CODEX_REVIEW_SUFFIX } from "../providers/models/helpers.js";
-
+import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
+import { CODEX_REVIEW_SUFFIX, isMuseSparkModel, opencodeFamilyFormats } from "../providers/models/helpers.js";
+import { FORMATS } from "../translator/formats.js";
 export { PROVIDER_MODELS };
+
+// OpenCode providers sharing the endpoint-family fallback for unknown model ids
+const isOpenCodeAlias = (aliasOrId) => !aliasOrId || ["oc", "opencode", "ocg", "opencode-go", "ocz", "opencode-zen"].includes(aliasOrId);
 
 
 // Helper functions
@@ -27,11 +29,14 @@ const DOT_VERSION_PROVIDERS = new Set(["kr", "kiro"]);
 // ("claude-sonnet-4-5" ~= "claude-sonnet-4.5"). Other providers use exact match only.
 function findModel(models, modelId, aliasOrId) {
   if (!models) return undefined;
-  const found = models.find(m => m.id === modelId);
+  const baseModelId = typeof modelId === "string"
+    ? modelId.replace(/\([^()]+\)\s*$/, "").trim()
+    : modelId;
+  const found = models.find(m => m.id === modelId || m.id === baseModelId);
   if (found) return found;
   if (!DOT_VERSION_PROVIDERS.has(aliasOrId)) return undefined;
-  const normalized = normalizeModelId(modelId);
-  if (normalized === modelId) return undefined;
+  const normalized = normalizeModelId(baseModelId);
+  if (normalized === baseModelId) return undefined;
   return models.find(m => m.id === normalized);
 }
 
@@ -50,9 +55,29 @@ export function findModelName(aliasOrId, modelId) {
 }
 
 export function getModelTargetFormat(aliasOrId, modelId) {
+  if (isOpenCodeAlias(aliasOrId) && isMuseSparkModel(modelId)) {
+    return FORMATS.OPENAI_RESPONSES;
+  }
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
-  return modelTargetFormat(findModel(models, modelId, aliasOrId));
+  const found = findModel(models, modelId, aliasOrId);
+  if (found) return modelTargetFormat(found);
+  // Family fallback keeps modelsFetcher/passthrough ids on their endpoint lane
+  if (isOpenCodeAlias(aliasOrId)) return opencodeFamilyFormats(modelId)?.targetFormat || null;
+  return null;
+}
+
+// Declared upstream formats for a model (registry `supportedFormats`). Drives the
+// per-model guard on the sourceFormat-matched transport; null when undeclared.
+// Unknown OpenCode ids fall back to the family regex (chat lane by default) so
+// auto-fetched models never wrongly use the sourceFormat-matched transport.
+export function getModelSupportedFormats(aliasOrId, modelId) {
+  const models = PROVIDER_MODELS[aliasOrId];
+  if (!models) return null;
+  const found = findModel(models, modelId, aliasOrId);
+  if (found) return modelSupportedFormats(found);
+  if (isOpenCodeAlias(aliasOrId)) return opencodeFamilyFormats(modelId)?.supportedFormats || [FORMATS.OPENAI];
+  return null;
 }
 
 export function getModelType(aliasOrId, modelId) {
@@ -62,16 +87,45 @@ export function getModelType(aliasOrId, modelId) {
   return found?.kind || found?.type || null;
 }
 
-export function getModelUpstreamId(aliasOrId, modelId) {
+// Raw registry entry for a model (suffix-aware) — executor lookups of per-model hints (e.g. defaultLocation).
+export function getModelMeta(aliasOrId, modelId) {
+  return findModel(PROVIDER_MODELS[aliasOrId], modelId, aliasOrId) || null;
+}
+
+export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
   // Split off thinking suffix "(level)" so lookup hits the base id; re-append it to
   // the result so downstream applyThinking still sees the suffix (body.model is stripped separately).
   const sufMatch = typeof modelId === "string" ? modelId.match(/\([^()]+\)\s*$/) : null;
   const suffix = sufMatch ? sufMatch[0] : "";
   const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
   const models = PROVIDER_MODELS[aliasOrId];
-  const found = findModel(models, baseId, aliasOrId);
-  if (found?.upstreamModelId) return found.upstreamModelId + suffix;
-  if (found?.id) return found.id + suffix;
+
+  // Resolve requested thinking level from suffix or client request body
+  const rawSuffix = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
+  let tier = rawSuffix === "xhigh" || rawSuffix === "max" ? "high" : rawSuffix === "minimal" ? "low" : rawSuffix;
+  if (!tier && clientBody && typeof clientBody === "object") {
+    const rawEffort = clientBody.reasoning_effort || clientBody.output_config?.effort || (typeof clientBody.reasoning === "object" ? clientBody.reasoning?.effort : null);
+    if (typeof rawEffort === "string" && rawEffort) {
+      const v = rawEffort.toLowerCase().trim();
+      tier = v === "xhigh" || v === "max" ? "high" : v === "minimal" ? "low" : v;
+    } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
+      const b = Number(clientBody.thinking.budget_tokens);
+      if (Number.isFinite(b) && b > 0) {
+        tier = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+      }
+    }
+  }
+
+  // Look for tiered variant first if a tier was requested (e.g. gemini-3.8-flash-high)
+  const tieredId = tier ? `${baseId}-${tier}` : null;
+  const found = (tieredId && findModel(models, tieredId, aliasOrId)) || findModel(models, baseId, aliasOrId);
+  const resolvedId = found?.upstreamModelId || found?.id;
+  if (resolvedId) {
+    const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
+    const presetSuffix = presetMatch?.[0] || "";
+    const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
+    return resolvedBase + (suffix || (presetSuffix && tier ? `(${tier})` : presetSuffix));
+  }
   if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;
   }
@@ -89,9 +143,13 @@ export const OAUTH_ALIASES = Object.fromEntries(
   REGISTRY.filter(r => r.alias && r.alias !== r.id).map(r => [r.id, r.alias])
 );
 
-// Derived from PROVIDERS — no need to maintain manually
+// Derived from REGISTRY — no need to maintain manually. REGISTRY (not PROVIDERS):
+// media-only entries (elevenlabs, cartesia, inworld, ...) declare no transport, so
+// keying off PROVIDERS dropped their alias and made their registry `models`
+// unreachable — the exact same map PROVIDER_MODELS is keyed by
+// (`entry.alias || entry.id` in providers/index.js).
 export const PROVIDER_ID_TO_ALIAS = Object.fromEntries(
-  Object.keys(PROVIDERS).map(id => [id, OAUTH_ALIASES[id] || id])
+  REGISTRY.map(r => [r.id, r.alias || r.id])
 );
 
 export function getModelsByProviderId(providerId) {

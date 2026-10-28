@@ -13,8 +13,8 @@ export default {
       signupUrl: "https://app.kimchi.dev",
     },
   },
-  category: "oauth",
-  authModes: ["oauth"],
+  category: "freeTier",
+  authModes: ["oauth", "apikey"],
   hasOAuth: true,
   transport: {
     baseUrl: "https://llm.kimchi.dev/openai/v1/chat/completions",

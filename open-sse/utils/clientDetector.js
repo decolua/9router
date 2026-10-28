@@ -22,6 +22,7 @@ export function detectClientTool(headers = {}, body = {}) {
   const xApp = (headers["x-app"] || "").toLowerCase();
   const openaiIntent = (headers["openai-intent"] || "").toLowerCase();
   const initiator = (headers["x-initiator"] || headers["X-Initiator"] || "").toLowerCase();
+  const originator = (headers["originator"] || "").toLowerCase();
 
   // Antigravity: detected via body field (not header)
   if (body.userAgent === "antigravity") return "antigravity";
@@ -37,8 +38,10 @@ export function detectClientTool(headers = {}, body = {}) {
   // Gemini CLI
   if (ua.includes("gemini-cli")) return "gemini-cli";
 
-  // Codex CLI
-  if (ua.includes("codex-cli")) return "codex";
+  // Codex CLI/Desktop — codex-tui is the current Rust CLI, codex-cli/codex_cli_rs legacy;
+  // Codex Desktop identifies via UA "Codex Desktop" or originator "codex_work_desktop"
+  if (ua.includes("codex-tui") || ua.includes("codex-cli") || ua.includes("codex_cli_rs") ||
+      ua.includes("codex desktop") || originator.startsWith("codex_")) return "codex";
 
   // DeepSeek TUI
   if (ua.includes("deepseek-tui")) return "deepseek-tui";

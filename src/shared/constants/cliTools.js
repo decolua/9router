@@ -8,43 +8,31 @@ export const MITM_TOOLS = {
     description: "Google Antigravity IDE with MITM",
     configType: "mitm",
     mitmDomain: "daily-cloudcode-pa.googleapis.com",
-    modelAliases: ["gemini-3.5-flash-low", "gemini-3-flash-agent", "gemini-3.5-flash-extra-low", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium", "gemini-3-flash"],
+    modelAliases: ["gemini-3.8-flash-high", "gemini-3.8-flash-medium", "gemini-3.8-flash-low", "gemini-3.7-flash-high", "gemini-3.7-flash-medium", "gemini-3.7-flash-low", "gemini-3.6-flash-high", "gemini-3.6-flash-medium", "gemini-3.6-flash-low", "gemini-3.1-pro-high", "gemini-3.1-pro-low", "gemini-pro-agent", "claude-sonnet-5-5", "claude-sonnet-5-5-low", "claude-sonnet-5-5-medium", "claude-sonnet-5-5-high", "claude-opus-5-5", "claude-opus-5-5-low", "claude-opus-5-5-medium", "claude-opus-5-5-high", "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium"],
     defaultModels: [
-      { id: "gemini-3.5-flash-low", name: "Gemini 3.5 Flash (Medium) / Default", alias: "gemini-3.5-flash-low" },
-      { id: "gemini-3-flash-agent", name: "Gemini 3.5 Flash (High)", alias: "gemini-3-flash-agent" },
-      { id: "gemini-3.5-flash-extra-low", name: "Gemini 3.5 Flash (Low)", alias: "gemini-3.5-flash-extra-low" },
+      { id: "gemini-3.8-flash-high", name: "Gemini 3.8 Flash (High)", alias: "gemini-3.8-flash-high" },
+      { id: "gemini-3.8-flash-medium", name: "Gemini 3.8 Flash (Medium) / Default", alias: "gemini-3.8-flash-medium", mandatory: true },
+      { id: "gemini-3.8-flash-low", name: "Gemini 3.8 Flash (Low)", alias: "gemini-3.8-flash-low" },
+      { id: "gemini-3.7-flash-high", name: "Gemini 3.7 Flash (High)", alias: "gemini-3.7-flash-high" },
+      { id: "gemini-3.7-flash-medium", name: "Gemini 3.7 Flash (Medium)", alias: "gemini-3.7-flash-medium" },
+      { id: "gemini-3.7-flash-low", name: "Gemini 3.7 Flash (Low)", alias: "gemini-3.7-flash-low" },
+      { id: "gemini-3.6-flash-high", name: "Gemini 3.6 Flash (High)", alias: "gemini-3.6-flash-high" },
+      { id: "gemini-3.6-flash-medium", name: "Gemini 3.6 Flash (Medium)", alias: "gemini-3.6-flash-medium" },
+      { id: "gemini-3.6-flash-low", name: "Gemini 3.6 Flash (Low)", alias: "gemini-3.6-flash-low" },
+      { id: "gemini-3.1-pro-high", name: "Gemini 3.1 Pro (High)", alias: "gemini-3.1-pro-high" },
       { id: "gemini-3.1-pro-low", name: "Gemini 3.1 Pro (Low)", alias: "gemini-3.1-pro-low" },
-      { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High)", alias: "gemini-pro-agent" },
+      { id: "gemini-pro-agent", name: "Gemini 3.1 Pro (High) / Legacy", alias: "gemini-pro-agent" },
+      { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5 (Thinking)", alias: "claude-sonnet-5-5" },
+      { id: "claude-sonnet-5-5-low", name: "Claude Sonnet 5.5 (Low)", alias: "claude-sonnet-5-5-low" },
+      { id: "claude-sonnet-5-5-medium", name: "Claude Sonnet 5.5 (Medium)", alias: "claude-sonnet-5-5-medium" },
+      { id: "claude-sonnet-5-5-high", name: "Claude Sonnet 5.5 (High)", alias: "claude-sonnet-5-5-high" },
+      { id: "claude-opus-5-5", name: "Claude Opus 5.5 (Thinking)", alias: "claude-opus-5-5" },
+      { id: "claude-opus-5-5-low", name: "Claude Opus 5.5 (Low)", alias: "claude-opus-5-5-low" },
+      { id: "claude-opus-5-5-medium", name: "Claude Opus 5.5 (Medium)", alias: "claude-opus-5-5-medium" },
+      { id: "claude-opus-5-5-high", name: "Claude Opus 5.5 (High)", alias: "claude-opus-5-5-high" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6 (Thinking)", alias: "claude-sonnet-4-6" },
       { id: "claude-opus-4-6-thinking", name: "Claude Opus 4.6 (Thinking)", alias: "claude-opus-4-6-thinking" },
       { id: "gpt-oss-120b-medium", name: "GPT-OSS 120B (Medium)", alias: "gpt-oss-120b-medium" },
-      { id: "gemini-3-flash", name: "Gemini 3 Flash (Command)", alias: "gemini-3-flash" },
-    ],
-  },
-  copilot: {
-    id: "copilot",
-    name: "GitHub Copilot",
-    image: "/providers/copilot.png",
-    color: "#1F6FEB",
-    description: "GitHub Copilot IDE with MITM",
-    configType: "mitm",
-    mitmDomain: "api.individual.githubcopilot.com",
-    modelAliases: ["gpt-5-mini", "gpt-5.4-nano", "claude-haiku-4.5", "gpt-4o", "gpt-4.1"],
-    defaultModels: [
-      // Verified via live MITM passthrough capture of the GitHub Copilot CLI: its model
-      // picker offers "GPT-5 mini" (default → wire id "gpt-5-mini"), "Claude Haiku 4.5"
-      // ("claude-haiku-4.5") and "Auto". "Auto" is NOT a wire id — Copilot dispatches
-      // concrete models dynamically (observed "gpt-5.4-nano" for light tasks and
-      // "claude-haiku-4.5"), so it needs no slot of its own. Without a slot for
-      // gpt-5-mini / gpt-5.4-nano, getMappedModel returns null and the /chat/completions
-      // call is passed through to GitHub Copilot instead of the configured provider —
-      // and gpt-5-mini is the CLI default, so the primary turn leaks (same class as the
-      // Kiro "auto" misrouting). gpt-4o / gpt-4.1 are kept for the VS Code Copilot Chat picker.
-      { id: "gpt-5-mini", name: "GPT-5 mini", alias: "gpt-5-mini" },
-      { id: "gpt-5.4-nano", name: "GPT-5.4 nano", alias: "gpt-5.4-nano" },
-      { id: "claude-haiku-4.5", name: "Claude Haiku 4.5", alias: "claude-haiku-4.5" },
-      { id: "gpt-4o", name: "GPT-4o", alias: "gpt-4o" },
-      { id: "gpt-4.1", name: "GPT-4.1", alias: "gpt-4.1" },
     ],
   },
   kiro: {
@@ -54,8 +42,13 @@ export const MITM_TOOLS = {
     color: "#FF6B00",
     description: "Kiro IDE with MITM",
     configType: "mitm",
-    mitmDomain: "q.us-east-1.amazonaws.com",
+    mitmDomain: "runtime.us-east-1.kiro.dev",
     defaultModels: [
+      // Kiro's agent/"vibe" mode sends modelId "auto" for the main turn and "simple-task"
+      // for background sub-tasks (verified via MITM request dump of generateAssistantResponse).
+      // Both need a mappable slot — otherwise getMappedModel returns null and the chat call
+      // is passed through to AWS instead of being routed to the chosen provider.
+      { id: "auto", name: "Auto (Kiro Agent)", alias: "auto" },
       { id: "claude-sonnet-5", name: "Claude Sonnet 5", alias: "claude-sonnet-5" },
       { id: "claude-sonnet-4.5", name: "Claude Sonnet 4.5", alias: "claude-sonnet-4.5" },
       { id: "claude-sonnet-4", name: "Claude Sonnet 4", alias: "claude-sonnet-4" },
@@ -105,7 +98,7 @@ export const CLI_TOOLS = {
     settingsFile: "~/.claude/settings.json",
     defaultModels: [
       { id: "fable", name: "Claude Fable", alias: "fable", envKey: "ANTHROPIC_DEFAULT_FABLE_MODEL", defaultValue: "cc/claude-fable-5" },
-      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-4-8" },
+      { id: "opus", name: "Claude Opus", alias: "opus", envKey: "ANTHROPIC_DEFAULT_OPUS_MODEL", defaultValue: "cc/claude-opus-5" },
       { id: "sonnet", name: "Claude Sonnet", alias: "sonnet", envKey: "ANTHROPIC_DEFAULT_SONNET_MODEL", defaultValue: "cc/claude-sonnet-5" },
       { id: "haiku", name: "Claude Haiku", alias: "haiku", envKey: "ANTHROPIC_DEFAULT_HAIKU_MODEL", defaultValue: "cc/claude-haiku-4-5-20251001" },
     ],
@@ -125,6 +118,34 @@ export const CLI_TOOLS = {
     color: "#10A37F",
     description: "OpenAI Codex CLI",
     configType: "custom",
+  },
+  copilot: {
+    id: "copilot",
+    name: "GitHub Copilot",
+    image: "/providers/copilot.png",
+    color: "#1F6FEB",
+    description: "GitHub Copilot in VS Code via 9Router extension",
+    configType: "guide",
+    docsUrl: "https://marketplace.visualstudio.com/items?itemName=hotrungnhan.9router-for-github-copilot",
+    guideSteps: [
+      {
+        step: 1,
+        title: "Install Extension",
+        desc: "In VS Code, open Extensions (Ctrl+Shift+X or Cmd+Shift+X), search for '9Router for Github Copilot' and click Install.",
+      },
+      {
+        step: 2,
+        title: "Configure Server",
+        desc: "Press Cmd+Shift+P (or Ctrl+Shift+P), run '9Router: Configure Server', then enter your Server URL and API Key:",
+        value: "{{baseUrl}}",
+        copyable: true,
+      },
+      {
+        step: 3,
+        title: "Select Model in Copilot Chat",
+        desc: "Open Copilot Chat, click the model picker at the bottom → 'Manage Models...' → check the 9Router models to use.",
+      },
+    ],
   },
   opencode: {
     id: "opencode",
@@ -149,6 +170,30 @@ export const CLI_TOOLS = {
     color: "#8B5CF6",
     description: "Nous Research self-improving AI agent",
     configType: "custom",
+    // Model slots Hermes supports besides the default ("model:" block).
+    // "default" is not listed — the card renders it as the main model picker.
+    // Mirrors the "auxiliary" defaults in hermes_cli/config_defaults.py (Hermes 0.21.5):
+    // web_extract/session_search no longer call an LLM (their leftover blocks are ignored,
+    // so exposing them only invites dead config), MoA slots are preset-driven and not listed.
+    roles: [
+      { id: "delegation", label: "Delegation (subagents)" },
+      { id: "vision", label: "Vision" },
+      { id: "compression", label: "Compression" },
+      { id: "title_generation", label: "Title Generation" },
+      { id: "approval", label: "Approval" },
+      { id: "skills_hub", label: "Skills Hub" },
+      { id: "mcp", label: "MCP" },
+      { id: "review", label: "Review (/review subagent)" },
+      { id: "memory_query_rewrite", label: "Memory Query Rewrite" },
+      { id: "background_review", label: "Background Review" },
+      { id: "curator", label: "Curator" },
+      { id: "monitor", label: "Monitor" },
+      { id: "tts_audio_tags", label: "TTS Audio Tags" },
+      { id: "triage_specifier", label: "Triage Specifier" },
+      { id: "kanban_decomposer", label: "Kanban Decomposer" },
+      { id: "profile_describer", label: "Profile Describer" },
+      { id: "goal_judge", label: "Goal Judge" },
+    ],
   },
   droid: {
     id: "droid",
@@ -183,7 +228,7 @@ export const CLI_TOOLS = {
     id: "cline",
     name: "Cline",
     image: "/providers/cline.png",
-    color: "#00D1B2",
+    color: "#5B9BD5",
     description: "Cline AI Coding Assistant",
     configType: "custom",
   },
@@ -357,9 +402,9 @@ amp --model "{{model}}"
       },
     ],
     defaultModels: [
-      { id: "claude-opus-4-7", name: "Claude Opus 4.7", alias: "opus", defaultValue: "cc/claude-opus-4-7" },
+      { id: "claude-opus-5", name: "Claude Opus 5", alias: "opus", defaultValue: "cc/claude-opus-5" },
       { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6", alias: "sonnet", defaultValue: "cc/claude-sonnet-4-6" },
-      { id: "gpt-5.5", name: "GPT 5.5", alias: "gpt5", defaultValue: "cx/gpt-5.5" },
+      { id: "gpt-6.1-sol", name: "GPT 6.1 Sol", alias: "gpt6", defaultValue: "cx/gpt-6.1-sol" },
       { id: "gemini-3.1-pro", name: "Gemini 3.1 Pro", alias: "gemini", defaultValue: "gemini/gemini-3.1-pro" },
     ],
   },
@@ -384,6 +429,161 @@ amp --model "{{model}}"
       {
         type: "warning",
         text: "Config path: Linux/macOS ~/.grok/config.toml • Windows %USERPROFILE%\\.grok\\config.toml",
+      },
+    ],
+  },
+  devin: {
+    id: "devin",
+    name: "Devin CLI",
+    image: "/providers/devin-cli.png",
+    color: "#6366F1",
+    description: "Cognition Devin CLI — local binary called by the Devin CLI provider via ACP/stdio",
+    configType: "guide",
+    installUrl: "https://cli.devin.ai",
+    notes: [
+      { type: "info", text: "This is a local dependency, not a routed CLI. The Devin CLI provider spawns `devin acp --agent-type summarizer` and relays its output." },
+      { type: "warning", text: "Install the Devin CLI and run `devin auth login` — without it, the provider returns a spawn error on first request." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Devin CLI", desc: "Install via the official installer at cli.devin.ai.", docsUrl: "https://cli.devin.ai" },
+      { step: 2, title: "Authenticate", desc: "Log in once so the binary stores its own credentials." },
+      { step: 3, title: "Use the provider", desc: "Pick any Devin CLI model under the Providers tab — no API key field needed." },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `# Install Devin CLI (see https://cli.devin.ai for options)
+devin auth login
+
+# Verify detection (optional)
+devin --version`,
+    },
+  },
+  opendesign: {
+    id: "opendesign",
+    name: "OpenDesign",
+    image: "/providers/opendesign.png",
+    color: "#7C3AED",
+    description: "OpenDesign — claude.ai/design open-sourced! Agent-native design skills pack",
+    docsUrl: "https://github.com/manalkaff/opendesign",
+    configType: "guide",
+    notes: [
+      { type: "info", text: "OpenDesign ships as a plugin/skills pack installed into Claude Code, Cursor, OpenAI Codex, Gemini CLI, or OpenCode. It inherits the host agent's model config, so once your host points at 9Router, /opendesign design sessions route through 9Router automatically — no extra env vars needed." },
+      { type: "info", text: "Invoke with /opendesign <brief>. Covers decks, wireframes, interactive prototypes, design-system extraction, and brand systems, with a verifier subagent that checks output against the brief." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install the plugin", desc: "Pick your host below and run the matching install command from the matrix." },
+      { step: 2, title: "No config needed", desc: "OpenDesign runs inside your host agent and uses its model config. If the host already routes through 9Router, /opendesign traffic does too." },
+      { step: 3, title: "Start designing", desc: "Invoke OpenDesign from your agent:", value: "/opendesign make a pitch deck for a seed-stage AI company, 10 slides", copyable: true },
+    ],
+    codeBlock: {
+      language: "bash",
+      code: `# Claude Code
+/plugin marketplace add manalkaff/opendesign
+/plugin install opendesign@opendesign
+
+# Cursor
+/add-plugin opendesign
+
+# OpenAI Codex CLI
+/plugins   # search "opendesign" -> Install Plugin
+
+# OpenAI Codex App
+# Plugins sidebar -> OpenDesign (Design section) -> +
+
+# Gemini CLI
+gemini extensions install https://github.com/manalkaff/opendesign
+
+# OpenCode
+# Fetch and follow .opencode/INSTALL.md from the repo`,
+    },
+  },
+  pi: {
+    id: "pi",
+    name: "Pi (pi-coding-agent)",
+    image: "/providers/pi.svg",
+    color: "#6366F1",
+    description: "Pi coding agent — minimal, extensible agent harness (pi.dev)",
+    configType: "custom",
+    docsUrl: "https://pi.dev",
+    notes: [
+      {
+        type: "info",
+        text: "Pi uses ~/.pi/agent/models.json. 9Router is configured under providers.9router as an OpenAI-compatible endpoint.",
+      },
+    ],
+  },
+  omp: {
+    id: "omp",
+    name: "Oh My Pi",
+    image: "/providers/omp.png",
+    color: "#EC4899",
+    description: "Oh My Pi terminal AI agent with auto-discovery support",
+    configType: "custom",
+    docsUrl: "https://github.com/can1357/oh-my-pi",
+    notes: [
+      {
+        type: "info",
+        text: "Oh My Pi uses ~/.omp/agent/models.yml and agent.db. 9Router is configured with proxy discovery so all models appear automatically under /model.",
+      },
+    ],
+  },
+  crush: {
+    id: "crush",
+    name: "Crush",
+    image: "/providers/crush.png",
+    color: "#FB923C",
+    description: "Charm Crush terminal AI coding agent",
+    configType: "custom",
+    docsUrl: "https://github.com/charmbracelet/crush",
+    notes: [
+      {
+        type: "info",
+        text: "Crush uses ~/.config/crush/crush.json. 9Router registers as an openai-compat provider.",
+      },
+    ],
+  },
+  forge: {
+    id: "forge",
+    name: "ForgeCode",
+    image: "/providers/forge.png",
+    color: "#EAB308",
+    description: "Antinomy HQ ForgeCode agent harness",
+    configType: "custom",
+    docsUrl: "https://github.com/antinomyhq/forge",
+    notes: [
+      {
+        type: "info",
+        text: "ForgeCode uses ~/.forge/config.toml. 9Router updates the [openai] section with your baseUrl, apiKey, and model.",
+      },
+    ],
+  },
+  smelt: {
+    id: "smelt",
+    name: "Smelt",
+    image: "/providers/smelt.svg",
+    color: "#EF4444",
+    description: "Smelt terminal AI coding assistant",
+    configType: "custom",
+    docsUrl: "https://github.com/leonardcser/smelt",
+    notes: [
+      {
+        type: "info",
+        text: "Smelt uses ~/.smelt/config.json for OpenAI-compatible endpoint configuration.",
+      },
+    ],
+  },
+  codewhale: {
+    id: "codewhale",
+    name: "CodeWhale",
+    image: "/providers/codewhale.svg",
+    color: "#4F46E5",
+    description: "CodeWhale terminal coding agent (successor to DeepSeek TUI)",
+    configType: "custom",
+    docsUrl: "https://github.com/Hmbown/CodeWhale",
+    notes: [
+      {
+        type: "info",
+        text: "CodeWhale uses ~/.codewhale/config.toml. 9Router configures the [openai] provider with your base_url, api_key, and model.",
       },
     ],
   },

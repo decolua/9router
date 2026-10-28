@@ -15,6 +15,8 @@ export default {
     },
   },
   category: "freeTier",
+  authType: "apikey",
+  authModes: ["apikey"],
   transport: {
     baseUrl: "https://ollama.com/api/chat",
     validateUrl: "https://ollama.com/api/tags",
@@ -28,9 +30,28 @@ export default {
     { id: "glm-4.7-flash", name: "GLM 4.7 Flash" },
     { id: "qwen3.5", name: "Qwen3.5" },
     { id: "minimax-m3", name: "MiniMax M3" },
+    { id: "deepseek-v4.1-flash:cloud", name: "DeepSeek V4.1 Flash" },
+    { id: "clef", name: "Clef", kind: "systemone" },
+    { id: "clef-flash", name: "Clef Flash", kind: "systemone" },
+    { id: "clef:cloud", name: "Clef (Cloud)", kind: "systemone" },
   ],
-  serviceKinds: ["llm"],
+  serviceKinds: ["llm", "webFetch", "systemone"],
+  systemoneConfig: {
+    baseUrl: "https://ollama.com/v1/systemone",
+    authType: "apikey",
+    authHeader: "bearer",
+  },
+  fetchConfig: {
+    baseUrl: "https://ollama.com/api/web_fetch",
+    method: "POST",
+    authType: "apikey",
+    authHeader: "bearer",
+    formats: ["markdown"],
+    maxCharacters: 200000,
+    timeoutMs: 30000,
+  },
   features: {
     usage: true,
+    usageApikey: true,
   },
 };

@@ -7,11 +7,22 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
+import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+import { saveRequestUsage } from "@/lib/usageDb.js";
+
+function exactEmbeddingUsage(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
+  const promptTokens = raw.prompt_tokens ?? raw.input_tokens;
+  const completionTokens = raw.completion_tokens ?? raw.output_tokens ?? 0;
+  const totalTokens = raw.total_tokens;
+  if (!Number.isSafeInteger(promptTokens) || promptTokens <= 0 || completionTokens !== 0 || totalTokens !== promptTokens) return null;
+  return { prompt_tokens: promptTokens, completion_tokens: 0, total_tokens: totalTokens };
+}
 
 /**
  * Handle embeddings request for the SSE/Next.js server.
@@ -73,6 +84,10 @@ export async function handleEmbeddings(request) {
 
   const { provider, model } = modelInfo;
 
+  // Per-key access control: checked before any credential lookup.
+  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
+  if (keyAccessDenied) return keyAccessDenied;
+
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
   } else {
@@ -124,7 +139,21 @@ export async function handleEmbeddings(request) {
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const usage = exactEmbeddingUsage(result.usage);
+      if (usage) {
+        saveRequestUsage({
+          provider,
+          model,
+          connectionId: credentials.connectionId,
+          apiKey,
+          endpoint: url.pathname,
+          tokens: usage,
+          status: "success",
+        }).catch(() => {});
+      }
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
 

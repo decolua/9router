@@ -20,9 +20,7 @@ describe("Codex CLI Responses → OpenAI", () => {
     expect(asst?.tool_calls?.length ?? 0, "empty tool_calls[] produced").toBeGreaterThan(0);
   });
 
-  // openai-responses.js:109-110 — arguments passed through without ensuring string type
-  // KNOWN BUG
-  it.fails("function_call arguments end up as a string", () => {
+  it("function_call arguments end up as a string", () => {
     const out = R2O({
       input: [{ type: "function_call", call_id: "c1", name: "f", arguments: { a: 1 } }],
     });

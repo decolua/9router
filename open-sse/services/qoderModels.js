@@ -10,6 +10,16 @@
  *
  * On any error the live cache stays empty and chatExecuteCall surfaces the
  * problem to the user as "model config not yet fetched, retry shortly".
+ *
+ * PAT (Personal Access Token, pt-...) connections: a PAT cannot sign COSY
+ * requests directly, so we exchange it for a short-lived job token (jt-...)
+ * via the region's jobToken/exchange endpoint (plain JSON POST), then use
+ * that job token for signing. On intl, job-token traffic must hit api2.qoder.sh —
+ * api3 rejects jt- with "Login expired" (403); CN serves it from the same
+ * gateway host.
+ *
+ * The region (intl/cn) is derived from credentials.provider (or an explicit
+ * options.region override) so the same catalog logic works for both sites.
  */
 
 import { createHash } from "crypto";
@@ -17,11 +27,31 @@ import { createHash } from "crypto";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { buildCosyHeaders } from "../shared/qoder/cosy.js";
 import {
-  QODER_MODEL_LIST_URL,
+  QODER_IDE_VERSION,
+  QODER_CLIENT_TYPE,
+  qoderRegionOf,
+  qoderJobTokenExchangeUrl,
+  qoderUserInfoUrl,
+  qoderInferenceBase,
+  QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
+
+const PAT_PREFIX = "pt-";
+
+// PAT → job-token cache: a job token is short-lived (24h), so we keep it per
+// PAT and re-exchange once it is within 5 minutes of expiry.
+const PAT_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const PAT_DEFAULT_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function isQoderPat(token) {
+  return typeof token === "string" && token.startsWith(PAT_PREFIX);
+}
+
+/** @type {Map<string, { accessToken: string, userId: string, expiresAt: number }>} */
+const patJobCache = new Map();
 
 /** @type {Map<string, { expiresAt: number, models: any[], rawConfigs: Map<string, object>, fetched: boolean }>} */
 const catalogCache = new Map();
@@ -35,13 +65,121 @@ const catalogCache = new Map();
 const inflight = new Map();
 
 /**
- * Stable cache key per credential (so different login sessions for the same
- * account share an entry).
+ * Exchange a Qoder PAT (pt-...) for a short-lived job token (jt-...).
+ * This endpoint is plain JSON POST — NOT COSY-signed.
+ */
+async function exchangeJobToken(pat, proxyOptions = null, signal = null, region = "intl") {
+  const res = await proxyAwareFetch(
+    qoderJobTokenExchangeUrl(region),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "qodercli/1.0.0",
+        "Cosy-Version": QODER_IDE_VERSION,
+        "Cosy-ClientType": QODER_CLIENT_TYPE,
+      },
+      body: JSON.stringify({ personal_token: pat }),
+      signal,
+    },
+    proxyOptions,
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`qoder PAT exchange failed: ${res.status} ${text.slice(0, 200)}`);
+  }
+  const data = await res.json();
+  if (!data.token) throw new Error("qoder PAT exchange returned no job token");
+
+  let expiresAt = Date.now() + PAT_DEFAULT_TTL_MS;
+  if (data.expires_at) {
+    const parsed = Date.parse(data.expires_at);
+    if (!Number.isNaN(parsed)) expiresAt = parsed;
+  } else if (typeof data.expires_in === "number" && data.expires_in > 0) {
+    expiresAt = Date.now() + data.expires_in;
+  }
+  return { jobToken: data.token, jobRefreshToken: data.refresh_token || "", expiresAt };
+}
+
+/**
+ * Resolve the Qoder userId for a job token (needed for COSY signing).
+ * Returns "" on any failure — callers fall back to the stored userId.
+ */
+async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = null, region = "intl") {
+  try {
+    const res = await proxyAwareFetch(
+      qoderUserInfoUrl(region),
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${jobToken}`,
+          Accept: "application/json",
+          "User-Agent": "qodercli/1.0.0",
+        },
+        signal,
+      },
+      proxyOptions,
+    );
+    if (!res.ok) return "";
+    const data = await res.json().catch(() => ({}));
+    return data.id || data.userId || data.user_id || "";
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Resolve a PAT to a job-token credential, cached per-PAT-per-region.
+ */
+async function resolvePatCredential(pat, proxyOptions = null, signal = null, region = "intl") {
+  const cacheKey = `${region}:${pat}`;
+  const cached = patJobCache.get(cacheKey);
+  if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) return cached;
+
+  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal, region);
+  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal, region);
+  const resolved = { accessToken: jobToken, userId, expiresAt };
+  patJobCache.set(cacheKey, resolved);
+  return resolved;
+}
+
+/**
+ * Resolve connection credentials to COSY-signable form:
+ *   - PAT (pt-...) connections → exchanged to a job token (jt-...) + userId
+ *   - everything else → passed through unchanged
+ *
+ * Region defaults to the one implied by credentials.provider (qoder-cn → cn).
+ */
+export async function resolveQoderCredentials(credentials, proxyOptions = null, signal = null, region) {
+  const raw = credentials?.apiKey || credentials?.accessToken;
+  if (isQoderPat(raw)) {
+    const effRegion = region || qoderRegionOf(credentials?.provider);
+    const resolved = await resolvePatCredential(raw, proxyOptions, signal, effRegion);
+    return {
+      ...credentials,
+      accessToken: resolved.accessToken,
+      apiKey: undefined,
+      providerSpecificData: {
+        authMethod: "pat",
+        ...(credentials?.providerSpecificData || {}),
+        userId: resolved.userId || credentials?.providerSpecificData?.userId || "",
+        machineId: credentials?.providerSpecificData?.machineId || "",
+      },
+    };
+  }
+  return credentials;
+}
+
+/**
+ * Stable cache key per credential+region (so different login sessions for the
+ * same account share an entry, and the same PAT on both sites stays apart).
  */
 function cacheKey(credentials) {
   const psd = credentials?.providerSpecificData || {};
   const seed = psd.userId || credentials?.refreshToken || credentials?.accessToken || "anonymous";
-  return createHash("sha256").update(`qoder:${seed}`).digest("hex");
+  const region = qoderRegionOf(credentials?.provider);
+  return createHash("sha256").update(`qoder:${region}:${seed}`).digest("hex");
 }
 
 /**
@@ -64,14 +202,18 @@ function cosyCredsFromConnection(credentials) {
  *     rawConfigs: Map<modelKey, modelConfigObject> }
  * or `null` on any error.
  */
-async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
+async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, region = "intl") {
   const creds = cosyCredsFromConnection(credentials);
   if (!creds.userId || !creds.authToken) return null;
+
+  // Intl job-token traffic is rejected by api3 ("Login expired" 403) — the
+  // official qodercli serves it from api2 instead; CN uses the single gateway.
+  const modelListUrl = `${qoderInferenceBase(credentials, region)}/algo/api/v2/model/list`;
 
   const headers = {
     Accept: "application/json",
     "Accept-Encoding": "identity",
-    ...buildCosyHeaders(Buffer.alloc(0), QODER_MODEL_LIST_URL, creds),
+    ...buildCosyHeaders(Buffer.alloc(0), modelListUrl, creds),
   };
 
   const controller = new AbortController();
@@ -92,7 +234,7 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null) {
       }
     }
     response = await proxyAwareFetch(
-      QODER_MODEL_LIST_URL,
+      modelListUrl,
       {
         method: "GET",
         headers,
@@ -159,11 +301,22 @@ export async function getQoderModelConfig(credentials, modelKey, options = {}) {
  * one upstream request per credential.
  */
 export async function resolveQoderModels(credentials, options = {}) {
-  if (!credentials?.accessToken) return null;
-  const psd = credentials.providerSpecificData || {};
-  if (!psd.userId) return null;
+  const region = options.region || qoderRegionOf(credentials?.provider);
+  let resolved;
+  try {
+    resolved = await resolveQoderCredentials(credentials, options.proxyOptions, options.signal, region);
+  } catch (error) {
+    options.log?.warn?.("QODER", `PAT exchange failed: ${error.message}`);
+    return null;
+  }
+  if (!resolved?.accessToken || !(resolved.providerSpecificData || {}).userId) return null;
+  // Stamp the provider so cacheKey/catalog derive the region even when the
+  // caller's credentials object didn't carry a provider id (e.g. /v1/models).
+  if (resolved && !resolved.provider) {
+    resolved.provider = region === "cn" ? "qoder-cn" : "qoder";
+  }
 
-  const key = cacheKey(credentials);
+  const key = cacheKey(resolved);
   const now = Date.now();
   if (!options.forceRefresh) {
     const cached = catalogCache.get(key);
@@ -180,7 +333,7 @@ export async function resolveQoderModels(credentials, options = {}) {
   }
 
   const fetchPromise = (async () => {
-    const fetched = await fetchQoderCatalogRaw(credentials, options.signal, options.proxyOptions);
+    const fetched = await fetchQoderCatalogRaw(resolved, options.signal, options.proxyOptions, region);
     if (!fetched) return null;
     const entry = {
       expiresAt: Date.now() + CACHE_TTL_MS,
@@ -202,6 +355,46 @@ export async function resolveQoderModels(credentials, options = {}) {
       inflight.delete(key);
     }
   }
+}
+
+/**
+ * Every model key the chat endpoint accepts for this credential: the IDE-visible
+ * models first, then catalog entries flagged `enable:false` (hidden in the IDE
+ * picker, e.g. by an account policy, but still served by agent_chat_generation —
+ * see fetchQoderCatalogRaw). /v1/models uses this so the advertised list matches
+ * what the router will actually route instead of collapsing to one or two keys.
+ */
+export function routableQoderModels(catalog) {
+  if (!catalog) return [];
+  const out = [];
+  const seen = new Set();
+
+  // Static fallback keys first (Sonus `smodel` / Cantus `cmodel`). The live
+  // catalog often omits them, yet the executor still routes them through
+  // QODER_STATIC_MODEL_CONFIGS — so they must not vanish from /v1/models just
+  // because the live catalog replaced the static provider list. A catalog entry
+  // for the same key always wins.
+  const catalogKeys = new Set([
+    ...(catalog.models || []).map((m) => m?.id),
+    ...(catalog.rawConfigs ? [...catalog.rawConfigs.keys()] : []),
+  ]);
+  for (const [key, cfg] of Object.entries(QODER_STATIC_MODEL_CONFIGS)) {
+    if (!key || seen.has(key) || catalogKeys.has(key)) continue;
+    seen.add(key);
+    out.push({ id: key, name: cfg.display_name || key, hidden: false });
+  }
+
+  for (const m of catalog.models || []) {
+    if (!m?.id || seen.has(m.id)) continue;
+    seen.add(m.id);
+    out.push({ id: m.id, name: m.name || m.id, hidden: false });
+  }
+  for (const [key, cfg] of catalog.rawConfigs || []) {
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ id: key, name: cfg?.display_name || key, hidden: true });
+  }
+  return out;
 }
 
 export function invalidateQoderCatalog(credentials) {

@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { handleImageGenerationCore } from "../../open-sse/handlers/imageGenerationCore.js";
+import { CODEX_CLI_VERSION } from "../../open-sse/config/appConstants.js";
 
 const originalFetch = global.fetch;
 
@@ -316,7 +317,69 @@ describe("handleImageGenerationCore", () => {
     expect(responseBody.data[0].b64_json).toBeTruthy();
   });
 
-  it("generates image with Codex gpt-5.5-image using current Codex version header", async () => {
+  it.each(["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"])("generates image with Codex %s-image using current Codex version header", async (model) => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        [
+          "event: response.output_item.done",
+          'data: {"item":{"type":"image_generation_call","result":"base64codeximage"}}',
+          "",
+          "event: response.completed",
+          'data: {"response":{"usage":{"input_tokens":123,"output_tokens":456,"total_tokens":579,"input_tokens_details":{"cached_tokens":12}}}}',
+          "",
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      )
+    );
+
+    const onUsage = vi.fn();
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A green square",
+        size: "1024x1024",
+        output_format: "png",
+      },
+      modelInfo: { provider: "codex", model: `${model}-image` },
+      credentials: {
+        accessToken: "codex-token",
+        providerSpecificData: { chatgptAccountId: "account-123" },
+      },
+      log: null,
+      onUsage,
+    });
+
+    expect(result.success).toBe(true);
+    expect(global.fetch).toHaveBeenCalledWith(
+      "https://chatgpt.com/backend-api/codex/responses",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          authorization: "Bearer codex-token",
+          "chatgpt-account-id": "account-123",
+          version: CODEX_CLI_VERSION,
+        }),
+      })
+    );
+
+    const fetchCall = global.fetch.mock.calls[0];
+    const requestBody = JSON.parse(fetchCall[1].body);
+    expect(requestBody.model).toBe(model);
+    expect(requestBody.tools).toEqual([
+      { type: "image_generation", output_format: "png", size: "1024x1024" },
+    ]);
+
+    const responseBody = await result.response.json();
+    expect(responseBody.data[0].b64_json).toBe("base64codeximage");
+    expect(onUsage).toHaveBeenCalledWith({
+      prompt_tokens: 123,
+      completion_tokens: 456,
+      total_tokens: 579,
+      cached_tokens: 12,
+    });
+  });
+
+  it("generates image with Codex gpt-image-2.5 tool model", async () => {
     global.fetch.mockResolvedValueOnce(
       new Response(
         [
@@ -331,11 +394,11 @@ describe("handleImageGenerationCore", () => {
 
     const result = await handleImageGenerationCore({
       body: {
-        prompt: "A green square",
+        prompt: "A futuristic city",
         size: "1024x1024",
         output_format: "png",
       },
-      modelInfo: { provider: "codex", model: "gpt-5.5-image" },
+      modelInfo: { provider: "codex", model: "gpt-image-2.5" },
       credentials: {
         accessToken: "codex-token",
         providerSpecificData: { chatgptAccountId: "account-123" },
@@ -344,24 +407,14 @@ describe("handleImageGenerationCore", () => {
     });
 
     expect(result.success).toBe(true);
-    expect(global.fetch).toHaveBeenCalledWith(
-      "https://chatgpt.com/backend-api/codex/responses",
-      expect.objectContaining({
-        method: "POST",
-        headers: expect.objectContaining({
-          authorization: "Bearer codex-token",
-          "chatgpt-account-id": "account-123",
-          version: "0.136.0",
-        }),
-      })
-    );
-
     const fetchCall = global.fetch.mock.calls[0];
     const requestBody = JSON.parse(fetchCall[1].body);
-    expect(requestBody.model).toBe("gpt-5.5");
+    expect(requestBody.model).toBe("gpt-6-sol");
     expect(requestBody.tools).toEqual([
-      { type: "image_generation", output_format: "png", size: "1024x1024" },
+      { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
     ]);
+    expect(requestBody.tool_choice).toEqual({ type: "image_generation" });
+    expect(requestBody.reasoning).toEqual({ effort: "medium", summary: "auto" });
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");

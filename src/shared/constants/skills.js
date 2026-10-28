@@ -56,7 +56,7 @@ export const SKILLS = [
   {
     id: "9router-web-search",
     name: "Web Search",
-    description: "Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com.",
+    description: "Web and X search via Tavily / Exa / Brave / Serper / SearXNG / Google PSE / You.com / Xquik.",
     endpoint: "/v1/search",
     icon: "search",
   },

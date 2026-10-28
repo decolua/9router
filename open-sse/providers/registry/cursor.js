@@ -23,7 +23,12 @@ export default {
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1",
     },
-    clientVersion: "3.1.0",
+    clientVersion: "3.12.17",
+    usage: {
+      url: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+      planInfoUrl: "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo",
+      authUsageUrl: "https://api2.cursor.sh/auth/usage",
+    },
   },
   models: [
     { id: "default", name: "Auto (Server Picks)" },
@@ -44,15 +49,18 @@ export default {
   oauth: {
     apiEndpoint: "https://api2.cursor.sh",
     chatEndpoint: "/aiserver.v1.ChatService/StreamUnifiedChatWithTools",
-    modelsEndpoint: "/aiserver.v1.AiService/GetDefaultModelNudgeData",
+    modelsEndpoint: "/agent.v1.AgentService/GetUsableModels",
     api3Endpoint: "https://api3.cursor.sh",
     agentEndpoint: "https://agent.api5.cursor.sh",
     agentNonPrivacyEndpoint: "https://agentn.api5.cursor.sh",
-    clientVersion: "3.1.0",
+    clientVersion: "3.12.17",
     clientType: "ide",
     dbKeys: {
       accessToken: "cursorAuth/accessToken",
       machineId: "storage.serviceMachineId",
     },
+  },
+  features: {
+    usage: true,
   },
 };

@@ -3,18 +3,18 @@ export default {
   priority: 10,
   alias: "alicode-intl",
   display: {
-    name: "Alibaba Intl",
+    name: "Alibaba Coding",
     icon: "cloud",
     color: "#FF6A00",
     textIcon: "ALi",
-    website: "https://modelstudio.console.alibabacloud.com",
+    website: "https://www.alibabacloud.com/product/coding",
     notice: {
-      apiKeyUrl: "https://modelstudio.console.alibabacloud.com/?apiKey=1",
+      apiKeyUrl: "https://www.alibabacloud.com/product/coding",
     },
   },
   category: "apikey",
   transport: {
-    baseUrl: "https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions",
+    baseUrl: "https://coding-intl.dashscope.aliyuncs.com/v1/chat/completions",
     headers: {},
     quirks: { preserveCacheControl: true },
   },
