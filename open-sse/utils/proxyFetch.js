@@ -277,6 +277,12 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
  * Create HTTPS request with manual socket connection (bypass DNS)
  */
 async function createBypassRequest(parsedUrl, realIP, options) {
+  if (options.signal?.aborted) {
+    const err = new Error("aborted");
+    err.name = "AbortError";
+    return Promise.reject(err);
+  }
+
   const httpsModule = await import("https");
   const netModule = await import("net");
   // CJS modules expose exports via .default in ESM dynamic import context
@@ -285,8 +291,41 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
+    let req = null;
+    let settled = false;
+    let onAbort = null;
+
+    const cleanup = () => {
+      settled = true;
+      if (options.signal && onAbort) {
+        try { options.signal.removeEventListener("abort", onAbort); } catch {}
+        onAbort = null;
+      }
+    };
+
+    onAbort = () => {
+      if (settled) return;
+      cleanup();
+      try { socket.destroy(); } catch {}
+      try { req?.destroy?.(); } catch {}
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      reject(err);
+    };
+
+    if (options.signal) {
+      options.signal.addEventListener("abort", onAbort, { once: true });
+    }
 
     socket.connect(HTTPS_PORT, realIP, () => {
+      if (settled || options.signal?.aborted) {
+        cleanup();
+        try { socket.destroy(); } catch {}
+        const err = new Error("aborted");
+        err.name = "AbortError";
+        return reject(err);
+      }
+
       const reqOptions = {
         socket,
         // SNI + cert hostname are validated against the hostname the caller
@@ -304,7 +343,8 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         },
       };
 
-      const req = https.request(reqOptions, (res) => {
+      req = https.request(reqOptions, (res) => {
+        cleanup();
         const response = {
           ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
           status: res.statusCode,
@@ -321,14 +361,31 @@ async function createBypassRequest(parsedUrl, realIP, options) {
         resolve(response);
       });
 
-      req.on("error", reject);
+      req.on("error", (err) => {
+        cleanup();
+        if (options.signal?.aborted) {
+          const abortErr = new Error("aborted");
+          abortErr.name = "AbortError";
+          return reject(abortErr);
+        }
+        reject(err);
+      });
+
       if (options.body) {
         req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
       }
       req.end();
     });
 
-    socket.on("error", reject);
+    socket.on("error", (err) => {
+      cleanup();
+      if (options.signal?.aborted) {
+        const abortErr = new Error("aborted");
+        abortErr.name = "AbortError";
+        return reject(abortErr);
+      }
+      reject(err);
+    });
   });
 }
 
@@ -373,6 +430,9 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       const realIP = await resolveRealIP(parsedUrl.hostname);
       if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
     } catch (error) {
+      if (options.signal?.aborted || error.name === "AbortError") {
+        throw error;
+      }
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
   }

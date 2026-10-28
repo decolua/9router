@@ -575,6 +575,12 @@ export async function handleComboChat({
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
+      // Client cancellation (499): exit immediately without rotating through remaining combo members
+      if (result.status === 499) {
+        log.warn("COMBO", `Model ${modelStr} client aborted request (499) — stopping combo rotation`);
+        return result;
+      }
+
       // Check if should fallback to next model
       const { provider } = parseModel(modelStr);
       const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
