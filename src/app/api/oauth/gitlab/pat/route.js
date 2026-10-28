@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { createProviderConnection } from "@/models";
+import { fetchPublic } from "@/shared/utils/ssrfGuard.js";
+import { isLocalRequest } from "@/dashboardGuard";
 
 const GITLAB_DEFAULT_BASE = "https://gitlab.com";
 
@@ -23,8 +25,13 @@ export async function POST(request) {
 
     const base = (baseUrl?.trim() || GITLAB_DEFAULT_BASE).replace(/\/$/, "");
 
+    // The base URL is client-supplied, so a remote caller must not be able to point
+    // the server at an internal/loopback/metadata host. Local callers keep self-hosted
+    // GitLab on a private network reachable (mirrors provider-nodes/validate + auth/oidc).
+    const fetchImpl = isLocalRequest(request) ? fetch : fetchPublic;
+
     // Verify token by fetching current user
-    const userRes = await fetch(`${base}/api/v4/user`, {
+    const userRes = await fetchImpl(`${base}/api/v4/user`, {
       headers: { "Private-Token": token.trim(), Accept: "application/json" },
     });
 
@@ -57,6 +64,9 @@ export async function POST(request) {
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("GitLab PAT auth error:", error);
+    if (String(error?.message).startsWith("Blocked URL")) {
+      return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
+    }
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
