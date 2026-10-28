@@ -17,8 +17,9 @@ export function filterToOpenAIFormat(body, opts = {}) {
   }
 
   body.messages = body.messages.map(msg => {
-    // Normalize developer role to system (many providers don't support developer)
-    if (msg.role === ROLE.DEVELOPER) msg = { ...msg, role: ROLE.SYSTEM };
+    // Legacy OpenAI-compatible providers may only accept system; the OpenAI
+    // provider accepts developer and must keep the caller's instruction role.
+    if (msg.role === ROLE.DEVELOPER && !opts.preserveDeveloperRole) msg = { ...msg, role: ROLE.SYSTEM };
 
     // Keep tool messages as-is (OpenAI format)
     if (msg.role === ROLE.TOOL) return msg;
