@@ -108,6 +108,7 @@
 - **Combos**: fallback when a model returns HTTP 200 with zero usable content (#4750)
 - **Qoder**: surface add-on (free-credit promo) quota in the quota tracker (#4758)
 - **Translator**: return Claude messages for forced SSE JSON responses (#4789)
+- **Translator**: report `prompt_tokens_details.cached_tokens` to OpenAI clients when a Claude stream ends without a `message_delta`, so a cached upstream request is not billed as a 0% cache hit (#5030)
 - **Vertex**: honor API-key project/location for Gemini 4 Argon (#4821)
 - **GitHub**: route Copilot embeddings to `api.githubcopilot.com` (#4793)
 - **Codex**: drop retired gpt-5.5 from registry, image, and auto-ping; CLI preset default to `gpt-6.1-sol`
