@@ -15,8 +15,14 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import { classifyUpstreamError } from "open-sse/utils/error.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
+
+// Model discovery is a discovery call, not inference: if a provider cannot
+// answer it quickly it is effectively down for this connection, and making the
+// caller wait on a dead socket is worse than saying so. Keep it short.
+const MODELS_FETCH_TIMEOUT_MS = 6000;
 
 // Model discovery must identify as the same Codex CLI version as inference.
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
@@ -528,7 +534,8 @@ const PROVIDER_MODELS_CONFIG = {
       const url = `${resolveOllamaLocalHost(connection)}/api/tags`;
       const response = await fetch(url, {
         method: "GET",
-        headers: { "Content-Type": "application/json" }
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       });
       if (!response.ok) {
         const errorText = await response.text();
@@ -565,6 +572,7 @@ export async function GET(request, { params }) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${connection.apiKey}`,
         },
+        signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -606,6 +614,7 @@ export async function GET(request, { params }) {
           "anthropic-version": "2023-06-01",
           "Authorization": `Bearer ${connection.apiKey}`
         },
+        signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -670,7 +679,8 @@ export async function GET(request, { params }) {
     // Make request
     const fetchOptions = {
       method: config.method,
-      headers
+      headers,
+      signal: AbortSignal.timeout(MODELS_FETCH_TIMEOUT_MS)
     };
 
     if (config.body && config.method === "POST") {
@@ -698,6 +708,14 @@ export async function GET(request, { params }) {
     });
   } catch (error) {
     console.log("Error fetching provider models:", error);
-    return NextResponse.json({ error: "Failed to fetch models" }, { status: 500 });
+
+    // A dead or slow upstream is not an internal error. The branches above
+    // already forward the upstream's real status (e.g. 401 -> 401); the thrown
+    // path should be just as honest instead of collapsing everything into 500.
+    const failure = classifyUpstreamError(error);
+    return NextResponse.json(
+      { error: failure.message, code: failure.code },
+      { status: failure.status }
+    );
   }
 }
