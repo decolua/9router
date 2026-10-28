@@ -41,3 +41,4 @@ Akar masalah teridentifikasi dari dua hal:
 Dengan perbaikan ini, request menuju endpoint OpenCode Free tier berhasil di-route melalui TLS client impersonation (`wreq-js`) dengan cipher list BoringSSL yang valid, mencegah error 502/429 dan mengembalikan respons chat completion secara normal.
 
 **Last Updated:** 2026-10-28
+
