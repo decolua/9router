@@ -20,7 +20,7 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
-import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities, DEFAULT_CAPABILITIES } from "open-sse/providers/capabilities.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
 // credentials carry the provider id so qoderModels picks the right region's
@@ -656,19 +656,148 @@ export async function OPTIONS() {
   });
 }
 
+// Capability vocabulary for discovery filters — exactly the boolean keys of
+// DEFAULT_CAPABILITIES. Non-boolean keys (thinkingFormat, thinkingRange,
+// contextWindow, maxOutput) are excluded because `=== true` can never match them;
+// per-model wire quirks that are not part of the default shape (forcedToolChoice,
+// thinkingOffType) are excluded for the same reason.
+export const VALID_CAPABILITIES = Object.keys(DEFAULT_CAPABILITIES).filter(
+  (key) => typeof DEFAULT_CAPABILITIES[key] === "boolean",
+);
+
+export function filterModels(models, filters = {}) {
+  let result = models;
+
+  if (filters.capabilities && filters.capabilities.length > 0) {
+    result = result.filter((m) => {
+      if (!m.capabilities) return false;
+      return filters.capabilities.every((cap) => m.capabilities[cap] === true);
+    });
+  }
+
+  if (Number.isFinite(filters.min_context)) {
+    result = result.filter((m) => (m.context_length || 0) >= filters.min_context);
+  }
+
+  if (Number.isFinite(filters.max_output)) {
+    result = result.filter((m) => (m.max_completion_tokens || 0) >= filters.max_output);
+  }
+
+  if (filters.kind) {
+    // Records with no explicit kind are LLM — same convention as modelKind()
+    // above, so ?kind=llm matches the whole default list.
+    result = result.filter((m) => (m.kind || LLM_KIND) === filters.kind);
+  }
+
+  if (filters.q) {
+    const needle = filters.q.toLowerCase();
+    result = result.filter((m) => {
+      const id = typeof m.id === "string" ? m.id.toLowerCase() : "";
+      const name = typeof m.name === "string" ? m.name.toLowerCase() : "";
+      return id.includes(needle) || (!!name && name.includes(needle));
+    });
+  }
+
+  if (filters.owned_by) {
+    result = result.filter((m) => m.owned_by === filters.owned_by);
+  }
+
+  if (Array.isArray(filters.exclude) && filters.exclude.length > 0) {
+    const excluded = new Set(filters.exclude);
+    result = result.filter((m) => !excluded.has(m.id));
+  }
+
+  return result;
+}
+
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
+ * Optional query params: capability, min_context, kind, q, limit
  */
 export async function GET(request) {
   try {
-    // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
     const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
-    const data = await filterModelsListForKey(
-      await getKeyAccessContext(request),
-      await buildModelsList([LLM_KIND], { skipDynamicFetch })
-    );
-    return Response.json({ object: "list", data }, {
+    const searchParams = request?.nextUrl?.searchParams;
+
+    const filters = {
+      capabilities: [],
+      min_context: null,
+      kind: null,
+      q: null,
+      limit: null,
+    };
+
+    if (searchParams) {
+      const capParams = searchParams.getAll("capability");
+      if (capParams.length > 0) {
+        for (const val of capParams) {
+          for (const part of val.split(",")) {
+            const trimmed = part.trim();
+            if (trimmed) {
+              if (!VALID_CAPABILITIES.includes(trimmed)) {
+                return Response.json(
+                  { error: { message: `Unknown capability: "${trimmed}". Valid: ${[...VALID_CAPABILITIES].sort().join(", ")}`, type: "invalid_request_error" } },
+                  { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
+                );
+              }
+              filters.capabilities.push(trimmed);
+            }
+          }
+        }
+      }
+
+      const minCtxStr = searchParams.get("min_context");
+      if (minCtxStr !== null) {
+        // Number() over parseInt(): "1.5"/"" must be rejected, not silently truncated to 1/NaN-guessed.
+        const minCtx = Number(minCtxStr.trim());
+        if (minCtxStr.trim() === "" || !Number.isInteger(minCtx) || minCtx < 0) {
+          return Response.json(
+            { error: { message: "min_context must be a non-negative integer", type: "invalid_request_error" } },
+            { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
+          );
+        }
+        filters.min_context = minCtx;
+      }
+
+      const kindVal = searchParams.get("kind");
+      if (kindVal !== null) {
+        filters.kind = kindVal;
+      }
+
+      const qVal = searchParams.get("q");
+      if (qVal !== null) {
+        filters.q = qVal;
+      }
+
+      const limitStr = searchParams.get("limit");
+      if (limitStr !== null) {
+        const limit = Number(limitStr.trim());
+        if (limitStr.trim() === "" || !Number.isInteger(limit) || limit <= 0) {
+          return Response.json(
+            { error: { message: "limit must be a positive integer", type: "invalid_request_error" } },
+            { status: 400, headers: { "Access-Control-Allow-Origin": "*" } }
+          );
+        }
+        filters.limit = limit;
+      }
+    }
+
+    const hasFilters = filters.capabilities.length > 0 || filters.min_context !== null ||
+                       filters.kind !== null || filters.q !== null || filters.limit !== null;
+
+    const data = await buildModelsList([LLM_KIND], { skipDynamicFetch });
+    // Filters are opt-in: with no filter param the list above is returned
+    // untouched, so existing /v1/models clients stay byte-compatible.
+    let filtered = data;
+    if (hasFilters) {
+      filtered = filterModels(data, filters);
+      if (filters.limit !== null) filtered = filtered.slice(0, filters.limit);
+    }
+    // v0.5.99: per-key access narrowing gates whatever is returned.
+    filtered = await filterModelsListForKey(await getKeyAccessContext(request), filtered);
+
+    return Response.json({ object: "list", data: filtered }, {
       headers: { "Access-Control-Allow-Origin": "*" },
     });
   } catch (error) {

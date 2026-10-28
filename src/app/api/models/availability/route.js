@@ -6,7 +6,7 @@ import {
 
 const MODEL_LOCK_PREFIX = "modelLock_";
 
-function getActiveModelLocks(connection) {
+export function getActiveModelLocks(connection) {
   const now = Date.now();
   return Object.entries(connection)
     .filter(([key, value]) => key.startsWith(MODEL_LOCK_PREFIX) && value)
