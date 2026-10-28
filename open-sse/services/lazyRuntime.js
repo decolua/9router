@@ -15,6 +15,8 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import { getWritableDataDir } from "../utils/writableDataDir.js";
 
+const nodeRequire = createRequire(import.meta.url);
+
 // Keep in sync with package.json devDependencies.
 const LAZY_DEP_VERSIONS = {
   "playwright-core": "^1.62.1",
@@ -33,6 +35,12 @@ function isModuleMissing(error) {
 function npmInstall(pkg, version) {
   const cwd = getRuntimeDir();
   fs.mkdirSync(cwd, { recursive: true });
+  const pkgJsonPath = path.join(cwd, "package.json");
+  if (!fs.existsSync(pkgJsonPath)) {
+    try {
+      fs.writeFileSync(pkgJsonPath, JSON.stringify({ name: "runtime-deps", private: true }, null, 2));
+    } catch {}
+  }
   const npm = process.platform === "win32" ? "npm.cmd" : "npm";
   const args = ["install", "--no-audit", "--no-fund", "--prefer-online", `${pkg}@${version}`];
   return new Promise((resolve) => {
@@ -54,9 +62,11 @@ async function load(pkg) {
     if (!isModuleMissing(error)) throw error;
   }
   // 2) Already present in the runtime dir from a previous install.
-  const runtimeRequire = createRequire(path.join(getRuntimeDir(), "package.json"));
   try {
-    return await import(pathToFileURL(runtimeRequire.resolve(pkg)).href);
+    const resolved = nodeRequire.resolve(pkg, {
+      paths: [getRuntimeDir(), path.join(getRuntimeDir(), "node_modules")],
+    });
+    return await import(pathToFileURL(resolved).href);
   } catch (error) {
     if (!isModuleMissing(error)) throw error;
   }
@@ -71,7 +81,10 @@ async function load(pkg) {
       `install it manually: cd "${dir}" && npm install ${pkg}@${version}`
     );
   }
-  return import(pathToFileURL(createRequire(path.join(dir, "package.json")).resolve(pkg)).href);
+  const resolved = nodeRequire.resolve(pkg, {
+    paths: [dir, path.join(dir, "node_modules")],
+  });
+  return import(pathToFileURL(resolved).href);
 }
 
 export function loadRuntimeDep(pkg) {
