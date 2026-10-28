@@ -33,6 +33,24 @@ COPY . ./
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
+# https://github.com/decolua/9router/issues/5245
+# wreq-js and playwright-core are lazy runtime dependencies (loaded by
+# lazyRuntime.js via createRequire). Next standalone tracing does not include
+# them, so OpenCode Free fails with HTTP 502 ("resolve is undefined").
+# Install them (with their native bindings/transitive deps) in an isolated dir
+# so the runner stage can copy them into /app/node_modules.
+RUN --mount=type=cache,target=/root/.npm \
+    mkdir -p /opt/lazy-runtime && cd /opt/lazy-runtime && \
+    npm init -y >/dev/null && \
+    npm install --no-save \
+      --registry="${NPM_REGISTRY}" \
+      --fetch-retries=5 \
+      --fetch-retry-factor=2 \
+      --fetch-retry-mintimeout=10000 \
+      --fetch-retry-maxtimeout=120000 \
+      --fetch-timeout=300000 \
+      wreq-js playwright-core
+
 FROM ${NODE_IMAGE} AS runner
 ARG ALPINE_MIRROR
 ARG APP_VERSION
@@ -67,6 +85,9 @@ COPY --chown=node:node --from=builder /app/node_modules/next ./node_modules/next
 COPY --chown=node:node --from=builder /app/node_modules/sql.js ./node_modules/sql.js
 # node-machine-id is createRequire-loaded at runtime; tracing omits it.
 COPY --chown=node:node --from=builder /app/node_modules/node-machine-id ./node_modules/node-machine-id
+# wreq-js + playwright-core (and deps) are lazy-loaded at runtime and omitted by
+# tracing. See https://github.com/decolua/9router/issues/5245
+COPY --chown=node:node --from=builder /opt/lazy-runtime/node_modules/. ./node_modules/
 
 RUN mkdir -p /app/data /app/data-home && \
   chown node:node /app/data /app/data-home && \

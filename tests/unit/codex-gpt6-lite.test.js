@@ -27,6 +27,32 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(getThinkingLevels("codex", `${model}(high)`)).toEqual(entry.thinkingLevels);
   });
 
+  it("lists gpt-6.1-terra as a Lite model with its 500k Codex window", () => {
+    const entry = getModelsByProviderId("codex").find((item) => item.id === "gpt-6.1-terra");
+    expect(entry?.responsesLite).toBe(true);
+    expect(entry?.thinkingLevels).toEqual(["low", "medium", "high", "xhigh", "max"]);
+    expect(getCapabilitiesForModel("codex", "gpt-6.1-terra")).toMatchObject({
+      vision: true,
+      reasoning: true,
+      search: true,
+      thinkingFormat: "openai",
+      contextWindow: 500000,
+      maxOutput: 128000,
+    });
+    expect(getPricingForModel("codex", "gpt-6.1-terra")).toMatchObject({ input: 1, cached: 0.05, cache_creation: 1.25, output: 5 });
+  });
+
+  it("sends gpt-6.1-terra with the Lite header and shape", () => {
+    const executor = new CodexExecutor();
+    const body = executor.transformRequest("gpt-6.1-terra", {
+      model: "gpt-6.1-terra", input: "hello", reasoning: { effort: "ultra" },
+    }, true, credentials);
+    const headers = executor.buildHeaders(credentials, true, null, "gpt-6.1-terra");
+
+    expect(headers["x-openai-internal-codex-responses-lite"]).toBe("true");
+    expect(body.reasoning).toEqual({ effort: "max", context: "all_turns" });
+  });
+
   it("uses official OpenAI Standard pricing for GPT-6", () => {
     expect(getPricingForModel("codex", "gpt-6-astra")).toMatchObject({ input: 10, cached: 1, cache_creation: 12.5, output: 50 });
     expect(getPricingForModel("codex", "gpt-6-sol")).toMatchObject({ input: 2, cached: 0.2, cache_creation: 2.5, output: 10 });
