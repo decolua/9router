@@ -1098,6 +1098,147 @@ export function encodeMcpResultToolNotFound(name) {
   );
 }
 
+// ==================== AgentService native tool result encoders ====================
+// Mirror agent/v1/*_exec.proto success payloads. wrapAgentExecResult frames an
+// ExecClientMessage (AgentStreamClientMessage.exec = field 2) with id (field 1),
+// exec_id (field 15), and the per-tool result variant.
+
+const AGENT_EXEC_ID = 15;
+
+function wrapAgentExecResult(id, execId, resultField, resultVariant, variantField = null) {
+  const result = variantField == null ? resultVariant : encodeField(variantField, WIRE_TYPE.LEN, resultVariant);
+  const exec = concatArrays(
+    encodeField(1, WIRE_TYPE.VARINT, id || 0),
+    ...(execId ? [encodeField(AGENT_EXEC_ID, WIRE_TYPE.LEN, execId)] : []),
+    encodeField(resultField, WIRE_TYPE.LEN, result),
+  );
+  return wrapConnectRPCFrame(encodeField(2, WIRE_TYPE.LEN, exec));
+}
+
+export function encodeAgentReadSuccess(execMsgId, execId, { path = "", content = "", truncated = false, fileSize = 0 } = {}) {
+  const lines = content ? content.split("\n").length : 0;
+  const success = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, path),
+    encodeField(2, WIRE_TYPE.LEN, content),
+    encodeField(3, WIRE_TYPE.VARINT, lines),
+    encodeField(4, WIRE_TYPE.VARINT, fileSize),
+    ...(truncated ? [encodeField(6, WIRE_TYPE.VARINT, 1)] : []),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 7, success, 1);
+}
+
+export function encodeAgentGrepSuccess(execMsgId, execId, { pattern = "", path = ".", matches = [], truncated = false } = {}) {
+  // GrepFileMatch -> repeated inside GrepContentResult.matches (field 1)
+  const fileMatches = matches.map(({ file = "", lines = [] }) =>
+    encodeField(1, WIRE_TYPE.LEN, concatArrays(
+      encodeField(1, WIRE_TYPE.LEN, file),
+      ...lines.map(({ lineNumber = 0, content = "" }) =>
+        encodeField(2, WIRE_TYPE.LEN, concatArrays(encodeField(1, WIRE_TYPE.VARINT, lineNumber), encodeField(2, WIRE_TYPE.LEN, content)))
+      ),
+    )),
+  );
+  const totalMatched = matches.reduce((n, m) => n + (m.lines?.length || 0), 0);
+  // GrepContentResult
+  const contentResult = concatArrays(
+    ...fileMatches,
+    encodeField(2, WIRE_TYPE.VARINT, totalMatched),
+    encodeField(3, WIRE_TYPE.VARINT, totalMatched),
+    ...(truncated ? [encodeField(4, WIRE_TYPE.VARINT, 1)] : []),
+  );
+  // GrepUnionResult.content = 3 ; map entry key=1 value=2 ; workspace_results=4
+  const entry = concatArrays(encodeField(1, WIRE_TYPE.LEN, path || "."), encodeField(2, WIRE_TYPE.LEN, encodeField(3, WIRE_TYPE.LEN, contentResult)));
+  const success = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, pattern),
+    encodeField(2, WIRE_TYPE.LEN, path || "."),
+    encodeField(3, WIRE_TYPE.LEN, "content"),
+    encodeField(4, WIRE_TYPE.LEN, entry),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 5, success, 1);
+}
+
+export function encodeAgentLsSuccess(execMsgId, execId, { path = "", files = [], dirs = [], truncated = false, numFiles = 0 } = {}) {
+  // LsDirectoryTreeNode: abs_path=1, children_dirs=2, children_files=3,
+  // children_were_processed=4, full_subtree_extension_counts=5, num_files=6
+  const node = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, path),
+    ...dirs.map((d) => encodeField(2, WIRE_TYPE.LEN, encodeField(1, WIRE_TYPE.LEN, d))),
+    ...files.map((f) => encodeField(3, WIRE_TYPE.LEN, encodeField(1, WIRE_TYPE.LEN, f))),
+    encodeField(4, WIRE_TYPE.VARINT, 1),
+    ...(truncated ? [encodeField(5, WIRE_TYPE.VARINT, 0)] : []),
+    encodeField(6, WIRE_TYPE.VARINT, numFiles),
+  );
+  const success = encodeField(1, WIRE_TYPE.LEN, node);
+  return wrapAgentExecResult(execMsgId, execId, 8, success, 1);
+}
+
+export function encodeAgentDiagnosticsSuccess(execMsgId, execId, path = "") {
+  const success = concatArrays(encodeField(1, WIRE_TYPE.LEN, path), encodeField(3, WIRE_TYPE.VARINT, 0));
+  return wrapAgentExecResult(execMsgId, execId, 9, success, 1);
+}
+
+export function encodeAgentFetchSuccess(execMsgId, execId, { url = "", content = "", statusCode = 200, contentType = "" } = {}) {
+  const success = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, url),
+    encodeField(2, WIRE_TYPE.LEN, content),
+    encodeField(3, WIRE_TYPE.VARINT, statusCode),
+    ...(contentType ? [encodeField(4, WIRE_TYPE.LEN, contentType)] : []),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 20, success, 1);
+}
+
+export function encodeAgentWriteSuccess(execMsgId, execId, { path = "", linesCreated = 0, fileSize = 0 } = {}) {
+  const success = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, path),
+    encodeField(2, WIRE_TYPE.VARINT, linesCreated),
+    encodeField(3, WIRE_TYPE.VARINT, fileSize),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 3, success, 1);
+}
+
+export function encodeAgentDeleteSuccess(execMsgId, execId, { path = "", deletedFile = "", fileSize = 0, prevContent = "" } = {}) {
+  const success = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, path),
+    encodeField(2, WIRE_TYPE.LEN, deletedFile),
+    encodeField(3, WIRE_TYPE.VARINT, fileSize),
+    encodeField(4, WIRE_TYPE.LEN, prevContent),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 4, success, 1);
+}
+
+export function encodeAgentShellSuccess(execMsgId, execId, { command = "", cwd = "", exitCode = 0, stdout = "", stderr = "", executionTime = 0 } = {}) {
+  const success = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, command),
+    encodeField(2, WIRE_TYPE.LEN, cwd),
+    encodeField(3, WIRE_TYPE.VARINT, exitCode),
+    ...(stdout ? [encodeField(5, WIRE_TYPE.LEN, stdout)] : []),
+    ...(stderr ? [encodeField(6, WIRE_TYPE.LEN, stderr)] : []),
+    encodeField(7, WIRE_TYPE.VARINT, executionTime),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 2, success, 1);
+}
+
+export function encodeAgentShellFailure(execMsgId, execId, { command = "", cwd = "", exitCode = 1, stdout = "", stderr = "", executionTime = 0, error = "" } = {}) {
+  const failure = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, command),
+    encodeField(2, WIRE_TYPE.LEN, cwd),
+    encodeField(3, WIRE_TYPE.VARINT, exitCode),
+    ...(stdout ? [encodeField(5, WIRE_TYPE.LEN, stdout)] : []),
+    ...(stderr ? [encodeField(6, WIRE_TYPE.LEN, stderr)] : []),
+    encodeField(7, WIRE_TYPE.VARINT, executionTime),
+    ...(error ? [encodeField(9, WIRE_TYPE.LEN, error)] : []),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 2, failure, 2);
+}
+
+export function encodeAgentShellTimeout(execMsgId, execId, { command = "", cwd = "", timeoutMs = 30000 } = {}) {
+  const timeout = concatArrays(
+    encodeField(1, WIRE_TYPE.LEN, command),
+    encodeField(2, WIRE_TYPE.LEN, cwd),
+    encodeField(3, WIRE_TYPE.VARINT, timeoutMs),
+  );
+  return wrapAgentExecResult(execMsgId, execId, 2, timeout, 3);
+}
+
 // ==================== EXPORTS ====================
 
 export default {

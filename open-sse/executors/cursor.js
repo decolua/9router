@@ -19,6 +19,25 @@ import { chatChunkSse, sseChunk } from "../utils/sse.js";
 import { FORMATS } from "../translator/formats.js";
 import { ROLE, OPENAI_BLOCK } from "../translator/schema/index.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  NATIVE_TOOLS_ENABLED,
+  runNativeTool,
+  NATIVE_REJECT_MUTATIONS,
+  NATIVE_REJECT_OUTSIDE,
+  NATIVE_REJECT_SHELL,
+} from "../utils/cursorNativeTools.js";
+import {
+  encodeAgentReadSuccess,
+  encodeAgentGrepSuccess,
+  encodeAgentLsSuccess,
+  encodeAgentDiagnosticsSuccess,
+  encodeAgentFetchSuccess,
+  encodeAgentWriteSuccess,
+  encodeAgentDeleteSuccess,
+  encodeAgentShellSuccess,
+  encodeAgentShellFailure,
+  encodeAgentShellTimeout,
+} from "../utils/cursorProtobuf.js";
 import zlib from "zlib";
 import crypto from "crypto";
 
@@ -228,14 +247,91 @@ const EXEC_RESULT_FIELD = {
   2: 2, 3: 3, 4: 4, 5: 5, 7: 7, 8: 8, 9: 9, 16: 16, 20: 20, 23: 23,
 };
 
-function rejectExecRequest(execRequest) {
+// ExecServerMessage variant → native tool kind (see cursorNativeTools.js).
+// Variants absent from this map have no local executor and keep the typed
+// rejection path.
+const NATIVE_EXEC_KIND = {
+  2: "exec_shell", 3: "exec_write", 4: "exec_delete", 5: "exec_grep",
+  7: "exec_read", 8: "exec_ls", 9: "exec_diagnostics", 20: "exec_fetch",
+};
+
+function decodeNativeExecEvent(execRequest, variant) {
+  const { id, execId } = execIds(execRequest);
+  const args = decodeMessage(execRequest.get(variant)[0].value);
+  const text = (n) => {
+    const value = args.get(n)?.[0]?.value;
+    return value instanceof Uint8Array || Buffer.isBuffer(value)
+      ? Buffer.from(value).toString("utf8")
+      : "";
+  };
+  switch (variant) {
+    case 2: return { kind: "exec_shell", execMsgId: id, execId, command: text(1), workingDir: text(2) };
+    case 3: return { kind: "exec_write", execMsgId: id, execId, path: text(1), fileText: text(2) };
+    case 4: return { kind: "exec_delete", execMsgId: id, execId, path: text(1) };
+    case 5: return { kind: "exec_grep", execMsgId: id, execId, pattern: text(1), path: text(2), glob: text(3) };
+    case 7: return { kind: "exec_read", execMsgId: id, execId, path: text(1) };
+    case 8: return { kind: "exec_ls", execMsgId: id, execId, path: text(1) };
+    case 9: return { kind: "exec_diagnostics", execMsgId: id, execId, path: text(1) };
+    case 20: return { kind: "exec_fetch", execMsgId: id, execId, url: text(1) };
+    default: return null;
+  }
+}
+
+// Execute a native IDE tool locally (opt-in) and reply on the session.
+// Returns true when the event was handled with a wire reply.
+async function executeNativeExec(execRequest, variant, session, log) {
+  const event = decodeNativeExecEvent(execRequest, variant);
+  if (!event) return false;
+  let reply;
+  try {
+    const result = await runNativeTool(event.kind, event);
+    log?.info?.("CURSOR", `AgentService native ${event.kind} ok`);
+    switch (event.kind) {
+      case "exec_read": reply = encodeAgentReadSuccess(event.execMsgId, event.execId, result); break;
+      case "exec_grep": reply = encodeAgentGrepSuccess(event.execMsgId, event.execId, result); break;
+      case "exec_ls": reply = encodeAgentLsSuccess(event.execMsgId, event.execId, result); break;
+      case "exec_diagnostics": reply = encodeAgentDiagnosticsSuccess(event.execMsgId, event.execId, result.path); break;
+      case "exec_fetch": reply = encodeAgentFetchSuccess(event.execMsgId, event.execId, result); break;
+      case "exec_write": reply = encodeAgentWriteSuccess(event.execMsgId, event.execId, result); break;
+      case "exec_delete": reply = encodeAgentDeleteSuccess(event.execMsgId, event.execId, result); break;
+      case "exec_shell":
+        reply = result.failed
+          ? encodeAgentShellFailure(event.execMsgId, event.execId, result)
+          : encodeAgentShellSuccess(event.execMsgId, event.execId, result);
+        break;
+    }
+  } catch (err) {
+    log?.info?.("CURSOR", `AgentService native ${event.kind} rejected: ${err.message}`);
+    if (err.shellTimeout) {
+      reply = encodeAgentShellTimeout(event.execMsgId, event.execId, err.shellTimeout);
+    } else if (err.shellFailure) {
+      reply = encodeAgentShellFailure(event.execMsgId, event.execId, err.shellFailure);
+    } else if (event.kind === "exec_shell") {
+      reply = encodeAgentShellFailure(event.execMsgId, event.execId, {
+        command: event.command, cwd: event.workingDir || "", exitCode: 1, stderr: err.message,
+      });
+    } else if (event.kind === "exec_fetch") {
+      reply = encodeAgentFetchSuccess(event.execMsgId, event.execId, {
+        url: event.url || "", content: err.message, statusCode: 0,
+      });
+    } else {
+      reply = rejectExecRequest(execRequest, err.mutationBlocked
+        ? NATIVE_REJECT_MUTATIONS
+        : err.outsideWorkspace ? NATIVE_REJECT_OUTSIDE : err.message);
+    }
+  }
+  if (reply) session.write(reply);
+  return true;
+}
+
+function rejectExecRequest(execRequest, reason) {
   const { id, execId } = execIds(execRequest);
   const variant = [...(execRequest?.keys?.() || [])].find((field) => field !== 1 && field !== 15);
   const resultField = EXEC_RESULT_FIELD[variant];
   if (!resultField) return null;
   // Diagnostics has no rejected variant — empty success unblocks the stream.
   if (variant === 9) return wrapExecClientMessage(id, execId, 9, new Uint8Array());
-  const rejected = agentMessage(2, agentString(2, "Tool not available in this environment. Use the MCP tools provided instead."));
+  const rejected = agentMessage(2, agentString(2, reason || "Tool not available in this environment. Use the MCP tools provided instead."));
   return wrapExecClientMessage(id, execId, resultField, rejected);
 }
 
@@ -826,17 +922,32 @@ export class CursorExecutor extends BaseExecutor {
                   onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
                 }
               } else {
-                // Auto/Composer often probe IDE builtins (shell/read/…). Reject
-                // them so the model can continue with MCP tools or a text answer
-                // instead of stalling the h2 stream.
-                const rejection = rejectExecRequest(execRequest);
-                if (rejection) {
-                  log?.info?.("CURSOR", `AgentService rejected IDE exec fields=${[...execRequest.keys()].join(",")}`);
-                  session.write(rejection);
+                // Auto/Composer often probe IDE builtins (shell/read/…).
+                // With CURSOR_NATIVE_TOOLS=1 execute them locally (confined
+                // to CURSOR_WORKSPACE); otherwise reject them so the model
+                // can continue with MCP tools or a text answer instead of
+                // stalling the h2 stream.
+                const variant = [...execRequest.keys()].find((field) => field !== 1 && field !== 15);
+                const nativeKind = NATIVE_EXEC_KIND[variant];
+                if (NATIVE_TOOLS_ENABLED && nativeKind) {
+                  // Fire-and-forget: the reply lands on the session when the
+                  // tool settles; errors inside executeNativeExec become
+                  // typed rejection replies rather than stream failures.
+                  executeNativeExec(execRequest, variant, session, log).catch((err) => {
+                    debugLog(`[CURSOR AGENT] native exec crashed: ${err.message}`);
+                    const rejection = rejectExecRequest(execRequest, err.message);
+                    if (rejection) session.write(rejection);
+                  });
                 } else {
-                  debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
-                  finished = true;
-                  onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
+                  const rejection = rejectExecRequest(execRequest);
+                  if (rejection) {
+                    log?.info?.("CURSOR", `AgentService rejected IDE exec fields=${[...execRequest.keys()].join(",")}`);
+                    session.write(rejection);
+                  } else {
+                    debugLog(`[CURSOR AGENT] Unsupported exec request fields: ${[...execRequest.keys()].join(",")}`);
+                    finished = true;
+                    onEvent({ type: "error", value: "Cursor AgentService requested an unsupported IDE tool" });
+                  }
                 }
               }
             }
