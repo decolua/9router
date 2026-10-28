@@ -184,6 +184,17 @@ export function createSSEStream(options = {}) {
               let parsed = JSON.parse(trimmed.slice(5).trim());
 
               const idFixed = fixInvalidId(parsed);
+              let fieldsInjected = false;
+              // Cline sends reasoning under delta.reasoning; downstream OpenAI
+              // clients read reasoning_content instead.
+              for (const choice of parsed.choices || []) {
+                const delta = choice?.delta;
+                if (typeof delta?.reasoning === "string" && delta.reasoning) {
+                  delta.reasoning_content = (delta.reasoning_content || "") + delta.reasoning;
+                  delete delta.reasoning;
+                  fieldsInjected = true;
+                }
+              }
 
               // A fragment that opens a new tool-call index without an id breaks
               // strict OpenAI-compatible clients. Mint/reuse one before the
@@ -204,7 +215,6 @@ export function createSSEStream(options = {}) {
               }
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
-              let fieldsInjected = false;
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
