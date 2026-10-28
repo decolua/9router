@@ -160,7 +160,8 @@ describe("fusion combo", () => {
       judgeModel: "p/judge"
     });
 
-    // Panel calls keep every turn but tool turns are flattened to assistant prose.
+    // Panel calls keep every turn but tool turns are flattened to user prose
+    // (assistant would be rejected as prefill when it ends the conversation).
     const panelCalls = handleSingleModel.mock.calls.filter(([,, isPanel]) => isPanel === true);
     expect(panelCalls.length).toBe(2);
     for (const [panelBody] of panelCalls) {
@@ -169,7 +170,7 @@ describe("fusion combo", () => {
       expect(panelBody.messages[0]).toEqual({ role: "user", content: "find files" });
       expect(panelBody.messages[1].tool_calls).toBeUndefined();
       expect(panelBody.messages[1].content).toContain("find");
-      expect(panelBody.messages[2].role).toBe("assistant");
+      expect(panelBody.messages[2].role).toBe("user");
       expect(panelBody.messages[2].content).toContain("['a.js']");
       expect(panelBody.messages[3]).toEqual({ role: "user", content: "describe it" });
     }
@@ -181,6 +182,29 @@ describe("fusion combo", () => {
     expect(judgeBody.messages.length).toBe(5); // original 4 + judge prompt turn
     expect(judgeBody.messages[1].tool_calls).toBeDefined();
     expect(judgeBody.messages[2].role).toBe("tool");
+  });
+
+  it("closes a trailing assistant turn with a user turn in panel calls (Anthropic prefill 400)", async () => {
+    const handleSingleModel = vi.fn(async () => okResponse("ans"));
+    await handleFusionChat({
+      body: {
+        messages: [
+          { role: "user", content: "Q" },
+          { role: "assistant", content: "partial answer" }
+        ]
+      },
+      models: ["p/a", "p/b"],
+      handleSingleModel,
+      log,
+      judgeModel: "p/judge"
+    });
+
+    const panelCalls = handleSingleModel.mock.calls.filter(([,, isPanel]) => isPanel === true);
+    expect(panelCalls.length).toBe(2);
+    for (const [panelBody] of panelCalls) {
+      expect(panelBody.messages.length).toBe(3);
+      expect(panelBody.messages.at(-1).role).toBe("user");
+    }
   });
 
   it("flattens Anthropic-style tool_use and tool_result blocks in arrays", async () => {
