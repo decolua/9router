@@ -166,9 +166,12 @@ export function hasThinkingConfig(body) {
 }
 
 // Normalize provider-native thinking config based on last message role.
-// OpenAI reasoning_effort is request-level and must survive tool-result turns.
+// Tool-result turns (role 'tool', Claude user tool_result, Gemini 'function')
+// must keep thinking; only an assistant/model prefill (last turn) strips it.
 export function normalizeThinkingConfig(body) {
-  if (!isLastMessageFromUser(body)) {
+  const messages = body.messages || body.contents;
+  const lastRole = messages?.length ? messages[messages.length - 1]?.role : undefined;
+  if (lastRole === "assistant" || lastRole === "model") {
     delete body.thinking;
   }
   return body;
