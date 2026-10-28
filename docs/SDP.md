@@ -249,3 +249,24 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Branch `vnot-production` siap di-build dan di-restart).
 - **Catatan untuk AI selanjutnya (Handoff Note):** Model test probe sekarang memiliki toleransi hingga 60 detik dengan error reporting yang informatif. Bind mount `./data:/app/data` tetap terjaga utuh.
+
+### 2026-10-28 — Add Gemini 3.1 Flash Lite & Gemini Embedding 2
+- **Tugas:** Menambahkan model `gemini-3.1-flash-lite` dan `gemini-embedding-2` ke dalam katalog provider Gemini pada 9Router sesuai dokumentasi Google AI Studio, serta memverifikasi status ketersediaan model-model Gemini lainnya (`gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash`).
+- **Analisis & Masalah:**
+  1. Registry Gemini sebelumnya hanya mendaftarkan versi preview (`gemini-3.1-flash-lite-preview` dan `gemini-embedding-2-preview`), sehingga ID stabil tanpa akhiran `-preview` tidak muncul di antarmuka *Available Models*.
+  2. Model `gemini-3.8-flash` terkena batasan kuota Free Tier Google (20 permintaan/hari), sedangkan `gemini-3.1-pro-preview` memiliki limit kuota 0 pada akun gratis (memerlukan akun berbayar).
+  3. Model `gemini-3.7-flash` pada akun gratis mengalami lonjakan beban/antrean di server Google (503 High Demand / stall koneksi), menyebabkan rotasi akun melewati batas toleransi 60 detik.
+  4. Model `gemini-2.5-pro` telah didepresiasi oleh Google untuk pengguna baru dengan status 404 (Google menyarankan beralih ke `gemini-3.1-pro-preview`).
+- **Penyelesaian:**
+  1. Membuat branch fitur `feat/add-gemini-models`.
+  2. Menambahkan `{ id: "gemini-3.1-flash-lite", name: "Gemini 3.1 Flash Lite" }` dan `{ id: "gemini-embedding-2", name: "Gemini Embedding 2", kind: "embedding" }` ke `open-sse/providers/registry/gemini.js`.
+  3. Mendaftarkan skema harga `"google/gemini-3.1-flash-lite"` di `open-sse/providers/pricing.js`.
+  4. Membuat dokumen proposal di `docs/add-gemini-models/README.md`.
+  5. Menggabungkan branch fitur ke dalam `vnot-production`.
+- **File yang diubah/dibuat:**
+  - `open-sse/providers/registry/gemini.js`
+  - `open-sse/providers/pricing.js`
+  - `docs/add-gemini-models/README.md`
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Branch `vnot-production` siap di-build).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Model `gemini-3.1-flash-lite` dan `gemini-embedding-2` kini aktif di registry bawaan. Rebuild container akan mengekspos model-model ini secara langsung di dashboard. Bind mount `./data:/app/data` tetap terjaga utuh.
