@@ -300,6 +300,12 @@ export function calculatePercentage(used, total) {
  * @returns {number} Remaining percentage (0-100)
  */
 export function getRemainingPercentage(quota) {
+  if (quota?.percentage !== undefined) {
+    // Providers may report the used share; the UI renders the remaining one.
+    const value = quota.percentageIsUsed === true ? 100 - quota.percentage : quota.percentage;
+    return Math.max(0, Math.round(value));
+  }
+
   if (quota?.remaining !== undefined) {
     return Math.max(0, Math.round(quota.remaining));
   }
@@ -735,7 +741,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "ollama":
-        // Session (5h) / Weekly (7d) / Monthly usage % from ollama.com/api/usage.
+        // Session (5h) / Weekly (7d) / Monthly usage % from ollama.com/api/balance (or /api/usage).
         // remainingPercentage only — no absolute remaining (UI treats remaining as %).
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
@@ -745,6 +751,10 @@ export function parseQuotaData(provider, data) {
               total: quota.total || 0,
               resetAt: quota.resetAt || null,
               remainingPercentage: quota.remainingPercentage,
+              isCreditBalance: quota.isCreditBalance,
+              currency: quota.currency,
+              unit: quota.unit,
+              unlimited: quota.unlimited,
             });
           });
         }
@@ -793,10 +803,14 @@ export function parseQuotaData(provider, data) {
         if (data.quotas) {
           Object.entries(data.quotas).forEach(([name, quota]) => {
             normalizedQuotas.push({
-              name,
+              name: quota.name || name,
               used: quota.used || 0,
               total: quota.total || 0,
+              percentage: quota.percentage,
+              colorPercentage: quota.colorPercentage,
+              percentageIsUsed: quota.percentageIsUsed === true,
               resetAt: quota.resetAt || null,
+              emptyMessage: quota.emptyMessage || null,
             });
           });
         }

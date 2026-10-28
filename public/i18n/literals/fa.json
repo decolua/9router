@@ -1172,7 +1172,7 @@
   "Theme": "پوسته",
   "Thinking": "تفکر",
   "Thinking Process": "فرآیند تفکر",
-  "This is the only time you will see this key. Store it securely.": "این تنها باری است که این کلید را می‌بینید. آن را به‌طور امن ذخیره کنید.",
+  "Store this key securely. You can view or copy it later from the API Keys list.": "این کلید را به‌طور امن ذخیره کنید. بعداً می‌توانید آن را از فهرست کلیدهای API مشاهده یا کپی کنید.",
   "This provider is ready to use.": "این ارائه‌دهنده آماده استفاده است.",
   "This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.": "این ارائه‌دهنده آماده استفاده است. در صورت تمایل، درخواست‌ها را از طریق یک استخر پروکسی برای دور زدن محدودیت‌های مبتنی بر IP مسیردهی کنید.",
   "This value is write-only after saving.": "این مقدار پس از ذخیره فقط نوشتنی است.",

@@ -139,6 +139,8 @@ export function matchesSearch(target, queryOrParsed) {
 
   // Handle Regex
   if (parsed.isRegex && parsed.regex) {
+    // Each target is an independent search, including for global/sticky regexes.
+    parsed.regex.lastIndex = 0;
     const fullText = candidates.join(" ");
     const hasNegativeAssertion = /\(\?!|\(\?<!/.test(parsed.raw);
     if (hasNegativeAssertion) {

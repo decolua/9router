@@ -309,6 +309,18 @@ describe("OpenCode Free ids newer than the capability tables", () => {
     });
   });
 
+  it("caps oc/deepseek-v4.1-flash-free at the real backend limit (~330k) instead of 1M", () => {
+    const caps = getCapabilitiesForModel("opencode", "deepseek-v4.1-flash-free");
+    // The OpenCode Free backend rejects requests above ~330k prompt tokens (issue #5097).
+    // The published context_length must not exceed the real window, otherwise clients
+    // (VS Code Copilot etc.) never compact and hard-fail mid-session.
+    expect(caps.contextWindow).toBeLessThanOrEqual(330000);
+    expect(caps.maxOutput).toBeLessThanOrEqual(caps.contextWindow);
+    // Vision and reasoning should still be reported correctly.
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+  });
+
   it("keeps per-id modalities and limits instead of a generic floor", () => {
     // text-only, small context — a shared pattern rule would overstate both.
     expect(getCapabilitiesForModel(undefined, "big-pickle")).toMatchObject({

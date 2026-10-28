@@ -23,10 +23,14 @@ const SPECIALIZED = new Set([
   "xiaomi-tokenplan", "mimo-free",
 ]);
 
+// Per-process / per-request values: kimi's random device name, minimax's session UUID.
+const VOLATILE_HEADERS = new Set(["x-msh-device-name", "x-mavis-session-id"]);
+
 // Sanitize header: khử token + field thời gian động (kimi X-Msh-Device-Id) để snapshot ổn định.
 function sanitize(headers) {
   const out = {};
   for (const [k, v] of Object.entries(headers)) {
+    if (VOLATILE_HEADERS.has(k.toLowerCase())) { out[k] = "<VOLATILE>"; continue; }
     out[k] = typeof v === "string"
       ? v.replace(/Bearer .+/, "Bearer <TOK>")
           .replace(/sk-test-APIKEY|tok-test-ACCESS/g, "<CRED>")

@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { createErrorResult } from "../utils/error.js";
 import { transcribeGeminiLive } from "./geminiLiveStt.js";
+import { transcribeCodex } from "./codexStt.js";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
@@ -270,12 +271,17 @@ function resolveModelTransport(provider, model) {
  * it in the app layer; built-ins fall back to the registry entry marker).
  * @returns {Promise<{success, response, status?, error?}>}
  */
-export async function handleSttCore({ provider, model, formData, credentials, sttConfig, transport }) {
+export async function handleSttCore({ provider, model, formData, credentials, sttConfig, transport, signal, proxyOptions }) {
   const file = formData.get("file");
   if (!file) return createErrorResult(HTTP_STATUS.BAD_REQUEST, "Missing required field: file");
 
   let cfg = sttConfig;
   if (!cfg) return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support STT`);
+
+  // OAuth transcription uses a fixed ChatGPT endpoint; never honor connection URL overrides.
+  if (provider === "codex" && cfg.format === "codex-transcribe") {
+    return transcribeCodex({ formData, credentials, signal, proxyOptions });
+  }
 
   // Per-connection endpoint override. Registry entries carry a fixed baseUrl,
   // which is right for a named cloud service but useless for a self-hosted one

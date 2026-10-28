@@ -166,7 +166,68 @@ export const QODER_MODEL_MAP = {
   gfmodel: "gfmodel",
   kmodel: "kmodel",
   mmodel: "mmodel",
+  // Frontier reasoning pair. Canonical keys are `smodel` / `cmodel`; the Qoder
+  // picker only shows the display names Sonus / Cantus. The per-account catalog
+  // frequently omits them even for entitled accounts — see
+  // QODER_STATIC_MODEL_CONFIGS below.
+  smodel: "smodel",
+  cmodel: "cmodel",
 };
+
+/**
+ * Static `model_config` blocks for models the per-account catalog does not
+ * reliably publish.
+ *
+ * `/algo/api/v2/model/list` is per-account, and the frontier pair Sonus
+ * (`smodel`) / Cantus (`cmodel`) is frequently absent from it even for accounts
+ * that can use them. Without a `model_config` the executor refuses the request
+ * before it is ever sent ("model_config for ... not yet known"), so the model
+ * looks unavailable when upstream would have served it.
+ *
+ * The chat endpoint does not validate `model_config.key` against the catalog, so
+ * supplying the block ourselves makes these routable. Verified against a live
+ * account: both keys are accepted and stream a real completion, and upstream
+ * tracks them as distinct queue entries (queue/status echoes modelKey=smodel /
+ * modelKey=cmodel).
+ *
+ * This is a FALLBACK only — a live catalog entry always wins, so a future
+ * catalog that publishes its own block for these keys takes precedence.
+ */
+const QODER_STATIC_MODEL_CONFIG_BASE = Object.freeze({
+  model: "",
+  format: "openai",
+  source: "system",
+  url: "",
+});
+
+export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
+  smodel: Object.freeze({
+    ...QODER_STATIC_MODEL_CONFIG_BASE,
+    key: "smodel",
+    display_name: "Sonus",
+    is_vl: true,
+    is_reasoning: true,
+    max_input_tokens: 180000,
+  }),
+  cmodel: Object.freeze({
+    ...QODER_STATIC_MODEL_CONFIG_BASE,
+    key: "cmodel",
+    display_name: "Cantus",
+    is_vl: true,
+    is_reasoning: true,
+    max_input_tokens: 180000,
+  }),
+});
+
+/**
+ * Static `model_config` for a canonical Qoder key, or null when there is no
+ * block for it (so genuinely unknown keys still fail loudly). Returns a fresh
+ * copy — callers may mutate `key` while aligning the alias path.
+ */
+export function getQoderStaticModelConfig(key) {
+  const cfg = QODER_STATIC_MODEL_CONFIGS[key];
+  return cfg ? { ...cfg, key } : null;
+}
 
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
 // Matches the CLIProxyAPIPlus branch and live qodercli traffic.
