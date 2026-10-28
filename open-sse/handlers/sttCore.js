@@ -36,6 +36,76 @@ async function upstreamError(res) {
   return createErrorResult(res.status, typeof msg === "string" ? msg : JSON.stringify(msg));
 }
 
+// Cloudflare Workers AI (Deepgram Nova-3): raw binary POST to
+// {baseUrl}/{model}?diarize=true&... with the account id in the URL. Unlike the
+// plain Deepgram path this keeps what the model returns: per-word timing and
+// speaker labels, mapped to an OpenAI-style verbose_json.
+async function transcribeCloudflareWorkersAI(cfg, file, model, token, formData, credentials) {
+  const accountId = credentials?.providerSpecificData?.accountId;
+  if (!accountId) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, "cloudflare-ai STT requires accountId in the connection's providerSpecificData");
+  }
+  const base = String(cfg.baseUrl).replace("{accountId}", encodeURIComponent(accountId)).replace(/\/+$/, "");
+  const url = new URL(`${base}/${model}`);
+  const field = (k) => {
+    const v = formData.get(k);
+    return typeof v === "string" ? v.trim() : "";
+  };
+  const wantsDiarize = ["true", "1"].includes(field("diarize").toLowerCase());
+  if (wantsDiarize) url.searchParams.set("diarize", "true");
+  url.searchParams.set("punctuate", "true");
+  const lang = field("language");
+  if (lang) url.searchParams.set("language", lang);
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file) },
+    body: await file.arrayBuffer(),
+  });
+  if (!res.ok) return upstreamError(res);
+
+  const data = await res.json();
+  if (data?.success === false) {
+    const first = Array.isArray(data.errors) ? data.errors[0] : null;
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Cloudflare: ${first?.message || "unknown error"}${first?.code ? ` (code ${first.code})` : ""}`);
+  }
+
+  const alt = data?.result?.results?.channels?.[0]?.alternatives?.[0] || {};  const text = typeof alt.transcript === "string" ? alt.transcript : "";
+  const fmt = field("response_format").toLowerCase();
+  if (fmt !== "verbose_json") return jsonResponse({ text });
+
+  // Words come as {word, punctuated_word, start, end, confidence, speaker?} — drop nulls, keep order.
+  const words = (Array.isArray(alt.words) ? alt.words : [])
+    .filter((w) => w && typeof w === "object")
+    .map((w) => ({
+      word: w.punctuated_word || w.word || "",
+      start: w.start,
+      end: w.end,
+      ...(w.speaker != null ? { speaker: w.speaker } : {}),
+    }));
+
+  // One segment per run of the same speaker (only when diarization produced labels).
+  const segments = [];
+  for (const w of words) {
+    const last = segments[segments.length - 1];
+    if (last && last.speaker === w.speaker) {
+      last.end = w.end;
+      last.text += ` ${w.word}`;
+    } else {
+      segments.push({ id: segments.length, start: w.start, end: w.end, text: w.word, speaker: w.speaker });
+    }
+  }
+  const speakers = new Set(words.map((w) => w.speaker).filter((s) => s != null));
+  return jsonResponse({
+    text,
+    language: lang || null,
+    duration: words.length ? words[words.length - 1].end : 0,
+    words,
+    ...(speakers.size ? { segments, num_speakers: speakers.size } : {}),
+    ...(data?.result?.usage?.neurons != null ? { usage: { neurons: data.result.usage.neurons } } : {}),
+  });
+}
+
 // Deepgram: raw binary POST + model query param
 async function transcribeDeepgram(cfg, file, model, token, formData) {
   const url = new URL(cfg.baseUrl);
@@ -319,6 +389,7 @@ export async function handleSttCore({ provider, model, formData, credentials, st
         }
         return jsonResponse({ text: live.text });
       }
+      case "cloudflare-workers-ai": return await transcribeCloudflareWorkersAI(cfg, file, model, token, formData, credentials);
       case "deepgram":        return await transcribeDeepgram(cfg, file, model, token, formData);
       case "assemblyai":      return await transcribeAssemblyAI(cfg, file, model, token);
       case "nvidia-asr":      return await transcribeNvidia(cfg, file, model, token);
