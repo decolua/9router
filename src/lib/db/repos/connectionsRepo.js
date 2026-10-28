@@ -25,8 +25,23 @@ function resetHealthStateOnActivation(existing, patch) {
     backoffLevel: 0,
   };
 
+  // Selectively handle modelLock_* entries from the existing record:
+  // - Expired locks: clear them (successful test proves the credential works again).
+  // - Active (future) locks: copy them into normalized so they survive the activation.
+  //   Far-future locks (manually injected to permanently disable a dead model, e.g.
+  //   modelLock_nvidia/nemotron-3.5=2099-01-01) must not be erased by a token
+  //   refresh or provider-test pass (#4250).
+  const now = Date.now();
   for (const key of Object.keys(existing || {})) {
-    if (key.startsWith(MODEL_LOCK_PREFIX)) normalized[key] = null;
+    if (!key.startsWith(MODEL_LOCK_PREFIX)) continue;
+    const expiry = existing[key];
+    if (!expiry) continue; // null/undefined — skip
+    const expiryMs = new Date(expiry).getTime();
+    if (!Number.isFinite(expiryMs) || expiryMs <= now) {
+      normalized[key] = null; // expired: clear
+    } else {
+      normalized[key] = expiry; // still active: preserve
+    }
   }
 
   return normalized;
