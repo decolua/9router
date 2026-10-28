@@ -7,6 +7,7 @@ import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
+import { modelSupportsCap } from "@/shared/utils/modelCapMatch";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
 import { getDeactivatedProviderIds } from "@/shared/utils/connectionStatus";
@@ -238,8 +239,18 @@ export default function ModelSelectModal({
     const filterByKind = (models) => {
       // No kindFilter means the LLM selector. Keep custom models visible because
       // user-added models may have typed capabilities (for example imageToText)
-      // while still being valid chat/combo targets.
-      if (!kindFilter) return models.filter((m) => m.isPlaceholder || m.isCustom || !getModelKind(m) || getModelKind(m) === "llm");
+      // while still being valid chat/combo targets. A capacity-adapter picker
+      // (capFilter without kindFilter) additionally keeps registry models whose
+      // kind maps to the requested modality — e.g. stt models in the Audio adapter (#4638).
+      if (!kindFilter) {
+        return models.filter((m) =>
+          m.isPlaceholder
+          || m.isCustom
+          || !getModelKind(m)
+          || getModelKind(m) === "llm"
+          || (capFilter && modelSupportsCap(capFilter, null, getModelKind(m)))
+        );
+      }
       if (!TYPED_KINDS.has(kindFilter)) return models;
       return models.filter((m) => m.isPlaceholder || getModelKind(m) === kindFilter);
     };
@@ -525,8 +536,10 @@ export default function ModelSelectModal({
     Object.entries(groupedModels).forEach(([providerId, group]) => {
       let models = group.models;
       // Filter by input-modality capability (vision/pdf/audioInput/videoInput).
+      // Typed registry models qualify through their kind as well as chat caps —
+      // whisper-class stt models have no chat-capability entry (#4638).
       if (capFilter) {
-        models = models.filter((m) => getCaps(m.value)?.[capFilter] === true);
+        models = models.filter((m) => modelSupportsCap(capFilter, getCaps(m.value), m.kind));
         if (models.length === 0) return;
       }
       if (!parsedQuery.isEmpty) {
