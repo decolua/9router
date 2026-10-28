@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import fs from "fs/promises";
 import path from "path";
 import os from "os";
+import { parseTOML, stringifyTOML } from "confbox";
+import { resolveContextWindow, syncCodexCatalog, restartCodexDaemon } from "@/lib/codexCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +15,17 @@ const isValidProfileName = (name) => {
 
 const isValidModel = (model) => {
   return typeof model === "string" && model.trim().length > 0 && model.length <= 256 && !/[\r\n"]/.test(model);
+};
+
+const toLimit = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 && n <= 100000000 ? n : NaN;
+};
+
+const readLimit = (content, key) => {
+  const match = content.match(new RegExp(`^\\s*${key}\\s*=\\s*(\\d+)\\s*$`, "m"));
+  return match ? Number(match[1]) : null;
 };
 
 // GET - List all custom profiles from ~/.codex/*.config.toml
@@ -40,10 +53,11 @@ export async function GET() {
           return {
             name,
             model: match ? match[2] : "",
+            contextWindow: readLimit(content, "model_context_window"),
             command: `codex -p ${name}`,
           };
         } catch {
-          return { name, model: "", command: `codex -p ${name}` };
+          return { name, model: "", contextWindow: null, command: `codex -p ${name}` };
         }
       })
     );
@@ -59,7 +73,7 @@ export async function GET() {
 // POST - Create or update a profile ~/.codex/<name>.config.toml
 export async function POST(request) {
   try {
-    const { name, model } = await request.json();
+    const { name, model, contextWindow } = await request.json();
 
     const cleanName = typeof name === "string" ? name.trim().toLowerCase() : "";
     if (!isValidProfileName(cleanName)) {
@@ -74,18 +88,42 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid model name" }, { status: 400 });
     }
 
+    const cleanContextWindow = toLimit(contextWindow);
+    if (Number.isNaN(cleanContextWindow)) {
+      return NextResponse.json({ error: "Context window must be a positive integer" }, { status: 400 });
+    }
+
     const codexDir = getCodexDir();
     await fs.mkdir(codexDir, { recursive: true });
 
     const filePath = path.join(codexDir, `${cleanName}.config.toml`);
-    const content = `# codex -p ${cleanName}\nmodel = "${cleanModel}"\nmodel_provider = "9router"\n`;
+    let content = `# codex -p ${cleanName}\nmodel = "${cleanModel}"\nmodel_provider = "9router"\n`;
+    if (cleanContextWindow) content += `model_context_window = ${cleanContextWindow}\n`;
     await fs.writeFile(filePath, content, "utf-8");
+
+    const catalogPath = await syncCodexCatalog({
+      codexDir,
+      models: [{ slug: cleanModel, contextWindow: resolveContextWindow(cleanContextWindow, cleanModel) }],
+    });
+    if (catalogPath) {
+      try {
+        const configPath = path.join(codexDir, "config.toml");
+        const config = parseTOML(await fs.readFile(configPath, "utf-8")) || {};
+        if (config.model_catalog_json !== catalogPath) {
+          config.model_catalog_json = catalogPath;
+          await fs.writeFile(configPath, stringifyTOML(config), "utf-8");
+        }
+      } catch {
+      }
+      await restartCodexDaemon();
+    }
 
     return NextResponse.json({
       success: true,
       profile: {
         name: cleanName,
         model: cleanModel,
+        contextWindow: cleanContextWindow,
         command: `codex -p ${cleanName}`,
       },
     });
