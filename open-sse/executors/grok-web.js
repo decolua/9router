@@ -159,6 +159,7 @@ async function* readGrokNdjsonEvents(body, signal) {
       try { yield JSON.parse(remaining); } catch { /* skip */ }
     }
   } finally {
+    await reader.cancel().catch(() => {});
     reader.releaseLock();
   }
 }
