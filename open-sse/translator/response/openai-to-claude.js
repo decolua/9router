@@ -67,9 +67,59 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Emit the finish tail (buffered tool args + content_block_stop, then
+// message_delta/message_stop exactly once). Shared by the inline finish chunk and
+// the clean-EOF flush (chunk === null) so a stream that ends without any upstream
+// finish_reason still delivers the client-format terminal event.
+function emitFinish(state, results, finishReason) {
+  if (state.openaiToClaudeFinishSent) return;
+  state.openaiToClaudeFinishSent = true;
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  for (const [idx, toolInfo] of state.toolCalls) {
+    // Emit buffered + sanitized args as single delta before stop
+    const buffered = state.toolArgBuffers?.get(idx);
+    if (buffered) {
+      const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: { type: "input_json_delta", partial_json: sanitized }
+      });
+    }
+    results.push({
+      type: "content_block_stop",
+      index: toolInfo.blockIndex
+    });
+  }
+
+  // Mark finish for later usage injection in stream.js
+  state.finishReason = finishReason;
+
+  // Use tracked usage (will be estimated in stream.js if not valid)
+  const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+  results.push({
+    type: "message_delta",
+    delta: { stop_reason: convertFinishReason(finishReason) },
+    usage: finalUsage
+  });
+  results.push({ type: "message_stop" });
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  // Clean EOF: upstream ended without a finish_reason chunk. Always close the
+  // Claude stream with its terminal event so clients do not hang, but only when a
+  // message was actually started.
+  if (!chunk) {
+    if (!state.messageStartSent || state.openaiToClaudeFinishSent) return null;
+    const results = [];
+    emitFinish(state, results, "stop");
+    return results.length > 0 ? results : null;
+  }
+
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -221,39 +271,10 @@ export function openaiToClaudeResponse(chunk, state) {
     }
   }
 
-  // Finish
+  // Finish — use translator-specific key to avoid collision when chained after
+  // openaiResponsesToOpenAIResponse which sets its own state.finishReasonSent.
   if (choice.finish_reason) {
-    stopThinkingBlock(state, results);
-    stopTextBlock(state, results);
-
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
-    }
-
-    // Mark finish for later usage injection in stream.js
-    state.finishReason = choice.finish_reason;
-
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+    emitFinish(state, results, choice.finish_reason);
   }
 
   return results.length > 0 ? results : null;

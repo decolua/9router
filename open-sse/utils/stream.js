@@ -96,8 +96,23 @@ export function createSSEStream(options = {}) {
   let openAIResponsesTerminalSeen = false;
   let openAIResponsesDoneSent = false;
   let streamDoneSent = false;  // track duplicate [DONE] across transform + flush
+  let passthroughDoneSeen = false;  // upstream [DONE] observed in passthrough mode
   let finalized = false;
   let completionFlushTimer = null;
+
+  // Terminal-outcome state machine, separate from `finalized`: a valid success
+  // terminal is claimed ("established") BEFORE the terminal bytes are awaited for
+  // delivery, so the generic disconnect/error callbacks can see completion already
+  // won the one-shot race and must not invoke the non-success writer. Actual
+  // success persistence is deferred until delivery completes.
+  let terminalEstablished = false;
+
+  // Claim the success terminal at most once; false when another outcome owns it.
+  const establishSuccessTerminal = () => {
+    if (terminalEstablished) return false;
+    terminalEstablished = true;
+    return true;
+  };
 
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
@@ -111,6 +126,7 @@ export function createSSEStream(options = {}) {
     if (completionFlushTimer) { clearTimeout(completionFlushTimer); completionFlushTimer = null; }
     if (finalized) return;
     finalized = true;
+    terminalEstablished = true;
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
@@ -134,9 +150,63 @@ export function createSSEStream(options = {}) {
     }
   };
 
+  // Terminal-error tail for an abnormal flush. Routes the accumulated snapshot
+  // through the terminal-error hook (the same one-shot guard the success path
+  // uses) instead of finalizeStream(), so a transform flush failure is never
+  // reported as a successful completion. Falls back to finalizeStream() when no
+  // terminal hook is wired, preserving the previous behavior for other callers.
+  const finalizeStreamError = (reason) => {
+    if (finalized) return;
+    // Success already claimed the terminal (delivery in flight): an abnormal flush
+    // or error must not overwrite it with a non-success outcome.
+    if (terminalEstablished) return;
+    const terminalOutcome = onStreamComplete?.onTerminalOutcome;
+    if (typeof terminalOutcome !== "function") {
+      finalizeStream();
+      return;
+    }
+    finalized = true;
+
+    const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
+    let finalUsage = isPassthrough ? usage : state?.usage;
+    if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
+      finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
+      if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
+    }
+
+    if (hasValidUsage(finalUsage)) {
+      logUsage(isPassthrough ? provider : (state?.provider || targetFormat), finalUsage, model, connectionId, apiKey);
+    } else {
+      appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
+    }
+
+    terminalOutcome({
+      reason,
+      content: accumulatedContent || null,
+      thinking: accumulatedThinking || null,
+      usage: finalUsage,
+      ttftAt
+    });
+  };
+
+  // Delivery barrier: yields a macrotask so every already-enqueued readable
+  // chunk can resolve the outer response consumer's pending reads (microtasks)
+  // before the success finalizer persists. A microtask boundary is too early —
+  // the just-enqueued terminal bytes are still queued and unseen, so
+  // saveRequestDetail() would run before a concurrently-reading client observed
+  // the SSE terminal event. Await this after enqueuing terminal bytes and before
+  // calling finalizeStream(); it never reorders or adds writes.
+  const awaitTerminalDelivery = () => new Promise((resolve) => setTimeout(resolve, 0));
+
   // Emit the deferred response.completed now — at [DONE], or when the watchdog
-  // below gives up on a usage trailer that never arrives.
-  const flushPendingCompletion = (controller) => {
+  // below gives up on a usage trailer that never arrives. Follows the shared
+  // terminal protocol: re-entry is blocked once any outcome owns the terminal,
+  // success is claimed after the deferred bytes are enqueued, the delivery
+  // barrier is awaited before persisting, and finalizeStream() is one-shot —
+  // so [DONE] racing the watchdog can never duplicate the completion event
+  // or its usage/completion record.
+  const flushPendingCompletion = async (controller) => {
+    if (finalized || terminalEstablished) return;
     const completed = translateResponse(targetFormat, sourceFormat, null, state);
     for (const item of completed || []) {
       if (item === null || item === undefined) continue;
@@ -145,11 +215,13 @@ export function createSSEStream(options = {}) {
       controller.enqueue(sharedEncoder.encode(output));
       sseEmittedCount++;
     }
+    establishSuccessTerminal();
+    await awaitTerminalDelivery();
     finalizeStream();
   };
 
-  return new TransformStream({
-    transform(chunk, controller) {
+  const stream = new TransformStream({
+    async transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
@@ -178,6 +250,18 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
           let responsesTerminal = false;
+
+          if (trimmed === "data: [DONE]") {
+            passthroughDoneSeen = true;
+            streamDoneSent = true;
+            const doneOutput = "data: [DONE]\n\n";
+            reqLogger?.appendConvertedChunk?.(doneOutput);
+            controller.enqueue(sharedEncoder.encode(doneOutput));
+            establishSuccessTerminal();
+            await awaitTerminalDelivery();
+            finalizeStream();
+            continue;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -268,6 +352,12 @@ export function createSSEStream(options = {}) {
                 accumulatedThinking += reasoning;
               }
 
+              // OpenAI Responses API format - output text delta
+              if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+                totalContentLength += parsed.delta.length;
+                accumulatedContent += parsed.delta;
+              }
+
               const extracted = extractUsage(parsed);
               if (extracted) {
                 usage = mergeUsage(usage, extracted);
@@ -310,7 +400,11 @@ export function createSSEStream(options = {}) {
           reqLogger?.appendConvertedChunk?.(output);
           controller.enqueue(sharedEncoder.encode(output));
           // Responses clients (codex CLI) close on response.completed instead of [DONE]
-          if (responsesTerminal) finalizeStream();
+          if (responsesTerminal) {
+            establishSuccessTerminal();
+            await awaitTerminalDelivery();
+            finalizeStream();
+          }
           continue;
         }
 
@@ -339,7 +433,7 @@ export function createSSEStream(options = {}) {
           // if the upstream keeps the HTTP connection open, so finish now.
           if (targetFormat === FORMATS.OPENAI && sourceFormat === FORMATS.OPENAI_RESPONSES &&
               state.completionPending && !state.completedSent) {
-            flushPendingCompletion(controller);
+            await flushPendingCompletion(controller);
           }
 
           // Synthesize response.failed if the Responses stream never sent a terminal event
@@ -356,8 +450,38 @@ export function createSSEStream(options = {}) {
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
+
+          // Translated content followed directly by [DONE] (no upstream
+          // finish_reason) never emitted the client-format terminal event: the
+          // translator emits it only from a finish chunk. Synthesize it through
+          // that same translator before finalizeStream() persists success.
+          // state.finishReasonSent makes this exactly-once when a prior
+          // finish_reason already emitted message_stop.
+          if (sourceFormat !== targetFormat && !state.finishReasonSent) {
+            const syntheticFinish = { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] };
+            const terminal = translateResponse(targetFormat, sourceFormat, syntheticFinish, state);
+            if (terminal?.length > 0) {
+              for (const item of terminal) {
+                if (item === null || item === undefined) continue;
+                if (!hasValuableContent(item, sourceFormat)) continue;
+                const output = formatSSE(item, sourceFormat);
+                reqLogger?.appendConvertedChunk?.(output);
+                controller.enqueue(sharedEncoder.encode(output));
+                sseEmittedCount++;
+              }
+            }
+          }
+
+          // A macrotask boundary lets every already-queued readable chunk resolve
+          // the client's pending reads (microtasks) before the success finalizer
+          // persists: the synthesized terminal event must be client-observable at
+          // persistence time. A microtask boundary is too early — the synthesized
+          // chunks are still queued and unseen.
+          establishSuccessTerminal();
+          await new Promise((resolve) => setTimeout(resolve, 0));
           streamDoneSent = true;
           if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
+          finalizeStream();
           continue;
         }
 
@@ -398,6 +522,12 @@ export function createSSEStream(options = {}) {
           }
         }
 
+        // OpenAI Responses API format - output text delta
+        if (parsed.type === "response.output_text.delta" && typeof parsed.delta === "string") {
+          totalContentLength += parsed.delta.length;
+          accumulatedContent += parsed.delta;
+        }
+
         // Extract usage
         const extracted = extractUsage(parsed);
         if (extracted) state.usage = mergeUsage(state.usage, extracted); // Keep original usage for logging
@@ -410,7 +540,11 @@ export function createSSEStream(options = {}) {
           currentOpenAIResponsesEvent = null;
           sseEmittedCount++;
           // Responses clients (codex) close on response.completed instead of [DONE]
-          if (openAIResponsesTerminalSeen) finalizeStream();
+          if (openAIResponsesTerminalSeen) {
+            establishSuccessTerminal();
+            await awaitTerminalDelivery();
+            finalizeStream();
+          }
           continue;
         }
 
@@ -462,13 +596,13 @@ export function createSSEStream(options = {}) {
           completionFlushTimer = setTimeout(() => {
             completionFlushTimer = null;
             if (state?.completedSent) return;
-            try { flushPendingCompletion(controller); } catch { /* controller already closed */ }
+            flushPendingCompletion(controller).catch(() => { /* controller already closed */ });
           }, PENDING_COMPLETION_FLUSH_MS);
         }
       }
     },
 
-    flush(controller) {
+    async flush(controller) {
       const evtSummary = Object.entries(eventTypeCounts).map(([k, v]) => `${k}=${v}`).join(",") || "none";
       dbg("SSE", `flush | provider=${provider} | model=${model} | recvLines=${sseLineCount} | emitted=${sseEmittedCount} | events=[${evtSummary}]`);
       trackPendingRequest(model, provider, connectionId, false);
@@ -486,6 +620,16 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(output));
           }
 
+          // Same terminal translator flush as the translate branch below, run
+          // only when the stream ended without its [DONE] sentinel. A same-format
+          // passthrough has nothing left to emit (its result is intentionally
+          // ignored), but running it keeps the flush failure surface identical
+          // across modes so the catch can terminate as an error instead of
+          // silently reporting success.
+          if (!passthroughDoneSeen) {
+            translateResponse(targetFormat, sourceFormat, null, state);
+          }
+
           // IMPORTANT: In passthrough mode we still must terminate the SSE stream.
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
@@ -498,6 +642,8 @@ export function createSSEStream(options = {}) {
             controller.enqueue(sharedEncoder.encode(doneOutput));
           }
 
+          establishSuccessTerminal();
+          await awaitTerminalDelivery();
           finalizeStream();
           return;
         }
@@ -573,13 +719,35 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
+        // The translator flush above may have emitted the only terminal event
+        // (synthesized finish_reason / message_stop). Establish success before the
+        // delivery wait so a disconnect during it cannot be recorded as an error,
+        // and let those flush terminal bytes reach the client before persisting.
+        establishSuccessTerminal();
+        await awaitTerminalDelivery();
         finalizeStream();
       } catch (error) {
         console.log("Error in flush:", error);
-        finalizeStream();
+        finalizeStreamError(error?.message ? String(error.message) : "transform_flush_error");
       }
     }
   });
+
+  // Minimal read-only snapshot of the per-stream accumulators, consumed by the
+  // disconnect/stall/error terminal finalizer. Exposes only plain values so
+  // callers never touch transform-internal state directly.
+  Object.defineProperty(stream, "snapshot", {
+    enumerable: false,
+    value: () => ({
+      content: accumulatedContent,
+      thinking: accumulatedThinking,
+      usage: mode === STREAM_MODE.PASSTHROUGH ? usage : state?.usage,
+      ttftAt,
+      terminalEstablished
+    })
+  });
+
+  return stream;
 }
 
 export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider = null, reqLogger = null, toolNameMap = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, customToolNames = null, credentials = null) {
@@ -600,9 +768,11 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null, targetFormat = null, sourceFormat = null) {
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
+    targetFormat,
+    sourceFormat,
     provider,
     reqLogger,
     toolNameMap,

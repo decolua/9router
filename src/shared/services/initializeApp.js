@@ -16,6 +16,11 @@ import {
 import { getMitmStatus, startMitm, loadEncryptedPassword, initDbHooks, restoreToolDNS, removeAllDNSEntriesSync } from "@/mitm/manager";
 import { syncToJson as syncMitmAliasCache } from "@/lib/mitmAliasCache";
 import { killAllBridges } from "@/lib/mcp/stdioSseBridge";
+import {
+  registerShutdownStep,
+  installProcessSignalHandlers,
+  ShutdownPhase,
+} from "@/lib/runtime/shutdownCoordinator.js";
 
 // Inject correct paths and DB hooks into manager.js (CJS) from ESM context
 (function bootstrapMitm() {
@@ -38,7 +43,7 @@ const STARTUP_DEFER_MS = 3000;
 
 // Survive Next.js hot reload
 const g = global.__appSingleton ??= {
-  signalHandlersRegistered: false,
+  exitHandlerRegistered: false,
   watchdogInterval: null,
   networkMonitorInterval: null,
   lastNetworkFingerprint: null,
@@ -51,19 +56,19 @@ const g = global.__appSingleton ??= {
 
 export async function initializeApp() {
   try {
-    // Register cleanup + exit-respawn callback immediately so signals and
-    // unexpected cloudflared exits are handled even during the deferred window.
-    if (!g.signalHandlersRegistered) {
-      const cleanup = () => {
-        try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
-        try { killAllBridges(); } catch { /* best effort */ }
-        killCloudflared();
-        process.exit();
-      };
-      process.on("SIGINT", cleanup);
-      process.on("SIGTERM", cleanup);
+    // Delegate signal ownership to the shutdown coordinator (single lifecycle
+    // owner): it flushes request details and closes the DB before this cleanup
+    // runs and the process exits. Registration is idempotent.
+    registerShutdownStep("app-runtime-cleanup", () => {
+      try { removeAllDNSEntriesSync(); } catch { /* best effort */ }
+      try { killAllBridges(); } catch { /* best effort */ }
+      killCloudflared();
+    }, { phase: ShutdownPhase.CLEANUP });
+    installProcessSignalHandlers();
+
+    if (!g.exitHandlerRegistered) {
       process.on("exit", () => { try { removeAllDNSEntriesSync(); } catch { /* ignore */ } });
-      g.signalHandlersRegistered = true;
+      g.exitHandlerRegistered = true;
     }
 
     setTunnelUnexpectedExitCallback(() => {

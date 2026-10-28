@@ -14,6 +14,7 @@ const [NODE_MAJOR] = process.versions.node.split(".").map(Number);
 const USE_NAPI_BUILD = NODE_MAJOR >= 22;
 const BETTER_SQLITE3_VERSION = USE_NAPI_BUILD ? "13.0.3" : "12.6.2";
 const SQL_JS_VERSION = "1.14.1";
+const TIMSLITE_VERSION = "0.1.4";
 
 function getDataDir() {
   if (process.env.DATA_DIR) return process.env.DATA_DIR;
@@ -81,6 +82,36 @@ function isBetterSqliteBinaryValid() {
   } catch { return false; }
 }
 
+// timslite's index.js loads `timslite.<target>.node` from its own directory. Mirror the
+// target name for the current runtime so an install can be validated without loading it.
+function getTimsliteBindingFilename() {
+  const { platform, arch } = process;
+  if (platform === "darwin") {
+    if (arch === "x64") return "timslite.darwin-x64.node";
+    if (arch === "arm64") return "timslite.darwin-arm64.node";
+    return null;
+  }
+  if (platform === "win32") {
+    if (arch === "x64") return "timslite.win32-x64-msvc.node";
+    if (arch === "arm64") return "timslite.win32-arm64-msvc.node";
+    if (arch === "ia32") return "timslite.win32-ia32-msvc.node";
+    return null;
+  }
+  if (platform === "linux") {
+    const musl = !isGlibcRuntime();
+    if (arch === "x64") return musl ? "timslite.linux-x64-musl.node" : "timslite.linux-x64-gnu.node";
+    if (arch === "arm64") return musl ? "timslite.linux-arm64-musl.node" : "timslite.linux-arm64-gnu.node";
+    return null;
+  }
+  return null;
+}
+
+function hasTimsliteBinding() {
+  const filename = getTimsliteBindingFilename();
+  if (!filename) return false;
+  return fs.existsSync(path.join(getRuntimeNodeModules(), "timslite", filename));
+}
+
 // Extract a short, user-friendly reason from npm stderr.
 function summarizeNpmError(stderr = "") {
   const text = String(stderr);
@@ -144,10 +175,20 @@ function ensureSqliteRuntime({ silent = false } = {}) {
     if (sqlJsOk) sqlJsOk = isSqlJsWasmValid();
   }
 
+  // Optional observability payload store. Installed like better-sqlite3 (into the
+  // user-writable runtime dir, non-fatal on failure) so an unsupported platform keeps
+  // running on the inline SQLite fallback. --ignore-scripts avoids timslite's cargo
+  // source build; prebuilt platform bindings ship inside the package.
+  let timsliteOk = hasTimsliteBinding();
+  if (!timsliteOk && !hasModule("timslite")) {
+    npmInstall([`timslite@${TIMSLITE_VERSION}`], { optional: true, silent, ignoreScripts: true });
+    timsliteOk = hasTimsliteBinding();
+  }
+
   const needBetterSqlite = !hasModule("better-sqlite3") || !isBetterSqliteBinaryValid();
   if (!needBetterSqlite) {
     if (!silent) console.log("✅ SQLite engine ready");
-    return { betterSqlite: true, sqlJs: sqlJsOk };
+    return { betterSqlite: true, sqlJs: sqlJsOk, timslite: timsliteOk };
   }
 
   // npm injects an implicit `node-gyp rebuild` for any package carrying a
@@ -157,6 +198,7 @@ function ensureSqliteRuntime({ silent = false } = {}) {
   return {
     betterSqlite: ok && hasModule("better-sqlite3") && isBetterSqliteBinaryValid(),
     sqlJs: sqlJsOk,
+    timslite: timsliteOk,
   };
 }
 
@@ -175,6 +217,8 @@ module.exports = {
   buildEnvWithRuntime,
   getRuntimeDir,
   getRuntimeNodeModules,
+  getTimsliteBindingFilename,
+  hasTimsliteBinding,
   runNpmInstall,
   summarizeNpmError,
 };

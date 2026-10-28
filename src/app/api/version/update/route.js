@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { killAppProcesses, spawnUpdaterAndExit } from "@/lib/appUpdater";
+import { runShutdown } from "@/lib/runtime/shutdownCoordinator.js";
 
 export async function POST() {
   if (process.env.NODE_ENV !== "production") {
@@ -8,6 +9,10 @@ export async function POST() {
       { status: 403 }
     );
   }
+
+  try {
+    await runShutdown("version-update");
+  } catch { /* best effort */ }
 
   try {
     // Kill sibling processes (cloudflared, MITM, stray next-server) to release file locks on Windows

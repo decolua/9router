@@ -255,6 +255,13 @@ function buildCliPackage() {
     fs.rmSync(betterDir, { recursive: true, force: true });
     console.log("✅ Stripped better-sqlite3 (lives in ~/.9router/runtime)");
   }
+  // timslite is external + optional, same as better-sqlite3: its native bindings live in
+  // ~/.9router/runtime so a global CLI update is not blocked by locked .node files on Windows.
+  const timsliteDir = path.join(cliAppDir, "node_modules", "timslite");
+  if (fs.existsSync(timsliteDir)) {
+    fs.rmSync(timsliteDir, { recursive: true, force: true });
+    console.log("✅ Stripped timslite (lives in ~/.9router/runtime)");
+  }
   console.log("");
 
   // Step 4: Copy static files
