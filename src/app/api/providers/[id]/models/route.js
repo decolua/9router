@@ -553,6 +553,9 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    if (isOpenAICompatibleProvider(connection.provider) && connection.providerSpecificData?.apiType === "custom-json") {
+      return NextResponse.json({ models: [], message: "Custom JSON endpoints use manually configured model IDs" });
+    }
     if (isOpenAICompatibleProvider(connection.provider)) {
       const baseUrl = connection.providerSpecificData?.baseUrl;
       if (!baseUrl) {

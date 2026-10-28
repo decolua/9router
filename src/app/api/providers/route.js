@@ -118,7 +118,9 @@ export async function POST(request) {
     // key to paste. Without this, following such a provider's own setup notice returns 400.
     const apiKeySubstitute = AI_PROVIDERS[provider]?.apiKeyOptionalWith;
     const hasApiKeySubstitute = !!(apiKeySubstitute && body.providerSpecificData?.[apiKeySubstitute]);
-    if (!apiKey && provider !== "ollama-local" && !hasApiKeySubstitute) {
+    const compatibleNode = isOpenAICompatibleProvider(provider) ? await getProviderNodeById(provider) : null;
+    const customNoAuth = compatibleNode?.apiType === "custom-json" && compatibleNode.customJson?.authType === "none";
+    if (!apiKey && provider !== "ollama-local" && !hasApiKeySubstitute && !customNoAuth) {
       return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
     }
     const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
@@ -131,13 +133,14 @@ export async function POST(request) {
     // Compatible LLM nodes support multiple API-key connections (key pool); runtime
     // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.
     if (isOpenAICompatibleProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = compatibleNode;
       if (!node) {
         return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
       }
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
+        ...(node.customJson ? { customJson: node.customJson } : {}),
         baseUrl: node.baseUrl,
         nodeName: node.name,
       };

@@ -1,3 +1,4 @@
+import { normalizeCustomJsonConfig } from "open-sse/utils/customJson.js";
 import { NextResponse } from "next/server";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
 
@@ -22,7 +23,7 @@ export async function PUT(request, { params }) {
     }
 
     // Only validate apiType for OpenAI Compatible nodes
-    if (node.type === "openai-compatible" && (!apiType || !["chat", "responses"].includes(apiType))) {
+    if (node.type === "openai-compatible" && (!apiType || !["chat", "responses", "custom-json"].includes(apiType))) {
       return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
     }
 
@@ -58,6 +59,12 @@ export async function PUT(request, { params }) {
       updates.apiType = apiType;
     }
 
+    if (node.type === "openai-compatible") {
+      try {
+        updates.customJson = apiType === "custom-json" ? normalizeCustomJsonConfig(body.customJson, sanitizedBaseUrl) : null;
+      } catch (error) { return NextResponse.json({ error: error.message }, { status: 400 }); }
+    }
+
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
@@ -67,6 +74,7 @@ export async function PUT(request, { params }) {
           ...(connection.providerSpecificData || {}),
           prefix: prefix.trim(),
           apiType: node.type === "openai-compatible" ? apiType : undefined,
+          customJson: updates.customJson,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
         }

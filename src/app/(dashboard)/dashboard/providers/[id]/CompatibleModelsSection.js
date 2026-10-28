@@ -71,7 +71,7 @@ function CompatibleModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias,
   );
 }
 
-export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic }) {
+export default function CompatibleModelsSection({ providerStorageAlias, providerDisplayAlias, modelAliases, customModels, copied, onCopy, onDeleteAlias, onAddCustomModel, onDeleteCustomModel, connections, isAnthropic, isCustomJson = false }) {
   const [newModel, setNewModel] = useState("");
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -163,7 +163,7 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
   return (
     <div className="flex flex-col gap-4">
       <p className="text-sm text-text-muted">
-        Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.
+        {isCustomJson ? "Add a model ID to use when calling this endpoint. The request template can include it with {{model}}." : <>Add {isAnthropic ? "Anthropic" : "OpenAI"}-compatible models manually or import them from the /models endpoint.</>}
       </p>
 
       <div className="flex items-end gap-2 flex-wrap">
@@ -175,19 +175,19 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
             value={newModel}
             onChange={(e) => setNewModel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
-            placeholder={isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
+            placeholder={isCustomJson ? "custom-model" : isAnthropic ? "claude-3-opus-20240229" : "gpt-4o"}
             className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
           />
         </div>
         <Button size="sm" icon="add" onClick={handleAdd} disabled={!newModel.trim() || adding}>
           {adding ? "Adding..." : "Add"}
         </Button>
-        <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
+        {!isCustomJson && <Button size="sm" variant="secondary" icon="download" onClick={handleImport} disabled={!canImport || importing}>
           {importing ? "Importing..." : "Import from /models"}
-        </Button>
+        </Button>}
       </div>
 
-      {!canImport && (
+      {!isCustomJson && !canImport && (
         <p className="text-xs text-text-muted">
           Add a connection to enable importing models.
         </p>
@@ -229,4 +229,5 @@ CompatibleModelsSection.propTypes = {
     isActive: PropTypes.bool,
   })).isRequired,
   isAnthropic: PropTypes.bool,
+  isCustomJson: PropTypes.bool,
 };

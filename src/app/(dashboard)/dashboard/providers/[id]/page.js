@@ -364,21 +364,17 @@ export default function ProviderDetailPage() {
   }, [providerId, isCompatible]);
 
   const handleUpdateNode = async (formData) => {
-    try {
-      const res = await fetch(`/api/provider-nodes/${providerId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(formData),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setProviderNode(data.node);
-        await fetchConnections();
-        setShowEditNodeModal(false);
-      }
-    } catch (error) {
-      console.log("Error updating provider node:", error);
-    }
+    const res = await fetch(`/api/provider-nodes/${providerId}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formData),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      setProviderNode(data.node);
+      await fetchConnections();
+      setShowEditNodeModal(false);
+    } else { throw new Error(data.error || "Failed to update provider"); }
   };
 
   const saveProviderStrategy = async (strategy, stickyLimit) => {
@@ -1178,6 +1174,7 @@ export default function ProviderDetailPage() {
           onDeleteCustomModel={(modelId) => handleDeleteCustomModel(modelId, "llm", providerStorageAlias)}
           connections={connections}
           isAnthropic={isAnthropicCompatible}
+          isCustomJson={providerNode?.apiType === "custom-json"}
         />
       );
     }
@@ -1465,10 +1462,12 @@ export default function ProviderDetailPage() {
         <Card>
           <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h2 className="text-lg font-semibold">{isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details"}</h2>
+              <h2 className="text-lg font-semibold">{providerNode.apiType === "custom-json" ? "Custom JSON API Details" : (isAnthropicCompatible ? "Anthropic Compatible Details" : "OpenAI Compatible Details")}</h2>
               <p className="break-all text-sm text-text-muted">
-                {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
-                {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+                {providerNode.apiType === "custom-json" ? `${providerNode.customJson?.method || "POST"} · ${providerNode.baseUrl}` : <>
+                  {isAnthropicCompatible ? "Messages API" : (providerNode.apiType === "responses" ? "Responses API" : "Chat Completions")} · {(providerNode.baseUrl || "").replace(/\/$/, "")}/
+                  {isAnthropicCompatible ? "messages" : (providerNode.apiType === "responses" ? "responses" : "chat/completions")}
+                </>}
               </p>
             </div>
             <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center">
@@ -1481,7 +1480,7 @@ export default function ProviderDetailPage() {
                 }}
                 className="w-full sm:w-auto"
               >
-                Add API Key
+                {providerNode?.apiType === "custom-json" ? "Add Connection" : "Add API Key"}
               </Button>
               <Button
                 size="sm"
@@ -1904,6 +1903,8 @@ export default function ProviderDetailPage() {
         />
       )}
       <AddApiKeyModal
+        customJson={providerNode?.apiType === "custom-json"}
+        apiKeyOptional={providerNode?.apiType === "custom-json" && providerNode.customJson?.authType === "none"}
         isOpen={showAddApiKeyModal}
         provider={providerId}
         providerName={providerInfo.name}
