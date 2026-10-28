@@ -196,6 +196,11 @@ function convertClaudeMessage(msg) {
           });
           break;
 
+        case "container_upload":
+          throw new Error(
+            "Unsupported Claude content block type for OpenAI: container_upload"
+          );
+
         case CLAUDE_BLOCK.TOOL_RESULT: {
           let resultContent = "";
           const resultImages = [];
