@@ -45,6 +45,16 @@ import AutoPingScheduleModal from "@/app/(dashboard)/dashboard/providers/[id]/Au
 import { getScheduleSlotLabels } from "@/shared/services/quotaPingSchedule";
 import { USAGE_SUPPORTED_PROVIDERS, AI_PROVIDERS } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { normalizeResetCard, getResetCardTypeLabel, isResetCardExpired, readPendingResetAttempt, savePendingResetAttempt, clearPendingResetAttempt, classifyResetPostOutcome } from "./glmResetCardsLogic";
+
+function glmResetStorage() {
+  try { return window.localStorage; } catch { return null; }
+}
+
+function readGlmPending(connectionId) {
+  const read = readPendingResetAttempt(glmResetStorage(), connectionId);
+  return read.status === "ok" ? read.attempt : read.status === "invalid" ? { invalid: true } : null;
+}
 
 // Maps the stored providerSpecificData.authMethod to a human label for Kiro.
 // Values come from the Kiro connect flows: builder-id/idc (device code),
@@ -175,6 +185,9 @@ export default function ProviderLimits() {
   const [resettingLimitId, setResettingLimitId] = useState(null);
   const [resetConfirmState, setResetConfirmState] = useState(null);
   const [resetCreditsState, setResetCreditsState] = useState(null);
+  const [glmResets, setGlmResets] = useState({});
+  const [glmResetNow, setGlmResetNow] = useState(Date.now);
+  const glmResetInFlightRef = useRef(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [selectedConnection, setSelectedConnection] = useState(null);
   const [proxyPools, setProxyPools] = useState([]);
@@ -225,6 +238,22 @@ export default function ProviderLimits() {
   const countdownRef = useRef(null);
   const tickCountRef = useRef(0);
 
+  useEffect(() => {
+    if (resetConfirmState?.connection.provider !== "glm" && resetCreditsState?.connection.provider !== "glm") return;
+    const timer = setInterval(() => setGlmResetNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [resetConfirmState?.connection.provider, resetCreditsState?.connection.provider]);
+
+  useEffect(() => {
+    const onStorage = () => {
+      if (glmResetInFlightRef.current) return;
+      setGlmResets((previous) => Object.fromEntries(Object.entries(previous).map(([id, state]) => [id, { ...state, pending: readGlmPending(id) }])));
+      setResetCreditsState((previous) => previous?.connection.provider === "glm" ? { ...previous, pending: readGlmPending(previous.connection.id), dashboardChecked: false } : previous);
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
   const fetchConnections = useCallback(
     async (targetPage = page) => {
       try {
@@ -250,6 +279,11 @@ export default function ProviderLimits() {
         const nextTotals = getSafeTotals(data.totals, connectionList.length);
 
         setConnections(connectionList);
+        setGlmResets((previous) => {
+          const next = { ...previous };
+          for (const connection of connectionList) if (connection.provider === "glm") next[connection.id] = { ...next[connection.id], pending: readGlmPending(connection.id) };
+          return next;
+        });
         setProviderOptions(getProviderOptions(data.providerOptions));
         setPagination(nextPagination);
         setTotals(nextTotals);
@@ -289,7 +323,7 @@ export default function ProviderLimits() {
           console.warn(
             `[ProviderLimits] Connection not found for ${provider}, skipping`,
           );
-          return;
+          return false;
         }
 
         if (response.status === 401) {
@@ -307,7 +341,7 @@ export default function ProviderLimits() {
             [connectionId]: quotaEntry,
           }));
           setQuotaCache(connectionId, quotaEntry);
-          return;
+          return false;
         }
 
         throw new Error(`HTTP ${response.status}: ${errorMsg}`);
@@ -331,6 +365,8 @@ export default function ProviderLimits() {
         [connectionId]: quotaEntry,
       }));
       setQuotaCache(connectionId, quotaEntry);
+      if (provider === "glm") setGlmResets((previous) => ({ ...previous, [connectionId]: { ...previous[connectionId], inventory: data.resetCards ?? null } }));
+      return !data.message;
     } catch (error) {
       console.error(
         `[ProviderLimits] Error fetching quota for ${provider} (${connectionId}):`,
@@ -340,6 +376,7 @@ export default function ProviderLimits() {
         ...prev,
         [connectionId]: error.message || "Failed to fetch quota",
       }));
+      return false;
     } finally {
       setLoading((prev) => ({ ...prev, [connectionId]: false }));
     }
@@ -353,6 +390,87 @@ export default function ProviderLimits() {
     },
     [fetchQuota],
   );
+
+  const readGlmResets = useCallback(async (connection) => {
+    const response = await fetch(`/api/usage/${connection.id}/glm-reset-cards`, { cache: "no-store" });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !Array.isArray(result?.cards) || !Number.isSafeInteger(result.availableCount) || result.availableCount < 0) {
+      setGlmResets((previous) => ({ ...previous, [connection.id]: { ...previous[connection.id], inventory: null } }));
+      throw new Error(result?.error || result?.message || "Could not load GLM reset cards");
+    }
+    const inventory = { ...result, cards: result.cards.map(normalizeResetCard).filter(Boolean).sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt)) };
+    setGlmResets((previous) => ({ ...previous, [connection.id]: { ...previous[connection.id], inventory } }));
+    return inventory;
+  }, []);
+
+  const prepareGlmReset = useCallback(async (connection) => {
+    if (glmResetInFlightRef.current || resettingLimitId) return;
+    glmResetInFlightRef.current = true;
+    setResettingLimitId(connection.id);
+    try {
+      const pending = readGlmPending(connection.id);
+      setGlmResets((previous) => ({ ...previous, [connection.id]: { ...previous[connection.id], pending } }));
+      if (pending || glmResets[connection.id]?.refreshNeeded) throw new Error("Resolve the unfinished reset in card details before using another card.");
+      const inventory = await readGlmResets(connection);
+      const cards = inventory.cards.filter((card) => !isResetCardExpired(card.expiresAt));
+      if (!cards.length) throw new Error("No GLM reset cards available.");
+      setResetConfirmState({ connection, cards, card: cards.length === 1 ? cards[0] : null });
+    } catch (error) {
+      setErrors((previous) => ({ ...previous, [connection.id]: error.message }));
+    } finally {
+      glmResetInFlightRef.current = false;
+      setResettingLimitId(null);
+    }
+  }, [glmResets, readGlmResets, resettingLimitId]);
+
+  const handleGlmReset = useCallback(async (connection, selection = null, resolution = null) => {
+    if (glmResetInFlightRef.current || resettingLimitId) return;
+    glmResetInFlightRef.current = true;
+    setResettingLimitId(connection.id);
+    setErrors((previous) => ({ ...previous, [connection.id]: null }));
+    const update = (patch) => {
+      setGlmResets((previous) => ({ ...previous, [connection.id]: { ...previous[connection.id], ...patch } }));
+      setResetCreditsState((previous) => previous?.connection.id === connection.id ? { ...previous, ...patch } : previous);
+    };
+    try {
+      if (selection) {
+        const pending = readGlmPending(connection.id);
+        update({ pending });
+        if (pending || glmResets[connection.id]?.refreshNeeded) throw new Error("Resolve the unfinished reset before using another card.");
+        const card = selection.card;
+        if (!card || isResetCardExpired(card.expiresAt)) throw new Error("Select a valid, unexpired GLM reset card.");
+        const attempt = { provider: "glm", card, startedAt: new Date().toISOString() };
+        if (!savePendingResetAttempt(glmResetStorage(), connection.id, attempt)) throw new Error("Could not save recovery info. For safety the card was not used.");
+        update({ pending: attempt });
+        setResetConfirmState(null);
+        let outcome;
+        try {
+          const response = await fetch(`/api/usage/${connection.id}/glm-reset-cards`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ recordId: card.recordId, type: card.type }) });
+          outcome = classifyResetPostOutcome({ ok: response.ok, payload: await response.json().catch(() => null) });
+        } catch { outcome = { kind: "uncertain" }; }
+        if (outcome.kind !== "success") throw new Error(outcome.message || "GLM reset outcome is uncertain. Check your GLM dashboard before trying again.");
+      } else if (resolution !== null) {
+        const latest = readGlmPending(connection.id);
+        if (!resetCreditsState?.dashboardChecked || JSON.stringify(latest) !== JSON.stringify(resetCreditsState.pending)) throw new Error("The unfinished attempt changed. Reopen details and check the GLM dashboard.");
+      }
+      if (selection || resolution !== null) {
+        if (!clearPendingResetAttempt(glmResetStorage(), connection.id)) throw new Error("Could not clear recovery info. Check your GLM dashboard before continuing.");
+        update({ pending: null, dashboardChecked: false });
+      }
+      if (resolution === "not-used" || resolution === "discard") return;
+      update({ refreshNeeded: true });
+      if (!await fetchQuota(connection.id, connection.provider, { force: true })) throw new Error("Could not refresh quota; the reset result is preserved. Open card details to finish.");
+      const inventory = await readGlmResets(connection);
+      update({ refreshNeeded: false, error: null, data: { kind: "glm", ...inventory } });
+      setLastUpdated(new Date());
+    } catch (error) {
+      setErrors((previous) => ({ ...previous, [connection.id]: error.message }));
+      setResetCreditsState((previous) => previous?.connection.id === connection.id ? { ...previous, recoveryError: error.message } : previous);
+    } finally {
+      glmResetInFlightRef.current = false;
+      setResettingLimitId(null);
+    }
+  }, [fetchQuota, glmResets, readGlmResets, resetCreditsState, resettingLimitId]);
 
   const handleResetCodexLimit = useCallback(
     async (connectionId, provider) => {
@@ -392,6 +510,24 @@ export default function ProviderLimits() {
   }, []);
 
   const handleViewCodexResetCredits = useCallback(async (connection) => {
+    if (connection.provider === "glm") {
+      if (glmResetInFlightRef.current || resettingLimitId) return;
+      glmResetInFlightRef.current = true;
+      setResettingLimitId(connection.id);
+      const pending = readGlmPending(connection.id);
+      setGlmResets((previous) => ({ ...previous, [connection.id]: { ...previous[connection.id], pending } }));
+      setResetCreditsState({ connection, loading: true, error: null, data: { kind: "glm" }, pending, refreshNeeded: glmResets[connection.id]?.refreshNeeded, dashboardChecked: false });
+      try {
+        const inventory = await readGlmResets(connection);
+        setResetCreditsState((previous) => ({ ...previous, loading: false, data: { kind: "glm", ...inventory } }));
+      } catch (error) {
+        setResetCreditsState((previous) => ({ ...previous, loading: false, recoveryError: error.message }));
+      } finally {
+        glmResetInFlightRef.current = false;
+        setResettingLimitId(null);
+      }
+      return;
+    }
     setResetCreditsState({ connection, loading: true, error: null, data: null });
     try {
       const response = await fetch(`/api/usage/${connection.id}/codex-reset-credits`, { cache: "no-store" });
@@ -409,7 +545,7 @@ export default function ProviderLimits() {
     } catch (error) {
       setResetCreditsState({ connection, loading: false, error: error.message || "Failed to load Codex reset credits", data: null });
     }
-  }, []);
+  }, [glmResets, readGlmResets, resettingLimitId]);
 
   const handleDeleteConnection = useCallback(
     async (id) => {
@@ -1124,9 +1260,12 @@ export default function ProviderLimits() {
           // Use table layout for all providers
           const isInactive = conn.isActive === false;
           const isCodex = conn.provider === "codex";
+          const isGlm = conn.provider === "glm";
+          const glmReset = glmResets[conn.id];
+          const glmInventory = glmReset && Object.hasOwn(glmReset, "inventory") ? glmReset.inventory : quota?.raw?.resetCards;
           const claudeReset = conn.provider === "claude" ? quota?.raw?.resetCredits : null;
-          const resetLabel = isCodex ? "Codex reset credit" : "Claude limit reset";
-          const resetCreditCount = getCodexResetCreditCount(quota);
+          const resetLabel = isGlm ? "GLM reset card" : isCodex ? "Codex reset credit" : "Claude limit reset";
+          const resetCreditCount = isGlm ? (glmInventory?.availableCount ?? 0) : getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
           const rawQuotas = quota?.quotas || [];
@@ -1211,11 +1350,11 @@ export default function ProviderLimits() {
                   </div>
 
                   <div className="flex items-center gap-1 shrink-0">
-                    {(isCodex || claudeReset) && (
+                    {(isCodex || claudeReset || isGlm) && (
                       <>
                         <Tooltip
                           text={
-                            resetCreditCount > 0
+                            isGlm && !glmInventory ? "Reset cards unavailable. Open card details to retry." : isGlm && (glmReset?.pending || glmReset?.refreshNeeded) ? "Resolve the unfinished reset in card details before using another card." : resetCreditCount > 0
                               ? claudeReset
                                 ? `Use your reset now (${resetCreditCount} left, use by ${formatCreditDate(claudeReset.expiresAt)}) · refills ${formatClaudeResetClears(claudeReset.clears)}`
                                 : `Use one ${resetLabel}. Available: ${resetCreditCount}`
@@ -1224,8 +1363,8 @@ export default function ProviderLimits() {
                         >
                           <button
                             type="button"
-                            onClick={() => setResetConfirmState({ connection: conn, resetCreditCount })}
-                            disabled={resetCreditCount <= 0 || isLoading || rowBusy}
+                            onClick={() => isGlm ? prepareGlmReset(conn) : setResetConfirmState({ connection: conn, resetCreditCount })}
+                            disabled={resetCreditCount <= 0 || isLoading || rowBusy || (isGlm && Boolean(glmReset?.pending || glmReset?.refreshNeeded))}
                             aria-label={
                               resetCreditCount > 0
                                 ? `Use one ${resetLabel}. ${resetCreditCount} available.`
@@ -1240,15 +1379,15 @@ export default function ProviderLimits() {
                             <span className={`material-symbols-outlined text-[15px] ${isResettingLimit ? "animate-spin" : ""}`}>
                               {isResettingLimit ? "progress_activity" : "restart_alt"}
                             </span>
-                            <span>{resetCreditCount}</span>
+                            <span>{isGlm && !glmInventory ? "–" : resetCreditCount}</span>
                           </button>
                         </Tooltip>
-                        <Tooltip text={isCodex ? "View Codex reset credit expiry" : "View Claude Code reset expiry"}>
+                        <Tooltip text={isGlm ? "View GLM reset card expiry" : isCodex ? "View Codex reset credit expiry" : "View Claude Code reset expiry"}>
                           <button
                             type="button"
-                            onClick={() => (isCodex ? handleViewCodexResetCredits(conn) : handleViewClaudeResets(conn, claudeReset))}
+                            onClick={() => ((isCodex || isGlm) ? handleViewCodexResetCredits(conn) : handleViewClaudeResets(conn, claudeReset))}
                             disabled={isLoading || rowBusy}
-                            aria-label={isCodex ? "View Codex reset credit expiry" : "View Claude Code reset expiry"}
+                            aria-label={isGlm ? "View GLM reset card expiry" : isCodex ? "View Codex reset credit expiry" : "View Claude Code reset expiry"}
                             className="flex h-8 w-8 items-center justify-center rounded-lg border border-black/10 text-text-muted transition-colors hover:bg-black/5 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50 dark:border-white/10 dark:hover:bg-white/5"
                           >
                             <span className="material-symbols-outlined text-[17px]">schedule</span>
@@ -1547,18 +1686,32 @@ export default function ProviderLimits() {
         onConfirm={async () => {
           const connection = resetConfirmState?.connection;
           if (!connection) return;
-          await handleResetCodexLimit(connection.id, connection.provider);
+          if (connection.provider === "glm") await handleGlmReset(connection, resetConfirmState);
+          else await handleResetCodexLimit(connection.id, connection.provider);
           setResetConfirmState(null);
         }}
-        title={resetConfirmState?.connection?.provider === "claude" ? "Reset Claude limits?" : "Reset Codex limit?"}
-        message={resetConfirmState?.connection?.provider === "claude"
+        title={resetConfirmState?.connection?.provider === "glm" ? "Reset GLM limits?" : resetConfirmState?.connection?.provider === "claude" ? "Reset Claude limits?" : "Reset Codex limit?"}
+        message={resetConfirmState?.connection?.provider === "glm"
+          ? resetConfirmState.card ? `Use one ${getResetCardTypeLabel(resetConfirmState.card.type)} reset card for ${getConnectionLabel(resetConfirmState.connection)}. Card expires ${formatCreditDate(resetConfirmState.card.expiresAt)}. This cannot be undone.` : "Choose a five-hour or weekly reset. This consumes one reset card and cannot be undone."
+          : resetConfirmState?.connection?.provider === "claude"
           ? `Refills your ${formatClaudeResetClears(quotaData[resetConfirmState.connection.id]?.raw?.resetCredits?.clears)} now for ${getConnectionLabel(resetConfirmState.connection) || "this account"} · your weekly reset day stays ${formatCreditDate(quotaData[resetConfirmState.connection.id]?.raw?.resetCredits?.weeklyResetsAt)}. This cannot be undone. Resets left: ${resetConfirmState.resetCreditCount ?? 0}.`
           : `Use 1 Codex reset credit for ${getConnectionLabel(resetConfirmState?.connection || {}) || "this account"}. This cannot be undone. Remaining credits: ${resetConfirmState?.resetCreditCount ?? 0}.`}
         confirmText="Reset limit"
         cancelText="Cancel"
         variant="danger"
         loading={Boolean(resettingLimitId)}
-      />
+        disabled={resetConfirmState?.connection?.provider === "glm" && (!resetConfirmState.card || isResetCardExpired(resetConfirmState.card.expiresAt, glmResetNow))}
+      >
+        {resetConfirmState?.connection?.provider === "glm" && (
+          <label className="mb-3 block text-sm text-text-primary">
+            Quota window to reset
+            <select aria-label="Quota window to reset" value={resetConfirmState.card?.id || ""} onChange={(event) => setResetConfirmState((previous) => ({ ...previous, card: previous.cards.find((card) => card.id === event.target.value) || null }))} className="mt-1 w-full rounded-lg border border-border-subtle bg-surface px-3 py-2">
+              <option value="" disabled>Select a reset card</option>
+              {resetConfirmState.cards.map((card) => <option key={card.id} value={card.id} disabled={isResetCardExpired(card.expiresAt, glmResetNow)}>{getResetCardTypeLabel(card.type)} · expires {formatCreditDate(card.expiresAt)}</option>)}
+            </select>
+          </label>
+        )}
+      </ConfirmModal>
 
       {resetCreditsState && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4 backdrop-blur-sm">
@@ -1566,7 +1719,7 @@ export default function ProviderLimits() {
             <div className="flex items-start justify-between gap-3 border-b border-black/10 bg-black/[0.03] px-4 py-3 dark:border-white/10 dark:bg-white/[0.04]">
               <div className="min-w-0">
                 <h3 className="text-base font-semibold text-text-primary">
-                  {resetCreditsState.data?.kind === "claude" ? "Claude Code Limit Resets" : "Codex Reset Credit Expiry"}
+                  {resetCreditsState.data?.kind === "glm" ? "GLM Reset Cards" : resetCreditsState.data?.kind === "claude" ? "Claude Code Limit Resets" : "Codex Reset Credit Expiry"}
                 </h3>
                 <p className="mt-0.5 truncate text-xs text-text-muted">
                   {getConnectionLabel(resetCreditsState.connection) || (resetCreditsState.data?.kind === "claude" ? "Claude account" : "Codex account")}
@@ -1575,6 +1728,7 @@ export default function ProviderLimits() {
               <button
                 type="button"
                 onClick={() => setResetCreditsState(null)}
+                disabled={resetCreditsState.connection.provider === "glm" && Boolean(resettingLimitId)}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
                 aria-label="Close reset credit expiry modal"
               >
@@ -1591,6 +1745,35 @@ export default function ProviderLimits() {
               ) : resetCreditsState.error ? (
                 <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-600 dark:text-red-300">
                   {resetCreditsState.error}
+                </div>
+              ) : resetCreditsState.data?.kind === "glm" ? (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between text-xs text-text-muted">
+                    <span>{resetCreditsState.data.availableCount == null ? "Inventory unavailable — not zero." : `${resetCreditsState.data.availableCount} reset cards available`}</span>
+                    <button type="button" disabled={Boolean(resettingLimitId)} onClick={() => handleViewCodexResetCredits(resetCreditsState.connection)} className="rounded-lg border px-3 py-1 disabled:opacity-50">Refresh inventory</button>
+                  </div>
+                  {resetCreditsState.recoveryError && <p role="alert" className="text-sm text-red-600 dark:text-red-300">{resetCreditsState.recoveryError}</p>}
+                  {resetCreditsState.refreshNeeded && <button type="button" disabled={Boolean(resettingLimitId)} onClick={() => handleGlmReset(resetCreditsState.connection)} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-50">Refresh to finish</button>}
+                  {resetCreditsState.pending && (
+                    <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+                      <p>{resetCreditsState.pending.invalid ? "The unfinished attempt marker is unreadable. Check your GLM dashboard before discarding it." : "Unfinished reset attempt — it may or may not have been used. No other card can be used until it is resolved."}</p>
+                      {!resetCreditsState.pending.invalid && <p className="text-xs">{getResetCardTypeLabel(resetCreditsState.pending.card.type)} · expires {formatCreditDate(resetCreditsState.pending.card.expiresAt)} · attempted {formatCreditDate(resetCreditsState.pending.startedAt)}</p>}
+                      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={Boolean(resetCreditsState.dashboardChecked)} onChange={(event) => setResetCreditsState((previous) => ({ ...previous, dashboardChecked: event.target.checked }))} />I checked my GLM dashboard for this card&apos;s status</label>
+                      <div className="flex gap-2">
+                        {resetCreditsState.pending.invalid ? <button type="button" disabled={!resetCreditsState.dashboardChecked || Boolean(resettingLimitId)} onClick={() => handleGlmReset(resetCreditsState.connection, null, "discard")} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-50">Discard unreadable marker</button> : <>
+                          <button type="button" disabled={!resetCreditsState.dashboardChecked || Boolean(resettingLimitId)} onClick={() => handleGlmReset(resetCreditsState.connection, null, "used")} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-50">Card was used</button>
+                          <button type="button" disabled={!resetCreditsState.dashboardChecked || Boolean(resettingLimitId)} onClick={() => handleGlmReset(resetCreditsState.connection, null, "not-used")} className="rounded-lg border px-3 py-1 text-xs disabled:opacity-50">Card was not used</button>
+                        </>}
+                      </div>
+                    </div>
+                  )}
+                  <div className="overflow-x-auto rounded-xl border border-black/10 dark:border-white/10">
+                    <table className="w-full text-left text-sm">
+                      <thead className="bg-black/[0.03] text-xs uppercase text-text-muted dark:bg-white/[0.04]"><tr><th scope="col" className="px-3 py-2">Reset</th><th scope="col" className="px-3 py-2">Expires At</th><th scope="col" className="px-3 py-2">Remaining</th></tr></thead>
+                      <tbody>{resetCreditsState.data.cards?.map((card) => <tr key={card.id} className="border-t border-black/5 dark:border-white/5"><td className="px-3 py-2">{getResetCardTypeLabel(card.type)}</td><td className="px-3 py-2">{formatCreditDate(card.expiresAt)}</td><td className="px-3 py-2">{formatTimeRemaining(card.expiresAt)}</td></tr>)}</tbody>
+                    </table>
+                  </div>
+                  {resetCreditsState.data.availableCount === 0 && <p className="text-sm text-text-muted">No reset cards available.</p>}
                 </div>
               ) : resetCreditsState.data?.kind === "claude" && resetCreditsState.data.grants?.length ? (
                 <div className="space-y-3">

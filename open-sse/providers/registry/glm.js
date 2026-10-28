@@ -45,6 +45,8 @@ export default {
     },
     usage: {
       url: "https://api.z.ai/api/monitor/usage/quota/limit",
+      resetCardsUrl: "https://api.z.ai/api/biz/customer-package-reset/list?targetType=PERSONAL",
+      resetCardsUseUrl: "https://api.z.ai/api/biz/customer-package-reset/use",
     },
   },
   // Multi-endpoint: pick the transport matching client sourceFormat to skip translation.

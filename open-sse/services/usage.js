@@ -23,6 +23,7 @@ import { getXiaomiMimoUsage } from "./usage/xiaomi-mimo.js";
 import { getCursorUsage } from "./usage/cursor.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
+export { getGlmResetCards, redeemGlmResetCard } from "./usage/glm.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
 import {
   getIflowUsage,
