@@ -7,13 +7,20 @@ import agnes from "../../open-sse/providers/registry/agnes.js";
 // passthroughModels still accepts anything the account actually has.
 
 describe("agnes registry model seeds", () => {
-  it("declares the four 2.5/3.0 models", () => {
-    expect(agnes.models.map((m) => m.id)).toEqual([
+  it("declares the seeded 2.5/3.0 models", () => {
+    // Membership, not order: adding a model should not fail an exact-list
+    // assertion here. The no-duplicates test below still guards integrity.
+    const ids = agnes.models.map((m) => m.id);
+    for (const id of [
       "agnes-2.5-flash",
       "agnes-2.5-pro",
       "agnes-2.5-pro-beta",
       "agnes-3.0-flash",
-    ]);
+      // Announced 2026-10-05, status "Coming soon" on the vendor's doc page.
+      "agnes-3.0-pro",
+    ]) {
+      expect(ids, id).toContain(id);
+    }
   });
 
   it("gives every model a display name", () => {
