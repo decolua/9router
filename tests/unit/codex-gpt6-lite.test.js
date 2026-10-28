@@ -121,6 +121,72 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     expect(body.input.some(item => item.type === "additional_tools")).toBe(false);
   });
 
+  it.each(["gpt-6.1-sol", "gpt-6-luna", "gpt-6-astra"])("keeps tool-free search-history compaction compatible on %s", async (model) => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    const history = [
+      { type: "web_search_call", id: "ws_fixture", status: "completed", action: { type: "search", query: "fixture" } },
+      { type: "reasoning", encrypted_content: "synthetic-fixture", summary: [] },
+      { type: "message", role: "user", content: [{ type: "input_text", text: "Summarize for continuation." }] },
+    ];
+    await new CodexExecutor().execute({
+      model,
+      body: { model, input: structuredClone(history), tools: [], reasoning: null, instructions: "Compact the conversation." },
+      stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.tools).toEqual([{ type: "web_search" }]);
+    expect(body.tool_choice).toBe("none");
+    expect(body.input).toEqual(history);
+    expect(body.instructions).toBe("Compact the conversation.");
+  });
+
+  it("migrates a retained Lite prefix when compacting hosted-search history", async () => {
+    const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
+      ok: true, status: 200, headers: new Map(),
+    });
+    const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
+    const instruction = { type: "message", role: "developer", content: [{ type: "input_text", text: "Keep these instructions." }] };
+    const search = { type: "web_search_call", id: "ws_fixture", status: "completed" };
+    await new CodexExecutor().execute({
+      model: "gpt-6.1-sol",
+      body: { model: "gpt-6.1-sol", tools: [], instructions: "", input: [
+        { type: "additional_tools", role: "developer", tools: [tool] },
+        instruction, search,
+      ] },
+      stream: true, credentials,
+    });
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    expect(options.headers["x-openai-internal-codex-responses-lite"]).toBeUndefined();
+    expect(body.input).toEqual([instruction, search]);
+    expect(body.instructions).toBe("");
+    expect(body.tools).toEqual([{ type: "web_search" }, tool]);
+    expect(body.tool_choice).toBe("none");
+  });
+
+  it("does not add a search declaration to tool-free history without hosted search", () => {
+    const body = new CodexExecutor().transformRequest("gpt-6.1-sol", {
+      model: "gpt-6.1-sol", input: "Summarize for continuation.", tools: [], reasoning: null,
+    }, true, credentials);
+    expect(body.tools).toBeNull();
+    expect(body.input[0]).toEqual({ type: "additional_tools", role: "developer", tools: [] });
+    expect(body.tool_choice).not.toBe("none");
+  });
+
+  it("preserves active tools and caller tool choice when replaying hosted search", () => {
+    const tool = { type: "function", name: "run", parameters: { type: "object", properties: {} } };
+    const body = new CodexExecutor().transformRequest("gpt-6.1-sol", {
+      model: "gpt-6.1-sol", input: [{ type: "web_search_call", id: "ws_fixture", status: "completed" }],
+      tools: [tool], tool_choice: "auto",
+    }, true, credentials);
+    expect(body.input[0].tools).toEqual([tool]);
+    expect(body.tool_choice).toBe("auto");
+  });
+
   it("moves hosted search out of a native Lite prefix", async () => {
     const fetchMock = vi.spyOn(proxyFetchModule, "proxyAwareFetch").mockResolvedValue({
       ok: true, status: 200, headers: new Map(),

@@ -426,6 +426,13 @@ export class CodexExecutor extends BaseExecutor {
     if (autoWebSearch && !body.tools?.some?.(tool => tool?.type === "web_search")) {
       body.tools = [...(Array.isArray(body.tools) ? body.tools : []), { type: "web_search" }];
     }
+    // Compaction clears active tools but can retain hosted-search history.
+    // Preserve its protocol declaration without allowing any new tool calls.
+    if (Array.isArray(body.tools) && body.tools.length === 0
+      && body.input?.some?.(item => item?.type === "web_search_call")) {
+      body.tools = [{ type: "web_search" }];
+      body.tool_choice = "none";
+    }
     // Hosted search cannot run from a Lite input prefix. When switching to
     // regular Responses, move all prefixed tools without duplicating definitions.
     let convertedLitePrefix = false;
