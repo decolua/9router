@@ -94,6 +94,20 @@ if (args[0] === "connect" || args[0] === "show") {
   return;
 }
 
+// `9router acp` is an Agent Client Protocol agent: the editor spawns it over
+// stdio, so it bypasses the launcher entirely (no update spinner, no server
+// spawn, stdout is protocol-only).
+if (args[0] === "acp") {
+  const { run } = require("./src/cli/commands/acp");
+  run(args.slice(1))
+    .then((code) => process.exit(code))
+    .catch((err) => {
+      console.error(`❌ ${err?.message || err}`);
+      process.exit(1);
+    });
+  return;
+}
+
 // Self-heal SQLite runtime deps (sql.js + better-sqlite3) into ~/.9router/runtime
 // so the server can resolve them via NODE_PATH. Best-effort — sql.js is required,
 // better-sqlite3 is optional. Logs to stderr only on failure.
@@ -170,6 +184,9 @@ Options:
 Commands:
   connect <server-url> Configure Claude Code for a remote 9router server
                       (npx 9router connect http://host:20128 — no install needed)
+  acp                  Run the Agent Client Protocol agent for Zed & other ACP
+                      editors (usually spawned by the editor itself)
+                      (see: ${APP_NAME} acp --help)
   show [tool…]        Show each CLI tool's current 9router config and models
                       (e.g. 9router show claude)
   xai video --prompt "..." --output video.mp4

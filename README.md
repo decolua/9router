@@ -332,9 +332,17 @@ Default URLs:
         <img src="./public/providers/qwen.png" width="60" alt="Qwen Code"/><br/>
         <b>Qwen Code</b>
       </td>
+      <td align="center" width="120">
+        <img src="./public/providers/zed.png" width="60" alt="Zed"/><br/>
+        <b>Zed</b>
+      </td>
     </tr>
   </table>
 </div>
+
+**Zed editor**: `npx 9router connect zed` fills Zed's model list automatically and registers the
+[ACP](https://agentclientprotocol.com) agent (`9router acp`) as an External Agent — model picker,
+workspace tools, permissions and RTK inside Zed. See `gitbook/content/en/integration/zed.md`.
 
 ---
 

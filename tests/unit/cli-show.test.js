@@ -45,7 +45,9 @@ describe("9router show", () => {
     for (const t of tools.TOOLS) {
       const [r] = await Promise.all([show.__test__.inspect(t)]);
       expect(r.configured, t.id).toBe(true);
-      expect(r.apiKey, t.id).toBe("sk-sho…6789");
+      // Zed opts out (keyInFile:false): settings.json is plaintext, so the key
+      // lives in ROUTER9_API_KEY and no file show() reads can hold it.
+      if (t.keyInFile !== false) expect(r.apiKey, t.id).toBe("sk-sho…6789");
       // omp lists every server model via discovery instead of a fixed id.
       expect(Object.values(r.models).join(" "), t.id).toContain(t.id === "omp" ? "discovery" : "srv/");
     }

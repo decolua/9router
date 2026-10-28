@@ -84,7 +84,11 @@ describe("connect tool writers", () => {
       const written = await t.apply(CTX);
       expect(written.length).toBeGreaterThan(0);
       // Key may live in just one of the files (cline: secrets.json).
-      expect(written.some((f) => fs.readFileSync(f, "utf8").includes(CTX.apiKey))).toBe(true);
+      // Zed opts out (keyInFile:false): settings.json is plaintext, the key
+      // travels via the ROUTER9_API_KEY env var instead.
+      if (t.keyInFile !== false) {
+        expect(written.some((f) => fs.readFileSync(f, "utf8").includes(CTX.apiKey))).toBe(true);
+      }
       if (process.platform !== "win32") {
         for (const f of written) expect(fs.statSync(f).mode & 0o777).toBe(0o600);
       }
@@ -186,6 +190,164 @@ describe("connect tool writers", () => {
     const state = readJson(path.join(home, ".cline", "data", "globalState.json"));
     expect(state.openAiBaseUrl).toBe("http://gw.test:20128");
     expect((await tool("cline").reset()).length).toBe(2);
+  });
+});
+
+describe("zed tool writer", () => {
+  let home;
+  const f = () => path.join(home, ".config", "zed", "settings.json");
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "9r-connect-zed-"));
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    vi.stubEnv("XDG_CONFIG_HOME", "");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("writes an OpenAI-compatible provider with combos first, capped, and never the API key", async () => {
+    const models = [
+      { id: "kr/claude-sonnet-4.5", owned_by: "kr", capabilities: { tools: true }, context_length: 200000, max_completion_tokens: 64000 },
+      { id: "my-stack", owned_by: "combo", capabilities: { tools: true }, context_length: 128000 },
+      { id: "no-tools", owned_by: "glm", capabilities: { tools: false } },
+      { id: "web/search", owned_by: "or", kind: "webSearch" },
+      { id: "plain", owned_by: "x" },
+    ];
+    await tool("zed").apply({ ...CTX, models });
+    const cfg = readJson(f());
+    const p = cfg.language_models.openai_compatible.router9;
+    expect(p.api_url).toBe("http://gw.test:20128/v1");
+    expect(p.available_models.map((m) => m.name)).toEqual(["my-stack", "kr/claude-sonnet-4.5", "plain"]);
+    expect(p.available_models[0].max_tokens).toBe(128000);
+    expect(p.available_models[0].max_output_tokens).toBeUndefined();
+    expect(p.available_models[1].max_output_tokens).toBe(64000);
+    // default context when the server omits it
+    expect(p.available_models[2].max_tokens).toBe(200000);
+    // plaintext settings.json must never hold the key
+    expect(JSON.stringify(cfg)).not.toContain(CTX.apiKey);
+    await tool("zed").reset();
+    const after = readJson(f());
+    expect(after.language_models?.openai_compatible?.router9).toBeUndefined();
+  });
+
+  it("caps the model list and keeps unrelated Zed settings", async () => {
+    fs.mkdirSync(path.dirname(f()), { recursive: true });
+    fs.writeFileSync(f(), JSON.stringify({ theme: "one", language_models: { openai_compatible: { other: { api_url: "http://x/v1" } } } }));
+    const models = Array.from({ length: 40 }, (_, i) => ({ id: `m${i}`, owned_by: "p" }));
+    await tool("zed").apply({ ...CTX, models });
+    const cfg = readJson(f());
+    expect(cfg.theme).toBe("one");
+    expect(cfg.language_models.openai_compatible.other.api_url).toBe("http://x/v1");
+    expect(cfg.language_models.openai_compatible.router9.available_models).toHaveLength(25);
+    await tool("zed").reset();
+    expect(readJson(f()).language_models.openai_compatible.other.api_url).toBe("http://x/v1");
+  });
+
+  it("falls back to the single ctx.model when the server returned no model list", async () => {
+    await tool("zed").apply({ ...CTX, models: [] });
+    const p = readJson(f()).language_models.openai_compatible.router9;
+    expect(p.available_models).toEqual([{ name: CTX.model, display_name: CTX.model, max_tokens: 200000 }]);
+  });
+
+  it("wires the ACP agent server only when 9router acp ships in this package", async () => {
+    await tool("zed").apply({ ...CTX, models: [] });
+    const cfg = readJson(f());
+    if (tools.__test__.acpAvailable()) {
+      const entry = cfg.agent_servers["9router"];
+      expect(entry).toEqual({ ...entry, type: "custom", args: ["acp"] });
+      // Absolute path resolved at connect time, or bare fallback — never a
+      // stale/relative string (GUI editors miss the pnpm bin dir in PATH).
+      expect(typeof entry.command).toBe("string");
+      expect(entry.command === "9router" || /[\\/]9router(\.cmd)?$/.test(entry.command)).toBe(true);
+    } else {
+      expect(cfg.agent_servers).toBeUndefined();
+    }
+    await tool("zed").reset();
+    expect(readJson(f()).agent_servers?.["9router"]).toBeUndefined();
+  });
+});
+
+describe("opencode tool writer", () => {
+  let home;
+  beforeEach(() => {
+    home = fs.mkdtempSync(path.join(os.tmpdir(), "9r-connect-oc-"));
+    vi.spyOn(os, "homedir").mockReturnValue(home);
+    vi.stubEnv("XDG_CONFIG_HOME", "");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+    fs.rmSync(home, { recursive: true, force: true });
+  });
+
+  it("opencode resyncs its static model list from the gateway and drops dead entries", async () => {
+    const f = path.join(home, ".config", "opencode", "opencode.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(
+      f,
+      JSON.stringify({
+        theme: "dark",
+        provider: { "9router": { npm: "@ai-sdk/openai-compatible", options: { apiKey: "sk-old" }, models: { "oc/dead-model": { name: "oc/dead-model" } } } },
+        model: "9router/oc/dead-model",
+        agent: { explorer: { model: "9router/oc/dead-model" } },
+      })
+    );
+    const models = [
+      { id: "oc/live-a", owned_by: "opencode" },
+      { id: "web/search", owned_by: "or", kind: "webSearch" },
+      { id: "oc/live-b", owned_by: "opencode", capabilities: { tools: false } },
+    ];
+    await tool("opencode").apply({ ...CTX, model: "oc/live-a", models });
+    const cfg = readJson(f);
+    expect(cfg.theme).toBe("dark");
+    // dead entry gone, non-LLM/non-tool endpoints filtered out
+    expect(Object.keys(cfg.provider["9router"].models)).toEqual(["oc/live-a"]);
+    expect(cfg.provider["9router"].options.baseURL).toBe("http://gw.test:20128/v1");
+    expect(cfg.provider["9router"].options.apiKey).toBe(CTX.apiKey);
+    // stale default followed the resync to a live model
+    expect(cfg.model).toBe("9router/oc/live-a");
+    expect(cfg.agent.explorer.model).toBe("9router/oc/live-a");
+    await tool("opencode").reset();
+    expect(readJson(f).provider?.["9router"]).toBeUndefined();
+  });
+
+  it("opencode keeps the current default when it survives and fails open without a model list", async () => {
+    const f = path.join(home, ".config", "opencode", "opencode.json");
+    fs.mkdirSync(path.dirname(f), { recursive: true });
+    fs.writeFileSync(
+      f,
+      JSON.stringify({ provider: { "9router": { models: { "oc/keep": { name: "oc/keep" } } } }, model: "9router/oc/keep" })
+    );
+    // still listed → default untouched
+    await tool("opencode").apply({ ...CTX, model: "oc/other", models: [{ id: "oc/keep" }, { id: "oc/other" }] });
+    expect(readJson(f).model).toBe("9router/oc/keep");
+    // gateway down (no list) → existing entries kept as-is, default kept
+    await tool("opencode").apply({ ...CTX, model: "cc/claude-opus-5" });
+    const cfg = readJson(f);
+    expect(Object.keys(cfg.provider["9router"].models)).toEqual(["oc/keep", "oc/other"]);
+    expect(cfg.model).toBe("9router/oc/keep");
+    expect(cfg.agent.explorer.model).toBe("9router/oc/keep");
+  });
+});
+
+describe("resolveSelfBin", () => {
+  const { resolveSelfBin } = tools.__test__;
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("finds the first executable 9router on PATH", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "9r-bin-"));
+    const bin = path.join(dir, process.platform === "win32" ? "9router.cmd" : "9router");
+    fs.writeFileSync(bin, "#!/bin/sh\n", { mode: 0o755 });
+    vi.stubEnv("PATH", `${dir}${path.delimiter}${dir}`);
+    expect(resolveSelfBin()).toBe(bin);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("falls back to the bare command when PATH has no match", () => {
+    vi.stubEnv("PATH", "");
+    expect(resolveSelfBin()).toBe(process.platform === "win32" ? "9router.cmd" : "9router");
   });
 });
 

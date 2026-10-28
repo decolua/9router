@@ -192,22 +192,44 @@ const opencode = {
     const m = data?.config?.model;
     return isStr(m) && m.startsWith("9router/") ? m.slice("9router/".length) : null;
   },
-  async apply({ baseUrl, apiKey, model }) {
+  async apply({ baseUrl, apiKey, model, models }) {
     const file = opencodePath();
     const cfg = readJson(file) || {};
     cfg.provider = cfg.provider || {};
     const p = cfg.provider["9router"] || { npm: "@ai-sdk/openai-compatible", options: {}, models: {} };
     p.options = { ...p.options, baseURL: v1(baseUrl), apiKey };
-    p.models = p.models || {};
-    p.models[model] = { name: model, modalities: { input: ["text", "image"], output: ["text"] } };
+    const served = Array.isArray(models) && models.length ? models : null;
+    // opencode lists models statically in its config — resync from the gateway
+    // on every connect so dead endpoints drop out and new ones appear. Gateway
+    // down → fail-open: keep whatever the file already had.
+    const list = served ? pickAgentModels(served) : Object.keys(p.models || {}).map((id) => ({ id }));
+    if (list.length === 0 && isStr(model)) list.push({ id: model });
+    p.models = {};
+    for (const m of list) {
+      if (!isStr(m?.id)) continue;
+      p.models[m.id] = { name: m.id, modalities: { input: ["text", "image"], output: ["text"] } };
+    }
     cfg.provider["9router"] = p;
-    cfg.model = `9router/${model}`;
-    cfg.agent = cfg.agent || {};
-    cfg.agent.explorer = {
-      description: "Fast explorer subagent for codebase exploration",
-      mode: "subagent",
-      model: `9router/${model}`,
-    };
+    // Priority: the default that survived the resync > the model this run asked
+    // for (--model / the server's own — honored even when the gateway's live
+    // list omits it) > the first live model.
+    const current = (cfg.model || "").startsWith("9router/") ? cfg.model.slice("9router/".length) : null;
+    const nextDefault = (current && p.models[current]) ? current : (model || Object.keys(p.models)[0] || null);
+    // The chosen default must exist in the list, even when the gateway omits it
+    // (explicit --model / the server's own model id).
+    if (nextDefault && !p.models[nextDefault]) {
+      p.models[nextDefault] = { name: nextDefault, modalities: { input: ["text", "image"], output: ["text"] } };
+    }
+    if (nextDefault) cfg.model = `9router/${nextDefault}`;
+    else if (cfg.model?.startsWith("9router/")) delete cfg.model;
+    if (nextDefault) {
+      cfg.agent = cfg.agent || {};
+      cfg.agent.explorer = {
+        description: "Fast explorer subagent for codebase exploration",
+        mode: "subagent",
+        model: `9router/${nextDefault}`,
+      };
+    }
     writeJson(file, cfg);
     return [file];
   },
@@ -425,6 +447,109 @@ const cline = {
   },
 };
 
+// ── Zed ─────────────────────────────────────────────────────────────────────
+// Zed is an ACP client: `agent_servers` spawns `9router acp`, and the
+// OpenAI-compatible provider gives Zed's native agent the model list too.
+// The API key is NEVER written to settings.json (Zed documents it as plaintext
+// on disk) — Zed reads it from the env var derived from the provider id:
+// "router9" → ROUTER9_API_KEY.
+const zedPath = () => path.join(process.env.XDG_CONFIG_HOME || path.join(home(), ".config"), "zed", "settings.json");
+const ZED_PROVIDER_ID = "router9";
+const ZED_MODEL_CAP = 25;
+const ZED_DEFAULT_CONTEXT = 200000;
+
+// Combos first (owned_by: "combo"), then tool-capable models. Non-LLM endpoints
+// (webSearch/webFetch, TTS, …) carry a `kind` and are useless to an agent.
+function pickAgentModels(models) {
+  const usable = (models || []).filter((m) => m?.id && !m.kind && m.capabilities?.tools !== false);
+  const combos = usable.filter((m) => m.owned_by === "combo");
+  const rest = usable.filter((m) => m.owned_by !== "combo");
+  return [...combos, ...rest];
+}
+
+function zedModelEntry(m) {
+  const entry = { name: m.id, display_name: m.id, max_tokens: m.context_length || ZED_DEFAULT_CONTEXT };
+  if (m.max_completion_tokens) entry.max_output_tokens = m.max_completion_tokens;
+  return entry;
+}
+
+// The ACP subcommand ships in this same package — only wire it up when present.
+const acpAvailable = () => fs.existsSync(path.join(__dirname, "acp.js"));
+
+// GUI-launched editors (Zed, …) inherit a login PATH that often misses
+// npm/pnpm global bin dirs — resolve our own executable at connect time so the
+// editor can spawn it regardless of its environment.
+function resolveSelfBin() {
+  const bin = process.platform === "win32" ? "9router.cmd" : "9router";
+  for (const dir of String(process.env.PATH || "").split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, bin);
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch {}
+  }
+  return bin;
+}
+
+const zed = {
+  id: "zed",
+  name: "Zed",
+  keyInFile: false, // key goes to ROUTER9_API_KEY, never into settings.json
+  // Its model list is taken from GET /v1/models (ctx.models) like omp's is
+  // discovered from the gateway — no server-side model id is needed.
+  needsModel: false,
+  paths: () => [zedPath()],
+  async apply({ baseUrl, apiKey, model, models }) {
+    const file = zedPath();
+    const cfg = readJson(file) || {};
+    const fallback = isStr(model) ? [{ id: model }] : [];
+    const picked = pickAgentModels(Array.isArray(models) && models.length ? models : fallback);
+    cfg.language_models = cfg.language_models || {};
+    const providers = { ...(cfg.language_models.openai_compatible || {}) };
+    delete providers[ZED_PROVIDER_ID];
+    providers[ZED_PROVIDER_ID] = {
+      api_url: v1(baseUrl),
+      available_models: picked.slice(0, ZED_MODEL_CAP).map(zedModelEntry),
+    };
+    cfg.language_models.openai_compatible = providers;
+    if (acpAvailable()) {
+      cfg.agent_servers = cfg.agent_servers || {};
+      cfg.agent_servers["9router"] = { type: "custom", command: resolveSelfBin(), args: ["acp"] };
+    }
+    writeJson(file, cfg);
+    return [file];
+  },
+  async reset() {
+    const file = zedPath();
+    const cfg = readJson(file);
+    if (!cfg) return [];
+    if (cfg.language_models?.openai_compatible) {
+      delete cfg.language_models.openai_compatible[ZED_PROVIDER_ID];
+      if (Object.keys(cfg.language_models.openai_compatible).length === 0) delete cfg.language_models.openai_compatible;
+      if (Object.keys(cfg.language_models).length === 0) delete cfg.language_models;
+    }
+    if (cfg.agent_servers) {
+      delete cfg.agent_servers["9router"];
+      if (Object.keys(cfg.agent_servers).length === 0) delete cfg.agent_servers;
+    }
+    rewriteFile(file, JSON.stringify(cfg, null, 2));
+    return [file];
+  },
+  async show() {
+    const p = readJson(zedPath())?.language_models?.openai_compatible?.[ZED_PROVIDER_ID];
+    const ids = (p?.available_models || []).map((m) => m.name).filter(isStr);
+    return {
+      baseUrl: p?.api_url || null,
+      // The key lives in the ROUTER9_API_KEY env var, not in any file we can read.
+      models: ids.length ? { main: ids[0], ...(ids.length > 1 ? { available: ids.join(", ") } : {}) } : {},
+    };
+  },
+  hint({ baseUrl, apiKey }) {
+    return `   export ROUTER9_API_KEY=${apiKey}   # Zed reads it from env — keys never go in settings.json\n   Base URL: ${baseUrl}/v1 · provider id: ${ZED_PROVIDER_ID}`;
+  },
+};
+
 // ── Pi (pi-coding-agent) ────────────────────────────────────────────────────
 // Prefers ~/.pi/agent/models.json; an existing legacy ~/.pi/models.json is used instead.
 const piPath = () => {
@@ -535,7 +660,7 @@ const omp = {
   },
 };
 
-const TOOLS = [claude, codex, opencode, droid, crush, kilo, cline, pi, omp];
+const TOOLS = [claude, codex, opencode, droid, crush, kilo, cline, pi, omp, zed];
 const TOOL_IDS = TOOLS.map((t) => t.id);
 const TOOL_ALIASES = {
   "claude-code": "claude", "claudecode": "claude", "factory": "droid", "kilocode": "kilo",
@@ -555,4 +680,10 @@ function resolveTools(list) {
   return TOOLS.filter((t) => ids.has(t.id));
 }
 
-module.exports = { TOOLS, TOOL_IDS, CLAUDE_MODELS, resolveTools, __test__: { stripTrailingCommas } };
+module.exports = {
+  TOOLS,
+  TOOL_IDS,
+  CLAUDE_MODELS,
+  resolveTools,
+  __test__: { stripTrailingCommas, zedPickModels: pickAgentModels, pickAgentModels, zedModelEntry, ZED_PROVIDER_ID, zedPath, acpAvailable, resolveSelfBin },
+};

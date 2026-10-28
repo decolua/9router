@@ -147,6 +147,17 @@
 - **Muse**: route Responses-only models to declared transport and nest reasoning effort
 - **TTS**: accept server model and voice in self-hosted example
 
+# v0.5.96 (2026-10-03)
+
+## Features
+- **ACP**: add `9router acp` — an Agent Client Protocol agent for Zed and other ACP editors (stdio JSON-RPC): model picker built from `GET /v1/models` (combos first, tool-capable only), workspace tools (read/write/edit/list/glob/grep/bash/web_fetch) with permission requests and diff reporting, MCP servers forwarded from the editor, persisted sessions (`load`/`list`/`delete`), image prompts, per-session RTK toggle, `authenticate`/`logout` with a terminal login method
+- **CLI**: add `connect zed` — writes Zed's `language_models.openai_compatible` provider (models pre-filled, key stays in `ROUTER9_API_KEY`) and the `agent_servers` ACP entry
+
+## Fixes
+- **API**: `GET /v1/models` now publishes noAuth providers' models (OpenCode Free, mmf, …) — they route with zero credentials but were invisible to OpenAI-compatible clients (Zed, ACP agents) whenever any other provider had a connection
+- **CLI**: `connect [server-url] [tools...]` — a bare tool name (`9router connect zed`) is no longer swallowed as the server URL; server URL defaults to `http://127.0.0.1:20128`
+- **CLI**: `acp --login` now runs headless when `NINE_ROUTER_PASSWORD` is set (terminal still required for interactive prompts)
+
 # v0.5.95 (2026-10-01)
 
 ## Features

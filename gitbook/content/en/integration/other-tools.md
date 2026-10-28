@@ -409,6 +409,7 @@ Error: Rate limit exceeded
 
 ## Next Steps
 
+- [Configure Zed](zed.md) (native agent + ACP agent)
 - [Configure Cursor](cursor.md) for IDE integration
 - [Set up Continue](continue.md) for VSCode
 - [Explore CLI usage](../cli/basic-usage.md)
