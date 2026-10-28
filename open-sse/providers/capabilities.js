@@ -656,7 +656,13 @@ export const PATTERN_CAPABILITIES = [
   // ── Others ───────────────────────────────────────────────────────
   { pattern: "*hunyuan*",       caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "hy3*",            caps: { reasoning: true, thinkingFormat: "hunyuan", contextWindow: 262144, maxOutput: 262144 } },
-  { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 128000 } },
+  // Step-5 ships with a 1M window (models.dev: opencode-go/step-5-preview-free
+  // = 1,000,000 context / 65,536 output). This pin was written when StepFun's
+  // line was 128k and never updated — same staleness as the GLM pins (#4544).
+  // Hand-added custom routes (customModels kv rows) carry no exact entry, so
+  // this pattern is what every Step-5 id resolves to. maxOutput left
+  // conservative at the default; models.dev says 65,536 vs the 64k default.
+  { pattern: "*step-*",         caps: { reasoning: true, thinkingFormat: "step", contextWindow: 1000000 } },
   { pattern: "*nemotron*",      caps: { reasoning: true, contextWindow: 128000 } },
   { pattern: "*ling-*",         caps: { reasoning: true, contextWindow: 128000 } },
 ];
