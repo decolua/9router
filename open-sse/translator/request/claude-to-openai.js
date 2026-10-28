@@ -185,6 +185,17 @@ function convertClaudeMessage(msg) {
           }
           break;
 
+        case CLAUDE_BLOCK.DOCUMENT:
+          if (block.source?.type === "base64") {
+            parts.push({
+              type: OPENAI_BLOCK.FILE,
+              file: {
+                file_data: encodeDataUri(block.source.media_type, block.source.data)
+              }
+            });
+          }
+          break;
+
         case CLAUDE_BLOCK.TOOL_USE:
           toolCalls.push({
             id: block.id,
