@@ -3,22 +3,22 @@ export const RAW_CAP = 10 * 1024 * 1024;      // 10 MiB
 export const MIN_COMPRESS_SIZE = 500;          // bytes; skip tiny blobs
 export const HEADROOM_TOOL_OUTPUT_MAX_DEPTH = 8; // bound native tool-output traversal
 export const DETECT_WINDOW = 1024;             // autodetect peeks first N chars
-export const GIT_DIFF_HUNK_MAX_LINES = 100;    // per-hunk line cap
-export const GIT_DIFF_CONTEXT_KEEP = 3;        // context lines around changes
-export const GIT_LOG_MAX_LINES = 200;          // gitLog line cap
-export const DEDUP_LINE_MAX = 2000;            // dedupLog truncation cap
+export const GIT_DIFF_HUNK_MAX_LINES = 100;    // per-hunk line cap (compact_diff max_hunk_lines)
+export const GIT_DIFF_MAX_LINES = 500;         // whole-diff line cap (rtk git diff default)
+export const GIT_DIFF_CONTEXT_KEEP = 3;        // leading context lines kept per hunk (max_leading_context)
+export const GIT_DIFF_CONTEXT_BUDGET_DIVISOR = 10; // diff-wide leading-context budget = max_lines / N
+export const GIT_LOG_MAX_COMMITS = 50;         // gitLog commit cap (pipe_cmd git_log_wrapper limit)
+export const GIT_LOG_BODY_LINES = 3;           // commit body lines kept per commit
+export const DEDUP_MIN_RUN = 3;                // engine dedup: collapse runs of >= N identical lines
+export const DEDUP_LINE_MAX = 2000;            // dedupLog truncation cap (9router safeguard)
 
 // Rust pipe_cmd.rs parity caps
 export const GREP_PER_FILE_MAX = 10;           // match rust: matches.iter().take(10)
 export const FIND_PER_DIR_MAX = 10;            // match rust: files.iter().take(10)
 export const FIND_TOTAL_DIR_MAX = 20;          // match rust: dirs.iter().take(20)
 
-// git status caps (rust config::limits())
-export const STATUS_MAX_FILES = 10;            // config::limits().status_max_files
-export const STATUS_MAX_UNTRACKED = 10;        // config::limits().status_max_untracked
-
 // ls compact_ls (rtk/src/cmds/system/ls.rs)
-export const LS_EXT_SUMMARY_TOP = 5;           // top-N extensions in summary
+export const LS_INVENTORY_MAX = 50;            // CAP_INVENTORY: max listing lines shown
 export const LS_NOISE_DIRS = [
   "node_modules", ".git", "target", "__pycache__",
   ".next", "dist", "build", ".cache", ".turbo",
@@ -36,13 +36,21 @@ export const TREE_MAX_LINES = 200;
 export const SEARCH_LIST_PER_DIR_MAX = 10;
 export const SEARCH_LIST_TOTAL_DIR_MAX = 20;
 
-// Smart truncate (port of filter.rs smart_truncate fallback)
-export const SMART_TRUNCATE_HEAD = 120;        // lines kept from top
-export const SMART_TRUNCATE_TAIL = 60;         // lines kept from bottom
-export const SMART_TRUNCATE_MIN_LINES = 250;   // only kick in above this
+// Smart truncate (port of text::smart_truncate)
+export const SMART_TRUNCATE_MAX_LINES = 300;   // line budget (engine truncate MAX_LINES)
+export const SMART_TRUNCATE_MIN_LINES = 300;   // autodetect gate (matches the line budget)
+
+// Test-runner filters (tsc / vitest / phpunit)
+export const TSC_MESSAGE_MAX_CHARS = 120;       // per-diagnostic message cap
+export const VITEST_MAX_FAILURES = 5;           // compact view failure cap
+export const PHPUNIT_MAX_FAILURES = 10;         // failure blocks shown
+export const PHPUNIT_MAX_DETAIL_LINES = 2;      // detail lines kept per failure
 
 // readNumbered (files with "  N|content" lines, e.g. Cursor read_file)
 export const READ_NUMBERED_MIN_HIT_RATIO = 0.7;
+export const READ_NUMBERED_HEAD = 120;          // lines kept from top
+export const READ_NUMBERED_TAIL = 60;           // lines kept from bottom
+export const READ_NUMBERED_MIN_LINES = 250;     // only truncate above this
 
 // Filter name strings (Rust parity + JS extras)
 export const FILTERS = {
@@ -57,5 +65,8 @@ export const FILTERS = {
   SMART_TRUNCATE: "smart-truncate",
   READ_NUMBERED: "read-numbered",
   SEARCH_LIST: "search-list",
-  BUILD_OUTPUT: "build-output"
+  BUILD_OUTPUT: "build-output",
+  TSC: "tsc",
+  VITEST: "vitest",
+  PHPUNIT: "phpunit"
 };

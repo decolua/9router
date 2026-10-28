@@ -1,6 +1,8 @@
-// Port of compact_ls (rtk/src/cmds/system/ls.rs:154-232)
-// Input: `ls -la` style output. Output: compact "name/  (dirs)\nname  size"
-import { LS_EXT_SUMMARY_TOP, LS_NOISE_DIRS } from "../constants.js";
+// Port of compact_ls (rtk/src/cmds/system/ls.rs)
+// Input: `ls -la` style output. Output: compact "dir/" then "name  size", capped
+// at CAP_INVENTORY entries. Upstream dropped the extension "Summary:" line, so
+// this port no longer emits one.
+import { LS_INVENTORY_MAX, LS_NOISE_DIRS } from "../constants.js";
 
 // Rust LS_DATE_RE: month + day + (year|HH:MM)
 const LS_DATE_RE = /\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+(\d{4}|\d{2}:\d{2})\s+/;
@@ -34,7 +36,6 @@ function parseLsLine(line) {
 export function ls(input) {
   const dirs = [];
   const files = [];      // [name, sizeStr]
-  const byExt = new Map();
 
   for (const line of input.split("\n")) {
     if (line.startsWith("total ") || line.length === 0) continue;
@@ -48,32 +49,26 @@ export function ls(input) {
     if (parsed.fileType === "d") {
       dirs.push(parsed.name);
     } else if (parsed.fileType === "-" || parsed.fileType === "l") {
-      const dot = parsed.name.lastIndexOf(".");
-      const ext = dot > 0 ? parsed.name.slice(dot) : "no ext";
-      byExt.set(ext, (byExt.get(ext) || 0) + 1);
       files.push([parsed.name, humanSize(parsed.size)]);
     }
   }
 
   if (dirs.length === 0 && files.length === 0) return input;
 
-  let out = "";
-  for (const d of dirs) out += `${d}/\n`;
-  for (const [name, size] of files) out += `${name}  ${size}\n`;
+  const lines = [
+    ...dirs.map(d => `${d}/`),
+    ...files.map(([name, size]) => `${name}  ${size}`)
+  ];
 
-  // Summary line (Rust port)
-  let summary = `\nSummary: ${files.length} files, ${dirs.length} dirs`;
-  if (byExt.size > 0) {
-    const ext = Array.from(byExt.entries()).sort((a, b) => b[1] - a[1]);
-    const parts = ext.slice(0, LS_EXT_SUMMARY_TOP).map(([e, c]) => `${c} ${e}`);
-    summary += ` (${parts.join(", ")}`;
-    if (ext.length > LS_EXT_SUMMARY_TOP) {
-      summary += `, +${ext.length - LS_EXT_SUMMARY_TOP} more`;
-    }
-    summary += ")";
+  // Cap the displayed listing (Rust CAP_INVENTORY); the tail stays recoverable
+  // by re-running ls on the directory.
+  if (lines.length > LS_INVENTORY_MAX) {
+    const hidden = lines.length - LS_INVENTORY_MAX;
+    lines.length = LS_INVENTORY_MAX;
+    lines.push(`... +${hidden} more entries`);
   }
 
-  return out + summary;
+  return lines.join("\n");
 }
 
 ls.filterName = "ls";

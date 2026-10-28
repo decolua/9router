@@ -112,7 +112,7 @@ describe("token savers on Cursor (pre-translate RTK)", () => {
 
     expect(dispatched.messages.some((m) => m.role === "tool")).toBe(false);
     expect(blob).toContain("<tool_result>");
-    expect(blob).toContain("lines truncated");
+    expect(blob).toContain("additions truncated");
     expect(blob).not.toContain("UNIQUE_PADDING_150");
     expect(blob).toContain("lazy senior developer");
     expect(blob).toMatch(/Respond like a caveman|drop filler|ACTIVE EVERY RESPONSE/i);
