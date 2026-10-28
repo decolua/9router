@@ -5,6 +5,7 @@ import { buildChunk } from "../concerns/chunk.js";
 import { toOpenAIUsage } from "../concerns/usage.js";
 import { reasoningDelta } from "../concerns/reasoning.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../../config/errorConfig.js";
 
 // Create OpenAI chunk helper
 function createChunk(state, delta, finishReason = null) {
@@ -182,6 +183,16 @@ export function claudeToOpenAIResponse(chunk, state) {
         results.push({ ...createChunk(state, {}, finishReason), ...usageObj });
         state.finishReasonSent = true;
       }
+      break;
+    }
+
+    case "error": {
+      // A Claude stream reports a mid-stream failure (e.g. overloaded_error) as this event,
+      // inside an HTTP 200. Without a case it translated to nothing, and every non-Claude client
+      // saw a clean but truncated answer. The OpenAI shape is the one buildErrorBody produces.
+      const { type, message } = chunk.error || {};
+      const errorType = type || ERROR_TYPES[500].type;
+      results.push({ error: { message: message || DEFAULT_ERROR_MESSAGES[500], type: errorType, code: errorType } });
       break;
     }
   }
