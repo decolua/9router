@@ -8,7 +8,7 @@ import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifi
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
-import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
+import { aggregateComboCapabilities, comboSeatLimits, comboWindowSetting } from "open-sse/providers/capabilities.js";
 import { resolveProviderId, AI_PROVIDERS } from "@/shared/constants/providers";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
@@ -64,6 +64,44 @@ function getPolicyBadgeLabel(strategy = {}) {
     return `Custom (≥${pct || 80}%)`;
   }
   return "Smart (≥80%)";
+}
+
+// What context window this combo advertises to clients. A fallback chain can only
+// serve as much as the seats *up to and including* the one that serves the request,
+// so seat order matters and the largest seat is not automatically the right answer:
+// pick the value you want from the windows the seats actually have. "min" stays
+// dynamic (tracks the smallest seat as seats change); picking a number pins it.
+function formatWindow(n) {
+  const v = Number(n);
+  if (!Number.isFinite(v) || v <= 0) return "—";
+  if (v >= 1000000) return `${(v / 1000000).toFixed(2).replace(/\.?0+$/, "")}M`;
+  return `${Math.round(v / 1000)}k`;
+}
+
+function shortModelName(id) {
+  const s = String(id || "");
+  const slash = s.lastIndexOf("/");
+  return slash === -1 ? s : s.slice(slash + 1);
+}
+
+// One option per distinct seat window, labelled with the seats that have it.
+function contextWindowOptions(seatEntries, seatMin, seatMax) {
+  const opts = [{ value: "min", label: `min — ${formatWindow(seatMin)} (dynamic)` }];
+  const groups = new Map();
+  for (const { model, window } of seatEntries) {
+    if (!groups.has(window)) groups.set(window, []);
+    groups.get(window).push(shortModelName(model));
+  }
+  for (const window of [...groups.keys()].sort((a, b) => a - b)) {
+    const names = groups.get(window);
+    const suffix = names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0];
+    opts.push({ value: `w:${window}`, label: `${formatWindow(window)} — ${suffix}` });
+  }
+  if (Number.isFinite(seatMax) && seatMax > seatMin) {
+    opts.push({ value: "max", label: `max — ${formatWindow(seatMax)} (dynamic, rollover)` });
+  }
+  opts.push({ value: "custom", label: "custom…" });
+  return opts;
 }
 
 export default function CombosPage() {
@@ -224,14 +262,47 @@ export default function CombosPage() {
     }
   };
 
+  // The context-window choice belongs to settings.comboStrategies[name], so it is
+  // written after the combo itself is stored (create) or renamed (update).
+  const applyWindowSetting = async (name, mode, value, prevName = null) => {
+    if (!name) return;
+    const updated = { ...comboStrategies };
+    const source = prevName && prevName !== name ? updated[prevName] : updated[name];
+    const entry = { ...(source || {}) };
+    if (prevName && prevName !== name) delete updated[prevName];
+
+    const numeric = Number(value);
+    if (mode === "max") {
+      entry.contextWindowMode = "max";
+      delete entry.contextWindow;
+    } else if (mode === "custom" && Number.isFinite(numeric) && numeric > 0) {
+      entry.contextWindowMode = "custom";
+      entry.contextWindow = numeric;
+    } else {
+      delete entry.contextWindowMode;
+      delete entry.contextWindow;
+    }
+
+    const keep = entry.contextWindowMode
+      || entry.judgeModel
+      || (entry.fallbackStrategy && entry.fallbackStrategy !== "fallback");
+    if (keep) updated[name] = entry;
+    else delete updated[name];
+
+    await persistComboStrategies(updated);
+  };
+
   const handleCreate = async (data) => {
     try {
+      const { contextWindowMode, contextWindow, ...combo } = data;
       const res = await fetch("/api/combos", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(combo),
       });
       if (res.ok) {
+        const created = await res.json();
+        await applyWindowSetting(created?.name || combo.name, contextWindowMode, contextWindow);
         await fetchData();
         setShowCreateModal(false);
       } else {
@@ -245,12 +316,15 @@ export default function CombosPage() {
 
   const handleUpdate = async (id, data) => {
     try {
+      const prevName = combos.find((c) => c.id === id)?.name || null;
+      const { contextWindowMode, contextWindow, ...combo } = data;
       const res = await fetch(`/api/combos/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(combo),
       });
       if (res.ok) {
+        await applyWindowSetting(combo.name, contextWindowMode, contextWindow, prevName);
         await fetchData();
         setEditingCombo(null);
       } else {
@@ -343,7 +417,9 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
       // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      // A context-window choice is an extra, so it keeps the entry alive on its own.
+      const hasWindowChoice = next.contextWindowMode === "max" || next.contextWindowMode === "custom";
+      if ((!next.fallbackStrategy || next.fallbackStrategy === "fallback") && !hasWindowChoice) {
         delete updated[comboName];
       } else {
         updated[comboName] = next;
@@ -563,6 +639,7 @@ export default function CombosPage() {
                   combo={combo}
                   getCaps={getCaps}
                   comboByName={comboByName}
+                  comboStrategies={comboStrategies}
                   activeProviders={activeProviders}
                   copied={copied}
                   onCopy={copy}
@@ -595,6 +672,8 @@ export default function CombosPage() {
           onClose={() => setShowCreateModal(false)}
           onSave={handleCreate}
           activeProviders={activeProviders}
+          comboByName={Object.fromEntries(combos.map((c) => [c.name, c.models]))}
+          getCaps={getCaps}
         />
       )}
 
@@ -606,6 +685,9 @@ export default function CombosPage() {
           onClose={() => setEditingCombo(null)}
           onSave={(data) => handleUpdate(editingCombo.id, data)}
           activeProviders={activeProviders}
+          strategy={comboStrategies[editingCombo.name] || {}}
+          comboByName={Object.fromEntries(combos.map((c) => [c.name, c.models]))}
+          getCaps={getCaps}
         />
       )}
 
@@ -655,7 +737,7 @@ function getRouterModelStatus(routerModel, activeProviders) {
   return { ready: false, label: "Not configured", providerId };
 }
 
-function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
+function ComboCard({ combo, getCaps, comboByName = {}, comboStrategies = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showRouterSelect, setShowRouterSelect] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
@@ -667,7 +749,17 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   // The synced catalog is server-only, so resolving here would fall back to the
   // generic patterns and under-report the limits. getCaps carries the server's
   // answer for /api/models.
-  const comboCaps = aggregateComboCapabilities(combo.models, comboByName, getCaps);
+  //
+  // The badge must show what /v1/models publishes for this combo, so it goes through
+  // the same resolver: this combo's own window override applied, nested combos
+  // contributing what they publish for themselves.
+  const comboLimits = comboSeatLimits(
+    combo,
+    (name) => (comboByName[name] ? { name, models: comboByName[name] } : null),
+    (seat) => aggregateComboCapabilities([seat], comboByName, getCaps),
+    comboStrategies,
+  );
+
 
   return (
     <Card padding="sm" className={`group ${selected ? "ring-1 ring-primary/40 bg-primary/[0.03]" : ""}`}>
@@ -707,11 +799,11 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
               )}
             </div>
-            {comboCaps && (
+            {(comboLimits.contextWindow || comboLimits.maxOutput) && (
               <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
-                <span>ctx {fmtK(comboCaps.contextWindow)}</span>
+                <span>ctx {fmtK(comboLimits.contextWindow)}</span>
                 <span className="opacity-40">·</span>
-                <span>max {fmtK(comboCaps.maxOutput)}</span>
+                <span>max {fmtK(comboLimits.maxOutput)}</span>
               </div>
             )}
             {/* Fusion: judge picker (Auto = first model) */}
@@ -800,6 +892,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               selectClassName="py-1.5 text-xs"
             />
           </div>
+
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
@@ -1177,7 +1270,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
   );
 }
 
-function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null }) {
+function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindFilter = null, strategy = {}, comboByName = {}, getCaps = null }) {
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
@@ -1185,6 +1278,31 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+
+  // Advertised context window. Persisted in settings.comboStrategies[name], not on
+  // the combo row, so switching it never rewrites the combo itself.
+  //
+  // The saved mode is the truth, never the number: a pinned value is not one of the
+  // seat options, so opening on `w:<value>` either matched a seat (and showed that
+  // seat's label, as if the pin had been lost) or matched nothing and let the
+  // browser fall through to "min" — which then overwrote the pin on the next save.
+  // A custom value always opens as "custom…" with the box holding the number.
+  // comboWindowSetting() is the same normalisation /v1/models resolves through, so
+  // the dialog and the published window cannot disagree.
+  const savedWindow = comboWindowSetting(strategy);
+  const initialChoice = savedWindow.mode === "custom" && !savedWindow.custom ? "min" : savedWindow.mode;
+  const [windowChoice, setWindowChoice] = useState(initialChoice);
+  const [windowInput, setWindowInput] = useState(savedWindow.custom ? String(savedWindow.custom) : "");
+  const [windowError, setWindowError] = useState("");
+
+  // Seat windows follow the model list as it is edited, so the choices offered are
+  // always the windows this combo can actually reach.
+  const seatEntries = (models || [])
+    .map((m) => ({ model: m, window: aggregateComboCapabilities([m], comboByName, getCaps)?.contextWindow }))
+    .filter((e) => Number.isFinite(e.window) && e.window > 0);
+  const seatWindows = seatEntries.map((e) => e.window);
+  const seatMin = seatWindows.length ? Math.min(...seatWindows) : undefined;
+  const seatMax = seatWindows.length ? Math.max(...seatWindows) : undefined;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -1270,8 +1388,20 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
 
   const handleSave = async () => {
     if (!validateName(name)) return;
+    // A "custom…" choice with no usable number used to save "min" silently, which
+    // dropped the setting and reverted the combo to its smallest seat.
+    const customWindow = Number(windowInput);
+    if (windowChoice === "custom" && !(Number.isFinite(customWindow) && customWindow > 0)) {
+      setWindowError("Enter the context window to advertise, in tokens.");
+      return;
+    }
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({
+      name: name.trim(),
+      models,
+      contextWindowMode: windowChoice === "max" ? "max" : windowChoice === "min" ? "min" : "custom",
+      contextWindow: windowChoice === "custom" ? customWindow : null,
+    });
     setSaving(false);
   };
 
@@ -1343,6 +1473,51 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>
+          </div>
+
+          {/* Advertised context window */}
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Context Window</label>
+            <Select
+              options={contextWindowOptions(seatEntries, seatMin, seatMax)}
+              value={windowChoice}
+              onChange={(e) => {
+                const v = e.target.value;
+                setWindowChoice(v);
+                setWindowError("");
+                // A seat value carries its own number; "min"/"max" track the seats;
+                // "custom…" clears the box so the value can be typed.
+                setWindowInput(v.startsWith("w:") ? v.slice(2) : "");
+              }}
+              selectClassName="py-1.5 text-xs"
+            />
+            {windowChoice === "custom" && (
+              <input
+                type="number"
+                min="1000"
+                step="1000"
+                value={windowInput}
+                placeholder={seatMin ? String(seatMin) : "tokens"}
+                onChange={(e) => {
+                  setWindowInput(e.target.value);
+                  setWindowError("");
+                }}
+                className="mt-2 w-full rounded border border-gray-300 bg-transparent px-2 py-1.5 text-xs dark:border-white/15"
+                aria-label="Advertised context window"
+              />
+            )}
+            {windowError && (
+              <p className="text-[10px] text-red-500 mt-1" role="alert">{windowError}</p>
+            )}
+            <p className="text-[10px] text-text-muted mt-1">
+              {windowChoice === "min"
+                ? `Advertises ${formatWindow(seatMin)} — the smallest seat, tracked as seats change.`
+                : windowChoice === "max"
+                  ? `Advertises ${formatWindow(seatMax)} — the largest seat, reached by rollover.`
+                  : windowChoice === "custom"
+                    ? "Advertises the number above."
+                    : `Advertises ${formatWindow(Number(windowInput))} — that seat's own window.`}
+            </p>
           </div>
 
           {/* Actions */}
