@@ -320,9 +320,18 @@ export function extractUsage(chunk) {
 // message_delta has the real cumulative output (input/cache absent). Max keeps
 // the meaningful value from each without clobbering. Idempotent for other
 // providers that emit a single complete usage object.
+//
+// Estimates are placeholders, never data. OpenAI streams send finish_reason
+// one chunk before the usage trailer, so the stream layer may already hold an
+// estimate (JSON body length / 4 — base64 images count as text, so it can be
+// orders of magnitude too high) when the real usage arrives. Max-merging the
+// two would persist the inflated estimate. Real usage carrying an input count
+// replaces an estimate outright, and an estimate never overrides real usage.
 export function mergeUsage(prev, next) {
   if (!prev) return next || null;
   if (!next) return prev;
+  if (prev.estimated && !next.estimated && hasRealInput(next)) return { ...next };
+  if (next.estimated && !prev.estimated && hasValidUsage(prev)) return prev;
   const merged = { ...prev };
   for (const [k, v] of Object.entries(next)) {
     // typeof NaN === "number" — guard with Number.isFinite so one malformed
@@ -334,6 +343,11 @@ export function mergeUsage(prev, next) {
     }
   }
   return merged;
+}
+
+function hasRealInput(usage) {
+  const input = usage.prompt_tokens ?? usage.input_tokens;
+  return typeof input === "number" && Number.isFinite(input) && input > 0;
 }
 
 /**
