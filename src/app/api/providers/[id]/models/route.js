@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { getProviderConnectionById } from "@/models";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
@@ -538,6 +539,52 @@ const PROVIDER_MODELS_CONFIG = {
       const data = await response.json();
       return { models: parseOpenAIStyleModels(data) };
     }
+  },
+  "cloudflare-ai": {
+    customResolver: async (connection) => {
+      const accountId = connection.providerSpecificData?.accountId;
+      if (!accountId) return { error: "Missing Cloudflare Account ID", status: 400 };
+      const token = connection.apiKey || connection.accessToken;
+      if (!token) return { error: "No API token found", status: 401 };
+      try {
+        const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+        const raw = [];
+        let pages = 1;
+        for (let page = 1; page <= pages; page++) {
+          const url = `https://api.cloudflare.com/client/v4/accounts/${encodeURIComponent(accountId)}/ai/models/search?page=${page}&per_page=100`;
+          const response = await proxyAwareFetch(url, {
+            method: "GET",
+            headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+            signal: AbortSignal.timeout(10000),
+          }, proxy);
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          if (data.success === false || data.errors?.length) throw new Error("Cloudflare returned an API error");
+          raw.push(...(Array.isArray(data.result) ? data.result : Array.isArray(data) ? data : []));
+          const info = data.result_info;
+          pages = Number(info?.total_pages) || Math.ceil(Number(info?.total_count || 0) / Number(info?.per_page || 100)) || 1;
+          if (pages > 20) throw new Error("Cloudflare catalog exceeds 20 pages");
+        }
+        const staticKinds = new Map(getStaticProviderModels("cloudflare-ai").map(model => [model.id, model.kind || "llm"]));
+        const skip = /bge-|embedding|plamo-embedding|aura-|melotts|whisper|nova-|deepgram\/flux|pipecat|smart-turn|resnet|distilbert|m2m100|indictrans|llama-guard|reranker|image-classif|speech|asr/i;
+        const images = /flux|stable-diffusion|dreamshaper|sdxl|phoenix|lucid|sd-v|imagen/i;
+        const models = new Map();
+        for (const model of raw) {
+          // Cloudflare's internal UUID is not an inference ID; older responses put the routing ID in `id`.
+          const id = [model?.name, model?.id].find(value => typeof value === "string" && /^@(cf|hf)\//.test(value));
+          if (!id || skip.test(id) || ["systemone", "embedding", "tts", "stt"].includes(staticKinds.get(id))) continue;
+          const task = model.task?.name || model.type || "";
+          if (/embedding|speech|classification|translation|rerank|audio|text.to.speech/i.test(task)) continue;
+          const isImage = staticKinds.get(id) === "image" || images.test(id) || /image.generation|text.to.image/i.test(task);
+          const name = typeof model.name === "string" && model.name && model.name !== id ? model.name : id.split("/").pop().replace(/[-_]/g, " ").replace(/\b\w/g, char => char.toUpperCase());
+          models.set(id, { id, name, kind: isImage ? "image" : "llm", description: typeof model.description === "string" ? model.description : "" });
+        }
+        if (models.size) return { models: [...models.values()] };
+        throw new Error("Cloudflare returned no supported chat/image models");
+      } catch (error) {
+        return { models: getStaticProviderModels("cloudflare-ai"), warning: `Failed to fetch Cloudflare models (${error.message}); using static catalog.` };
+      }
+    },
   }
 };
 
