@@ -278,23 +278,38 @@ function comboMatchesKinds(combo, kindFilter) {
 // treated as a literal model and publishes the 200k floor. Expand nested
 // names (cycle-guarded) so the published window is the true min across the
 // whole chain.
-function comboSeatLimits(combo, combosByName, visiting = new Set()) {
+export function comboSeatLimits(combo, combosByName, activeConnectionByProvider = null, visiting = new Set()) {
   const name = typeof combo?.name === "string" ? combo.name : null;
   if (name) {
     if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
     visiting.add(name);
   }
 
+  // Filter seats to active providers when connection records are available.
+  // ponytail: only checks provider-level activation, not per-model enabledModels; add per-model filter if combos mix enabled/disabled models on one account.
+  const seats = Array.isArray(combo?.models) ? combo.models : [];
+  const hasActiveFilter = activeConnectionByProvider && activeConnectionByProvider.size > 0;
+  const isSeatActive = (seat) => {
+    if (!hasActiveFilter || typeof seat !== "string") return true;
+    const slash = seat.indexOf("/");
+    if (slash <= 0) return true;
+    const alias = seat.slice(0, slash);
+    const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
+    return activeConnectionByProvider.has(providerId);
+  };
+  const activeSeats = hasActiveFilter ? seats.filter(isSeatActive) : seats;
+  const candidateSeats = activeSeats.length > 0 ? activeSeats : seats;
+
   let contextWindow = Infinity;
   let maxOutput = Infinity;
   try {
-    for (const seat of Array.isArray(combo?.models) ? combo.models : []) {
+    for (const seat of candidateSeats) {
       if (typeof seat !== "string") continue;
       const slash = seat.indexOf("/");
       if (slash <= 0) {
         const nested = combosByName.get(seat);
         if (nested) {
-          const nestedLimits = comboSeatLimits(nested, combosByName, visiting);
+          const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, visiting);
           if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
           if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
           continue;
@@ -362,7 +377,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
   const activeConnectionByProvider = new Map();
   for (const conn of connections) {
-    if (!activeConnectionByProvider.has(conn.provider)) {
+    if (conn.isActive && !activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
     }
   }
@@ -403,7 +418,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       // its smallest. Combo entries were the only models on this endpoint that
       // published no limits at all, which leaves a client to guess from the name —
       // and it guesses high (see the snake_case note on the per-provider path).
-      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName);
+      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, activeConnectionByProvider);
       if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
       if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
     }
