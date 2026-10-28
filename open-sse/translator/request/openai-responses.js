@@ -238,6 +238,25 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
     delete result.max_output_tokens;
   }
 
+  // Structured output: Responses puts it in text.format, Chat Completions in
+  // response_format. Map it instead of leaking the Responses-only `text` field.
+  const textFormat = body.text?.format;
+  if (textFormat?.type === "json_schema" && textFormat.schema) {
+    result.response_format = {
+      type: "json_schema",
+      json_schema: {
+        name: textFormat.name || "response",
+        schema: textFormat.schema,
+        ...(textFormat.strict !== undefined ? { strict: textFormat.strict } : {}),
+        ...(textFormat.description ? { description: textFormat.description } : {}),
+      },
+    };
+  } else if (textFormat?.type === "json_object") {
+    result.response_format = { type: "json_object" };
+  }
+  if (body.text?.verbosity !== undefined && result.verbosity === undefined) result.verbosity = body.text.verbosity;
+  delete result.text;
+
   delete result.input;
   delete result.instructions;
   delete result.include;
@@ -458,6 +477,24 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
+
+  // Structured output: Chat Completions response_format -> Responses text.format.
+  const responseFormat = body.response_format;
+  if (responseFormat?.type === "json_schema" && responseFormat.json_schema?.schema) {
+    const js = responseFormat.json_schema;
+    result.text = {
+      format: {
+        type: "json_schema",
+        name: js.name || "response",
+        schema: js.schema,
+        ...(js.strict !== undefined ? { strict: js.strict } : {}),
+        ...(js.description ? { description: js.description } : {}),
+      },
+    };
+  } else if (responseFormat?.type === "json_object") {
+    result.text = { format: { type: "json_object" } };
+  }
+  if (body.verbosity !== undefined) result.text = { ...(result.text || {}), verbosity: body.verbosity };
 
   return result;
 }
