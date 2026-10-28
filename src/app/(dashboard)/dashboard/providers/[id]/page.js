@@ -1597,6 +1597,9 @@ export default function ProviderDetailPage() {
               </div>
             </div>
           </div>
+          <p className="mb-4 -mt-1 text-xs text-text-muted">
+            Tip: pin requests to a specific account by sending the <code>x-connection-id</code> request header with a connection ID — click the ID chip on a connection to copy it. When the pinned account is unavailable, 9Router falls back to the other accounts automatically.
+          </p>
 
           {connections.length === 0 ? (
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

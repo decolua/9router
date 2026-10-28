@@ -80,6 +80,22 @@ Claude Code stores its configuration in `~/.claude/settings.json`. You can manua
 }
 ```
 
+### Pin a specific account (optional)
+
+When a 9Router provider has multiple connected accounts, you can pin Claude Code to a specific one with the `x-connection-id` header. Claude Code sends custom headers via the `ANTHROPIC_CUSTOM_HEADERS` environment variable — put it in the `env` block of `~/.claude/settings.json` (or a project-level `.claude/settings.json` to pin a different account per project):
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "http://localhost:20128/v1",
+    "ANTHROPIC_AUTH_TOKEN": "sk-...",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-connection-id: <providerConnection id>"
+  }
+}
+```
+
+Copy the connection id from the provider page in the 9Router dashboard (the `xxxxxxxx…` chip on each connection). If the pinned account is unavailable — rate-limited or out of quota — 9Router automatically falls back to the provider's other accounts. See [Smart Routing](features/smart-routing.md) for details.
+
 ## Troubleshooting
 
 ### Connection Issues

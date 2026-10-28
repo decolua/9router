@@ -57,6 +57,20 @@ function filterBlocks(blocks, capOf, caps, removed, isLast) {
   return out;
 }
 
+// Claude tool_result blocks keep their media in a nested content[]; filterBlocks
+// only inspects top-level block types, so drop nested media here and keep the
+// tool_result block itself (its text) intact.
+function stripNestedToolResultMedia(blocks, caps, isLast) {
+  for (const block of blocks) {
+    if (block?.type !== "tool_result" || !Array.isArray(block.content)) continue;
+    block.content = block.content.filter((c) => {
+      const cap = capForClaudeBlock(c);
+      return !(cap && caps[cap] === false);
+    });
+    if (block.content.length === 0) block.content = [{ type: "text", text: ph("vision", isLast) }];
+  }
+}
+
 // OpenAI / OpenAI-compatible chat messages[].content[].
 function stripOpenAI(body, caps) {
   if (!Array.isArray(body.messages)) return;
@@ -89,6 +103,7 @@ function stripClaude(body, caps) {
     if (!Array.isArray(msg.content)) return;
     const removed = new Set();
     msg.content = filterBlocks(msg.content, capForClaudeBlock, caps, removed, i === last);
+    stripNestedToolResultMedia(msg.content, caps, i === last);
   });
 }
 

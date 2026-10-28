@@ -191,6 +191,10 @@ export async function handleChat(request, clientRawRequest = null) {
  * Handle single model chat request
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
+  // Optional account pinning, same opt-in header as the image/video endpoints:
+  // `x-connection-id: <providerConnection id>`. Falls back to the normal
+  // account strategy when the header is absent or the id is unknown/unavailable.
+  const preferredConnectionId = request?.headers?.get("x-connection-id") || null;
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -277,7 +281,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastHeaders = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model, preferredConnectionId });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
