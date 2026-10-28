@@ -82,7 +82,7 @@ That's it! Start coding with FREE AI models.
 9router                    # Start with default settings
 9router --port 8080        # Custom port
 9router --no-browser       # Don't open browser
-9router --skip-update      # Skip auto-update check
+9router --skip-update      # Skip update checks (CLI and dashboard notice)
 9router --help             # Show all options
 ```
 

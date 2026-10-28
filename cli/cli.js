@@ -65,6 +65,7 @@ function createSpinner(text) {
 const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
+const { buildServerEnv } = require("./src/cli/serverEnv");
 const args = process.argv.slice(2);
 
 // Subcommands (`9router xai video …`) run against an already-running gateway
@@ -163,7 +164,7 @@ Options:
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
-  --skip-update       Skip auto-update check
+  --skip-update       Skip update checks (CLI and dashboard notice)
   -h, --help          Show this help message
   -v, --version       Show version
 
@@ -476,7 +477,10 @@ function isRestrictedEnvironment() {
 // Check if new version available, return latest version or null
 function checkForUpdate() {
   return new Promise((resolve) => {
-    if (skipUpdate) {
+    // Tray mode never surfaces the result - the menu loop that consumes it is
+    // skipped - so checking here would only spend a registry request in every
+    // detached/autostart process.
+    if (skipUpdate || trayMode) {
       resolve(null);
       return;
     }
@@ -635,11 +639,12 @@ function startServer(updatePromise) {
       stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
       detached: true,
       windowsHide: true,
-      env: {
-        ...buildEnvWithRuntime(process.env),
-        PORT: port.toString(),
-        HOSTNAME: host
-      }
+      env: buildServerEnv({
+        baseEnv: buildEnvWithRuntime(process.env),
+        port,
+        host,
+        skipUpdate
+      })
     });
     if (!showLog && child.stderr) {
       child.stderr.on("data", (data) => {
@@ -803,7 +808,13 @@ function startServer(updatePromise) {
           // Windows/Linux: spawn detached bgProcess (systray works fine in child)
           console.log(`\n⏳ Starting background process... (tray icon will appear in ~3s)`);
 
-          const bgProcess = spawn(process.execPath, ["--dns-result-order=ipv4first", __filename, "--tray", "--skip-update", "-p", port.toString()], {
+          // The child is a fresh CLI invocation, so it inherits the user's
+          // choice - never add the flag for someone who did not ask for it.
+          const bgProcess = spawn(process.execPath, [
+            "--dns-result-order=ipv4first", __filename, "--tray",
+            ...(skipUpdate ? ["--skip-update"] : []),
+            "-p", port.toString()
+          ], {
             detached: true,
             stdio: "ignore",
             windowsHide: true,

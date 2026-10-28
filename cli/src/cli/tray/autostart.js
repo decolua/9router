@@ -170,7 +170,6 @@ function enableMacOS(cliPath) {
         <string>${nodePath}</string>
         <string>${routerScript}</string>
         <string>--tray</string>
-        <string>--skip-update</string>
     </array>
     <key>EnvironmentVariables</key>
     <dict>
@@ -249,7 +248,7 @@ function enableWindows(cliPath) {
   // Run node + cli.js directly, hidden window. Avoids the fragile
   // `9router.cmd` lookup that depended on the npm prefix path.
   const vbsContent = `Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run """${nodePath}"" ""${routerScript}"" --tray --skip-update", 0, False
+WshShell.Run """${nodePath}"" ""${routerScript}"" --tray", 0, False
 `;
   fs.writeFileSync(vbsPath, vbsContent);
   return true;
@@ -282,7 +281,7 @@ function enableLinux(cliPath) {
 Type=Application
 Name=9Router
 Comment=9Router API Proxy
-Exec=${nodePath} ${routerScript} --tray --skip-update
+Exec=${nodePath} ${routerScript} --tray
 Hidden=false
 NoDisplay=false
 X-GNOME-Autostart-enabled=true
