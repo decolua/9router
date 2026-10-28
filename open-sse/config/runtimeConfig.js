@@ -101,3 +101,23 @@ export function resolveRetryEntry(entry) {
 export const SKIP_PATTERNS = [
   "Please write a 5-10 word title for the following conversation:"
 ];
+
+// === Request logging (ENABLE_REQUEST_LOGS) ===
+// Header keys whose values must never reach disk in clear text. Substring match on the
+// lowercase key (fail-closed): a false positive only hides one debug field, a false
+// negative writes a live credential into logs/.
+export const REQUEST_LOG_SENSITIVE_HEADER_KEYS = [
+  "authorization",
+  "api-key",
+  "apikey",
+  "cookie",
+  "token",
+  "secret",
+  "password"
+];
+// Values longer than prefix+suffix keep a recognizable stub (sk-proj-…abcde) so a log
+// reader can still tell credentials apart; shorter ones are fully replaced — a short
+// secret IS the whole secret.
+export const REQUEST_LOG_MASK_PREFIX = 10;
+export const REQUEST_LOG_MASK_SUFFIX = 5;
+export const REQUEST_LOG_MASK_REDACTED = "[redacted]";

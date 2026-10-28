@@ -134,6 +134,7 @@
 
 ## Fixes
 - Avoid Headroom compression warnings caused by large unchanged tool schemas (#4809).
+- **Request Logs**: mask provider auth headers (`Authorization`, `x-api-key`, `cookie`, …) before writing stage files to disk — the masking function shipped disabled, leaving live credentials in clear text next to the app; short values are fully redacted, response headers (`set-cookie`) are masked too, and verbatim headers now require a separate explicit `REQUEST_LOG_FULL_HEADERS=true` opt-in (#4808)
 - **Dashboard**: fix mobile layouts for API Keys card (alignment, code wrap), header breadcrumbs (overflow collision), model chips (full width, break-all), and Claude CLI settings
 - **Gemini**: do not treat properties map as schema node when tool parameter is named `properties` (#4620); rename `$ref` keys in `functionResponse` payloads
 - **Translator**: uniquify duplicate `tool_call_ids` for Gemini (#4532)
