@@ -259,7 +259,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "") {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -290,11 +290,15 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display) {
     }
     case "claude-adaptive": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      // Models that can disable thinking need the explicit adaptive switch.
-      // Permanently adaptive models such as Fable 5.1 accept effort directly.
-      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
-      else delete body.thinking;
       const level = toLevel(eff);
+      // Models that can disable thinking need the explicit adaptive switch.
+      // Permanently adaptive models such as Fable 5.1 accept effort directly. Claude
+      // ones still get the switch when it carries a requested display: display
+      // defaults to "omitted" there, so dropping it hides the thinking text. A
+      // thinking-off request (clamped to minimal) asks for no thinking text.
+      if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
+      else if (display && level !== "minimal" && /claude/i.test(model)) body.thinking = { type: "adaptive", display };
+      else delete body.thinking;
       // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
       // Claude effort has no "minimal" (always-on models clamp "none" to it).
       body.output_config = { effort: level === "auto" ? "high"
@@ -453,6 +457,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel);
   return body;
 }
