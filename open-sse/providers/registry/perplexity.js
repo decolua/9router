@@ -20,7 +20,7 @@ export default {
   authType: "apikey",
   transport: {
     baseUrl: "https://api.perplexity.ai/chat/completions",
-    validateUrl: "https://api.perplexity.ai/models",
+    validateUrl: "https://api.perplexity.ai/v1/models",
   },
   models: [
     { id: "sonar-pro", name: "Sonar Pro" },

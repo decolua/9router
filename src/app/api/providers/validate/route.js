@@ -334,50 +334,29 @@ export async function POST(request) {
         case "alicode-intl":
         case "alims-intl":
         case "alicode":
-        case "agentrouter": {
-          // Use baseUrl from PROVIDERS (DRY); separate openai-format vs claude-format flow
-          const cfg = PROVIDERS[provider];
-          const isOpenAiFormat = provider === "glm-cn" || provider === "alicode" || provider === "alicode-intl" || provider === "alims-intl";
-
-          if (isOpenAiFormat) {
-            const testModel = getDefaultModel(provider);
-            const res = await fetch(cfg.baseUrl, {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" },
-              body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-            });
-            isValid = res.status !== 401 && res.status !== 403;
-          } else {
-            const testModel = getDefaultModel(provider) || "claude-sonnet-4-20250514";
-            const res = await fetch(cfg.baseUrl, {
-              method: "POST",
-              headers: {
-                "x-api-key": apiKey,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-                ...(cfg.headers || {}),
-              },
-              body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
-            });
-            // 400 = model resolution error but auth passed (e.g. agentrouter "no available channel")
-            isValid = res.status !== 401 && res.status !== 403;
-          }
-          break;
-        }
+        case "agentrouter":
         case "volcengine-ark":
         case "byteplus": {
-          const res = await fetch(PROVIDERS[provider]?.baseUrl, {
+          // Unified probe: read format from PROVIDERS config (DRY — no hardcoded list)
+          const cfg = PROVIDERS[provider];
+          if (!cfg?.baseUrl) {
+            return NextResponse.json({ error: "Provider configuration missing" }, { status: 500 });
+          }
+          const isOpenAiFormat = cfg.format !== "claude";
+          const testModel = isOpenAiFormat ? getDefaultModel(provider) : (getDefaultModel(provider) || "claude-sonnet-4-20250514");
+          const res = await fetch(cfg.baseUrl, {
             method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              model: getDefaultModel(provider),
-              max_tokens: 1,
-              messages: [{ role: "user", content: "test" }],
-            }),
+            headers: isOpenAiFormat
+              ? { "Authorization": `Bearer ${apiKey}`, "content-type": "application/json" }
+              : {
+                  "x-api-key": apiKey,
+                  "anthropic-version": "2023-06-01",
+                  "content-type": "application/json",
+                  ...(cfg.headers || {}),
+                },
+            body: JSON.stringify({ model: testModel, max_tokens: 1, messages: [{ role: "user", content: "test" }] }),
           });
+          // 400 = model resolution error but auth passed (e.g. agentrouter "no available channel")
           isValid = res.status !== 401 && res.status !== 403;
           break;
         }
