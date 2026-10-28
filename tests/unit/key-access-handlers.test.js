@@ -8,6 +8,8 @@ const fx = vi.hoisted(() => ({
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
   ],
   keys: {},
+  settings: { requireApiKey: false, comboStrategy: "fallback" },
+  comboLookupError: null,
 }));
 const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
@@ -15,9 +17,12 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback" }),
+  getSettings: async () => fx.settings,
   getModelAliases: async () => ({}),
-  getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
+  getComboByName: async (name) => {
+    if (fx.comboLookupError) throw fx.comboLookupError;
+    return fx.combos.find((c) => c.name === name) || null;
+  },
   getProviderNodes: async () => [],
   getCombos: async () => fx.combos,
   getProviderConnections: async () => [],
@@ -74,9 +79,15 @@ const post = (path, body, k, extra = {}) => new Request(`http://localhost${path}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fx.settings = { requireApiKey: false, comboStrategy: "fallback" };
+  fx.comboLookupError = null;
+  fx.combos = [
+    { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
+  ];
   fx.keys = {
     "sk-open": { id: "o", name: "open", isActive: true, access: { restricted: false, allow: [] } },
     "sk-combo": { id: "c", name: "combo", isActive: true, access: { restricted: true, allow: ["Main"] } },
+    "sk-auto": { id: "a", name: "auto", isActive: true, access: { restricted: true, allow: ["Coder Auto"] } },
     "sk-b": { id: "b", name: "b", isActive: true, access: { restricted: true, allow: ["openai/model-b"] } },
     "sk-empty": { id: "e", name: "empty", isActive: true, access: { restricted: true, allow: [] } },
     "sk-media": {
@@ -150,6 +161,102 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
       { params: Promise.resolve({ path: ["openai", "model-a:generateContent"] }) },
     );
     expect(res.status).toBe(403);
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
+  it("Auto Router selects one target and delegates through an ordinary nested combo", async () => {
+    fx.combos = [
+      { id: "auto", name: "Coder Auto", models: ["Coder", "openai/high"] },
+      { id: "nested", name: "Coder", models: ["openai/model-a", "openai/model-b"] },
+    ];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+    };
+
+    const r = await chat("Coder Auto", "sk-open");
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("from-model-b");
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["model-a", "model-b"]);
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).not.toContain("high");
+  });
+  it("Auto Router selected plain model uses its capacity adapter without making it a tier", async () => {
+    fx.combos = [{ id: "auto", name: "Coder Auto", models: ["openai/model-a", "openai/high"] }];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+      capacityAdapter: { vision: { enabled: true, models: ["openai/gpt-4o"] } },
+    };
+
+    const r = await handleChat(post("/v1/chat/completions", {
+      model: "Coder Auto", stream: true,
+      messages: [{ role: "user", content: "describe this", images: ["base64-image"] }],
+    }, "sk-open"));
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("from-gpt-4o");
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["gpt-4o"]);
+  });
+  it("restricted key allowed only for an Auto Router outer combo can execute its selected member", async () => {
+    fx.combos = [{ id: "auto", name: "Coder Auto", models: ["openai/model-b", "openai/high"] }];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+    };
+
+    expect((await chat("Coder Auto", "sk-auto")).status).toBe(200);
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["model-b"]);
+    vi.clearAllMocks();
+    expect((await chat("Coder Auto", "sk-b")).status).toBe(403);
+    expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
+  it("global auto strategy does not implicitly enable Auto Router", async () => {
+    fx.combos = [{ id: "main", name: "Main", models: ["openai/model-a", "openai/model-b"] }];
+    fx.settings = { requireApiKey: false, comboStrategy: "auto" };
+
+    const r = await chat("Main", "sk-open");
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("from-model-b");
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["model-a", "model-b"]);
+  });
+  it("does not misreport target lookup failures as client configuration errors", async () => {
+    fx.combos = [{ id: "auto", name: "Coder Auto", models: ["Coder", "openai/high"] }];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+    };
+    fx.comboLookupError = new Error("database unavailable");
+
+    await expect(chat("Coder Auto", "sk-open")).rejects.toThrow("database unavailable");
+  });
+  it("ordinary combos can reach an Auto Router, but a selected route cannot reach another Auto Router", async () => {
+    fx.combos = [
+      { id: "main", name: "Main", models: ["Coder Auto"] },
+      { id: "auto", name: "Coder Auto", models: ["openai/model-b", "openai/high"] },
+    ];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+    };
+
+    expect((await chat("Main", "sk-open")).status).toBe(200);
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["model-b"]);
+
+    vi.clearAllMocks();
+    fx.combos = [
+      { id: "outer", name: "Outer Auto", models: ["Ordinary"] },
+      { id: "ordinary", name: "Ordinary", models: ["Coder Auto"] },
+      { id: "auto", name: "Coder Auto", models: ["openai/model-b", "openai/high"] },
+    ];
+    fx.settings.comboStrategies = {
+      "Outer Auto": { fallbackStrategy: "auto" },
+      "Coder Auto": { fallbackStrategy: "auto" },
+    };
+
+    expect((await chat("Outer Auto", "sk-open")).status).toBe(400);
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
   });
 });

@@ -28,6 +28,64 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
+
+
+async function handleAutoRouterCombo({ body, comboName, models, settings, autoRouterPath = new Set(), handleSelectedTarget }) {
+  let decision;
+  let targetModels;
+  try {
+    if (autoRouterPath.size > 0) {
+      throw new AutoRouterConfigurationError(`Auto Router chaining is not supported (encountered "${comboName}").`);
+    }
+    decision = selectAutoRoute({
+      body,
+      comboName,
+      models,
+      comboStrategies: settings.comboStrategies || {},
+    });
+    targetModels = await getComboModels(decision.target);
+    if (targetModels && settings.comboStrategies?.[decision.target]?.fallbackStrategy === "auto") {
+      throw new AutoRouterConfigurationError(`Auto Router target "${decision.target}" is configured as an Auto Router combo; Auto Router chaining is not supported.`);
+    }
+  } catch (error) {
+    if (!(error instanceof AutoRouterConfigurationError)) throw error;
+    log.warn("AUTO-ROUTER", `combo=${comboName} selection failed: ${error.message}`);
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Auto Router configuration error: ${error.message}`);
+  }
+
+  const { target, classification, index, candidates } = decision;
+  log.info("AUTO-ROUTER", `combo=${comboName} rank=${index + 1}/${candidates.length} score=${classification.score} target=${target} reasons=${classification.reasons.join(",") || "none"}`);
+  log.debug("AUTO-ROUTER", `combo=${comboName} structural metadata`, classification.metadata);
+  return handleSelectedTarget(target, targetModels);
+}
+
+async function handleSingleTargetWithCapacityAdapter({ body, modelStr, clientRawRequest, request, apiKey, settings, keyAccess, requiredCapabilities, requestedModel = null, autoRouterPath = new Set() }) {
+  const soloAugmented = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings), [modelStr]);
+  if (soloAugmented.length > 1) {
+    const adapterAdded = soloAugmented.filter((model) => model !== modelStr);
+    log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
+    return handleComboChat({
+      body,
+      models: soloAugmented,
+      handleSingleModel: withCapacityAdapterStripping(
+        (candidateBody, candidate) => handleSingleModelChat(candidateBody, candidate, clientRawRequest, request, apiKey, null, autoRouterPath),
+        adapterAdded
+      ),
+      log,
+      comboName: modelStr,
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+    });
+  }
+
+  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, requestedModel, autoRouterPath);
+}
+
+function comboStrategyFor(settings, comboName) {
+  const specific = settings.comboStrategies?.[comboName]?.fallbackStrategy;
+  if (specific === "auto") return { comboStrategy: "auto", isAutoRouter: true };
+  return { comboStrategy: specific || (settings.comboStrategy === "auto" ? "fallback" : settings.comboStrategy) || "fallback", isAutoRouter: false };
+}
 
 /**
  * Handle chat completion request
@@ -109,10 +167,29 @@ export async function handleChat(request, clientRawRequest = null) {
   // Check if model is a combo (has multiple models with fallback)
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
-    // Check for combo-specific strategy first, fallback to global
     const comboStrategies = settings.comboStrategies || {};
-    const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-    const comboStrategy = comboSpecificStrategy || settings.comboStrategy || "fallback";
+    const { comboStrategy, isAutoRouter } = comboStrategyFor(settings, modelStr);
+    if (isAutoRouter) {
+      return handleAutoRouterCombo({
+        body,
+        comboName: modelStr,
+        models: comboModels,
+        settings,
+        handleSelectedTarget: (target, selectedComboModels) => selectedComboModels
+          ? handleSingleModelChat(body, target, clientRawRequest, request, apiKey, null, new Set([modelStr]))
+          : handleSingleTargetWithCapacityAdapter({
+            body,
+            modelStr: target,
+            clientRawRequest,
+            request,
+            apiKey,
+            settings,
+            keyAccess,
+            requiredCapabilities,
+            autoRouterPath: new Set([modelStr]),
+          }),
+      });
+    }
     const augmentedModels = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter(comboModels, requiredCapabilities, settings), comboModels);
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
 
@@ -165,32 +242,23 @@ export async function handleChat(request, clientRawRequest = null) {
     });
   }
 
-  // Single model request — may still switch to a capacity-adapter model if the
-  // target lacks a capability the request needs (e.g. no vision, request has an image).
-  const soloAugmented = await filterAdapterModels(keyAccess, augmentModelsWithCapacityAdapter([modelStr], requiredCapabilities, settings), [modelStr]);
-  if (soloAugmented.length > 1) {
-    const adapterAdded = soloAugmented.filter((m) => m !== modelStr);
-    log.info("CHAT", `Capacity adapter for [${[...requiredCapabilities].join(",")}] on "${modelStr}" → trying ${soloAugmented.join(", ")}`);
-    return handleComboChat({
-      body,
-      models: soloAugmented,
-      handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
-        adapterAdded
-      ),
-      log,
-      comboName: modelStr,
-      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
-    });
-  }
-
-  return handleSingleModelChat(body, modelStr, clientRawRequest, request, apiKey, contextMarker ? `${modelStr.slice(modelStr.indexOf("/") + 1)}[${contextMarker}]` : null);
+  return handleSingleTargetWithCapacityAdapter({
+    body,
+    modelStr,
+    clientRawRequest,
+    request,
+    apiKey,
+    settings,
+    keyAccess,
+    requiredCapabilities,
+    requestedModel: contextMarker ? `${modelStr.slice(modelStr.indexOf("/") + 1)}[${contextMarker}]` : null,
+  });
 }
 
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, autoRouterPath = new Set()) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -198,10 +266,30 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     const comboModels = await getComboModels(modelStr);
     if (comboModels) {
       const chatSettings = await getSettings();
-      // Check for combo-specific strategy first, fallback to global
       const comboStrategies = chatSettings.comboStrategies || {};
-      const comboSpecificStrategy = comboStrategies[modelStr]?.fallbackStrategy;
-      const comboStrategy = comboSpecificStrategy || chatSettings.comboStrategy || "fallback";
+      const { comboStrategy, isAutoRouter } = comboStrategyFor(chatSettings, modelStr);
+      if (isAutoRouter) {
+        return handleAutoRouterCombo({
+          body,
+          comboName: modelStr,
+          models: comboModels,
+          settings: chatSettings,
+          autoRouterPath,
+          handleSelectedTarget: async (target, selectedComboModels) => selectedComboModels
+            ? handleSingleModelChat(body, target, clientRawRequest, request, apiKey, null, new Set([...autoRouterPath, modelStr]))
+            : handleSingleTargetWithCapacityAdapter({
+              body,
+              modelStr: target,
+              clientRawRequest,
+              request,
+              apiKey,
+              settings: chatSettings,
+              keyAccess: await getKeyAccessContext(request),
+              requiredCapabilities: detectRequiredCapabilities(body),
+              autoRouterPath: new Set([...autoRouterPath, modelStr]),
+            }),
+        });
+      }
       const requiredCapabilities = detectRequiredCapabilities(body);
       // Nested combo (a combo member that is itself a combo): the access decision
       // was made on the outer target; only drop adapter models the key may not call.
@@ -220,7 +308,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null, autoRouterPath);
           },
           log,
           comboName: modelStr,
@@ -238,7 +326,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, autoRouterPath),
           adapterAdded
         ),
         log,
