@@ -1540,6 +1540,8 @@ Thanks to all contributors who helped make 9Router better!
 
 **[OmniRoute](https://github.com/diegosouzapw/OmniRoute)** — A full-featured TypeScript fork of 9Router. Adds 36+ providers, 4-tier auto-fallback, multi-modal APIs (images, embeddings, audio, TTS), circuit breaker, semantic cache, LLM evaluations, and a polished dashboard. 368+ unit tests. Available via npm and Docker.
 
+**[DurinDoor](https://github.com/bloodf/durindoor)** - A self-hosted fork of 9Router with quota-aware routing, scoped API keys, SQLite or PostgreSQL storage, MCP gateway and control APIs, and a branded dashboard with an interactive website demo. Supports OpenAI and Anthropic clients. Available via npm, Docker, and source.
+
 ---
 
 ## 🙏 Acknowledgments
