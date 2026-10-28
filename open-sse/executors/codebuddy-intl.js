@@ -1,3 +1,4 @@
+import { createHash, randomUUID } from "node:crypto";
 import { DefaultExecutor } from "./default.js";
 
 /**
@@ -8,9 +9,142 @@ import { DefaultExecutor } from "./default.js";
  * request carries the IDE's OpenAI-style reasoning params. Force stream and
  * mirror reasoning_summary exactly like CodeBuddyExecutor.
  */
+
+// Deterministic RFC-4122-v5-shaped UUID derived from a session key, mirroring
+// the official client's per-conversation id (uuid5 over the session key).
+function stableUuidFrom(key) {
+  const hash = createHash("sha1").update(key).digest("hex");
+  const timeHigh = ((parseInt(hash.slice(12, 16), 16) & 0x0fff) | 0x5000)
+    .toString(16)
+    .padStart(4, "0");
+  const clockSeq = ((parseInt(hash.slice(16, 20), 16) & 0x3fff) | 0x8000)
+    .toString(16)
+    .padStart(4, "0");
+  return [
+    hash.slice(0, 8),
+    hash.slice(8, 12),
+    timeHigh,
+    clockSeq,
+    hash.slice(20, 32),
+  ].join("-");
+}
+
+// Read a header case-insensitively. HTTP header names are case-insensitive, so a
+// caller that already sent `x-conversation-id` must be found — testing the exact
+// key would miss it, add a second `X-Conversation-ID`, and undici would then join
+// both into one comma-separated value ("caller, ours"), corrupting the id we are
+// supposed to keep stable. Accepts a plain object (the executor path) or a fetch
+// `Headers` instance (whose get/set are already case-insensitive). A non-object
+// input means "no headers", not an error.
+function readHeader(headers, name) {
+  if (typeof headers?.get === "function") {
+    const value = headers.get(name);
+    return typeof value === "string" ? value.trim() : "";
+  }
+  if (!headers || typeof headers !== "object") return "";
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
+  const value = key ? headers[key] : undefined;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+// Write a header, updating the caller's existing key when only the case differs
+// rather than adding a duplicate.
+function writeHeader(headers, name, value) {
+  if (typeof headers?.set === "function") {
+    headers.set(name, value);
+    return;
+  }
+  if (!headers || typeof headers !== "object") return;
+  const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
+  headers[key || name] = value;
+}
+
+/**
+ * Attach the conversation-correlation family the gateway's channel verification
+ * demands (HTTP 400 code 11128 "conversation id missing" without it). Values
+ * that already exist and are non-empty are preserved, so a caller tracking its
+ * own conversation keeps it; blank values count as absent.
+ *
+ * **All three of `X-Conversation-ID`, `X-Conversation-Request-ID` and
+ * `X-Conversation-Message-ID` are required** — verified A/B against the live
+ * gateway, where any two of them are still answered 11128. `X-Request-ID` is
+ * NOT part of the requirement; it is mirrored from the message id because the
+ * official client sends it.
+ *
+ * - `X-Conversation-ID`: derived stably from the session key (or the opening
+ *   user message), so retries of a turn and later turns of one conversation
+ *   keep the id; a fresh UUID when nothing is derivable.
+ * - `X-Conversation-Request-ID` / `X-Conversation-Message-ID`: fresh per
+ *   request, and `X-Request-ID` mirrors the message id.
+ */
+export function withConversationHeaders(headers, body = null) {
+  const sessionKey =
+    (typeof body?.session_id === "string" && body.session_id) ||
+    (typeof body?.prompt_cache_key === "string" && body.prompt_cache_key) ||
+    (typeof body?.conversation_id === "string" && body.conversation_id) ||
+    null;
+  const firstUser = Array.isArray(body?.messages)
+    ? body.messages.find((m) => m?.role === "user")
+    : null;
+  const userText =
+    typeof firstUser?.content === "string"
+      ? firstUser.content
+      : Array.isArray(firstUser?.content)
+        ? firstUser.content
+            .map((b) => (b && typeof b.text === "string" ? b.text : ""))
+            .join("\n")
+        : "";
+  const conversationKey = sessionKey || (userText ? `cbai:${userText}` : null);
+
+  if (!readHeader(headers, "X-Conversation-ID")) {
+    writeHeader(
+      headers,
+      "X-Conversation-ID",
+      conversationKey ? stableUuidFrom(conversationKey) : randomUUID(),
+    );
+  }
+  if (!readHeader(headers, "X-Conversation-Request-ID")) {
+    writeHeader(headers, "X-Conversation-Request-ID", randomUUID());
+  }
+  // The request id mirrors the message id: reuse whichever side already exists.
+  const messageId =
+    readHeader(headers, "X-Conversation-Message-ID") ||
+    readHeader(headers, "X-Request-ID") ||
+    randomUUID();
+  if (!readHeader(headers, "X-Conversation-Message-ID")) {
+    writeHeader(headers, "X-Conversation-Message-ID", messageId);
+  }
+  if (!readHeader(headers, "X-Request-ID")) {
+    writeHeader(headers, "X-Request-ID", messageId);
+  }
+
+  return headers;
+}
+
 export class CodeBuddyIntlExecutor extends DefaultExecutor {
   constructor() {
     super("codebuddy-intl");
+  }
+
+  // The intl gateway's channel verification rejects any request that does not
+  // carry the X-Conversation-* header family the official IDE sends on every
+  // turn. The derivation rules live in withConversationHeaders above.
+  //
+  // **Fail closed.** buildHeaders runs outside the fetch try/catch in base.js,
+  // so an unexpected error here would surface as a generic 502 with no cause —
+  // and a silent fall-through to "send without the family" is worse, because the
+  // gateway refuses such a request every time. Name the gate instead.
+  buildHeaders(credentials, stream = true, url, model, body = null) {
+    const headers = super.buildHeaders(credentials, stream, url, model, body);
+    try {
+      return withConversationHeaders(headers, body);
+    } catch (error) {
+      throw new Error(
+        `CodeBuddy channel verification: could not attach the X-Conversation-* family `
+        + `(${error?.message || error}). The intl gateway rejects any request without it `
+        + `(HTTP 400 code 11128 "conversation id missing"), so this request cannot succeed.`,
+      );
+    }
   }
 
   transformRequest(model, body, stream, credentials) {
@@ -60,6 +194,24 @@ export class CodeBuddyIntlExecutor extends DefaultExecutor {
             status: 429,
             message: msg || "CodeBuddy frequency limit (6004)",
             resetsAtMs,
+          };
+        }
+
+        // Code 11128 is overloaded: it also carries "first message is not system
+        // prompt" (a body-shape problem fixed in transformRequest). Only the
+        // conversation-id variant is channel verification, so branch on the
+        // message, never on the code alone — otherwise the failure reads as a
+        // generic 400 and the cause has to be rediscovered from scratch.
+        if (data?.code === 11128 && /conversation id missing/i.test(msg)) {
+          const tip = data?.displayTips?.en || data?.displayMsg?.en || "";
+          return {
+            status: 400,
+            message:
+              "CodeBuddy channel verification failed (11128 \"conversation id missing\"): "
+              + "the upstream gateway requires the X-Conversation-* header family the official "
+              + "IDE sends, supplied by CodeBuddyIntlExecutor.buildHeaders(). If this appears, "
+              + "the gate likely changed (e.g. a new required header)."
+              + (tip ? ` Upstream said: ${tip}` : ""),
           };
         }
       } catch {}
