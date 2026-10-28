@@ -95,7 +95,7 @@ export function claudeToOpenAIResponse(chunk, state) {
           results.push(createChunk(state, {
             tool_calls: [{
               index: toolCall.index,
-              id: toolCall.id,
+              // IDs are sent on block start only; SDKs concatenate string deltas.
               function: { arguments: delta.partial_json }
             }]
           }));

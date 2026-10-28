@@ -81,7 +81,6 @@ exports[`GOLDEN response stream: Claude → OpenAI > text + thinking + tool_use 
               "function": {
                 "arguments": "{"city":"NYC"}",
               },
-              "id": "tu_1",
               "index": 0,
             },
           ],
