@@ -201,3 +201,22 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Codebase v0.5.111 siap di-build ke container).
 - **Catatan untuk AI selanjutnya (Handoff Note):** Branch `vnot-production` kini berada di versi 0.5.111. Pengguna perlu menjalankan `docker compose up -d --build` di terminal VPS untuk menerapkan container image baru.
+
+### 2026-10-28 — Fix Wreq-JS and OpenCode Free Tier (502 / Cannot read properties of undefined)
+- **Tugas:** Memperbaiki error `HTTP 502: [502]: wreq-js unavailable (Cannot read properties of undefined (reading 'resolve')) — install the optional wreq-js dependency to reach the OpenCode free tier` saat melakukan testing model OpenCode Free di dashboard.
+- **Masalah:**
+  1. Di `open-sse/services/lazyRuntime.js`, pemanggilan `createRequire(path.join(getRuntimeDir(), "package.json"))` dievaluasi oleh Webpack saat proses `next build` menjadi `(void 0)`, menyebabkan `(void 0).resolve(...)` menghasilkan `TypeError` dan membatalkan lazy install otomatis.
+  2. Multi-stage build di `Dockerfile` tidak menyalin direktori `wreq-js` dan `@wreq-js` ke dalam image runner container produksi karena paket berada di `devDependencies`.
+- **Penyelesaian:**
+  - Memperbaiki `open-sse/services/lazyRuntime.js`: menggunakan `nodeRequire = createRequire(import.meta.url)` yang dikenali secara statis oleh Webpack dan memanfaatkan opsi `{ paths: [...] }` pada `nodeRequire.resolve()`.
+  - Menginisialisasi `package.json` minimal di runtime dir sebelum `npm install` agar npm tidak mencari package.json di root container.
+  - Memperbarui `Dockerfile`: menambahkan `COPY --from=builder /app/node_modules/wreq-js ./node_modules/wreq-js` dan `COPY --from=builder /app/node_modules/@wreq-js ./node_modules/@wreq-js` ke stage runner.
+  - Membuat proposal & dokumentasi di `docs/wreq-js-opencode-fix/README.md`.
+  - Menggabungkan perubahan ke branch `vnot-production`.
+- **File yang diubah/dibuat:**
+  - `Dockerfile`
+  - `open-sse/services/lazyRuntime.js`
+  - `docs/wreq-js-opencode-fix/README.md`
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Container siap di-rebuild dengan image mandiri).
+- **Catatan untuk AI selanjutnya (Handoff Note):** `wreq-js` dan binary musl Rust `@wreq-js/binding-linux-x64-musl` kini disalin otomatis ke runner stage Dockerfile. Provider OpenCode Free dan Grok Web dapat langsung melakukan TLS client impersonation tanpa perlu runtime npm install.
