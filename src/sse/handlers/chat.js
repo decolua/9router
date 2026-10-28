@@ -17,6 +17,7 @@ import { appendPxpipeEvent } from "@/lib/pxpipe/events.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { upstreamResponseHeaders } from "open-sse/utils/upstreamHeaders.js";
 import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "open-sse/services/combo.js";
+import { getSpeedMode } from "open-sse/services/modelSpeed.js";
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -162,6 +163,8 @@ export async function handleChat(request, clientRawRequest = null) {
             log,
           })
         : null,
+      resolveModel: getModelInfo,
+      speedMode: getSpeedMode(body, clientRawRequest?.headers),
     });
   }
 
@@ -257,6 +260,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               log,
             })
           : null,
+        resolveModel: getModelInfo,
+        speedMode: getSpeedMode(body, clientRawRequest?.headers),
       });
     }
     log.warn("CHAT", "Invalid model format", { model: modelStr });
