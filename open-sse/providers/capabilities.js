@@ -724,6 +724,14 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
  * @returns {object} full capabilities object
  */
 const MODALITY_KEYS = ["vision", "pdf", "audioInput", "videoInput"];
+const LIMIT_KEYS = ["contextWindow", "maxOutput"];
+
+function mergeWithLimitSources(base, label, sources) {
+  if (sources) {
+    for (const key of LIMIT_KEYS) sources[key] = Object.hasOwn(base || {}, key) ? label : "default";
+  }
+  return { ...DEFAULT_CAPABILITIES, ...base };
+}
 
 // Catalog lookups, installed by the server at startup. Left as no-ops in the
 // browser bundle, where there is no file to read.
@@ -753,8 +761,8 @@ function getCatalogSource() {
 // Apply the synced catalog + name heuristic on top of a table-resolved result.
 // Strictly additive: a capability already true stays true, and a false one only
 // flips when an outside source positively declares support.
-function refine(base, provider, model) {
-  const result = { ...DEFAULT_CAPABILITIES, ...base };
+function refine(base, provider, model, sources, label) {
+  const result = mergeWithLimitSources(base, label, sources);
 
   const source = getCatalogSource();
   if (source) {
@@ -767,8 +775,12 @@ function refine(base, provider, model) {
 
     const limits = source.getLimits(provider, model);
     if (limits) {
-      if (limits.contextWindow > 0) result.contextWindow = limits.contextWindow;
-      if (limits.maxOutput > 0) result.maxOutput = limits.maxOutput;
+      for (const key of LIMIT_KEYS) {
+        if (limits[key] > 0) {
+          result[key] = limits[key];
+          if (sources) sources[key] = `catalog:${provider ? `${provider}/` : ""}${model}`;
+        }
+      }
     }
   }
 
@@ -815,7 +827,20 @@ function isCommandCodeTextOnly(model) {
   return false;
 }
 export function getCapabilitiesForModel(provider, model) {
-  if (!model) return { ...DEFAULT_CAPABILITIES };
+  return resolveCapabilities(provider, model);
+}
+
+// Same resolver, with per-limit provenance for diagnostic API consumers.
+// builtin: canonical exact entry; override: provider table; provider: wire-wide
+// defaults; pattern: first matching glob; catalog: synced overlay; default: floor.
+export function getCapabilitiesWithSource(provider, model) {
+  const capsSource = {};
+  const caps = resolveCapabilities(provider, model, capsSource);
+  return { caps, capsSource };
+}
+
+function resolveCapabilities(provider, model, sources = null) {
+  if (!model) return mergeWithLimitSources(null, "default", sources);
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".
   const baseModel = model.includes("/") ? model.split("/").pop() : model;
@@ -824,40 +849,39 @@ export function getCapabilitiesForModel(provider, model) {
   // (deepseek-v4 → thinkingFormat:deepseek, vision:false) must not win here.
   if (provider === "commandcode" || provider === "cmc") {
     const providerCaps = PROVIDER_CAPABILITIES.commandcode;
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
-    return {
-      ...DEFAULT_CAPABILITIES,
+    if (providerCaps?.[model]) return mergeWithLimitSources(providerCaps[model], "override:commandcode", sources);
+    if (providerCaps?.[baseModel]) return mergeWithLimitSources(providerCaps[baseModel], "override:commandcode", sources);
+    return mergeWithLimitSources({
       reasoning: true,
       thinkingFormat: "commandcode",
       thinkingEffortSupported: true,
       vision: !isCommandCodeTextOnly(model),
       contextWindow: 1000000,
       maxOutput: 384000,
-    };
+    }, "provider:commandcode", sources);
   }
 
   // 1. Provider-specific override
   if (provider) {
     const providerCaps = PROVIDER_CAPABILITIES[provider];
-    if (providerCaps?.[model]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[model] };
-    if (providerCaps?.[baseModel]) return { ...DEFAULT_CAPABILITIES, ...providerCaps[baseModel] };
+    if (providerCaps?.[model]) return mergeWithLimitSources(providerCaps[model], `override:${provider}`, sources);
+    if (providerCaps?.[baseModel]) return mergeWithLimitSources(providerCaps[baseModel], `override:${provider}`, sources);
   }
 
   // 2. Canonical exact, then catalog overlay so provider-scoped models.dev
   //    deltas still apply. Step 1 above still short-circuits.
-  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model);
-  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model);
+  if (MODEL_CAPABILITIES[baseModel]) return refine(MODEL_CAPABILITIES[baseModel], provider, model, sources, `builtin:${baseModel}`);
+  if (MODEL_CAPABILITIES[model]) return refine(MODEL_CAPABILITIES[model], provider, model, sources, `builtin:${model}`);
 
   // 3. Pattern match (first match wins), refined by catalog + name heuristic
   for (const { pattern, caps } of PATTERN_CAPABILITIES) {
     if (matchPattern(pattern, baseModel) || matchPattern(pattern, model)) {
-      return refine(caps, provider, model);
+      return refine(caps, provider, model, sources, `pattern:${pattern}`);
     }
   }
 
   // 4. Floor
-  return refine(null, provider, model);
+  return refine(null, provider, model, sources, "default");
 }
 
 // Gemini 4 (Argon) drops sampling params and requires functionResponse-last merged user turns.
