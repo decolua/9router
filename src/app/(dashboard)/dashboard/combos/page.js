@@ -81,6 +81,78 @@ export default function CombosPage() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const { copied, copy } = useCopyToClipboard();
+  const [testingCombos, setTestingCombos] = useState({});
+  const [comboTestResults, setComboTestResults] = useState({});
+
+  const handleTestCombo = async (combo) => {
+    if (!combo?.id || testingCombos[combo.id]) return;
+    const models = combo.models || [];
+    if (models.length === 0) return;
+
+    setTestingCombos((prev) => ({ ...prev, [combo.id]: true }));
+    const currentResults = {};
+
+    try {
+      for (const model of models) {
+        setComboTestResults((prev) => ({
+          ...prev,
+          [combo.id]: {
+            ...prev[combo.id],
+            activeModel: model,
+          },
+        }));
+
+        try {
+          const res = await fetch(`/api/combos/${combo.id}/test-models`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ models: [model], kind: combo.kind }),
+          });
+          const data = await res.json();
+          if (res.ok && data.results?.[0]) {
+            currentResults[model] = data.results[0];
+          } else {
+            currentResults[model] = {
+              model,
+              ok: false,
+              latencyMs: 0,
+              error: data.error || "Failed",
+            };
+          }
+        } catch (err) {
+          currentResults[model] = {
+            model,
+            ok: false,
+            latencyMs: 0,
+            error: err.message || "Network error",
+          };
+        }
+
+        const alive = Object.values(currentResults).filter((r) => r.ok).length;
+        const totalTested = Object.values(currentResults).length;
+        setComboTestResults((prev) => ({
+          ...prev,
+          [combo.id]: {
+            results: { ...currentResults },
+            summary: {
+              total: models.length,
+              alive,
+              dead: totalTested - alive,
+            },
+          },
+        }));
+      }
+    } finally {
+      setTestingCombos((prev) => ({ ...prev, [combo.id]: false }));
+      setComboTestResults((prev) => ({
+        ...prev,
+        [combo.id]: {
+          ...prev[combo.id],
+          activeModel: null,
+        },
+      }));
+    }
+  };
 
   useEffect(() => {
     fetchData();
@@ -568,6 +640,9 @@ export default function CombosPage() {
                   onCopy={copy}
                   onEdit={() => setEditingCombo(combo)}
                   onDelete={() => handleDelete(combo.id)}
+                  onTest={() => handleTestCombo(combo)}
+                  isTesting={!!testingCombos[combo.id]}
+                  testData={comboTestResults[combo.id]}
                   strategy={comboStrategies[combo.name] || {}}
                   onSetStrategy={(patch) => handleSetComboStrategy(combo.name, patch)}
                   selected={selectedIds.includes(combo.id)}
@@ -655,10 +730,27 @@ function getRouterModelStatus(routerModel, activeProviders) {
   return { ready: false, label: "Not configured", providerId };
 }
 
-function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
+function ComboCard({
+  combo,
+  getCaps,
+  comboByName = {},
+  activeProviders = [],
+  copied,
+  onCopy,
+  onEdit,
+  onDelete,
+  onTest,
+  isTesting = false,
+  testData = null,
+  strategy = {},
+  onSetStrategy,
+  selected = false,
+  onToggleSelect,
+}) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showRouterSelect, setShowRouterSelect] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [expandedModels, setExpandedModels] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
@@ -688,23 +780,77 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           </div>
           <div className="min-w-0 flex-1">
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={
-                      comboByName[model]
-                        ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
-                        : getCaps?.(model)
-                    } />
-                  </code>
-                ))
+                (expandedModels ? combo.models : combo.models.slice(0, 3)).map((model, index) => {
+                  const testRes = testData?.results?.[model];
+                  let statusClasses = "bg-black/5 dark:bg-white/5 text-text-muted border-transparent";
+                  if (testRes) {
+                    statusClasses = testRes.ok
+                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 font-medium"
+                      : "border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-400 font-medium";
+                  }
+
+                  const isModelTesting = isTesting && (testData?.activeModel ? testData.activeModel === model : !testRes);
+                  const tooltipTitle = testRes
+                    ? testRes.ok
+                      ? `Alive · ${testRes.latencyMs}ms`
+                      : `Dead · ${testRes.error || "Request failed"}`
+                    : isModelTesting
+                    ? "Testing..."
+                    : undefined;
+
+                  return (
+                    <code
+                      key={`${model}-${index}`}
+                      title={tooltipTitle}
+                      className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-xs transition-colors ${statusClasses}`}
+                    >
+                      {isModelTesting && (
+                        <span className="material-symbols-outlined animate-spin text-[12px] text-primary">
+                          progress_activity
+                        </span>
+                      )}
+                      {!isModelTesting && testRes && (
+                        <span className={`material-symbols-outlined text-[13px] ${testRes.ok ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
+                          {testRes.ok ? "check_circle" : "cancel"}
+                        </span>
+                      )}
+                      <span>{model}</span>
+                      {testRes?.ok && (
+                        <span className="text-[10px] opacity-75 font-sans font-normal">
+                          {testRes.latencyMs}ms
+                        </span>
+                      )}
+                      <CapacityBadges caps={
+                        comboByName[model]
+                          ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
+                          : getCaps?.(model)
+                      } />
+                    </code>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setExpandedModels(!expandedModels);
+                  }}
+                  className="text-[11px] font-medium text-primary hover:underline cursor-pointer"
+                >
+                  {expandedModels ? "Show less" : `+${combo.models.length - 3} more`}
+                </button>
+              )}
+              {testData?.summary && (
+                <span className="inline-flex items-center gap-1 ml-1">
+                  <Badge variant={testData.summary.dead > 0 ? "error" : "success"} size="sm">
+                    {testData.summary.alive}/{testData.summary.total} Alive
+                  </Badge>
+                </span>
               )}
             </div>
             {comboCaps && (
@@ -801,7 +947,33 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onTest?.();
+              }}
+              disabled={isTesting || combo.models.length === 0}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5 ${
+                isTesting
+                  ? "text-primary cursor-wait"
+                  : combo.models.length === 0
+                  ? "opacity-40 cursor-not-allowed text-text-muted"
+                  : "text-text-muted"
+              }`}
+              title={
+                combo.models.length === 0
+                  ? "No models to test"
+                  : isTesting
+                  ? "Testing models..."
+                  : "Test all models in combo (Dead/Alive check)"
+              }
+            >
+              <span className={`material-symbols-outlined text-[18px] ${isTesting ? "animate-spin" : ""}`}>
+                {isTesting ? "progress_activity" : "science"}
+              </span>
+              <span className="text-[10px] leading-tight font-medium">Test</span>
+            </button>
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -1079,7 +1251,19 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({
+  id,
+  index,
+  model,
+  isFirst,
+  isLast,
+  onEdit,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+  testStatus = null,
+  isTesting = false,
+}) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1105,7 +1289,13 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 border transition-colors ${
+        testStatus
+          ? testStatus.ok
+            ? "border-emerald-500/40 bg-emerald-500/5"
+            : "border-rose-500/40 bg-rose-500/5"
+          : "border-transparent bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04]"
+      } ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
     >
       {/* Drag handle */}
       <button
@@ -1143,6 +1333,28 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
         >
           {model}
         </div>
+      )}
+
+      {/* Test status indicator */}
+      {isTesting && (
+        <span className="material-symbols-outlined animate-spin text-[14px] text-primary shrink-0" title="Testing...">
+          progress_activity
+        </span>
+      )}
+      {!isTesting && testStatus && (
+        <span
+          className={`material-symbols-outlined text-[15px] shrink-0 ${
+            testStatus.ok ? "text-emerald-500" : "text-rose-500"
+          }`}
+          title={testStatus.ok ? `Alive (${testStatus.latencyMs}ms)` : `Dead: ${testStatus.error || "Failed"}`}
+        >
+          {testStatus.ok ? "check_circle" : "cancel"}
+        </span>
+      )}
+      {!isTesting && testStatus?.ok && (
+        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-sans shrink-0">
+          {testStatus.latencyMs}ms
+        </span>
       )}
 
       {/* Priority arrows */}
@@ -1185,6 +1397,50 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
+  const [testingModels, setTestingModels] = useState(false);
+  const [modalTestResults, setModalTestResults] = useState({});
+  const [activeTestingModel, setActiveTestingModel] = useState(null);
+
+  const handleTestModalModels = async () => {
+    if (testingModels || models.length === 0) return;
+    setTestingModels(true);
+    const currentResults = {};
+
+    try {
+      for (const model of models) {
+        setActiveTestingModel(model);
+        try {
+          const res = await fetch("/api/combos/draft/test-models", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ models: [model], kind: kindFilter }),
+          });
+          const data = await res.json();
+          if (res.ok && data.results?.[0]) {
+            currentResults[model] = data.results[0];
+          } else {
+            currentResults[model] = {
+              model,
+              ok: false,
+              latencyMs: 0,
+              error: data.error || "Failed",
+            };
+          }
+        } catch (err) {
+          currentResults[model] = {
+            model,
+            ok: false,
+            latencyMs: 0,
+            error: err.message || "Network error",
+          };
+        }
+        setModalTestResults({ ...currentResults });
+      }
+    } finally {
+      setActiveTestingModel(null);
+      setTestingModels(false);
+    }
+  };
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -1328,6 +1584,8 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       onMoveUp={() => handleMoveUp(index)}
                       onMoveDown={() => handleMoveDown(index)}
                       onRemove={() => handleRemoveModel(index)}
+                      testStatus={modalTestResults[model]}
+                      isTesting={testingModels && activeTestingModel === model}
                     />
                   ))}
                 </div>
@@ -1350,6 +1608,19 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <Button onClick={onClose} variant="ghost" fullWidth size="sm">
               Cancel
             </Button>
+            {models.length > 0 && (
+              <Button
+                type="button"
+                onClick={handleTestModalModels}
+                variant="outline"
+                fullWidth
+                size="sm"
+                disabled={testingModels}
+                loading={testingModels}
+              >
+                {testingModels ? "Testing..." : "Test Models"}
+              </Button>
+            )}
             <Button
               onClick={handleSave}
               fullWidth
