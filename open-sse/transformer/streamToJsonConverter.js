@@ -33,6 +33,12 @@ function processSSEMessage(msg, state) {
       state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
       state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
       state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
+      // The cached and reasoning parts live only in the details objects; drop
+      // them and a client can no longer tell a cache hit from a full prompt.
+      for (const k of ["input_tokens_details", "output_tokens_details"]) {
+        const v = parsed.response.usage[k];
+        if (v && typeof v === "object") state.usage[k] = v;
+      }
     }
   } else if (eventType === "response.failed") {
     state.status = "failed";
