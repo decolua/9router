@@ -200,6 +200,8 @@ export PORT="20128"
 export NODE_ENV="production"
 
 # Logging
+# initial default only — request/frame capture is a runtime setting
+# (/dashboard/profile or PATCH /api/settings), and the stored setting always wins.
 export ENABLE_REQUEST_LOGS="false"
 ```
 

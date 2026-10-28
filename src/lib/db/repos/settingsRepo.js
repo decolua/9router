@@ -40,6 +40,13 @@ const DEFAULT_SETTINGS = {
   samlAttributeEmail: "email",
   samlAttributeName: "name",
   enableObservability: false,
+  // raw upstream SSE frame capture and the two rolling caps that
+  // bound its disk use. Frame logging is a sub-switch of enableObservability — master off
+  // means frames off. Retention/size are rolling windows: capture continues until switched
+  // off; only the artifacts are trimmed.
+  observabilityFrameLogging: false,
+  observabilityRetentionHours: 12,
+  observabilityMaxLogSizeMb: 512,
   observabilityMaxRecords: 1000,
   observabilityBatchSize: 20,
   observabilityFlushIntervalMs: 5000,

@@ -517,8 +517,29 @@ Runtime visibility sources:
 - console logs from `src/sse/utils/logger.js`
 - per-request usage aggregates in `usage.json`
 - textual request status log in `log.txt`
-- optional deep request/translation logs under `logs/` when `ENABLE_REQUEST_LOGS=true`
+- optional deep request/translation logs (see the note below)
 - dashboard usage endpoints (`/api/usage/*`) for UI consumption
+
+> **Note.** Request capture is
+> **settings-driven, not env-driven**. Two mechanisms, one shared gate
+> (`src/lib/observability/config.js`):
+>
+> | Setting | Default | Captures |
+> |---|---|---|
+> | `enableObservability` | `false` | parsed request/response envelopes into SQLite (`requestDetails`) |
+> | `observabilityFrameLogging` | `false` | raw, unparsed upstream SSE frames into `$DATA_DIR/logs/frames` — sub-switch, master off means frames off |
+> | `observabilityRetentionHours` | `12` | rolling time window of frame-log artifacts kept |
+> | `observabilityMaxLogSizeMb` | `512` | rolling size budget for that directory, oldest session trimmed first |
+>
+> Precedence: the stored setting wins; `ENABLE_REQUEST_LOGS` / `OBSERVABILITY_ENABLED` /
+> `OBSERVABILITY_FRAME_LOGGING` / `OBSERVABILITY_RETENTION_HOURS` /
+> `OBSERVABILITY_MAX_LOG_SIZE_MB` supply only the **initial default** while the matching key
+> has never been written. No env value can render the runtime toggle inert.
+>
+> The two caps trim artifacts; they never switch capture off. Frame logging keeps capturing
+> until an operator turns it off, bounded by both caps, and writes pause if free disk falls
+> below `OBSERVABILITY_FRAME_LOG_MIN_FREE_MB` (default 1 GiB) so the logs can never fill the
+> volume `data.sqlite` lives on.
 
 ## Security-Sensitive Boundaries
 
@@ -535,7 +556,7 @@ Environment variables actively used by code:
 - App/auth: `JWT_SECRET`, `INITIAL_PASSWORD`
 - Storage: `DATA_DIR`
 - Security hashing: `API_KEY_SECRET`, `MACHINE_ID_SALT`
-- Logging: `ENABLE_REQUEST_LOGS`
+- Logging (initial defaults only; settings are authoritative): `ENABLE_REQUEST_LOGS`, `OBSERVABILITY_ENABLED`, `OBSERVABILITY_FRAME_LOGGING`, `OBSERVABILITY_RETENTION_HOURS`, `OBSERVABILITY_MAX_LOG_SIZE_MB`, `OBSERVABILITY_FRAME_LOG_DIR`, `OBSERVABILITY_FRAME_LOG_MIN_FREE_MB`
 - Sync/cloud URLing: `NEXT_PUBLIC_BASE_URL`, `NEXT_PUBLIC_CLOUD_URL`
 - Outbound proxy: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` and lowercase variants
 - Platform/runtime helpers (not app-specific config): `APPDATA`, `NODE_ENV`, `PORT`, `HOSTNAME`
