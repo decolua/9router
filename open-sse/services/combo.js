@@ -608,9 +608,15 @@ export async function handleComboChat({
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
-      // Fallback to next model
+      // Fallback to next model. Status and message are recorded together: the
+      // status used to keep the FIRST failure while the message kept the LAST,
+      // so a combo that ran out of models answered with one model's status and
+      // another model's text -- e.g. 403 from a Console model carrying a 429
+      // body from the model tried after it. That reads as a single provider
+      // returning a nonsensical pair, which is why #3729 looked like fallback
+      // had not run at all.
       lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
+      lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
@@ -618,7 +624,7 @@ export async function handleComboChat({
         clearStickyComboSession(comboName, sessionId);
       }
       lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
+      lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
