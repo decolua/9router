@@ -5,6 +5,7 @@ import path from "node:path";
 import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
 import { getSettings } from "@/lib/localDb";
+import { isDashboardSessionRevoked, revokeDashboardSession } from "@/lib/db/repos/dashboardSessionsRepo.js";
 
 const DEFAULT_PASSWORD = "123456";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
@@ -34,26 +35,36 @@ export async function createDashboardAuthToken(claims = {}) {
   return new SignJWT({ authenticated: true, ...claims })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
+    .setJti(crypto.randomUUID())
     .setExpirationTime("24h")
     .sign(SECRET);
 }
 
 export async function verifyDashboardAuthToken(token) {
-  if (!token) return false;
+  return (await getDashboardAuthSession(token)) !== null;
+}
+
+async function readSignedDashboardSession(token) {
+  if (typeof token !== "string" || !token) return null;
   try {
-    await jwtVerify(token, SECRET);
-    return true;
+    const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
+    return payload.authenticated === true && Number.isFinite(payload.exp) ? payload : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
+function sessionDigest(token) {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
 export async function getDashboardAuthSession(token) {
-  if (!token) return null;
+  const payload = await readSignedDashboardSession(token);
+  if (!payload) return null;
   try {
-    const { payload } = await jwtVerify(token, SECRET);
-    return payload;
+    return (await isDashboardSessionRevoked(sessionDigest(token))) ? null : payload;
   } catch {
+    // An unavailable revocation store must not restore signed-out sessions.
     return null;
   }
 }
@@ -69,7 +80,14 @@ export async function setDashboardAuthCookie(cookieStore, request, claims = {}) 
   });
 }
 
-export function clearDashboardAuthCookie(cookieStore) {
+export async function clearDashboardAuthCookie(cookieStore) {
+  const token = cookieStore.get("auth_token")?.value;
+  const payload = await readSignedDashboardSession(token);
+  if (payload) {
+    // Hash the complete token so legacy sessions without jti can also sign out.
+    // Do not swallow persistence errors or report success before this write.
+    await revokeDashboardSession(sessionDigest(token), payload.exp);
+  }
   cookieStore.delete("auth_token");
 }
 

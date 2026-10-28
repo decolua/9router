@@ -1,3 +1,9 @@
+# Unreleased
+
+## Fixes
+- **Production build**: keep HTTP route handlers out of React Server Function registration, preventing the webpack action-manifest crash when the CLI status endpoint imports other route handlers.
+- **Dashboard authentication**: persist token revocation before acknowledging logout; give password, OIDC and SAML logins unique session IDs, and consult the same revocation check in dashboard guards and auth status. API keys are unchanged. Legacy identical tokens represent one shared session and are revoked together; signing in again creates independent sessions. Failed revocation writes return a retryable error rather than a false success.
+
 # v0.5.112 (2026-10-28)
 
 ## Features
