@@ -145,7 +145,21 @@ const MODEL_PREFIX_PROVIDERS = [
   [/^gemini-/, "gemini"],
   [/^gpt-/, "openai"],
   [/^o[134]/, "openai"],
-  [/^deepseek-/, "openrouter"],
+  [/^glm-/, "glm"],
+  [/^qwen[-0-9]/, "qwen"],
+  [/^deepseek-/, "deepseek"],
+  [/^kimi-/, "kimi"],
+  [/^moonshot-/, "kimi"],
+  [/^minimax-/, "minimax"],
+  [/^grok-/, "xai"],
+  [/^(mistral|codestral)-/, "mistral"],
+  [/^(cohere|command)-/, "cohere"],
+  [/^(sonar|perplexity)-/, "perplexity"],
+  [/^(llama|meta-llama)-/, "groq"],
+  [/^yi-/, "lingyi"],
+  [/^baichuan-/, "baichuan"],
+  [/^doubao-/, "volcengine-ark"],
+  [/^step-/, "stepfun"],
 ];
 
 /**
