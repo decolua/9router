@@ -1064,7 +1064,12 @@ export default function APIPageClient({ machineId }) {
                       message: `Restrict API key "${key.name}"?\n\nIt will only be able to call the combos and models you add. Until you add one, it can call nothing.`,
                       onConfirm: async () => {
                         setConfirmState(null);
-                        handleUpdateKeyAccess(key.id, { restricted: true, allow: key.access?.allow || [] });
+                        handleUpdateKeyAccess(key.id, {
+                          restricted: true,
+                          allow: key.access?.allow || [],
+                          allowedProviders: key.access?.allowedProviders || [],
+                          allowedConnections: key.access?.allowedConnections || [],
+                        });
                       }
                     })}
                   />

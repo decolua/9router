@@ -1,5 +1,12 @@
 import { NextResponse } from "next/server";
 import { getRequestDetails } from "@/lib/usageDb";
+import { getApiKeys } from "@/lib/localDb";
+
+function maskApiKey(key) {
+  if (!key || typeof key !== "string") return null;
+  if (key.length <= 12) return key.charAt(0) + "***";
+  return key.slice(0, 8) + "***" + key.slice(-4);
+}
 
 /**
  * GET /api/usage/request-details
@@ -46,7 +53,15 @@ export async function GET(request) {
     if (startDate) filter.startDate = startDate;
     if (endDate) filter.endDate = endDate;
     
-    const result = await getRequestDetails(filter);
+    const [result, apiKeys] = await Promise.all([
+      getRequestDetails(filter),
+      getApiKeys().catch(() => [])
+    ]);
+
+    const keyMap = new Map();
+    for (const k of apiKeys || []) {
+      if (k?.key) keyMap.set(k.key, k);
+    }
 
     // Redact conversation payloads: the stored details include full request
     // bodies (user prompts, tool calls) and provider responses. Returning them
@@ -60,6 +75,16 @@ export async function GET(request) {
           redacted[key] = { redacted: true };
         }
       }
+
+      if (redacted.apiKey) {
+        const matched = keyMap.get(redacted.apiKey);
+        redacted.apiKeyName = matched?.name || null;
+        redacted.apiKey = maskApiKey(redacted.apiKey);
+      } else {
+        redacted.apiKey = null;
+        redacted.apiKeyName = "Local / No Key";
+      }
+
       return redacted;
     });
 

@@ -7,7 +7,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccessResolved, getAllowedConnectionIdsForProvider } from "../services/keyAccess.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -85,8 +85,15 @@ export async function handleEmbeddings(request) {
   const { provider, model } = modelInfo;
 
   // Per-key access control: checked before any credential lookup.
-  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccessResolved(keyAccess, modelStr, provider, model);
   if (keyAccessDenied) return keyAccessDenied;
+
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${provider}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${provider}"`);
+  }
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -100,7 +107,7 @@ export async function handleEmbeddings(request) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

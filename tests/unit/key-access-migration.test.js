@@ -55,8 +55,8 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
 
     const keys = await db.getApiKeys();
     expect(keys.map((k) => [k.id, k.name, k.isActive, k.access])).toEqual([
-      ["k1", "Default Key", true, { restricted: false, allow: [] }],
-      ["k2", "paused", false, { restricted: false, allow: [] }],
+      ["k1", "Default Key", true, { restricted: false, allow: [], allowedProviders: [], allowedConnections: [] }],
+      ["k2", "paused", false, { restricted: false, allow: [], allowedProviders: [], allowedConnections: [] }],
     ]);
     expect(await db.validateApiKey("sk-legacy-one")).toBe(true);
     expect((await db.getApiKeyByKey("sk-legacy-one")).access.restricted).toBe(false);
@@ -70,15 +70,15 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
     writeLegacyDb(tempDir);
     const { db } = await boot();
     const updated = await db.updateApiKey("k1", { access: { restricted: true, allow: ["Main", "cx/gpt-5"] } });
-    expect(updated.access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"] });
-    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"] });
+    expect(updated.access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"], allowedProviders: [], allowedConnections: [] });
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main", "cx/gpt-5"], allowedProviders: [], allowedConnections: [] });
     // Unrelated updates (pause/resume) keep the access.
     await db.updateApiKey("k1", { isActive: false });
     expect((await db.getApiKeyById("k1")).access.restricted).toBe(true);
 
     const created = await db.createApiKey("fresh", "machine-1");
-    expect(created.access).toEqual({ restricted: false, allow: [] });
-    expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: false, allow: [] });
+    expect(created.access).toEqual({ restricted: false, allow: [], allowedProviders: [], allowedConnections: [] });
+    expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: false, allow: [], allowedProviders: [], allowedConnections: [] });
   });
 
   it("export/import round-trips access; a backup without access restores unrestricted; malformed access is refused", async () => {
@@ -86,14 +86,14 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
     const { db } = await boot();
     await db.updateApiKey("k1", { access: { restricted: true, allow: ["Main"] } });
     const dump = await db.exportDb();
-    expect(dump.apiKeys.find((k) => k.id === "k1").access).toEqual({ restricted: true, allow: ["Main"] });
+    expect(dump.apiKeys.find((k) => k.id === "k1").access).toEqual({ restricted: true, allow: ["Main"], allowedProviders: [], allowedConnections: [] });
 
     await db.importDb(dump);
-    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main"] });
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: true, allow: ["Main"], allowedProviders: [], allowedConnections: [] });
 
     const legacy = { ...dump, apiKeys: dump.apiKeys.map(({ access, ...rest }) => rest) };
     await db.importDb(legacy);
-    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: false, allow: [] });
+    expect((await db.getApiKeyById("k1")).access).toEqual({ restricted: false, allow: [], allowedProviders: [], allowedConnections: [] });
 
     const bad = { ...dump, apiKeys: [{ ...dump.apiKeys[0], access: { restricted: "yes", allow: [] } }] };
     await expect(db.importDb(bad)).rejects.toThrow(/access/);

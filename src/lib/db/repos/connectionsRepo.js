@@ -108,6 +108,14 @@ export async function getProviderConnectionById(id) {
   return rowToConn(row);
 }
 
+export async function getProviderConnectionsByIds(ids = []) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const db = await getAdapter();
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = db.all(`SELECT * FROM providerConnections WHERE id IN (${placeholders})`, ids);
+  return rows.map(rowToConn);
+}
+
 // Internal sync reorder — must be called INSIDE a transaction.
 //
 // Normalizes priorities to a contiguous 1..N after a DELETE or an explicit

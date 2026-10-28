@@ -4,7 +4,13 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import {
+  getKeyAccessContext,
+  enforceKeyAccess,
+  pruneComboModelsForKey,
+  getAllowedConnectionIdsForProvider,
+  keyAccessDeniedResponse,
+} from "../services/keyAccess.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -46,20 +52,29 @@ export async function handleTts(request) {
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
 
   // Per-key access control: requested target, before combo expansion.
-  const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
+  const keyAccess = await getKeyAccessContext(request);
+  const keyAccessDenied = await enforceKeyAccess(keyAccess, modelStr);
   if (keyAccessDenied) return keyAccessDenied;
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
   if (comboModels) {
+    let activeModels = comboModels;
+    if (keyAccess) {
+      const pruned = await pruneComboModelsForKey(keyAccess, comboModels, modelStr);
+      if (!pruned || pruned.length === 0) {
+        return keyAccessDeniedResponse(keyAccess, modelStr);
+      }
+      activeModels = pruned;
+    }
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[modelStr]?.fallbackStrategy || settings.comboStrategy || "fallback";
     const comboStickyLimit = settings.comboStickyRoundRobinLimit;
-    log.info("TTS", `Combo "${modelStr}" with ${comboModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
+    log.info("TTS", `Combo "${modelStr}" with ${activeModels.length} models (strategy: ${comboStrategy}, sticky: ${comboStickyLimit})`);
     return handleComboChat({
       body,
-      models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      models: activeModels,
+      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style, keyAccess),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -67,15 +82,21 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, keyAccess);
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, keyAccess = null) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
   const { provider, model } = modelInfo;
   log.info("ROUTING", `Provider: ${provider}, Voice: ${model}`);
+
+  const allowedConnectionIds = await getAllowedConnectionIdsForProvider(keyAccess, provider);
+  if (allowedConnectionIds && allowedConnectionIds.size === 0) {
+    log.warn("AUTH", `key-access: provider "${provider}" is not allowed for this key`);
+    return errorResponse(HTTP_STATUS.FORBIDDEN, `This API key is not allowed to use provider "${provider}"`);
+  }
 
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
@@ -90,7 +111,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { allowedConnectionIds });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

@@ -9,7 +9,12 @@ export const KEY_ACCESS_MAX_ENTRY_LENGTH = 256;
 
 // Every key — new, migrated, or restored from a backup without the field — is
 // unrestricted unless explicitly switched to restricted.
-export const KEY_ACCESS_UNRESTRICTED = Object.freeze({ restricted: false, allow: Object.freeze([]) });
+export const KEY_ACCESS_UNRESTRICTED = Object.freeze({
+  restricted: false,
+  allow: Object.freeze([]),
+  allowedProviders: Object.freeze([]),
+  allowedConnections: Object.freeze([]),
+});
 
 // /v1/models entry kinds whose "model" is the provider itself (search/fetch).
 export const KEY_ACCESS_PROVIDER_AS_MODEL_KINDS = Object.freeze(["webSearch", "webFetch"]);
@@ -21,4 +26,8 @@ export const KEY_ACCESS_COMBO_OWNER = "combo";
 // key name or the key's allow list.
 export function keyAccessDeniedMessage(requested) {
   return `This API key is not allowed to use model "${requested}"`;
+}
+
+export function keyAccessProviderDeniedMessage(provider) {
+  return `This API key is not allowed to use provider "${provider}"`;
 }
