@@ -186,6 +186,9 @@ Respond ONLY with the JSON object, no other text.`);
   if (body.tool_choice) {
     result.tool_choice = convertOpenAIToolChoice(body.tool_choice);
   }
+  if (body.parallel_tool_calls === false && result.tools?.length) {
+    result.tool_choice = { ...(result.tool_choice || { type: "auto" }), disable_parallel_tool_use: true };
+  }
 
   // Thinking is normalized centrally by applyThinking (thinkingUnified.js) after translation.
 

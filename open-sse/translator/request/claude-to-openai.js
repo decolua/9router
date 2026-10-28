@@ -78,6 +78,7 @@ export function claudeToOpenAIRequest(model, body, stream) {
   // Tool choice
   if (body.tool_choice) {
     result.tool_choice = convertToolChoice(body.tool_choice);
+    if (body.tool_choice.disable_parallel_tool_use === true) result.parallel_tool_calls = false;
   }
 
   if (body.reasoning_effort !== undefined) {
