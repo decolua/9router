@@ -6,11 +6,18 @@ import { Card, Button, Modal } from "@/shared/components";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { getProviderAlias } from "@/shared/constants/providers";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
+import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { usePricing } from "@/shared/hooks/usePricing";
+import { formatModelMeta } from "@/shared/utils/modelMeta";
 
 // ── ModelRow ───────────────────────────────────────────────────
 export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCustom, isFree, onDeleteAlias, onTest, isTesting }) {
+  const { getCaps } = useModelCaps();
+  const { getPricing } = usePricing();
   const borderColor = testStatus === "ok" ? "border-green-500/40" : testStatus === "error" ? "border-red-500/40" : "border-border";
   const iconColor = testStatus === "ok" ? "#22c55e" : testStatus === "error" ? "#ef4444" : undefined;
+  const providerKey = fullModel.includes("/") ? fullModel.slice(0, fullModel.indexOf("/")) : null;
+  const meta = formatModelMeta(getCaps(fullModel), getPricing(providerKey, model.id));
 
   return (
     <div className={`group px-3 py-2 rounded-lg border ${borderColor} hover:bg-sidebar/50`}>
@@ -21,6 +28,7 @@ export function ModelRow({ model, fullModel, copied, onCopy, testStatus, isCusto
         <div className="flex flex-col gap-1">
           <code className="text-xs text-text-muted font-mono bg-sidebar px-1.5 py-0.5 rounded">{fullModel}</code>
           {model.name && <span className="text-[9px] text-text-muted/70 italic pl-1">{model.name}</span>}
+          {meta && <span className="text-[9px] text-text-muted/70 pl-1">{meta}</span>}
         </div>
         {onTest && (
           <div className="relative group/btn">

@@ -31,7 +31,9 @@ export function resolveProviderIconId(providerId) {
   const id = normalizeId(providerId);
   if (!id) return "";
   if (failedIds.has(id)) return "";
-  const aliased = ICON_ALIASES[id] || id;
+  const compatibleBrand = id.startsWith("anthropic-compatible") ? "anthropic"
+    : id.startsWith("openai-compatible") || id.startsWith("custom-embedding") ? "openai" : null;
+  const aliased = compatibleBrand || ICON_ALIASES[id] || id;
   if (failedIds.has(aliased)) return "";
   return aliased;
 }

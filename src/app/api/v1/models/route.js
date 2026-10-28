@@ -7,7 +7,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
-import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
+import { getProviderConnections, getCombos, getCustomModels, getModelAliases, getCapsOverrides } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
@@ -630,6 +630,44 @@ export async function buildModelsList(kindFilter, options = {}) {
         });
       }
     }
+  }
+
+  // Apply persisted metadata only to models already visible in this list.
+  let overrides = {};
+  try {
+    overrides = await getCapsOverrides();
+  } catch {
+    console.log("Could not fetch capability overrides");
+  }
+  const providerByOutputAlias = new Map();
+  const outputAliasByProvider = new Map();
+  for (const [provider, connection] of activeConnectionByProvider) {
+    const output = (connection.providerSpecificData?.prefix || getProviderAlias(provider) || provider).trim();
+    providerByOutputAlias.set(output, provider);
+    outputAliasByProvider.set(provider, output);
+  }
+  for (const model of models) {
+    const slash = model.id.indexOf("/");
+    if (slash < 0) continue;
+    const alias = model.id.slice(0, slash);
+    const id = model.id.slice(slash + 1);
+    const provider = providerByOutputAlias.get(alias) || ALIAS_TO_PROVIDER_ID[alias] || alias;
+    const staticAlias = getProviderAlias(provider) || provider;
+    const override = overrides[`${alias}|${id}`] || overrides[`${staticAlias}|${id}`] || overrides[`${provider}|${id}`];
+    if (!override) continue;
+    model.capabilities = { ...(model.capabilities || {}), ...override };
+    if (Number.isFinite(override.contextWindow)) model.context_length = override.contextWindow;
+    if (Number.isFinite(override.maxOutput)) model.max_completion_tokens = override.maxOutput;
+  }
+  const visibleById = new Map(models.map((model) => [model.id, model]));
+  for (const [alias, target] of Object.entries(modelAliases || {})) {
+    if (!alias || typeof target !== "string") continue;
+    const slash = target.indexOf("/");
+    const targetProvider = slash < 0 ? null : target.slice(0, slash);
+    const provider = ALIAS_TO_PROVIDER_ID[targetProvider] || targetProvider;
+    const routed = slash < 0 ? target : `${outputAliasByProvider.get(provider) || getProviderAlias(provider) || provider}/${target.slice(slash + 1)}`;
+    const source = visibleById.get(routed);
+    if (source) models.push({ ...source, id: alias, owned_by: "alias" });
   }
 
   const dedupedModels = [];

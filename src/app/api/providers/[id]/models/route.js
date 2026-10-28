@@ -4,7 +4,6 @@ import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/sha
 import { GEMINI_CONFIG, ZED_HOSTED_CONFIG } from "@/lib/oauth/constants/oauth";
 import { refreshGoogleToken, refreshCodexToken, updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveOllamaLocalHost } from "open-sse/config/providers.js";
-import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 import { resolveKiroModels } from "open-sse/services/kiroModels.js";
 import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
@@ -15,16 +14,12 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import { getRegistryEntry, deriveModelsEndpoint, fetchViaDerivedEndpoint, parseOpenAIStyleModels, getStaticProviderModels } from "@/lib/providerModels/deriveModelsEndpoint.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
 // Model discovery must identify as the same Codex CLI version as inference.
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
-
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
-};
 
 const parseGeminiCliModels = (data) => {
   if (Array.isArray(data?.models)) {
@@ -87,13 +82,6 @@ const normalizeRoutedNousModels = (data) => normalizeNousModels(data).map((model
   id: `nous/${model.id}`,
   upstreamModelId: model.id,
 }));
-
-const getStaticProviderModels = (providerId) =>
-  getModelsByProviderId(providerId).map((model) => ({
-    ...model,
-    id: model.id,
-    name: model.name || model.id,
-  }));
 
 // Generic custom resolver for OAuth providers that need refresh-on-401 + token persist.
 // Receives a `fetchFn(token)` and returns parsed models or throws.
@@ -553,6 +541,29 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: "Connection not found" }, { status: 404 });
     }
 
+    // Lightweight capability probe (?check=1) — no upstream call. Lets the UI
+    // decide whether to show the "Import Models" button for this provider.
+    if (new URL(request.url).searchParams.get("check") === "1") {
+      if (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider)) {
+        const hasBaseUrl = !!connection.providerSpecificData?.baseUrl;
+        return NextResponse.json({
+          supported: hasBaseUrl,
+          ...(hasBaseUrl ? {} : { reason: "No base URL configured for compatible provider" }),
+        });
+      }
+      if (PROVIDER_MODELS_CONFIG[connection.provider]) {
+        return NextResponse.json({ supported: true });
+      }
+      if (deriveModelsEndpoint(getRegistryEntry(connection.provider))) {
+        return NextResponse.json({ supported: true });
+      }
+      if (getStaticProviderModels(connection.provider).length) return NextResponse.json({ supported: true });
+      return NextResponse.json({
+        supported: false,
+        reason: `Provider ${connection.provider} does not support models listing`,
+      });
+    }
+
     if (isOpenAICompatibleProvider(connection.provider)) {
       const baseUrl = connection.providerSpecificData?.baseUrl;
       if (!baseUrl) {
@@ -629,10 +640,23 @@ export async function GET(request, { params }) {
 
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
-      return NextResponse.json(
-        { error: `Provider ${connection.provider} does not support models listing` },
-        { status: 400 }
-      );
+      const endpoint = deriveModelsEndpoint(getRegistryEntry(connection.provider));
+      if (!endpoint && getStaticProviderModels(connection.provider).length) {
+        return NextResponse.json({ provider: connection.provider, connectionId: connection.id, models: getStaticProviderModels(connection.provider), warning: "No live catalog endpoint; using static catalog." });
+      }
+      if (!endpoint) {
+        return NextResponse.json(
+          { error: `Provider ${connection.provider} does not support models listing` },
+          { status: 400 }
+        );
+      }
+      const result = await fetchViaDerivedEndpoint(endpoint, connection);
+      return NextResponse.json({
+        provider: connection.provider,
+        connectionId: connection.id,
+        models: result.models,
+        ...(result.warning ? { warning: result.warning } : {})
+      });
     }
 
     // Config-driven custom resolver path (OAuth refresh, non-OpenAI shape, etc.)

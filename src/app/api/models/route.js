@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
+import { getCapsOverrides } from "@/lib/db/index.js";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
@@ -10,6 +11,9 @@ export async function GET() {
   try {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+    const capsOverrides = await getCapsOverrides();
+    const savedModels = (await getCustomModels()).filter((m) => m?.id && (m.kind || m.type || "llm") === "llm");
+    const savedByRouted = new Map(savedModels.map((m) => [`${getProviderAlias(m.providerAlias) || m.providerAlias}/${m.id}`, m]));
 
     const models = AI_MODELS
       .filter((m) => {
@@ -21,9 +25,13 @@ export async function GET() {
         const fullModel = `${m.provider}/${m.model}`;
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        // User overrides (models.dev import / manual edits) win over static caps
+        const override = capsOverrides[`${providerAlias}|${m.model}`] || capsOverrides[`${m.provider}|${m.model}`];
+        const saved = savedByRouted.get(routedModel);
+        const c = { ...getCapabilitiesForModel(m.provider, m.model), ...(saved?.caps || {}), ...(override || {}) };
         return {
           ...m,
+          name: saved?.name || m.name,
           fullModel,
           routedModel,
           alias: modelAliases[fullModel] || m.model,
@@ -31,9 +39,13 @@ export async function GET() {
             vision: c.vision,
             search: c.search,
             reasoning: c.reasoning,
+            tools: c.tools,
+            pdf: c.pdf,
+            imageOutput: c.imageOutput,
             contextWindow: c.contextWindow,
             maxOutput: c.maxOutput,
           },
+          ...(override ? { capsOverridden: true } : {}),
         };
       });
 
@@ -48,7 +60,7 @@ export async function GET() {
     // provider-scoped entries and falls back to the generic patterns.
     const seenFull = new Set(models.map((m) => m.fullModel));
     const seenRouted = new Set(models.map((m) => m.routedModel));
-    const customModels = (await getCustomModels()).filter((m) => {
+    const customModels = savedModels.filter((m) => {
       if (!m?.id || (m.kind || m.type || "llm") !== "llm") return false;
       if (seenRouted.has(`${m.providerAlias}/${m.id}`)) return false;
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
@@ -56,7 +68,8 @@ export async function GET() {
     for (const m of customModels) {
       const fullModel = `${m.providerAlias}/${m.id}`;
       const providerId = ALIAS_TO_ID[m.providerAlias] || m.providerAlias;
-      const c = getCapabilitiesForModel(providerId, m.id);
+      const override = capsOverrides[`${m.providerAlias}|${m.id}`] || capsOverrides[`${providerId}|${m.id}`];
+      const c = { ...getCapabilitiesForModel(providerId, m.id), ...(m.caps || {}), ...(override || {}) };
       models.push({
         provider: m.providerAlias,
         model: m.id,
@@ -70,7 +83,7 @@ export async function GET() {
           reasoning: c.reasoning,
           contextWindow: c.contextWindow,
           maxOutput: c.maxOutput,
-          ...(m.caps || {}),
+          ...(override || {}),
         },
       });
     }
