@@ -130,3 +130,74 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Codebase v0.5.95 siap di-build ke container).
 - **Catatan untuk AI selanjutnya (Handoff Note):** Seluruh fitur kustom (Auto-Update menu/sidebar, Cloudflare agreement, persistent SQLite data) telah terintegrasi di `vnot-production` di atas upstream v0.5.95. Jalankan `docker compose up -d --build` untuk menerapkan update ke container yang sedang berjalan.
+
+### 2026-10-12 — Upstream Sync to v0.5.99 and Auto-Update Overlay Fix
+- **Tugas:** Memperbarui codebase ke rilis terbaru dari upstream pengembang (v0.5.99) dan memperbaiki tampilan modal update agar tidak lagi menampilkan prompt manual CLI (`npm i -g 9router@latest --prefer-online`) saat tombol update ditekan.
+- **Masalah:**
+  1. Pengembang resmi upstream merilis v0.5.99 (commit `ce4460ef`).
+  2. Saat pengguna menekan tombol pembaruan di antarmuka web, muncul modal `ManualUpdatePanel` dengan tombol "Copy & Shutdown" dan perintah terminal `npm i -g 9router@latest --prefer-online`. Hal ini terjadi karena komponen `Sidebar.js` sebelumnya merender `ManualUpdatePanel` bawaan upstream ketika state `isUpdating` bernilai `true`.
+- **Penyelesaian:**
+  - Mengambil pembaruan upstream terbaru `origin/master` (commit `ce4460ef` - v0.5.99) ke branch `master`.
+  - Menggabungkan (*merge*) `master` (v0.5.99) ke dalam branch deployment `vnot-production`.
+  - Mengganti tampilan modal `ManualUpdatePanel` pada `Sidebar.js` dengan panel loading progres "Updating 9Router in Background" yang elegan dan informatif dengan animasi spinner, sehingga pengguna tidak lagi disuguhkan prompt terminal manual.
+  - Memastikan konfigurasi `docker-compose.yml` tetap menggunakan build lokal (`build: context: . dockerfile: Dockerfile`) dan bind mount persisten `./data:/app/data` sesuai aturan perlindungan data.
+- **File yang diubah/dibuat:**
+  - `src/shared/components/Sidebar.js`
+  - `package.json` (terupdate ke 0.5.99)
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Codebase v0.5.99 siap di-build ke container).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Branch `vnot-production` kini berada di versi 0.5.99. Pengguna dapat menjalankan `docker compose up -d --build` di terminal VPS untuk menerapkan container image baru.
+
+### 2026-10-22 — Upstream Sync to v0.5.104
+- **Tugas:** Memperbarui codebase ke rilis terbaru dari upstream pengembang (v0.5.104) yang mencakup 38 commit baru sejak v0.5.99.
+- **Masalah:**
+  1. Pengembang resmi upstream merilis v0.5.104 (commit `87a74e1b`, tag `v0.5.104`).
+  2. Sesi update sebelumnya terpotong akibat system restart pada server.
+- **Penyelesaian:**
+  - Mengambil pembaruan upstream terbaru `origin/master` (commit `87a74e1b` - v0.5.104) ke branch `master`.
+  - Menggabungkan (*merge*) `master` (v0.5.104) ke dalam branch deployment `vnot-production` — **merge bersih tanpa konflik** (Git auto-merge berhasil menangani `page.js`, `testUtils.js`, dan `validate/route.js`).
+  - Memverifikasi seluruh fitur kustom tetap intact: Auto-Update Menu (`HeaderMenu.js`, `Sidebar.js`, `/api/auto-update/route.js`, `dashboardGuard.js`), Cloudflare agreement, dan persistent bind mount `./data:/app/data`.
+  - Memastikan `docker-compose.yml` tetap menggunakan build lokal (`build: context: . dockerfile: Dockerfile`).
+- **Highlight Upstream v0.5.104:**
+  - Nous Research OAuth + free-tier provider baru
+  - Gemini 4 Argon support (gemini/vertex/antigravity)
+  - Model picker regex/negation search dan batch select
+  - Per-key token quotas (reverted kemudian)
+  - Fix Gemini 4 sampling params & functionResponse ordering
+  - Fix Codex: drop retired gpt-5.5
+  - Fix GitHub Copilot embeddings routing
+  - Anchored auto-ping schedule at fixed local times
+- **File yang diubah/dibuat:**
+  - 140 file (6551 insertions, 923 deletions) — termasuk provider baru, UI enhancements, dan test suites
+  - `package.json` (terupdate ke 0.5.104)
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Codebase v0.5.104 siap di-build ke container).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Branch `vnot-production` kini berada di versi 0.5.104. Merge berjalan mulus tanpa konflik. Pengguna perlu menjalankan `docker compose up -d --build` di terminal VPS untuk menerapkan container image baru.
+
+### 2026-10-28 — Upstream Sync to v0.5.111
+- **Tugas:** Memperbarui codebase ke rilis terbaru dari upstream pengembang (v0.5.111) yang mencakup 56 commit baru sejak v0.5.104.
+- **Masalah:**
+  1. Pengembang resmi upstream merilis v0.5.111 (commit `3a978a63`, tag `v0.5.111`).
+  2. Terjadi merge conflict di `docker-compose.yml` karena upstream mengubah binding headroom port ke `127.0.0.1:8787` dan menambahkan named volume `9router-data`.
+- **Penyelesaian:**
+  - Mengambil pembaruan upstream terbaru `origin/master` (commit `3a978a63` - v0.5.111) ke branch `master`.
+  - Menggabungkan (*merge*) `master` (v0.5.111) ke dalam branch deployment `vnot-production`.
+  - Menyelesaikan konflik `docker-compose.yml`: mengadopsi `127.0.0.1:8787` dari upstream (keamanan lebih baik), membuang named volume `9router-data` (melindungi bind mount `./data:/app/data` sesuai Aturan 6).
+  - Memverifikasi seluruh fitur kustom tetap intact: Auto-Update Menu, Cloudflare agreement, dan persistent bind mount.
+- **Highlight Upstream v0.5.111:**
+  - Ollama embedding provider adapter & TTS support (Phonon)
+  - Kimi K3.1 Pro support
+  - Runcrate provider baru
+  - DeepSeek v4.1 Flash upstream ID fix
+  - Grok 4.7 context window support
+  - OpenCode TLS client & fingerprint improvements
+  - Qoder queue streaming
+  - Smart policy modal & web login support
+  - Claude Haiku adaptive thinking fix
+  - Headroom: Claude documents & tool outputs support
+- **File yang diubah/dibuat:**
+  - `docker-compose.yml` (conflict resolved)
+  - `package.json` (terupdate ke 0.5.111)
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Codebase v0.5.111 siap di-build ke container).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Branch `vnot-production` kini berada di versi 0.5.111. Pengguna perlu menjalankan `docker compose up -d --build` di terminal VPS untuk menerapkan container image baru.

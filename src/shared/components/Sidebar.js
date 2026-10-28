@@ -381,15 +381,21 @@ export default function Sidebar({ onClose }) {
       {(isDisconnected || isUpdating) && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-6">
           {isUpdating ? (
-            <ManualUpdatePanel
-              latestVersion={updateInfo?.latestVersion}
-              installCmd={INSTALL_CMD}
-              copied={copied}
-              onCopyAndShutdown={handleCopyAndShutdown}
-              onCancel={handleCancelUpdate}
-              countdown={shutdownCountdown}
-              isDisconnected={isDisconnected}
-            />
+            <div className="w-full max-w-md rounded-2xl bg-surface border border-border p-6 text-text-main shadow-2xl animate-in fade-in zoom-in-95 duration-200 text-center">
+              <div className="flex items-center justify-center size-14 rounded-full bg-primary/20 text-primary mx-auto mb-4 animate-spin">
+                <span className="material-symbols-outlined text-[32px]">sync</span>
+              </div>
+              <h2 className="text-lg font-semibold mb-2">Updating 9Router{updateInfo?.latestVersion ? ` to v${updateInfo.latestVersion}` : ""}</h2>
+              <p className="text-sm text-text-muted mb-4">
+                Updating codebase and rebuilding Docker container in background. Please wait ~1 to 3 minutes.
+              </p>
+              <div className="w-full bg-border/40 rounded-full h-1.5 overflow-hidden mb-3">
+                <div className="bg-primary h-full animate-pulse w-3/4 rounded-full"></div>
+              </div>
+              <p className="text-xs text-text-muted">
+                The page will automatically reload once the update completes.
+              </p>
+            </div>
           ) : (
             <div className="text-center p-8">
               <div className="flex items-center justify-center size-16 rounded-full bg-red-500/20 text-red-500 mx-auto mb-4">
