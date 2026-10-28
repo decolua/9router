@@ -725,6 +725,12 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "cloudflare-ai":
+        for (const [name, quota] of Object.entries(data.quotas || {})) {
+          normalizedQuotas.push({ ...quota, name: quota.name || name });
+        }
+        break;
+
       case "groq":
         // Requests/Tokens rate-limit windows from response headers — absolute
         // used/total (calculatePercentage derives the bar), like Codex/Kiro.
