@@ -299,17 +299,22 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "")
       if (canDisable) body.thinking = { type: "adaptive", ...(display ? { display } : {}) };
       else if (display && level !== "minimal" && /claude/i.test(model)) body.thinking = { type: "adaptive", display };
       else delete body.thinking;
+      // output_config.effort only accepts low|medium|high|xhigh — omit it in
+      // auto mode (thinking is already on; upstream picks its own level). #2894
       // xhigh is model-gated (Opus/Sonnet 4.6 reject it) — clamp when not advertised.
       // Claude effort has no "minimal" (always-on models clamp "none" to it).
-      body.output_config = { effort: level === "auto" ? "high"
-        : level === "minimal" ? "low"
+      if (level && level !== "auto") body.output_config = { effort: level === "minimal" ? "low"
         : level === "xhigh" && !supportedLevels?.includes("xhigh") ? "high" : level };
       break;
     }
     case "claude-budget": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       const budget = toBudget(eff, caps.thinkingRange);
-      body.thinking = budget === -1 ? { type: "enabled", ...(display ? { display } : {}) } : { type: "enabled", budget_tokens: budget || 8192, ...(display ? { display } : {}) };
+      // Anthropic requires budget_tokens whenever type === "enabled" — auto mode
+      // (-1) gets 10000, matching normalizeClaudePassthrough's downgrade. #2894
+      body.thinking = budget === -1
+        ? { type: "enabled", budget_tokens: 10000, ...(display ? { display } : {}) }
+        : { type: "enabled", budget_tokens: budget || 8192, ...(display ? { display } : {}) };
       break;
     }
     case "gemini-level": {
