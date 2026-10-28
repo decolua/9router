@@ -138,6 +138,9 @@ export const MODEL_CAPABILITIES = {
   // Gemini image-gen / OpenAI image / xai image variants
   "gpt-image-1":       { imageOutput: true, tools: false },
 
+  // Grok Build subscription limits differ from the generic Grok family.
+  "grok-build":        { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 64000 },
+
   // GLM vision variants (text GLM has no vision) — 5.3-Flash and 5V-Turbo are
   // natively multimodal per z.ai, and 5.3-Flash carries the full 1M window.
   //
