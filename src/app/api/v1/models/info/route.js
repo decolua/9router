@@ -13,7 +13,7 @@ const KIND_ENDPOINT = {
   webFetch: "/v1/fetch",
 };
 
-const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device"]);
+const TTS_VOICES_API = new Set(["elevenlabs", "edge-tts", "deepgram", "inworld", "local-device", "minimax", "minimax-cn"]);
 
 function buildInfo({ alias, providerId, model, kind, providerInfo }) {
   const out = {
