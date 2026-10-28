@@ -276,6 +276,7 @@ function convertToolChoice(choice) {
   
   switch (choice.type) {
     case "auto": return "auto";
+    case "none": return "none";
     case "any": return "required";
     case "tool": return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };
     default: return "auto";
