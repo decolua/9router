@@ -10,10 +10,29 @@ export const CODEX_MAX_REFRESH_AGE_MS = PROVIDER_OAUTH["codex"]?.maxRefreshAgeMs
 
 const refreshLocks = new Map();
 
-function parseTimeMs(value) {
+const NUMERIC_STRING = /^\d+(\.\d+)?$/;
+
+/**
+ * Normalize a credential timestamp to epoch milliseconds.
+ *
+ * Accepts the three shapes credentials actually arrive in:
+ *   - number      — epoch seconds or milliseconds
+ *   - numeric str — same, as text (bulk-import routes persist the user-supplied
+ *                   `expires_at` verbatim, and a TEXT column reads back as a
+ *                   string). `new Date("1789012345678")` is an Invalid Date, so
+ *                   these must be converted before the Date fallback.
+ *   - date string — ISO 8601 and anything else `Date` understands
+ *
+ * @param {unknown} value
+ * @returns {number|null} epoch ms, or null when the value carries no usable time
+ */
+export function parseTimeMs(value) {
   if (value === undefined || value === null || value === "") return null;
-  if (typeof value === "number") {
-    return value < 1e12 ? value * 1000 : value;
+
+  if (typeof value === "number" || (typeof value === "string" && NUMERIC_STRING.test(value.trim()))) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    return numeric < 1e12 ? numeric * 1000 : numeric;
   }
 
   const parsed = new Date(value).getTime();
