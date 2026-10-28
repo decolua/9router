@@ -84,13 +84,20 @@ export function antigravityToOpenAIRequest(model, body, stream) {
   return result;
 }
 
-// Recursively convert Antigravity schema types (OBJECT, STRING, etc.) to lowercase
-// and strip unsupported fields like enumDescriptions
+// int64 fields of the Gemini Schema proto. Proto3 JSON mapping encodes int64 as
+// strings (e.g. "1"), which strict JSON Schema validators reject as non-integer.
+// Values within JavaScript safe integer range are decoded to numbers; values exceeding
+// Number.MAX_SAFE_INTEGER are preserved as strings to prevent precision loss.
+const PROTO3_INT64_SCHEMA_FIELDS = ["minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties"];
+const MAX_SAFE_INT_BIGINT = BigInt(Number.MAX_SAFE_INTEGER);
+
+// Recursively convert Antigravity schema types (OBJECT, STRING, etc.) to lowercase,
+// decode Proto3 int64 strings to numbers, and strip unsupported fields like enumDescriptions
 function normalizeSchemaTypes(schema) {
   if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map(normalizeSchemaTypes);
 
-  const result = Array.isArray(schema) ? [...schema] : { ...schema };
-
+  const result = { ...schema };
 
   if (typeof result.type === "string") {
     result.type = result.type.toLowerCase();
@@ -99,6 +106,14 @@ function normalizeSchemaTypes(schema) {
   // Strip enumDescriptions — not supported by upstream APIs
   delete result.enumDescriptions;
 
+  for (const key of PROTO3_INT64_SCHEMA_FIELDS) {
+    if (typeof result[key] === "string" && /^\d+$/.test(result[key])) {
+      const val = BigInt(result[key]);
+      if (val <= MAX_SAFE_INT_BIGINT) {
+        result[key] = Number(val);
+      }
+    }
+  }
 
   if (result.properties) {
     const normalized = {};
@@ -110,6 +125,10 @@ function normalizeSchemaTypes(schema) {
 
   if (result.items) {
     result.items = normalizeSchemaTypes(result.items);
+  }
+
+  if (Array.isArray(result.anyOf)) {
+    result.anyOf = result.anyOf.map(normalizeSchemaTypes);
   }
 
   return result;
