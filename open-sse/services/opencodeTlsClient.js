@@ -78,7 +78,7 @@ export function resetOpencodeTlsSession() {
  * Streaming is preserved: the response body is handed over as the live
  * ReadableStream, never buffered.
  */
-export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS, proxy } = {}) {
   let session;
   try {
     session = await loadSession();
@@ -96,6 +96,7 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
   };
   if (init.body !== undefined) options.body = init.body;
   if (signal) options.signal = signal;
+  if (proxy) options.proxy = proxy;
 
   const res = await session.fetch(url, options);
   const headers = {};

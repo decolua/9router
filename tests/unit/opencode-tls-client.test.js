@@ -75,6 +75,18 @@ describe("opencodeTlsClient", () => {
     );
   });
 
+  it("forwards a resolved proxy URL onto the impersonated session fetch", async () => {
+    const fetchMock = vi.fn().mockImplementation(async () => new Response("ok", { status: 200 }));
+    createSessionMock.mockResolvedValue({ fetch: fetchMock, close: vi.fn() });
+
+    const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+    await opencodeTlsFetch("https://opencode.ai/a", { method: "POST", body: "{}" }, {
+      proxy: "http://user:pass@127.0.0.1:8080",
+    });
+
+    expect(fetchMock.mock.calls[0][1].proxy).toBe("http://user:pass@127.0.0.1:8080");
+  });
+
   it("forwards the abort signal so a cancelled stream stops upstream", async () => {
     const fetchMock = vi.fn().mockImplementation(async () => new Response("ok", { status: 200 }));
     createSessionMock.mockResolvedValue({ fetch: fetchMock, close: vi.fn() });
