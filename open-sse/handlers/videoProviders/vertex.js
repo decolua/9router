@@ -109,6 +109,11 @@ function fromVertexOperation(json) {
 }
 
 export default {
+  // A Vertex job id is a base64url-encoded Vertex operation path, which is
+  // self-identifying: only this adapter can have minted it. Lets a poll resolve
+  // its provider from the id alone, with no pinned connection.
+  ownsJobId: (id) => decodeJobId(id) !== null,
+
   async buildRequest({ config, action, requestId, rawBody, contentType, credentials, log }) {
     if (contentType && !contentType.includes("application/json")) {
       return { error: "Vertex video requires an application/json body" };
