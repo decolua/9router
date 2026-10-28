@@ -223,6 +223,13 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
+    // Once only. A provider that repeats finish_reason on a trailing usage chunk
+    // otherwise re-emits the whole terminal set — including the buffered tool
+    // arguments — and the client concatenates the two input_json_delta payloads
+    // into `{...}{...}`, which is not parseable JSON.
+    if (state.claudeTerminalEmitted) return results.length > 0 ? results : null;
+    state.claudeTerminalEmitted = true;
+
     stopThinkingBlock(state, results);
     stopTextBlock(state, results);
 
@@ -242,6 +249,7 @@ export function openaiToClaudeResponse(chunk, state) {
         index: toolInfo.blockIndex
       });
     }
+    state.toolArgBuffers?.clear();
 
     // Mark finish for later usage injection in stream.js
     state.finishReason = choice.finish_reason;
