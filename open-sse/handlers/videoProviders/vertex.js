@@ -142,7 +142,7 @@ export default {
     } catch {
       return { error: "Invalid JSON body" };
     }
-    if (!body.model) return { error: "Vertex video requires a model (e.g. vertex/veo-3.1-generate-preview)" };
+    if (!body.model) return { error: "Vertex video requires a model (e.g. vertex/veo-3.1-generate-001)" };
     // Plain model id only — a path segment carrying "/" or ".." would rewrite the URL.
     if (!/^[A-Za-z0-9._-]+$/.test(body.model)) return { error: "Invalid Vertex video model id" };
     if (!body.prompt && !body.image && !body.image_url) return { error: "Vertex video requires a prompt or an image" };
