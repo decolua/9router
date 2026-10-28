@@ -113,6 +113,7 @@
 - **Codex**: drop retired gpt-5.5 from registry, image, and auto-ping; CLI preset default to `gpt-6.1-sol`
 - **Gemini**: drop sampling params and order functionResponse-last for Gemini 4 (#4802)
 - **Models**: expose no-auth free providers in `/v1/models`; prune custom models on node deletion
+- **Models**: `/v1/models` answers in ~0.3s instead of 10-20s — live provider catalogs (Kiro, Qoder, Kimchi, Copilot, Cline, Cursor, Zed, compatible providers) are now resolved by a background pass every 10 min and cached, so no request waits on a provider; covers the providers that have no static model list and shows the full catalog instead of the last reachable one
 - **Usage**: token fallback for `input_tokens` rows in 24h/today stats; stable key masking
 - **Dashboard**: unclip proxy dropdown and tooltips via body portal
 
