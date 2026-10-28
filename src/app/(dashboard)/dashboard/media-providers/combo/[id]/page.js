@@ -22,6 +22,7 @@ const KIND_LABELS = {
   webFetch: "Web Fetch",
   image: "Text to Image",
   tts: "Text To Speech",
+  systemone: "System One",
 };
 
 const EXAMPLE_PATHS = {
@@ -29,6 +30,7 @@ const EXAMPLE_PATHS = {
   webFetch: "/v1/web/fetch",
   image: "/v1/images/generations",
   tts: "/v1/audio/speech",
+  systemone: "/v1/systemone",
 };
 
 const EXAMPLE_BODIES = {
@@ -36,6 +38,18 @@ const EXAMPLE_BODIES = {
   webFetch: (n) => ({ model: n, url: "https://example.com", format: "markdown" }),
   image: (n) => ({ model: n, prompt: "A cute cat playing piano", n: 1, size: "1024x1024" }),
   tts: (n) => ({ model: n, input: "Hello, this is a test.", voice: "alloy" }),
+  // Native System One decision payload — mirrors KIND_EXAMPLE_CONFIG.systemone on the
+  // provider detail page; the endpoint replaces `model` with the upstream id.
+  systemone: (n) => ({
+    model: n,
+    state: "My payments have failed for three days and I am losing sales. Please help now.",
+    questions: {
+      is_urgent: {
+        type: "noul",
+        instructions: "Does this request require urgent attention?",
+      },
+    },
+  }),
 };
 
 // Map combo.kind → listing route to go back to
@@ -211,8 +225,10 @@ export default function ComboDetailPage() {
       setTestResult({ json: JSON.stringify(maskB64(data), null, 2), imageUrl, latencyMs });
     } catch (e) {
       setTestError(e.message || "Network error");
+    } finally {
+      // Release the button on every path, including early returns on HTTP errors.
+      setTesting(false);
     }
-    setTesting(false);
   };
 
   // Mask large b64_json strings to keep JSON view readable
