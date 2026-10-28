@@ -276,7 +276,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
 /**
  * Create HTTPS request with manual socket connection (bypass DNS)
  */
-async function createBypassRequest(parsedUrl, realIP, options) {
+export async function createBypassRequest(parsedUrl, realIP, options) {
   const httpsModule = await import("https");
   const netModule = await import("net");
   // CJS modules expose exports via .default in ESM dynamic import context
@@ -305,11 +305,17 @@ async function createBypassRequest(parsedUrl, realIP, options) {
       };
 
       const req = https.request(reqOptions, (res) => {
+        const resHeaders = new Headers();
+        for (const [k, v] of Object.entries(res.headers || {})) {
+          if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
+          else if (v != null) resHeaders.set(k, String(v));
+        }
+
         const response = {
           ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
           status: res.statusCode,
           statusText: res.statusMessage,
-          headers: new Map(Object.entries(res.headers)),
+          headers: resHeaders,
           body: Readable.toWeb(res),
           text: async () => {
             const chunks = [];

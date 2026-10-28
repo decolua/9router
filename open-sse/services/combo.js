@@ -610,7 +610,7 @@ export async function handleComboChat({
 
       // Fallback to next model
       lastError = errorText || String(result.status);
-      if (!lastStatus) lastStatus = result.status;
+      lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
@@ -618,7 +618,7 @@ export async function handleComboChat({
         clearStickyComboSession(comboName, sessionId);
       }
       lastError = error.message || String(error);
-      if (!lastStatus) lastStatus = 500;
+      lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
   }
