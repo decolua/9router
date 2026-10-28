@@ -22,7 +22,7 @@ import { SSE_HEADERS_CORS } from "../utils/sseConstants.js";
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @returns {Promise<{success: boolean, response?: Response, status?: number, error?: string}>}
  */
-export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId }) {
+export async function handleResponsesCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, connectionId, toolDisclosure }) {
   // Convert Responses API format to Chat Completions format
   const convertedBody = convertResponsesApiFormat(body);
 
@@ -43,7 +43,8 @@ export async function handleResponsesCore({ body, modelInfo, credentials, log, o
     onRequestSuccess,
     onDisconnect,
     connectionId,
-    sourceFormatOverride: "openai-responses"
+    sourceFormatOverride: "openai-responses",
+    toolDisclosure
   });
 
   if (!result.success || !result.response) {

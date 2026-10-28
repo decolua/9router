@@ -708,6 +708,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         });
     }
 
+    // Strip client-supplied cache annotations before anchoring the final cacheable tool.
     const lastCacheable = lastCacheableToolIndex(body.tools);
     body.tools = body.tools.map((tool, i) => {
       const { cache_control, ...rest } = tool;

@@ -79,4 +79,4 @@ function dedupeTools(tools, opts = {}) {
   return { tools: out, stripped };
 }
 
-export { dedupeTools };
+export { dedupeTools, getToolName };

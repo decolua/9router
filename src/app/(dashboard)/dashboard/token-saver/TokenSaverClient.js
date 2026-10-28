@@ -48,6 +48,10 @@ export default function TokenSaverClient() {
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
+  const [toolDisclosureEnabled, setToolDisclosureEnabled] = useState(false);
+  const [toolDisclosureFilterEnabled, setToolDisclosureFilterEnabled] = useState(false);
+  const [toolDisclosureMaxTools, setToolDisclosureMaxTools] = useState(20);
+  const [disclosureStats, setDisclosureStats] = useState([]);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
     installed: false,
@@ -418,6 +422,11 @@ export default function TokenSaverClient() {
     patchSetting({ pxpipeMinChars: next });
   };
 
+  const handleToolDisclosureEnabled = (value) => { setToolDisclosureEnabled(value); patchSetting({ toolDisclosureEnabled: value }); };
+  const handleToolDisclosureFilterEnabled = (value) => { setToolDisclosureFilterEnabled(value); patchSetting({ toolDisclosureFilterEnabled: value }); };
+  const handleToolDisclosureMaxToolsBlur = () => { const next = Math.max(1, Number(toolDisclosureMaxTools) || 20); setToolDisclosureMaxTools(next); patchSetting({ toolDisclosureMaxTools: next }); };
+  const refreshDisclosureStats = async () => { try { const res = await fetch("/api/tool-disclosure/stats"); if (res.ok) setDisclosureStats(await res.json()); } catch {} };
+
   const handleHeadroomTimeoutBlur = () => {
     const raw = Math.round(Number(headroomTimeoutMs));
     const next = Number.isFinite(raw) && raw > 0 ? raw : 3000;
@@ -444,6 +453,10 @@ export default function TokenSaverClient() {
           setCustomPromptEnabled(!!data.customPromptEnabled);
           setCustomPrompt(data.customPrompt || "");
           setPxpipeEnabled(!!data.pxpipeEnabled);
+          setToolDisclosureEnabled(!!data.toolDisclosureEnabled);
+          setToolDisclosureFilterEnabled(!!data.toolDisclosureFilterEnabled);
+          if (typeof data.toolDisclosureMaxTools === "number") setToolDisclosureMaxTools(data.toolDisclosureMaxTools);
+          refreshDisclosureStats();
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
           // PRD: run the PXPIPE health check automatically when the page opens
@@ -785,6 +798,17 @@ export default function TokenSaverClient() {
             </p>
           </div>
         )}
+        {/* Progressive tool disclosure */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1"><p className="font-medium">Filter MCP tool schemas</p><p className="text-sm text-text-muted">Exclude irrelevant MCP tool schemas before sending requests.</p></div>
+          <Toggle checked={toolDisclosureFilterEnabled} onChange={() => handleToolDisclosureFilterEnabled(!toolDisclosureFilterEnabled)} />
+        </div>
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1"><p className="font-medium">BM25 tool relevance</p><p className="text-sm text-text-muted">Send only tools relevant to the current request.</p></div>
+          <Toggle checked={toolDisclosureEnabled} onChange={() => handleToolDisclosureEnabled(!toolDisclosureEnabled)} />
+        </div>
+        {toolDisclosureEnabled && <div className="mt-2 flex flex-col gap-2"><label className="text-sm font-medium" htmlFor="tool-disclosure-max">Max tools per turn</label><Input id="tool-disclosure-max" value={String(toolDisclosureMaxTools)} onChange={(e) => setToolDisclosureMaxTools(e.target.value)} onBlur={handleToolDisclosureMaxToolsBlur} placeholder="20" className="font-mono text-sm" /></div>}
+        {disclosureStats.length > 0 && <p className="text-xs text-text-muted mt-2">Recent disclosure samples: {disclosureStats.length}</p>}
         {/* PXPIPE hidden from UI — experimental, not exposed to users yet */}
         {false && (
         <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">

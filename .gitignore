@@ -51,6 +51,8 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/design/
+!docs/design/**
 test/*
 open-sse/test/*
 RM.vn.md
@@ -101,4 +103,5 @@ graphify-out/*
 .start-dev.ps1
 start-dev-silent.cjs
 debug.log
+.scratch/
 .scratch/
