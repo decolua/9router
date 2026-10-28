@@ -412,11 +412,12 @@ export class OpenCodeExecutor extends BaseExecutor {
     return super.execute({
       ...args,
       credentials,
-      directFetch: (url, options) => opencodeTlsFetch(url, {
+      directFetch: (url, options, { proxyUrl } = {}) => opencodeTlsFetch(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
-      }, { signal: options.signal }),
+      }, { signal: options.signal, proxyUrl }),
+      directFetchProxy: true,
     });
   }
 
