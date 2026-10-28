@@ -12,6 +12,8 @@
  *   The hardcoded list ["cursor","cline","clinepass"] omitted "zed", so the
  *   Zed provider card was never fetched and never shown in the Combo picker.
  *   Fix: add "zed" to the list (and wire up the corresponding state/hook/ternary).
+ *   Zed is also a passthrough provider, so the live models must be merged inside
+ *   the passthroughModels branch; the non-passthrough branch never runs for it.
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
@@ -76,5 +78,19 @@ describe("ModelSelectModal LIVE_CATALOG_PROVIDERS includes zed (#4244)", () => {
   it("zedModels hook call is present in the file", () => {
     expect(src).toContain("zedModels");
     expect(src).toContain("zedConnectionIds");
+  });
+
+  it("merges live Zed models inside the passthroughModels branch", () => {
+    // Zed has passthroughModels: true, so the non-passthrough else-branch below
+    // where zedModels was originally wired never runs. The live entries must be
+    // merged in the passthrough branch itself (#4244).
+    const start = src.indexOf("if (providerInfo.passthroughModels)");
+    const end = src.indexOf("} else if (isCustomProvider)", start);
+    expect(start).toBeGreaterThan(-1);
+    expect(end).toBeGreaterThan(start);
+    const branch = src.slice(start, end);
+    expect(branch).toContain('const liveModels = providerId === "zed" ? zedModels : []');
+    expect(branch).toContain("mergePassthroughModels");
+    expect(branch).toContain("live: liveModels");
   });
 });
