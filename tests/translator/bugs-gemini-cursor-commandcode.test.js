@@ -25,7 +25,11 @@ describe("OpenAI → Gemini", () => {
 });
 
 describe("Antigravity JSON Schema cleanup", () => {
-  it("infers type=object for properties children and items but not arbitrary nested values", () => {
+  it("infers type=object for properties children and array-items children but not arbitrary nested values", () => {
+    // Gemini's proto predicates reject `items` on anything but type:"array"
+    // (enforceTypeConstraints, open-sse/translator/formats/gemini.js:393) — so
+    // the array-items case below is nested under an explicit array, not a
+    // sibling of the root's own `properties`.
     const cleaned = cleanJSONSchemaForAntigravity({
       properties: {
         query: { type: "string" },
@@ -34,17 +38,20 @@ describe("Antigravity JSON Schema cleanup", () => {
             deep: { type: "string" },
           },
         },
-      },
-      items: {
-        properties: {
-          itemField: { type: "string" },
+        list: {
+          type: "array",
+          items: {
+            properties: {
+              itemField: { type: "string" },
+            },
+          },
         },
       },
     });
 
     expect(cleaned.type).toBe("object");
     expect(cleaned.properties.nested.type).toBe("object");
-    expect(cleaned.items.type).toBe("object");
+    expect(cleaned.properties.list.items.type).toBe("object");
   });
 });
 
