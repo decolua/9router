@@ -267,6 +267,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
         ? upstreamStatus
         : HTTP_STATUS.BAD_GATEWAY;
+      appendLog({ status: `FAILED ${status}` });
       const result = createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
       result.origin = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599 ? "upstream_http" : "processing";
       return result;
