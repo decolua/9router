@@ -72,6 +72,9 @@ export const DEFAULT_MIN_TOKENS = 32000;
 
 export const TOKEN_SAVER_HEADER = "x-9router-token-saver";
 
+// Set to "0" or "false" to suppress x-9router-provider/-model/-combo/-attempts headers.
+export const ROUTE_HEADERS_ENABLED = process.env.NINEROUTER_ROUTE_HEADERS !== "0" && process.env.NINEROUTER_ROUTE_HEADERS !== "false";
+
 // Retry config for 429 responses (legacy - kept for backward compatibility)
 export const RETRY_CONFIG = {
   maxAttempts: 2,
