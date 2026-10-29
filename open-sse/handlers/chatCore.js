@@ -572,7 +572,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (!stream) {
     const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap: toolResponseMetadata || toolNameMap, customToolNames, trackDone, appendLog });
     if (result.success) {
-      await notifyRequestSuccess();
+      // The handler owns this callback so bookkeeping failures cannot affect
+      // the already-valid response; forced-SSE-to-JSON above keeps this call here.
       streamController.handleComplete();
     } else {
       streamController.handleError(new Error(result.error || "Non-stream response failed"));
