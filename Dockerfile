@@ -51,6 +51,10 @@ RUN --mount=type=cache,target=/root/.npm \
       --fetch-timeout=300000 \
       wreq-js playwright-core
 
+# The OpenCode free lane is forwarded through a Bun sidecar: Bun's TLS stack is
+# accepted by the upstream gate where Node's is refused.
+FROM oven/bun:1-alpine AS bunbin
+
 FROM ${NODE_IMAGE} AS runner
 ARG ALPINE_MIRROR
 ARG APP_VERSION
@@ -74,6 +78,9 @@ COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/custom-server.js ./custom-server.js
 COPY --from=builder /app/open-sse ./open-sse
+# The Bun transport sidecar is not traced into the standalone build.
+COPY --from=builder /app/scripts/opencode-transport.mjs ./scripts/opencode-transport.mjs
+COPY --from=bunbin /usr/local/bin/bun /usr/local/bin/bun
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
 COPY --from=builder /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.

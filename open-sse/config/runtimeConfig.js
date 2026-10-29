@@ -44,6 +44,21 @@ function envUrl(name, def) {
   return raw || def;
 }
 
+// Parse an enum-style env override, falling back to the default for unknown values.
+function envChoice(name, allowed, def) {
+  const raw = process.env[name]?.trim().toLowerCase();
+  return allowed.includes(raw) ? raw : def;
+}
+
+// Free-lane forwarding through a local Bun process. Bun's TLS stack is accepted
+// by the upstream gate where Node's and impersonated profiles are refused.
+export const OPENCODE_TRANSPORT_CONFIG = {
+  mode: envChoice("OPENCODE_TRANSPORT", ["off", "auto"], "auto"),
+  bunBin: envUrl("OPENCODE_BUN_BIN", "bun"),
+  readyTimeoutMs: envMs("OPENCODE_TRANSPORT_READY_TIMEOUT_MS", 8000),
+  failureBackoffMs: envMs("OPENCODE_TRANSPORT_BACKOFF_MS", 5 * 60 * 1000),
+};
+
 // SearXNG endpoint used by the unauthenticated web-search provider.
 // Configure this for a separate Docker service or remote SearXNG instance.
 export const SEARXNG_URL = envUrl("SEARXNG_URL", "http://localhost:8888/search");

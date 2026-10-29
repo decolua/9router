@@ -8,6 +8,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
 import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
+import { fetchViaTransport } from "../utils/opencodeTransport.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -347,6 +348,32 @@ function dropAdaptiveReasoningEffort(body) {
   if (body?.reasoning_effort === "auto") delete body.reasoning_effort;
 }
 
+// The upstream free gate keys on the TLS ClientHello. Forward through the local
+// Bun sidecar, which owns the handshake and the proxy hop. wreq-js is kept as
+// the direct fallback; when neither transport is available the caller's native
+// fetch still runs (fail-open).
+async function fetchFreeLane(url, options, proxyUrl = "") {
+  const viaTransport = await fetchViaTransport(url, {
+    method: options.method,
+    headers: options.headers,
+    body: options.body,
+  }, { proxyUrl, signal: options.signal });
+  if (viaTransport) return viaTransport;
+
+  if (!proxyUrl) {
+    try {
+      return await opencodeTlsFetch(url, {
+        method: options.method,
+        headers: options.headers,
+        body: options.body,
+      }, { signal: options.signal });
+    } catch (error) {
+      if (error?.name !== "OpencodeTlsUnavailableError") throw error;
+    }
+  }
+  return null;
+}
+
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
@@ -403,20 +430,16 @@ export class OpenCodeExecutor extends BaseExecutor {
   }
 
   // The free gate keys on the TLS ClientHello, so a native Node fetch is refused
-  // no matter how faithful the body is. Route through the impersonating client
-  // and keep proxy handling on the existing path (proxyAwareFetch delegates to
-  // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
-  // request still goes out on native fetch instead of erroring here.
+  // no matter how faithful the body is. The Bun sidecar owns the handshake and
+  // the proxy hop; wreq-js stays as the direct fallback. Fail-open: without
+  // either transport the request still goes out on native fetch.
   async execute(args) {
     const credentials = this.prepareRequestCredentials(args);
     return super.execute({
       ...args,
       credentials,
-      directFetch: (url, options) => opencodeTlsFetch(url, {
-        method: options.method,
-        headers: options.headers,
-        body: options.body,
-      }, { signal: options.signal }),
+      directFetch: fetchFreeLane,
+      proxyDirectFetch: true,
     });
   }
 
