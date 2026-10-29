@@ -4,6 +4,7 @@ import {
   MODEL_LOCK_ALL,
   getEarliestModelLockUntil,
   getModelLockKey,
+  getModelLockUntil,
   isModelLockActive,
 } from "../../open-sse/services/accountFallback.js";
 
@@ -51,5 +52,67 @@ describe("isModelLockActive precedence", () => {
 
   it("returns false when the connection carries no lock at all", () => {
     expect(isModelLockActive({}, MODEL)).toBe(false);
+  });
+});
+
+describe("getModelLockUntil agrees with isModelLockActive, key for key", () => {
+  it("reports the later of the two gating locks, not the earlier", () => {
+    // The connection is locked for MODEL while either key is live, so it frees up
+    // when the LAST of them passes. Returning the earlier one advises a retry that
+    // is still locked.
+    const soon = new Date(Date.now() + 60_000).toISOString();
+    const later = new Date(Date.now() + 3600_000).toISOString();
+
+    expect(getModelLockUntil({ [getModelLockKey(MODEL)]: soon, [MODEL_LOCK_ALL]: later }, MODEL))
+      .toBe(later);
+    expect(getModelLockUntil({ [getModelLockKey(MODEL)]: later, [MODEL_LOCK_ALL]: soon }, MODEL))
+      .toBe(later);
+  });
+
+  it("ignores a lock belonging to a different model", () => {
+    // This is the divergence that made retry timing wrong: the connection-wide
+    // helper returns the other model's expiry, so a caller retried while the model
+    // it actually asked for was still locked, and burned an upstream request.
+    const otherSoon = new Date(Date.now() + 60_000).toISOString();
+    const mineLater = new Date(Date.now() + 3600_000).toISOString();
+    const connection = {
+      [getModelLockKey("some-other-model")]: otherSoon,
+      [getModelLockKey(MODEL)]: mineLater,
+    };
+
+    expect(getModelLockUntil(connection, MODEL)).toBe(mineLater);
+    expect(getEarliestModelLockUntil(connection)).toBe(otherSoon);
+  });
+
+  it("returns null exactly when isModelLockActive returns false", () => {
+    const cases = [
+      {},
+      { [getModelLockKey(MODEL)]: past() },
+      { [getModelLockKey(MODEL)]: past(), [MODEL_LOCK_ALL]: past() },
+      { [getModelLockKey(MODEL)]: "not-a-date" },
+      { [getModelLockKey("some-other-model")]: future() },
+      { [getModelLockKey(MODEL)]: future() },
+      { [MODEL_LOCK_ALL]: future() },
+      { [getModelLockKey(MODEL)]: past(), [MODEL_LOCK_ALL]: future() },
+    ];
+
+    for (const connection of cases) {
+      const locked = isModelLockActive(connection, MODEL);
+      const until = getModelLockUntil(connection, MODEL);
+      expect(until !== null, JSON.stringify(connection)).toBe(locked);
+    }
+  });
+
+  it("resolves a null or absent model to the account-wide key, as the sibling does", () => {
+    const connection = { [MODEL_LOCK_ALL]: future() };
+
+    for (const model of [null, undefined]) {
+      expect(isModelLockActive(connection, model)).toBe(true);
+      expect(getModelLockUntil(connection, model)).toBe(connection[MODEL_LOCK_ALL]);
+    }
+  });
+
+  it("returns null for a missing connection rather than throwing", () => {
+    expect(getModelLockUntil(null, MODEL)).toBeNull();
   });
 });

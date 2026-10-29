@@ -156,8 +156,46 @@ export function isModelLockActive(connection, model) {
 }
 
 /**
+ * When this connection becomes usable for *model* again, or null if it is usable now.
+ *
+ * The time-valued twin of `isModelLockActive`, and it has to agree with it key for key.
+ * That connection is locked while EITHER the per-model key or the account-wide key is
+ * live, so it frees up only once BOTH have passed -- the **later** of the two, not the
+ * earlier. It routes the model through `getModelLockKey` for the same reason, so a null
+ * or absent model resolves to the account-wide key here exactly as it does there.
+ *
+ * `getEarliestModelLockUntil` below cannot answer this: it scans every `modelLock_*`
+ * key, so on a connection locked for two models it returns the unrelated model's expiry.
+ * Used for retry timing that way, it advises a retry while this model is still locked,
+ * and the retry fails identically -- one wasted upstream request per caller, reported as
+ * a second rate-limit error.
+ */
+export function getModelLockUntil(connection, model) {
+  if (!connection) return null;
+  const now = Date.now();
+  const activeUntil = (value) => {
+    if (!value) return null;
+    const t = new Date(value).getTime();
+    return Number.isFinite(t) && t > now ? t : null;
+  };
+
+  const gates = [
+    activeUntil(connection[getModelLockKey(model)]),
+    activeUntil(connection[MODEL_LOCK_ALL]),
+  ].filter((t) => t !== null);
+
+  return gates.length ? new Date(Math.max(...gates)).toISOString() : null;
+}
+
+/**
  * Get earliest active model lock expiry across all modelLock_* fields.
- * Used for UI cooldown display.
+ *
+ * Connection-wide: "when does anything on this account free up". That is the right
+ * question for a per-connection cooldown badge and the wrong one for retry timing on a
+ * specific model -- use `getModelLockUntil` for that. Left as it is rather than widened:
+ * both of its callers wanted the model-scoped question and now ask for it by name, and
+ * making the scope depend on whether an argument was passed would bring back the
+ * undefined-versus-null divergence this file already had one of.
  */
 export function getEarliestModelLockUntil(connection) {
   if (!connection) return null;
