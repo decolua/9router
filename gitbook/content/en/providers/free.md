@@ -8,23 +8,22 @@ Emergency backup when everything else is quota-limited. Code 24/7 with zero cost
 
 Free tier providers are your **fallback** when subscription and cheap quota exhausted:
 
-- 🆓 **iFlow** - 8 models FREE (Kimi K2, Qwen3, GLM 4.7, MiniMax M2...)
-- 🆓 **Qwen** - 3 models FREE (Qwen3 Coder Plus/Flash, Vision)
-- 🆓 **Kiro** - 2 models FREE (Claude Sonnet 4.5, Haiku 4.5)
+- 🆓 **iFlow** - 15 models FREE (Kimi K2, Qwen3, GLM 4.7, DeepSeek...)
+- 🆓 **Kiro** - 48 FREE models (Claude Sonnet 4.5, Haiku 4.5)
 
 **Strategy:** Use as emergency backup. Unlimited usage, zero cost forever!
 
 ---
 
-## iFlow (8 FREE Models)
+## iFlow (15 FREE Models)
 
 ### Pricing
 
 | Plan | Monthly Cost | Models | Quota |
 |------|--------------|--------|-------|
-| FREE | $0 | 8 models | Unlimited |
+| FREE | $0 | 15 models | Unlimited |
 
-**Best Value:** Most models in free tier! Kimi K2, Qwen3, GLM, MiniMax, DeepSeek.
+**Best Value:** Most models in free tier! Kimi K2, Qwen3, GLM, DeepSeek.
 
 ### Setup
 
@@ -46,86 +45,53 @@ Free tier providers are your **fallback** when subscription and cheap quota exha
 **Step 3: Use in CLI**
 
 ```
-Model: if/kimi-k2-thinking
-       if/kimi-k2
+Model: if/kimi-k2
        if/qwen3-coder-plus
+       if/qwen3-max
        if/glm-4.7
-       if/minimax-m2
+       if/deepseek-v3.2
        if/deepseek-r1
-       if/deepseek-v3.2-chat
-       if/deepseek-v3.2-reasoner
 ```
 
 ### Available Models
 
 | Model ID | Description | Best For |
 |----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | Complex reasoning |
 | `if/kimi-k2` | Kimi K2 | General coding |
 | `if/qwen3-coder-plus` | Qwen3 Coder Plus | Code generation |
-| `if/glm-4.7` | GLM 4.7 | Chinese + English |
-| `if/minimax-m2` | MiniMax M2 | Long context |
+| `if/qwen3-max` | Qwen3 Max | Flagship reasoning |
+| `if/qwen3-vl-plus` | Qwen3 VL Plus | Vision + text |
+| `if/qwen3-max-preview` | Qwen3 Max Preview | Preview flagship |
+| `if/qwen3-235b` | Qwen3 235B A22B | Large MoE |
+| `if/qwen3-235b-a22b-instruct` | Qwen3 235B Instruct | Instruction following |
+| `if/qwen3-235b-a22b-thinking-2507` | Qwen3 235B Thinking | Deep reasoning |
+| `if/qwen3-32b` | Qwen3 32B | Fast responses |
+| `if/deepseek-v3.2` | DeepSeek V3.2 Exp | Latest DeepSeek |
+| `if/deepseek-v3.1` | DeepSeek V3.1 Terminus | Stable chat |
+| `if/deepseek-v3` | DeepSeek V3 671B | Large MoE |
 | `if/deepseek-r1` | DeepSeek R1 | Reasoning tasks |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | Conversational |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | Complex logic |
+| `if/glm-4.7` | GLM 4.7 | Chinese + English |
+| `if/iflow-rome-30ba3b` | iFlow ROME | iFlow's own model |
 
 ### Pro Tips
 
-- **8 models FREE** - Most variety in free tier
+- **15 models FREE** - Most variety in free tier
 - **Unlimited usage** - No quota limits
-- **Kimi K2 Thinking** - Best for complex reasoning
+- **Kimi K2** - Best for complex reasoning
 - **DeepSeek R1** - Strong reasoning capabilities
 
 ---
 
-## Qwen (3 FREE Models)
+## Qwen (via iFlow)
 
-### Pricing
-
-| Plan | Monthly Cost | Models | Quota |
-|------|--------------|--------|-------|
-| FREE | $0 | 3 models | Unlimited |
-
-### Setup
-
-**Step 1: Connect via Dashboard**
-
-```bash
-9router
-# Dashboard → Providers → Connect Qwen
-```
-
-**Step 2: Device Code Authorization**
-
-- Click "Connect Qwen"
-- Dashboard shows device code
-- Visit authorization URL
-- Enter device code
-- Login to Qwen account
-- Auto token refresh enabled
-
-**Step 3: Use in CLI**
-
-```
-Model: qw/qwen3-coder-plus
-       qw/qwen3-coder-flash
-       qw/vision-model
-```
-
-### Available Models
+The standalone Qwen provider has been removed. Qwen3 models remain available FREE through iFlow — connect iFlow (see above) and use the `if/` prefixed models:
 
 | Model ID | Description | Best For |
 |----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | Advanced coding |
-| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | Fast responses |
-| `qw/vision-model` | Qwen3 Vision | Image analysis |
-
-### Pro Tips
-
-- **Qwen3 Coder Plus** - Strong coding capabilities
-- **Qwen3 Coder Flash** - Fast for quick tasks
-- **Vision model** - FREE image analysis
-- **Unlimited usage** - No quota limits
+| `if/qwen3-coder-plus` | Qwen3 Coder Plus | Advanced coding |
+| `if/qwen3-32b` | Qwen3 32B | Fast responses |
+| `if/qwen3-vl-plus` | Qwen3 VL Plus | Image analysis |
+| `if/qwen3-max` | Qwen3 Max | Flagship reasoning |
 
 ---
 
@@ -185,9 +151,8 @@ Model: kr/claude-sonnet-4.5
 
 | Provider | Models | Best Model | Setup | Quota |
 |----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | Unlimited |
-| **Qwen** | 3 | Qwen3 Coder Plus | Device Code | Unlimited |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | Unlimited |
+| **iFlow** | 15 | Kimi K2 | OAuth | Unlimited |
+| **Kiro** | 48 | Claude Sonnet 4.5 | AWS Builder ID | Unlimited |
 
 **Winner:** iFlow for variety, Kiro for quality!
 
@@ -201,7 +166,7 @@ Model: kr/claude-sonnet-4.5
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [from 9router dashboard]
-  Model: if/kimi-k2-thinking
+  Model: if/kimi-k2
 ```
 
 ### Create Combo (Recommended)
@@ -211,8 +176,8 @@ Dashboard → Combos → Create New
 
 Name: free-combo
 Models:
-  1. if/kimi-k2-thinking (iFlow primary)
-  2. qw/qwen3-coder-plus (Qwen backup)
+  1. if/kimi-k2 (iFlow primary)
+  2. if/qwen3-coder-plus (Qwen backup)
   3. kr/claude-sonnet-4.5 (Kiro quality)
 
 Use in CLI: free-combo
@@ -232,10 +197,10 @@ Dashboard → Combos → Create New
 Name: complete-fallback
 Models:
   1. gc/gemini-3-flash-preview (FREE subscription)
-  2. cc/claude-opus-4-5 (Paid subscription)
+  2. cc/claude-opus-5-5 (Paid subscription)
   3. glm/glm-4.7 (Cheap backup, $0.6/1M)
   4. minimax/MiniMax-M2.1 (Cheapest, $0.2/1M)
-  5. if/kimi-k2-thinking (FREE fallback)
+  5. if/kimi-k2 (FREE fallback)
   6. kr/claude-sonnet-4.5 (FREE quality)
 
 Use in CLI: complete-fallback
@@ -270,11 +235,11 @@ Only use free tier when:
 ### 2. Choose Right Model
 
 ```
-Complex reasoning: if/kimi-k2-thinking
-Fast coding: qw/qwen3-coder-flash
+Complex reasoning: if/kimi-k2
+Fast coding: if/qwen3-32b
 Best quality: kr/claude-sonnet-4.5
-Long context: if/minimax-m2
-Vision tasks: qw/vision-model
+Long context: if/qwen3-max
+Vision tasks: if/qwen3-vl-plus
 ```
 
 ### 3. Create Free-Only Combo
@@ -285,8 +250,8 @@ For zero-cost coding:
 Name: zero-cost
 Models:
   1. kr/claude-sonnet-4.5 (Best quality)
-  2. if/kimi-k2-thinking (Complex tasks)
-  3. qw/qwen3-coder-plus (Fast coding)
+  2. if/kimi-k2 (Complex tasks)
+  3. if/qwen3-coder-plus (Fast coding)
 
 Cost: $0 forever!
 ```
@@ -315,8 +280,8 @@ Save paid quota for:
 ```
 Setup:
 1. kr/claude-sonnet-4.5 (Best quality)
-2. if/kimi-k2-thinking (Complex reasoning)
-3. qw/qwen3-coder-plus (Fast coding)
+2. if/kimi-k2 (Complex reasoning)
+3. if/qwen3-coder-plus (Fast coding)
 
 Monthly cost: $0
 Usage: Unlimited
@@ -333,7 +298,7 @@ Perfect for:
 Setup:
 1. gc/gemini-3-flash-preview (FREE 180K/month)
 2. glm/glm-4.7 (Cheap backup, $0.6/1M)
-3. if/kimi-k2-thinking (FREE fallback)
+3. if/kimi-k2 (FREE fallback)
 
 Monthly cost: $5-10
 Usage: 100M+ tokens
@@ -349,11 +314,11 @@ Perfect for:
 ```
 Setup:
 1. gc/gemini-3-flash-preview (FREE 180K/month)
-2. cc/claude-opus-4-5 (Subscription $20-100)
-3. cx/gpt-5.2-codex (Subscription $20-200)
+2. cc/claude-opus-5-5 (Subscription $20-100)
+3. cx/gpt-6.1-sol (Subscription $20-200)
 4. glm/glm-4.7 (Cheap $0.6/1M)
 5. minimax/MiniMax-M2.1 (Cheapest $0.2/1M)
-6. if/kimi-k2-thinking (FREE unlimited)
+6. if/kimi-k2 (FREE unlimited)
 7. kr/claude-sonnet-4.5 (FREE quality)
 
 Monthly cost: $40-320 (subscriptions) + $10-20 (cheap tier)

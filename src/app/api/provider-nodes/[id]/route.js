@@ -66,9 +66,12 @@ export async function PUT(request, { params }) {
         providerSpecificData: {
           ...(connection.providerSpecificData || {}),
           prefix: prefix.trim(),
-          apiType: node.type === "openai-compatible" ? apiType : undefined,
           baseUrl: sanitizedBaseUrl,
           nodeName: updated.name,
+          // Only openai-compatible connections carry apiType. Spreading
+          // `apiType: undefined` on anthropic/custom-embedding rows re-created
+          // the key with a null value after JSON round-trips; omit it instead.
+          ...(node.type === "openai-compatible" ? { apiType } : {}),
         }
       })
     )));

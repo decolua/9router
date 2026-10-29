@@ -7,7 +7,7 @@ import { anchorClaudeCache, prepareClaudeRequest } from "../../open-sse/translat
 const CC = { type: "ephemeral" };
 const text = (t, extra = {}) => ({ type: "text", text: t, ...extra });
 const tool = (name, extra = {}) => ({ name, description: "d", input_schema: { type: "object", properties: {} }, ...extra });
-const use = (id) => ({ role: "assistant", content: [text("Reading."), { type: "tool_use", id, name: "read_file", input: { path: "a" } }] });
+const toolUse = (id) => ({ role: "assistant", content: [text("Reading."), { type: "tool_use", id, name: "read_file", input: { path: "a" } }] });
 const result = (id, content = "file") => ({ type: "tool_result", tool_use_id: id, content });
 
 function markers(body) {
@@ -25,9 +25,9 @@ const loop = () => ({
   tools: [tool("read_file"), tool("run_command")],
   messages: [
     { role: "user", content: [text("Fix the bug.")] },
-    use("t1"),
+    toolUse("t1"),
     { role: "user", content: [result("t1")] },
-    use("t2"),
+    toolUse("t2"),
     { role: "user", content: [result("t2", "a"), result("t2b", "b")] },
   ],
 });

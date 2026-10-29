@@ -266,10 +266,10 @@ Settings → Models → Advanced:
 
 名称: cheap-backup
 模型:
-  1. cc/claude-opus-4-5 (订阅主力)
+  1. cc/claude-opus-5-5 (订阅主力)
   2. glm/glm-4.7 (低价备用, 每日重置)
   3. minimax/MiniMax-M2.1 (最便宜的回退)
-  4. if/kimi-k2-thinking (免费应急)
+  4. if/kimi-k2 (免费应急)
 
 CLI 中使用: cheap-backup
 ```
@@ -406,10 +406,10 @@ Coding Plan: 3× 配额(同价!)
 
 ```
 组合:
-1. gc/gemini-3-flash(免费主力)
+1. gc/gemini-3-flash-preview(免费主力)
 2. glm/glm-4.7(低价备用)
 3. minimax/MiniMax-M2.1(最便宜)
-4. if/kimi-k2-thinking(免费应急)
+4. if/kimi-k2(免费应急)
 
 结果: 最小化成本,最大化在线
 ```

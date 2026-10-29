@@ -36,6 +36,11 @@ export async function GET() {
       samlConfigured: isSamlConfigured(settings),
       samlLoginLabel: (settings.samlLoginLabel || "Sign in with SAML SSO").trim() || "Sign in with SAML SSO",
       hasPassword: !!settings.password,
+      // DF-9ROUTER-3: the login page's "Default password is 123456" hint is
+      // only accurate when no stored hash exists AND INITIAL_PASSWORD is not
+      // configured. Computed server-side — the client component cannot read
+      // non-public env vars reliably (SSR/hydration divergence).
+      defaultPasswordIsPublic: !settings.password && !process.env.INITIAL_PASSWORD,
       displayName,
       loginMethod,
       authenticated: !!session,
@@ -56,6 +61,7 @@ export async function GET() {
       samlConfigured: false,
       samlLoginLabel: "Sign in with SAML SSO",
       hasPassword: false,
+      defaultPasswordIsPublic: false,
       displayName: "Password user",
       loginMethod: "Password",
       authenticated: false,

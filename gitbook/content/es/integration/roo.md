@@ -37,17 +37,17 @@ API Key: your-api-key-from-dashboard
 Elige entre los modelos disponibles de 9Router:
 
 **Modelos Claude:**
-- `cc/claude-opus-4-5-20251101` - El más capaz
-- `cc/claude-sonnet-4-20250514` - Equilibrado
-- `cc/claude-haiku-4-20250514` - Rápido
+- `cc/claude-opus-5-5` - El más capaz
+- `cc/claude-sonnet-5-5` - Equilibrado
+- `cc/claude-haiku-4-5-20251001` - Rápido
 
 **Modelos DeepSeek:**
-- `cx/deepseek-chat` - Propósito general
-- `cx/deepseek-reasoner` - Razonamiento complejo
+- `deepseek/deepseek-chat` - Propósito general
+- `deepseek/deepseek-reasoner` - Razonamiento complejo
 
 **Modelos GLM:**
-- `glm/glm-4-plus` - Avanzado
-- `glm/glm-4-flash` - Respuestas rápidas
+- `glm/glm-4.7` - Avanzado
+- `glm/glm-4.7-flash` - Respuestas rápidas
 
 ### 4. Probar la conexión
 
@@ -62,26 +62,26 @@ Hello! Can you confirm you're connected through 9Router?
 ### Chat básico
 ```
 Pregunta a Roo: "Explain quantum computing in simple terms"
-Modelo: cc/claude-sonnet-4-20250514
+Modelo: cc/claude-sonnet-5-5
 ```
 
 ### Generación de código
 ```
 Pregunta a Roo: "Write a Python function to calculate Fibonacci numbers"
-Modelo: cx/deepseek-chat
+Modelo: deepseek/deepseek-chat
 ```
 
 ### Razonamiento complejo
 ```
 Pregunta a Roo: "Analyze the trade-offs between microservices and monolithic architecture"
-Modelo: cx/deepseek-reasoner
+Modelo: deepseek/deepseek-reasoner
 ```
 
 ## Consejos de selección de modelo
 
-- **Tareas rápidas**: Usa `cc/claude-haiku-4-20250514` o `glm/glm-4-flash`
-- **Rendimiento equilibrado**: Usa `cc/claude-sonnet-4-20250514` o `cx/deepseek-chat`
-- **Razonamiento complejo**: Usa `cc/claude-opus-4-5-20251101` o `cx/deepseek-reasoner`
+- **Tareas rápidas**: Usa `cc/claude-haiku-4-5-20251001` o `glm/glm-4.7-flash`
+- **Rendimiento equilibrado**: Usa `cc/claude-sonnet-5-5` o `deepseek/deepseek-chat`
+- **Razonamiento complejo**: Usa `cc/claude-opus-5-5` o `deepseek/deepseek-reasoner`
 - **Optimización de costos**: Usa modelos DeepSeek o GLM
 
 ## Solución de problemas
@@ -108,9 +108,9 @@ Modelo: cx/deepseek-reasoner
 Puedes crear atajos para modelos usados con frecuencia en la configuración de Roo:
 
 ```
-Alias: "fast" → cc/claude-haiku-4-20250514
-Alias: "smart" → cc/claude-opus-4-5-20251101
-Alias: "code" → cx/deepseek-chat
+Alias: "fast" → cc/claude-haiku-4-5-20251001
+Alias: "smart" → cc/claude-opus-5-5
+Alias: "code" → deepseek/deepseek-chat
 ```
 
 ### Múltiples perfiles
@@ -124,4 +124,3 @@ Configura diferentes perfiles para distintos casos de uso:
 
 - [Configurar Cursor](cursor.md) para integración con IDE
 - [Configurar Continue](continue.md) para VSCode
-- [Explorar uso de CLI](../cli/basic-usage.md)

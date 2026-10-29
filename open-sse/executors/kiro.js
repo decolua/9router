@@ -272,17 +272,26 @@ export class KiroExecutor extends BaseExecutor {
   /**
    * Auth-aware endpoint ordering.
    *
-   * API-key Kiro connections use the Amazon Q surface. The legacy
-   * codewhisperer.* GenerateAssistantResponse endpoint can authenticate the key
-   * but rejects the same valid payload with REQUEST_BODY_INVALID. Since a 400
-   * is terminal in BaseExecutor, putting CodeWhisperer first prevents the working
-   * q.* endpoint from ever being tried. Keep q.* first only for api_key accounts.
+   * The Amazon surfaces come first for EVERY auth method, with q.* ahead of
+   * codewhisperer.* and runtime.*.kiro.dev last. Kiro deprecated the legacy
+   * path-style GenerateAssistantResponse on runtime.*.kiro.dev (IDE 1.0.228+
+   * moved to POST / + x-amz-target): the path gateway answers valid modern
+   * payloads with 400 REQUEST_BODY_INVALID, and a 400 is terminal in
+   * BaseExecutor, so kiro.dev must never be the first surface. Amazon surfaces
+   * reject a foreign token with 401/403, which DO fall through
+   * (KIRO_ENDPOINT_FALLBACK_STATUSES), so trying q/codewhisperer first is safe
+   * for every auth method (CLIRO parity). q.* is ordered ahead of
+   * codewhisperer.* because the legacy codewhisperer.* endpoint can
+   * authenticate a key but rejects the same valid payload with a terminal
+   * REQUEST_BODY_INVALID 400 -- codewhisperer.* first would prevent the working
+   * q.* endpoint from ever being tried.
    *
-   * The Kiro IDE gateway (runtime.*.kiro.dev) expects Kiro OIDC/social tokens
-   * and rejects TokenType=API_KEY. External IdP enterprise tokens instead
-   * use the CodeWhisperer surface, with the `TokenType: EXTERNAL_IDP` header.
-   * Other OAuth methods keep the default order (kiro.dev first) since their
-   * tokens are what that gateway accepts.
+   * The auth method selects the token HEADERS, never the order: API-key
+   * connections send `TokenType: API_KEY`, and external IdP enterprise tokens
+   * send `TokenType: EXTERNAL_IDP` so CodeWhisperer binds them to a profile
+   * (see buildHeaders). Enterprise tokens are no exception to the ordering
+   * above -- if an Amazon surface rejects such a token it answers 401/403 and
+   * the executor falls through to the next Amazon surface.
    */
   getOrderedBaseUrls(credentials) {
     const baseUrls = this.getBaseUrls();

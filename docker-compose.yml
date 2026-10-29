@@ -1,14 +1,30 @@
+# Standalone deployment. The image reads its secrets from `.env` — copy
+# .env.example to .env first (`cp .env.example .env`) and set real values
+# for INITIAL_PASSWORD / JWT_SECRET / API_KEY_SECRET (see README).
+# `.env` is intentionally OPTIONAL at config time (required: false) so a
+# fresh clone validates with `docker compose config`; without it the
+# container falls back to insecure image defaults. Requires Docker Compose
+# v2.24+ for the optional env_file syntax.
+#
+# Cannot pull the published images on this host (clean/rootless/air-gapped)?
+# Build 9router from this checkout instead — the base file is unchanged, the
+# fallback is an override applied on top of it:
+#   docker compose -f docker-compose.yml -f docker-compose.local-build.yml up -d --build
+# See DOCKER.md § "Clean host / pull-failure fallback (local build)".
 services:
   9router:
     image: decolua/9router:latest
     container_name: 9router
     restart: always
     ports:
-      - "20128:20128"
+      # Host port overridable (compose interpolates from the environment or the
+      # project-dir .env file): PORT=30128 docker compose up -d
+      - "${PORT:-20128}:20128"
     volumes:
       - 9router-data:/app/data
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATA_DIR: /app/data
       PORT: "20128"
@@ -23,8 +39,15 @@ services:
     container_name: headroom
     restart: always
     ports:
-      - "127.0.0.1:8787:8787"
+      # Headroom is optional at runtime (9router only calls it when the
+      # headroom toggle is enabled and HEADROOM_URL is reachable). The HOST
+      # port is overridable so a busy 8787 doesn't abort `compose up`:
+      # HEADROOM_PORT=18787 docker compose up -d
+      # (the container-internal port stays 8787 to match HEADROOM_URL).
+      - "${HEADROOM_PORT:-8787}:8787"
 
 volumes:
-  9router-data:
-    name: 9router-data
+  # No explicit `name:` — compose scopes the volume per project
+  # (<project>_9router-data). A pinned global name made unrelated checkouts
+  # share (and tear down) the same volume (DF-9ROUTER-48 class, QA-9ROUTER-32).
+  9router-data: {}

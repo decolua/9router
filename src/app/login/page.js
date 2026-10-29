@@ -1,15 +1,20 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, Button, Input } from "@/shared/components";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [resetHint, setResetHint] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
   const [loading, setLoading] = useState(false);
   const [hasPassword, setHasPassword] = useState(null);
+  // DF-9ROUTER-3: server-computed (auth/status) — client env reads diverge
+  // between SSR and hydration, so the hint is driven by API data instead.
+  const [defaultPasswordIsPublic, setDefaultPasswordIsPublic] = useState(false);
   const [authMode, setAuthMode] = useState("password");
   const [ssoType, setSsoType] = useState("oidc");
   const [oidcConfigured, setOidcConfigured] = useState(false);
@@ -41,10 +46,11 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.authenticated === true || data.requireLogin === false) {
-            window.location.assign("/dashboard");
+            router.push("/dashboard");
             return;
           }
           setHasPassword(!!data.hasPassword);
+          setDefaultPasswordIsPublic(data.defaultPasswordIsPublic === true);
           setAuthMode(data.authMode || "password");
           setSsoType(data.ssoType || "oidc");
           setOidcConfigured(data.oidcConfigured === true);
@@ -61,7 +67,10 @@ export default function LoginPage() {
       }
     }
     checkAuth();
-  }, []);
+    // `router` comes from useRouter(), which memoizes over the app-router
+    // singleton — its identity is stable for the life of this page, so listing
+    // it keeps this auth check single-shot instead of re-running it per render.
+  }, [router]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -82,7 +91,7 @@ export default function LoginPage() {
           setMustChange(true);
           return;
         }
-        window.location.assign("/dashboard");
+        router.push("/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Invalid password");
@@ -108,7 +117,7 @@ export default function LoginPage() {
         body: JSON.stringify({ currentPassword: password, newPassword }),
       });
       if (res.ok) {
-        window.location.assign("/dashboard");
+        router.push("/dashboard");
       } else {
         const data = await res.json();
         setError(data.error || "Failed to set password");
@@ -120,12 +129,17 @@ export default function LoginPage() {
     }
   };
 
+  // Kept on window.location (not router.push): this route 302s to the external
+  // IdP, and a client-side navigation cannot follow a cross-origin redirect.
+  // The absolute-URL form also keeps the destination non-relative.
   const handleOidcLogin = () => {
-    window.location.href = "/api/auth/oidc/start";
+    window.location.assign(new URL("/api/auth/oidc/start", window.location.origin).href);
   };
 
+  // Same as handleOidcLogin: SAML 302s to the external IdP, so this stays a
+  // full-document navigation to an absolute URL.
   const handleSamlLogin = () => {
-    window.location.href = "/api/auth/saml/start";
+    window.location.assign(new URL("/api/auth/saml/start", window.location.origin).href);
   };
 
   const isSsoEnabled = ["sso", "oidc", "saml", "both"].includes(authMode);
@@ -251,7 +265,12 @@ export default function LoginPage() {
                 </Button>
 
                 <p className="text-xs text-center text-text-muted mt-2">
-                  Default password is <code className="bg-sidebar px-1 rounded">123456</code>
+                  {defaultPasswordIsPublic && (
+                    <>
+                      Default password is{" "}
+                      <code className="bg-sidebar px-1 rounded">123456</code>
+                    </>
+                  )}
                 </p>
                 {hasPassword === false && (
                   <p className="text-xs text-center text-amber-600 dark:text-amber-400">

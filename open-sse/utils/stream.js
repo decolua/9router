@@ -35,7 +35,7 @@ const PENDING_COMPLETION_FLUSH_MS = 3000;
  * @param {object} options
  * @param {string} options.mode - Stream mode: translate, passthrough
  * @param {string} options.targetFormat - Provider format (for translate mode)
- * @param {string} options.sourceFormat - Client format (for translate mode)
+ * @param {string} options.sourceFormat - Client format (translate mode: translation target; passthrough mode: gates the synthetic [DONE] terminator)
  * @param {string} options.provider - Provider name
  * @param {object} options.reqLogger - Request logger instance
  * @param {string} options.model - Model name
@@ -99,6 +99,31 @@ export function createSSEStream(options = {}) {
   let finalized = false;
   let completionFlushTimer = null;
 
+  // Responses-API assistant text rides on top-level `response.output_text.delta`
+  // events, not on a chat delta. Both branches below (passthrough for a
+  // Responses-format client, translate for a chat client routed to a
+  // Responses-format provider such as codex) receive those same events, so the
+  // counting lives here and is called from both. Without it totalContentLength
+  // stayed 0 for a whole codex conversation, finalizeStream() had no content to
+  // base an estimate on, and the request was recorded nowhere — while the client
+  // received the full answer (DF-9ROUTER-33).
+  //
+  // A concatenated `response.output_text.done` carries the item's FULL text, so it
+  // REPLACES what the deltas accumulated rather than being added on top: a
+  // provider emitting both must not be double-counted.
+  const countResponsesText = (parsed, eventName) => {
+    const event = eventName || parsed?.type || null;
+    if (typeof parsed?.delta === "string" && event === "response.output_text.delta") {
+      totalContentLength += parsed.delta.length;
+      accumulatedContent += parsed.delta;
+      return;
+    }
+    if (typeof parsed?.text === "string" && event === "response.output_text.done" && parsed.text.length >= accumulatedContent.length) {
+      totalContentLength += parsed.text.length - accumulatedContent.length;
+      accumulatedContent = parsed.text;
+    }
+  };
+
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
   // Free's MiMo route does. Lift it on every passthrough delta so OpenAI-shaped
@@ -114,8 +139,19 @@ export function createSSEStream(options = {}) {
 
     const isPassthrough = mode === STREAM_MODE.PASSTHROUGH;
     let finalUsage = isPassthrough ? usage : state?.usage;
+    // An all-zero usage chunk is the upstream SAYING "no counts", not reporting a
+    // zero-token completion: hasValidUsage() treats it as absent, so drop it here
+    // rather than let a plain 0/0 object sail past the estimate fallback below.
+    if (!hasValidUsage(finalUsage)) finalUsage = null;
 
-    if (!hasValidUsage(finalUsage) && totalContentLength > 0) {
+    // A successful stream that produced content but whose upstream never reported
+    // token counts must still be RECORDED. Without the estimate on this path the
+    // record reached the DB layer as 0/0 and was dropped by its all-zero guard, so
+    // a whole class of traffic (Responses-API passthrough streams, an upstream
+    // that omits the usage chunk) disappeared from usageHistory while the client
+    // received a perfectly good answer — DF-9ROUTER-33, where usageHistory stayed
+    // at zero rows and /api/usage/stats reported nothing for served requests.
+    if (!finalUsage && totalContentLength > 0) {
       finalUsage = estimateUsage(body, totalContentLength, isPassthrough ? FORMATS.OPENAI : sourceFormat);
       if (isPassthrough) usage = finalUsage; else state.usage = finalUsage;
     }
@@ -123,6 +159,10 @@ export function createSSEStream(options = {}) {
     if (hasValidUsage(finalUsage)) {
       logUsage(isPassthrough ? provider : (state?.provider || targetFormat), finalUsage, model, connectionId, apiKey);
     } else {
+      // Neither counts nor content: the only case where an absent usage row is the
+      // honest outcome. Name it, because an empty completion and a broken
+      // accounting path otherwise look identical in the logs.
+      console.warn(`[USAGE] no usage recorded · ${provider || "unknown"}/${model || "unknown"} · ${totalContentLength} content chars, no token counts`);
       appendRequestLog({ model, provider, connectionId, tokens: null, status: "200 OK" }).catch(() => { });
     }
 
@@ -178,6 +218,13 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
           let responsesTerminal = false;
+
+          // The upstream's own terminator: forwarded verbatim below, and latched
+          // here so flush() does not append a second one (the documented contract
+          // is exactly one `data: [DONE]`, not two).
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            streamDoneSent = true;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -267,6 +314,9 @@ export function createSSEStream(options = {}) {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
               }
+              // Responses-API passthrough: the assistant text rides on top-level
+              // `response.output_text.delta` events, not on a chat delta.
+              countResponsesText(parsed, currentOpenAIResponsesEvent);
 
               const extracted = extractUsage(parsed);
               if (extracted) {
@@ -351,13 +401,20 @@ export function createSSEStream(options = {}) {
             sseEmittedCount++;
           }
 
-          if (keepsOpenAIResponsesFormat && !streamDoneSent) {
-            const doneOutput = "data: [DONE]\n\n";
-            reqLogger?.appendConvertedChunk?.(doneOutput);
-            controller.enqueue(sharedEncoder.encode(doneOutput));
+          // Only latch the sentinel flag when this branch actually emitted one.
+          // For every other client format the terminator is decided in flush():
+          // an OpenAI-chat client must still get its `data: [DONE]` even though
+          // the transform dropped the upstream's copy, while a Responses client
+          // closes on response.completed.
+          if (keepsOpenAIResponsesFormat) {
+            if (!streamDoneSent) {
+              const doneOutput = "data: [DONE]\n\n";
+              reqLogger?.appendConvertedChunk?.(doneOutput);
+              controller.enqueue(sharedEncoder.encode(doneOutput));
+            }
+            streamDoneSent = true;
+            openAIResponsesDoneSent = true;
           }
-          streamDoneSent = true;
-          if (keepsOpenAIResponsesFormat) openAIResponsesDoneSent = true;
           continue;
         }
 
@@ -383,6 +440,12 @@ export function createSSEStream(options = {}) {
           accumulatedThinking += parsed.choices[0].delta.reasoning_content;
         }
         
+        // Responses-API event (a chat client routed to a Responses-format provider
+        // such as codex): the assistant text is a top-level string. Counting it
+        // here is what lets finalizeStream() record an estimate for a codex
+        // conversation that reports no usage (DF-9ROUTER-33).
+        countResponsesText(parsed, currentOpenAIResponsesEvent);
+
         // Gemini format
         if (parsed.candidates?.[0]?.content?.parts) {
           for (const part of parsed.candidates[0].content.parts) {
@@ -396,6 +459,21 @@ export function createSSEStream(options = {}) {
               }
             }
           }
+        }
+
+        // Ollama native NDJSON — /api/chat streams `message.content`, /api/generate
+        // streams `response`. The translator above pivots either shape into the
+        // client's format, but without counting it here totalContentLength stayed
+        // 0 and the estimate fallback in finalizeStream() never fired: an Ollama
+        // upstream that omits prompt_eval_count/eval_count ended the stream on
+        // 0/0 and the usage guard dropped the whole request (DF-9ROUTER-26).
+        if (typeof parsed.message?.content === "string" && parsed.message.content) {
+          totalContentLength += parsed.message.content.length;
+          accumulatedContent += parsed.message.content;
+        }
+        if (typeof parsed.response === "string" && parsed.response) {
+          totalContentLength += parsed.response.length;
+          accumulatedContent += parsed.response;
         }
 
         // Extract usage
@@ -478,6 +556,12 @@ export function createSSEStream(options = {}) {
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
           if (buffer) {
+            // A terminator that arrived without its trailing newline is still
+            // forwarded here; latch it so the block below does not append a
+            // second one.
+            if (buffer.startsWith("data:") && buffer.slice(5).trim() === "[DONE]") {
+              streamDoneSent = true;
+            }
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
@@ -490,9 +574,15 @@ export function createSSEStream(options = {}) {
           // Some clients (e.g. OpenClaw) expect the OpenAI-style sentinel:
           //   data: [DONE]\n\n
           // Without it they can hang until timeout and trigger failover.
-          // Gemini-family clients (Antigravity, Vertex, Gemini) reject this sentinel with 400 syntax errors.
+          // The sentinel is an OpenAI-client terminator, not a universal one:
+          // Gemini-family clients (Antigravity, Vertex, Gemini) reject it with 400
+          // syntax errors, and a Claude client's contract ends on the upstream's own
+          // `message_stop` (forwarded verbatim above) — appending [DONE] after it
+          // hands an Anthropic client a malformed stream end. Passthrough means the
+          // client format IS the upstream format (sourceFormat), so gate on it.
           const isGeminiFamily = provider === "antigravity" || provider === "gemini" || provider === "vertex";
-          if (!streamDoneSent && !isGeminiFamily) {
+          const isClaudeClient = sourceFormat === FORMATS.CLAUDE;
+          if (!streamDoneSent && !isGeminiFamily && !isClaudeClient) {
             const doneOutput = "data: [DONE]\n\n";
             reqLogger?.appendConvertedChunk?.(doneOutput);
             controller.enqueue(sharedEncoder.encode(doneOutput));
@@ -573,6 +663,39 @@ export function createSSEStream(options = {}) {
           streamDoneSent = true;
         }
 
+        // A Claude client's contract ends on `message_stop`. The translator emits
+        // it when the upstream sends a finish_reason, and the null-chunk flush
+        // call above covers a chat-native OpenAI upstream. Upstreams whose own
+        // translator does not synthesise a terminal on flush (gemini, kiro,
+        // ollama, cursor, commandcode — all return null for a null chunk) would
+        // otherwise leave the client with zero message_stop and hang it until
+        // timeout, so ask the OpenAI→Claude translator for the terminal it owes.
+        // The latch inside it makes this a no-op whenever one already went out.
+        if (sourceFormat === FORMATS.CLAUDE && !state.claudeTerminalSent) {
+          const claudeTerminal = translateResponse(FORMATS.OPENAI, FORMATS.CLAUDE, null, state);
+          for (const item of claudeTerminal || []) {
+            if (item === null || item === undefined) continue;
+            const output = formatSSE(item, sourceFormat);
+            reqLogger?.appendConvertedChunk?.(output);
+            controller.enqueue(sharedEncoder.encode(output));
+          }
+        }
+
+        // Documented contract (docs/api-reference.md): an OpenAI Chat Completions
+        // stream ends with exactly one `data: [DONE]`. The upstream shape is not
+        // something the client should have to know about — a Responses-API /
+        // forced-stream upstream closes on `response.completed` and never sends
+        // the sentinel, and the translation above does not forward one — so the
+        // terminator is emitted here for OpenAI-format clients, exactly once,
+        // whether or not the upstream sent its own (passthrough latches the flag
+        // when it forwards that copy). Other client formats are terminated by
+        // their own contract (Claude: message_stop) and must not receive it.
+        if (sourceFormat === FORMATS.OPENAI && !streamDoneSent) {
+          reqLogger?.appendConvertedChunk?.(SSE_DONE);
+          controller.enqueue(sharedEncoder.encode(SSE_DONE));
+          streamDoneSent = true;
+        }
+
         finalizeStream();
       } catch (error) {
         console.log("Error in flush:", error);
@@ -600,16 +723,30 @@ export function createSSETransformStreamWithLogger(targetFormat, sourceFormat, p
   });
 }
 
-export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMap = null) {
+// Passthrough stream factory. Two vintages of 8th argument exist in the wild:
+//   - upstream v0.5.111 callers/tests pass the fingerprint toolNameMap (Map)
+//     so passthrough can restore renamed tool calls (#4986);
+//   - federation callers/tests pass the client sourceFormat (string, FORMATS.*)
+//     so the synthetic `data: [DONE]` terminator matches the client's contract
+//     (OpenAI keeps the sentinel; Claude ends on message_stop; gemini 400s).
+// A string is never a valid toolNameMap, so the shapes are distinguishable and
+// both work: detect and slot accordingly. The 9-arg form passes both explicitly.
+export function createPassthroughStreamWithLogger(provider = null, reqLogger = null, model = null, connectionId = null, body = null, onStreamComplete = null, apiKey = null, toolNameMapOrSourceFormat = null, sourceFormat = null) {
+  const eighthIsFormat = typeof toolNameMapOrSourceFormat === "string";
   return createSSEStream({
     mode: STREAM_MODE.PASSTHROUGH,
     provider,
     reqLogger,
-    toolNameMap,
+    toolNameMap: eighthIsFormat ? null : toolNameMapOrSourceFormat,
     model,
     connectionId,
     body,
     onStreamComplete,
-    apiKey
+    apiKey,
+    // Client format: passthrough mode uses it only to decide whether the
+    // synthetic `data: [DONE]` terminator belongs to the client's contract
+    // (OpenAI) or not (Claude — message_stop, gemini-family — 400s).
+    sourceFormat: sourceFormat ?? (eighthIsFormat ? toolNameMapOrSourceFormat : null),
   });
 }
+

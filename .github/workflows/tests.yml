@@ -1,0 +1,116 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [federation, master]
+  pull_request:
+    branches: [federation, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # NOTE: package-lock.json is tracked in this repo (commit 0f8d3204,
+      # 2026-08-18) — `npm ci` works on fresh runners; `npm install` is
+      # kept here for speed.
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Install test dependencies (independent ESM package)
+        working-directory: tests
+        run: npm install
+
+      # The suite is NOT all-green by design (the 84 catalogued known-fails
+      # in tests/__baseline__/known-fails.txt). The regression gate
+      # (verify-no-regression.mjs) is the authoritative pass/fail signal —
+      # never gate on the raw vitest exit code.
+      - name: Run vitest + regression gate
+        run: bash scripts/gitreins-guard-tests.sh
+
+  # Production build leg (DF-9ROUTER-47). The suite above and the federation
+  # E2E both run WITHOUT ever invoking `next build`, so a build-breaking state
+  # at HEAD could land on `federation`/`master` unseen — exactly what happened
+  # on 2026-09-25, when a webpack build crashed (`uncaughtException TypeError:
+  # Cannot read properties of undefined (reading 'length')`, no BUILD_ID) and a
+  # clean retry on the identical tree succeeded. That crash was load-dependent,
+  # so a single green run here is a SMOKE leg for build breakage, not a proof of
+  # determinism (the 10-consecutive-run evidence lives in the DF-9ROUTER-47
+  # record). Every step below is fatal on failure — no `|| true`, no
+  # `continue-on-error` — so a broken build turns this job (and the check) red.
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 25
+
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
+      # Same value the acceptance runs used, so a crash inside CI prints a deep
+      # stack instead of Next's default truncation ("at ignore-listed frames",
+      # which is all the 2026-09-25 crash left behind).
+      NODE_OPTIONS: "--stack-trace-limit=50"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # package-lock.json is tracked in this repo, so the build leg installs
+      # lockfile-exact: `npm ci` fails loudly on lockfile drift instead of
+      # silently resolving a different tree than the one that was tested.
+      - name: Install root dependencies (lockfile-exact)
+        run: npm ci
+
+      - name: Production build (next build --webpack)
+        run: npm run build
+
+      # `npm run build` = `next build --webpack` + the postbuild standalone
+      # asset copy. A build that exits 0 without emitting a runnable standalone
+      # artifact is still a broken release surface (that is how the container
+      # image is produced), so assert the artifacts, not just the exit code.
+      - name: Assert build artifacts
+        run: |
+          set -euo pipefail
+          test -s .next/BUILD_ID || { echo "::error::no .next/BUILD_ID produced"; exit 1; }
+          test -f .next/standalone/custom-server.js || { echo "::error::postbuild did not copy custom-server.js into .next/standalone"; exit 1; }
+          test -d .next/standalone/.next/static || { echo "::error::postbuild did not copy static assets into .next/standalone"; exit 1; }
+          test -d .next/standalone/public || { echo "::error::postbuild did not copy public/ into .next/standalone"; exit 1; }
+          echo "BUILD_ID=$(cat .next/BUILD_ID)"
+
+  # Federation end-to-end: spawns 3 real instances (central + 2 edges) and
+  # proves edge→central proxying + edge-serving-from-replica during a
+  # central outage. Only needs root deps (the loader aliases @/ → src/; no
+  # build step). A broken proxy/failover wiring must turn CI red, so the
+  # step exits non-zero on any failed check (no `|| true`).
+  e2e:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # NOTE: package-lock.json is tracked in this repo (commit 0f8d3204,
+      # 2026-08-18) — `npm ci` works on fresh runners; `npm install` is
+      # kept here for speed.
+      - name: Install root dependencies
+        run: npm install
+
+      - name: Run federation E2E
+        run: npm run test:e2e

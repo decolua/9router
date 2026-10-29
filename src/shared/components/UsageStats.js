@@ -257,6 +257,10 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
 
   // Fetch filtered stats via REST when period changes
   useEffect(() => {
+    // Stale-response guard: clicking periods quickly must never let a slow
+    // response for an OLD period overwrite the numbers for the NEW one
+    // (observed as "7d showing the 30d numbers / 24h showing the week").
+    let ignore = false;
     // First load: show full spinner; subsequent: show subtle fetching indicator
     if (isInitialLoad.current) {
       isInitialLoad.current = false;
@@ -268,16 +272,19 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
     fetch(`/api/usage/stats?period=${period}`)
       .then((r) => r.ok ? r.json() : null)
       .then((data) => {
-        if (data) {
+        if (data && !ignore) {
           hasLoadedStats.current = true;
           setStats((prev) => ({ ...prev, ...data }));
         }
       })
       .catch(() => {})
       .finally(() => {
-        setLoading(false);
-        setFetching(false);
+        if (!ignore) {
+          setLoading(false);
+          setFetching(false);
+        }
       });
+    return () => { ignore = true; };
   }, [period]);
 
   // SSE connection - real-time updates for activeRequests + recentRequests only

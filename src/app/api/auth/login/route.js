@@ -61,7 +61,6 @@ export async function POST(request) {
 
     if (isValid) {
       recordSuccess(ip);
-
       // Default password still in use on a remote client → force a password
       // change before the dashboard is exposed remotely (keeps local UX intact).
       const mustChangePassword =
@@ -91,6 +90,20 @@ export async function POST(request) {
       await setDashboardAuthCookie(cookieStore, request);
 
       return NextResponse.json({ success: true, mustChangePassword: false }, { headers: NO_STORE_HEADERS });
+    }
+
+    // With INITIAL_PASSWORD set, the default-credential chain is replaced;
+    // the 401 below is deliberately generic, so hint once when someone is
+    // still trying the public default (123456) — explains why every attempt
+    // now fails and burns the lockout budget.
+    if (!storedHash && process.env.INITIAL_PASSWORD && password === "123456") {
+      recordFail(ip);
+      return NextResponse.json(
+        {
+          error: "INITIAL_PASSWORD is set — the default password (123456) is disabled.",
+        },
+        { status: 401, headers: NO_STORE_HEADERS }
+      );
     }
 
     const { remainingBeforeLock } = recordFail(ip);

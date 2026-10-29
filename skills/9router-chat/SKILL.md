@@ -63,6 +63,20 @@ OpenAI (`/v1/chat/completions`):
   "usage": { "prompt_tokens": 8, "completion_tokens": 2, "total_tokens": 10 } }
 ```
 
+Thinking models (deepseek-v4-*, glm-5.3-*, kimi-k*, minimax-*, …) put the
+reasoning text under `message.reasoning_content` — **that key and no other**:
+`reasoning`/`thoughts` are never emitted, whichever upstream route served the
+request (direct provider, fallback account, or a relaying peer). The key is
+present on a reasoning-only turn, i.e. one where the model spent its budget
+thinking and returned `content: ""`/`null` with `finish_reason: "length"`; when
+the turn also carries real content the reasoning is dropped and only `content`
+is returned. Non-stream and streamed (`delta.reasoning_content`) responses use
+the same name:
+```json
+{ "choices": [{ "index": 0, "finish_reason": "length",
+  "message": { "role": "assistant", "content": "", "reasoning_content": "The user is asking…" } }] }
+```
+
 Streaming (`stream:true`) emits SSE: `data: {choices:[{delta:{content:"..."}}]}\n\n` ... `data: [DONE]\n\n`.
 
 Anthropic (`/v1/messages`):

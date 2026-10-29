@@ -2,8 +2,88 @@ import { Readable } from "stream";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
 
-const originalFetch = globalThis.fetch;
+// ─── Global fetch patch idempotency (QA-9ROUTER-18) ─────────────────────────
+// This module patches globalThis.fetch. Re-evaluating the module — vitest
+// vi.resetModules(), dev/HMR, next worker threads — used to install a SECOND
+// wrapper whose "original fetch" was the FIRST wrapper, so every wrapper layer
+// re-attempted the (dead) proxy: ONE fetch produced 2^N-1 proxy attempts and
+// warnings after N evaluations.
+//
+// The wrapper is therefore tagged with a process-wide symbol and the real
+// inner fetch is resolved at CALL time by unwrapping every tagged wrapper —
+// never captured at module-evaluation time.
+const PATCH_MARK = Symbol.for("9router.proxyFetch.patched");
+const INNER_FETCH = Symbol.for("9router.proxyFetch.innerFetch");
+// Last-resort fetch captured at module evaluation. Only consulted when a tagged
+// wrapper cannot be unwrapped (foreign/older patch without an inner fetch).
+const fallbackFetch = globalThis.fetch;
+
 const proxyDispatchers = new Map();
+
+function isPatchedFetch(fn) {
+  return typeof fn === "function" && fn[PATCH_MARK] === true;
+}
+
+/**
+ * Unwrap a chain of tagged wrappers down to the first untagged function.
+ * Returns null when the chain is cyclic or a layer has no usable inner fetch.
+ */
+function unwrapFetch(fn) {
+  let current = fn;
+  const seen = new Set();
+  while (isPatchedFetch(current)) {
+    if (seen.has(current)) return null;
+    seen.add(current);
+    const inner = current[INNER_FETCH];
+    if (typeof inner !== "function") return null;
+    current = inner;
+  }
+  return typeof current === "function" ? current : null;
+}
+
+/**
+ * Resolve the fetch that actually performs the request, AT CALL TIME.
+ * An untagged function (native fetch, or a test stub installed via
+ * `globalThis.fetch = vi.fn()`) is respected as-is; a tagged wrapper is
+ * unwrapped so a stacked chain collapses to the real fetch. Never returns a
+ * tagged wrapper, so the wrapper can never recurse into itself.
+ */
+function resolveInnerFetch() {
+  const current = globalThis.fetch;
+  if (!isPatchedFetch(current)) return current;
+
+  const unwrapped = unwrapFetch(current);
+  if (unwrapped) return unwrapped;
+
+  // Degenerate chain (cyclic, or a foreign wrapper without an inner fetch):
+  // prefer the evaluation-time fetch when it is usable, otherwise fail loud
+  // instead of looping back into this wrapper forever.
+  const fallback = unwrapFetch(fallbackFetch);
+  if (fallback) return fallback;
+  return typeof fallbackFetch === "function" && !isPatchedFetch(fallbackFetch)
+    ? fallbackFetch
+    : undefined;
+}
+
+// ─── Proxy-failure warning dedupe (QA-9ROUTER-18) ───────────────────────────
+// Keyed by "<proxyUrl>|<message>" and stored on a process-wide symbol so the
+// dedupe SURVIVES module re-evaluation: one warning per distinct failure per
+// process instead of one per evaluation (the flood reached 262,143 lines).
+// Bounded so a pathological error message cannot grow the set without limit.
+const PROXY_WARN_SEEN = Symbol.for("9router.proxyFetch.warnedProxyFailures");
+const PROXY_WARN_MAX_KEYS = 500;
+if (!globalThis[PROXY_WARN_SEEN]) globalThis[PROXY_WARN_SEEN] = new Set();
+const warnedProxyFailures = globalThis[PROXY_WARN_SEEN];
+
+function warnProxyFailureOnce(fallbackLabel, proxyUrl, message) {
+  const key = `${proxyUrl}|${message}`;
+  if (warnedProxyFailures.has(key)) {
+    dbg("PROXY", `proxy failed, falling back to ${fallbackLabel} (already warned): ${message}`);
+    return;
+  }
+  if (warnedProxyFailures.size < PROXY_WARN_MAX_KEYS) warnedProxyFailures.add(key);
+  console.warn(`[ProxyFetch] Proxy failed, falling back to ${fallbackLabel}: ${message}`);
+}
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
 // Disabled: not in use. Kept commented for future re-enable.
@@ -257,7 +337,8 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
     const dispatcher = proxyUrl ? await getDispatcher(proxyUrl) : undefined;
-    return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
+    const innerFetch = resolveInnerFetch();
+    return await innerFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
     const isStrictSsl = options.strictTls === true || process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
     if (!isStrictSsl && isTlsCertError(err)) {
@@ -267,7 +348,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
       // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
       console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
       const insecureDispatcher = await getDispatcher(proxyUrl, true);
-      return await originalFetch(url, { ...options, dispatcher: insecureDispatcher });
+      return await resolveInnerFetch()(url, { ...options, dispatcher: insecureDispatcher });
     }
     throw err;
   }
@@ -333,7 +414,18 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  const res = await proxyAwareFetchRaw(url, options, proxyOptions);
+  // DF-9ROUTER-42: single seam — every response that leaves the proxy-aware
+  // engine (proxy, MITM bypass, vercel relay, direct) is checked for a raw
+  // gzip body before it reaches a provider .json()/text() consumer.
+  return guardGzipResponse(res);
+}
+
+async function proxyAwareFetchRaw(url, options = {}, proxyOptions = null) {
   const targetUrl = typeof url === "string" ? url : url.toString();
+  // Resolved per call, never at module-evaluation time: a re-evaluated module
+  // must not treat a previous wrapper as the "original" fetch.
+  const innerFetch = resolveInnerFetch();
 
   // Vercel relay: forward request via relay headers
   const vercelRelayUrl = normalizeString(proxyOptions?.vercelRelayUrl);
@@ -347,7 +439,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       "x-relay-target": `${parsed.protocol}//${parsed.host}`,
       "x-relay-path": `${parsed.pathname}${parsed.search}`,
     };
-    return originalFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
+    return innerFetch(vercelRelayUrl, { ...options, headers: relayHeaders });
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
@@ -364,7 +456,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         if (proxyOptions?.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
         }
-        console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
+        warnProxyFailureOnce("direct bypass", proxyUrl, proxyError.message);
       }
     }
     // No proxy — manually resolve real IP to bypass DNS spoof
@@ -385,7 +477,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       if (proxyOptions?.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
-      console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
+      warnProxyFailureOnce("direct", proxyUrl, proxyError.message);
       return fetchWithTlsFallback(url, options, null);
     }
   }
@@ -420,8 +512,231 @@ async function patchedFetch(url, options = {}) {
   return proxyAwareFetch(url, options, null);
 }
 
-// Idempotency guard — only patch once to avoid wrapping multiple times
-if (globalThis.fetch !== patchedFetch) {
+// ─── Transparent gzip guard (DF-9ROUTER-42) ─────────────────────────────────
+// With undici 8 inside the Next runtime, provider upstream responses can
+// reach consumers with `content-encoding: gzip` still set and a raw gzip
+// stream as the body — providerResponse.json() then throws
+// `Unexpected token \u001f ... is not valid JSON` (chat 503
+// "Invalid JSON response from gemini", images/TTS 502). The same chain
+// decompresses transparently with undici 7, in bare node, and in vitest, so
+// the guard is installed here at the single boundary every provider call
+// crosses: whatever inner fetch ran, a response still carrying an
+// uncompressed-able gzip body is delivered decompressed. Scoped strictly to
+// gzip with a ReadableStream body — br/deflate and non-stream bodies are
+// handed through untouched, and failure to decompress is fail-open (the
+// original response is returned rather than masking the real upstream error).
+const GZIP_HEADER_RE = /^\s*gzip\s*(?:,|$)/i;
+// Max bytes the guard will buffer while inspecting/decompressing a JSON-bound
+// response body. Generous for any real JSON payload; keeps a runaway response
+// from exhausting memory.
+const SNIFF_BUFFER_MAX = 64 * 1024 * 1024;
+
+function shouldGuardGzipResponse(res) {
+  try {
+    const encoding = res?.headers?.get?.("content-encoding") ?? "";
+    // Duck-type the body (getReader) instead of `instanceof ReadableStream`:
+    // inside the Next runtime the Response can come from a bundled/aliased
+    // undici copy whose ReadableStream is a DIFFERENT realm's constructor,
+    // which makes instanceof false and would silently skip the guard.
+    const hasStreamBody = !!res?.body && typeof res.body.getReader === "function";
+    return GZIP_HEADER_RE.test(encoding) && hasStreamBody;
+  } catch {
+    return false;
+  }
+}
+
+function isGzipMagic(chunk) {
+  return !!chunk && chunk.length >= 2 && chunk[0] === 0x1f && chunk[1] === 0x8b;
+}
+
+/**
+ * Concatenate buffered Uint8Array chunks into one Uint8Array — the single
+ * Uint8Array constructor is understood identically by every Response
+ * implementation in the process (native and bundled), unlike chunk arrays
+ * (stringified) or cross-realm streams.
+ */
+function concatChunks(chunks) {
+  if (!chunks.length) return new Uint8Array(0);
+  const total = chunks.reduce((sum, c) => sum + c.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  }
+  return out;
+}
+
+/**
+ * Re-serve a stream body whose first chunk we already consumed, cancelling the
+ * upstream reader when the consumer aborts (generator return()) or finishes.
+ */
+function streamWithFirstChunk(reader, firstChunk) {
+  return async function* () {
+    try {
+      yield firstChunk;
+      for (;;) {
+        const next = await reader.read();
+        if (next.done) break;
+        yield next.value;
+      }
+    } finally {
+      try {
+        reader.cancel();
+      } catch { /* already closed */ }
+    }
+  };
+}
+
+/**
+ * Inspect the first chunk of the RAW body stream and route it:
+ * - genuine gzip (0x1f 0x8b magic)  -> gunzip the whole stream, drop the
+ *   encoding/content-length headers so consumers see a plain body;
+ * - anything else (undici 8 already decompressed the body but left the
+ *   `content-encoding` header set, or a non-gzip encoding) -> hand the raw
+ *   chunks through untouched, so nothing is ever garbage-in or lost.
+ */
+async function rebuildGzipResponse(res) {
+  const { createGunzip } = await import("node:zlib");
+  const { PassThrough, Readable } = await import("node:stream");
+
+  const reader = res.body.getReader();
+  let firstChunk;
+  const buffered = [];
+  try {
+    const first = await reader.read();
+    if (first.done) {
+      // Empty body: nothing to decompress, nothing to lose.
+      return new Response(null, {
+        status: res.status,
+        statusText: res.statusText,
+        headers: res.headers,
+      });
+    }
+    firstChunk = first.value;
+    // Buffer the whole remainder: the Next runtime's response re-wrapping can
+    // leave this stream locked to a second consumer, so re-serving a lazy
+    // reader-backed stream fails with `ReadableStream is locked`. JSON-bound
+    // bodies are bounded, and the guard caps the buffer (SNIFF_BUFFER_MAX)
+    // to keep a runaway response from exhausting memory.
+    let total = firstChunk.length;
+    for (;;) {
+      const next = await reader.read();
+      if (next.done) break;
+      buffered.push(next.value);
+      total += next.value.length;
+      if (total > SNIFF_BUFFER_MAX) {
+        dbg("PROXY", `gzip guard: body exceeds ${SNIFF_BUFFER_MAX}B, aborting guard (returning original)`);
+        try {
+          reader.cancel();
+        } catch { /* ignore */ }
+        return res;
+      }
+    }
+  } catch (e) {
+    dbg("PROXY", `gzip guard could not read body, returning original response: ${e.message}`);
+    try {
+      reader.cancel();
+    } catch { /* ignore */ }
+    return res;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch { /* ignore */ }
+  }
+
+  const all = [firstChunk, ...buffered];
+
+  if (!isGzipMagic(firstChunk)) {
+    // Not actually gzip — serve the buffered bytes as-is (headers untouched,
+    // so the body/content-length pair stays valid exactly like undici 7 did).
+    return new Response(concatChunks(all), {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
+  }
+
+  // Genuine gzip: decompress the whole buffered body.
+  let plain;
+  try {
+    plain = await new Promise((resolve, reject) => {
+      const gunzip = createGunzip();
+      gunzip.on("data", (c) => parts.push(c));
+      const parts = [];
+      gunzip.on("end", () => resolve(parts));
+      gunzip.on("error", reject);
+      for (const chunk of all) gunzip.write(chunk);
+      gunzip.end();
+    });
+  } catch (e) {
+    dbg("PROXY", `gzip decompress failed, serving raw body: ${e.message}`);
+    // fail-open: serve the raw bytes rather than masking the upstream error
+    return new Response(concatChunks(all), {
+      status: res.status,
+      statusText: res.statusText,
+      headers: res.headers,
+    });
+  }
+  const headers = new Headers();
+  try {
+    for (const [key, value] of res.headers.entries?.() ?? []) headers.set(key, value);
+    headers.delete("content-encoding");
+    headers.delete("content-length");
+  } catch { /* headers were broken anyway — an empty Headers still parses */ }
+  return new Response(concatChunks(plain), {
+    status: res.status,
+    statusText: res.statusText,
+    headers,
+  });
+}
+
+/**
+ * DF-9ROUTER-42: single seam — every response that leaves the proxy-aware
+ * engine (proxy, MITM bypass, vercel relay, direct) is checked for a raw gzip
+ * body before it reaches a provider .json()/text() consumer.
+ *
+ * Two defect shapes are covered:
+ * 1. `content-encoding: gzip` + raw gzip stream (undici 8 dispatcher path) —
+ *    guarded by the header, confirmed by magic bytes.
+ * 2. NO headers at all + raw gzip stream — observed in the Next runtime,
+ *    whose response re-wrapping can drop the headers entirely; guarded by
+ *    sniffing the first bytes of JSON-bound responses (the only consumers
+ *    that hit the parse failure). SSE streams (text/event-stream) and other
+ *    non-JSON encodings are never peeked, so streaming stays zero-copy.
+ */
+async function guardGzipResponse(res) {
+  let encoding = "";
+  let contentType = "";
+  try {
+    encoding = (res?.headers?.get?.("content-encoding") ?? "").toLowerCase();
+    contentType = (res?.headers?.get?.("content-type") ?? "").toLowerCase();
+  } catch { /* broken/cross-realm headers — treat as absent */ }
+
+  const hasStreamBody = !!res?.body && typeof res.body.getReader === "function";
+  if (!hasStreamBody) return res;
+
+  const headerSaysGzip = GZIP_HEADER_RE.test(encoding);
+  const jsonBoundNoEncoding = !encoding && (!contentType || contentType.includes("json"));
+  if (!headerSaysGzip && !jsonBoundNoEncoding) return res;
+
+  try {
+    return await rebuildGzipResponse(res);
+  } catch (e) {
+    dbg("PROXY", `gzip guard failed, returning original response: ${e.message}`);
+    return res;
+  }
+}
+
+// ─── Install at most once per global (QA-9ROUTER-18) ────────────────────────
+// Tag the wrapper with its inner fetch, then install it only when the current
+// global fetch is not already one of our wrappers. A re-evaluated module
+// (vi.resetModules, HMR, worker threads) therefore leaves the installed
+// wrapper in place instead of stacking another layer on top of it.
+patchedFetch[PATCH_MARK] = true;
+patchedFetch[INNER_FETCH] = resolveInnerFetch();
+
+if (!isPatchedFetch(globalThis.fetch)) {
   globalThis.fetch = patchedFetch;
 }
 

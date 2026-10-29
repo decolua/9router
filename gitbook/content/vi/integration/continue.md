@@ -29,7 +29,7 @@ Thêm cấu hình sau vào `config.json`:
     {
       "title": "9Router - Claude Opus",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -44,28 +44,28 @@ Thêm cấu hình sau vào `config.json`:
     {
       "title": "9Router - Claude Opus (Best)",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Sonnet (Balanced)",
       "provider": "openai",
-      "model": "cc/claude-sonnet-4-20250514",
+      "model": "cc/claude-sonnet-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - DeepSeek Chat (Code)",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Haiku (Fast)",
       "provider": "openai",
-      "model": "cc/claude-haiku-4-20250514",
+      "model": "cc/claude-haiku-4-5-20251001",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -94,17 +94,17 @@ Thay `apiBase` bằng:
 ## Model có sẵn
 
 ### Claude Models (Anthropic)
-- `cc/claude-opus-4-5-20251101` - Mạnh nhất, tốt nhất cho task phức tạp
-- `cc/claude-sonnet-4-20250514` - Cân bằng hiệu năng và tốc độ
-- `cc/claude-haiku-4-20250514` - Nhanh nhất, phù hợp task đơn giản
+- `cc/claude-opus-5-5` - Mạnh nhất, tốt nhất cho task phức tạp
+- `cc/claude-sonnet-5-5` - Cân bằng hiệu năng và tốc độ
+- `cc/claude-haiku-4-5-20251001` - Nhanh nhất, phù hợp task đơn giản
 
 ### DeepSeek Models
-- `cx/deepseek-chat` - Xuất sắc cho tạo code
-- `cx/deepseek-reasoner` - Tốt nhất cho giải quyết vấn đề phức tạp
+- `deepseek/deepseek-chat` - Xuất sắc cho tạo code
+- `deepseek/deepseek-reasoner` - Tốt nhất cho giải quyết vấn đề phức tạp
 
 ### GLM Models (Zhipu AI)
-- `glm/glm-4-plus` - Tiếng Trung và tiếng Anh nâng cao
-- `glm/glm-4-flash` - Phản hồi nhanh
+- `glm/glm-4.7` - Tiếng Trung và tiếng Anh nâng cao
+- `glm/glm-4.7-flash` - Phản hồi nhanh
 
 ## Ví dụ Sử dụng
 
@@ -112,22 +112,22 @@ Thay `apiBase` bằng:
 1. Chọn code trong editor
 2. Mở sidebar Continue
 3. Gõ: "Explain this code"
-4. Model: `cc/claude-sonnet-4-20250514`
+4. Model: `cc/claude-sonnet-5-5`
 
 ### Tạo Code
 1. Mở sidebar Continue
 2. Gõ: "Create a React component for user profile card"
-3. Model: `cx/deepseek-chat`
+3. Model: `deepseek/deepseek-chat`
 
 ### Refactoring
 1. Chọn code để refactor
 2. Gõ: "Refactor this to use async/await"
-3. Model: `cc/claude-sonnet-4-20250514`
+3. Model: `cc/claude-sonnet-5-5`
 
 ### Sửa Bug
 1. Chọn code có vấn đề
 2. Gõ: "Find and fix the bug in this code"
-3. Model: `cx/deepseek-reasoner`
+3. Model: `deepseek/deepseek-reasoner`
 
 ## Cấu hình Nâng cao
 
@@ -141,7 +141,7 @@ Thêm system prompt tùy chỉnh cho hành vi cụ thể:
     {
       "title": "9Router - Code Expert",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "systemMessage": "You are an expert programmer. Always provide clean, well-documented code with best practices."
@@ -160,7 +160,7 @@ Thêm system prompt tùy chỉnh cho hành vi cụ thể:
     {
       "title": "9Router - Creative Writer",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "temperature": 0.9,
@@ -226,10 +226,10 @@ Cấu hình context Continue gửi đến model:
 ## Best Practices
 
 ### Chiến lược Chọn Model
-- **Edit nhanh**: Dùng `cc/claude-haiku-4-20250514`
-- **Tạo code**: Dùng `cx/deepseek-chat`
-- **Refactoring phức tạp**: Dùng `cc/claude-opus-4-5-20251101`
-- **Giải quyết vấn đề**: Dùng `cx/deepseek-reasoner`
+- **Edit nhanh**: Dùng `cc/claude-haiku-4-5-20251001`
+- **Tạo code**: Dùng `deepseek/deepseek-chat`
+- **Refactoring phức tạp**: Dùng `cc/claude-opus-5-5`
+- **Giải quyết vấn đề**: Dùng `deepseek/deepseek-reasoner`
 
 ### Quản lý Context
 - Chỉ chọn code liên quan trước khi hỏi
@@ -245,5 +245,3 @@ Cấu hình context Continue gửi đến model:
 
 - [Cấu hình Cursor](cursor.md) cho tích hợp IDE nâng cao
 - [Setup Roo](roo.md) cho trợ lý AI
-- [Khám phá CLI usage](../cli/basic-usage.md)
-- [Tìm hiểu về chọn model](../models/overview.md)

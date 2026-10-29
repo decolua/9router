@@ -33,6 +33,10 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
+  // requestDetail.js (chatCore import chain) also binds this; a mock missing it
+  // fails the call with "No saveRequestUsage export is defined" once the
+  // non-stream exit runs saveUsageStats (same pattern as force-stream-config).
+  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");

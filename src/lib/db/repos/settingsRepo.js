@@ -1,5 +1,6 @@
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { nowIso, stampInsert, stampUpsertConflict } from "../../federation/stamp.js";
 
 const DEFAULT_MITM_ROUTER_BASE = "http://localhost:20128";
 const DEFAULT_HEADROOM_URL = process.env.HEADROOM_URL || "http://localhost:8787";
@@ -75,9 +76,31 @@ async function readRaw() {
   return row ? parseJson(row.data, {}) : {};
 }
 
+// REQUIRE_API_KEY deployment policy (QA-9ROUTER-5): an explicit "true"/"false"
+// env value wins over the stored setting so a deployment can pin API-key
+// enforcement from the environment; when unset, the stored setting (or the
+// secure default) applies. Parsing is intentionally narrow — only exact
+// lowercase "true"/"false" are honored; anything else is treated as unset.
+function envRequireApiKeyOverride() {
+  const raw = process.env.REQUIRE_API_KEY;
+  if (raw === "true") return true;
+  if (raw === "false") return false;
+  return undefined;
+}
+
+// DF-9ROUTER-38: disclosure helper — names the env var pinning requireApiKey
+// (see envRequireApiKeyOverride), or null when the UI controls it.
+export function requireApiKeyPinnedBy() {
+  return envRequireApiKeyOverride() !== undefined ? "REQUIRE_API_KEY" : null;
+}
+
 // Merge raw settings with defaults; backward-compat for missing keys
 export function mergeWithDefaults(raw) {
   const merged = { ...DEFAULT_SETTINGS, ...(raw || {}) };
+  const envRequireApiKey = envRequireApiKeyOverride();
+  if (envRequireApiKey !== undefined) {
+    merged.requireApiKey = envRequireApiKey;
+  }
   for (const [key, defVal] of Object.entries(DEFAULT_SETTINGS)) {
     if (merged[key] === undefined) {
       if (
@@ -117,9 +140,10 @@ export async function updateSettings(updates) {
     const row = db.get(`SELECT data FROM settings WHERE id = 1`);
     const current = row ? parseJson(row.data, {}) : {};
     next = { ...current, ...updates };
+    const s = stampInsert(db);
     db.run(
-      `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
-      [stringifyJson(next)],
+      `INSERT INTO settings(id, data${s.cols}) VALUES(1, ?${s.placeholders}) ON CONFLICT(id) DO UPDATE SET data = excluded.data${stampUpsertConflict()}`,
+      [stringifyJson(next), ...s.params],
     );
   });
   return mergeWithDefaults(next);

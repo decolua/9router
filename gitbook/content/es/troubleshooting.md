@@ -24,7 +24,7 @@ Problemas comunes y soluciones al usar 9Router.
 2. **Usa el fallback con combo:**
    ```
    Dashboard → Combos → Crea cadena de fallback
-   Ejemplo: cc/claude-opus → glm/glm-4.7 → if/kimi-k2
+   Ejemplo: cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
    ```
 
 3. **Verifica la conexión del proveedor:**
@@ -59,7 +59,7 @@ Problemas comunes y soluciones al usar 9Router.
 3. **Agrega un combo de fallback:**
    ```
    Dashboard → Combos → Agrega modelos de respaldo
-   Principal: cc/claude-opus (suscripción)
+   Principal: cc/claude-opus-5-5 (suscripción)
    Respaldo: glm/glm-4.7 (barato)
    Emergencia: if/kimi-k2 (gratis)
    ```
@@ -110,15 +110,15 @@ Problemas comunes y soluciones al usar 9Router.
 
 2. **Cambia a modelos más baratos:**
    ```
-   Reemplaza: cc/claude-opus (suscripción $20-100/mes)
+   Reemplaza: cc/claude-opus-5-5 (suscripción $20-100/mes)
    Con: glm/glm-4.7 ($0.6/1M tokens)
         minimax/MiniMax-M2.1 ($0.20/1M tokens)
    ```
 
 3. **Usa el nivel gratis:**
    ```
-   if/kimi-k2-thinking (GRATIS)
-   qw/qwen3-coder-plus (GRATIS)
+   if/kimi-k2 (GRATIS)
+   if/qwen3-coder-plus (GRATIS)
    kr/claude-sonnet-4.5 (GRATIS)
    gc/gemini-3-flash-preview (GRATIS 180K/mes)
    ```
@@ -235,8 +235,8 @@ Problemas comunes y soluciones al usar 9Router.
 
 2. **Revisa el formato del ID del modelo:**
    ```
-   Correcto: cc/claude-opus-4-5-20251101
-   Incorrecto: claude-opus-4-5-20251101
+   Correcto: cc/claude-opus-5-5
+   Incorrecto: claude-opus-5-5
    
    Formato: [prefijo-proveedor]/[nombre-modelo]
    ```
@@ -273,15 +273,15 @@ Problemas comunes y soluciones al usar 9Router.
 
 2. **Cambia a un modelo más rápido:**
    ```
-   Rápidos: cc/claude-haiku-4-5 (Haiku es más rápido que Opus)
+   Rápidos: cc/claude-haiku-4-5-20251001 (Haiku es más rápido que Opus)
          gc/gemini-3-flash-preview
-         qw/qwen3-coder-flash
+         if/qwen3-32b
    ```
 
 3. **Usa streaming:**
    ```json
    {
-     "model": "cc/claude-opus-4-5",
+     "model": "cc/claude-opus-5-5",
      "messages": [...],
      "stream": true
    }

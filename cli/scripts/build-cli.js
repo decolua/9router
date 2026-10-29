@@ -148,8 +148,35 @@ function assertRequiredApiArtifacts(cliAppDir) {
   }
 }
 
+// Preflight: the CLI build scripts (scripts/buildMitm.js et al.) require cli
+// devDependencies (esbuild). On a fresh clone `cli/node_modules` is never
+// installed, so the build would die at Step 8 with a bare MODULE_NOT_FOUND
+// stack. Fail fast with an actionable message instead. Check stays cheap,
+// synchronous, and never auto-installs (no network side effects).
+function preflightBuildDependencies() {
+  const required = ["esbuild"];
+  const missing = required.filter((pkg) => {
+    try {
+      require.resolve(pkg, { paths: [cliDir] });
+      return false;
+    } catch {
+      return true;
+    }
+  });
+
+  if (missing.length > 0) {
+    console.error(`❌ CLI build dependencies are not installed (missing: ${missing.join(", ")}).`);
+    console.error("Install them with one of:");
+    console.error("  npm --prefix cli install   # from the repository root");
+    console.error("  cd cli && npm install      # equivalent");
+    process.exit(1);
+  }
+}
+
 function buildCliPackage() {
   console.log("📦 Building 9Router CLI package with Next.js...\n");
+
+  preflightBuildDependencies();
 
   fs.mkdirSync(buildHomeDir, { recursive: true });
   fs.mkdirSync(path.join(buildHomeDir, "AppData", "Roaming"), { recursive: true });

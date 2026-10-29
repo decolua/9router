@@ -37,17 +37,17 @@ API Key: your-api-key-from-dashboard
 利用可能な9Routerモデルから選択:
 
 **Claudeモデル:**
-- `cc/claude-opus-4-5-20251101` - 最も高性能
-- `cc/claude-sonnet-4-20250514` - バランス
-- `cc/claude-haiku-4-20250514` - 高速
+- `cc/claude-opus-5-5` - 最も高性能
+- `cc/claude-sonnet-5-5` - バランス
+- `cc/claude-haiku-4-5-20251001` - 高速
 
 **DeepSeekモデル:**
-- `cx/deepseek-chat` - 汎用
-- `cx/deepseek-reasoner` - 複雑な推論
+- `deepseek/deepseek-chat` - 汎用
+- `deepseek/deepseek-reasoner` - 複雑な推論
 
 **GLMモデル:**
-- `glm/glm-4-plus` - 高度
-- `glm/glm-4-flash` - 高速応答
+- `glm/glm-4.7` - 高度
+- `glm/glm-4.7-flash` - 高速応答
 
 ### 4. 接続をテスト
 
@@ -62,26 +62,26 @@ Hello! Can you confirm you're connected through 9Router?
 ### 基本チャット
 ```
 Rooに質問: "Explain quantum computing in simple terms"
-Model: cc/claude-sonnet-4-20250514
+Model: cc/claude-sonnet-5-5
 ```
 
 ### コード生成
 ```
 Rooに質問: "Write a Python function to calculate Fibonacci numbers"
-Model: cx/deepseek-chat
+Model: deepseek/deepseek-chat
 ```
 
 ### 複雑な推論
 ```
 Rooに質問: "Analyze the trade-offs between microservices and monolithic architecture"
-Model: cx/deepseek-reasoner
+Model: deepseek/deepseek-reasoner
 ```
 
 ## モデル選択のヒント
 
-- **クイックタスク**: `cc/claude-haiku-4-20250514` または `glm/glm-4-flash` を使用
-- **バランスのとれたパフォーマンス**: `cc/claude-sonnet-4-20250514` または `cx/deepseek-chat` を使用
-- **複雑な推論**: `cc/claude-opus-4-5-20251101` または `cx/deepseek-reasoner` を使用
+- **クイックタスク**: `cc/claude-haiku-4-5-20251001` または `glm/glm-4.7-flash` を使用
+- **バランスのとれたパフォーマンス**: `cc/claude-sonnet-5-5` または `deepseek/deepseek-chat` を使用
+- **複雑な推論**: `cc/claude-opus-5-5` または `deepseek/deepseek-reasoner` を使用
 - **コスト最適化**: DeepSeekまたはGLMモデルを使用
 
 ## トラブルシューティング
@@ -108,9 +108,9 @@ Model: cx/deepseek-reasoner
 Roo設定で頻繁に使うモデルのショートカットを作成:
 
 ```
-エイリアス: "fast" → cc/claude-haiku-4-20250514
-エイリアス: "smart" → cc/claude-opus-4-5-20251101
-エイリアス: "code" → cx/deepseek-chat
+エイリアス: "fast" → cc/claude-haiku-4-5-20251001
+エイリアス: "smart" → cc/claude-opus-5-5
+エイリアス: "code" → deepseek/deepseek-chat
 ```
 
 ### 複数のプロファイル
@@ -124,4 +124,3 @@ Roo設定で頻繁に使うモデルのショートカットを作成:
 
 - [Cursorを設定](cursor.md) IDE統合用
 - [Continueをセットアップ](continue.md) VSCode用
-- [CLI使用法を確認](../cli/basic-usage.md)

@@ -72,7 +72,7 @@ Cada solicitud muestra el uso detallado de tokens:
 Dashboard → Activity → Recent Requests
 
 Request #1234
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 Timestamp: 2026-02-04 04:15:32
 
 Tokens:
@@ -103,9 +103,9 @@ Solicitud actual:
 Dashboard → Analytics → Token Usage
 
 Hoy (4 feb 2026):
-  cc/claude-opus-4-5: 15M tokens ($0, suscripción)
+  cc/claude-opus-5-5: 15M tokens ($0, suscripción)
   glm/glm-4.7: 8M tokens ($4.80)
-  if/kimi-k2-thinking: 3M tokens ($0, gratis)
+  if/kimi-k2: 3M tokens ($0, gratis)
   
 Total: 26M tokens
 Costo: $4.80
@@ -209,7 +209,7 @@ El dashboard muestra:
 
 ### Proveedores gratis
 
-**iFlow / Qwen / Kiro**
+**iFlow / Kiro**
 ```
 Tipo de cuota: Ilimitado (con rate-limit)
 Límite: Sin límite duro
@@ -324,7 +324,7 @@ Este mes:
   Solicitudes: 15,234
   Tokens: 320M
   Costo: $52.00
-  Modelo principal: cc/claude-opus-4-5 (45%)
+  Modelo principal: cc/claude-opus-5-5 (45%)
 ```
 
 ### Uso por modelo
@@ -333,18 +333,18 @@ Este mes:
 Dashboard → Analytics → Models
 
 Modelos principales (este mes):
-1. cc/claude-opus-4-5: 145M tokens (45%)
+1. cc/claude-opus-5-5: 145M tokens (45%)
 2. glm/glm-4.7: 95M tokens (30%)
-3. if/kimi-k2-thinking: 50M tokens (16%)
+3. if/kimi-k2: 50M tokens (16%)
 4. minimax/MiniMax-M2.1: 20M tokens (6%)
-5. gc/gemini-3-flash: 10M tokens (3%)
+5. gc/gemini-3-flash-preview: 10M tokens (3%)
 
 Desglose de costos:
-  cc/claude-opus: $0 (suscripción)
+  cc/claude-opus-5-5: $0 (suscripción)
   glm/glm-4.7: $45.00
-  if/kimi-k2-thinking: $0 (gratis)
+  if/kimi-k2: $0 (gratis)
   minimax/MiniMax-M2.1: $7.00
-  gc/gemini-3-flash: $0 (gratis)
+  gc/gemini-3-flash-preview: $0 (gratis)
 ```
 
 ### Uso por tiempo
@@ -376,7 +376,7 @@ premium-coding:
   Costo: $2.40
   
   Desglose:
-    cc/claude-opus: 8M tokens (67%, $0)
+    cc/claude-opus-5-5: 8M tokens (67%, $0)
     glm/glm-4.7: 3M tokens (25%, $1.80)
     minimax/MiniMax-M2.1: 1M tokens (8%, $0.20)
 
@@ -387,7 +387,7 @@ budget-combo:
   
   Desglose:
     glm/glm-4.7: 4M tokens (67%, $2.40)
-    if/kimi-k2-thinking: 2M tokens (33%, $0)
+    if/kimi-k2: 2M tokens (33%, $0)
 ```
 
 ---
@@ -512,11 +512,11 @@ Dashboard → Analytics → Combos:
 
 **Ejemplo:**
 ```
-Actual: cc/claude-opus → glm/glm-4.7
+Actual: cc/claude-opus-5-5 → glm/glm-4.7
   80% vía Claude (bueno)
   20% vía GLM ($12/mes)
 
-Optimizado: gc/gemini-3-flash → cc/claude-opus → glm/glm-4.7
+Optimizado: gc/gemini-3-flash-preview → cc/claude-opus-5-5 → glm/glm-4.7
   50% vía Gemini (gratis)
   40% vía Claude (suscripción)
   10% vía GLM ($6/mes)
@@ -628,7 +628,7 @@ Response:
   },
   "byModel": [
     {
-      "model": "cc/claude-opus-4-5",
+      "model": "cc/claude-opus-5-5",
       "requests": 456,
       "tokens": 15000000,
       "cost": 0

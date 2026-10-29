@@ -18,7 +18,7 @@
 
 **Start maximizing value:**
 - ✅ **Maximize Subscriptions** - Track and use every bit of Claude Code, Codex, Gemini quota
-- ✅ **FREE Available** - Access iFlow, Qwen, Kiro models via CLI
+- ✅ **FREE Available** - Access iFlow and Kiro models via CLI
 - ✅ **Ultra-Cheap Backup** - GLM ($0.6/1M), MiniMax M2.1 ($0.20/1M)
 - ✅ **Smart Fallback** - Subscription → Cheap → Free, automatic switching
 
@@ -35,7 +35,7 @@ Tier 1 (SUBSCRIPTION): Claude Code → Codex → Gemini
   ↓ quota exhausted
 Tier 2 (CHEAP): GLM-4.7 → MiniMax M2.1 → Kimi
   ↓ budget limit
-Tier 3 (FREE): iFlow → Qwen → Kiro
+Tier 3 (FREE): iFlow → Kiro
 
 → Automatic switching, zero downtime!
 ```
@@ -93,7 +93,7 @@ When subscription quota runs out, pay pennies:
 
 Emergency backup when everything else is quota-limited:
 
-- **iFlow**: 8 models (Kimi K2, Qwen3 Coder Plus, GLM 4.7, MiniMax M2)
+- **iFlow**: 15 models (Kimi K2, Qwen3 Coder Plus, GLM 4.7, DeepSeek R1)
 - **Qwen**: 3 models (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro**: Claude Sonnet 4.5, Haiku 4.5 (AWS Builder ID)
 
@@ -118,10 +118,10 @@ npm install -g 9router
 ```
 Endpoint: http://localhost:20128/v1
 API Key: [from dashboard]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
-[→ Full Getting Started Guide](getting-started.md)
+[→ Full Getting Started Guide](getting-started/quick-start.md)
 
 ---
 
@@ -152,7 +152,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ## What's Next?
 
-- [Getting Started](getting-started.md) - Install and configure in 5 minutes
+- [Getting Started](getting-started/quick-start.md) - Install and configure in 5 minutes
 - [Installation Guide](getting-started/installation.md) - Detailed setup instructions
 - [Features](features/) - Explore all capabilities
 - [FAQ](faq.md) - Common questions

@@ -1,64 +1,13 @@
-import { ensureDirs, DATA_FILE } from "./paths.js";
+import { ensureDirs, DATA_FILE, BACKUPS_DIR } from "./paths.js";
+import { openStateDatabase } from "./integrity.js";
 import { stripNullBytes } from "./helpers/nullBytes.js";
 
 // Use global to survive Next.js dev hot-reload (module state resets on reload)
 if (!global._dbAdapter) global._dbAdapter = { instance: null, initPromise: null, logged: false };
 const state = global._dbAdapter;
 
-async function tryBunSqlite() {
-  // Bun runtime only — built-in, no install needed
-  if (!process.versions.bun) return null;
-  try {
-    const { createBunSqliteAdapter } = await import("./adapters/bunSqliteAdapter.js");
-    return await createBunSqliteAdapter(DATA_FILE);
-  } catch (e) {
-    console.warn(`[DB] bun:sqlite unavailable: ${e.message}`);
-    return null;
-  }
-}
-
-async function tryBetterSqlite() {
-  // Skip on Bun — better-sqlite3 native bindings unsupported
-  if (process.versions.bun) return null;
-  // Skip on Node >= 24: the native addon SIGSEGVs on load there, which is a
-  // process-level crash the try/catch below cannot recover from. node:sqlite covers it.
-  const [nodeMajor] = process.versions.node.split(".").map(Number);
-  if (nodeMajor >= 24) return null;
-  try {
-    const { createBetterSqliteAdapter } = await import("./adapters/betterSqliteAdapter.js");
-    return createBetterSqliteAdapter(DATA_FILE);
-  } catch (e) {
-    console.warn(`[DB] better-sqlite3 unavailable: ${e.message}`);
-    return null;
-  }
-}
-
-async function tryNodeSqlite() {
-  // Built-in since Node 22.5.0 — no install needed. Skip under Bun (no node:sqlite).
-  if (process.versions.bun) return null;
-  const [maj, min] = process.versions.node.split(".").map(Number);
-  if (maj < 22 || (maj === 22 && min < 5)) return null;
-  try {
-    const { createNodeSqliteAdapter } = await import("./adapters/nodeSqliteAdapter.js");
-    return await createNodeSqliteAdapter(DATA_FILE);
-  } catch (e) {
-    console.warn(`[DB] node:sqlite unavailable: ${e.message}`);
-    return null;
-  }
-}
-
-async function trySqlJs() {
-  try {
-    const { createSqlJsAdapter } = await import("./adapters/sqljsAdapter.js");
-    return await createSqlJsAdapter(DATA_FILE);
-  } catch (e) {
-    console.warn(`[DB] sql.js unavailable: ${e.message}`);
-    return null;
-  }
-}
-
 /**
- * Make every bound string NUL-safe, once, for all drivers.
+ * Make every bound string NUL-safe, once, for all drivers (upstream v0.5.111).
  *
  * SQLite stores TEXT as a NUL-terminated C string, so a bound string with an
  * embedded NUL is rejected by better-sqlite3 ("String contains null byte") and
@@ -83,14 +32,14 @@ function withNullByteSafeParams(adapter) {
 
 async function initAdapter() {
   ensureDirs();
-  // Order per runtime:
-  //   Bun:  bun:sqlite → sql.js
-  //   Node: better-sqlite3 → node:sqlite (≥22.5) → sql.js
-  let adapter = await tryBunSqlite();
-  if (!adapter) adapter = await tryBetterSqlite();
-  if (!adapter) adapter = await tryNodeSqlite();
-  if (!adapter) adapter = await trySqlJs();
-  if (!adapter) throw new Error("[DB] No SQLite driver available (bun/better/node/sql.js all failed)");
+
+  // The adapter chain itself now lives in adapterChain.js (it is shared with
+  // the corrupt-DB recovery path, which validates backup candidates with the
+  // same ordering). openStateDatabase() opens the healthy/missing file
+  // unchanged, and for a damaged state DB it preserves the bytes, restores the
+  // newest usable backup and reports loudly — a corrupt file never surfaces as
+  // "[DB] No SQLite driver available …" any more. See integrity.js.
+  let adapter = await openStateDatabase({ dataFile: DATA_FILE, backupsDir: BACKUPS_DIR });
 
   adapter = withNullByteSafeParams(adapter);
 

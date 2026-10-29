@@ -156,7 +156,7 @@ curl http://localhost:20128/v1/models \
   "object": "list",
   "data": [
     {
-      "id": "cc/claude-opus-4-5-20251101",
+      "id": "cc/claude-opus-5-5",
       "object": "model",
       "created": 1234567890,
       "owned_by": "claude-code"
@@ -172,7 +172,7 @@ curl http://localhost:20128/v1/chat/completions \
   -H "Authorization: Bearer your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "cc/claude-opus-4-5-20251101",
+    "model": "cc/claude-opus-5-5",
     "messages": [
       {"role": "user", "content": "Hello!"}
     ]
@@ -465,7 +465,7 @@ nano ~/.bashrc  # 或 ~/.zshrc
 
 ## 下一步
 
-- [入门指南](../getting-started.md) - 连接提供商并开始编码
+- [入门指南](../getting-started/quick-start.md) - 连接提供商并开始编码
 - [功能特性](../features/) - 探索配额跟踪、组合、部署
 - [故障排除](../troubleshooting.md) - 解决常见问题
 

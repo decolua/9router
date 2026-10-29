@@ -24,7 +24,7 @@ Common issues and solutions when using 9Router.
 2. **Use combo fallback:**
    ```
    Dashboard → Combos → Create fallback chain
-   Example: cc/claude-opus → glm/glm-4.7 → if/kimi-k2
+   Example: cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
    ```
 
 3. **Verify provider connection:**
@@ -59,7 +59,7 @@ Common issues and solutions when using 9Router.
 3. **Add fallback combo:**
    ```
    Dashboard → Combos → Add backup models
-   Primary: cc/claude-opus (subscription)
+   Primary: cc/claude-opus-5-5 (subscription)
    Backup: glm/glm-4.7 (cheap)
    Emergency: if/kimi-k2 (free)
    ```
@@ -110,15 +110,15 @@ Common issues and solutions when using 9Router.
 
 2. **Switch to cheaper models:**
    ```
-   Replace: cc/claude-opus ($20-100/month subscription)
+   Replace: cc/claude-opus-5-5 ($20-100/month subscription)
    With: glm/glm-4.7 ($0.6/1M tokens)
          minimax/MiniMax-M2.1 ($0.20/1M tokens)
    ```
 
 3. **Use free tier:**
    ```
-   if/kimi-k2-thinking (FREE)
-   qw/qwen3-coder-plus (FREE)
+   if/kimi-k2 (FREE)
+   if/qwen3-coder-plus (FREE)
    kr/claude-sonnet-4.5 (FREE)
    gc/gemini-3-flash-preview (FREE 180K/month)
    ```
@@ -235,8 +235,8 @@ Common issues and solutions when using 9Router.
 
 2. **Check model ID format:**
    ```
-   Correct: cc/claude-opus-4-5-20251101
-   Wrong: claude-opus-4-5-20251101
+   Correct: cc/claude-opus-5-5
+   Wrong: claude-opus-5-5
    
    Format: [provider-prefix]/[model-name]
    ```
@@ -273,15 +273,15 @@ Common issues and solutions when using 9Router.
 
 2. **Switch to faster model:**
    ```
-   Fast: cc/claude-haiku-4-5 (Haiku is faster than Opus)
+   Fast: cc/claude-haiku-4-5-20251001 (Haiku is faster than Opus)
          gc/gemini-3-flash-preview
-         qw/qwen3-coder-flash
+         if/qwen3-32b
    ```
 
 3. **Use streaming:**
    ```json
    {
-     "model": "cc/claude-opus-4-5",
+     "model": "cc/claude-opus-5-5",
      "messages": [...],
      "stream": true
    }

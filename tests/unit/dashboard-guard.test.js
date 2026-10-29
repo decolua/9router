@@ -77,7 +77,7 @@ describe("dashboard guard public LLM API access", () => {
     }));
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
   });
 
   it("allows loopback peer IP regardless of Host", async () => {
@@ -94,7 +94,7 @@ describe("dashboard guard public LLM API access", () => {
     const response = await proxy(request("/api/v1/chat/completions", { host: "router.example.com" }));
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
   });
 
   it("allows loopback rewritten public LLM API without API key", async () => {
@@ -108,28 +108,28 @@ describe("dashboard guard public LLM API access", () => {
     const response = await proxy(request("/v1beta/models", { host: "router.example.com" }));
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
   });
 
   it("rejects remote rewritten beta public LLM API without API key", async () => {
     const response = await proxy(request("/api/v1beta/models", { host: "router.example.com" }));
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
   });
 
   it("rejects remote codex rewrite without API key", async () => {
     const response = await proxy(request("/codex/x", { host: "router.example.com" }));
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
   });
 
   it("rejects remote /responses rewrite without API key", async () => {
     const response = await proxy(request("/responses", { host: "router.example.com" }));
 
     expect(response.status).toBe(401);
-    expect(response.body.error).toBe("API key required for remote API access");
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
   });
 
   it("allows remote /responses rewrite with a valid API key", async () => {
@@ -216,6 +216,91 @@ describe("dashboard guard public LLM API access", () => {
   });
 });
 
+describe("dashboard guard REQUIRE_API_KEY=false opt-out (QA-9ROUTER-5)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows remote keyless public LLM API when requireApiKey=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: false });
+
+    const response = await proxy(request("/v1/chat/completions", { host: "router.example.com" }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("allows remote keyless rewritten public LLM API when requireApiKey=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: false });
+
+    const response = await proxy(request("/api/v1/chat/completions", { host: "router.example.com" }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("rejects remote keyless public LLM API when requireApiKey=true", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: true });
+
+    const response = await proxy(request("/v1/chat/completions", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
+  });
+
+  it("rejects remote keyless public LLM API when requireApiKey is absent (secure default)", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+
+    const response = await proxy(request("/v1/chat/completions", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
+  });
+
+  it("fails closed when settings read returns null", async () => {
+    mocks.getSettings.mockResolvedValue(null);
+
+    const response = await proxy(request("/v1/chat/completions", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
+  });
+
+  it("fails closed when settings read throws", async () => {
+    mocks.getSettings.mockRejectedValue(new Error("db unavailable"));
+
+    const response = await proxy(request("/v1/chat/completions", { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+    expect(response.body.error).toEqual({ message: "API key required for remote API access", type: "authentication_error", code: "invalid_api_key" });
+  });
+
+  it("allows remote public LLM API with valid CLI token even when requireApiKey=true", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: true });
+
+    const response = await proxy(request("/v1/chat/completions", {
+      host: "router.example.com",
+      "x-9r-cli-token": "cli-token",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it("keeps loopback allowed regardless of requireApiKey", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: true, requireApiKey: true });
+
+    const response = await proxy(localRequest("/v1/chat/completions", { host: "localhost:20128" }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+});
+
 describe("dashboard guard local-only access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -284,6 +369,47 @@ describe("dashboard guard local-only access", () => {
     }));
 
     expect(response).toBe(mocks.nextResponse);
+  });
+});
+
+describe("dashboard guard federation API access (FED-012)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(false);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it("allows /api/federation/status from remote host without cookies or CLI token", async () => {
+    // dashboardGuard must NOT 401 before roleGuard runs — roleGuard
+    // enforces FEDERATION_TOKEN on central-only routes.
+    const response = await proxy(request("/api/federation/status", {
+      host: "router.example.com",
+      authorization: "Bearer fed-token",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("allows /api/federation/local-status without cookies (token-less by design)", async () => {
+    const response = await proxy(request("/api/federation/local-status", {
+      host: "router.example.com",
+    }));
+
+    expect(response).toBe(mocks.nextResponse);
+    expect(mocks.verifyDashboardAuthToken).not.toHaveBeenCalled();
+  });
+
+  it("allows /api/federation/snapshot and /api/federation/verify sub-paths", async () => {
+    for (const path of ["/api/federation/snapshot", "/api/federation/verify", "/api/federation/delta", "/api/federation/replay"]) {
+      const response = await proxy(request(path, {
+        host: "router.example.com",
+        authorization: "Bearer fed-token",
+      }));
+      expect(response).toBe(mocks.nextResponse);
+    }
   });
 });
 

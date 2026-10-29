@@ -53,7 +53,14 @@ export NODE_ENV="production"
 | `NODE_ENV` | `development` | Set to `production` for deployment |
 | `ENABLE_REQUEST_LOGS` | `false` | Enable debug request/response logs |
 
-### Step 5: Create Data Directory
+> ⚠️ `DATA_DIR` must be creatable and writable by the runtime user — the app
+> **fails fast at boot** otherwise. The `/var/lib/9router` path exported above is
+> a system path that does not exist on a fresh host, so **Step 5's
+> `sudo mkdir -p` + `sudo chown $USER:$USER` MUST run before the first
+> `npm run start`.** To skip that step entirely, omit the `export DATA_DIR` line
+> above and the app will use the per-user default `~/.9router` instead.
+
+### Step 5: Create Data Directory (required before start when DATA_DIR is a system path)
 
 ```bash
 sudo mkdir -p /var/lib/9router
@@ -468,6 +475,6 @@ chmod 755 /var/lib/9router
 
 ## 🔗 Next Steps
 
-- [Connect Providers](/providers/subscription.md)
-- [Setup Combos](/features/combos.md)
-- [Integrate with Tools](/integration/cursor.md)
+- [Connect Providers](../providers/subscription.md)
+- [Setup Combos](../features/combos.md)
+- [Integrate with Tools](../integration/cursor.md)

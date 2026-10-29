@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
 import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { runKeyCheck } from "@/shared/utils/keyFeedback";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -54,6 +55,14 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  // DF-9ROUTER-41: per-check result surfaced next to the Check button. The old
+  // modal only swapped the label to "Checking..." and rendered nothing after,
+  // so users could not tell the check ran and re-clicked (double-submit).
+  const [checkResult, setCheckResult] = useState(null); // { status: "valid"|"invalid", message }
+  // Mirrors requireApiKeyInFlight in EndpointPageClient: the guard is the
+  // single source of in-flight truth and the button's disabled state reads it.
+  const [checkInFlight, setCheckInFlight] = useState(false);
+  const checkInFlightRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const bulkPlaceholder = isCloudflareAi
     ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
@@ -108,19 +117,25 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleValidate = async () => {
+    // Single-flight: re-entry while a check is pending is ignored (the button
+    // is disabled too, but programmatic double-fire must stay 1 request).
+    if (checkInFlightRef.current) return;
+    checkInFlightRef.current = true;
+    setCheckInFlight(true);
     setValidating(true);
+    setCheckResult(null);
     try {
-      const res = await fetch("/api/providers/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey, providerSpecificData: buildProviderSpecificData() }),
+      const result = await runKeyCheck({
+        provider,
+        apiKey: formData.apiKey,
+        providerSpecificData: buildProviderSpecificData(),
       });
-      const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
-    } catch {
-      setValidationResult("failed");
+      setCheckResult(result);
+      setValidationResult(result.status === "valid" ? "success" : "failed");
     } finally {
       setValidating(false);
+      setCheckInFlight(false);
+      checkInFlightRef.current = false;
     }
   };
 
@@ -280,7 +295,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               className="flex-1"
             />
             <div className="pt-6">
-              <Button onClick={handleValidate} disabled={validating || saving} variant="secondary">
+              <Button onClick={handleValidate} disabled={checkInFlight || validating || saving} variant="secondary">
                 {validating ? "Checking..." : "Check"}
               </Button>
             </div>
@@ -297,11 +312,19 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               className="flex-1"
             />
             <div className="pt-6">
-              <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving} variant="secondary">
+              <Button onClick={handleValidate} disabled={!apiKeySatisfied() || checkInFlight || validating || saving} variant="secondary">
                 {validating ? "Checking..." : "Check"}
               </Button>
             </div>
           </div>
+        )}
+        {checkResult && (
+          <p
+            className={`text-xs font-medium break-words ${checkResult.status === "valid" ? "text-green-500" : "text-red-500"}`}
+            role="status"
+          >
+            {checkResult.status === "valid" ? "✓" : "✗"} {checkResult.status === "valid" ? `Valid — ${checkResult.message}` : checkResult.message}
+          </p>
         )}
         {isXaiApiKey && (
           <p className="text-xs text-text-muted">

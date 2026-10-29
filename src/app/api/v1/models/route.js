@@ -167,7 +167,38 @@ const parseOpenAIStyleModels = (data) => {
 
 // Header sent by fetchCompatibleModelIds to detect cross-instance /models fetches
 // and break recursive loops between 9router instances connected to each other.
+//
+// Kept as the INBOUND rule, byte for byte: a request that carries it is a peer's
+// internal fan-out, so this instance answers from its static view and does not
+// fan out again. Old instances only know this header, so honouring it is what
+// keeps a partially-upgraded federation terminating.
+//
+// It is deliberately NO LONGER sent on the outbound discovery fetch (see
+// MODELS_FETCH_ORIGIN_HEADER): a 9router peer that sees this header answers with
+// only its combos — it suppresses every model it learned from ITS nodes — which
+// is how a node pointing at another 9router came back with a single id
+// (DF-9ROUTER-35, measured live: 96 upstream ids -> 1 listed).
 const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
+
+// Cycle detection for the model discovery fetch, replacing the blanket marker on
+// the outbound side. The instance whose /v1/models call started the chain puts its
+// own process id here and forwards it unchanged down every hop; a chain that comes
+// back to the originating process sees its own id and stops. A peer that fans out
+// with this header still gets an answer (that is the point — its models are what
+// the caller asked for), so a 9router upstream now lists its whole catalog while a
+// node cycle still terminates.
+const MODELS_FETCH_ORIGIN_HEADER = "x-9r-models-fetch-origin";
+
+// Process-wide, not module-scoped: the server bundles this module into more than
+// one chunk, and two copies would otherwise present two different identities for
+// the same process — which would defeat the cycle check on the second copy.
+function modelsFetchOriginId() {
+  if (!globalThis.__9rModelsFetchOriginId) {
+    globalThis.__9rModelsFetchOriginId =
+      `9r-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+  return globalThis.__9rModelsFetchOriginId;
+}
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
@@ -199,14 +230,18 @@ function inferKindFromUnknownModelId(modelId) {
   return LLM_KIND;
 }
 
-async function fetchCompatibleModelIds(connection) {
-  if (!connection?.apiKey) return [];
+// Reads a compatible node's own /models and returns the raw upstream ids.
+// Returns null when the node has nothing to read from (no credential / no base
+// URL / not a compatible provider) so the caller can tell "cannot look up" from
+// "looked up and got nothing"; a failed or rejected lookup returns [].
+async function fetchCompatibleModelIds(connection, { originId } = {}) {
+  if (!connection?.apiKey) return null;
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
     ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
     : "";
 
-  if (!baseUrl) return [];
+  if (!baseUrl) return null;
 
   let url = `${baseUrl}/models`;
   const headers = {
@@ -225,21 +260,32 @@ async function fetchCompatibleModelIds(connection) {
     headers["anthropic-version"] = "2023-06-01";
     headers.Authorization = `Bearer ${connection.apiKey}`;
   } else {
-    return [];
+    return null;
   }
+
+  // Cycle detection only — this is NOT the internal-fetch marker. A 9router peer
+  // that receives the marker answers with its combos alone (no models from its
+  // own nodes), which is exactly the "one model instead of ninety" this task
+  // fixes, so the marker must not ride the outbound discovery fetch.
+  headers[MODELS_FETCH_ORIGIN_HEADER] = originId || modelsFetchOriginId();
 
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000);
     const response = await fetch(url, {
       method: "GET",
-      headers: { ...headers, [INTERNAL_MODELS_FETCH_HEADER]: "1" },
+      headers,
       cache: "no-store",
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
-    if (!response.ok) return [];
+    if (!response.ok) {
+      console.log(
+        `Compatible model listing failed for ${connection.provider} (${response.status} ${url}); keeping the configured list`,
+      );
+      return [];
+    }
 
     const data = await response.json();
     const rawModels = parseOpenAIStyleModels(data);
@@ -251,7 +297,10 @@ async function fetchCompatibleModelIds(connection) {
           .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
       )
     );
-  } catch {
+  } catch (err) {
+    console.log(
+      `Compatible model listing failed for ${connection.provider} (${err?.message || err}; ${url}); keeping the configured list`,
+    );
     return [];
   }
 }
@@ -266,11 +315,69 @@ function providerMatchesKinds(providerId, kindFilter) {
   return kindFilter.some((k) => kinds.includes(k));
 }
 
+// A provider is usable without a stored connection only when its registry entry
+// declares `noAuth: true` — the same flag the chat/TTS/media handlers use to skip
+// credential lookup (see src/sse/services/auth.js FREE_PROVIDERS check and the
+// noAuth-derived CREDENTIALED_PROVIDERS set in src/sse/handlers/tts.js).
+// Any other provider answers /v1 with 404 "No active credentials for provider"
+// until a connection exists, so it must not be advertised as retrievable.
+function providerIsCredentialless(providerId) {
+  return AI_PROVIDERS[providerId]?.noAuth === true;
+}
+
+// `noAuth` alone can overstate usability: a provider may declare a
+// credentialless path that only works from the VENDOR's own client
+// (`requiresVendorClient`, e.g. opencode). Live probe 2026-09-17: opencode's
+// /zen/v1/models answers 200 — so the catalog looks healthy — while
+// /zen/v1/responses answers 403 FreeTierError "OpenCode's free tier can only be
+// used from within OpenCode" even with the executor's own header set, and
+// /zen/v1/chat/completions answers 401 "Missing API key.". No completion can be
+// produced from this process, so such a provider is NOT usable without a stored
+// connection and must not be advertised as retrievable on a fresh install.
+// Both the list endpoint and the exact-model endpoint build their catalog
+// through this module, so the refinement holds for both automatically.
+function providerIsUsableWithoutCredentials(providerId) {
+  return providerIsCredentialless(providerId)
+    && AI_PROVIDERS[providerId]?.requiresVendorClient !== true;
+}
+
 // Combo matches kindFilter when its `kind` field is in the list.
 // Combos with no kind are treated as LLM.
 function comboMatchesKinds(combo, kindFilter) {
   const kind = combo?.kind || LLM_KIND;
   return kindFilter.includes(kind);
+}
+
+// An id belongs to the node itself when it is already prefixed with the node's
+// own prefix (or its node id / static alias). `/v1/models` re-adds that prefix,
+// so such an entry must not be published as `${prefix}/${prefix}/${id}`.
+function belongsToNode(modelId, { outputAlias, staticAlias, providerId }) {
+  return modelId.startsWith(`${outputAlias}/`)
+    || modelId.startsWith(`${staticAlias}/`)
+    || modelId.startsWith(`${providerId}/`);
+}
+
+// Entries the upstream itself prefixes with the node's own prefix: a 9router
+// upstream echoes the ids it was asked for, so a nested node added AFTER a
+// listing was cached can answer with `${ourPrefix}/…`. Such an entry names a
+// model the node does not define, but it is the only handle left once the
+// upstream has dropped the one it did define, and dropping it is what turns a
+// working node into an empty catalog. Kind-filter it like any other id.
+function nodeOwnedUpstreamIds(rawModelIds, aliases) {
+  const owned = [];
+  for (const modelId of rawModelIds) {
+    if (!belongsToNode(modelId, aliases)) continue;
+    const stripped = stripNodePrefixes(modelId, aliases);
+    if (stripped) owned.push(stripped);
+  }
+  return owned;
+}
+
+function stripNodePrefixes(modelId, { outputAlias, staticAlias, providerId }) {
+  if (modelId.startsWith(`${outputAlias}/`)) return modelId.slice(outputAlias.length + 1);
+  if (modelId.startsWith(`${staticAlias}/`)) return modelId.slice(staticAlias.length + 1);
+  if (modelId.startsWith(`${providerId}/`)) return modelId.slice(providerId.length + 1);
+  return modelId;
 }
 
 // Nested combo names are valid seats — the model selector exposes them and
@@ -312,6 +419,7 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
     contextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
     maxOutput: Number.isFinite(maxOutput) ? maxOutput : undefined,
   };
+
 }
 
 /**
@@ -319,17 +427,32 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
 export async function buildModelsList(kindFilter, options = {}) {
-  // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
-  // cross-instance recursive loops.
-  const skipDynamicFetch = options.skipDynamicFetch === true;
-  let connections = [];
+  // Cycle detection. `skipDynamicFetch` is the explicit override; the two
+  // headers are the shapes a peer's internal fetch arrives in:
+  //  - `legacyInternalFetch`: an instance that predates the origin header still
+  //    sends only the internal marker and still expects a static answer. Honour
+  //    it, or a partially-upgraded federation stops terminating.
+  //  - the origin coming back unchanged: the chain returned to the process that
+  //    started it, so this hop must not fan out again.
+  // Both are resolved here rather than in the GET handler so the per-kind and
+  // exact-model routes inherit the same guard for free.
+  const ownOrigin = modelsFetchOriginId();
+  const skipDynamicFetch = options.skipDynamicFetch === true
+    || options.legacyInternalFetch === true
+    || options.originId === ownOrigin;
+  const connections = [];
+  // Distinguishes a SUCCESSFUL lookup that found nothing (fresh install: only
+  // credentialless providers are usable) from a FAILED lookup (DB unavailable:
+  // keep the all-static fail-open list so discovery is not erased).
+  let connectionsLoaded = false;
   try {
-    connections = await getProviderConnections();
-    connections = connections.filter(c => c.isActive !== false);
+    const fetched = await getProviderConnections();
+    connections.push(...fetched);
+    connectionsLoaded = true;
   } catch (e) {
     console.log("Could not fetch providers, returning all models");
   }
+  const activeConnections = connections.filter(c => c.isActive !== false);
 
   let combos = [];
   try {
@@ -361,7 +484,7 @@ export async function buildModelsList(kindFilter, options = {}) {
   const isDisabled = (alias, modelId) => Array.isArray(disabledByAlias[alias]) && disabledByAlias[alias].includes(modelId);
 
   const activeConnectionByProvider = new Map();
-  for (const conn of connections) {
+  for (const conn of activeConnections) {
     if (!activeConnectionByProvider.has(conn.provider)) {
       activeConnectionByProvider.set(conn.provider, conn);
     }
@@ -410,11 +533,26 @@ export async function buildModelsList(kindFilter, options = {}) {
     models.push(entry);
   }
 
-  if (connections.length === 0) {
-    // DB unavailable -> return static models, filtered by per-model kind
+  if (activeConnections.length === 0) {
+    // Two very different states land here:
+    //  - the lookup SUCCEEDED and found nothing (fresh install) -> advertise
+    //    only providers that genuinely need no credentials (and whose
+    //    credentialless path is usable from this process — see
+    //    providerIsUsableWithoutCredentials). Listing the whole static catalog
+    //    here is what advertised ~1000 models that immediately fail chat with
+    //    404 "No active credentials for provider".
+    //  - the lookup FAILED (DB unavailable) -> keep the legacy all-static
+    //    fail-open catalog so a transient error cannot erase discovery.
+    const failOpen = !connectionsLoaded;
+    const aliasToProviderId = Object.fromEntries(
+      Object.entries(PROVIDER_ID_TO_ALIAS).map(([id, alias]) => [alias, id])
+    );
     for (const [alias, providerModels] of Object.entries(PROVIDER_MODELS)) {
       const providerId = ALIAS_TO_PROVIDER_ID[alias] || alias;
       if (!providerMatchesKinds(providerId, kindFilter)) continue;
+      // Credential-required AND vendor-client-only providers are both unusable
+      // from this process until a connection exists.
+      if (!failOpen && !providerIsUsableWithoutCredentials(providerId)) continue;
       for (const model of providerModels) {
         if (!kindFilter.includes(modelKind(model))) continue;
         if (isDisabled(alias, model.id) || isDisabled(providerId, model.id)) continue;
@@ -433,6 +571,10 @@ export async function buildModelsList(kindFilter, options = {}) {
       if (!kindFilter.includes(LLM_KIND)) continue;
       const providerAlias = customModel.providerAlias;
       if (!providerAlias) continue;
+      // A custom model on a credential-required (or vendor-client-only)
+      // provider is just as unusable as its provider's static models until a
+      // connection exists.
+      if (!failOpen && !providerIsUsableWithoutCredentials(aliasToProviderId[providerAlias] || providerAlias)) continue;
 
       const modelId = String(customModel.id).trim();
       if (!modelId) continue;
@@ -460,6 +602,10 @@ export async function buildModelsList(kindFilter, options = {}) {
       const isCompatibleProvider =
         isOpenAICompatibleProvider(providerId) || isAnthropicCompatibleProvider(providerId);
 
+      // Node identity, resolved before the model list so the same three names are
+      // used for the lookup, the prefix handling and the published ids.
+      const nodeAliases = { outputAlias, staticAlias, providerId };
+
       // Build kind lookup for static models so we can filter even when only IDs are exposed
       const staticModelKindById = new Map(
         providerModels.map((m) => [m.id, modelKind(m)])
@@ -477,8 +623,45 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
+      // A compatible node is a passthrough: it offers whatever its upstream
+      // offers. Resolve that from the upstream unless the user pinned an
+      // explicit enabledModels list (an opt-in override; no fan-out then).
+      //
+      // The lookup is attempted ALWAYS for a compatible node, not only when the
+      // static list is empty. The old gate (`rawModelIds.length === 0`) meant a
+      // node whose prefix names anything at all with a static list — and, more
+      // importantly, any node on an upstream the guard suppressed — short-
+      // circuited before the fetch: the upstream was never read and the listing
+      // was whatever the local catalog happened to hold. The static list is
+      // still the fallback when the lookup cannot answer at all.
+      let passthroughIds = null;
+      let usedStaticFallback = false;
+      if (isCompatibleProvider && !hasExplicitEnabledModels && !skipDynamicFetch) {
+        usedStaticFallback = true;
+        const discovered = await fetchCompatibleModelIds(conn, { originId: options.originId });
+        if (discovered && discovered.length > 0) {
+          // Keep the node's own non-passthrough entries: ids the upstream echoes
+          // back already carrying this node's prefix still name a node model.
+          passthroughIds = Array.from(
+            new Set([...discovered, ...nodeOwnedUpstreamIds(rawModelIds, nodeAliases)]),
+          );
+          usedStaticFallback = false;
+        } else if (discovered && discovered.length === 0) {
+          // Reachable, but it offered nothing for this node: an upstream that
+          // answers with an empty list is an answer.
+          passthroughIds = [];
+          usedStaticFallback = false;
+        }
+        // discovered === null (no credential / no base URL) leaves rawModelIds
+        // exactly as before — the configured list stays the catalog.
+      }
+      if (passthroughIds !== null) {
+        rawModelIds = passthroughIds;
+      }
+      if (isCompatibleProvider && usedStaticFallback) {
+        console.log(
+          `Compatible model listing unavailable for ${providerId}; listing the configured models`,
+        );
       }
 
       // Config-driven live catalog override (e.g. Kiro returns dynamic
@@ -507,18 +690,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
 
       const modelIds = rawModelIds
-        .map((modelId) => {
-          if (modelId.startsWith(`${outputAlias}/`)) {
-            return modelId.slice(outputAlias.length + 1);
-          }
-          if (modelId.startsWith(`${staticAlias}/`)) {
-            return modelId.slice(staticAlias.length + 1);
-          }
-          if (modelId.startsWith(`${providerId}/`)) {
-            return modelId.slice(providerId.length + 1);
-          }
-          return modelId;
-        })
+        .map((modelId) => stripNodePrefixes(modelId, nodeAliases))
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const customModelKindById = new Map();
@@ -548,21 +720,14 @@ export async function buildModelsList(kindFilter, options = {}) {
             fullModel.startsWith(`${providerId}/`)
           );
         })
-        .map((fullModel) => {
-          if (fullModel.startsWith(`${outputAlias}/`)) {
-            return fullModel.slice(outputAlias.length + 1);
-          }
-          if (fullModel.startsWith(`${staticAlias}/`)) {
-            return fullModel.slice(staticAlias.length + 1);
-          }
-          if (fullModel.startsWith(`${providerId}/`)) {
-            return fullModel.slice(providerId.length + 1);
-          }
-          return fullModel;
-        })
+        .map((fullModel) => stripNodePrefixes(fullModel, nodeAliases))
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
+      // One entry per model id under the node's prefix. The prefix is stripped
+      // once here and added once below, so an id that arrives already carrying
+      // the node's prefix can never be published as `${prefix}/${prefix}/${id}`.
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));
+      const seenPublishedIds = new Set();
 
       for (const modelId of mergedModelIds) {
         // Resolve kind: prefer custom/live metadata, then static, then ID heuristics.
@@ -573,6 +738,8 @@ export async function buildModelsList(kindFilter, options = {}) {
         const allowAsLlm = kind === "imageToText" && kindFilter.includes(LLM_KIND);
         if (!kindFilter.includes(kind) && !allowAsLlm) continue;
         if (isDisabled(outputAlias, modelId) || isDisabled(staticAlias, modelId) || isDisabled(providerId, modelId)) continue;
+        if (seenPublishedIds.has(modelId)) continue;
+        seenPublishedIds.add(modelId);
 
         const model = {
           id: `${outputAlias}/${modelId}`,
@@ -656,17 +823,34 @@ export async function OPTIONS() {
   });
 }
 
+/** Shared by the list route and the per-kind / exact-model route. */
+export async function buildModelsListForRequest(request, kindFilter) {
+  // A chain that comes back to THIS process has recursed: stop fanning out and
+  // answer from the static view. The identity travels in a header we mint for
+  // the chain's first hop and forward unchanged afterwards.
+  const incomingOrigin = request?.headers?.get(MODELS_FETCH_ORIGIN_HEADER);
+  // A peer using the legacy marker (an instance that predates the origin header)
+  // sends no origin and expects the old suppression. The origin header supersedes
+  // it: a new-style caller must not be answered from the static view, because
+  // that is what reduced a 96-model upstream to a single id.
+  const legacyInternalFetch = !incomingOrigin
+    && request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
+  return buildModelsList(kindFilter, { legacyInternalFetch, originId: incomingOrigin });
+}
+
 /**
  * GET /v1/models - OpenAI compatible models list (LLM/chat models only by default).
  * For other capabilities use /v1/models/{kind} (image, tts, stt, embedding, image-to-text, web).
  */
 export async function GET(request) {
   try {
-    // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
-    const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
+    // Federation recursion guard: origin header supersedes the legacy internal
+    // marker (buildModelsListForRequest resolves both + chain-return detection).
+    // Per-key access filtering (upstream) is applied on top — a key restricted
+    // to selected combos/models must not see the full list.
     const data = await filterModelsListForKey(
       await getKeyAccessContext(request),
-      await buildModelsList([LLM_KIND], { skipDynamicFetch })
+      await buildModelsListForRequest(request, [LLM_KIND])
     );
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },

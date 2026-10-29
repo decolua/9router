@@ -18,7 +18,7 @@ Dashboard/gateway (run from repo root):
 ```bash
 cp .env.example .env
 npm install
-PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev   # dev (webpack, port 20127 by default via next dev)
+PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev   # dev (port 20128 default via package.json scripts)
 npm run build && PORT=20128 HOSTNAME=0.0.0.0 npm run start           # production
 ```
 - Bun variants: `npm run dev:bun` / `build:bun` / `start:bun`.
@@ -31,17 +31,21 @@ npm run cli:pack       # build + npm pack from root
 cd cli && npm run dev  # nodemon watch
 ```
 
-Tests (vitest, in `tests/`, an **independent** ESM package — not wired into root `npm test`):
+Tests (vitest, in `tests/` — an **independent** ESM package with its own dependency tree, driven from the root by `npm test` since FED-019):
 ```bash
 npm install                             # ROOT deps first — tests import from src/ which needs `open`, `undici`, etc.
-cd tests && npm install                 # then tests' own deps (vitest) → tests/node_modules (allowed by tests/.gitignore)
-npx vitest run                          # all tests; auto-discovers tests/vitest.config.js
-npx vitest run unit/capabilities.test.js   # single file (path relative to tests/)
+cd tests && npm install                 # then tests' own deps (vitest ^4.0.0) → tests/node_modules (allowed by tests/.gitignore)
+npm test                                # from the repo root — runs the tests-local vitest (scripts/check-test-deps.mjs preflights it)
+npm test -- unit/capabilities.test.js   # single file (path relative to tests/); args are forwarded to vitest
 ```
-> The committed `tests/package.json` `test` script hardcodes Unix paths (`NODE_PATH=/tmp/node_modules …`) — a shared-install workaround from upstream. On Windows (or anywhere), ignore it and use the `npx vitest` form above; `vitest.config.js` resolves the `open-sse`/`@/` aliases from the repo root regardless of where vitest lives.
->
-> **The suite is NOT expected to be all-green on a plain checkout.** ~938 pass, ~64 fail. Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run. Expected red:
-> - 26 catalogued in `tests/__baseline__/known-fails.txt` (rtk, oauth-cursor-auto-import, translator-request-normalization, …).
+> The root `test` script never uses a bare `npx vitest`: the root package declares
+> no vitest, so npx resolves an arbitrary major from the registry/npx cache
+> (measured: vitest/5.0.1 against the pinned 4.1.10) and the run dies with a
+> misleading `CACError`. When `tests/node_modules` is missing, `npm test` exits
+> non-zero with a message naming `cd tests && npm install` and downloads nothing.
+
+> **The suite is NOT expected to be all-green on a plain checkout.** Baseline (re-verified 2026-09-19): ~2749 pass, ~81 fail, ~61 skip (2891 total). Judge regressions with `tests/__baseline__/verify-no-regression.mjs`, not a raw run. Expected red:
+> - 81 catalogued in `tests/__baseline__/known-fails.txt` (rtk, oauth-cursor-auto-import, translator-request-normalization, …).
 > - `unit/embeddings.cloud.test.js` imports `cloud/src/handlers/embeddings.js` — the `cloud/` worker dir is **not in this repo**, so it always fails here.
 > - `unit/xai-oauth-service.test.js` times out (5s) when the xAI endpoint-discovery fetch isn't reachable/mocked.
 > - `real/*.real.test.js` make live provider calls — need credentials, skip otherwise.
@@ -77,7 +81,7 @@ Two authoritative docs already exist — read them before working in these areas
 State is **no longer `db.json`**. It's a SQLite layer under `src/lib/db/` with an adapter fallback chain (`driver.js`): `bun:sqlite` → `better-sqlite3` (optional native dep) → `node:sqlite` (Node ≥22.5) → `sql.js` (pure-JS fallback, always works). `better-sqlite3` is deliberately in `optionalDependencies` so install never fails without build tools.
 - `src/lib/localDb.js` is a **backward-compat shim** re-exporting `src/lib/db/index.js`. New code should import from `@/lib/db/index.js`; per-entity logic lives in `src/lib/db/repos/*`. Schema/migrations in `src/lib/db/migrations/`.
 - DB file location resolves via `src/lib/db/paths.js` (`DATA_DIR`, else `~/.9router/`).
-- Usage/logs (`src/lib/usageDb.js`, `usage.json` + `log.txt`) still live under `~/.9router` and do **not** follow `DATA_DIR`.
+- Usage/logs are SQLite-backed: `src/lib/usageDb.js` is a **compat shim** re-exporting `src/lib/db/repos/usageRepo.js` (tables `usageHistory`/`usageDaily` in the main DB, so usage follows `DATA_DIR` like all other state). No `usage.json`/`log.txt` writer remains.
 
 ### RTK token saver (`open-sse/rtk/`)
 Pre-translate hooks that compress `tool_result` content in-place to cut tokens. **Fail-open**: any error returns null and leaves the body untouched — never throw out of them. Skips `is_error`/`status:"error"` results to preserve traces.

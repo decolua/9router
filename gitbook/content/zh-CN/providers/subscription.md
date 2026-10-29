@@ -8,8 +8,8 @@
 
 订阅型提供商是你的 **首选** - 既然已经付费了,就要用足:
 
-- ✅ **Claude Code**(Pro/Max)- Claude 4.5 Opus/Sonnet/Haiku
-- ✅ **OpenAI Codex**(Plus/Pro)- GPT 5.2 Codex、GPT 5.1 Codex Max
+- ✅ **Claude Code**(Pro/Max)- Claude Opus 5.5/Sonnet 5.5/Haiku 4.5
+- ✅ **OpenAI Codex**(Plus/Pro)- GPT 6.1 Sol、GPT 6 Sol
 - ✅ **Gemini CLI**(免费层!)- 每月 180K 次补全
 - ✅ **GitHub Copilot** - GPT-5、Claude 4.5、Gemini 3
 - ✅ **Antigravity**(Google)- Gemini 3 Pro、Claude Sonnet 4.5
@@ -46,8 +46,8 @@
 **步骤 3:在 CLI 中使用**
 
 ```
-Model: cc/claude-opus-4-5-20251101
-       cc/claude-sonnet-4-5-20250929
+Model: cc/claude-opus-5-5
+       cc/claude-sonnet-5-5
        cc/claude-haiku-4-5-20251001
 ```
 
@@ -55,8 +55,8 @@ Model: cc/claude-opus-4-5-20251101
 
 | 模型 ID | 描述 | 最佳场景 |
 |----------|-------------|----------|
-| `cc/claude-opus-4-5-20251101` | Claude 4.5 Opus | 复杂任务、架构 |
-| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | 平衡速度/质量 |
+| `cc/claude-opus-5-5` | Claude Opus 5.5 | 复杂任务、架构 |
+| `cc/claude-sonnet-5-5` | Claude Sonnet 5.5 | 平衡速度/质量 |
 | `cc/claude-haiku-4-5-20251001` | Claude 4.5 Haiku | 快速响应 |
 
 ### 专业建议
@@ -74,8 +74,8 @@ Model: cc/claude-opus-4-5-20251101
 
 | 套餐 | 月费 | 配额重置 | 模型 |
 |------|--------------|-------------|--------|
-| Plus | $20 | 5 小时 + 每周 | GPT 5.2、GPT 5.1 |
-| Pro | $200 | 5 小时 + 每周 | GPT 5.2 Codex、GPT 5.1 Max |
+| Plus | $20 | 5 小时 + 每周 | GPT 6.1 Sol、GPT 5.6 |
+| Pro | $200 | 5 小时 + 每周 | GPT 6.1 Sol、GPT 6 Sol |
 
 ### 设置
 
@@ -96,20 +96,20 @@ Model: cc/claude-opus-4-5-20251101
 **步骤 3:在 CLI 中使用**
 
 ```
-Model: cx/gpt-5.2-codex
-       cx/gpt-5.1-codex-max
-       cx/gpt-5.2
-       cx/gpt-5.1-codex
+Model: cx/gpt-6.1-sol
+       cx/gpt-6-sol
+       cx/gpt-5.5
+       cx/gpt-5.6-sol
 ```
 
 ### 可用模型
 
 | 模型 ID | 描述 | 最佳场景 |
 |----------|-------------|----------|
-| `cx/gpt-5.2-codex` | GPT 5.2 Codex | 最新编码模型 |
-| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | 最大上下文 |
-| `cx/gpt-5.2` | GPT 5.2 | 通用任务 |
-| `cx/gpt-5.1-codex` | GPT 5.1 Codex | 稳定编码 |
+| `cx/gpt-6.1-sol` | GPT 6.1 Sol | 最新编码模型 |
+| `cx/gpt-6-sol` | GPT 6 Sol | 最大上下文 |
+| `cx/gpt-5.5` | GPT 5.5 | 通用任务 |
+| `cx/gpt-5.6-sol` | GPT 5.6 Sol | 稳定编码 |
 
 ### 专业建议
 
@@ -200,20 +200,20 @@ Model: gc/gemini-3-flash-preview
 **步骤 3:在 CLI 中使用**
 
 ```
-Model: gh/gpt-5
-       gh/gpt-5.1-codex-max
-       gh/claude-4.5-sonnet
-       gh/gemini-3-pro
+Model: gh/gpt-5.4
+       gh/gpt-5.3-codex
+       gh/claude-sonnet-4.5
+       gh/gemini-3.1-pro-preview
 ```
 
 ### 可用模型
 
 | 模型 ID | 描述 | 最佳场景 |
 |----------|-------------|----------|
-| `gh/gpt-5` | GPT-5 | 最新 OpenAI 模型 |
-| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | 最大上下文 |
-| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Anthropic 质量 |
-| `gh/gemini-3-pro` | Gemini 3 Pro | Google 质量 |
+| `gh/gpt-5.4` | GPT-5.4 | 最新 OpenAI 模型 |
+| `gh/gpt-5.3-codex` | GPT-5.3 Codex | 最大上下文 |
+| `gh/claude-sonnet-4.5` | Claude Sonnet 4.5 | Anthropic 质量 |
+| `gh/gemini-3.1-pro-preview` | Gemini 3.1 Pro | Google 质量 |
 
 ### 专业建议
 
@@ -250,18 +250,18 @@ Model: gh/gpt-5
 **步骤 3:在 CLI 中使用**
 
 ```
-Model: ag/gemini-3-pro-high
-       ag/claude-sonnet-4-5
-       ag/claude-opus-4-5-thinking
+Model: ag/gemini-3.1-pro-high
+       ag/claude-sonnet-5-5
+       ag/claude-opus-5-5-high
 ```
 
 ### 可用模型
 
 | 模型 ID | 描述 | 最佳场景 |
 |----------|-------------|----------|
-| `ag/gemini-3-pro-high` | Gemini 3 Pro High | 高质量响应 |
-| `ag/claude-sonnet-4-5` | Claude Sonnet 4.5 | Anthropic 质量 |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | 复杂推理 |
+| `ag/gemini-3.1-pro-high` | Gemini 3.1 Pro High | 高质量响应 |
+| `ag/claude-sonnet-5-5` | Claude Sonnet 5.5 | Anthropic 质量 |
+| `ag/claude-opus-5-5-high` | Claude Opus 5.5 High | 复杂推理 |
 
 ### 专业建议
 
@@ -293,7 +293,7 @@ Model: ag/gemini-3-pro-high
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [从 9router 仪表盘获取]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### 创建组合(推荐)
@@ -304,8 +304,8 @@ Settings → Models → Advanced:
 名称: premium-coding
 模型:
   1. gc/gemini-3-flash-preview (免费, 优先使用)
-  2. cc/claude-opus-4-5-20251101 (订阅)
-  3. cx/gpt-5.2-codex (订阅备用)
+  2. cc/claude-opus-5-5 (订阅)
+  3. cx/gpt-6.1-sol (订阅备用)
 
 CLI 中使用: premium-coding
 ```
@@ -357,9 +357,9 @@ Claude Code Pro
 ```
 示例组合:
 1. gc/gemini-3-flash-preview(免费主力)
-2. cc/claude-opus-4-5(复杂任务)
+2. cc/claude-opus-5-5(复杂任务)
 3. glm/glm-4.7(低价备用)
-4. if/kimi-k2-thinking(免费回退)
+4. if/kimi-k2(免费回退)
 ```
 
 ### 4. 按时间优化
@@ -392,8 +392,8 @@ Claude Code Pro
 
 **方案:**
 - 订阅配额已用尽
-- 添加回退:`cc/claude-opus → glm/glm-4.7`
-- 使用免费层:`if/kimi-k2-thinking`
+- 添加回退:`cc/claude-opus-5-5 → glm/glm-4.7`
+- 使用免费层:`if/kimi-k2`
 
 ---
 

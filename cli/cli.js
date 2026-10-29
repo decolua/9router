@@ -3,28 +3,23 @@
 const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const https = require("https");
-const net = require("net");
 const os = require("os");
 
-// Poll until the server accepts TCP connections on port, or timeout — avoids blind fixed waits.
-function waitServerReady(port, { timeoutMs = 15000, intervalMs = 150 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  return new Promise((resolve) => {
-    const tryConnect = () => {
-      const socket = net.connect({ host: "127.0.0.1", port }, () => {
-        socket.destroy();
-        resolve(true);
-      });
-      socket.on("error", () => {
-        socket.destroy();
-        if (Date.now() >= deadline) return resolve(false);
-        setTimeout(tryConnect, intervalMs);
-      });
-    };
-    tryConnect();
-  });
-}
+// Startup readiness/failure detection (DF-9ROUTER-18) and port resolution
+// (DF-9ROUTER-28) live in ./src/cli/utils/serverStartup so they are
+// unit-testable: an occupied port is refused BEFORE spawning, readiness requires
+// the 9router identity probe (not just an open socket), an early child exit is a
+// hard failure, and the port comes from `--port/-p` → `PORT` → the default
+// (DEFAULT_PORT is imported — this file no longer holds the port literal).
+const {
+  DEFAULT_PORT,
+  checkPortAvailable,
+  describeOccupiedPort,
+  describeStartupFailure,
+  resolvePort,
+  waitForServerReady,
+} = require("./src/cli/utils/serverStartup");
+const { checkForUpdate } = require("./src/cli/utils/updateCheck");
 
 // Native spinner - no external dependency
 function createSpinner(text) {
@@ -99,14 +94,24 @@ if (args[0] === "connect" || args[0] === "show") {
 // better-sqlite3 is optional. Logs to stderr only on failure.
 try { ensureSqliteRuntime({ silent: true }); } catch {}
 
+// Headless escape (DF-9ROUTER-64): `--no-tray` must skip the tray lifecycle
+// ENTIRELY — starting with this runtime install, which on a fresh headless host
+// would otherwise spend a network `npm install systray2` on a tray that can
+// never be initialized without a display. Parsed here (before the main arg
+// loop) because the install runs before that loop; the loop below re-sets the
+// same variable so the flag is handled like every other one.
+const noTrayRequested = args.includes("--no-tray");
+
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
-try { ensureTrayRuntime({ silent: true }); } catch {}
+// Skipped under --no-tray (DF-9ROUTER-64): no tray is ever initialized on the
+// headless path, so none of its runtime is installed either.
+if (!noTrayRequested) {
+  try { ensureTrayRuntime({ silent: true }); } catch {}
+}
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
-const INSTALL_CMD_LATEST = `npm i -g ${APP_NAME}@latest --prefer-online`;
 
-const DEFAULT_PORT = 20128;
 const DEFAULT_HOST = "0.0.0.0";
 
 // First non-internal IPv4 — the address remote peers actually reach when bound to 0.0.0.0.
@@ -129,23 +134,30 @@ const PROCESS_IDENTIFIERS = [
   '9router'  // Only package name - avoid killing other apps
 ];
 
-// Parse arguments
-let port = DEFAULT_PORT;
+// Parse arguments. The port is only COLLECTED here — what it means (flag beats
+// env beats default, and what an unusable value does) is decided by
+// resolvePort() right below (DF-9ROUTER-28).
+let argPort = null;
 let host = DEFAULT_HOST;
 let noBrowser = false;
 let skipUpdate = false;
 let showLog = false;
 let trayMode = false;
+// Headless escape (DF-9ROUTER-64): set by `--no-tray`. Default `false` — the
+// interactive launcher behavior is unchanged when the flag is absent.
+let noTray = noTrayRequested;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--port" || args[i] === "-p") {
-    port = parseInt(args[i + 1], 10) || DEFAULT_PORT;
+    argPort = args[i + 1];
     i++;
   } else if (args[i] === "--host" || args[i] === "-H") {
     host = args[i + 1] || DEFAULT_HOST;
     i++;
   } else if (args[i] === "--no-browser" || args[i] === "-n") {
     noBrowser = true;
+  } else if (args[i] === "--no-tray") {
+    noTray = true;
   } else if (args[i] === "--log" || args[i] === "-l") {
     showLog = true;
   } else if (args[i] === "--skip-update") {
@@ -161,11 +173,16 @@ Options:
   -p, --port <port>   Port to run the server (default: ${DEFAULT_PORT})
   -H, --host <host>   Host to bind (default: ${DEFAULT_HOST})
   -n, --no-browser    Don't open browser automatically
+  --no-tray           Headless mode: skip tray/UI, serve in the foreground
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
+
+Environment:
+  PORT                Port to run the server when --port/-p is not given
+                      (precedence: --port/-p → PORT → ${DEFAULT_PORT})
 
 Commands:
   connect <server-url> Configure Claude Code for a remote 9router server
@@ -183,25 +200,38 @@ Commands:
   }
 }
 
-// Auto-relaunch after update: detached process has no TTY → fallback to tray
-if (skipUpdate && !trayMode && !process.stdin.isTTY) {
+// Resolve the port (DF-9ROUTER-28) — `--port/-p` → `PORT` → the default
+// (DEFAULT_PORT, imported from the same module). `port` is the single source of
+// truth from here on: it seeds the tray relaunch, the pre-flight probe, the
+// child's env, and every URL printed.
+// An unusable PORT is reported (never silently overridden); an unusable --port
+// falls through (its legacy behavior — never an error).
+const { port, warning: portWarning } = resolvePort({ argPort });
+if (portWarning) console.error(portWarning);
+
+// Auto-relaunch after update: detached process has no TTY → fallback to tray.
+// `--no-tray` opts out (DF-9ROUTER-64): a headless operator asked for the
+// foreground server, and a launcher that silently flips itself into the
+// tray/background path is exactly the untraceable lifecycle this flag escapes.
+if (skipUpdate && !trayMode && !noTray && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
 
+// Loud exits (DF-9ROUTER-64): published-package instances on headless hosts were
+// found dying with zero output — no log line, no kernel OOM, nothing to grep.
+// Every lifecycle exit now writes one timestamped line to stderr FIRST, so even
+// a launcher whose stdout was never attached to anything leaves a trace.
+function logExit(reason, detail) {
+  try {
+    const parts = [`[${new Date().toISOString()}]`, "[9router]", "exiting:", reason];
+    if (detail !== undefined) parts.push(JSON.stringify(detail));
+    process.stderr.write(`${parts.join(" ")}\n`);
+  } catch { /* a dying process must never die because logging died */ }
+}
+
 // Always use Node.js runtime with absolute path
 const RUNTIME = process.execPath;
-
-// Compare semver versions: returns 1 if a > b, -1 if a < b, 0 if equal
-function compareVersions(a, b) {
-  const partsA = a.split(".").map(Number);
-  const partsB = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) {
-    if (partsA[i] > partsB[i]) return 1;
-    if (partsA[i] < partsB[i]) return -1;
-  }
-  return 0;
-}
 
 // Get app data dir (matches app/src/lib/dataDir.js convention)
 function getAppDataDir() {
@@ -473,55 +503,6 @@ function isRestrictedEnvironment() {
   return null;
 }
 
-// Check if new version available, return latest version or null
-function checkForUpdate() {
-  return new Promise((resolve) => {
-    if (skipUpdate) {
-      resolve(null);
-      return;
-    }
-
-    const spinner = createSpinner("Checking for updates...").start();
-    let resolved = false;
-
-    const safetyTimeout = setTimeout(() => {
-      if (!resolved) {
-        resolved = true;
-        spinner.stop();
-        resolve(null);
-      }
-    }, 8000);
-
-    const done = (version) => {
-      if (resolved) return;
-      resolved = true;
-      clearTimeout(safetyTimeout);
-      spinner.stop();
-      resolve(version);
-    };
-
-    const req = https.get(`https://registry.npmjs.org/${pkg.name}/latest`, { timeout: 3000 }, (res) => {
-      let data = "";
-      res.on("data", chunk => data += chunk);
-      res.on("end", () => {
-        try {
-          const latest = JSON.parse(data);
-          if (latest.version && compareVersions(latest.version, pkg.version) > 0) {
-            done(latest.version);
-          } else {
-            done(null);
-          }
-        } catch (e) {
-          done(null);
-        }
-      });
-    });
-
-    req.on("error", () => done(null));
-    req.on("timeout", () => { req.destroy(); done(null); });
-  });
-}
-
 // Open browser
 function openBrowser(url) {
   const platform = process.platform;
@@ -557,13 +538,30 @@ if (!fs.existsSync(serverPath)) {
 }
 
 // Start server immediately; run update check in parallel (not on the critical path).
-const updatePromise = checkForUpdate();
+const updatePromise = checkForUpdate({ pkg, skipUpdate, createSpinner });
 killAllAppProcesses(port)
   .then(() => killProcessOnPort(port))
-  .then(() => startServer(updatePromise));
+  // Pre-flight (DF-9ROUTER-18): the cleanup above is best-effort — a port we
+  // could not free (held by another user, published by docker, lsof missing)
+  // would make the child we are about to spawn die with EADDRINUSE. Refuse
+  // instead of starting a doomed child and reporting a healthy start.
+  .then(() => checkPortAvailable({ port }))
+  .then((portState) => {
+    if (!portState.ok) {
+      console.error(describeOccupiedPort(port, portState));
+      process.exit(1);
+    }
+    startServer(updatePromise);
+  })
+  // A throw anywhere in the launch path must still be a loud, non-zero exit —
+  // never a launcher that silently does nothing.
+  .catch((err) => {
+    console.error(`❌ Startup failed: ${err?.message || err}`);
+    process.exit(1);
+  });
 
 // Show interface selection menu
-async function showInterfaceMenu(latestVersion) {
+async function showInterfaceMenu(updateOffer) {
   const { selectMenu } = require("./src/cli/utils/input");
   const { clearScreen } = require("./src/cli/utils/display");
   const { getEndpoint } = require("./src/cli/utils/endpoint");
@@ -585,8 +583,8 @@ async function showInterfaceMenu(latestVersion) {
 
   const menuItems = [];
 
-  if (latestVersion) {
-    menuItems.push({ label: `Update to v${latestVersion} (current: v${pkg.version})`, icon: "⬆" });
+  if (updateOffer) {
+    menuItems.push({ label: updateOffer.label, icon: "⬆" });
   }
 
   menuItems.push(
@@ -598,9 +596,9 @@ async function showInterfaceMenu(latestVersion) {
 
   const selected = await selectMenu(`Choose Interface (v${pkg.version})`, menuItems, 0, subtitle);
 
-  const offset = latestVersion ? 1 : 0;
+  const offset = updateOffer ? 1 : 0;
 
-  if (latestVersion && selected === 0) return "update";
+  if (updateOffer && selected === 0) return "update";
   if (selected === offset) return "web";
   if (selected === offset + 1) return "terminal";
   if (selected === offset + 2) return "hide";
@@ -611,8 +609,8 @@ const MAX_RESTARTS = 2;
 const RESTART_RESET_MS = 30000; // Reset counter if alive > 30s
 
 function startServer(updatePromise) {
-  // Accept either a Promise (parallel update check) or a resolved value.
-  const latestVersionPromise = Promise.resolve(updatePromise);
+  // Accept either a Promise (parallel update check) or a resolved offer.
+  const updateOfferPromise = Promise.resolve(updatePromise);
   const displayHost = getDisplayHost();
   const url = `http://${displayHost}:${port}/dashboard`;
   // Surface real network exposure when bound to all interfaces (default 0.0.0.0).
@@ -626,6 +624,10 @@ function startServer(updatePromise) {
 
   const CRASH_LOG_LINES = 50;
   let crashLog = [];
+
+  // Flips true only once the readiness probe confirms OUR child is serving.
+  // Before that, any child exit is a startup failure — never a silent restart.
+  let serverReady = false;
 
   function spawnServer() {
     serverStartTime = Date.now();
@@ -653,6 +655,28 @@ function startServer(updatePromise) {
 
   let server = spawnServer();
 
+  // ── Startup gate (DF-9ROUTER-18) ─────────────────────────────────────────
+  // The launcher must never report success for a failed start. An early child
+  // exit (EADDRINUSE and friends) or a readiness timeout is a hard failure with
+  // a non-zero exit code — in every mode, including tray/background mode, which
+  // has no other watcher on the child process.
+  function printCrashLog() {
+    if (!crashLog.length) return;
+    console.error("\n--- Server crash log ---");
+    crashLog.forEach((l) => console.error(l));
+    console.error("--- End crash log ---\n");
+  }
+
+  function failStartup(result) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    logExit("startup-failed", { port, result }); // loud BEFORE the report (DF-9ROUTER-64)
+    console.error(`\n${describeStartupFailure(port, result)}`);
+    printCrashLog();
+    cleanup();
+    process.exit(1);
+  }
+
   // Cleanup function - force kill server process
   let isCleaningUp = false;
   function cleanup() {
@@ -677,10 +701,13 @@ function startServer(updatePromise) {
     } catch (e) { }
   }
 
-  // Suppress all errors during shutdown (systray lib throws JSON parse errors)
+  // Suppress all errors during shutdown (systray lib throws JSON parse errors).
+  // The timestamped line below (DF-9ROUTER-64) makes sure an unexpected
+  // uncaughtException still leaves a dated trace before being swallowed.
   let isShuttingDown = false;
   process.on("uncaughtException", (err) => {
     if (isShuttingDown) return;
+    logExit("uncaught-exception", { message: err && err.message });
     console.error("Error:", err.message);
   });
 
@@ -688,6 +715,7 @@ function startServer(updatePromise) {
   process.on("SIGINT", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
+    logExit("signal", { signal: "SIGINT" });
     console.log("\nExiting...");
     cleanup();
     setTimeout(() => process.exit(0), 100);
@@ -695,12 +723,14 @@ function startServer(updatePromise) {
   process.on("SIGTERM", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
+    logExit("signal", { signal: "SIGTERM" });
     cleanup();
     setTimeout(() => process.exit(0), 100);
   });
   process.on("SIGHUP", () => {
     if (isShuttingDown) return;
     isShuttingDown = true;
+    logExit("signal", { signal: "SIGHUP" });
     cleanup();
     setTimeout(() => process.exit(0), 100);
   });
@@ -724,8 +754,10 @@ function startServer(updatePromise) {
     }
   };
 
-  // Tray-only mode: no TUI, just tray icon
-  if (trayMode) {
+  // Tray-only mode: no TUI, just tray icon. `--no-tray` takes precedence
+  // (DF-9ROUTER-64): it is an escape hatch, so even a contradictory `-t` on the
+  // same command line cannot push a headless launch back into the tray path.
+  if (trayMode && !noTray) {
     // Ignore SIGHUP so macOS terminal close doesn't kill the background tray process
     process.removeAllListeners("SIGHUP");
     process.on("SIGHUP", () => {});
@@ -733,7 +765,9 @@ function startServer(updatePromise) {
     console.log(`\n🚀 ${pkg.name} v${pkg.version}`);
     console.log(`Server: http://${displayHost}:${port}`);
 
-    waitServerReady(port).then(() => {
+    waitForServerReady({ port, child: server }).then((result) => {
+      if (!result.ok) return failStartup(result);
+      serverReady = true;
       initTrayIcon();
       console.log("\n💡 Router is now running in system tray. Close this terminal if you want.");
       console.log("   Right-click tray icon to open dashboard or quit.\n");
@@ -742,24 +776,72 @@ function startServer(updatePromise) {
     return;
   }
 
+  // Headless escape (DF-9ROUTER-64): `--no-tray` serves in the FOREGROUND with
+  // the whole tray/UI lifecycle skipped — no tray icon, no interface menu loop,
+  // no TUI, no hide-to-tray relaunch, no enableAutoStart(). The launcher stays
+  // alive only to supervise its child (readiness gate + restart policy below
+  // still apply) and normal logging goes to the terminal. Unreachable without
+  // the flag, so the default interactive behavior is unchanged.
+  if (noTray) {
+    console.log(`\n🚀 ${pkg.name} v${pkg.version} (headless)`);
+    console.log(`Server: http://${displayHost}:${port}`);
+    console.log(`Dashboard: ${url}`);
+    console.log("Tray/UI disabled (--no-tray). Press Ctrl+C to stop.\n");
+
+    waitForServerReady({ port, child: server }).then((result) => {
+      if (!result.ok) return failStartup(result);
+      serverReady = true;
+      console.log(`[${new Date().toISOString()}] [9router] server ready on http://${displayHost}:${port}`);
+    });
+
+    return;
+  }
+
   // Wait for server to be ready, then show interface menu loop + tray
-  waitServerReady(port).then(async () => {
-    // Resolve parallel update check (already running); don't block server start on it.
-    const latestVersion = await latestVersionPromise;
+  waitForServerReady({ port, child: server }).then(async (result) => {
+    if (!result.ok) return failStartup(result);
+    serverReady = true;
+
+    // Non-TTY (piped stdin, CI runner, systemd unit): there is no user to
+    // render a menu for — selectMenu() resolves before its first paint when
+    // stdin is not a TTY, i.e. the documented outcome is "exit". Resolve that
+    // HERE, before the interactive menu stack is loaded, so the promised
+    // behavior holds even where that stack cannot be required: a source
+    // checkout that never ran `npm --prefix cli install` has no
+    // cli/node_modules, and showInterfaceMenu() throws
+    // `Cannot find module 'node-machine-id'` (endpoint → api/client) — which
+    // the catch below reported as exit 1, breaking the DF-9ROUTER-64 promise
+    // ("a non-TTY menu resolves to exit and the launcher exits 0") on exactly
+    // the clean box that guard was written for (DF-9ROUTER-70).
+    if (!process.stdin.isTTY) {
+      isShuttingDown = true;
+      console.log("\nExiting...");
+      cleanup();
+      setTimeout(() => process.exit(0), 100);
+      return;
+    }
+
+    // Resolve the parallel update check (already running); don't block server start on it.
+    const updateOffer = await updateOfferPromise;
     // Start tray icon alongside TUI
     initTrayIcon();
 
     try {
       while (true) {
-        const choice = await showInterfaceMenu(latestVersion);
+        const choice = await showInterfaceMenu(updateOffer);
 
         if (choice === "update") {
           isShuttingDown = true;
           const { clearScreen } = require("./src/cli/utils/display");
           clearScreen();
-          console.log(`\n⬆  Update v${pkg.version} → v${latestVersion}\n`);
-          console.log(`Run this after exit:\n`);
-          console.log(`   \x1b[33m${INSTALL_CMD_LATEST}\x1b[0m\n`);
+          if (updateOffer.kind === "upstream-replaces-fork") {
+            console.log(`\n⬆  Install upstream v${updateOffer.latestVersion} (removes federation)\n`);
+            console.log("This replaces this federation fork with upstream 9router.\n");
+          } else {
+            console.log(`\n⬆  Update v${pkg.version} → v${updateOffer.latestVersion}\n`);
+          }
+          console.log("Run this after exit:\n");
+          console.log(`   \x1b[33m${updateOffer.installCommand}\x1b[0m\n`);
           cleanup();
           await killAllAppProcesses(port);
           await killProcessOnPort(port);
@@ -823,6 +905,10 @@ function startServer(updatePromise) {
           console.log("\nExiting...");
           cleanup();
           setTimeout(() => process.exit(0), 100);
+          // Stop the menu loop: without this the loop re-renders and prints a
+          // fresh "Exiting..." on every 100ms tick until the timer fires (the
+          // exit is scheduled, not immediate).
+          return;
         }
       }
     } catch (err) {
@@ -835,12 +921,18 @@ function startServer(updatePromise) {
   function attachServerEvents() {
     server.on("error", (err) => {
       console.error("Failed to start server:", err.message);
+      // Before readiness the startup gate owns the failure: it reports the
+      // diagnostic and exits non-zero (DF-9ROUTER-18). Restarting here would
+      // race it and could mask a start that never works.
+      if (!serverReady) return;
       if (!isShuttingDown) tryRestart();
       else { cleanup(); process.exit(1); }
     });
 
     server.on("close", (code) => {
+      if (!serverReady) return; // pre-ready exits are reported by the startup gate
       if (isShuttingDown || code === 0) {
+        logExit("server-exit", { code: code ?? null, shuttingDown: isShuttingDown }); // loud (DF-9ROUTER-64)
         process.exit(code || 0);
         return;
       }
@@ -872,11 +964,7 @@ function startServer(updatePromise) {
     restartCount++;
     const delay = Math.min(1000 * restartCount, 10000);
     console.error(`\n⚠️  Server exited (code=${code ?? "unknown"}). Restarting in ${delay / 1000}s... (${restartCount}/${MAX_RESTARTS})`);
-    if (crashLog.length) {
-      console.error("\n--- Server crash log ---");
-      crashLog.forEach(l => console.error(l));
-      console.error("--- End crash log ---\n");
-    }
+    printCrashLog();
 
     setTimeout(() => {
       server = spawnServer();

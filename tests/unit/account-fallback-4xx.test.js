@@ -18,10 +18,28 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     expect(result).toEqual({ shouldFallback: false, cooldownMs: 0, requestScoped: true });
   });
 
+  it("does not cool the account for unsupported media responses", () => {
+    expect(checkFallbackError(415, "Unsupported media type: application/octet-stream")).toEqual({
+      shouldFallback: false,
+      cooldownMs: 0,
+    });
+    expect(checkFallbackError(400, JSON.stringify({
+      error: { type: "invalid_request_error", message: "Unsupported MIME type" },
+    }))).toEqual({ shouldFallback: false, cooldownMs: 0 });
+  });
+
+  it("does not cool the account for a model-scoped not-found response", () => {
+    expect(checkFallbackError(404, JSON.stringify({
+      error: { code: "model_not_found", message: "The requested model does not exist" },
+    }))).toEqual({ shouldFallback: false, cooldownMs: 0 });
+  });
+
   it("still falls back for account-scoped statuses", () => {
-    for (const status of [401, 402, 403, 404, 429]) {
+    for (const status of [401, 402, 403, 429]) {
       expect(checkFallbackError(status, "nope").shouldFallback).toBe(true);
     }
+    // A generic 404 remains account-scoped; only an explicit model failure is exempt.
+    expect(checkFallbackError(404, "nope").shouldFallback).toBe(true);
   });
 
   it("still honours rate-limit / quota wording on any 4xx", () => {

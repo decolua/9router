@@ -159,6 +159,6 @@ cp -r ~/.9router.backup ~/.9router
 
 ## 🔗 下一步
 
-- [连接提供商](/providers/subscription.md)
-- [创建组合](/features/combos.md)
-- [集成 CLI 工具](/integration/cursor.md)
+- [连接提供商](../providers/subscription.md)
+- [创建组合](../features/combos.md)
+- [集成 CLI 工具](../integration/cursor.md)

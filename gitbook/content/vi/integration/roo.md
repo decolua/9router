@@ -37,17 +37,17 @@ API Key: your-api-key-from-dashboard
 Chọn từ các model 9Router có sẵn:
 
 **Claude Models:**
-- `cc/claude-opus-4-5-20251101` - Mạnh nhất
-- `cc/claude-sonnet-4-20250514` - Cân bằng
-- `cc/claude-haiku-4-20250514` - Nhanh
+- `cc/claude-opus-5-5` - Mạnh nhất
+- `cc/claude-sonnet-5-5` - Cân bằng
+- `cc/claude-haiku-4-5-20251001` - Nhanh
 
 **DeepSeek Models:**
-- `cx/deepseek-chat` - Đa năng
-- `cx/deepseek-reasoner` - Reasoning phức tạp
+- `deepseek/deepseek-chat` - Đa năng
+- `deepseek/deepseek-reasoner` - Reasoning phức tạp
 
 **GLM Models:**
-- `glm/glm-4-plus` - Nâng cao
-- `glm/glm-4-flash` - Phản hồi nhanh
+- `glm/glm-4.7` - Nâng cao
+- `glm/glm-4.7-flash` - Phản hồi nhanh
 
 ### 4. Test Connection
 
@@ -62,26 +62,26 @@ Hello! Can you confirm you're connected through 9Router?
 ### Chat Cơ bản
 ```
 Ask Roo: "Explain quantum computing in simple terms"
-Model: cc/claude-sonnet-4-20250514
+Model: cc/claude-sonnet-5-5
 ```
 
 ### Tạo Code
 ```
 Ask Roo: "Write a Python function to calculate Fibonacci numbers"
-Model: cx/deepseek-chat
+Model: deepseek/deepseek-chat
 ```
 
 ### Reasoning Phức tạp
 ```
 Ask Roo: "Analyze the trade-offs between microservices and monolithic architecture"
-Model: cx/deepseek-reasoner
+Model: deepseek/deepseek-reasoner
 ```
 
 ## Mẹo Chọn Model
 
-- **Task nhanh**: Dùng `cc/claude-haiku-4-20250514` hoặc `glm/glm-4-flash`
-- **Hiệu năng cân bằng**: Dùng `cc/claude-sonnet-4-20250514` hoặc `cx/deepseek-chat`
-- **Reasoning phức tạp**: Dùng `cc/claude-opus-4-5-20251101` hoặc `cx/deepseek-reasoner`
+- **Task nhanh**: Dùng `cc/claude-haiku-4-5-20251001` hoặc `glm/glm-4.7-flash`
+- **Hiệu năng cân bằng**: Dùng `cc/claude-sonnet-5-5` hoặc `deepseek/deepseek-chat`
+- **Reasoning phức tạp**: Dùng `cc/claude-opus-5-5` hoặc `deepseek/deepseek-reasoner`
 - **Tối ưu chi phí**: Dùng model DeepSeek hoặc GLM
 
 ## Troubleshooting
@@ -108,9 +108,9 @@ Model: cx/deepseek-reasoner
 Bạn có thể tạo shortcut cho model thường dùng trong Roo settings:
 
 ```
-Alias: "fast" → cc/claude-haiku-4-20250514
-Alias: "smart" → cc/claude-opus-4-5-20251101
-Alias: "code" → cx/deepseek-chat
+Alias: "fast" → cc/claude-haiku-4-5-20251001
+Alias: "smart" → cc/claude-opus-5-5
+Alias: "code" → deepseek/deepseek-chat
 ```
 
 ### Nhiều Profile
@@ -124,4 +124,3 @@ Setup profile khác nhau cho use case khác nhau:
 
 - [Cấu hình Cursor](cursor.md) cho tích hợp IDE
 - [Setup Continue](continue.md) cho VSCode
-- [Khám phá CLI usage](../cli/basic-usage.md)

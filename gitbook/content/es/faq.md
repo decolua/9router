@@ -42,7 +42,7 @@ Enruta inteligentemente las solicitudes a través de múltiples proveedores de I
 **Objetivo:** ¡90% más barato que ChatGPT API ($20/1M)!
 
 ### Nivel 3: Gratis (Emergencia)
-- **iFlow**: 8 modelos GRATIS (Kimi K2, Qwen3, GLM, MiniMax...)
+- **iFlow**: 15 modelos GRATIS (Kimi K2, Qwen3, GLM, DeepSeek...)
 - **Qwen**: 3 modelos GRATIS (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro**: 2 modelos GRATIS (Claude Sonnet 4.5, Haiku 4.5)
 
@@ -56,8 +56,8 @@ Enruta inteligentemente las solicitudes a través de múltiples proveedores de I
 
 **Proveedores de nivel gratis disponibles:**
 - **Gemini CLI** - 180K completados/mes (cuenta Google GRATIS)
-- **iFlow** - 8 modelos ilimitados (OAuth GRATIS)
-- **Qwen** - 3 modelos ilimitados (OAuth GRATIS)
+- **iFlow** - 15 modelos ilimitados (OAuth GRATIS)
+- **Modelos Qwen** - ilimitados vía iFlow (OAuth GRATIS)
 - **Kiro** - Claude Sonnet/Haiku (AWS Builder ID GRATIS)
 
 **¡Puedes codificar GRATIS para siempre usando solo proveedores de nivel gratis!**
@@ -71,9 +71,9 @@ Enruta inteligentemente las solicitudes a través de múltiples proveedores de I
 ## ¿Qué proveedores son compatibles?
 
 ### Proveedores de suscripción
-- **Claude Code** (Pro/Max) - Claude 4.5 Opus/Sonnet/Haiku
-- **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
-- **Gemini CLI** (GRATIS) - Gemini 3 Flash/Pro, 2.5 Pro/Flash
+- **Claude Code** (Pro/Max) - Claude Opus 5.5/Sonnet 5.5/Haiku 4.5
+- **OpenAI Codex** (Plus/Pro) - GPT 6.1 Sol, GPT 6 Sol
+- **Gemini CLI** (GRATIS) - Gemini 3 Flash/Pro Preview, 2.5 Pro/Flash
 - **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
 - **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
 
@@ -84,7 +84,7 @@ Enruta inteligentemente las solicitudes a través de múltiples proveedores de I
 - **OpenRouter** - Passthrough a cualquier modelo de OpenRouter
 
 ### Proveedores gratis
-- **iFlow** - 8 modelos (Kimi K2, Qwen3, GLM, MiniMax, DeepSeek...)
+- **iFlow** - 15 modelos (Kimi K2, Qwen3, GLM, DeepSeek...)
 - **Qwen** - 3 modelos (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro** - 2 modelos (Claude Sonnet 4.5, Haiku 4.5)
 
@@ -102,7 +102,7 @@ Consulta la [documentación de proveedores](providers/subscription.md) para más
 
 ```
 Ejemplo de combo: "premium-coding"
-1. cc/claude-opus-4-5 (Suscripción principal)
+1. cc/claude-opus-5-5 (Suscripción principal)
 2. glm/glm-4.7 (Respaldo barato)
 3. if/kimi-k2 (Emergencia gratis)
 
@@ -166,7 +166,7 @@ Consulta la [documentación de seguimiento de cuota](features/quota-tracking.md)
 Cursor Settings → Models → Advanced:
   OpenAI API Base URL: https://9router.com/v1
   OpenAI API Key: [desde el dashboard]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 **Alternativa:** Auto-hospéda en VPS con dominio público:

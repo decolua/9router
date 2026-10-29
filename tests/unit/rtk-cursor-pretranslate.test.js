@@ -31,6 +31,10 @@ vi.mock("@/lib/usageDb.js", () => ({
   trackPendingRequest: vi.fn(),
   appendRequestLog: vi.fn(async () => {}),
   saveRequestDetail: vi.fn(async () => {}),
+  // The fork's requestDetail (estimate-flagging, DF-9ROUTER-39) routes
+  // saveUsageStats through saveRequestUsage; upstream's simpler version does
+  // not reach it, so upstream's mock table lacks this key.
+  saveRequestUsage: vi.fn(async () => {}),
 }));
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");

@@ -8,7 +8,7 @@ import {
   isValidApiKey,
 } from "../services/auth.js";
 import { handleAntigravityQuotaError, clearAntigravityStrikes } from "../services/antigravityQuota.js";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getProviderConnections, getCustomModels } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
 import { handleChatCore } from "open-sse/handlers/chatCore.js";
 import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
@@ -20,14 +20,145 @@ import { handleComboChat, handleFusionChat, detectRequiredCapabilities } from "o
 import { augmentModelsWithCapacityAdapter, withCapacityAdapterStripping, getActiveAdapterStrategy } from "open-sse/services/capacityAdapter.js";
 import { handleBypassRequest } from "open-sse/utils/bypassHandler.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "open-sse/config/providerModels.js";
+import { isValidModel } from "@/shared/constants/models.js";
 import { detectFormatByEndpoint } from "open-sse/translator/formats.js";
 import { resolveSessionIdentity } from "open-sse/utils/sessionManager.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
+import { isOpenAICompatibleProvider } from "@/shared/constants/providers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+
+// DF-9ROUTER-54 — a fresh install advertises only the models that work with no
+// stored connection (buildModelsList in src/app/api/v1/models/route.js filters
+// the catalog to providers that need no credentials), yet a chat request naming
+// any other provider answered a bare 404 "No active credentials for provider: X"
+// with nothing pointing at that catalog. The 404 is exactly the moment the
+// pointer is worth most, so the message carries it — plus, when the DB is
+// readable, the providers that DO have a connection, which separates "nothing is
+// configured on this instance" from "this one provider is not".
+//
+// The prefix is unchanged ("No active credentials for provider: X") so existing
+// clients and log greps keep matching; only guidance is appended.
+const MAX_NO_CREDENTIALS_MESSAGE_CHARS = 200;
+const NO_CREDENTIALS_DISCOVERY = " See /v1/models for models usable without credentials.";
+const MAX_NAMED_CONFIGURED_PROVIDERS = 5;
+
+/**
+ * Compose the 404 body for a provider with no usable stored connection.
+ * Pure — `configuredProviders` is the caller's best-effort lookup (null when it
+ * failed, so the guidance is never lost to a DB hiccup).
+ * Budget: the discovery pointer is mandatory, the provider list is optional and
+ * is dropped rather than letting the message reach
+ * MAX_NO_CREDENTIALS_MESSAGE_CHARS.
+ * @param {string} provider - provider id/alias as routed
+ * @param {string[]|null} [configuredProviders] - providers with a stored connection
+ * @returns {string} OpenAI-compatible error message
+ */
+export function noCredentialsMessage(provider, configuredProviders = null) {
+  const base = `No active credentials for provider: ${provider}.`;
+  const discovery = `${base}${NO_CREDENTIALS_DISCOVERY}`;
+  const names = (Array.isArray(configuredProviders) ? configuredProviders : [])
+    .filter((name) => typeof name === "string" && name.length > 0);
+  if (names.length === 0) return discovery;
+
+  const shown = names.slice(0, MAX_NAMED_CONFIGURED_PROVIDERS);
+  const ellipsis = names.length > shown.length ? ", …" : "";
+  const withList = `${base} Active connections exist for: ${shown.join(", ")}${ellipsis}.${NO_CREDENTIALS_DISCOVERY}`;
+  return withList.length < MAX_NO_CREDENTIALS_MESSAGE_CHARS ? withList : discovery;
+}
+
+/**
+ * Compose the 404 message for an id the instance's own catalog cannot name —
+ * pure, exported for tests. Mirrors the fresh-install contract: the id a
+ * client was told to call is /v1/models, so the error points there, and it
+ * does NOT name credentials (a catalog miss is a wrong model name, not a dead
+ * key). Budgeted like noCredentialsMessage.
+ * @param {string} modelStr - the model id exactly as the client sent it
+ * @returns {string} OpenAI-compatible error message
+ */
+export function modelNotInCatalogMessage(modelStr) {
+  return `Model '${modelStr}' not found in catalog. See /v1/models for models usable without credentials.`;
+}
+
+/**
+ * Best-effort check: can `provider/model` exist on this instance at all?
+ * Reads the SAME catalog surfaces GET /v1/models advertises (static registry
+ * under the provider's alias, custom models on that provider). Live resolvers
+ * (kiro/qoder/github/…) are deliberately NOT consulted — an unresolvable id
+ * has usually already failed one credential lookup, and the 404 must not
+ * depend on a second network call succeeding.
+ *
+ * Semantics, chosen so the error path can never erase a real routing case:
+ *   false — DEFINITIVE miss: registered provider, no active connection, and
+ *           the id is in neither its static list nor its custom models. On
+ *           this instance the id cannot resolve, so blaming credentials would
+ *           be wrong (this is exactly the fresh-install 404 state).
+ *   null  — UNKNOWN: openai-compatible NODE (catalog = its upstream's,
+ *           discovered live — unknowable here), a connection that exists (a
+ *           passthrough/compat node can name anything), a failed DB read, or
+ *           an unregistered provider prefix. Every null degrades to the
+ *           legacy credential wording.
+ * @param {string} provider - provider id/alias as routed
+ * @param {string} model - unprefixed model id
+ * @returns {Promise<boolean|null>} false = definitively not in catalog, null = unknown
+ */
+async function modelResolvableInCatalog(provider, model) {
+  // A NODE's catalog is its upstream's, discovered live at /v1/models time;
+  // this static read cannot prove a miss for one.
+  if (isOpenAICompatibleProvider(provider)) return null;
+  let connections;
+  try {
+    connections = await getProviderConnections({ provider });
+  } catch {
+    return null;
+  }
+  const hasConnection = (connections || []).some((c) => c?.provider === provider && c.isActive !== false);
+  // A connection exists: the provider is passthrough/compatible in practice —
+  // its model set is whatever the upstream accepts. Not provable statically.
+  if (hasConnection) return null;
+  const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
+  // An unregistered provider prefix is not provable here — alias/combo
+  // resolution ran earlier, so this is a node-ish or future id: unknown.
+  if (!Object.prototype.hasOwnProperty.call(PROVIDER_MODELS, alias)) return null;
+  // Definitive-miss test: absent from the static registry AND from the
+  // custom models published under this provider. Any read failure is unknown.
+  const inStatic = isValidModel(alias, model);
+  let inCustom = false;
+  try {
+    const customs = await getCustomModels();
+    inCustom = (customs || []).some((m) => {
+      if (!m?.id || String(m.id).trim() !== model) return false;
+      const providerAlias = m.providerAlias;
+      return providerAlias === alias || providerAlias === provider;
+    });
+  } catch {
+    return null;
+  }
+  return inStatic || inCustom ? null : false;
+}
+
+/**
+ * Best-effort list of providers that currently have a stored (active)
+ * connection. Returns null when the lookup fails — the 404 guidance must not
+ * depend on a second DB read succeeding in the error path.
+ */
+async function configuredProviderIds() {
+  try {
+    const connections = await getProviderConnections();
+    const ids = [];
+    for (const connection of connections || []) {
+      if (!connection?.provider || connection.isActive === false) continue;
+      if (!ids.includes(connection.provider)) ids.push(connection.provider);
+    }
+    return ids;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Handle chat completion request
@@ -288,8 +419,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        // Nothing has been tried-and-excluded, so this is not "all accounts
+        // exhausted" — the provider has no usable stored connection on this
+        // instance. DF-9ROUTER-56: before blaming credentials, ask whether the
+        // requested id can exist on this instance at all. A model absent from
+        // the same catalog GET /v1/models advertises is a WRONG MODEL NAME,
+        // not a missing connection — saying "No active credentials for
+        // provider: X" there sends users hunting for a dead API key. The
+        // credential wording is kept only for ids the catalog actually lists
+        // (combo/alias resolution and node passthrough both land here), where
+        // a connection really is what is missing. Same 404 / model_not_found
+        // either way — only the message changes.
+        const modelInCatalog = await modelResolvableInCatalog(provider, model);
+        if (modelInCatalog === false) {
+          const message = modelNotInCatalogMessage(modelStr);
+          log.warn("CHAT", message);
+          return errorResponse(HTTP_STATUS.NOT_FOUND, message);
+        }
+        // Say so with a pointer at the model discovery surface
+        // (and the providers that ARE configured) instead of a dead end.
+        const message = noCredentialsMessage(provider, await configuredProviderIds());
+        log.warn("AUTH", message);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, message);
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
@@ -358,6 +509,28 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     });
 
     if (result.success) return result.response;
+
+    // DF-9ROUTER-40 — on an OpenAI-compatible NODE a 404/406 is model-scoped
+    // by construction: the node's credential demonstrably worked (the request
+    // reached the upstream and was routed), so the model id simply does not
+    // resolve there. A chained 9router reports exactly this with credential
+    // wording — it receives the bare remainder, infers provider `openai` for
+    // the unknown id, and answers "No active credentials for provider:
+    // openai". Left to the generic account classifier, that wording matches
+    // the "no credentials" rule: the VALID connection is cooled down and the
+    // caller waits out the retry window for a misleading answer (measured
+    // ~95s in the 2026-09-24 dogfood). Surface the honest verdict immediately
+    // instead — no cooldown, no next account (every account on this node
+    // speaks to the same upstream), naming the id the caller asked for.
+    // Non-node providers keep the generic classification: their 404 can be a
+    // genuine credential/routing failure and stays account-scoped.
+    if (
+      (result.status === HTTP_STATUS.NOT_FOUND || result.status === HTTP_STATUS.NOT_ACCEPTABLE)
+      && isOpenAICompatibleProvider(provider)
+    ) {
+      log.warn("CHAT", `[${provider}/${model}] upstream node answered ${result.status} — model id does not resolve there (upstream said: ${String(result.error || "").slice(0, 120)})`);
+      return errorResponse(result.status, `Model not found on upstream node: ${modelStr}`);
+    }
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;

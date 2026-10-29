@@ -17,6 +17,10 @@ export const KEY_ACCESS_PROVIDER_AS_MODEL_KINDS = Object.freeze(["webSearch", "w
 // /v1/models owner tag for combo entries.
 export const KEY_ACCESS_COMBO_OWNER = "combo";
 
+// Error classification for an API key that is authenticated but not authorized
+// to use the requested target. It is deliberately not a retryable quota error.
+export const KEY_ACCESS_DENIED_ERROR = Object.freeze({ type: "permission_error", code: "permission_error" });
+
 // Client-facing 403 message. Names only what the client itself sent: never the
 // key name or the key's allow list.
 export function keyAccessDeniedMessage(requested) {

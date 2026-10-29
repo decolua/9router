@@ -75,7 +75,7 @@ Clone and build from GitHub:
 
 ```bash
 git clone https://github.com/decolua/9router.git
-cd 9router/app
+cd 9router
 npm install
 npm run build
 npm start
@@ -132,15 +132,12 @@ Dashboard → Settings → API Keys
 ### Check Server Status
 
 ```bash
-curl http://localhost:20128/health
+curl http://localhost:20128/api/health
 ```
 
 **Expected response:**
 ```json
-{
-  "status": "ok",
-  "version": "1.0.0"
-}
+{"ok":true}
 ```
 
 ### List Available Models
@@ -156,7 +153,7 @@ curl http://localhost:20128/v1/models \
   "object": "list",
   "data": [
     {
-      "id": "cc/claude-opus-4-5-20251101",
+      "id": "cc/claude-opus-5-5",
       "object": "model",
       "created": 1234567890,
       "owned_by": "claude-code"
@@ -172,7 +169,7 @@ curl http://localhost:20128/v1/chat/completions \
   -H "Authorization: Bearer your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "cc/claude-opus-4-5-20251101",
+    "model": "cc/claude-opus-5-5",
     "messages": [
       {"role": "user", "content": "Hello!"}
     ]
@@ -192,8 +189,12 @@ Create `.env` file or set environment variables:
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
 
-# Storage
-export DATA_DIR="~/.9router"
+# Storage (OPTIONAL — omit this line to use the per-user default ~/.9router)
+# Do NOT export the literal "~/.9router": Node's fs does not expand "~", so the
+# app would create a directory literally named "~". Set a real absolute path
+# instead — one the runtime user can create and write, or the app fails fast at
+# boot with an EACCES DATA_DIR error.
+# export DATA_DIR="/absolute/writable/path"
 
 # Server
 export PORT="20128"
@@ -465,7 +466,7 @@ nano ~/.bashrc  # or ~/.zshrc
 
 ## Next Steps
 
-- [Getting Started Guide](../getting-started.md) - Connect providers and start coding
+- [Getting Started Guide](../getting-started/quick-start.md) - Connect providers and start coding
 - [Features](../features/) - Explore quota tracking, combos, deployment
 - [Troubleshooting](../troubleshooting.md) - Fix common issues
 

@@ -17,6 +17,11 @@ const CUSTOM_EMBEDDING_DEFAULTS = {
   baseUrl: "https://api.openai.com/v1",
 };
 
+// `type` is the node KIND; `apiType` is the PROTOCOL an openai-compatible node
+// speaks. They are independent fields and neither is derived from the other —
+// a node is only ever stored with the two values the caller sent.
+const OPENAI_COMPATIBLE_API_TYPES = ["chat", "responses"];
+
 // GET /api/provider-nodes - List all provider nodes
 export async function GET() {
   try {
@@ -46,8 +51,17 @@ export async function POST(request) {
     const nodeType = type || "openai-compatible";
 
     if (nodeType === "openai-compatible") {
-      if (!apiType || !["chat", "responses"].includes(apiType)) {
-        return NextResponse.json({ error: "Invalid OpenAI compatible API type" }, { status: 400 });
+      if (!OPENAI_COMPATIBLE_API_TYPES.includes(apiType)) {
+        const shown = apiType === undefined || apiType === null ? "missing" : JSON.stringify(apiType);
+        return NextResponse.json(
+          {
+            error:
+              `Invalid apiType ${shown} — allowed values: ${OPENAI_COMPATIBLE_API_TYPES.join(", ")} ` +
+              `(apiType is the protocol; "type" is the node kind)`,
+            allowedApiTypes: OPENAI_COMPATIBLE_API_TYPES,
+          },
+          { status: 400 }
+        );
       }
 
       const node = await createProviderNode({

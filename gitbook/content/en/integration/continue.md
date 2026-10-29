@@ -29,7 +29,7 @@ Add the following configuration to your `config.json`:
     {
       "title": "9Router - Claude Opus",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -44,28 +44,28 @@ Add the following configuration to your `config.json`:
     {
       "title": "9Router - Claude Opus (Best)",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Sonnet (Balanced)",
       "provider": "openai",
-      "model": "cc/claude-sonnet-4-20250514",
+      "model": "cc/claude-sonnet-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - DeepSeek Chat (Code)",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Haiku (Fast)",
       "provider": "openai",
-      "model": "cc/claude-haiku-4-20250514",
+      "model": "cc/claude-haiku-4-5-20251001",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -94,17 +94,17 @@ Replace `apiBase` with:
 ## Available Models
 
 ### Claude Models (Anthropic)
-- `cc/claude-opus-4-5-20251101` - Most capable, best for complex tasks
-- `cc/claude-sonnet-4-20250514` - Balanced performance and speed
-- `cc/claude-haiku-4-20250514` - Fastest, good for simple tasks
+- `cc/claude-opus-5-5` - Most capable, best for complex tasks
+- `cc/claude-sonnet-5-5` - Balanced performance and speed
+- `cc/claude-haiku-4-5-20251001` - Fastest, good for simple tasks
 
 ### DeepSeek Models
-- `cx/deepseek-chat` - Excellent for code generation
-- `cx/deepseek-reasoner` - Best for complex problem solving
+- `deepseek/deepseek-chat` - Excellent for code generation
+- `deepseek/deepseek-reasoner` - Best for complex problem solving
 
 ### GLM Models (Zhipu AI)
-- `glm/glm-4-plus` - Advanced Chinese and English
-- `glm/glm-4-flash` - Fast responses
+- `glm/glm-4.7` - Advanced Chinese and English
+- `glm/glm-4.7-flash` - Fast responses
 
 ## Usage Examples
 
@@ -112,22 +112,22 @@ Replace `apiBase` with:
 1. Select code in editor
 2. Open Continue sidebar
 3. Type: "Explain this code"
-4. Model: `cc/claude-sonnet-4-20250514`
+4. Model: `cc/claude-sonnet-5-5`
 
 ### Code Generation
 1. Open Continue sidebar
 2. Type: "Create a React component for user profile card"
-3. Model: `cx/deepseek-chat`
+3. Model: `deepseek/deepseek-chat`
 
 ### Refactoring
 1. Select code to refactor
 2. Type: "Refactor this to use async/await"
-3. Model: `cc/claude-sonnet-4-20250514`
+3. Model: `cc/claude-sonnet-5-5`
 
 ### Bug Fixing
 1. Select problematic code
 2. Type: "Find and fix the bug in this code"
-3. Model: `cx/deepseek-reasoner`
+3. Model: `deepseek/deepseek-reasoner`
 
 ## Advanced Configuration
 
@@ -141,7 +141,7 @@ Add custom system prompts for specific behaviors:
     {
       "title": "9Router - Code Expert",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "systemMessage": "You are an expert programmer. Always provide clean, well-documented code with best practices."
@@ -160,7 +160,7 @@ Adjust model behavior with parameters:
     {
       "title": "9Router - Creative Writer",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "temperature": 0.9,
@@ -226,10 +226,10 @@ Configure what context Continue sends to the model:
 ## Best Practices
 
 ### Model Selection Strategy
-- **Quick edits**: Use `cc/claude-haiku-4-20250514`
-- **Code generation**: Use `cx/deepseek-chat`
-- **Complex refactoring**: Use `cc/claude-opus-4-5-20251101`
-- **Problem solving**: Use `cx/deepseek-reasoner`
+- **Quick edits**: Use `cc/claude-haiku-4-5-20251001`
+- **Code generation**: Use `deepseek/deepseek-chat`
+- **Complex refactoring**: Use `cc/claude-opus-5-5`
+- **Problem solving**: Use `deepseek/deepseek-reasoner`
 
 ### Context Management
 - Select only relevant code before asking
@@ -245,5 +245,3 @@ Configure what context Continue sends to the model:
 
 - [Configure Cursor](cursor.md) for enhanced IDE integration
 - [Set up Roo](roo.md) for AI assistant
-- [Explore CLI usage](../cli/basic-usage.md)
-- [Learn about model selection](../models/overview.md)

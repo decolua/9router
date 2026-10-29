@@ -78,14 +78,33 @@ const originalDataDir = process.env.DATA_DIR;
 let GET;
 let createProviderConnection;
 
+// vi.resetModules() clears the module registry but NOT the process-global
+// driver cache: src/lib/db/driver.js deliberately parks its adapter on
+// `global._dbAdapter` so Next.js dev hot-reload reuses one connection.
+// A test file that runs earlier in the SAME worker therefore leaves a live
+// adapter pointing at a DATA_DIR it has already deleted, and every dynamic
+// import below would silently reuse it — seeding, and being served from, a
+// foreign (unlinked) database instead of this file's temp dir. That is what
+// made this file flake with `SqliteError: database is locked` under full-suite
+// parallelism, so the cache is dropped explicitly on both ends: fresh here,
+// and left clean for the next file in the worker.
+function resetDriverCache() {
+  try { global._dbAdapter?.instance?.close?.(); } catch { /* already closed */ }
+  delete global._dbAdapter;
+}
+
 beforeAll(async () => {
   process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "9router-zed-live-"));
+  resetDriverCache();
   vi.resetModules();
   ({ GET } = await import("@/app/api/providers/[id]/models/route.js"));
   ({ createProviderConnection } = await import("@/models/index.js"));
 });
 
 afterAll(() => {
+  // Close before removing the dir: an open handle on a deleted database is
+  // exactly the state that hijacks the next file's seeding.
+  resetDriverCache();
   fs.rmSync(process.env.DATA_DIR, { recursive: true, force: true });
   if (originalDataDir === undefined) delete process.env.DATA_DIR;
   else process.env.DATA_DIR = originalDataDir;
@@ -163,6 +182,19 @@ describe("criterion 6 (route) — unknown connection → 404", () => {
   it("rejects missing connections", async () => {
     const res = await getModels("00000000-0000-0000-0000-000000000000");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("isolation — the state DB is this file's own DATA_DIR", () => {
+  it("seeds into its private temp dir, not a foreign process-global adapter", async () => {
+    const conn = await seedZed("iso");
+    // Pre-fix, a shared worker handed this file the previous file's (already
+    // deleted) adapter and this file created NO database of its own — measured
+    // by the QA-9ROUTER-31 rig as ownDbExists=false / rowInOwnDb=0, versus
+    // true/1 with the cache reset in place.
+    expect(fs.existsSync(path.join(process.env.DATA_DIR, "db", "data.sqlite"))).toBe(true);
+    const res = await getModels(conn.id);
+    expect(res.status).toBe(200);
   });
 });
 

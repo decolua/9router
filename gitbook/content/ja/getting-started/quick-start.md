@@ -12,7 +12,7 @@
 npm install -g 9router
 ```
 
-**要件:** Node.js 20+ ([インストール詳細](getting-started/installation.md))
+**要件:** Node.js 20+ ([インストール詳細](../installation.md))
 
 ### 2. 起動
 
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 1. 「Connect Claude Code」をクリック
 2. Claudeアカウントでログイン
 3. 9Routerを認可
-4. ✅ 完了! モデルを使用: `cc/claude-opus-4-5-20251101`
+4. ✅ 完了! モデルを使用: `cc/claude-opus-5-5`
 
 #### オプションB: APIキー(低価格プロバイダー)
 
@@ -65,7 +65,7 @@ Dashboard → Providers → Add API Key
 
 #### オプションC: 無料プロバイダー(コストなし)
 
-**最適:** iFlow、Qwen、Kiro
+**最適:** iFlow、Kiro
 
 ```
 Dashboard → Providers → Connect [Free Provider]
@@ -77,7 +77,7 @@ Dashboard → Providers → Connect [Free Provider]
 1. 「Connect iFlow」をクリック
 2. iFlowアカウントでログイン
 3. 認可
-4. ✅ 完了! 8モデルを使用: `if/kimi-k2-thinking`、`if/qwen3-coder-plus`など
+4. ✅ 完了! 15モデルを使用: `if/kimi-k2`、`if/qwen3-coder-plus`など
 
 ---
 
@@ -91,7 +91,7 @@ Dashboard → Providers → Connect [Free Provider]
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [9routerダッシュボードから取得]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### Claude Desktop
@@ -111,7 +111,7 @@ Settings → Models → Advanced:
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [ダッシュボードから取得]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
 ### Codex CLI
@@ -134,9 +134,9 @@ Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-5-20251101 (サブスクリプション優先)
+  1. cc/claude-opus-5-5 (サブスクリプション優先)
   2. glm/glm-4.7 (低価格バックアップ、100万あたり$0.6)
-  3. if/kimi-k2-thinking (無料フォールバック)
+  3. if/kimi-k2 (無料フォールバック)
 
 CLIで使用: premium-coding
 ```
@@ -154,21 +154,21 @@ CLIで使用: premium-coding
 ### サブスクリプションモデル(最初に最大化)
 
 **Claude Code (`cc/`)** - Pro/Maxサブスクリプション:
-- `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
-- `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
+- `cc/claude-opus-5-5` - Claude Opus 5.5
+- `cc/claude-sonnet-5-5` - Claude Sonnet 5.5
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Plus/Proサブスクリプション:
-- `cx/gpt-5.2-codex` - GPT 5.2 Codex
-- `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
+- `cx/gpt-6.1-sol` - GPT 6.1 Sol
+- `cx/gpt-6-sol` - GPT 6 Sol
 
 **Gemini CLI (`gc/`)** - 月18万無料:
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - サブスクリプション:
-- `gh/gpt-5` - GPT-5
-- `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
+- `gh/gpt-5.4` - GPT-5.4
+- `gh/claude-sonnet-4.5` - Claude Sonnet 4.5
 
 ### 低価格モデル(バックアップ)
 
@@ -183,17 +183,13 @@ CLIで使用: premium-coding
 
 ### 無料モデル(緊急時)
 
-**iFlow (`if/`)** - 8モデル無料:
-- `if/kimi-k2-thinking` - Kimi K2 Thinking
+**iFlow (`if/`)** - 15モデル無料:
+- `if/kimi-k2` - Kimi K2
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
-**Qwen (`qw/`)** - 3モデル無料:
-- `qw/qwen3-coder-plus` - Qwen3 Coder Plus
-- `qw/qwen3-coder-flash` - Qwen3 Coder Flash
-
-**Kiro (`kr/`)** - 2モデル無料:
+**Kiro (`kr/`)** - 48モデル無料:
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 
@@ -233,10 +229,10 @@ CLIで使用: premium-coding
 
 ## 次のステップ
 
-- [インストール詳細](getting-started/installation.md) - 要件、トラブルシューティング
-- [機能](features/) - クォータトラッキング、コンボ、デプロイを確認
-- [FAQ](faq.md) - よくある質問と回答
-- [トラブルシューティング](troubleshooting.md) - 一般的な問題の修正
+- [インストール詳細](../installation.md) - 要件、トラブルシューティング
+- [機能](../features/) - クォータトラッキング、コンボ、デプロイを確認
+- [FAQ](../faq.md) - よくある質問と回答
+- [トラブルシューティング](../troubleshooting.md) - 一般的な問題の修正
 
 ---
 

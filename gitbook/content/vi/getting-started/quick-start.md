@@ -12,7 +12,7 @@ Khởi chạy 9Router trong 5 phút và bắt đầu định tuyến các reques
 npm install -g 9router
 ```
 
-**Yêu cầu:** Node.js 20+ ([Chi tiết cài đặt](getting-started/installation.md))
+**Yêu cầu:** Node.js 20+ ([Chi tiết cài đặt](../installation.md))
 
 ### 2. Khởi chạy
 
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 1. Click "Connect Claude Code"
 2. Đăng nhập tài khoản Claude
 3. Cho phép 9Router
-4. ✅ Xong! Dùng model: `cc/claude-opus-4-5-20251101`
+4. ✅ Xong! Dùng model: `cc/claude-opus-5-5`
 
 #### Cách B: API Key (Cheap Provider)
 
@@ -65,7 +65,7 @@ Dashboard → Providers → Add API Key
 
 #### Cách C: Free Provider (Miễn phí)
 
-**Tốt nhất cho:** iFlow, Qwen, Kiro
+**Tốt nhất cho:** iFlow, Kiro
 
 ```
 Dashboard → Providers → Connect [Free Provider]
@@ -77,7 +77,7 @@ Dashboard → Providers → Connect [Free Provider]
 1. Click "Connect iFlow"
 2. Đăng nhập tài khoản iFlow
 3. Cho phép
-4. ✅ Xong! Dùng 8 model: `if/kimi-k2-thinking`, `if/qwen3-coder-plus`, v.v.
+4. ✅ Xong! Dùng 15 model: `if/kimi-k2`, `if/qwen3-coder-plus`, v.v.
 
 ---
 
@@ -91,7 +91,7 @@ Trỏ công cụ code của bạn tới 9Router:
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [from 9router dashboard]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### Claude Desktop
@@ -111,7 +111,7 @@ Sửa `~/.claude/config.json`:
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [from dashboard]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
 ### Codex CLI
@@ -134,9 +134,9 @@ Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-5-20251101 (Subscription primary)
+  1. cc/claude-opus-5-5 (Subscription primary)
   2. glm/glm-4.7 (Cheap backup, $0.6/1M)
-  3. if/kimi-k2-thinking (Free fallback)
+  3. if/kimi-k2 (Free fallback)
 
 Use in CLI: premium-coding
 ```
@@ -154,21 +154,21 @@ Use in CLI: premium-coding
 ### Subscription Models (Dùng đầu tiên)
 
 **Claude Code (`cc/`)** - Subscription Pro/Max:
-- `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
-- `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
+- `cc/claude-opus-5-5` - Claude Opus 5.5
+- `cc/claude-sonnet-5-5` - Claude Sonnet 5.5
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Subscription Plus/Pro:
-- `cx/gpt-5.2-codex` - GPT 5.2 Codex
-- `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
+- `cx/gpt-6.1-sol` - GPT 6.1 Sol
+- `cx/gpt-6-sol` - GPT 6 Sol
 
 **Gemini CLI (`gc/`)** - MIỄN PHÍ 180K/tháng:
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - Subscription:
-- `gh/gpt-5` - GPT-5
-- `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
+- `gh/gpt-5.4` - GPT-5.4
+- `gh/claude-sonnet-4.5` - Claude Sonnet 4.5
 
 ### Cheap Models (Backup)
 
@@ -183,17 +183,13 @@ Use in CLI: premium-coding
 
 ### Model MIỄN PHÍ (Khẩn cấp)
 
-**iFlow (`if/`)** - 8 models MIỄN PHÍ:
-- `if/kimi-k2-thinking` - Kimi K2 Thinking
+**iFlow (`if/`)** - 15 models MIỄN PHÍ:
+- `if/kimi-k2` - Kimi K2
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
-**Qwen (`qw/`)** - 3 models MIỄN PHÍ:
-- `qw/qwen3-coder-plus` - Qwen3 Coder Plus
-- `qw/qwen3-coder-flash` - Qwen3 Coder Flash
-
-**Kiro (`kr/`)** - 2 models MIỄN PHÍ:
+**Kiro (`kr/`)** - 48 model MIỄN PHÍ:
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 
@@ -233,10 +229,10 @@ Daily routine:
 
 ## Bước tiếp theo
 
-- [Chi tiết cài đặt](getting-started/installation.md) - Yêu cầu, troubleshooting
-- [Tính năng](features/) - Khám phá quota tracking, combos, deployment
-- [FAQ](faq.md) - Câu hỏi thường gặp
-- [Troubleshooting](troubleshooting.md) - Sửa các vấn đề phổ biến
+- [Chi tiết cài đặt](../installation.md) - Yêu cầu, troubleshooting
+- [Tính năng](../features/) - Khám phá quota tracking, combos, deployment
+- [FAQ](../faq.md) - Câu hỏi thường gặp
+- [Troubleshooting](../troubleshooting.md) - Sửa các vấn đề phổ biến
 
 ---
 

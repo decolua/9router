@@ -37,8 +37,8 @@ Request → 9Router → Check Tier 1 (Subscription)
 **Goal**: Ultra-cheap backup when subscription quota runs out (~90% cheaper than ChatGPT API).
 
 **Tier 3: FREE (Emergency)**
-- iFlow (8 models)
-- Qwen (3 models)
+- iFlow (15 models)
+- Qwen models (via iFlow)
 - Kiro (Claude FREE)
 
 **Goal**: Zero-cost fallback for unlimited coding.
@@ -52,13 +52,13 @@ Request → 9Router → Check Tier 1 (Subscription)
 ### Scenario 1: Subscription Quota Exhausted
 
 ```
-User request → cc/claude-opus-4-5
+User request → cc/claude-opus-5-5
                ↓ quota exhausted (5-hour limit reached)
                Auto switch → glm/glm-4.7
                ↓ daily quota exhausted
                Auto switch → minimax/MiniMax-M2.1
                ↓ 5-hour quota exhausted
-               Auto switch → if/kimi-k2-thinking (FREE)
+               Auto switch → if/kimi-k2 (FREE)
                ↓
                Response delivered ✅
 ```
@@ -68,7 +68,7 @@ User request → cc/claude-opus-4-5
 ### Scenario 2: Rate Limiting
 
 ```
-User request → cx/gpt-5.2-codex
+User request → cx/gpt-6.1-sol
                ↓ rate limited (too many requests)
                Auto switch → glm/glm-4.7
                ↓
@@ -78,7 +78,7 @@ User request → cx/gpt-5.2-codex
 ### Scenario 3: Provider Unavailable
 
 ```
-User request → cc/claude-opus-4-5
+User request → cc/claude-opus-5-5
                ↓ provider error (503)
                Auto switch → next available model
                ↓
@@ -98,11 +98,11 @@ User request → cc/claude-opus-4-5
 
 ### Priority Order Example
 
-For a request to `cc/claude-opus-4-5`:
+For a request to `cc/claude-opus-5-5`:
 
 ```
 1. Check Claude Code quota
-   ✅ Available → Use cc/claude-opus-4-5
+   ✅ Available → Use cc/claude-opus-5-5
    ❌ Exhausted → Continue to step 2
 
 2. Check fallback tier (if configured)
@@ -110,7 +110,7 @@ For a request to `cc/claude-opus-4-5`:
    ❌ Exhausted → Continue to step 3
 
 3. Check free tier
-   ✅ iFlow available → Use if/kimi-k2-thinking
+   ✅ iFlow available → Use if/kimi-k2
    ❌ All exhausted → Return quota error
 ```
 
@@ -151,7 +151,7 @@ Example custom order:
 ```
 Tier 1: Gemini CLI → Claude Code → Codex
 Tier 2: MiniMax → GLM → Kimi
-Tier 3: iFlow → Kiro → Qwen
+Tier 3: iFlow → Kiro
 ```
 
 **4. Quota Reset Notifications**
@@ -170,14 +170,14 @@ Dashboard → Settings → Notifications
 
 **Setup:**
 ```
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 Fallback: Auto (default 3-tier)
 ```
 
 **Behavior:**
 ```
 Morning (fresh quota):
-  Request → cc/claude-opus-4-5 ✅
+  Request → cc/claude-opus-5-5 ✅
 
 Afternoon (quota exhausted):
   Request → glm/glm-4.7 ✅ (auto switched)
@@ -186,7 +186,7 @@ Evening (GLM quota out):
   Request → minimax/MiniMax-M2.1 ✅ (auto switched)
 
 Late night (all paid quota out):
-  Request → if/kimi-k2-thinking ✅ (free tier)
+  Request → if/kimi-k2 ✅ (free tier)
 ```
 
 **Cost**: ~$5-10/month extra (mostly covered by subscription).
@@ -208,7 +208,7 @@ Day 1-15 (within budget):
   Cost: $1.50/day
 
 Day 16 (budget reached):
-  Requests → if/kimi-k2-thinking (free tier)
+  Requests → if/kimi-k2 (free tier)
   Cost: $0
 
 Next month (budget resets):
@@ -228,7 +228,7 @@ Dashboard → Settings:
 
 **Behavior:**
 ```
-Request → cc/claude-opus-4-5
+Request → cc/claude-opus-5-5
   ✅ Quota available → Success
   ❌ Quota exhausted → Return error (no fallback)
 ```
@@ -239,8 +239,8 @@ Request → cc/claude-opus-4-5
 
 **Setup:**
 ```
-Model: if/kimi-k2-thinking
-Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
+Model: if/kimi-k2
+Fallback: if/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **Behavior:**
@@ -266,7 +266,7 @@ Strategy:
 
 **Example combo:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 2. Optimize for Cost
@@ -280,7 +280,7 @@ Strategy:
 
 **Example combo:**
 ```
-gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
+gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 3. Optimize for Quality
@@ -294,7 +294,7 @@ Strategy:
 
 **Example combo:**
 ```
-cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
+cc/claude-opus-5-5 → cx/gpt-6.1-sol → glm/glm-4.7
 ```
 
 ### 4. 24/7 Availability
@@ -308,7 +308,7 @@ Strategy:
 
 **Example combo:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2
 ```
 
 **Result**: Never run out of quota, code anytime.
@@ -326,7 +326,7 @@ Plan your usage around quota reset times:
 | **Gemini CLI** | Daily (1K) + Monthly (180K) | Use throughout day |
 | **GLM-4.7** | Daily 10:00 AM | Use evening, resets next morning |
 | **MiniMax M2.1** | 5-hour rolling | Use anytime, tracks rolling window |
-| **iFlow/Qwen/Kiro** | No limit | Emergency backup |
+| **iFlow/Kiro** | No limit | Emergency backup |
 
 **Daily routine example:**
 ```

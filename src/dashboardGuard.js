@@ -2,7 +2,15 @@ import { NextResponse } from "next/server";
 import { getSettings, validateApiKey } from "@/lib/localDb";
 import { getConsistentMachineId } from "@/shared/utils/machineId";
 import { verifyDashboardAuthToken } from "@/lib/auth/dashboardSession";
+import { getRelayedClientApiKey } from "@/lib/federation/clientAuth.js";
 import { hasTrustedPeerHeaders } from "@/lib/auth/trustedPeer";
+import { buildErrorBody } from "open-sse/utils/error.js";
+import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
+
+// DF-9ROUTER-56 — the /v1-style 401 message. Kept verbatim so clients and log
+// greps matching the old text keep working; only the ENVELOPE changed (bare
+// string → OpenAI error object with type/code).
+const API_KEY_REQUIRED_MESSAGE = "API key required for remote API access";
 
 const CLI_TOKEN_HEADER = "x-9r-cli-token";
 const CLI_TOKEN_SALT = "9r-cli-auth";
@@ -31,6 +39,12 @@ const PUBLIC_API_PATHS = [
   "/api/auth/saml",
   "/api/version",
   "/api/settings/require-login",
+  // Federation API (FED-012): dashboardGuard must NOT 401 before roleGuard
+  // runs — roleGuard (src/lib/federation/roleGuard.js) enforces the
+  // FEDERATION_TOKEN on central-only routes (status/snapshot/delta/verify/
+  // replay); local-status + config-status stay token-less by design
+  // (spec §3.5, FED-005).
+  "/api/federation",
 ];
 
 // Public top-level prefixes (LLM API endpoints with their own API key auth).
@@ -143,6 +157,13 @@ function isPublicLlmApi(pathname) {
 }
 
 function extractApiKey(request) {
+  // FED-011: a LINKED edge proxies public LLM API calls with its own
+  // federation token in Authorization and the end client's key in
+  // X-9r-Client-Authorization. When the presented Bearer IS the federation
+  // token, authenticate the end client from the relay header instead.
+  const relayed = getRelayedClientApiKey(request);
+  if (relayed) return relayed;
+
   const authHeader = request.headers.get("Authorization");
   if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
   const apiKeyHeader = request.headers.get("x-api-key");
@@ -161,6 +182,11 @@ async function hasValidApiKey(request) {
 async function canAccessPublicLlmApi(request) {
   if (isLocalRequest(request)) return true;
   if (await hasValidCliToken(request)) return true;
+  // REQUIRE_API_KEY=false deployment opt-out: allow remote keyless access to
+  // the public LLM API only when the effective setting is exactly false.
+  // Fail closed — null settings or a settings read error keep the 401 path.
+  const settings = await loadSettings();
+  if (settings && settings.requireApiKey === false) return true;
   return await hasValidApiKey(request);
 }
 
@@ -227,7 +253,12 @@ export async function proxy(request) {
 
   if (isPublicLlmApi(pathname)) {
     if (await canAccessPublicLlmApi(request)) return NextResponse.next();
-    return NextResponse.json({ error: "API key required for remote API access" }, { status: 401 });
+    // DF-9ROUTER-56 — OpenAI-compatible clients read error.type / error.code;
+    // a bare string error leaves both undefined. Same 401, same message, but
+    // shaped by the shared OpenAI error builder (buildErrorBody(401) →
+    // authentication_error / invalid_api_key). Dashboard /api/* 401s keep
+    // their dashboard shape — only /v1-style surfaces are OpenAI clients.
+    return NextResponse.json(buildErrorBody(HTTP_STATUS.UNAUTHORIZED, API_KEY_REQUIRED_MESSAGE), { status: 401 });
   }
 
   // Deny-by-default for /api/* — public allow-list bypasses, everything else requires auth.

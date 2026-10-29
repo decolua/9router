@@ -19,6 +19,7 @@ import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDeta
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
 import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
+import { classifyProtocolMismatch, buildProtocolMismatchMessage, protocolMismatchResult, peekFirstLine, snippet, PROTOCOL_PEEKED } from "./chatCore/protocolMismatch.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
 import { takeRenamedToolNames } from "../utils/opencodeFingerprint.js";
@@ -143,7 +144,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const clientRequestedStreaming = body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI;
   const providerRequiresStreaming = PROVIDERS[provider]?.forceStream === true;
-  let stream = providerRequiresStreaming ? true : (body.stream !== false);
+  // An OMITTED `stream` key means the client wants a single JSON body — that is
+  // the documented OpenAI Chat Completions default, and it is what every client
+  // that never mentions the flag (the OpenAI SDK, plain curl, most "wrap your
+  // base URL" integrations) is entitled to. Reading the absent key as
+  // "streaming" made the router take the streaming path end to end while the
+  // outbound body it sent carried no `stream` key at all, so the upstream
+  // answered `application/json` and that JSON body went through the SSE
+  // transform, which appended the synthetic `data: [DONE]` terminator onto it
+  // (DF-9ROUTER-32 — `json.loads` then fails with `Extra data`).
+  // Only an explicit `stream: true` (or a source format that cannot be answered
+  // any other way) turns streaming on; `providerRequiresStreaming` still forces
+  // it for providers that have no non-streaming mode, and the forced case is
+  // aggregated back to JSON for the client by handleForcedSSEToJson below.
+  let stream = providerRequiresStreaming ? true : (body.stream === true || sourceFormat === FORMATS.ANTIGRAVITY || sourceFormat === FORMATS.GEMINI || sourceFormat === FORMATS.GEMINI_CLI);
 
   // Image generation models require non-streaming (Google v1internal:generateContent)
   const modelType = getModelType(alias, model);
@@ -517,11 +531,97 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
+  // Executor/upstream protocol guard (DF-9ROUTER-30).
+  //
+  // An executor speaks exactly ONE upstream wire protocol. `ollama-local` POSTs
+  // Ollama-native `/api/chat` and parses NDJSON (one bare JSON object per line,
+  // no `data:` prefix); `openai-compatible-*` speaks `data:`-framed SSE. Point
+  // one at an upstream of the other family and the upstream answers 200 with a
+  // body the executor cannot parse — the parser returns null for every line, the
+  // transform emits nothing, and the client receives HTTP 200 + a bare
+  // `data: [DONE]` with zero tokens while the central log prints a
+  // normal-looking `DONE 500ms · TTFT 499ms · IN 0 · OUT 0`. Nothing separates
+  // "the model produced nothing" from "the protocols disagree".
+  //
+  // Peek the upstream's FIRST line and classify it. A recognized FOREIGN
+  // protocol shape (an OpenAI `data:` SSE stream or OpenAI JSON body answered to
+  // an executor that spoke bare NDJSON, or the reverse) fails LOUD here, before
+  // any byte reaches the client or any handler consumes the body. The guard is
+  // deliberately conservative: an unrecognized/absent first line is NOT a
+  // mismatch — it falls open to the previous behavior — and a protocol-VALID
+  // stream with legitimately empty content is untouched.
+  //
+  // It is memoized on the Response so whichever path runs next (forced
+  // SSE→JSON, non-streaming, or streaming) sees the replayed body without a
+  // second read; every path reaches it through this one place, so the check
+  // cannot be bypassed by a new branch.
+  if (providerResponse && typeof providerResponse === "object" && !providerResponse[PROTOCOL_PEEKED]) {
+    const peeked = await peekFirstLine(providerResponse.body);
+    providerResponse[PROTOCOL_PEEKED] = true;
+    const protocolCheck = classifyProtocolMismatch({ responseFormat: providerResponseFormat, payload: peeked.line });
+    const excerpt = `"${snippet(peeked.line || peeked.excerpt)}"`;
+    if (protocolCheck.mismatch) {
+      trackDone();
+      const mismatchMessage = buildProtocolMismatchMessage({
+        provider,
+        expected: protocolCheck.expected,
+        observed: protocolCheck.observed,
+        status: providerResponse.status,
+        contentType: providerResponse.headers?.get?.("content-type") || "none",
+        url: providerUrl,
+        firstLine: peeked.line,
+      });
+      streamController.handleError(new Error(mismatchMessage));
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      saveRequestDetail(buildRequestDetail({
+        provider, model, connectionId,
+        latency: { ttft: 0, total: Date.now() - requestStartTime },
+        tokens: { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: finalBody || translatedBody || null,
+        providerResponse: peeked.excerpt,
+        response: { error: mismatchMessage, status: HTTP_STATUS.BAD_GATEWAY, thinking: null },
+        pxpipe: pxpipeSummary,
+        status: "error"
+      })).catch(() => { });
+      if (log?.errorLine) {
+        log.errorLine(reqTag, "✗", `PROTOCOL ${HTTP_STATUS.BAD_GATEWAY} · ${provider}/${model} · ${providerUrl || "unknown upstream"} · ${protocolCheck.observed} (executor speaks ${protocolCheck.expected}) · 0 tokens\n    Upstream said: ${excerpt}`);
+      } else {
+        console.warn(`[STREAM] ${provider} | ${model} | protocol mismatch: ${excerpt}`);
+      }
+      return protocolMismatchResult(mismatchMessage);
+    }
+    // Not a mismatch: hand every downstream consumer the replayed body (same
+    // bytes, same order, nothing lost) so the peek is invisible. Only rewrap when
+    // the peek actually created a stream — a body-less response (204/304) has
+    // nothing to replay and cannot carry a body anyway.
+    if (peeked.stream && peeked.stream !== providerResponse.body) {
+      providerResponse = new Response(peeked.stream, {
+        status: providerResponse.status,
+        statusText: providerResponse.statusText,
+        headers: providerResponse.headers,
+      });
+    }
+  }
+
   // Provider forced streaming but client wants JSON. The Responses wire always
   // streams upstream (openaiToOpenAIResponsesRequest pins stream:true), so a
   // non-stream OpenAI/native client behind a Responses upstream must also take
   // this path — handleForcedSSEToJson returns null when the body is not SSE.
-  if (!clientRequestedStreaming && (providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES)) {
+  //
+  // Federation additions: two more independent causes make the upstream answer
+  // with an event stream even though the client asked for `stream: false`:
+  //   (a) the provider config requires streaming (`forceStream`), or
+  //   (b) the request translator forced the outbound body to stream — the
+  //       OpenAI → Responses translation always sends `stream: true`, and
+  //       /responses answers every streaming request with SSE.
+  // In all cases the body must go through the SSE→JSON aggregation. Without
+  // (b), the non-streaming JSON parser read a Responses event stream as a Chat
+  // Completions payload, found no `choices[].delta` events, and returned HTTP
+  // 200 with an empty `choices[0].message.content`.
+  const clientWantsJson = !clientRequestedStreaming;
+  const upstreamBodyStreams = providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES || finalBody?.stream === true;
+  if (clientWantsJson && upstreamBodyStreams) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, toolNameMap, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
   }

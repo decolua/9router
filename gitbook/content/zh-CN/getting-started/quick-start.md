@@ -12,7 +12,7 @@
 npm install -g 9router
 ```
 
-**要求:** Node.js 20+([安装详情](getting-started/installation.md))
+**要求:** Node.js 20+([安装详情](../installation.md))
 
 ### 2. 启动
 
@@ -44,7 +44,7 @@ npm install -g 9router
 1. 点击 "Connect Claude Code"
 2. 用你的 Claude 账户登录
 3. 授权 9Router
-4. ✅ 完成!使用模型:`cc/claude-opus-4-5-20251101`
+4. ✅ 完成!使用模型:`cc/claude-opus-5-5`
 
 #### 方式 B:API Key(低价提供商)
 
@@ -65,7 +65,7 @@ npm install -g 9router
 
 #### 方式 C:免费提供商(零成本)
 
-**适用于:** iFlow、Qwen、Kiro
+**适用于:** iFlow、Kiro
 
 ```
 仪表盘 → 提供商 → 连接 [免费提供商]
@@ -77,7 +77,7 @@ npm install -g 9router
 1. 点击 "Connect iFlow"
 2. 用 iFlow 账户登录
 3. 授权
-4. ✅ 完成!使用 8 个模型:`if/kimi-k2-thinking`、`if/qwen3-coder-plus` 等
+4. ✅ 完成!使用 15 个模型:`if/kimi-k2`、`if/qwen3-coder-plus` 等
 
 ---
 
@@ -91,7 +91,7 @@ npm install -g 9router
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [从 9router 仪表盘获取]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### Claude Desktop
@@ -111,7 +111,7 @@ Settings → Models → Advanced:
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [从仪表盘获取]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
 ### Codex CLI
@@ -134,9 +134,9 @@ codex "your prompt"
 
 名称: premium-coding
 模型:
-  1. cc/claude-opus-4-5-20251101 (订阅主力)
+  1. cc/claude-opus-5-5 (订阅主力)
   2. glm/glm-4.7 (低价备用, $0.6/1M)
-  3. if/kimi-k2-thinking (免费回退)
+  3. if/kimi-k2 (免费回退)
 
 CLI 中使用: premium-coding
 ```
@@ -154,21 +154,21 @@ CLI 中使用: premium-coding
 ### 订阅型模型(优先使用)
 
 **Claude Code (`cc/`)** - Pro/Max 订阅:
-- `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
-- `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
+- `cc/claude-opus-5-5` - Claude Opus 5.5
+- `cc/claude-sonnet-5-5` - Claude Sonnet 5.5
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Plus/Pro 订阅:
-- `cx/gpt-5.2-codex` - GPT 5.2 Codex
-- `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
+- `cx/gpt-6.1-sol` - GPT 6.1 Sol
+- `cx/gpt-6-sol` - GPT 6 Sol
 
 **Gemini CLI (`gc/`)** - 每月免费 180K:
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - 订阅:
-- `gh/gpt-5` - GPT-5
-- `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
+- `gh/gpt-5.4` - GPT-5.4
+- `gh/claude-sonnet-4.5` - Claude Sonnet 4.5
 
 ### 低价模型(备用)
 
@@ -183,17 +183,13 @@ CLI 中使用: premium-coding
 
 ### 免费模型(应急)
 
-**iFlow (`if/`)** - 8 个免费模型:
-- `if/kimi-k2-thinking` - Kimi K2 Thinking
+**iFlow (`if/`)** - 15 个免费模型:
+- `if/kimi-k2` - Kimi K2
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
-**Qwen (`qw/`)** - 3 个免费模型:
-- `qw/qwen3-coder-plus` - Qwen3 Coder Plus
-- `qw/qwen3-coder-flash` - Qwen3 Coder Flash
-
-**Kiro (`kr/`)** - 2 个免费模型:
+**Kiro (`kr/`)** - 48 个免费模型:
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 
@@ -233,10 +229,10 @@ CLI 中使用: premium-coding
 
 ## 下一步
 
-- [安装详情](getting-started/installation.md) - 要求与故障排除
-- [功能特性](features/) - 探索配额跟踪、组合、部署
-- [常见问题](faq.md) - 常见问题与解答
-- [故障排除](troubleshooting.md) - 解决常见问题
+- [安装详情](../installation.md) - 要求与故障排除
+- [功能特性](../features/) - 探索配额跟踪、组合、部署
+- [常见问题](../faq.md) - 常见问题与解答
+- [故障排除](../troubleshooting.md) - 解决常见问题
 
 ---
 

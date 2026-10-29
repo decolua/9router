@@ -23,6 +23,28 @@
 
 ---
 
+## 🧩 Federation (this fork)
+
+**This fork adds federation** on top of upstream 9router: deploy the same gateway on
+multiple instances across datacenters/hosts and keep them in sync.
+
+- **Edge → central proxying** — edge instances proxy all `/v1/*` traffic and mutating
+  dashboard API calls up to the central instance by default.
+- **SQLite replication** — edges continuously track/replicate central's database, so a
+  central outage leaves edges serving independently; writes during an outage are queued
+  locally and reconciled later (eventual consistency).
+- **One frontend per host** — each instance serves its own `/dashboard`, backed by its
+  local replica or central.
+- **Standalone stays the default** — all federation behavior is inert unless
+  `FEDERATION_MODE` is set (zero behavior change out of the box).
+
+Enable it with the `FEDERATION_*` environment variables (see the Federation block
+in `.env.example`, search `FEDERATION_`): set `FEDERATION_MODE=central` on the
+central instance, and `FEDERATION_MODE=edge` with `FEDERATION_CENTRAL_URL` +
+`FEDERATION_TOKEN` on edges.
+
+Full design & config reference: [docs/federation-spec.md](docs/federation-spec.md).
+
 ## 🤔 Why 9Router?
 
 **Stop wasting money, tokens and hitting limits:**
@@ -38,7 +60,7 @@
 - ✅ **RTK Token Saver** - Auto-compress tool_result content, save 20-40% tokens per request
 - ✅ **Maximize subscriptions** - Track quota, use every bit before reset
 - ✅ **Auto fallback** - Subscription → Cheap → Free, zero downtime
-- ✅ **Multi-account** - Round-robin between accounts per provider
+- ✅ **Multi-account** - Round-robin or fill-first, configurable per provider
 - ✅ **Universal** - Works with Claude Code, Codex, Cursor, Cline, any CLI tool
 
 ---
@@ -73,14 +95,44 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
-**1. Install globally:**
+**1. Install globally — upstream build only (no federation):**
+
+> ⚠️ **Prerequisite: Node.js ≥ 22.19.0** (a current 22.x LTS) is required before
+> running `npm`. The floor is not cosmetic: the app loads `undici` 8, whose
+> decompression table is built at module load from `zlib.createZstdDecompress`
+> (Node ≥ 22.15), so an older runtime (Node 20.x, or 22.14) aborts
+> `npm run build` during page-data collection with
+> `TypeError: Cannot read properties of undefined (reading 'bind')` and names no
+> cause. `npm run build` now preflights the version and prints the requirement
+> instead. On fresh bunker/SSH-only boxes the OS image ships `git` + `docker` but
+> **not** `node` or `npm`. Rescue path — download the Node tarball, extract into
+> `$HOME` and prepend it to your `PATH`:
+>
+> ```bash
+> # Example (adjust ARCH=x64 or arm64; any 22.x >= 22.19.0 works):
+> curl -fsSL https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.xz \
+>   | tar -xJ -C $HOME
+> export PATH=$HOME/node-v22.23.4-linux-x64/bin:$PATH
+> node -v && npm -v  # must print v22.19.0 or newer
+> ```
+>
+> After the toolchain is in place, continue below.
 
 ```bash
 npm install -g 9router
 9router
 ```
 
+> ⚠️ **Upstream-only:** `npm install -g 9router` installs the published npm
+> package — the **upstream** build, which does **not** include this fork's
+> federation feature. For federation (edge → central proxying, SQLite
+> replication, failover), install this fork from source — see **Run from
+> source (this fork)** below.
+
 🎉 Dashboard opens at `http://localhost:20128`
+
+> First boot takes 10–30s (Next.js standalone server startup). If the browser
+> shows "connection refused" right after launch, wait a few seconds and retry.
 
 **2. Connect a FREE provider (no signup needed):**
 
@@ -97,15 +149,103 @@ Claude Code/Codex/OpenClaw/Cursor/Cline Settings:
 
 **That's it!** Start coding with FREE AI models.
 
-**Alternative: run from source (this repository):**
+> Per-tool setup guides (Claude Code, Cursor, and more):
+> [docs/integrations/](docs/integrations/README.md) · API reference:
+> [docs/api-reference.md](docs/api-reference.md)
 
-This repository package is private (`9router-app`), so source/Docker execution is the expected local development path.
+**Run from source (this fork — federation included):**
+
+This fork's package is private (`9router-app`), so source/Docker execution is
+the way to run it — and the only way to get the federation feature (the npm
+package is upstream-only). The federation work lives on the `federation`
+branch (default `master` mirrors upstream):
 
 ```bash
+git clone https://github.com/totalwindupflightsystems/9router.git
+cd 9router
+git checkout federation
 cp .env.example .env
-npm install
+npm ci   # reproducible install from the tracked package-lock.json (`npm install` also works)
 PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev
 ```
+
+> Node.js **≥ 22.19.0** is required for the source path too — `npm run build`
+> now preflights it (`scripts/check-node-version.mjs`) and prints the required
+> version instead of failing later with the `reading 'bind'` error. See the
+> Quick Start prerequisite above for the no-root toolchain recipe.
+
+Restart the server after adding a provider connection — running config is loaded at boot.
+
+> Note (removing an install): stop the dev server first (`pkill next-server` or
+> Ctrl-C in its terminal) before deleting the directory. The `bunkerd destroy`
+> gate refuses to remove an install with live processes running and names them
+> in the error — this is intentional protection, not a failure.
+
+> ⚠️ In a copied or relocated tree `npm run dev` can fail before the server
+> starts, with Turbopack complaining `Symlink [project]/node_modules/... points
+> out of the filesystem root`. `package.json` already carries the escape hatch:
+> `npm run dev:webpack` runs the same dev server on webpack instead of Turbopack
+> and is unaffected —
+> `PORT=20128 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run dev:webpack`.
+
+No `DATA_DIR` override is needed: `.env.example` leaves `DATA_DIR` unset, so the
+app stores everything under the per-user default `~/.9router` (SQLite at
+`~/.9router/db/data.sqlite`; Windows: `%APPDATA%\9router`) — a directory your own
+user can always create. To keep data elsewhere, set `DATA_DIR` to a path your user
+can create and write (as an env var or a `.env` line); the app fails fast at boot
+if it cannot create or write it. Docker is unaffected — compose sets the
+container's `DATA_DIR=/app/data`.
+
+### CLI launcher from this fork
+
+`npm install -g 9router` installs the published upstream package. To build and
+run this fork's CLI launcher from a source checkout, use the source entrypoint
+`cli/cli.js` after packing it. No `DATA_DIR` override is needed — the pack step
+resolves the same per-user default (`~/.9router`) as the server, because
+`.env.example` no longer points `DATA_DIR` at a system-owned directory:
+
+```bash
+npm --prefix cli install   # one-time: CLI build deps (esbuild)
+npm run cli:pack
+node cli/cli.js --skip-update --no-browser
+```
+
+(If your own `.env` sets a `DATA_DIR` the current user cannot write, the pack step
+fails fast with the DATA_DIR error — point it at a writable path, or unset it, and
+re-run.)
+
+**Port precedence.** The launcher reads the port from, in order: the explicit
+`--port/-p` flag, then the `PORT` env var, then the default `20128`. The launcher
+does not read `.env` — only the process environment. On a host that already runs
+9router on the default port, the quick-start command above therefore needs a port
+override, and both spellings work (the launcher refuses an occupied port with an
+`EADDRINUSE` message and a non-zero exit rather than starting a doomed child):
+
+```bash
+PORT=20129 node cli/cli.js --skip-update --no-browser   # env fallback
+node cli/cli.js --skip-update --no-browser -p 20129     # --port overrides PORT
+```
+
+A `PORT` that is not a usable port number (empty, non-numeric, `0`, negative,
+`>65535`) is ignored with a one-line warning naming the value and the port actually
+used, instead of crashing or silently serving somewhere else; an unusable `--port`
+argument falls back the same way (unchanged legacy behavior). The occupied-port
+refusal names both remedies, and `node cli/cli.js --help` documents `PORT` under
+`Environment:`.
+
+The pack command writes `9router-<version>.tgz` at the repository root; it is a
+package artifact, not the source launcher to execute. The launcher entrypoint is
+`cli/cli.js` (the same file installed as the `9router` executable), not a
+compiled `dist` entrypoint. See [cli/README.md](cli/README.md) for foreground,
+tray, and shutdown behavior.
+
+> ⚠️ Dev mode (`npm run dev` / `next dev`) does **not** support
+> `FEDERATION_MODE=edge`: the edge proxy + DEGRADED intercept live only in
+> `custom-server.js`, which the Next.js dev server never loads, so an edge
+> dev boot exits FATAL with a clear message. Use the production path
+> (`npm run build && npm start`) or `docker compose -p 9router-federation -f
+> docker-compose.federation.yml up` to run an edge. Central/standalone dev
+> is unaffected.
 
 Production mode:
 
@@ -116,10 +256,6 @@ sudo chmod 600 /swapfile_temp
 sudo mkswap /swapfile_temp
 sudo swapon /swapfile_temp
 
-export MAKEFLAGS="-j1"
-export DLIB_NO_GUI_SUPPORT=1
-export CFLAGS="-mno-avx"
-
 npm run build
 
 # Clear temporary swap
@@ -129,10 +265,333 @@ sudo rm /swapfile_temp
 PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run start
 ```
 
+`npm run start` boots the standalone server through `custom-server.js` (the
+federation-aware wrapper). Edge nodes additionally set `FEDERATION_MODE=edge`
+(plus `FEDERATION_TOKEN` / `FEDERATION_CENTRAL_URL` — see
+[docs/FEDERATION.md](docs/FEDERATION.md)).
+
+**Docker (docker compose):**
+
+```bash
+cp .env.example .env   # REQUIRED before first up — the container reads its
+                       # secrets (INITIAL_PASSWORD, JWT_SECRET, API_KEY_SECRET)
+                       # from this file; without it the image falls back to
+                       # insecure defaults
+docker compose up -d
+```
+
+> **Port already in use?** `20128` is the default host port. If another
+> process (or another 9router instance) holds it, move the host side:
+>
+> ```bash
+> PORT=30128 docker compose up -d
+> ```
+>
+> The container still listens on 20128 internally; only the host-side
+> mapping changes. Update your client base URL accordingly
+> (`http://localhost:30128/v1`).
+
+> `docker-compose.yml` treats `.env` as optional at config time (so
+> `docker compose config` validates on a fresh clone), but you still need it
+> for a real deployment — set `INITIAL_PASSWORD` / `JWT_SECRET` /
+> `API_KEY_SECRET` before exposing the instance. The optional `env_file`
+> syntax requires Docker Compose v2.24+.
+>
+> Pulling the published images fails on a clean/rootless host? Build 9router
+> locally instead (base file unchanged, applied as an override):
+>
+> ```bash
+> # 9router from this checkout; headroom image still pulled if needed
+> docker compose -f docker-compose.yml -f docker-compose.local-build.yml up -d --build
+>
+> # no third-party pulls at all — headroom sidecar omitted (it is optional)
+> docker compose -f docker-compose.yml -f docker-compose.local-build.yml \
+>   up -d --build --no-deps 9router
+> ```
+>
+> The fallback builds the distinct tag `9router:local` (never overwrites
+> `decolua/9router:latest`); details in [DOCKER.md](DOCKER.md).
+> Federation deployments use `docker compose -p 9router-federation -f
+> docker-compose.federation.yml up` instead (see
+> [docs/FEDERATION.md](docs/FEDERATION.md)).
+
 Default URLs:
 
 - Dashboard: `http://localhost:20128/dashboard`
 - OpenAI-compatible API: `http://localhost:20128/v1`
+
+### Credential-free headless bring-up (no dashboard)
+
+Every `POST /api/providers` needs a credential — except for `ollama-local`.
+Verified in source AND live against a fresh instance (2026-09-17):
+
+- `src/app/api/providers/route.js:119` — `if (!apiKey && provider !== "ollama-local")`
+  → `400 {"error":"API Key is required"}`. `ollama-local` is the single create-path
+  exemption. Live control: keyless `openai` → `HTTP 400 {"error":"API Key is
+  required"}`; keyless `ollama-local` → `HTTP 201` with the connection object.
+- `src/app/api/providers/validate/route.js:91-92` is slightly wider — it also
+  exempts providers whose registry entry declares `noAuth: true`
+  (`const isNoAuth = AI_PROVIDERS[provider]?.noAuth === true;`). That exemption is
+  on VALIDATION only, and it is not a key-free registration path.
+- Both routes sit behind the deny-by-default `/api/*` policy
+  (`src/dashboardGuard.js` `PROTECTED_API_PATHS`), so they need a session cookie or
+  the on-host `x-9r-cli-token` header. Without one, both answer
+  `401 {"error":"Unauthorized"}` (confirmed live). The dashboard UI is never needed.
+- Passwords: with `INITIAL_PASSWORD` unset and no stored password, the built-in
+  default is `123456` for a loopback session. `.env.example` ships
+  `INITIAL_PASSWORD=change-me-to-a-strong-password`, which replaces that default — posting `123456` then
+  answers `401 {"error":"INITIAL_PASSWORD is set — the default password (123456) is
+  disabled."}` (`src/app/api/auth/login/route.js:99-106`). Send your
+  `INITIAL_PASSWORD` value instead.
+- Start the server the way the launcher / `npm start` does (through
+  `custom-server.js`): the loopback-locality that login relies on comes from the
+  per-process peer token `custom-server.js` stamps
+  (`src/lib/auth/trustedPeer.js:5-6`). A bare `node .next/standalone/server.js`
+  never stamps it, so every request — loopback included — looks remote, and the
+  default-password login is refused with `403 {"success":false,"error":"Default
+  password must be changed before remote access…","mustChangePassword":true}`
+  (observed live).
+
+```bash
+# 1. Start the server on a free port (see the port precedence above)
+PORT=20129 node cli/cli.js --skip-update --no-browser -t &
+#    from a built tree: PORT=20129 HOSTNAME=0.0.0.0 npm start   (= custom-server.js)
+
+# 2. Log in — the auth_token JWT cookie lands in cookies.txt
+curl -s -c cookies.txt -X POST http://localhost:20129/api/auth/login \
+  -H "Content-Type: application/json" -d '{"password":"123456"}'
+# → 200 {"success":true,"mustChangePassword":false}   (INITIAL_PASSWORD unset —
+#    send that value instead when .env sets it, e.g. "change-me-to-a-strong-password")
+
+# 3. Register a local Ollama provider — the one provider that needs no credential
+curl -s -b cookies.txt -X POST http://localhost:20129/api/providers \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"ollama-local","name":"local-ollama"}'
+# → 201 {"connection":{"id":"…","provider":"ollama-local","name":"local-ollama",…}}
+
+# 4. Create the API key your CLI tools authenticate with
+curl -s -b cookies.txt -X POST http://localhost:20129/api/keys \
+  -H "Content-Type: application/json" -d '{"name":"my-tool"}'
+# → 201 {"key":"sk-…","name":"my-tool","id":"…","machineId":"…"}
+```
+
+#### Restrict an API key to specific combos or models
+
+New keys are unrestricted. To make a key usable only with named combos and/or
+models, send the key `id` returned by `POST /api/keys` to the authenticated
+update route:
+
+```bash
+curl -s -b cookies.txt -X PUT http://localhost:20129/api/keys/<id> \
+  -H "Content-Type: application/json" \
+  -d '{"access":{"restricted":true,"allow":["Main","openai/model-b"]}}'
+```
+
+`allow` entries are exact, case-insensitive combo or resolved model names. An
+allowed combo authorizes the models it routes to only when the client calls the
+combo; calling one of those members directly requires its own `allow` entry.
+Set `{"access":{"restricted":false,"allow":[]}}` to remove the restriction.
+
+A restricted key that requests a target outside its `allow` list receives HTTP
+403 before any provider credential lookup. The OpenAI-style error has
+`type` and `code` both set to `permission_error`, for example:
+
+```json
+{"error":{"message":"This API key is not allowed to use model \"openai/model-a\"","type":"permission_error","code":"permission_error"}}
+```
+
+`ollama-local` talks to `http://localhost:11434/api/chat` (the registry default), so
+Ollama itself must be running for those models to answer. Every other provider needs
+its own real credential in the same `POST /api/providers` call — no keyless
+registration path exists for them.
+
+#### Wiring a local OpenAI-compatible endpoint (LM Studio, Ollama `/v1`, llama.cpp…)
+
+**A provider is two objects, not one.** A **provider node**
+(`POST /api/provider-nodes`) declares *where* a compatible upstream lives — a
+user-defined `prefix`, an `apiType`, and a `baseUrl`. A **provider connection**
+(`POST /api/providers`) holds the *credential*. Chat traffic only works when both
+exist and the connection's `provider` field is the node's `id`
+(`src/app/api/providers/route.js:131-141` copies the node's `prefix` / `apiType` /
+`baseUrl` onto the connection; `src/sse/services/model.js:45-49` resolves
+`<prefix>/<model>` back to the node id at request time).
+
+Two obvious routes dead-end — worth knowing before you spend time on them:
+
+- `POST /api/providers` with `{"provider":"ollama-local","baseUrl":"http://localhost:1234/v1"}`
+  answers **201** but `baseUrl` is only honored by the Ollama-native executor
+  (`/api/chat`). An OpenAI-shaped upstream behind `ollama-local` answers HTTP 200
+  with **0 tokens** — a silent empty success, not a protocol error. Only use
+  `ollama-local` for a real Ollama server; send every OpenAI-shaped upstream
+  (LM Studio, llama.cpp, vLLM, Ollama's own `/v1`) through the node flow below.
+- `{"provider":"openai-compatible-chat"}` answers
+  `404 {"error":"OpenAI Compatible node not found"}` — a compatible provider id
+  **is** a node id, so a type or prefix alone is not a provider.
+
+Worked example: LM Studio (or any OpenAI-shaped server) on `http://localhost:1234/v1`.
+
+**1. Create the node** — this call stores no credential:
+
+```bash
+curl -s -X POST http://localhost:20128/api/provider-nodes \
+  -H "Content-Type: application/json" \
+  -d '{"name":"LM Studio Local","prefix":"lmstudio","apiType":"chat","baseUrl":"http://localhost:1234/v1","type":"openai-compatible"}'
+# → 201 {"node":{"id":"openai-compatible-chat-412551d5-…","type":"openai-compatible",
+#      "name":"LM Studio Local","prefix":"lmstudio","apiType":"chat",
+#      "baseUrl":"http://localhost:1234/v1","createdAt":"…","updatedAt":"…"}}
+```
+
+The generated `id` is `openai-compatible-<apiType>-<uuid>` — read it out of the
+response (`GET /api/provider-nodes` lists every node: `{"nodes":[…]}`). Fields the
+route accepts (`src/app/api/provider-nodes/route.js:40-70`):
+
+Two fields look alike and are easy to transpose: **`type` is the node *kind***,
+**`apiType` is the *protocol* the node speaks**. Neither is derived from the other —
+sending one where the other belongs is rejected, never silently repaired into a
+placeholder value.
+
+| Field | Required | Values |
+| --- | --- | --- |
+| `name` | yes | free text — 400 `Name is required` |
+| `prefix` | yes | the model-id namespace, e.g. `lmstudio` → `lmstudio/<model>` — 400 `Prefix is required`. Must not collide with a built-in provider id/alias (`src/sse/services/model.js:12-17`). Always the caller's own string — never defaulted from `type` |
+| `type` | no | the node **kind**: `openai-compatible` (default), `anthropic-compatible`, `custom-embedding`. Not the protocol — that is `apiType` |
+| `apiType` | for `openai-compatible` | the **protocol**: `chat` (Chat Completions) or `responses` (Responses API). Omitted or anything else: 400 `Invalid apiType "openai" — allowed values: chat, responses (apiType is the protocol; "type" is the node kind)`. Never defaulted |
+| `baseUrl` | no | defaults to `https://api.openai.com/v1`; for a local server give the OpenAI base **including `/v1`** |
+
+**2. Add the credential connection** — `provider` is the `id` from step 1:
+
+```bash
+curl -s -X POST http://localhost:20128/api/providers \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"openai-compatible-chat-412551d5-…","apiKey":"lm-studio","name":"LM Studio Local"}'
+# → 201 {"connection":{"id":"0db751f6-…","provider":"openai-compatible-chat-412551d5-…",
+#      "authType":"apikey","name":"LM Studio Local","priority":1,"isActive":true,
+#      "providerSpecificData":{"prefix":"lmstudio","apiType":"chat",
+#      "baseUrl":"http://localhost:1234/v1","nodeName":"LM Studio Local",…}}}
+```
+
+`apiKey` is required here even for a server that ignores it — the connection is what
+gives the provider a credentials record, and any non-empty placeholder works (only
+`ollama-local` is exempt, `src/app/api/providers/route.js:119-121`). Repeat this call
+with different keys to pool several connections for the same node.
+
+**3. Verify the wiring** — with the API key your CLI tools authenticate with
+(`POST /api/keys`):
+
+```bash
+curl -s http://localhost:20128/v1/models -H "Authorization: Bearer sk-…"
+# → {"object":"list","data":[{"id":"lmstudio/qwen3.5-4b","owned_by":"lmstudio",…}, …]}
+
+curl -s http://localhost:20128/v1/chat/completions \
+  -H "Authorization: Bearer sk-…" -H "Content-Type: application/json" \
+  -d '{"model":"lmstudio/qwen3.5-4b","messages":[{"role":"user","content":"ping"}],"max_tokens":16}'
+```
+
+The node is live as soon as its models appear as `<prefix>/<model-id>`.
+
+> ⚠️ **`No active credentials for provider: openai-compatible-chat-<uuid>` (HTTP 404).**
+> The node exists but has **no credential connection** — step 1 alone is not enough.
+> Re-run step 2 with `provider` set to that exact id. Note the 404 shape, not a 401:
+> to the client this looks like a missing model, which is why the trap is easy to
+> misread as a prefix/typo problem.
+
+#### Account rotation: `fill-first` by default, round-robin per provider on request
+
+With several connections on one provider, 9Router **fills the highest-priority
+account first** (`fill-first`) and only moves to the next one when the first is
+rate-limited, errored, or out of quota. Every connection created without an
+explicit strategy behaves this way — creating a second connection does **not**
+put it into rotation.
+
+Round-robin (rotate between accounts after N calls, `stickyRoundRobinLimit`) is
+a real, tested feature — it is simply **opt-in, per provider**. Pick it either
+from the dashboard or with one API call; both write the same settings key.
+
+**Where the setting lives** — one entry per provider, keyed by the provider id:
+
+```jsonc
+// settings.providerStrategies
+{
+  "<provider-id>": {
+    "fallbackStrategy": "round-robin",   // or "fill-first"
+    "stickyRoundRobinLimit": 3           // calls per account before switching (default 3)
+  }
+}
+```
+
+**Enable it with one call** — `<provider-id>` is the **provider / node id**
+(`GET /api/providers` → `connection.provider`; for a compatible node it is the
+`id` returned by `POST /api/provider-nodes`, e.g.
+`openai-compatible-chat-412551d5-…` — see the LM Studio walkthrough above):
+
+```bash
+curl -s -X PATCH http://localhost:20128/api/settings \
+  -H "Content-Type: application/json" \
+  -d '{"providerStrategies":{"<provider-id>":{"fallbackStrategy":"round-robin","stickyRoundRobinLimit":3}}}'
+```
+
+Turn it back off by setting `"fill-first"`. Note that this replaces the
+`providerStrategies` object wholesale, so re-send the other providers' entries
+if you have more than one override.
+
+**From the dashboard** (verified in `src/app/(dashboard)/dashboard/`):
+
+| Surface | Control | Source |
+| --- | --- | --- |
+| A provider's own page — built-in **and** OpenAI/Anthropic-compatible nodes | a `Round Robin` toggle plus a `Sticky` field, next to the connections list | `providers/[id]/page.js:1563` (toggle; reachable for compatible nodes too — gated on `isCompatible`, not on the built-in-only detail card) |
+| Settings → **Routing Strategy** | the **global** `fallbackStrategy` toggle (`fill-first` ↔ `round-robin`) for every provider without an override | `profile/page.js:1460` |
+| Media providers | a per-combo round-robin toggle | `media-providers/combo/[id]/page.js:87` |
+
+A per-provider entry set from a provider page wins over the global toggle
+(`src/sse/services/auth.js:139-140`).
+
+---
+
+## 🧪 Testing
+
+**The suite is NOT all-green by design** — don't chase a red run as a regression.
+The baseline is ~3730 pass / ~48 fail / ~95 skip (3874 total, verified 2026-10-06), with every
+known-failing test catalogued in [`tests/__baseline__/known-fails.txt`](tests/__baseline__/known-fails.txt).
+Live-network tests (`real/*.real.test.js`, `unit/mimo-free.live.test.js`) are **opt-in** via
+`RUN_REAL=1` — a default run skips them, and they are deliberately **not** part of the baseline
+because a third-party endpoint is not a deterministic property of this repo.
+
+```bash
+npm test                          # full vitest suite (runs from tests/, its own npm package)
+node tests/__baseline__/verify-no-regression.mjs <vitest-results.json>
+```
+
+Run the suite with a JSON reporter to feed the regression gate:
+
+```bash
+(cd tests && ./node_modules/.bin/vitest run --reporter=json --outputFile=/tmp/vitest-results.json)
+node tests/__baseline__/verify-no-regression.mjs /tmp/vitest-results.json
+```
+
+Both lines are repo-root relative and safe to paste into one shell: the subshell
+returns to the repo root even though the run ends red by design (exit 1) — the
+verify step is the gate.
+
+`tests/` is its own npm package, so `cd tests && npm install` is a one-time
+prerequisite before the first run — that is what puts the pinned vitest in
+`tests/node_modules` (the root `npm test` entry fails fast and names this when
+it is missing).
+
+**Judge regressions with `verify-no-regression.mjs`, never a raw run.** The gate
+fails only when a test that PASSED in the baseline now FAILS — new tests are
+allowed, new failures are not. A raw `npm test` exit code is meaningless here
+because the known-fails baseline means the suite legitimately ends red.
+
+Notes:
+
+- `tests/` is its own npm package — vitest must run from `tests/` (the root
+  `npm test` script does this for you); running vitest from the repo root breaks
+  the `@/` alias resolution.
+- Lint with `npm run lint` from the repo root (full-tree eslint). Lint is **red by design**
+  at ~135 errors / ~204 warnings of pre-existing debt — that debt is frozen in
+  `scripts/lint-baseline.json`, so judge lint changes with `npm run lint:gate` (fails on
+  NEW/INCREASED problems, on STALE baseline entries, and always on parse errors) rather than a
+  raw run, and pay debt down with `npm run lint:baseline`.
 
 ---
 
@@ -542,11 +1001,10 @@ a third party under a provider named "Self-hosted".
 | 🎯 **Smart 3-Tier Fallback**                                                      | Auto-route: Subscription → Cheap → Free                                                  | Never stop coding, zero downtime                  |
 | 📊 **Real-Time Quota Tracking**                                                   | Live token count + reset countdown                                                       | Maximize subscription value                       |
 | 🔄 **Format Translation**                                                         | OpenAI ↔ Claude ↔ Gemini ↔ Cursor ↔ Kiro ↔ Vertex                                        | Works with any CLI tool                           |
-| 👥 **Multi-Account Support**                                                      | Multiple accounts per provider                                                           | Load balancing + redundancy                       |
+| 👥 **Multi-Account Support**                                                      | Multiple accounts per provider, tried in priority order unless rotation is enabled       | Redundancy + optional load balancing              |
 | 🔄 **Auto Token Refresh**                                                         | OAuth tokens refresh automatically                                                       | No manual re-login needed                         |
 | 🎨 **Custom Combos**                                                              | Create unlimited model combinations                                                      | Tailor fallback to your needs                     |
 | 📝 **Request Logging**                                                            | Debug mode with full request/response logs                                               | Troubleshoot issues easily                        |
-| 💾 **Cloud Sync**                                                                 | Sync config across devices                                                               | Same setup everywhere                             |
 | 📊 **Usage Analytics**                                                            | Track tokens, cost, trends over time                                                     | Optimize spending                                 |
 | 🌐 **Deploy Anywhere**                                                            | Localhost, VPS, Docker, Cloudflare Workers                                               | Flexible deployment options                       |
 
@@ -620,9 +1078,9 @@ Create combos with automatic fallback:
 
 ```
 Combo: "my-coding-stack"
-  1. cc/claude-opus-4-6        (your subscription)
+  1. cc/claude-opus-5          (your subscription)
   2. glm/glm-4.7               (cheap backup, $0.6/1M)
-  3. if/kimi-k2-thinking       (free fallback)
+  3. if/kimi-k2               (free fallback — the only kimi model iflow.js ships)
 
 → Auto switches when quota runs out or errors occur
 ```
@@ -645,7 +1103,7 @@ Seamless translation between formats:
 ### 👥 Multi-Account Support
 
 - Add multiple accounts per provider
-- Auto round-robin or priority-based routing
+- Priority-based (`fill-first`) routing by default — round-robin is opt-in per provider
 - Fallback to next account when one hits quota
 
 ### 🔄 Auto Token Refresh
@@ -659,7 +1117,6 @@ Seamless translation between formats:
 - Create unlimited model combinations
 - Mix subscription, cheap, and free tiers
 - Name your combos for easy access
-- Share combos across devices with Cloud Sync
 
 ### 📝 Request Logging
 
@@ -668,27 +1125,18 @@ Seamless translation between formats:
 - Troubleshoot integration issues
 - Export logs for analysis
 
-### 💾 Cloud Sync
-
-- Sync providers, combos, and settings across devices
-- Automatic background sync
-- Secure encrypted storage
-- Access your setup from anywhere
-
-#### Cloud Runtime Notes
-
-- Prefer server-side cloud variables in production:
-  - `BASE_URL` (internal callback URL used by sync scheduler)
-  - `CLOUD_URL` (cloud sync endpoint base)
-- `NEXT_PUBLIC_BASE_URL` and `NEXT_PUBLIC_CLOUD_URL` are still supported for compatibility/UI, but server runtime now prioritizes `BASE_URL`/`CLOUD_URL`.
-- Cloud sync requests now use timeout + fail-fast behavior to avoid UI hanging when cloud DNS/network is unavailable.
-
 ### 📊 Usage Analytics
 
 - Track token usage per provider and model
 - Cost estimation and spending trends
 - Monthly reports and insights
 - Optimize your AI spending
+- Counts come from the provider's own usage metadata; when a provider reports
+  none and the response carried content, the tokens are **estimated** from the
+  request and response text and the row is stored marked `estimated` (shown as
+  `(estimated)` on the `📊 DONE` line) — so an upstream that omits counts no
+  longer leaves the Usage page at zero. A response with neither counts nor
+  content is not recorded.
 
 > **💡 IMPORTANT - Understanding Dashboard Costs:**
 >
@@ -704,7 +1152,7 @@ Seamless translation between formats:
 ### 🌐 Deploy Anywhere
 
 - 💻 **Localhost** - Default, works offline
-- ☁️ **VPS/Cloud** - Share across devices
+- ☁️ **VPS/Cloud** - Run on any server you control
 - 🐳 **Docker** - One-command deployment
 - 🚀 **Cloudflare Workers** - Global edge network
 
@@ -724,9 +1172,9 @@ Seamless translation between formats:
 | **💰 CHEAP**        | GLM-5.1 / GLM-4.7     | $0.6/1M      | Daily 10AM       | Budget backup                           |
 |                     | MiniMax M2.7          | $0.2/1M      | 5-hour rolling   | Cheapest option                         |
 |                     | Kimi K2.5             | $9/mo flat   | 10M tokens/mo    | Predictable cost                        |
- | **🆓 FREE**         | Kiro AI               | $0           | 50 credits/mo    | Claude 4.5 + GLM-5 + MiniMax free (paid tiers above) |
- |                     | OpenCode Free         | $0           | Varies*          | No auth, auto-fetch models (list changes over time) |
- |                     | Vertex AI             | $300 credits | New GCP accounts | Gemini 3 Pro + DeepSeek + GLM-5 (use Vertex AI Studio endpoint for free credits) |
+| **🆓 FREE**         | Kiro AI               | $0           | 50 credits/mo    | Claude 4.5 + GLM-5 + MiniMax free (paid tiers above) |
+|                     | OpenCode Free         | $0           | Varies*          | No auth, auto-fetch models (list changes over time) |
+|                     | Vertex AI             | $300 credits | New GCP accounts | Gemini 3 Pro + DeepSeek + GLM-5 (use Vertex AI Studio endpoint for free credits) |
 
 **💡 Pro Tip:** RTK + Kiro AI + OpenCode Free combo = **$0 cost + 20-40% token savings**!
 
@@ -764,7 +1212,7 @@ Reality Check:
 
 - **Subscription providers** (Claude Code, Codex): Pay them directly via their websites
 - **Cheap providers** (GLM, MiniMax): Pay them directly, 9Router just routes
-- **FREE providers** (iFlow, Kiro, Qwen): Genuinely free forever, no hidden charges
+- **FREE providers** (Kiro, OpenCode Free, Vertex): Genuinely free within their free-tier limits, no hidden charges
 - **9Router**: Never charges anything, ever
 
 ---
@@ -779,7 +1227,7 @@ Reality Check:
 
 ```
 Combo: "maximize-claude"
-  1. cc/claude-opus-4-7        (use subscription fully)
+  1. cc/claude-opus-5          (use subscription fully)
   2. glm/glm-5.1               (cheap backup when quota out)
   3. kr/claude-sonnet-4.5      (free emergency fallback)
 
@@ -811,7 +1259,7 @@ Quality: Production-ready models + RTK saves 20-40% tokens
 
 ```
 Combo: "always-on"
-  1. cc/claude-opus-4-7        (best quality)
+  1. cc/claude-opus-5          (best quality)
   2. cx/gpt-5.5                (second subscription)
   3. glm/glm-5.1               (cheap, resets daily)
   4. minimax/MiniMax-M2.7      (cheapest, 5h reset)
@@ -961,9 +1409,9 @@ Dashboard → Providers → Connect Claude Code
 → 5-hour + weekly quota tracking
 
 Models:
-  cc/claude-opus-4-7
-  cc/claude-opus-4-6
-  cc/claude-sonnet-4-6
+  cc/claude-opus-5
+  cc/claude-fable-5-1
+  cc/claude-sonnet-5
   cc/claude-haiku-4-5-20251001
 ```
 
@@ -977,10 +1425,12 @@ Dashboard → Providers → Connect Codex
 → 5-hour + weekly reset
 
 Models:
+  cx/gpt-6.1-sol
+  cx/gpt-6-sol
+  cx/gpt-6-astra
+  cx/gpt-6-luna
+  cx/gpt-5.6-sol
   cx/gpt-5.5
-  cx/gpt-5.4
-  cx/gpt-5.3-codex
-  cx/gpt-5.2-codex
 ```
 
 ### GitHub Copilot
@@ -1058,7 +1508,7 @@ Models:
 ```bash
 Dashboard → Connect Kiro
 → AWS Builder ID, AWS IAM Identity Center, Google, or GitHub
-→ Unlimited usage
+→ ~50 credits/month free (paid tiers above)
 
 Models:
   kr/claude-sonnet-4.5
@@ -1069,7 +1519,7 @@ Models:
   kr/deepseek-3.2
 ```
 
-**Pro Tip:** Best free option for Claude. No API key, no payment, fully unlimited.
+**Pro Tip:** Best free option for Claude. No API key, no payment; free tier ~50 credits/mo.
 
 ### OpenCode Free (No auth, auto-fetch models)
 
@@ -1094,9 +1544,9 @@ Models:
   vertex/gemini-2.5-flash
 
 Vertex Partner (Anthropic / DeepSeek / GLM / Qwen via Vertex):
-  vertex-partner/glm-5-maas
-  vertex-partner/deepseek-v3.2-maas
-  vertex-partner/qwen3-next-80b-a3b-thinking-maas
+  vertex-partner/zai-org/glm-5-maas
+  vertex-partner/deepseek-ai/deepseek-v3.2-maas
+  vertex-partner/qwen/qwen3-next-80b-a3b-thinking-maas
 ```
 
 For a raw Google Cloud API-key connection, set the following through
@@ -1131,7 +1581,7 @@ Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-7 (Subscription primary)
+  1. cc/claude-opus-5 (Subscription primary)
   2. glm/glm-5.1 (Cheap backup, $0.6/1M)
   3. minimax/MiniMax-M2.7 (Cheapest fallback, $0.20/1M)
 
@@ -1167,20 +1617,20 @@ Cost: $0 forever (+ 20-40% token savings via RTK)!
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [from 9router dashboard]
-  Model: cc/claude-opus-4-7
+  Model: cc/claude-opus-5
 ```
 
 Or use combo: `premium-coding`
 
 ### Claude Code
 
-Edit `~/.claude/config.json`:
+Claude Code reads its endpoint from env vars (or `~/.claude/settings.json`), not
+`~/.claude/config.json`. Set:
 
-```json
-{
-  "anthropic_api_base": "http://localhost:20128/v1",
-  "anthropic_api_key": "your-9router-api-key"
-}
+```bash
+export ANTHROPIC_BASE_URL="http://localhost:20128/v1"
+export ANTHROPIC_AUTH_TOKEN="your-9router-api-key"
+claude
 ```
 
 ### Codex CLI
@@ -1237,7 +1687,7 @@ Dashboard → CLI Tools → OpenClaw → Select Model → Apply
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [from dashboard]
-Model: cc/claude-opus-4-7
+Model: cc/claude-opus-5
 ```
 
 </details>
@@ -1257,6 +1707,10 @@ npm run build
 # Configure
 export JWT_SECRET="your-secure-secret-change-this"
 export INITIAL_PASSWORD="your-password"
+# /var/lib/9router is a system path and does not exist on a fresh host: create it
+# first (the app fails fast at boot if DATA_DIR cannot be created/written). Or
+# drop this export entirely and the app uses the per-user default ~/.9router.
+sudo mkdir -p /var/lib/9router && sudo chown "$USER:$USER" /var/lib/9router
 export DATA_DIR="/var/lib/9router"
 export PORT="20128"
 export HOSTNAME="0.0.0.0"
@@ -1300,11 +1754,28 @@ docker run -d \
 
 ```bash
 git clone https://github.com/decolua/9router.git
-cd 9router/app
+cd 9router
 docker build -t 9router .
 docker run -d --name 9router -p 20128:20128 \
   -v "$HOME/.9router:/app/data" -e DATA_DIR=/app/data 9router
 ```
+
+**Compose fallback when the published images cannot be pulled** (clean,
+rootless or air-gapped host): keep `docker-compose.yml` and apply the
+local-build override on top of it — ports, volumes, env and wiring still come
+from the base file:
+
+```bash
+# 9router built from this checkout
+docker compose -f docker-compose.yml -f docker-compose.local-build.yml up -d --build
+
+# no third-party pulls at all (headroom sidecar omitted — optional at runtime)
+docker compose -f docker-compose.yml -f docker-compose.local-build.yml \
+  up -d --build --no-deps 9router
+```
+
+The override tags the build `9router:local` (a local build never overwrites
+`decolua/9router:latest`) — see [DOCKER.md](DOCKER.md).
 
 **Container defaults:**
 
@@ -1328,19 +1799,19 @@ docker pull decolua/9router:latest   # update to latest
 | ---------------------------------------------------- | ---------------------------------------- | ----------------------------------------------------------------------------------- |
 | `JWT_SECRET`                                         | Auto-generated (`~/.9router/jwt-secret`) | JWT signing secret for dashboard auth cookie (override to share across instances)   |
 | `INITIAL_PASSWORD`                                   | `123456`                                 | First login password when no saved hash exists                                      |
-| `DATA_DIR`                                           | `~/.9router`                             | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`)                       |
+| `DATA_DIR`                                           | `~/.9router`                             | Main app data location (SQLite at `$DATA_DIR/db/data.sqlite`); must be writable — the app fails fast at boot if it cannot create/write it |
 | `PORT`                                               | framework default                        | Service port (`20128` in examples)                                                  |
 | `HOSTNAME`                                           | framework default                        | Bind host (Docker defaults to `0.0.0.0`)                                            |
 | `NODE_ENV`                                           | runtime default                          | Set `production` for deploy                                                         |
-| `BASE_URL`                                           | `http://localhost:20128`                 | Server-side internal base URL used by cloud sync jobs                               |
-| `CLOUD_URL`                                          | `https://9router.com`                    | Server-side cloud sync endpoint base URL                                            |
+| `BASE_URL`                                           | `http://localhost:20128`                 | Server-side public base URL of this instance (used when resolving callback/redirect origins for SAML/OIDC login; falls back to request headers when unset) |
+| `CLOUD_URL`                                          | `https://9router.com`                    | Dashboard URL used by the CLI endpoint presets and URL matching                               |
 | `NEXT_PUBLIC_BASE_URL`                               | `http://localhost:3000`                  | Backward-compatible/public base URL (prefer `BASE_URL` for server runtime)          |
-| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                    | Backward-compatible/public cloud URL (prefer `CLOUD_URL` for server runtime)        |
-| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`          | HMAC secret for generated API keys                                                  |
+| `NEXT_PUBLIC_CLOUD_URL`                              | `https://9router.com`                    | Backward-compatible/public dashboard URL fallback (prefer `CLOUD_URL`)             |
+| `API_KEY_SECRET`                                     | `endpoint-proxy-api-key-secret`          | Server-side HMAC secret used to derive and validate generated API keys. **This is not a client credential — never send it as `Authorization: Bearer <API_KEY_SECRET>` to `/v1`.** Remote clients must use an active API key minted in the dashboard (Endpoint → API Keys) or via login + `POST /api/keys` (keys look like `sk-…`). |
 | `MACHINE_ID_SALT`                                    | `endpoint-proxy-salt`                    | Salt for stable machine ID hashing                                                  |
-| `ENABLE_REQUEST_LOGS`                                | `false`                                  | Enables request/response logs under `logs/`                                         |
+| `ENABLE_REQUEST_LOGS`                                | `false`                                  | Enables request/response logs under `logs/`. **Also the hard override for the in-DB `requestDetails` store** (dashboard → Observability): when the variable is set to any value it supersedes the UI toggle, so `ENABLE_REQUEST_LOGS=false` disables in-DB request-detail capture even when Observability is enabled in the dashboard — and `true` enables it regardless of the UI setting. |
 | `AUTH_COOKIE_SECURE`                                 | `false`                                  | Force `Secure` auth cookie (set `true` behind HTTPS reverse proxy)                  |
-| `REQUIRE_API_KEY`                                    | `false`                                  | Enforce Bearer API key on `/v1/*` routes (recommended for internet-exposed deploys) |
+| `REQUIRE_API_KEY`                                    | `false`                                  | API-key enforcement on the public LLM API (`/v1`, `/v1beta`, `/api/v1`, `/api/v1beta`, `/codex`, `/responses`) for remote clients. `true` = a remote client must send a valid key (trusted-local clients still pass the dashboard gate, and the LLM handlers layer their own key check on top while it is `true`); `false` = a remote client may call the LLM API with no key. Unset = the stored setting applies, whose default is `true` (secure). `.env.example` ships `false` for local use — set `true` before exposing the gateway to the internet (recommended for internet-exposed deploys). This opt-out is a deployment setting only — it is never a reason to send `API_KEY_SECRET` as a client key; remote clients still use a minted `sk-…` API key when a key is needed. |
 | `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY` | empty                                    | Optional outbound proxy for upstream provider calls                                 |
 | `SEARXNG_URL`                                        | `http://localhost:8888/search`           | Endpoint for the built-in unauthenticated SearXNG web-search provider               |
 
@@ -1369,19 +1840,20 @@ Notes:
 
 **Claude Code (`cc/`)** - Pro/Max:
 
-- `cc/claude-opus-4-7`
-- `cc/claude-opus-4-6`
-- `cc/claude-sonnet-4-6`
-- `cc/claude-sonnet-4-5-20250929`
+- `cc/claude-opus-5`
+- `cc/claude-fable-5-1`
+- `cc/claude-fable-5`
+- `cc/claude-sonnet-5`
 - `cc/claude-haiku-4-5-20251001`
 
 **Codex (`cx/`)** - Plus/Pro:
 
+- `cx/gpt-6.1-sol`
+- `cx/gpt-6-sol`
+- `cx/gpt-6-astra`
+- `cx/gpt-6-luna`
+- `cx/gpt-5.6-sol`
 - `cx/gpt-5.5`
-- `cx/gpt-5.4`
-- `cx/gpt-5.3-codex`
-- `cx/gpt-5.2-codex`
-- `cx/gpt-5.1-codex-max`
 
 **GitHub Copilot (`gh/`)**:
 
@@ -1394,9 +1866,20 @@ Notes:
 **Cursor (`cu/`)** - Subscription:
 
 - `cu/claude-4.6-opus-max`
+- `cu/claude-4.6-sonnet-medium-thinking`
+- `cu/claude-4.5-opus-high-thinking`
+- `cu/claude-4.5-opus-high`
+- `cu/claude-4.5-opus`
 - `cu/claude-4.5-sonnet-thinking`
+- `cu/claude-4.5-sonnet`
+- `cu/claude-4.5-haiku`
 - `cu/gpt-5.3-codex`
+- `cu/gpt-5.2-codex`
+- `cu/gpt-5.2`
+- `cu/gemini-3-flash-preview`
 - `cu/kimi-k2.5`
+
+The list is synced from the provider registry (`open-sse/providers/registry/cursor.js`); `cu/auto` is also available (server picks).
 
 **GLM (`glm/`)** - $0.6/1M:
 
@@ -1432,8 +1915,8 @@ Notes:
 - `vertex/gemini-3.1-pro-preview`
 - `vertex/gemini-3-flash-preview`
 - `vertex/gemini-2.5-flash`
-- `vertex-partner/glm-5-maas`
-- `vertex-partner/deepseek-v3.2-maas`
+- `vertex-partner/zai-org/glm-5-maas`
+- `vertex-partner/deepseek-ai/deepseek-v3.2-maas`
 
 </details>
 
@@ -1449,7 +1932,7 @@ Notes:
 **Rate limiting**
 
 - Subscription quota out → Fallback to GLM/MiniMax
-- Add combo: `cc/claude-opus-4-7 → glm/glm-5.1 → kr/claude-sonnet-4.5`
+- Add combo: `cc/claude-opus-5 → glm/glm-5.1 → kr/claude-sonnet-4.5`
 
 **OAuth token expired**
 
@@ -1469,12 +1952,30 @@ Notes:
 
 **First login not working**
 
-- Check `INITIAL_PASSWORD` in `.env`
-- If unset, fallback password is `123456`
+- Check `INITIAL_PASSWORD` in `.env`. If it is set (the `.env.example` default is
+  `change-me-to-a-strong-password`), that value is the password — not the built-in fallback.
+- Only when `INITIAL_PASSWORD` is completely unset does the built-in fallback
+  `123456` apply (loopback sessions only). See "Headless / Docker first login"
+  above for why a copied `.env.example` rejects `123456`.
 
 **No request logs under `logs/`**
 
 - Set `ENABLE_REQUEST_LOGS=true`
+
+### Crash logging
+
+The production wrapper (`custom-server.js`, used by `npm start` and the Docker image) appends one JSON object per line to `$DATA_DIR/logs/crash.log` (default `~/.9router/logs/crash.log`). All crash-log writes are fail-open — a logging error never crashes or blocks the server.
+
+Record shapes:
+
+```json
+{"ts":"…ISO…","event":"boot","pid":123,"argv":"custom-server.js","dataDir":"…"}
+{"ts":"…ISO…","event":"shutdown","pid":123,"signal":"SIGTERM"}
+{"ts":"…ISO…","event":"uncaughtException","pid":123,"name":"Error","message":"…","stack":"…"}
+{"ts":"…ISO…","event":"unhandledRejection","pid":123,"name":"Error","message":"…","stack":"…"}
+```
+
+**Reading an exit-137 (OOM/SIGKILL) death:** SIGKILL cannot be caught, so nothing is logged for it. A `boot` record with no following `shutdown`/`uncaughtException`/`unhandledRejection` record means the process was killed abnormally — check `dmesg` or `journalctl -k` for the kernel OOM killer entry.
 
 ---
 
@@ -1499,7 +2000,7 @@ Authorization: Bearer your-api-key
 Content-Type: application/json
 
 {
-  "model": "cc/claude-opus-4-6",
+  "model": "cc/claude-opus-5",
   "messages": [
     {"role": "user", "content": "Write a function to..."}
   ],
@@ -1528,13 +2029,15 @@ Authorization: Bearer your-api-key
 
 Thanks to all contributors who helped make 9Router better!
 
+For work-item markers, evidence, and close-out expectations, see the [repository traceability doctrine](docs/traceability-doctrine.md).
+
 [![Contributors](https://contrib.rocks/image?repo=decolua/9router&max=150&columns=15&anon=1&v=20260309)](https://github.com/decolua/9router/graphs/contributors)
 
 ---
 
 ## 📊 Star Chart
 
-[![Star Chart](https://starchart.cc/decolua/9router.svg?variant=adaptive)](https://starchart.cc/decolua/9router)
+[![GitHub stars](https://img.shields.io/github/stars/decolua/9router?style=social)](https://github.com/decolua/9router)
 
 ## 🔀 Forks
 

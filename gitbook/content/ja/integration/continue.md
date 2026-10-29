@@ -29,7 +29,7 @@
     {
       "title": "9Router - Claude Opus",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -44,28 +44,28 @@
     {
       "title": "9Router - Claude Opus (Best)",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Sonnet (Balanced)",
       "provider": "openai",
-      "model": "cc/claude-sonnet-4-20250514",
+      "model": "cc/claude-sonnet-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - DeepSeek Chat (Code)",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Haiku (Fast)",
       "provider": "openai",
-      "model": "cc/claude-haiku-4-20250514",
+      "model": "cc/claude-haiku-4-5-20251001",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -94,17 +94,17 @@
 ## 利用可能なモデル
 
 ### Claudeモデル (Anthropic)
-- `cc/claude-opus-4-5-20251101` - 最も高性能、複雑なタスクに最適
-- `cc/claude-sonnet-4-20250514` - パフォーマンスと速度のバランス
-- `cc/claude-haiku-4-20250514` - 最速、シンプルなタスクに適している
+- `cc/claude-opus-5-5` - 最も高性能、複雑なタスクに最適
+- `cc/claude-sonnet-5-5` - パフォーマンスと速度のバランス
+- `cc/claude-haiku-4-5-20251001` - 最速、シンプルなタスクに適している
 
 ### DeepSeekモデル
-- `cx/deepseek-chat` - コード生成に優れている
-- `cx/deepseek-reasoner` - 複雑な問題解決に最適
+- `deepseek/deepseek-chat` - コード生成に優れている
+- `deepseek/deepseek-reasoner` - 複雑な問題解決に最適
 
 ### GLMモデル (Zhipu AI)
-- `glm/glm-4-plus` - 高度な中国語と英語
-- `glm/glm-4-flash` - 高速応答
+- `glm/glm-4.7` - 高度な中国語と英語
+- `glm/glm-4.7-flash` - 高速応答
 
 ## 使用例
 
@@ -112,22 +112,22 @@
 1. エディタでコードを選択
 2. Continueサイドバーを開く
 3. 入力: 「Explain this code」
-4. Model: `cc/claude-sonnet-4-20250514`
+4. Model: `cc/claude-sonnet-5-5`
 
 ### コード生成
 1. Continueサイドバーを開く
 2. 入力: 「Create a React component for user profile card」
-3. Model: `cx/deepseek-chat`
+3. Model: `deepseek/deepseek-chat`
 
 ### リファクタリング
 1. リファクタリングするコードを選択
 2. 入力: 「Refactor this to use async/await」
-3. Model: `cc/claude-sonnet-4-20250514`
+3. Model: `cc/claude-sonnet-5-5`
 
 ### バグ修正
 1. 問題のあるコードを選択
 2. 入力: 「Find and fix the bug in this code」
-3. Model: `cx/deepseek-reasoner`
+3. Model: `deepseek/deepseek-reasoner`
 
 ## 高度な設定
 
@@ -141,7 +141,7 @@
     {
       "title": "9Router - Code Expert",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "systemMessage": "You are an expert programmer. Always provide clean, well-documented code with best practices."
@@ -160,7 +160,7 @@
     {
       "title": "9Router - Creative Writer",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "temperature": 0.9,
@@ -226,10 +226,10 @@ Continueがモデルに送信するコンテキストを設定:
 ## ベストプラクティス
 
 ### モデル選択戦略
-- **クイック編集**: `cc/claude-haiku-4-20250514` を使用
-- **コード生成**: `cx/deepseek-chat` を使用
-- **複雑なリファクタリング**: `cc/claude-opus-4-5-20251101` を使用
-- **問題解決**: `cx/deepseek-reasoner` を使用
+- **クイック編集**: `cc/claude-haiku-4-5-20251001` を使用
+- **コード生成**: `deepseek/deepseek-chat` を使用
+- **複雑なリファクタリング**: `cc/claude-opus-5-5` を使用
+- **問題解決**: `deepseek/deepseek-reasoner` を使用
 
 ### コンテキスト管理
 - 質問する前に関連コードのみを選択
@@ -245,5 +245,3 @@ Continueがモデルに送信するコンテキストを設定:
 
 - [Cursorを設定](cursor.md) IDE統合を強化
 - [Rooをセットアップ](roo.md) AIアシスタント用
-- [CLI使用法を確認](../cli/basic-usage.md)
-- [モデル選択について学ぶ](../models/overview.md)

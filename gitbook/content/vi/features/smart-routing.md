@@ -37,8 +37,8 @@ Request → 9Router → Check Tier 1 (Subscription)
 **Mục tiêu**: Backup siêu rẻ khi hết quota subscription (~90% rẻ hơn ChatGPT API).
 
 **Tier 3: FREE (Khẩn cấp)**
-- iFlow (8 models)
-- Qwen (3 models)
+- iFlow (15 models)
+- Model Qwen (qua iFlow)
 - Kiro (Claude MIỄN PHÍ)
 
 **Mục tiêu**: Fallback chi phí 0 để code không giới hạn.
@@ -52,13 +52,13 @@ Request → 9Router → Check Tier 1 (Subscription)
 ### Kịch bản 1: Hết Quota Subscription
 
 ```
-User request → cc/claude-opus-4-5
+User request → cc/claude-opus-5-5
                ↓ quota exhausted (5-hour limit reached)
                Auto switch → glm/glm-4.7
                ↓ daily quota exhausted
                Auto switch → minimax/MiniMax-M2.1
                ↓ 5-hour quota exhausted
-               Auto switch → if/kimi-k2-thinking (FREE)
+               Auto switch → if/kimi-k2 (FREE)
                ↓
                Response delivered ✅
 ```
@@ -68,7 +68,7 @@ User request → cc/claude-opus-4-5
 ### Kịch bản 2: Rate Limiting
 
 ```
-User request → cx/gpt-5.2-codex
+User request → cx/gpt-6.1-sol
                ↓ rate limited (too many requests)
                Auto switch → glm/glm-4.7
                ↓
@@ -78,7 +78,7 @@ User request → cx/gpt-5.2-codex
 ### Kịch bản 3: Provider không khả dụng
 
 ```
-User request → cc/claude-opus-4-5
+User request → cc/claude-opus-5-5
                ↓ provider error (503)
                Auto switch → next available model
                ↓
@@ -98,11 +98,11 @@ User request → cc/claude-opus-4-5
 
 ### Ví dụ Thứ tự Ưu tiên
 
-Cho request đến `cc/claude-opus-4-5`:
+Cho request đến `cc/claude-opus-5-5`:
 
 ```
 1. Check Claude Code quota
-   ✅ Available → Use cc/claude-opus-4-5
+   ✅ Available → Use cc/claude-opus-5-5
    ❌ Exhausted → Continue to step 2
 
 2. Check fallback tier (if configured)
@@ -110,7 +110,7 @@ Cho request đến `cc/claude-opus-4-5`:
    ❌ Exhausted → Continue to step 3
 
 3. Check free tier
-   ✅ iFlow available → Use if/kimi-k2-thinking
+   ✅ iFlow available → Use if/kimi-k2
    ❌ All exhausted → Return quota error
 ```
 
@@ -151,7 +151,7 @@ Ví dụ thứ tự tùy chỉnh:
 ```
 Tier 1: Gemini CLI → Claude Code → Codex
 Tier 2: MiniMax → GLM → Kimi
-Tier 3: iFlow → Kiro → Qwen
+Tier 3: iFlow → Kiro
 ```
 
 **4. Thông báo Reset Quota**
@@ -170,14 +170,14 @@ Dashboard → Settings → Notifications
 
 **Setup:**
 ```
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 Fallback: Auto (default 3-tier)
 ```
 
 **Hoạt động:**
 ```
 Morning (fresh quota):
-  Request → cc/claude-opus-4-5 ✅
+  Request → cc/claude-opus-5-5 ✅
 
 Afternoon (quota exhausted):
   Request → glm/glm-4.7 ✅ (auto switched)
@@ -186,7 +186,7 @@ Evening (GLM quota out):
   Request → minimax/MiniMax-M2.1 ✅ (auto switched)
 
 Late night (all paid quota out):
-  Request → if/kimi-k2-thinking ✅ (free tier)
+  Request → if/kimi-k2 ✅ (free tier)
 ```
 
 **Chi phí**: ~$5-10/tháng extra (chủ yếu được bao bởi subscription).
@@ -208,7 +208,7 @@ Day 1-15 (within budget):
   Cost: $1.50/day
 
 Day 16 (budget reached):
-  Requests → if/kimi-k2-thinking (free tier)
+  Requests → if/kimi-k2 (free tier)
   Cost: $0
 
 Next month (budget resets):
@@ -228,7 +228,7 @@ Dashboard → Settings:
 
 **Hoạt động:**
 ```
-Request → cc/claude-opus-4-5
+Request → cc/claude-opus-5-5
   ✅ Quota available → Success
   ❌ Quota exhausted → Return error (no fallback)
 ```
@@ -239,8 +239,8 @@ Request → cc/claude-opus-4-5
 
 **Setup:**
 ```
-Model: if/kimi-k2-thinking
-Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
+Model: if/kimi-k2
+Fallback: if/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **Hoạt động:**
@@ -266,7 +266,7 @@ Strategy:
 
 **Ví dụ combo:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 2. Tối ưu Chi phí
@@ -280,7 +280,7 @@ Strategy:
 
 **Ví dụ combo:**
 ```
-gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
+gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 3. Tối ưu Chất lượng
@@ -294,7 +294,7 @@ Strategy:
 
 **Ví dụ combo:**
 ```
-cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
+cc/claude-opus-5-5 → cx/gpt-6.1-sol → glm/glm-4.7
 ```
 
 ### 4. Khả dụng 24/7
@@ -308,7 +308,7 @@ Strategy:
 
 **Ví dụ combo:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2
 ```
 
 **Kết quả**: Không bao giờ hết quota, code mọi lúc.
@@ -326,7 +326,7 @@ Lên kế hoạch usage quanh thời gian reset quota:
 | **Gemini CLI** | Hàng ngày (1K) + Hàng tháng (180K) | Dùng cả ngày |
 | **GLM-4.7** | Hàng ngày 10:00 AM | Dùng buổi tối, reset sáng hôm sau |
 | **MiniMax M2.1** | 5 giờ rolling | Dùng mọi lúc, theo rolling window |
-| **iFlow/Qwen/Kiro** | Không giới hạn | Backup khẩn cấp |
+| **iFlow/Kiro** | Không giới hạn | Backup khẩn cấp |
 
 **Ví dụ lịch hàng ngày:**
 ```

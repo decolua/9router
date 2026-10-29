@@ -29,7 +29,7 @@
     {
       "title": "9Router - Claude Opus",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -44,28 +44,28 @@
     {
       "title": "9Router - Claude Opus (Best)",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Sonnet (Balanced)",
       "provider": "openai",
-      "model": "cc/claude-sonnet-4-20250514",
+      "model": "cc/claude-sonnet-5-5",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - DeepSeek Chat (Code)",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     },
     {
       "title": "9Router - Claude Haiku (Fast)",
       "provider": "openai",
-      "model": "cc/claude-haiku-4-20250514",
+      "model": "cc/claude-haiku-4-5-20251001",
       "apiKey": "your-api-key-from-dashboard",
       "apiBase": "http://localhost:20128/v1"
     }
@@ -94,17 +94,17 @@
 ## 可用模型
 
 ### Claude 模型(Anthropic)
-- `cc/claude-opus-4-5-20251101` - 最强,适合复杂任务
-- `cc/claude-sonnet-4-20250514` - 性能与速度平衡
-- `cc/claude-haiku-4-20250514` - 最快,适合简单任务
+- `cc/claude-opus-5-5` - 最强,适合复杂任务
+- `cc/claude-sonnet-5-5` - 性能与速度平衡
+- `cc/claude-haiku-4-5-20251001` - 最快,适合简单任务
 
 ### DeepSeek 模型
-- `cx/deepseek-chat` - 出色的代码生成
-- `cx/deepseek-reasoner` - 复杂问题求解
+- `deepseek/deepseek-chat` - 出色的代码生成
+- `deepseek/deepseek-reasoner` - 复杂问题求解
 
 ### GLM 模型(Zhipu AI)
-- `glm/glm-4-plus` - 高级中文与英文
-- `glm/glm-4-flash` - 快速响应
+- `glm/glm-4.7` - 高级中文与英文
+- `glm/glm-4.7-flash` - 快速响应
 
 ## 使用示例
 
@@ -112,22 +112,22 @@
 1. 在编辑器中选中代码
 2. 打开 Continue 侧边栏
 3. 输入:"Explain this code"
-4. 模型:`cc/claude-sonnet-4-20250514`
+4. 模型:`cc/claude-sonnet-5-5`
 
 ### 代码生成
 1. 打开 Continue 侧边栏
 2. 输入:"Create a React component for user profile card"
-3. 模型:`cx/deepseek-chat`
+3. 模型:`deepseek/deepseek-chat`
 
 ### 重构
 1. 选中要重构的代码
 2. 输入:"Refactor this to use async/await"
-3. 模型:`cc/claude-sonnet-4-20250514`
+3. 模型:`cc/claude-sonnet-5-5`
 
 ### Bug 修复
 1. 选中有问题的代码
 2. 输入:"Find and fix the bug in this code"
-3. 模型:`cx/deepseek-reasoner`
+3. 模型:`deepseek/deepseek-reasoner`
 
 ## 高级配置
 
@@ -141,7 +141,7 @@
     {
       "title": "9Router - Code Expert",
       "provider": "openai",
-      "model": "cx/deepseek-chat",
+      "model": "deepseek/deepseek-chat",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "systemMessage": "You are an expert programmer. Always provide clean, well-documented code with best practices."
@@ -160,7 +160,7 @@
     {
       "title": "9Router - Creative Writer",
       "provider": "openai",
-      "model": "cc/claude-opus-4-5-20251101",
+      "model": "cc/claude-opus-5-5",
       "apiKey": "your-api-key",
       "apiBase": "http://localhost:20128/v1",
       "temperature": 0.9,
@@ -226,10 +226,10 @@
 ## 最佳实践
 
 ### 模型选择策略
-- **快速编辑**:使用 `cc/claude-haiku-4-20250514`
-- **代码生成**:使用 `cx/deepseek-chat`
-- **复杂重构**:使用 `cc/claude-opus-4-5-20251101`
-- **问题求解**:使用 `cx/deepseek-reasoner`
+- **快速编辑**:使用 `cc/claude-haiku-4-5-20251001`
+- **代码生成**:使用 `deepseek/deepseek-chat`
+- **复杂重构**:使用 `cc/claude-opus-5-5`
+- **问题求解**:使用 `deepseek/deepseek-reasoner`
 
 ### 上下文管理
 - 提问前只选中相关代码
@@ -245,5 +245,3 @@
 
 - [配置 Cursor](cursor.md) 以增强 IDE 集成
 - [设置 Roo](roo.md) AI 助手
-- [探索 CLI 用法](../cli/basic-usage.md)
-- [了解模型选择](../models/overview.md)

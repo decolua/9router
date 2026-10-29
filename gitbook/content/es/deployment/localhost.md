@@ -159,6 +159,6 @@ cp -r ~/.9router.backup ~/.9router
 
 ## 🔗 Próximos pasos
 
-- [Conectar proveedores](/providers/subscription.md)
-- [Crear combos](/features/combos.md)
-- [Integrar con herramientas CLI](/integration/cursor.md)
+- [Conectar proveedores](../providers/subscription.md)
+- [Crear combos](../features/combos.md)
+- [Integrar con herramientas CLI](../integration/cursor.md)

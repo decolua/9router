@@ -463,6 +463,45 @@ Combo: "my-coding-stack"
 
 ---
 
+## 🔗 联邦模式（Federation）— 本 fork 功能
+
+> ⚠️ **重要：** 联邦是**本 fork 分支**的功能。通过 `npm install -g 9router` 安装的是**上游版本**，**不包含联邦功能**。如需使用，请从 fork 源码构建：
+>
+> ```bash
+> git clone https://github.com/totalwindupflightsystems/9router.git
+> cd 9router
+> git checkout federation
+> npm install
+> npm run build && npm run start
+> ```
+
+**联邦是什么？** 在多个数据中心/主机上部署同一套 9Router，并让它们协同工作：
+
+- 🔗 **边缘 → 中央代理** - 边缘实例默认将所有 `/v1` 流量和仪表板 API 代理到中央实例
+- 💾 **数据库复制** - 边缘持续复制中央数据库，始终持有本地副本
+- 🛡️ **降级保护（DEGRADED 模式）** - 中央宕机时，边缘自动切换到本地副本继续服务，依赖服务不中断
+- 📥 **写入排队** - 宕机期间的写入暂存在本地 `pendingWrites` 队列，恢复后自动回放并对账（最终一致性）
+- ⚙️ **单机模式仍是默认** - 不设置 `FEDERATION_MODE` 时行为与上游完全一致，零干扰
+
+**联邦环境变量（全部可选，默认为单机模式）：**
+
+| 变量 | 默认值 | 描述 |
+|----------|---------|-------------|
+| `FEDERATION_MODE` | `standalone` | 角色：`standalone`（单机）/ `central`（中央）/ `edge`（边缘） |
+| `FEDERATION_CENTRAL_URL` | 空 | 中央实例基础 URL（仅边缘需要） |
+| `FEDERATION_TOKEN` | 空 | 边缘 ↔ 中央的 Bearer 认证共享密钥（切勿复用 `JWT_SECRET`/`API_KEY_SECRET`） |
+| `FEDERATION_EDGE_ID` | 机器 ID | 边缘身份标识（默认取 `node-machine-id`） |
+| `FEDERATION_SYNC_INTERVAL_MS` | `5000` | 增量同步轮询间隔 |
+| `FEDERATION_HEARTBEAT_INTERVAL_MS` | `2000` | 心跳检测间隔 |
+| `FEDERATION_OUTAGE_THRESHOLD_MS` | `15000` | 连续失败窗口，超过则进入 DEGRADED |
+| `FEDERATION_QUEUE_MAX` | `10000` | `pendingWrites` 队列上限 |
+| `FEDERATION_REPLAY_BATCH_SIZE` | `50` | 恢复时每批回放的写入数 |
+| `FEDERATION_REDACT_FIELDS` | 空 | 可选 JSON 路径脱敏（仅纯代理边缘） |
+
+📖 **完整设计文档：** [`docs/federation-spec.md`](../docs/federation-spec.md)（实现规范）与 [`docs/FEDERATION.md`](../docs/FEDERATION.md)（部署指南）。
+
+---
+
 ## 💰 定价一览
 
 | 层级 | 提供商 | 成本 | 配额重置 | 最适合 |

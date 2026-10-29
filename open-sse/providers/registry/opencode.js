@@ -12,12 +12,25 @@ export default {
   },
   category: "free",
   noAuth: true,
+  // LIVE PROBE (2026-09-17): the credentialless path only works from OpenCode's
+  // own client. GET /zen/v1/models answers 200 (so the provider LOOKS healthy),
+  // but POST /zen/v1/responses answers 403 FreeTierError "OpenCode's free tier
+  // can only be used from within OpenCode" even when the request carries
+  // OpenCodeExecutor's own header set, and /zen/v1/chat/completions answers
+  // 401 "Missing API key.". A working model list therefore does NOT make the
+  // provider usable from this process.
+  requiresVendorClient: true,
   transport: {
     baseUrl: "https://opencode.ai",
     headers: {
       "x-opencode-client": "desktop",
     },
-    forceStream: true,
+    // NOTE (fork): upstream v0.5.81 declares `forceStream: true` here. In the fork
+    // that flag is REDUNDANT (chatCore's forced-SSE→JSON hook already detects
+    // translator-forced streaming via finalBody.stream) and HARMFUL: it flips
+    // internal `stream` to true for stream:false requests to JSON-native
+    // upstreams, breaking DF-9ROUTER-11/16's pinned wire contract. Removed at
+    // the v0.5.81 merge; revisit if upstream's executor path changes.
     noAuth: true,
     // Zen reasoning models reject multi-turn history whose assistant messages
     // carry no reasoning_content (400 missing_required_parameter), and the

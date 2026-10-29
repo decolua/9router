@@ -42,7 +42,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 **Goal:** 90% cheaper than ChatGPT API ($20/1M)!
 
 ### Tier 3: Free (Emergency)
-- **iFlow**: 8 models FREE (Kimi K2, Qwen3, GLM, MiniMax...)
+- **iFlow**: 15 models FREE (Kimi K2, Qwen3, GLM, DeepSeek...)
 - **Qwen**: 3 models FREE (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro**: 2 models FREE (Claude Sonnet 4.5, Haiku 4.5)
 
@@ -56,8 +56,8 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 
 **Free tier providers available:**
 - **Gemini CLI** - 180K completions/month (FREE Google account)
-- **iFlow** - 8 models unlimited (FREE OAuth)
-- **Qwen** - 3 models unlimited (FREE OAuth)
+- **iFlow** - 15 models unlimited (FREE OAuth)
+- **Qwen models** - unlimited via iFlow (FREE OAuth)
 - **Kiro** - Claude Sonnet/Haiku (FREE AWS Builder ID)
 
 **You can code for FREE forever using only free tier providers!**
@@ -71,9 +71,9 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 ## Which providers are supported?
 
 ### Subscription Providers
-- **Claude Code** (Pro/Max) - Claude 4.5 Opus/Sonnet/Haiku
-- **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
-- **Gemini CLI** (FREE) - Gemini 3 Flash/Pro, 2.5 Pro/Flash
+- **Claude Code** (Pro/Max) - Claude Opus 5.5/Sonnet 5.5/Haiku 4.5
+- **OpenAI Codex** (Plus/Pro) - GPT 6.1 Sol, GPT 6 Sol
+- **Gemini CLI** (FREE) - Gemini 3 Flash/Pro Preview, 2.5 Pro/Flash
 - **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
 - **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
 
@@ -84,7 +84,7 @@ It intelligently routes requests across multiple AI providers using a 3-tier fal
 - **OpenRouter** - Passthrough to any OpenRouter model
 
 ### Free Providers
-- **iFlow** - 8 models (Kimi K2, Qwen3, GLM, MiniMax, DeepSeek...)
+- **iFlow** - 15 models (Kimi K2, Qwen3, GLM, DeepSeek...)
 - **Qwen** - 3 models (Qwen3 Coder Plus/Flash, Vision)
 - **Kiro** - 2 models (Claude Sonnet 4.5, Haiku 4.5)
 
@@ -102,7 +102,7 @@ See [providers documentation](providers/subscription.md) for details.
 
 ```
 Example combo: "premium-coding"
-1. cc/claude-opus-4-5 (Subscription primary)
+1. cc/claude-opus-5-5 (Subscription primary)
 2. glm/glm-4.7 (Cheap backup)
 3. if/kimi-k2 (Free emergency)
 
@@ -166,7 +166,7 @@ See [quota tracking documentation](features/quota-tracking.md) for details.
 Cursor Settings → Models → Advanced:
   OpenAI API Base URL: https://9router.com/v1
   OpenAI API Key: [from dashboard]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 **Alternative:** Self-host on VPS with public domain:

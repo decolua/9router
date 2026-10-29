@@ -2,7 +2,7 @@
  * Shared combo (model combo) handling with fallback support
  */
 
-import { checkFallbackError, formatRetryAfter } from "./accountFallback.js";
+import { checkFallbackError, isModelScopedError, formatRetryAfter } from "./accountFallback.js";
 import { unavailableResponse } from "../utils/error.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { parseModel } from "./model.js";
@@ -466,7 +466,7 @@ export async function handleComboChat({
   let lastError = null;
   let earliestRetryAfter = null;
   let lastStatus = null;
-  let requestScopedResult = null;
+  const attempts = [];
 
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
@@ -511,6 +511,7 @@ export async function handleComboChat({
                   }
                   lastError = "Zero usable content";
                   lastStatus = 200;
+                  attempts.push({ seat_id: modelStr, status: 200, error_message: lastError });
                   continue;
                 }
               } catch {
@@ -574,29 +575,32 @@ export async function handleComboChat({
       if (typeof errorText !== "string") {
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
+      attempts.push({ seat_id: modelStr, status: result.status, error_message: errorText });
 
-      // Check if should fallback to next model
+      // Check if should fallback to next model.
+      // MODEL-level rule (not the account rule): a combo walks an ordered list of
+      // DIFFERENT models, so a model-scoped failure (unknown model, 404/406) means
+      // "ask the next entry" even though the credential itself is healthy — the
+      // 400-no-fallback guard is per-ACCOUNT and stays intact for auth.js.
+      // checkFallbackError + provider arg (upstream v0.5.111): provider-specific
+      // error rules and the requestScoped classification apply here too.
+      // Combo doctrine (DF-9ROUTER-34, kept over upstream's advance-on-request-scoped):
+      // every member faces the SAME request, so a request-scoped 4xx with no model
+      // wording (context overflow, malformed body) is answered identically by the
+      // next member — the combo stops and hands back the member's own response.
       const { provider } = parseModel(modelStr);
-      const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
+      const comboDecision = checkFallbackError(result.status, errorText, 0, provider);
+      if (!comboDecision.shouldFallback && isModelScopedError(result.status, errorText)) {
+        // The credential is healthy — this model simply cannot serve the request.
+        // No cooldown is recorded against the account; only the model pointer moves.
+        comboDecision.shouldFallback = true;
+        comboDecision.cooldownMs = 0;
+      }
+      const { shouldFallback, cooldownMs } = comboDecision;
 
-      if (!shouldFallback && !requestScoped) {
+      if (!shouldFallback) {
         log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
         return result;
-      }
-
-      // A request-scoped 4xx (validation failure, unsupported parameter, context
-      // overflow) says this member cannot serve THIS request — not that the
-      // credential is unhealthy. Members run on different providers with
-      // different validation, so the next member may well serve it. Advance
-      // without a cooldown, and without waiting: there is nothing to recover.
-      // checkFallbackError() reports no account fallback here on purpose (a
-      // request-scoped fault must not evict a healthy account from rotation).
-      if (requestScoped) {
-        log.warn("COMBO", `Model ${modelStr} rejected the request (${result.status}), trying next`, { status: result.status });
-        lastError = errorText || String(result.status);
-        if (!lastStatus) lastStatus = result.status;
-        if (!requestScopedResult) requestScopedResult = result;
-        continue;
       }
 
       // For transient errors (503/502/504), wait for cooldown before falling through
@@ -618,19 +622,10 @@ export async function handleComboChat({
         clearStickyComboSession(comboName, sessionId);
       }
       lastError = error.message || String(error);
+      attempts.push({ seat_id: modelStr, status: 500, error_message: lastError });
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
     }
-  }
-
-  // At least one member rejected the request itself. Hand back that member's own
-  // response — status and body — rather than the synthesized envelope below: the
-  // synthesized one reaches the client as a 200 carrying an error object, which
-  // reads as an empty success, and it buries the member that named the real cause.
-  // This is also what the caller saw before combos advanced on these errors.
-  if (requestScopedResult) {
-    log.warn("COMBO", `No model served the request; returning the first request-scoped failure (${requestScopedResult.status})`);
-    return requestScopedResult;
   }
 
   // All models failed
@@ -639,17 +634,19 @@ export async function handleComboChat({
   // or have no active credentials. 503 is more accurate and retryable by clients.
   const allDisabled = lastError && lastError.toLowerCase().includes("no credentials");
   const status = allDisabled ? 503 : (lastStatus || 503);
-  const msg = lastError || "All combo models unavailable";
+  const msg = attempts.length > 0
+    ? attempts.map(({ seat_id, status: attemptStatus, error_message }) => `${seat_id} (${attemptStatus}): ${error_message}`).join("; ")
+    : (lastError || "All combo models unavailable");
 
   if (earliestRetryAfter) {
     const retryHuman = formatRetryAfter(earliestRetryAfter);
     log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
-    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+    return unavailableResponse(status, msg, earliestRetryAfter, retryHuman, null, attempts);
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);
   return new Response(
-    JSON.stringify({ error: { message: msg } }),
+    JSON.stringify({ error: { message: msg, type: "server_error", attempts } }),
     { status, headers: { "Content-Type": "application/json" } }
   );
 }

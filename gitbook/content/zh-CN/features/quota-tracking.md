@@ -72,7 +72,7 @@
 仪表盘 → 活动 → 最近请求
 
 请求 #1234
-模型: cc/claude-opus-4-5-20251101
+模型: cc/claude-opus-5-5
 时间戳: 2026-02-04 04:15:32
 
 Tokens:
@@ -103,9 +103,9 @@ Tokens:
 仪表盘 → 分析 → Token 使用
 
 今日(2026-02-04):
-  cc/claude-opus-4-5: 15M tokens($0,订阅)
+  cc/claude-opus-5-5: 15M tokens($0,订阅)
   glm/glm-4.7: 8M tokens($4.80)
-  if/kimi-k2-thinking: 3M tokens($0,免费)
+  if/kimi-k2: 3M tokens($0,免费)
   
 合计: 26M tokens
 成本: $4.80
@@ -209,7 +209,7 @@ Tokens:
 
 ### 免费提供商
 
-**iFlow / Qwen / Kiro**
+**iFlow / Kiro**
 ```
 配额类型: 无限(限速)
 上限: 无硬上限
@@ -324,7 +324,7 @@ Tokens:
   请求: 15,234
   Tokens: 320M
   成本: $52.00
-  Top 模型: cc/claude-opus-4-5 (45%)
+  Top 模型: cc/claude-opus-5-5 (45%)
 ```
 
 ### 按模型使用
@@ -333,18 +333,18 @@ Tokens:
 仪表盘 → 分析 → 模型
 
 Top 模型(本月):
-1. cc/claude-opus-4-5: 145M tokens (45%)
+1. cc/claude-opus-5-5: 145M tokens (45%)
 2. glm/glm-4.7: 95M tokens (30%)
-3. if/kimi-k2-thinking: 50M tokens (16%)
+3. if/kimi-k2: 50M tokens (16%)
 4. minimax/MiniMax-M2.1: 20M tokens (6%)
-5. gc/gemini-3-flash: 10M tokens (3%)
+5. gc/gemini-3-flash-preview: 10M tokens (3%)
 
 成本分解:
-  cc/claude-opus: $0(订阅)
+  cc/claude-opus-5-5: $0(订阅)
   glm/glm-4.7: $45.00
-  if/kimi-k2-thinking: $0(免费)
+  if/kimi-k2: $0(免费)
   minimax/MiniMax-M2.1: $7.00
-  gc/gemini-3-flash: $0(免费)
+  gc/gemini-3-flash-preview: $0(免费)
 ```
 
 ### 按时间使用
@@ -376,7 +376,7 @@ premium-coding:
   成本: $2.40
   
   分解:
-    cc/claude-opus: 8M tokens (67%, $0)
+    cc/claude-opus-5-5: 8M tokens (67%, $0)
     glm/glm-4.7: 3M tokens (25%, $1.80)
     minimax/MiniMax-M2.1: 1M tokens (8%, $0.20)
 
@@ -387,7 +387,7 @@ budget-combo:
   
   分解:
     glm/glm-4.7: 4M tokens (67%, $2.40)
-    if/kimi-k2-thinking: 2M tokens (33%, $0)
+    if/kimi-k2: 2M tokens (33%, $0)
 ```
 
 ---
@@ -512,11 +512,11 @@ budget-combo:
 
 **示例:**
 ```
-当前: cc/claude-opus → glm/glm-4.7
+当前: cc/claude-opus-5-5 → glm/glm-4.7
   80% 通过 Claude(好)
   20% 通过 GLM($12/月)
 
-优化后: gc/gemini-3-flash → cc/claude-opus → glm/glm-4.7
+优化后: gc/gemini-3-flash-preview → cc/claude-opus-5-5 → glm/glm-4.7
   50% 通过 Gemini(免费)
   40% 通过 Claude(订阅)
   10% 通过 GLM($6/月)
@@ -628,7 +628,7 @@ Response:
   },
   "byModel": [
     {
-      "model": "cc/claude-opus-4-5",
+      "model": "cc/claude-opus-5-5",
       "requests": 456,
       "tokens": 15000000,
       "cost": 0

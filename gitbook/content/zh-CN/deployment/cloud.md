@@ -468,6 +468,6 @@ chmod 755 /var/lib/9router
 
 ## 🔗 下一步
 
-- [连接提供商](/providers/subscription.md)
-- [配置组合](/features/combos.md)
-- [集成工具](/integration/cursor.md)
+- [连接提供商](../providers/subscription.md)
+- [配置组合](../features/combos.md)
+- [集成工具](../integration/cursor.md)

@@ -1,3 +1,113 @@
+# Unreleased
+
+- fix(cli): a non-TTY launch resolves to exit 0 without the interactive menu
+  stack, and stops re-printing `Exiting...` (DF-9ROUTER-70). The documented
+  non-TTY outcome ("the menu resolves to exit, the launcher exits 0") was only
+  reachable where the menu's runtime dependencies could be required:
+  `showInterfaceMenu()` pulls `endpoint → api/client → node-machine-id`, so a
+  source checkout that ran `npm ci` at the repo root but never
+  `npm --prefix cli install` died with `Error: Cannot find module
+  'node-machine-id'` and exit 1 — on exactly the clean box the promise was
+  written for, while the dev host passed. The default path now resolves the
+  non-TTY case immediately after the readiness gate, before that stack loads
+  (TTY behavior, including the menu, is untouched), and the menu's `exit`
+  branch returns instead of looping until its 100ms exit timer fired (which
+  printed `Exiting...` three times). Guard: the clean-box arm of
+  `tests/unit/cli-no-tray-headless.test.js` runs the launcher with NO
+  resolvable `node_modules` — the fixture no longer links a developer machine's
+  `cli/node_modules`, and its menu-loop anchor no longer hardcodes the argument
+  name DF-9ROUTER-68 renamed. Documented in `cli/README.md`.
+
+- fix(providers): compatible-node edits now fix existing connections; the
+  connection API accepts the node prefix (DF-9ROUTER-63). Connections to
+  OpenAI-compatible / Anthropic-compatible / custom-embedding nodes snapshot
+  the node's `baseUrl`/`apiType` at create time, so correcting a node with
+  `PUT /api/provider-nodes/<id>` left every existing connection dialing the
+  old URL until each was recreated, and `POST /api/providers` demanded the
+  node's generated id — sending the user-chosen prefix returned a bare
+  `404 "OpenAI Compatible node not found"` that named no contract. Three
+  changes: (1) request-time credential resolution overlays the node's CURRENT
+  `baseUrl`/`apiType`/`prefix`/`nodeName` onto the stored snapshot (fail-open
+  to the snapshot if the node row is gone), so a node fix reaches existing
+  connections with no recreation; (2) the node PUT's snapshot re-sync no
+  longer writes a null `apiType` key onto anthropic/embedding connections;
+  (3) `POST /api/providers` resolves the node from the generated id OR the
+  prefix in either form (`pfx`, `openai-compatible-pfx`), stores the
+  connection under the node id, and a miss returns 404 with a message naming
+  both accepted forms and `GET /api/provider-nodes`. Contract documented in
+  `docs/ARCHITECTURE.md`. Tests:
+  `tests/unit/provider-node-update-propagation.test.js`,
+  `tests/unit/credentials-node-overlay.test.js`.
+
+- fix(api): /v1/* error envelope drift — OpenAI shapes on both pre-handler 404/401
+  paths (DF-9ROUTER-56). Two paths answered shapes OpenAI SDK clients could not
+  read: (1) a remote `/v1` request with a missing/invalid key got the dashboard
+  guard's flat `{"error":"API key required for remote API access"}` while the
+  endpoint handlers answered `authentication_error`/`invalid_api_key` for the
+  SAME failure — same state, two shapes depending on entry path. The guard now
+  builds its 401 through the shared `buildErrorBody` (message text unchanged;
+  dashboard `/api/*` 401s keep their flat body). (2) A chat request naming a
+  model absent from every catalog the instance advertises answered
+  `404 "No active credentials for provider: openai"` — a guessed provider name
+  sending users hunting for a dead API key. When the routed provider has no
+  connection AND the id is provably absent from its static registry and custom
+  models, the message is now
+  `Model 'X' not found in catalog. See /v1/models for models usable without credentials.`
+  Unprovable cases (openai-compatible nodes whose catalog is upstream's,
+  live-resolver providers, DB read failures, ids the catalog DOES list) keep
+  the legacy credential wording — the fix only claims a miss it can prove.
+  Status codes, `type`/`code` pairs and cooldown behavior are unchanged.
+
+- fix(ux): point fresh-install chat 404s at the model discovery surface
+  (DF-9ROUTER-54). A zero-connection install advertises only the models that
+  work without credentials on `GET /v1/models`, but a chat request naming any
+  other provider answered a bare `404 "No active credentials for provider: X"`
+  with nothing pointing at that catalog — a fresh user had no way to discover
+  what was actually callable. The message keeps its legacy prefix (existing
+  clients and log greps still match) and appends
+  ` See /v1/models for models usable without credentials.`, plus — when the
+  connection store is readable — the providers that already have a connection
+  (`Active connections exist for: …`, capped at five), which separates "nothing
+  is configured on this instance" from "this provider is not". Error-path only:
+  no routing or credential lookup is touched, the wire contract is unchanged
+  (`404` / `model_not_found`, no cooldown written), the message is budgeted
+  under 200 characters (the provider list is dropped rather than exceed it), and
+  a failed inventory read degrades to the static guidance.
+
+- fix(docker): make the documented local-build docker path fast and servable
+  (QA-9ROUTER-33). Two fixes: (1) `.dockerignore` gained `**/node_modules`,
+  `**/.next-cli-build`, `.vfs`, `dagger.db*`, `.git`, `.coding-hermes`,
+  `.gitreins`, `.hermes` — the bare `node_modules`/`.next-cli-build` rules only
+  match the context root in docker's ignore matcher, so nested copies
+  (tests/node_modules 67M) and the 960M Next CLI build cache still entered the
+  build context: measured `tar --exclude-from=.dockerignore -cf - .` dropped
+  from 980,940,800 bytes (935 MiB; QA's live run reported `transferring
+  context: 1.14GB`) to 27,351,040 bytes (~26 MiB). (2) The runner stage put
+  `--chown=node:node` on every `COPY --from=builder` line and shrank the
+  recursive `chown -R node:node /app` to the three runtime-writable paths —
+  that layer walked the entire image tree, took 140.2s at HEAD, and under
+  BuildKit the metadata rewrite stalled `exporting to image` so the build
+  never produced a servable `9router:local`. Dependencies shipped via the
+  QA-9ROUTER-32 explicit node_modules list are unchanged; the runtime
+  `/entrypoint.sh` chown of `/app/data /app/data-home` (mounted volumes)
+  is kept.
+
+- fix(ci): add a production build leg to the Test Suite workflow (DF-9ROUTER-47) —
+  CI ran vitest and the federation E2E but never `next build`, so a
+  build-breaking state at HEAD could reach `federation`/`master` unseen. The new
+  `build` job installs lockfile-exact (`npm ci`), runs `npm run build`
+  (`next build --webpack` + the postbuild standalone asset copy), then asserts
+  the artifacts a real deployment consumes — `.next/BUILD_ID`,
+  `.next/standalone/custom-server.js`, `.next/standalone/.next/static`,
+  `.next/standalone/public` — so a build that exits 0 without emitting a
+  runnable standalone output fails the check too. Every step is fatal (no
+  `|| true`, no `continue-on-error`); `NODE_OPTIONS=--stack-trace-limit=50` is
+  set on the job so a build crash prints a deep stack. Background: a 2026-09-25
+  webpack build crashed under load (`uncaughtException TypeError: Cannot read
+  properties of undefined (reading 'length')`, no BUILD_ID) and a clean retry on
+  the identical tree succeeded; 10 consecutive `npm run build` runs at HEAD
+  (loadavg 23–58, NODE_OPTIONS=--stack-trace-limit=50) are all green, i.e. the
+  crash is load-dependent, not tree-dependent.
 # v0.5.112 (2026-10-28)
 
 ## Features
@@ -213,6 +323,416 @@
 - **Usage**: key live byApiKey stats by full api key to prevent team-key collision and preserve API key usage attribution
 - **Tailscale**: cap enable-flow health wait at 20s
 
+# v0.6.0-federation.1 (2026-09-24)
+
+First federation-branch release. Cut from `federation` per docs/RELEASE-UPSTREAM-FLOW.md
+(Option A: release line starts above the upstream-mirror `v0.5.x` tag namespace).
+
+## Features
+- **Providers**: refresh xAI + DeepSeek registries to the live catalogs —
+  xAI gains grok-4.20, grok-4.20-multi-agent, grok-4.6, grok-4.5, grok-4.3
+  and grok-build-0.1 (search-via-chat default moved from the stale
+  `grok-4.20-reasoning` to `grok-4.20`); DeepSeek gains the dated pins
+  deepseek-v4-pro-0813 / deepseek-v4-flash-0731 and the experimental
+  deepseek-v4-flash-vision-exp. Existing entries (incl. the
+  deepseek-v4-pro-max / deepseek-v4-pro-none internal aliases) are kept.
+- **Federation (docs, Docker, end-to-end)**: the federation feature is now
+  deployable and documented end to end. `docs/FEDERATION.md` covers the
+  deployment topologies (single central + N edges, per-datacenter edges,
+  edge-only degraded serving), the full env matrix (every `FEDERATION_*`
+  var plus `DATA_DIR`/`PORT`/`JWT_SECRET`/`API_KEY_SECRET` sharing policy
+  and `FEDERATION_TOKEN` setup), and a failover runbook (outage detection,
+  degraded serving, recovery/reconcile, fencing, troubleshooting
+  SCHEMA_BLOCKED + auth 401s). `docker-compose.federation.yml` runs a
+  central + 2 edge instances with per-instance volumes and a shared
+  federation network; `Dockerfile.federation` ships the `src/` tree + `@/`
+  alias the federation runtime modules need (Next file tracing does not
+  follow custom-server.js's dynamic imports). A standalone lifecycle proof
+  (`tests/federation/e2e.mjs`, runnable with `node
+  tests/federation/e2e.mjs`) spawns 3 real instances and proves:
+  standalone boot → LINKED (heartbeat + replication) → kill central →
+  DEGRADED (replica serving + queued writes) → restart central →
+  RECOVERING → replay drain + delta catch-up → LINKED → writes reconcile.
+  Standalone mode is unchanged (no-op).
+  Env: none new (all `FEDERATION_*` vars were added in FED-001..FED-005).
+- **Federation (status banner + config page)**: edge instances now show a
+  `FederationStatus` banner on every dashboard page (LINKED green /
+  DEGRADED red / RECOVERING blue + "behind N revisions" when the local
+  replica lags the central watermark). The banner reads a new token-less
+  local status endpoint (`/api/federation/local-status`) so the
+  `FEDERATION_TOKEN` never reaches browser JS. While an edge is DEGRADED,
+  dashboard API read responses carry `X-Federation-State: degraded` (the
+  queued-write responses already carried it + `X-Federation-Queued-Write-Id`).
+  A new read-only Federation config page (`/dashboard/federation`, linked
+  from the header menu) shows mode, central URL (edge only), edge ID,
+  sync/heartbeat/outage/queue settings, and token status (configured
+  yes/no — the token value is never displayed). Standalone mode is
+  unchanged (banner and page render nothing / show "Federation not
+  enabled").
+  Env: none new (reads existing `FEDERATION_*` vars).
+- **Federation (failover + write queue)**: edge instances now run a failover
+  state machine (LINKED → DEGRADED → RECOVERING → LINKED, persisted in
+  `federation_meta.last_state`). A heartbeat (`GET /api/federation/verify`)
+  every `FEDERATION_HEARTBEAT_INTERVAL_MS` flips the edge to DEGRADED after
+  consecutive failures spanning `FEDERATION_OUTAGE_THRESHOLD_MS` (with ±20%
+  jitter + bounded reconnect backoff); a proxy-side 502/timeout flips
+  immediately. While DEGRADED, `/v1` traffic is served from the local replica
+  through the unchanged chat pipeline and mutating dashboard API calls are
+  queued to `pendingWrites` (idempotency-key dedupe, cap
+  `FEDERATION_QUEUE_MAX` → 503 when full), responding with
+  `X-Federation-State: degraded` + `X-Federation-Queued-Write-Id`. On
+  recovery the queue drains to central in batches
+  (`FEDERATION_REPLAY_BATCH_SIZE`) through a fenced `POST
+  /api/federation/replay` (stale fencing tokens rejected 409, idempotency
+  keys never double-applied), deltas catch up, and the edge returns to
+  LINKED. Edges never self-promote. Edge replication pulls now send the
+  `FEDERATION_TOKEN` Bearer header (previously missing). Standalone mode is
+  unchanged (no-op).
+  Env: `FEDERATION_MODE=edge`, `FEDERATION_HEARTBEAT_INTERVAL_MS`,
+  `FEDERATION_OUTAGE_THRESHOLD_MS`, `FEDERATION_QUEUE_MAX`,
+  `FEDERATION_REPLAY_BATCH_SIZE`.
+- **Federation (edge proxy + role guard)**: LINKED edge instances now proxy
+  `/v1/*` traffic and mutating dashboard API calls to the central instance
+  with a dedicated `FEDERATION_TOKEN` (Bearer auth), preserving SSE
+  status/headers/chunks with flush + backpressure and propagating client
+  aborts upstream. Dashboard GET reads resolve locally from the replica;
+  DEGRADED state falls through to local handlers. The federation route
+  handlers (`/api/federation/*`) now require the `FEDERATION_TOKEN` Bearer
+  header in non-standalone modes. Standalone mode is unchanged (no-op).
+  Env: `FEDERATION_MODE=edge`, `FEDERATION_CENTRAL_URL`, `FEDERATION_TOKEN`.
+
+## Docs
+- **CLI**: document this fork's source pack/run path (`npm run cli:pack` followed by `node cli/cli.js --skip-update --no-browser` — the pack no longer needs a `DATA_DIR` override, see Fixes) and the launcher lifecycle: normal foreground signals clean up the detached server group, Windows/Linux tray mode detaches an unref'd background launcher, macOS retains its launcher for `NSStatusItem`, and `SIGKILL` cannot trigger cleanup and may leave the server running (DF-9ROUTER-5).
+- **API authentication**: `docs/api-reference.md` now documents the auth model the
+  server actually implements instead of a blanket "every `/v1` request needs an API
+  key". The dashboard surface (`/api/*`) is deny-by-default — `POST /api/keys` needs
+  the `auth_token` session cookie from `POST /api/auth/login` (or the on-host
+  `x-9r-cli-token`), and the documented example is now executable as written
+  (login with a cookie jar → create key), with the 401 stated next to it. The LLM
+  prefixes (`/v1`, `/v1beta`, `/api/v1`, `/api/v1beta`, `/codex`, `/responses`)
+  accept a trusted-local client with no key, a valid key in any of the four
+  documented forms (`Authorization: Bearer`, `x-api-key`, `x-goog-api-key`,
+  `?key=`), or a remote client while the effective `requireApiKey` is `false` — which
+  is what the shipped `.env.example` sets. It also documents the second, handler-level
+  check (measured live: with `requireApiKey` true a keyless loopback completion still
+  answers 401 `Missing API key`, while `GET /v1/models` has no such check and stays
+  keyless) and no longer implies that an API key authorizes the dashboard surface. The
+  README `REQUIRE_API_KEY` row now
+  spells out the `true`/`false`/**unset** semantics (unset falls back to the stored
+  setting, default `true`). No runtime behavior changed. Pinned by
+  `tests/unit/api-reference-auth-claims.test.js` (DF-9ROUTER-9/14/19).
+- **Tests**: the three documented commands that still used a bare `npx vitest`
+  (README, `docs/FEDERATION.md`, `tests/README.md`) now resolve the pinned
+  tests-local runner (`./node_modules/.bin/vitest`, `tests/package.json` pins
+  `vitest ^4.0.0`) and state the one-time `cd tests && npm install` prerequisite
+  next to it. Docs only — no runtime or test-source change (HYG-9ROUTER-3).
+
+## Fixes
+- **Federation (pre-DEGRADED outage window)**: an edge now serves `/v1` from
+  its local replica during the window between central becoming unreachable and
+  the DEGRADED flip, instead of answering a hard `502
+  FED_UPSTREAM_ERROR` while holding a fully current replica (DF-9ROUTER-31).
+  The window fails open only when it is provably safe — central unreachable
+  **before** the request body was sent (dead/partitioned central), a `/v1/*`
+  request, and a replica that is initialized with `revisionLag == 0` against
+  the central-advertised watermark — and the response carries the same
+  `X-Federation-State: degraded` header the post-flip path emits. No new state
+  was added: the LINKED → DEGRADED transition is still owned by the heartbeat
+  threshold and the proxy failover hook, and the freshness numbers come from
+  the same `federation_meta` columns `local-status` reports. The window stays
+  fail-hard for a lagging or never-synced replica, for failures **after**
+  connect (the client body was already consumed), and for mutating dashboard
+  writes (applying those locally while LINKED would skip `pendingWrites` and
+  never replay) — see `docs/FEDERATION.md` §5.1.1. Env: none new.
+- **State database (corrupt / emptied `db/data.sqlite`)**: the real state DB
+  (`DATA_DIR/db/data.sqlite`) is now detected, preserved and recovered instead
+  of being misreported or silently reset (HYG-9ROUTER-15). Measured at the
+  previous revision: a truncated or otherwise unreadable file made every driver
+  fail, and the process died with `[DB] No SQLite driver available
+  (bun/better/node/sql.js all failed)` — the drivers were blamed, the damaged
+  bytes stayed in place and `DATA_DIR/db/backups` was never consulted; an
+  EMPTIED file (0 bytes) was treated as a fresh install, so migrations were
+  re-applied, the previous schema was gone and nothing was logged at all. Now a
+  damaged file is classified separately from a missing driver module (static
+  size/header check plus the drivers' own `SQLITE_CORRUPT`/`SQLITE_NOTADB`
+  errors, so a genuinely absent `better-sqlite3` still reports `[DB]
+  better-sqlite3 unavailable: …` and falls through), the damaged bytes are
+  RENAMED to `data.sqlite.corrupt-<timestamp>` (`-wal`/`-shm` siblings
+  alongside — never overwritten in place, never deleted), and startup
+  continues: if a usable `data.sqlite` exists under
+  `DATA_DIR/db/backups/<dir>/` (validated the same way, with `PRAGMA
+  quick_check`) the newest one is restored and announced, otherwise the app
+  comes up on a fresh DB behind a prominent `DATA LOSS` message naming the
+  file, the preserved copy and the backup directory. No new dependencies, and
+  healthy/standalone/federation behaviour is unchanged.
+- **Docker (standalone Compose)**: `docker-compose.yml` now has a
+  backwards-compatible local-build fallback for hosts that cannot pull the
+  third-party images the stack depends on (`decolua/9router`, plus the optional
+  `ghcr.io/chopratejas/headroom` sidecar). Measured on a clean/rootless agent,
+  `docker compose up -d --build` aborted during those pulls, which made the only
+  documented deployment path unusable there. New
+  `docker-compose.local-build.yml` is a Compose **override**: the base file is
+  unchanged, so the default render still resolves the published images, the
+  `${PORT:-20128}` / `${HEADROOM_PORT:-8787}` overrides, the optional `.env`
+  (still `required: false`) and the `9router-data` volume exactly as before, and
+  a plain `docker compose up -d` never starts building. A local build tags
+  `9router:local` — a distinct tag, so it never overwrites
+  `decolua/9router:latest` in the local image cache (`NINEROUTER_LOCAL_IMAGE`
+  picks another). Commands (also in `DOCKER.md` and `README.md`):
+  `docker compose -f docker-compose.yml -f docker-compose.local-build.yml up -d --build`
+  builds 9router from the repo Dockerfile and still pulls headroom; adding
+  `--no-deps 9router` starts 9router alone so nothing is pulled from a
+  third-party registry. Headroom has no local build in this repository
+  (third-party project) and stays optional at runtime, so pull failure degrades
+  to that documented no-headroom run instead of an unusable stack. Pinned by
+  `tests/unit/compose-local-build-fallback.test.js` (static contracts for both
+  paths, the documented commands, and a daemonless/registry-free
+  `docker compose config` render when the Compose CLI is present). No runtime
+  code and no federation compose change (QA-9ROUTER-8).
+- **Tests (root entry)**: `npm test` now runs the vitest pinned by the independent
+  `tests/` package instead of a bare `npx vitest`. The root `package.json`
+  declares no vitest, so a root-cwd `npx vitest` resolved whatever major the
+  registry/npx cache held — measured live at `e141a786` (2026-09-17):
+  `npx vitest --version` printed `vitest/5.0.1` while
+  `tests/node_modules/.bin/vitest --version` printed `vitest/4.1.10` — and on a
+  tree where the documented prerequisite (`cd tests && npm install`) had not been
+  run, the entry died with a misleading `CACError` (e.g. `Unknown option
+  --runInBand`) instead of naming the missing install. The root script is now
+  `node scripts/check-test-deps.mjs && cd tests && ./node_modules/.bin/vitest run`:
+  the new dependency-free preflight exits non-zero with an actionable message
+  naming `cd tests && npm install` when the tests dependency tree is absent, and
+  never downloads a runner. `npm test -- <path>` still forwards its argument to
+  vitest. No test sources changed; `tests/package.json` keeps `vitest ^4.0.0`.
+- **Providers (OpenCode Free)**: the credentialless opencode provider is no
+  longer advertised as usable from this router (DF-9ROUTER-1). Live probe of the
+  executor-shaped request (2026-09-17): `GET https://opencode.ai/zen/v1/models`
+  answers 200 — so the provider looked healthy — while
+  `POST https://opencode.ai/zen/v1/responses` answers 403
+  `FreeTierError: OpenCode's free tier can only be used from within OpenCode`
+  (even with `OpenCodeExecutor`'s own header set) and
+  `POST /zen/v1/chat/completions` answers 401 `Missing API key.`: no completion
+  can be produced from 9router's own process. The provider entry now declares
+  `requiresVendorClient: true`, which the fresh-install catalog honours — its
+  models (`oc/muse-spark-1.2|1.3-contributor-free`) are no longer listed by
+  `GET /v1/models`, the exact-model lookup answers 404 `model_not_found`, and
+  the dashboard card shows an amber `OpenCode client only` badge instead of a
+  green `Ready`. Providers that are genuinely credentialless (edge-tts, …) are
+  unaffected, and both the failed-lookup fail-open catalog and the
+  configured-connection path are unchanged. Pinned by
+  `tests/unit/provider-free-tier-honesty.test.js` and the updated
+  `tests/unit/fresh-install-model-catalog-339.test.js`.
+- **Usage tracking**: a successful completion whose upstream omits token counts
+  was recorded nowhere (DF-9ROUTER-26). Non-streaming
+  `extractUsageFromResponse()` understood Claude/Responses, OpenAI and Gemini
+  bodies but not a NATIVE OLLAMA answer — `/api/chat` carries its counts on the
+  top level (`done:true`, `prompt_eval_count`, `eval_count`) with no `usage`
+  object, and `/api/generate` answers `response` with the same top-level counts —
+  so it returned null and `saveUsageStats()` stopped at its "no tokens" guard:
+  no `usageHistory` row, no `usageDaily` aggregate, no
+  `totalRequestsLifetime` bump, `/api/usage/stats` and the dashboard Usage page
+  at zero while the server logged `📊 DONE … IN 0 · OUT 0`. The same class of
+  hole sat in the streaming translate branch, which accumulated output length
+  for Claude (`delta.text`), OpenAI (`choices[].delta.content`) and Gemini
+  (`candidates[].parts`) chunks only — an Ollama-native NDJSON chunk
+  (`message.content` / `response`) counted 0 characters, so the existing
+  `estimateUsage()` fallback never fired and an upstream that omits counts ended
+  the stream on 0/0 and was dropped too. Both paths now fall back to an estimate
+  when the upstream reports no counts and the completion produced content,
+  stored marked `estimated: true` (and shown as `(estimated)` on the
+  `📊 DONE` line); provider-reported counts always win over the estimate, and a
+  response with neither counts nor content is still not recorded, so the
+  fallback cannot invent traffic. The new Ollama branch is guarded exactly like
+  the streaming extractor (`done === true` plus a numeric count). Pinned by
+  `tests/unit/usage-tracking-silent-upstream.test.js`.
+- **Streaming (Ollama)**: a native Ollama upstream's NDJSON stream is no longer
+  blocked as a non-SSE response (DF-9ROUTER-24). `ollama-local` posts to
+  Ollama's native `/api/chat`, which answers a `stream:true` request with
+  `application/x-ndjson` — one raw JSON object per line, no `data:` prefix.
+  streamingHandler's content-type gate (the guard that keeps an upstream
+  HTML/plain-text error page out of the SSE transform) only recognised
+  `text/event-stream` and `application/json`, so it read the NDJSON body,
+  logged `BLOCKED 200 · non-SSE (application/x-ndjson)` and handed the client
+  the upstream status as a JSON error: every streaming request to the only
+  credential-free provider path failed (the client saw a 503) while Ollama
+  itself answered 200. `application/x-ndjson` and `application/ndjson` are now
+  whitelisted — case-insensitively and with parameters (`…; charset=utf-8`) —
+  so the Ollama→client transform downstream receives the stream it already
+  knows how to parse (NDJSON → OpenAI chat chunks → any client format, Claude
+  included). HTML, plain-text and unknown content types are still blocked with
+  the same JSON error shape and the upstream status preserved. Clients that
+  stream by default (Claude Code, Cline, Cursor, Codex) work against
+  `ollama-local` again. Pinned by
+  `tests/unit/ollama-ndjson-streaming-gate.test.js`.
+- **Source install / docs**: stop shipping a root-owned `DATA_DIR` default.
+  `.env.example` activated `DATA_DIR=/var/lib/9router` — a path an unprivileged
+  user cannot create — so the documented `cp .env.example .env` quickstart failed
+  with EACCES for normal users: `npm run dev` exited shortly after printing
+  Ready, `npm run build` failed during page-data collection, and
+  `npm run cli:pack` failed too, each requiring an undocumented writable
+  `DATA_DIR` override. The assignment is now commented out and the contract is
+  documented in place (optional; unset → per-user `~/.9router`; if set it must be
+  creatable/writable by the runtime user; Docker/compose sets `/app/data`
+  itself). The README source quickstart and VPS recipe, the CLI-launcher pack
+  instructions (no more `DATA_DIR=` override), and the English GitBook
+  installation/cloud pages were updated to match. Pinned by
+  `tests/unit/env-example-data-dir.test.js`.
+- **OpenAI/Anthropic clients**: a Responses-API upstream that closes its event
+  stream without a terminal event (`response.completed` / `response.done` /
+  `response.incomplete` / `response.failed`) is no longer relayed as a
+  successful completion (DF-9ROUTER-23). A stream that dies with zero assistant
+  output used to answer HTTP 200 with `finish_reason:"in_progress"` — not an
+  OpenAI finish_reason — on `/v1/chat/completions`, and with
+  `content:[{type:"text",text:""}]` + `stop_reason:"end_turn"` on `/v1/messages`,
+  so a health check could not tell "the model produced nothing" from "the model
+  had nothing to say". The stream-to-JSON converter now records whether a
+  terminal event was seen, and a non-terminal upstream with no assistant text
+  and no tool-call items fails loud with `502 upstream_empty_completion` instead
+  of a plausible empty body. Additionally, every 200 response (and the recorded
+  request detail) now carries a `finish_reason` clamped to the OpenAI enum —
+  `incomplete` → `length`, anything else → `stop` — so `in_progress` / `failed` /
+  `unknown` can no longer leak to a client. A completed upstream with empty
+  output is still a legitimate 200.
+- fix(cli): the launcher no longer reports a healthy start when the server never
+  bound (DF-9ROUTER-18). Readiness was a bare TCP connect to the configured
+  port, so with a foreign/stale listener already on it (occupied port,
+  docker-published port, stale instance) the CLI printed "Router is now
+  running" and exited 0 while its own child died with `EADDRINUSE`. The launcher
+  now pre-flights the port before spawning (occupied → clear `EADDRINUSE`
+  refusal naming the port, exit non-zero, nothing started), requires the 9router
+  identity probe (`GET /api/health` → `{"ok":true}`) plus a live child for
+  readiness, and turns an early child exit or a readiness timeout into a
+  non-zero exit with a diagnostic — in every mode, including tray/background
+  mode, which previously had no watcher on the child at all. Free-port behavior
+  is unchanged.
+- fix(cli): `npm run cli:pack` on a fresh clone now fails fast with actionable
+  guidance instead of a bare `MODULE_NOT_FOUND: esbuild` stack (DF-9ROUTER-3).
+  The CLI build script preflights its build-time dependencies and, when
+  missing, names both remediation commands (`npm --prefix cli install` /
+  `cd cli && npm install`) and exits non-zero without a stack trace; the
+  source-launcher docs (README.md, cli/README.md) now document the one-time
+  CLI dependency install step before the pack command.
+- fix(federation): honor the documented `REQUIRE_API_KEY=false` deployment
+  opt-out on remote public LLM routes (QA-9ROUTER-5) — `REQUIRE_API_KEY` was
+  documented in `.env.example` and the README env tables but had no production
+  read under `src/`, and `dashboardGuard.canAccessPublicLlmApi` unconditionally
+  demanded a valid API key after the loopback/CLI-token checks, so a remote
+  keyless `/v1` request got 401 even with `REQUIRE_API_KEY=false`.
+  `settingsRepo` now parses `REQUIRE_API_KEY` narrowly (exact `true`/`false`;
+  anything else is treated as unset) and an explicit value overrides the stored
+  setting — unset preserves stored/default behavior with the secure
+  `requireApiKey: true` default intact. The guard keeps its loopback →
+  CLI-token ordering, then allows the public LLM route only when effective
+  `settings.requireApiKey === false`; null settings or a settings-read failure
+  fail closed into the existing API-key validation. Federation-token auth,
+  relayed-client-key handling and `/api/federation/*` roleGuard handoff are
+  unchanged.
+- fix(models): hide unconfigured providers from the fresh-install catalog
+  (DF-9ROUTER-2) — `GET /v1/models` and `GET /v1/models/{id}` advertised the
+  whole static catalog (652 LLM entries) whenever the active-connection list
+  was empty, because a successful lookup that found nothing and a failed
+  lookup were treated identically. Every one of those models answered chat
+  with 404 `No active credentials for provider`, so a fresh install looked
+  fully provisioned while nothing was usable; `GET /v1/models/{id}` even
+  returned 200 for a model that could not be called. A successful lookup with
+  zero active connections now lists static and custom models only for
+  providers whose registry entry declares `noAuth: true` (the same flag the
+  chat/TTS/media handlers use to skip credential lookup), so genuinely
+  credentialless providers such as OpenCode Free, edge-tts, google-tts and
+  local-device stay discoverable while credential-required providers do not.
+  A lookup that THROWS keeps the previous all-static fail-open catalog, so a
+  transient DB failure cannot erase discovery, and the non-empty
+  active-connection path is unchanged. Kind filtering, disabled-model
+  filtering and the response shape are preserved.
+- fix(cli): make `npm run cli:pack` work out of the box (DF-9ROUTER-3) —
+  `cli/scripts/build-cli.js` invokes esbuild via `execSync`, but esbuild was
+  declared only in `cli/package.json` devDependencies while the root
+  package.json has no workspaces, so a fresh clone (no `cli/node_modules`)
+  died `MODULE_NOT_FOUND: esbuild`. esbuild `^0.25.12` is now a root
+  devDependency (hoisted, resolvable from `cli/`), with root + cli
+  lockfiles updated. `npm run cli:pack` exits 0 from a no-`cli/node_modules`
+  state and produces `9router-0.5.55.tgz`.
+- fix(security): reject short FEDERATION_TOKEN at boot + document secret
+  rotation (NR-GAP-034) — a configured `FEDERATION_TOKEN` shorter than 16
+  chars is now treated like the `change-me-*` placeholders: flagged by the
+  boot-time secret check, so a federation-mode boot (central or edge)
+  refuses to start with a `[security] FATAL` + exit 1 (standalone keeps
+  warning-only). The federation API (snapshot/delta/verify/replay) is
+  gated only by this token, so a 3-char token was brute-forceable.
+  `docs/FEDERATION.md` gains a "Rotating secrets" section (§6.5) covering
+  `FEDERATION_TOKEN` / `JWT_SECRET` / `API_KEY_SECRET` / `INITIAL_PASSWORD`
+  rotation steps and the ≥ 16-char (prefer 32+) minimum-length rule.
+- fix(ci): wire federation E2E into npm + CI (NR-GAP-033) — the standalone
+  federation lifecycle proof (`tests/federation/e2e.mjs`, central + 2 edge
+  instances: standalone boot → LINKED → central outage → DEGRADED replica
+  serving + queued writes → restart → RECOVERING → reconcile) now runs as
+  `npm run test:e2e` and as a dedicated CI job (10-minute timeout, fails on
+  any non-zero exit) so edge→central proxying and failover wiring are
+  exercised on every push instead of shipping unverified.
+- fix(boot): eliminate MODULE_TYPELESS_PACKAGE_JSON warnings on prod boot (NR-GAP-030)
+  With no root `"type"` field, Node 22 auto-detected ESM syntax in the
+  typeless `.js` files that `custom-server.js` loads natively at boot
+  (the background-token-refresh module + the federation runtime graph it
+  dynamically imports in every mode), warned once per package scope, and
+  paid a reparse tax on each. Declared the three natively-loaded subtrees
+  explicitly ESM with scoped `package.json` files (`src/sse/`,
+  `src/lib/federation/`, `src/lib/db/`) and renamed the lone straggler
+  `src/lib/dataDir.js` → `dataDir.mjs` (import sites, the FED-015 boot
+  guard, and the Dockerfile COPY updated to match). Boot log is now
+  warning-free; standalone mode is unchanged (the declaration only tells
+  Node what was already true — every covered file was already ESM).
+- fix(federation): settings seed stamped so settings replicate via delta (FED-022)
+  The boot-time legacy JSON import (`importLegacyMain`) and the import/restore
+  path (`importDb`) wrote the settings row with a raw unstamped INSERT, leaving
+  `federation_version = NULL` forever — the delta query
+  (`federation_version > since`) excluded it, so seeded/restored settings only
+  ever reached edges via full-snapshot timing. Both inserts now use the same
+  `stampInsert`/`stampUpsertConflict` helpers as `settingsRepo`, so the
+  settings row carries a real version and propagates via deltas like the
+  other 7 replicated tables.
+- **Federation (revisionLag metric)**: the edge `revisionLag` status metric
+  (dashboard "behind N revisions" banner) is now measured against the
+  central instance's advertised watermark — persisted as
+  `federation_meta.centralMaxVersion` on every applied snapshot/delta
+  (migration 005) — instead of the edge's own replica watermark, which by
+  construction equals `lastAppliedRevision` and made a genuinely stale edge
+  report `revisionLag` 0. The local status payload also carries the
+  advertised value as `centralMaxVersion` (edge only). Standalone and
+  central modes are unchanged (`revisionLag` 0 + edge-only note).
+
+## Maintenance
+- **Board tooling**: add `scripts/board-task.mjs` (`npm run board:task -- …`), a
+  fail-closed mutation helper for the JSONL-canonical board. The board keeps
+  intentional historical generations of the same id (`DF-9ROUTER-1` ×3,
+  `QA-9ROUTER-1` ×9), so an id-only first-match update rewrites the wrong
+  generation — on tick 336 a first-match completion helper completed
+  `DF-9ROUTER-3` (line 73) and `DF-9ROUTER-5` (line 75) instead of the live rows
+  (96/98). The helper refuses an ambiguous id-only mutation (exit 2) with the
+  competing candidates and requires an explicit discriminator (`--line`,
+  `--created-at`, `--ts`, `--title-contains`, `--detail-contains`); unique ids
+  still update without one and historical rows are never renumbered, re-idded or
+  rewritten. Only the selected line is re-serialized (atomic temp+rename write);
+  the rest of the file is copied byte-for-byte. Documented in
+  `.coding-hermes/board/README.md`; covered by
+  `tests/unit/board-task-guard.test.js` (28 tests: unique / ambiguous / explicit
+  discriminator, exit codes 2-5, `--dry-run`, byte preservation). Env: none.
+- **Dependencies**: conservative refresh of nine semver-compatible direct
+  packages — `@next/third-parties` 16.3.0 → 16.3.5, `@xyflow/react`
+  12.11.2 → 12.11.6, `jose` 6.2.8 → 6.2.12, `marked` 18.0.9 → 18.0.13,
+  `next` 16.3.0 → 16.3.5, `open` 11.0.0 → 11.0.3, `postcss` 8.5.26 → 8.5.28,
+  `sql.js` 1.14.1 → 1.14.2 and `zustand` 5.0.14 → 5.0.15. The `package.json`
+  declarations keep their existing `^` ranges (minimum raised to the wanted
+  version) and `package-lock.json` is regenerated from them, so the only
+  transitive movement is what those bumps require (`next`'s
+  `@next/env`/`@next/swc-*`/`@swc/helpers`/`sharp`, `@xyflow/system`, and
+  `open`'s `default-browser`/`powershell-utils`/`wsl-utils` chain).
+  **Major-version upgrades remain deferred** — `better-sqlite3` 13, `chalk` 6,
+  `confbox` 0.3, `esbuild` 0.28, `eslint` 10, `eslint-config-next` 16.3,
+  `http-proxy-middleware` 4, `material-symbols` 0.47, `react`/`react-dom` 19.3,
+  `react-is` 19, `socks-proxy-agent` 10, `undici` 8 and `uuid` 14 are
+  intentionally not taken here, so this refresh requires no source migration.
+  Env: none.
+
+
 # v0.5.86 (2026-09-23)
 
 ## Features
@@ -265,6 +785,7 @@
 - **Auth**: do not cool down an account for request-scoped 4xx errors
 - **Usage**: improve DeepSeek credit balance display as currency credit instead of 0/total quota bar
 - **Model Catalog**: scope synced catalog to gateways and declare vision capabilities for DeepSeek V4.1-Flash IDs
+
 
 # v0.5.75 (2026-09-10)
 

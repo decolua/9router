@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { getStatusVariant as getConnectionStatusVariant } from "@/shared/utils/connectionStatus";
 import PropTypes from "prop-types";
 import { Card, Badge, Button, Modal, Select, Toggle, EditConnectionModal, ConfirmModal } from "@/shared/components";
+import { useNotificationStore } from "@/store/notificationStore";
+import { runKeyCheck } from "@/shared/utils/keyFeedback";
 import WebLoginButton from "./WebLoginButton";
 
 // ── CooldownTimer ──────────────────────────────────────────────
@@ -200,20 +202,27 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
   const [formData, setFormData] = useState({ name: "", apiKey: "", priority: 1, proxyPoolId: NONE });
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  // DF-9ROUTER-41: render the check outcome inline — the old modal only
+  // swapped the label to "Checking..." and showed nothing afterwards.
+  const [checkResult, setCheckResult] = useState(null); // { status: "valid"|"invalid", message }
+  const checkInFlightRef = useRef(false);
   const [saving, setSaving] = useState(false);
 
   const handleValidate = async () => {
+    // Single-flight: ignore re-entry while a check is pending (button is
+    // disabled too, but programmatic double-fire must stay 1 request).
+    if (checkInFlightRef.current) return;
+    checkInFlightRef.current = true;
     setValidating(true);
+    setCheckResult(null);
     try {
-      const res = await fetch("/api/providers/validate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, apiKey: formData.apiKey }),
-      });
-      const data = await res.json();
-      setValidationResult(data.valid ? "success" : "failed");
-    } catch { setValidationResult("failed"); }
-    finally { setValidating(false); }
+      const result = await runKeyCheck({ provider, apiKey: formData.apiKey });
+      setCheckResult(result);
+      setValidationResult(result.status === "valid" ? "success" : "failed");
+    } finally {
+      setValidating(false);
+      checkInFlightRef.current = false;
+    }
   };
 
   const handleSubmit = async () => {
@@ -263,6 +272,14 @@ function AddApiKeyModal({ isOpen, provider, providerName, proxyPools, onSave, on
             </Button>
           </div>
         </div>
+        {checkResult && (
+          <p
+            className={`text-xs font-medium break-words ${checkResult.status === "valid" ? "text-green-500" : "text-red-500"}`}
+            role="status"
+          >
+            {checkResult.status === "valid" ? "✓" : "✗"} {checkResult.status === "valid" ? `Valid — ${checkResult.message}` : checkResult.message}
+          </p>
+        )}
         {validationResult && (
           <Badge variant={validationResult === "success" ? "success" : "error"}>
             {validationResult === "success" ? "Valid" : "Invalid"}
@@ -306,6 +323,7 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
   const [providerStrategy, setProviderStrategy] = useState(null);
   const [providerStickyLimit, setProviderStickyLimit] = useState("1");
   const [confirmState, setConfirmState] = useState(null);
+  const notify = useNotificationStore();
 
   const fetch_ = useCallback(async () => {
     try {
@@ -386,15 +404,37 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
   const handleSaveApiKey = async (formData) => {
     try {
       const res = await fetch("/api/providers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider: providerId, ...formData }) });
-      if (res.ok) { await fetch_(); setShowAddModal(false); }
-    } catch (e) { console.log("save apikey error:", e); }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        // DF-9ROUTER-41: the modal closes and the count 0→1 was the only
+        // signal — make the success explicit (non-blocking toast).
+        notify.success("Connection created");
+        await fetch_();
+        setShowAddModal(false);
+      } else {
+        notify.error(data.error || "Failed to create connection");
+      }
+    } catch (e) {
+      notify.error(e?.message || "Failed to create connection");
+      console.log("save apikey error:", e);
+    }
   };
 
   const handleUpdateConnection = async (formData) => {
     try {
       const res = await fetch(`/api/providers/${selectedConnection.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(formData) });
-      if (res.ok) { await fetch_(); setShowEditModal(false); }
-    } catch (e) { console.log("update connection error:", e); }
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        notify.success("Connection updated");
+        await fetch_();
+        setShowEditModal(false);
+      } else {
+        notify.error(data.error || "Failed to update connection");
+      }
+    } catch (e) {
+      notify.error(e?.message || "Failed to update connection");
+      console.log("update connection error:", e);
+    }
   };
 
   if (loading) return <Card><div className="h-20 animate-pulse bg-black/5 rounded-lg" /></Card>;

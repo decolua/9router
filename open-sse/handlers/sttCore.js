@@ -4,6 +4,7 @@ import { transcribeGeminiLive } from "./geminiLiveStt.js";
 import { transcribeCodex } from "./codexStt.js";
 import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS } from "../config/providerModels.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
+import { resolveAudioMimeType } from "@/lib/audioMimeSniffer.js";
 
 // Build auth headers from sttConfig + token
 function buildAuthHeaders(cfg, token) {
@@ -18,8 +19,13 @@ function buildAuthHeaders(cfg, token) {
   }
 }
 
-// Map browser file MIME / ext → audio MIME for binary formats (deepgram/HF)
-function resolveAudioContentType(file) {
+// Map browser file MIME / ext → audio MIME for binary formats (deepgram/HF).
+// Magic-byte sniffing wins over whatever the client declared: Whisper
+// compatible clients often stream raw audio as application/octet-stream
+// (curl's default), which Gemini rejects with "Unsupported MIME type".
+function resolveAudioContentType(file, firstBytes) {
+  const sniffed = resolveAudioMimeType(firstBytes, file.type);
+  if (sniffed) return sniffed;
   const t = (file.type || "").toLowerCase();
   if (t.startsWith("audio/")) return t;
   const name = typeof file.name === "string" ? file.name.toLowerCase() : "";
@@ -49,7 +55,7 @@ async function transcribeDeepgram(cfg, file, model, token, formData) {
   const buf = await file.arrayBuffer();
   const res = await fetch(url, {
     method: "POST",
-    headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file) },
+    headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file, buf) },
     body: buf,
   });
   if (!res.ok) return upstreamError(res);
@@ -103,7 +109,7 @@ async function transcribeNvidia(cfg, file, model, token) {
 async function transcribeGemini(cfg, file, model, token, formData) {
   const buf = await file.arrayBuffer();
   const b64 = Buffer.from(buf).toString("base64");
-  const mime = resolveAudioContentType(file);
+  const mime = resolveAudioContentType(file, buf);
   const lang = formData.get("language");
   const userPrompt = formData.get("prompt");
   let promptText = userPrompt && typeof userPrompt === "string" && userPrompt.trim()
@@ -218,7 +224,7 @@ async function transcribeHuggingFace(cfg, file, model, token) {
   const buf = await file.arrayBuffer();
   const res = await fetch(url, {
     method: "POST",
-    headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file) },
+    headers: { ...buildAuthHeaders(cfg, token), "Content-Type": resolveAudioContentType(file, buf) },
     body: buf,
   });
   if (!res.ok) return upstreamError(res);

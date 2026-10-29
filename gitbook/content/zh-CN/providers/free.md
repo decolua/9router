@@ -8,23 +8,22 @@
 
 免费层提供商是订阅和低价配额都耗尽时的 **回退**:
 
-- 🆓 **iFlow** - 8 个免费模型(Kimi K2、Qwen3、GLM 4.7、MiniMax M2...)
-- 🆓 **Qwen** - 3 个免费模型(Qwen3 Coder Plus/Flash、Vision)
-- 🆓 **Kiro** - 2 个免费模型(Claude Sonnet 4.5、Haiku 4.5)
+- 🆓 **iFlow** - 15 个免费模型(Kimi K2、Qwen3、GLM 4.7、DeepSeek...)
+- 🆓 **Kiro** - 48 个免费模型(Claude Sonnet 4.5、Haiku 4.5)
 
 **策略:** 作为应急备用使用。无限用量,永久零成本!
 
 ---
 
-## iFlow(8 个免费模型)
+## iFlow(15 个免费模型)
 
 ### 价格
 
 | 套餐 | 月费 | 模型 | 配额 |
 |------|--------------|--------|-------|
-| 免费 | $0 | 8 个模型 | 无限 |
+| 免费 | $0 | 15 个模型 | 无限 |
 
-**最佳价值:** 免费层中模型最多!Kimi K2、Qwen3、GLM、MiniMax、DeepSeek。
+**最佳价值:** 免费层中模型最多!Kimi K2、Qwen3、GLM、DeepSeek。
 
 ### 设置
 
@@ -46,86 +45,53 @@
 **步骤 3:在 CLI 中使用**
 
 ```
-Model: if/kimi-k2-thinking
-       if/kimi-k2
+Model: if/kimi-k2
        if/qwen3-coder-plus
+       if/qwen3-max
        if/glm-4.7
-       if/minimax-m2
+       if/deepseek-v3.2
        if/deepseek-r1
-       if/deepseek-v3.2-chat
-       if/deepseek-v3.2-reasoner
 ```
 
 ### 可用模型
 
 | 模型 ID | 描述 | 最佳场景 |
 |----------|-------------|----------|
-| `if/kimi-k2-thinking` | Kimi K2 Thinking | 复杂推理 |
 | `if/kimi-k2` | Kimi K2 | 通用编码 |
 | `if/qwen3-coder-plus` | Qwen3 Coder Plus | 代码生成 |
-| `if/glm-4.7` | GLM 4.7 | 中文 + 英文 |
-| `if/minimax-m2` | MiniMax M2 | 长上下文 |
+| `if/qwen3-max` | Qwen3 Max | 旗舰推理 |
+| `if/qwen3-vl-plus` | Qwen3 VL Plus | 视觉 + 文本 |
+| `if/qwen3-max-preview` | Qwen3 Max Preview | 预览版旗舰 |
+| `if/qwen3-235b` | Qwen3 235B A22B | 大型 MoE |
+| `if/qwen3-235b-a22b-instruct` | Qwen3 235B Instruct | 指令遵循 |
+| `if/qwen3-235b-a22b-thinking-2507` | Qwen3 235B Thinking | 深度推理 |
+| `if/qwen3-32b` | Qwen3 32B | 快速响应 |
+| `if/deepseek-v3.2` | DeepSeek V3.2 Exp | 最新 DeepSeek |
+| `if/deepseek-v3.1` | DeepSeek V3.1 Terminus | 稳定对话 |
+| `if/deepseek-v3` | DeepSeek V3 671B | 大型 MoE |
 | `if/deepseek-r1` | DeepSeek R1 | 推理任务 |
-| `if/deepseek-v3.2-chat` | DeepSeek V3.2 Chat | 对话型 |
-| `if/deepseek-v3.2-reasoner` | DeepSeek V3.2 Reasoner | 复杂逻辑 |
+| `if/glm-4.7` | GLM 4.7 | 中文 + 英文 |
+| `if/iflow-rome-30ba3b` | iFlow ROME | iFlow 自研模型 |
 
 ### 专业建议
 
-- **8 个免费模型** - 免费层中最丰富
+- **15 个免费模型** - 免费层中最丰富
 - **无限用量** - 无配额限制
-- **Kimi K2 Thinking** - 复杂推理最佳
+- **Kimi K2** - 复杂推理最佳
 - **DeepSeek R1** - 强大的推理能力
 
 ---
 
-## Qwen(3 个免费模型)
+## Qwen(通过 iFlow)
 
-### 价格
-
-| 套餐 | 月费 | 模型 | 配额 |
-|------|--------------|--------|-------|
-| 免费 | $0 | 3 个模型 | 无限 |
-
-### 设置
-
-**步骤 1:通过仪表盘连接**
-
-```bash
-9router
-# 仪表盘 → 提供商 → 连接 Qwen
-```
-
-**步骤 2:设备码授权**
-
-- 点击 "Connect Qwen"
-- 仪表盘显示设备码
-- 访问授权 URL
-- 输入设备码
-- 登录 Qwen 账户
-- 启用自动 token 刷新
-
-**步骤 3:在 CLI 中使用**
-
-```
-Model: qw/qwen3-coder-plus
-       qw/qwen3-coder-flash
-       qw/vision-model
-```
-
-### 可用模型
+独立的 Qwen 提供商已被移除。Qwen3 模型仍可通过 iFlow 免费使用 — 连接 iFlow(见上文)并使用 `if/` 前缀的模型:
 
 | 模型 ID | 描述 | 最佳场景 |
 |----------|-------------|----------|
-| `qw/qwen3-coder-plus` | Qwen3 Coder Plus | 高级编码 |
-| `qw/qwen3-coder-flash` | Qwen3 Coder Flash | 快速响应 |
-| `qw/vision-model` | Qwen3 Vision | 图像分析 |
-
-### 专业建议
-
-- **Qwen3 Coder Plus** - 编码能力强
-- **Qwen3 Coder Flash** - 快速任务首选
-- **Vision 模型** - 免费图像分析
-- **无限用量** - 无配额限制
+| `if/qwen3-coder-plus` | Qwen3 Coder Plus | 高级编码 |
+| `if/qwen3-32b` | Qwen3 32B | 快速响应 |
+| `if/qwen3-vl-plus` | Qwen3 VL Plus | 图像分析 |
+| `if/qwen3-max` | Qwen3 Max | 旗舰推理 |
 
 ---
 
@@ -185,9 +151,8 @@ Model: kr/claude-sonnet-4.5
 
 | 提供商 | 模型 | 最佳模型 | 设置方式 | 配额 |
 |----------|--------|------------|-------|-------|
-| **iFlow** | 8 | Kimi K2 Thinking | OAuth | 无限 |
-| **Qwen** | 3 | Qwen3 Coder Plus | 设备码 | 无限 |
-| **Kiro** | 2 | Claude Sonnet 4.5 | AWS Builder ID | 无限 |
+| **iFlow** | 15 | Kimi K2 | OAuth | 无限 |
+| **Kiro** | 48 | Claude Sonnet 4.5 | AWS Builder ID | 无限 |
 
 **赢家:** 多样性看 iFlow,质量看 Kiro!
 
@@ -201,7 +166,7 @@ Model: kr/claude-sonnet-4.5
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [从 9router 仪表盘获取]
-  Model: if/kimi-k2-thinking
+  Model: if/kimi-k2
 ```
 
 ### 创建组合(推荐)
@@ -211,8 +176,8 @@ Settings → Models → Advanced:
 
 名称: free-combo
 模型:
-  1. if/kimi-k2-thinking (iFlow 主力)
-  2. qw/qwen3-coder-plus (Qwen 备用)
+  1. if/kimi-k2 (iFlow 主力)
+  2. if/qwen3-coder-plus (Qwen 备用)
   3. kr/claude-sonnet-4.5 (Kiro 质量)
 
 CLI 中使用: free-combo
@@ -232,10 +197,10 @@ CLI 中使用: free-combo
 名称: complete-fallback
 模型:
   1. gc/gemini-3-flash-preview (免费订阅)
-  2. cc/claude-opus-4-5 (付费订阅)
+  2. cc/claude-opus-5-5 (付费订阅)
   3. glm/glm-4.7 (低价备用, 每 1M $0.6)
   4. minimax/MiniMax-M2.1 (最便宜, 每 1M $0.2)
-  5. if/kimi-k2-thinking (免费回退)
+  5. if/kimi-k2 (免费回退)
   6. kr/claude-sonnet-4.5 (免费质量)
 
 CLI 中使用: complete-fallback
@@ -270,11 +235,11 @@ CLI 中使用: complete-fallback
 ### 2. 选择合适的模型
 
 ```
-复杂推理: if/kimi-k2-thinking
-快速编码: qw/qwen3-coder-flash
+复杂推理: if/kimi-k2
+快速编码: if/qwen3-32b
 最佳质量: kr/claude-sonnet-4.5
-长上下文: if/minimax-m2
-视觉任务: qw/vision-model
+长上下文: if/qwen3-max
+视觉任务: if/qwen3-vl-plus
 ```
 
 ### 3. 创建仅免费组合
@@ -285,8 +250,8 @@ CLI 中使用: complete-fallback
 名称: zero-cost
 模型:
   1. kr/claude-sonnet-4.5 (最佳质量)
-  2. if/kimi-k2-thinking (复杂任务)
-  3. qw/qwen3-coder-plus (快速编码)
+  2. if/kimi-k2 (复杂任务)
+  3. if/qwen3-coder-plus (快速编码)
 
 成本: 永远 $0!
 ```
@@ -315,8 +280,8 @@ CLI 中使用: complete-fallback
 ```
 设置:
 1. kr/claude-sonnet-4.5 (最佳质量)
-2. if/kimi-k2-thinking (复杂推理)
-3. qw/qwen3-coder-plus (快速编码)
+2. if/kimi-k2 (复杂推理)
+3. if/qwen3-coder-plus (快速编码)
 
 月成本: $0
 用量: 无限
@@ -333,7 +298,7 @@ CLI 中使用: complete-fallback
 设置:
 1. gc/gemini-3-flash-preview (每月免费 180K)
 2. glm/glm-4.7 (低价备用, 每 1M $0.6)
-3. if/kimi-k2-thinking (免费回退)
+3. if/kimi-k2 (免费回退)
 
 月成本: $5-10
 用量: 100M+ tokens
@@ -349,11 +314,11 @@ CLI 中使用: complete-fallback
 ```
 设置:
 1. gc/gemini-3-flash-preview (每月免费 180K)
-2. cc/claude-opus-4-5 (订阅 $20-100)
-3. cx/gpt-5.2-codex (订阅 $20-200)
+2. cc/claude-opus-5-5 (订阅 $20-100)
+3. cx/gpt-6.1-sol (订阅 $20-200)
 4. glm/glm-4.7 (低价 每 1M $0.6)
 5. minimax/MiniMax-M2.1 (最便宜 每 1M $0.2)
-6. if/kimi-k2-thinking (免费无限)
+6. if/kimi-k2 (免费无限)
 7. kr/claude-sonnet-4.5 (免费质量)
 
 月成本: $40-320(订阅)+ $10-20(低价层)

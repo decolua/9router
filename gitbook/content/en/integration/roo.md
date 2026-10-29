@@ -37,17 +37,17 @@ API Key: your-api-key-from-dashboard
 Choose from available 9Router models:
 
 **Claude Models:**
-- `cc/claude-opus-4-5-20251101` - Most capable
-- `cc/claude-sonnet-4-20250514` - Balanced
-- `cc/claude-haiku-4-20250514` - Fast
+- `cc/claude-opus-5-5` - Most capable
+- `cc/claude-sonnet-5-5` - Balanced
+- `cc/claude-haiku-4-5-20251001` - Fast
 
 **DeepSeek Models:**
-- `cx/deepseek-chat` - General purpose
-- `cx/deepseek-reasoner` - Complex reasoning
+- `deepseek/deepseek-chat` - General purpose
+- `deepseek/deepseek-reasoner` - Complex reasoning
 
 **GLM Models:**
-- `glm/glm-4-plus` - Advanced
-- `glm/glm-4-flash` - Fast responses
+- `glm/glm-4.7` - Advanced
+- `glm/glm-4.7-flash` - Fast responses
 
 ### 4. Test Connection
 
@@ -62,26 +62,26 @@ Hello! Can you confirm you're connected through 9Router?
 ### Basic Chat
 ```
 Ask Roo: "Explain quantum computing in simple terms"
-Model: cc/claude-sonnet-4-20250514
+Model: cc/claude-sonnet-5-5
 ```
 
 ### Code Generation
 ```
 Ask Roo: "Write a Python function to calculate Fibonacci numbers"
-Model: cx/deepseek-chat
+Model: deepseek/deepseek-chat
 ```
 
 ### Complex Reasoning
 ```
 Ask Roo: "Analyze the trade-offs between microservices and monolithic architecture"
-Model: cx/deepseek-reasoner
+Model: deepseek/deepseek-reasoner
 ```
 
 ## Model Selection Tips
 
-- **Quick tasks**: Use `cc/claude-haiku-4-20250514` or `glm/glm-4-flash`
-- **Balanced performance**: Use `cc/claude-sonnet-4-20250514` or `cx/deepseek-chat`
-- **Complex reasoning**: Use `cc/claude-opus-4-5-20251101` or `cx/deepseek-reasoner`
+- **Quick tasks**: Use `cc/claude-haiku-4-5-20251001` or `glm/glm-4.7-flash`
+- **Balanced performance**: Use `cc/claude-sonnet-5-5` or `deepseek/deepseek-chat`
+- **Complex reasoning**: Use `cc/claude-opus-5-5` or `deepseek/deepseek-reasoner`
 - **Cost optimization**: Use DeepSeek or GLM models
 
 ## Troubleshooting
@@ -108,9 +108,9 @@ Model: cx/deepseek-reasoner
 You can create shortcuts for frequently used models in Roo settings:
 
 ```
-Alias: "fast" → cc/claude-haiku-4-20250514
-Alias: "smart" → cc/claude-opus-4-5-20251101
-Alias: "code" → cx/deepseek-chat
+Alias: "fast" → cc/claude-haiku-4-5-20251001
+Alias: "smart" → cc/claude-opus-5-5
+Alias: "code" → deepseek/deepseek-chat
 ```
 
 ### Multiple Profiles
@@ -124,4 +124,3 @@ Set up different profiles for different use cases:
 
 - [Configure Cursor](cursor.md) for IDE integration
 - [Set up Continue](continue.md) for VSCode
-- [Explore CLI usage](../cli/basic-usage.md)
