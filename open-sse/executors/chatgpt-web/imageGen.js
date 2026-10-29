@@ -177,11 +177,13 @@ async function runImageConversation(page, prompt, { sizeHint, signal }) {
       const conversationId = (sseText.match(/"conversation_id"\s*:\s*"([0-9a-f-]{36})"/) || [])[1] || "";
       const fileIds = [];
       const sedimentIds = [];
+      const isInvalidFileId = (id) => !id || id === "file_upload" || id.startsWith("file_upload");
       const addUnique = (list, value) => {
-        if (value && !list.includes(value)) list.push(value);
+        if (value && !isInvalidFileId(value) && !list.includes(value)) list.push(value);
       };
       for (const match of sseText.matchAll(/file-service:\/\/([A-Za-z0-9_-]+)/g)) addUnique(fileIds, match[1]);
       for (const match of sseText.matchAll(/\bfile_00000000[a-f0-9]{24}\b/g)) addUnique(fileIds, match[0]);
+      for (const match of sseText.matchAll(/\bfile-[A-Za-z0-9_-]{16,}\b/g)) addUnique(fileIds, match[0]);
       for (const match of sseText.matchAll(/sediment:\/\/([A-Za-z0-9_-]+)/g)) addUnique(sedimentIds, match[1]);
       return { conversationId, fileIds, sedimentIds };
     },
@@ -231,8 +233,9 @@ async function pollConversationImages(page, accessToken, conversationId, initial
 
         const fileIds = [];
         const sedimentIds = [];
+        const isInvalidFileId = (id) => !id || id === "file_upload" || id.startsWith("file_upload");
         const addUnique = (list, value) => {
-          if (value && !list.includes(value)) list.push(value);
+          if (value && !isInvalidFileId(value) && !list.includes(value)) list.push(value);
         };
         const hasAssetPointer = (value) => {
           if (Array.isArray(value)) return value.some(hasAssetPointer);
@@ -248,6 +251,7 @@ async function pollConversationImages(page, accessToken, conversationId, initial
           if (typeof value === "string") {
             for (const match of value.matchAll(/file-service:\/\/([A-Za-z0-9_-]+)/g)) addUnique(fileIds, match[1]);
             for (const match of value.matchAll(/\bfile_00000000[a-f0-9]{24}\b/g)) addUnique(fileIds, match[0]);
+            for (const match of value.matchAll(/\bfile-[A-Za-z0-9_-]{16,}\b/g)) addUnique(fileIds, match[0]);
             for (const match of value.matchAll(/sediment:\/\/([A-Za-z0-9_-]+)/g)) addUnique(sedimentIds, match[1]);
             return;
           }
@@ -287,8 +291,9 @@ async function pollConversationImages(page, accessToken, conversationId, initial
     } else {
       for (const id of polled.fileIds) if (!fileIds.includes(id)) fileIds.push(id);
       for (const id of polled.sedimentIds) if (!sedimentIds.includes(id)) sedimentIds.push(id);
-      if (fileIds.length > 0 || sedimentIds.length > 0) {
-        return { fileIds: fileIds.filter((id) => id !== "file_upload"), sedimentIds };
+      const validFileIds = fileIds.filter((id) => id && id !== "file_upload" && !id.startsWith("file_upload"));
+      if (validFileIds.length > 0 || sedimentIds.length > 0) {
+        return { fileIds: validFileIds, sedimentIds };
       }
       if (polled.errorText && CONTENT_POLICY_RE.test(polled.errorText)) {
         throw new ChatGptWebImageError(
@@ -323,7 +328,10 @@ async function downloadGeneratedImage(page, accessToken, conversationId, { fileI
         const data = await response.json();
         const url = data.download_url || data.url || "";
         if (!url) return { status: 404 };
-        const binary = await fetchWithTimeout(url, {}, 90000);
+        const binary = await fetchWithTimeout(url, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }, 90000);
         if (!binary.ok) return { status: binary.status };
         const blob = await binary.blob();
         const buf = new Uint8Array(await blob.arrayBuffer());
@@ -363,7 +371,10 @@ async function downloadGeneratedImage(page, accessToken, conversationId, { fileI
         const data = await response.json();
         const url = data.download_url || data.url || "";
         if (!url) return { status: 404 };
-        const binary = await fetchWithTimeout(url, {}, 90000);
+        const binary = await fetchWithTimeout(url, {
+          credentials: "include",
+          headers: { Authorization: `Bearer ${accessToken}` },
+        }, 90000);
         if (!binary.ok) return { status: binary.status };
         const blob = await binary.blob();
         const buf = new Uint8Array(await blob.arrayBuffer());
@@ -389,13 +400,14 @@ export async function generateChatGptWebImage(page, { prompt, sizeHint, signal, 
   await ensureFirstPartyBridge(page);
   if (signal?.aborted) throw new Error("Request aborted");
   const initial = await runImageConversation(page, prompt, { sizeHint, signal });
-  if (!initial.conversationId && initial.fileIds.length === 0 && initial.sedimentIds.length === 0) {
+  const validInitialFileIds = initial.fileIds.filter((id) => id && id !== "file_upload" && !id.startsWith("file_upload"));
+  const hasInitial = validInitialFileIds.length > 0 || initial.sedimentIds.length > 0;
+  if (!initial.conversationId && !hasInitial) {
     throw new ChatGptWebImageError("ChatGPT image conversation produced no conversation id", 502);
   }
   const accessToken = await pageAccessToken(page);
-  const ids =
-    initial.fileIds.length > 0 || initial.sedimentIds.length > 0
-      ? initial
-      : await pollConversationImages(page, accessToken, initial.conversationId, initial, { signal, log });
+  const ids = hasInitial
+    ? { ...initial, fileIds: validInitialFileIds }
+    : await pollConversationImages(page, accessToken, initial.conversationId, initial, { signal, log });
   return downloadGeneratedImage(page, accessToken, initial.conversationId, ids);
 }
