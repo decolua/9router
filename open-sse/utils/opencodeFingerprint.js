@@ -1,14 +1,24 @@
 /**
  * Helpers for the OpenCode free-tier client fingerprint.
  *
- * Live upstream probes (OpenCode v2, /inference/v1) show that free-tier
- * requests must declare OpenCode's own `read` and `shell` tools with their exact
- * descriptions and parameter schemas; stubbed descriptions, renamed schemas or
- * tool_choice "none" are answered with 403 FreeTierError. Caller tools are sent
- * untouched, except one that already uses an exact fingerprint name with a
- * different definition: it travels under an alias and the response side
- * restores the caller's original name.
+ * Two body-side gates are mirrored here (live probes 2026-10-26, /inference/v1):
+ *
+ * - Tools: free-tier requests must declare OpenCode's own `read` and `shell`
+ *   tools with their exact descriptions and parameter schemas; stubbed
+ *   descriptions, renamed schemas or tool_choice "none" are answered with 403
+ *   FreeTierError. Caller tools are sent untouched. A tool that already uses an
+ *   exact fingerprint name with a different definition adopts OpenCode's
+ *   definition in place whenever its arguments can carry them; only a genuinely
+ *   different schema travels under an alias, and the response side restores
+ *   that caller's original name.
+ * - System prompt: the CLI's `<env>` marker must be present. A request missing
+ *   either half (marker or tools) answers 429 FreeUsageLimitError regardless of
+ *   headers, UA or session shape; both halves together pass.
+ *
+ * Transport is a third gate and lives in services/opencodeTlsClient.js.
  */
+import os from "node:os";
+import path from "node:path";
 
 /** Names required by the upstream free-tier gate. */
 export const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
@@ -102,10 +112,46 @@ function withToolName(tool, name) {
 }
 
 /**
- * Move caller tools off the fingerprint names when their definition differs
- * from OpenCode's, so the exact definitions can be appended without a
- * duplicate name. Everything else, including case variants such as `Read`, is
- * preserved verbatim; upstream accepts them alongside `read`.
+ * True when `tool` already speaks OpenCode's parameter names for `key`, so the
+ * fingerprint definition can replace its own without hiding or adding an
+ * argument the caller's handler expects.
+ *
+ * This is the common case, not an edge: OpenCode composes `shell`'s description
+ * from `process.platform`, so the very same tool run on Windows reports
+ * "Commands run on Windows using pwsh." while the captured definition says
+ * "Commands run on Linux using bash." — a two-word difference that an exact
+ * string compare rejects.
+ */
+function canNormalizeInPlace(tool, key) {
+  const def = tool && (chatFunctionOf(tool) || tool);
+  const props = def?.parameters?.properties;
+  if (!props || typeof props !== "object" || Array.isArray(props)) return false;
+
+  const wanted = Object.keys(FINGERPRINT_TOOL_DEFINITIONS[key].parameters.properties || {});
+  const declared = Object.keys(props);
+  if (declared.some((name) => !wanted.includes(name))) return false;
+  return FINGERPRINT_TOOL_DEFINITIONS[key].parameters.required.every((name) => declared.includes(name));
+}
+
+/**
+ * Replace `tool`'s definition with OpenCode's while keeping its name, so the
+ * wire carries a single, gate-satisfying tool instead of a caller tool plus a
+ * placeholder of the same purpose.
+ */
+function withFingerprintDefinition(tool, key) {
+  const { description, parameters } = FINGERPRINT_TOOL_DEFINITIONS[key];
+  const fn = chatFunctionOf(tool);
+  return fn
+    ? { ...tool, function: { ...fn, description, parameters } }
+    : { ...tool, description, parameters };
+}
+
+/**
+ * Keep caller tools on the fingerprint names whenever their arguments can carry
+ * OpenCode's, and move the remaining ones off them so the exact definitions can
+ * be appended without a duplicate name. Everything else, including case
+ * variants such as `Read`, is preserved verbatim; upstream accepts them
+ * alongside `read`.
  *
  * @param {Array} tools
  * @returns {{ tools: Array, map: Map<string,string> }} map: sent name -> original name
@@ -135,6 +181,14 @@ export function concealFingerprintToolNames(tools) {
 
     if (isFingerprintDefinition(tool, key)) {
       out.push(tool);
+      continue;
+    }
+
+    // Same tool, different wording. Adopt OpenCode's definition in place: the
+    // caller keeps its own name, so there is no alias to restore, no alias name
+    // for the model to collide with, and no placeholder to explain away.
+    if (canNormalizeInPlace(tool, key)) {
+      out.push(withFingerprintDefinition(tool, key));
       continue;
     }
 
@@ -226,7 +280,7 @@ export function aliasHistoryToolCalls(body, map) {
 // in the system prompt instead. Upstream does not gate on the prompt text.
 // Wording matters: "not available" made the model also refuse the caller's own
 // Read/Bash; "placeholders ... use the other tools" kept those working.
-function noteUnavailableTools(body, flat, names) {
+function noteUnavailableTools(body, flat, names, claude = false) {
   const list = names.map((name) => `\`${name}\``).join(" or ");
   const note = names.length > 1
     ? `Do not call the ${list} tools; they are placeholders that do nothing. Use the other tools you have been given instead.`
@@ -237,8 +291,12 @@ function noteUnavailableTools(body, flat, names) {
       : note;
     return;
   }
-  // OpenAI chat shape only; Claude-shaped bodies carry `system` instead.
-  if (!Array.isArray(body.messages) || body.system !== undefined) return;
+  // Claude-shaped bodies carry `system` instead; /messages rejects role:"system".
+  if (claude || body.system !== undefined) {
+    body.system = appendSystemText(body.system, note);
+    return;
+  }
+  if (!Array.isArray(body.messages)) return;
   const first = body.messages[0];
   if (first?.role === "system" && typeof first.content === "string") {
     body.messages = [{ ...first, content: `${first.content}\n\n${note}` }, ...body.messages.slice(1)];
@@ -247,15 +305,107 @@ function noteUnavailableTools(body, flat, names) {
   }
 }
 
+// The marker gate reads text only: a foreign system prompt plus this exact block
+// passes, so the marker is appended to the caller's own prompt rather than
+// replacing it. Values mirror a real CLI instance on this host.
+const ENV_TAG = "<env>";
+const ENV_HEADING = "Here is some useful information about the environment you are running in:";
+const ENV_TMP_DIR = path.join(os.tmpdir(), "opencode");
+const ENV_WORKING_DIR = process.cwd();
+const ENV_FINGERPRINT_PROMPT = [
+  ENV_HEADING,
+  ENV_TAG,
+  `  Working directory: ${ENV_WORKING_DIR}`,
+  `  Workspace root folder: ${ENV_WORKING_DIR}`,
+  "  Is directory a git repo: no",
+  `  Platform: ${process.platform}`,
+  `  Prefer ${ENV_TMP_DIR} over generic system temporary directories such as /tmp; it is pre-created and approved for external access.`,
+  "</env>",
+].join("\n");
+
+/** True when the marker is already present; a genuine opencode client is passthrough. */
+function systemCarriesEnv(system) {
+  if (typeof system === "string") return system.includes(ENV_TAG);
+  if (Array.isArray(system)) {
+    return system.some((block) => typeof block?.text === "string" && block.text.includes(ENV_TAG));
+  }
+  return false;
+}
+
+/** Append `text` to a system prompt held as a string, text blocks, or unset. */
+function appendSystemText(system, text) {
+  if (typeof system === "string") {
+    return system.trim() ? `${system}\n\n${text}` : text;
+  }
+  const blocks = Array.isArray(system) ? [...system] : [];
+  for (let i = blocks.length - 1; i >= 0; i--) {
+    const block = blocks[i];
+    if (typeof block?.text === "string") {
+      const existing = block.text.trim();
+      blocks[i] = { ...block, text: existing ? `${block.text}\n\n${text}` : text };
+      return blocks;
+    }
+  }
+  return [...blocks, { type: "text", text }];
+}
+
 /**
- * Full request-side pass: alias conflicting caller tools, append OpenCode's
- * fingerprint definitions, and tell the model the appended ones are off-limits.
+ * Append the CLI's environment marker without replacing the caller's content,
+ * covering all three request shapes: Responses (`instructions`), chat
+ * (`messages[]` system) and claude-top-level (`system`). Fail-open — the marker
+ * is an enhancement, so a surprising body is left untouched.
+ *
+ * @param {object} body
+ * @param {boolean} flat - true for Responses instructions, false for chat/claude
+ * @param {object} [options]
+ * @param {boolean} [options.claude] - body posts to /messages (claude shape)
+ * @returns {boolean} true when the marker was added
+ */
+export function applyEnvFingerprint(body, flat, { claude = false } = {}) {
+  try {
+    if (!body || typeof body !== "object") return false;
+
+    if (flat) {
+      if (body.instructions !== undefined && typeof body.instructions !== "string") return false;
+      if (systemCarriesEnv(body.instructions)) return false;
+      body.instructions = (typeof body.instructions === "string" && body.instructions.trim())
+        ? `${body.instructions}\n\n${ENV_FINGERPRINT_PROMPT}`
+        : ENV_FINGERPRINT_PROMPT;
+      return true;
+    }
+
+    if (claude || body.system !== undefined) {
+      if (systemCarriesEnv(body.system)) return false;
+      body.system = appendSystemText(body.system, ENV_FINGERPRINT_PROMPT);
+      return true;
+    }
+
+    if (!Array.isArray(body.messages)) return false;
+    const idx = body.messages.findIndex((msg) => msg?.role === "system");
+    if (idx >= 0) {
+      const target = body.messages[idx];
+      if (systemCarriesEnv(target.content)) return false;
+      const content = appendSystemText(target.content, ENV_FINGERPRINT_PROMPT);
+      body.messages = body.messages.map((msg, i) => (i === idx ? { ...msg, content } : msg));
+      return true;
+    }
+    body.messages = [{ role: "system", content: ENV_FINGERPRINT_PROMPT }, ...body.messages];
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Full request-side pass: normalize caller tools that collide with a
+ * fingerprint name, append OpenCode's definitions for any that are missing, and
+ * tell the model the appended ones are off-limits.
  *
  * @param {object} body
  * @param {boolean} flat - true for Responses tools ({name}), false for chat tools
  * @returns {Map<string,string>} map: sent name -> original name
  */
-export function applyFingerprintTools(body, flat) {
+export function applyFingerprintTools(body, flat, { claude = false } = {}) {
   if (!body || typeof body !== "object") return new Map();
   const existing = takeFingerprintMetadata(body);
   if (existing) return existing.renameMap;
@@ -266,7 +416,10 @@ export function applyFingerprintTools(body, flat) {
   const appended = appendMissingFingerprintTools(body.tools, flat, injectedNames);
   retargetToolChoice(body, map);
   aliasHistoryToolCalls(body, map);
-  if (appended.length) noteUnavailableTools(body, flat, appended);
+  if (appended.length) noteUnavailableTools(body, flat, appended, claude);
+
+  // The `<env>` marker is required on every free-lane request, with or without tools.
+  applyEnvFingerprint(body, flat, { claude });
 
   // Responses keeps its explicit auto default. Never default to "none": upstream
   // answers tool_choice "none" with 403 FreeTierError.
@@ -295,7 +448,8 @@ export function takeFingerprintMetadata(body) {
 
 /** Compatibility accessor for response rename mappings. */
 export function takeRenamedToolNames(body) {
-  return takeFingerprintMetadata(body)?.renameMap || null;
+  const map = takeFingerprintMetadata(body)?.renameMap;
+  return map?.size ? map : null;
 }
 
 /** Verify a completed tool name belongs to a caller declaration, not an injected decoy. */
