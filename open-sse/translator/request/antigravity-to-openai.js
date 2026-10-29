@@ -84,32 +84,47 @@ export function antigravityToOpenAIRequest(model, body, stream) {
   return result;
 }
 
-// Recursively convert Antigravity schema types (OBJECT, STRING, etc.) to lowercase
-// and strip unsupported fields like enumDescriptions
+const PROTOJSON_INT64_SCHEMA_KEYS = new Set([
+  "minLength",
+  "maxLength",
+  "minItems",
+  "maxItems",
+  "minProperties",
+  "maxProperties",
+]);
+
+// Recursively normalize Antigravity/Gemini ProtoJSON schemas for JSON Schema consumers.
+// Gemini encodes int64 fields as JSON strings, while downstream providers expect these
+// JSON Schema keywords to be actual non-negative integers.
 function normalizeSchemaTypes(schema) {
+  if (Array.isArray(schema)) {
+    return schema.map(normalizeSchemaTypes);
+  }
   if (!schema || typeof schema !== "object") return schema;
 
-  const result = Array.isArray(schema) ? [...schema] : { ...schema };
+  const result = {};
 
+  for (const [key, value] of Object.entries(schema)) {
+    // enumDescriptions is a Gemini extension unsupported by downstream APIs.
+    if (key === "enumDescriptions") continue;
 
-  if (typeof result.type === "string") {
-    result.type = result.type.toLowerCase();
-  }
-
-  // Strip enumDescriptions — not supported by upstream APIs
-  delete result.enumDescriptions;
-
-
-  if (result.properties) {
-    const normalized = {};
-    for (const [key, val] of Object.entries(result.properties)) {
-      normalized[key] = normalizeSchemaTypes(val);
+    if (key === "type" && typeof value === "string") {
+      result[key] = value.toLowerCase();
+      continue;
     }
-    result.properties = normalized;
-  }
 
-  if (result.items) {
-    result.items = normalizeSchemaTypes(result.items);
+    if (
+      PROTOJSON_INT64_SCHEMA_KEYS.has(key) &&
+      typeof value === "string" &&
+      /^\\d+$/.test(value.trim())
+    ) {
+      const parsed = Number(value);
+      // Avoid silently rounding ProtoJSON int64 values that exceed JS safe integers.
+      result[key] = Number.isSafeInteger(parsed) ? parsed : value;
+      continue;
+    }
+
+    result[key] = normalizeSchemaTypes(value);
   }
 
   return result;
