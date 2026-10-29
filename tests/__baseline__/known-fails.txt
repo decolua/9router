@@ -20,6 +20,7 @@ tests/translator/golden-url-header.test.js :: GOLDEN buildUrl (default executor 
 # Catalogued before the June translator refactor (9532ec80); expected behavior not
 # re-established from current code, needs the maintainer.
 tests/unit/claude-header-forwarding.test.js :: proxyAwareFetch — api.anthropic.com routing routes api.anthropic.com to gotScraping (non-streaming) and returns ok response
+tests/unit/codex-stt-transport.test.js :: uses canonical NO_PROXY and strict unresolved-pool semantics on the direct adapter
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling execute() prefetches images before sending to upstream
 tests/unit/codex-image-fetch.test.js :: CodexExecutor image handling fetches 1MB remote image and inlines it as base64 data URI
 tests/unit/combo-autoswitch.test.js :: detectRequiredCapabilities web_search tool -> search

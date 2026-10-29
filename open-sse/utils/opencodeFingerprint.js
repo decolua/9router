@@ -448,7 +448,8 @@ export function takeFingerprintMetadata(body) {
 
 /** Compatibility accessor for response rename mappings. */
 export function takeRenamedToolNames(body) {
-  return takeFingerprintMetadata(body)?.renameMap || null;
+  const map = takeFingerprintMetadata(body)?.renameMap;
+  return map?.size ? map : null;
 }
 
 /** Verify a completed tool name belongs to a caller declaration, not an injected decoy. */
