@@ -455,7 +455,12 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   }
   if (body.top_p !== undefined) result.top_p = body.top_p;
   if (body.reasoning !== undefined) result.reasoning = body.reasoning;
-  if (body.reasoning_effort !== undefined) result.reasoning = { effort: body.reasoning_effort, summary: "auto" };
+  // Precedence (matches extractThinking): top-level reasoning_effort wins over reasoning.effort;
+  // other reasoning fields (summary, …) are kept. null/undefined effort leaves reasoning untouched.
+  if (body.reasoning_effort != null) {
+    const prev = body.reasoning && typeof body.reasoning === "object" && !Array.isArray(body.reasoning) ? body.reasoning : {};
+    result.reasoning = { summary: "auto", ...prev, effort: body.reasoning_effort };
+  }
   if (body.service_tier !== undefined) result.service_tier = body.service_tier;
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
 
