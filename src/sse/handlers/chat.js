@@ -153,6 +153,7 @@ export async function handleChat(request, clientRawRequest = null) {
       sessionId,
       smartPolicy: comboCfg.smartPolicy || "smart",
       sessionSticky: comboCfg.sessionSticky !== false,
+      stickySession: comboCfg.stickySession === true,
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
       resolveSmartChoice: comboStrategy === "smart"
         ? (b, m) => resolveSmartChoice({
@@ -180,7 +181,9 @@ export async function handleChat(request, clientRawRequest = null) {
       ),
       log,
       comboName: modelStr,
-      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
+      sessionId,
+      stickySession: true,
     });
   }
 
@@ -248,6 +251,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         sessionId: nestedSessionId,
         smartPolicy: comboCfg.smartPolicy || "smart",
         sessionSticky: comboCfg.sessionSticky !== false,
+        stickySession: comboCfg.stickySession === true,
         confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
         resolveSmartChoice: comboStrategy === "smart"
           ? (b, m) => resolveSmartChoice({
@@ -263,7 +267,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
   }
 
-  const { provider, model } = modelInfo;
+  const { provider, model, connectionId } = modelInfo;
+  const preferredConnectionId = connectionId || request?.headers?.get("x-connection-id") || null;
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -277,7 +282,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastHeaders = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId,
+      requestedModel: requestedModel || model,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

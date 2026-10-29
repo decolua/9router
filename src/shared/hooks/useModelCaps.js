@@ -45,10 +45,11 @@ function loadModelCaps() {
 // (e.g. any *claude*haiku* id reads as 200k regardless of the provider entry).
 export function resolveCaps(byFull, byId, key) {
   if (!key) return null;
-  if (byFull[key]) return byFull[key];
-  const bare = key.includes("/") ? key.slice(key.indexOf("/") + 1) : key;
+  const cleanKey = typeof key === "string" && key.includes("@") ? key.slice(0, key.lastIndexOf("@")) : key;
+  if (byFull[cleanKey]) return byFull[cleanKey];
+  const bare = cleanKey.includes("/") ? cleanKey.slice(cleanKey.indexOf("/") + 1) : cleanKey;
   if (byId[bare]) return byId[bare];
-  const alias = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
+  const alias = cleanKey.includes("/") ? cleanKey.slice(0, cleanKey.indexOf("/")) : null;
   const provider = alias ? (ALIAS_TO_ID[alias] || alias) : null;
   const c = getCapabilitiesForModel(provider, bare);
   return {

@@ -15,6 +15,8 @@ import {
   resetStickyComboStore,
 } from "../../open-sse/services/systemoneRouter.js";
 
+import { parseModel } from "../../open-sse/services/model.js";
+
 const log = { info: () => {}, warn: () => {}, debug: () => {}, error: () => {} };
 
 function okResponse(content = "ok") {
@@ -540,6 +542,213 @@ describe("System One Smart Combo Router", () => {
       });
 
       expect(calls[1]).toBe("ds/deepseek-v4"); // Switched because 0.76 >= 0.75
+    });
+  });
+
+  describe("handleComboChat with fallback & round-robin stickySession (issue #5215)", () => {
+    it("pins round-robin session to chosen member across subsequent turns when stickySession is true", async () => {
+      const calls = [];
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        calls.push(model);
+        return okResponse(`Answer from ${model}`);
+      });
+
+      const comboName = "rr-sticky-combo";
+      const models = ["acc1/gpt-5", "acc2/gpt-5", "acc3/gpt-5"];
+
+      // Turn 1 for User A: round-robin selects acc1/gpt-5
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "User A turn 1" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-user-a",
+        stickySession: true,
+      });
+
+      expect(calls[0]).toBe("acc1/gpt-5");
+
+      // Turn 1 for User B: round-robin rotates to acc2/gpt-5
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "User B turn 1" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-user-b",
+        stickySession: true,
+      });
+
+      expect(calls[1]).toBe("acc2/gpt-5");
+
+      // Turn 2 for User A: MUST retain acc1/gpt-5 to preserve prompt cache!
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "User A turn 2" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-user-a",
+        stickySession: true,
+      });
+
+      expect(calls[2]).toBe("acc1/gpt-5");
+
+      // Turn 2 for User B: MUST retain acc2/gpt-5 to preserve prompt cache!
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "User B turn 2" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-user-b",
+        stickySession: true,
+      });
+
+      expect(calls[3]).toBe("acc2/gpt-5");
+    });
+
+    it("unpins and re-anchors to next member if the pinned member fails on subsequent turn", async () => {
+      const calls = [];
+      let failAcc1 = false;
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        calls.push(model);
+        if (model === "acc1/gpt-5" && failAcc1) {
+          return errResponse(503, "Service Unavailable");
+        }
+        return okResponse(`Answer from ${model}`);
+      });
+
+      const comboName = "rr-failover-combo";
+      const models = ["acc1/gpt-5", "acc2/gpt-5"];
+
+      // Turn 1: acc1 succeeds and becomes pinned
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Turn 1" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-failover",
+        stickySession: true,
+      });
+
+      expect(calls[0]).toBe("acc1/gpt-5");
+
+      // Turn 2: acc1 fails with 503 -> falls back to acc2
+      failAcc1 = true;
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Turn 2" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-failover",
+        stickySession: true,
+      });
+
+      expect(calls[1]).toBe("acc1/gpt-5"); // Tried pinned model first
+      expect(calls[2]).toBe("acc2/gpt-5"); // Succeeded on fallback acc2
+
+      // Turn 3: session should now be re-anchored to acc2!
+      failAcc1 = false; // Even if acc1 is back, session-failover stays on acc2
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Turn 3" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "round-robin",
+        sessionId: "session-failover",
+        stickySession: true,
+      });
+
+      expect(calls[3]).toBe("acc2/gpt-5");
+    });
+
+    it("pins fallback combo to successful fallback member on subsequent turns", async () => {
+      const calls = [];
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        calls.push(model);
+        if (model === "primary/model") return errResponse(429, "Rate limited");
+        return okResponse(`Answer from ${model}`);
+      });
+
+      const comboName = "fallback-sticky-combo";
+      const models = ["primary/model", "secondary/model"];
+
+      // Turn 1: primary fails, secondary succeeds and anchors
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Turn 1" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "fallback",
+        sessionId: "session-fb",
+        stickySession: true,
+      });
+
+      expect(calls).toEqual(["primary/model", "secondary/model"]);
+
+      // Turn 2: secondary should be tried first (saving prompt cache & avoiding 429)
+      await handleComboChat({
+        body: { messages: [{ role: "user", content: "Turn 2" }] },
+        models,
+        handleSingleModel,
+        log,
+        comboName,
+        comboStrategy: "fallback",
+        sessionId: "session-fb",
+        stickySession: true,
+      });
+
+      expect(calls[2]).toBe("secondary/model");
+    });
+  });
+
+  describe("parseModel connection affinity (@connectionId)", () => {
+    it("parses model strings with connection affinity suffix", () => {
+      const res = parseModel("codex/gpt-5@conn-uuid-1234");
+      expect(res.provider).toBe("codex");
+      expect(res.model).toBe("gpt-5");
+      expect(res.connectionId).toBe("conn-uuid-1234");
+      expect(res.isAlias).toBe(false);
+    });
+
+    it("parses alias strings with connection affinity suffix", () => {
+      const res = parseModel("my-alias@conn-9876");
+      expect(res.model).toBe("my-alias");
+      expect(res.connectionId).toBe("conn-9876");
+      expect(res.isAlias).toBe(true);
+    });
+
+    it("leaves standard model strings intact without connectionId", () => {
+      const res = parseModel("openai/gpt-4o");
+      expect(res.provider).toBe("openai");
+      expect(res.model).toBe("gpt-4o");
+      expect(res.connectionId).toBeUndefined();
+    });
+
+    it("correctly handles Cloudflare AI models with @cf/ prefix without mistaking it for connectionId", () => {
+      const res = parseModel("cf/@cf/black-forest-labs/flux-2-klein-9b");
+      expect(res.provider).toBe("cloudflare-ai");
+      expect(res.model).toBe("@cf/black-forest-labs/flux-2-klein-9b");
+      expect(res.connectionId).toBeUndefined();
+    });
+
+    it("correctly extracts connectionId on Cloudflare AI models when affinity is appended", () => {
+      const res = parseModel("cf/@cf/black-forest-labs/flux-2-klein-9b@conn-cf-uuid");
+      expect(res.provider).toBe("cloudflare-ai");
+      expect(res.model).toBe("@cf/black-forest-labs/flux-2-klein-9b");
+      expect(res.connectionId).toBe("conn-cf-uuid");
     });
   });
 });

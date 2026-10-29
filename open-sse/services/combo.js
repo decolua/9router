@@ -91,15 +91,20 @@ export function reorderByCapabilities(models, required) {
   const tierOf = (m) => {
     const slash = typeof m === "string" ? m.indexOf("/") : -1;
     const provider = slash > 0 ? m.slice(0, slash) : "";
-    const model = slash > 0 ? m.slice(slash + 1) : m;
+    let model = slash > 0 ? m.slice(slash + 1) : m;
+    if (typeof model === "string" && model.includes("@")) {
+      model = model.slice(0, model.lastIndexOf("@"));
+    }
     const caps = getCapabilitiesForModel(provider, model);
     if (!hard.every((c) => caps[c] === true)) return 2;
     return soft.every((c) => caps[c] === true) ? 0 : 1;
   };
 
+  const tiered = models.map((m, i) => ({ m, i, t: tierOf(m) }));
+  if (tiered.every((x) => x.t === tiered[0].t)) return models;
+
   // Stable sort by tier (Array.prototype.sort is stable in modern engines).
-  return models
-    .map((m, i) => ({ m, i, t: tierOf(m) }))
+  return tiered
     .sort((a, b) => a.t - b.t || a.i - b.i)
     .map((x) => x.m);
 }
@@ -346,7 +351,8 @@ export function isZeroContentResponse(data) {
  * @param {boolean} [options.autoSwitch=true] - Capability auto-switching
  * @param {string|null} [options.sessionId=null] - Client session identifier for prompt cache retention
  * @param {string} [options.smartPolicy="smart"] - Policy: "smart" (adaptive ≥80%), "strict" (lock 1st model), "per-turn", or "custom"
- * @param {boolean} [options.sessionSticky=true] - Keep chosen model across session requests to retain prompt cache
+ * @param {boolean} [options.sessionSticky=true] - Keep chosen model across session requests to retain prompt cache (smart strategy)
+ * @param {boolean} [options.stickySession=false] - Keep chosen model across session requests for fallback/round-robin combos
  * @param {number} [options.confidenceThreshold=0.8] - Minimum confidence required for model switch (0-1)
  * @param {Function|null} [options.resolveSmartChoice=null] - Smart router resolver callback: (body, models) => Promise<{ choice, probabilities, confidence } | null>
  * @returns {Promise<Response>}
@@ -363,15 +369,19 @@ export async function handleComboChat({
   sessionId = null,
   smartPolicy = "smart",
   sessionSticky = true,
+  stickySession = false,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
+  const isSticky = comboStrategy === "smart"
+    ? ((typeof smartPolicy === "string" ? smartPolicy.toLowerCase() : "smart") !== "per-turn" && sessionSticky !== false)
+    : Boolean(stickySession);
 
   if (comboStrategy === "smart") {
     const policy = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
-    const isPerTurn = policy === "per-turn" || sessionSticky === false;
+    const isPerTurn = !isSticky;
     const isStrict = policy === "strict";
 
     let switchThreshold = 0.8;
@@ -447,8 +457,19 @@ export async function handleComboChat({
       }
     }
   } else {
-    // Apply rotation strategy if enabled
-    rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+    // Session stickiness for fallback and round-robin combos
+    if (isSticky && sessionId) {
+      activeStickyModel = getStickyComboModel(comboName, sessionId, models);
+    }
+
+    if (activeStickyModel) {
+      // Retain previously successful model as first seat for prompt-cache retention
+      rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+      log.info("COMBO", `combo [${comboStrategy || "fallback"}] retained prompt cache model "${activeStickyModel}" for session "${sessionId}"`);
+    } else {
+      // Turn 1: Apply rotation strategy if enabled
+      rotatedModels = getRotatedModels(models, comboName, comboStrategy, comboStickyLimit);
+    }
   }
 
   // Auto-switch: float models that satisfy the request's required capabilities to the front.
@@ -506,7 +527,7 @@ export async function handleComboChat({
                 const peekBody = await result.clone().json();
                 if (isZeroContentResponse(peekBody)) {
                   log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
-                  if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+                  if (sessionId && modelStr === activeStickyModel) {
                     clearStickyComboSession(comboName, sessionId);
                   }
                   lastError = "Zero usable content";
@@ -519,11 +540,19 @@ export async function handleComboChat({
             }
           }
 
+          if (comboStrategy !== "smart" && stickySession && sessionId && comboName) {
+            setStickyComboModel(comboName, sessionId, modelStr);
+            activeStickyModel = modelStr;
+          }
           log.info("COMBO", `Model ${modelStr} succeeded`);
           return result;
         }
 
         if (peeked.outcome === "content") {
+          if (comboStrategy !== "smart" && stickySession && sessionId && comboName) {
+            setStickyComboModel(comboName, sessionId, modelStr);
+            activeStickyModel = modelStr;
+          }
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
           return peeked.response;
         }
@@ -539,7 +568,7 @@ export async function handleComboChat({
         }
 
         log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — falling through to next candidate`);
-        if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+        if (sessionId && modelStr === activeStickyModel) {
           clearStickyComboSession(comboName, sessionId);
         }
         // Drain/close the discarded stream in the background so its usage logging still runs.
@@ -550,7 +579,7 @@ export async function handleComboChat({
       }
 
       // If the model that failed was the session-sticky model, clear it so next turns re-evaluate
-      if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+      if (sessionId && modelStr === activeStickyModel) {
         clearStickyComboSession(comboName, sessionId);
       }
 
@@ -614,7 +643,7 @@ export async function handleComboChat({
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
     } catch (error) {
       // Catch unexpected exceptions to ensure fallback continues
-      if (comboStrategy === "smart" && sessionId && modelStr === activeStickyModel) {
+      if (sessionId && modelStr === activeStickyModel) {
         clearStickyComboSession(comboName, sessionId);
       }
       lastError = error.message || String(error);

@@ -95,7 +95,12 @@ async function getAllowSets(ctx) {
       continue;
     }
     const info = await getModelInfo(entry);
-    if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
+    if (info?.provider && info.model) {
+      models.add(canonicalModel(info.provider, info.model));
+      if (info.connectionId) {
+        models.add(`${canonicalModel(info.provider, info.model)}@${info.connectionId.toLowerCase()}`);
+      }
+    }
     if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
   }
   ctx._sets = { combos, models, providers };
@@ -107,7 +112,9 @@ async function isModelStringAllowed(ctx, requested) {
   const info = await getModelInfo(requested);
   // provider null ⇔ an existing combo with no members (routes nowhere).
   if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+  const canonical = canonicalModel(info.provider, info.model);
+  const canonicalWithConn = info.connectionId ? `${canonical}@${info.connectionId.toLowerCase()}` : canonical;
+  return sets.models.has(canonical) || sets.models.has(canonicalWithConn) || sets.models.has(lower(requested));
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {

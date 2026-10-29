@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal, Tooltip } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
@@ -337,15 +337,25 @@ export default function CombosPage() {
   };
 
   // Merge a per-combo strategy patch into settings.comboStrategies. Passing an empty
-  // patch (strategy back to default "fallback") drops the entry entirely.
+  // patch (strategy back to default "fallback" with no sticky/judge/router options) drops the entry entirely.
   const handleSetComboStrategy = async (comboName, patch) => {
     try {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      const hasCustomSettings =
+        (next.fallbackStrategy && next.fallbackStrategy !== "fallback") ||
+        Boolean(next.stickySession) ||
+        Boolean(next.judgeModel) ||
+        Boolean(next.routerModel) ||
+        Boolean(next.smartPolicy) ||
+        next.sessionSticky === false ||
+        typeof next.confidenceThreshold === "number";
+
+      // Prune to keep settings clean: default fallback with no custom options = no entry.
+      if (!hasCustomSettings) {
         delete updated[comboName];
       } else {
+        if (!next.fallbackStrategy) next.fallbackStrategy = "fallback";
         updated[comboName] = next;
       }
 
@@ -669,6 +679,12 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   // answer for /api/models.
   const comboCaps = aggregateComboCapabilities(combo.models, comboByName, getCaps);
 
+  const getAccountLabel = (connId) => {
+    if (!connId) return "";
+    const conn = (activeProviders || []).find((c) => c?.id === connId);
+    return conn?.name?.trim() || conn?.displayName?.trim() || conn?.email?.trim() || connId.slice(0, 8);
+  };
+
   return (
     <Card padding="sm" className={`group ${selected ? "ring-1 ring-primary/40 bg-primary/[0.03]" : ""}`}>
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -692,16 +708,27 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={
-                      comboByName[model]
-                        ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
-                        : getCaps?.(model)
-                    } />
-                  </code>
-                ))
+                combo.models.slice(0, 3).map((model, index) => {
+                  const atIdx = typeof model === "string" ? model.indexOf("@") : -1;
+                  const baseModel = atIdx > 0 ? model.slice(0, atIdx) : model;
+                  const accountSuffix = atIdx > 0 ? model.slice(atIdx + 1) : null;
+                  const accountLabel = accountSuffix ? getAccountLabel(accountSuffix) : null;
+                  return (
+                    <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
+                      <span>{baseModel}</span>
+                      {accountLabel && (
+                        <span className="text-[10px] text-primary bg-primary/10 px-1.5 py-0.2 rounded-md font-sans" title={`Pinned to account: ${accountLabel}`}>
+                          @{accountLabel}
+                        </span>
+                      )}
+                      <CapacityBadges caps={
+                        comboByName[baseModel]
+                          ? aggregateComboCapabilities(comboByName[baseModel], comboByName, getCaps)
+                          : getCaps?.(baseModel)
+                      } />
+                    </code>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -786,6 +813,38 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 </div>
               );
             })()}
+
+            {/* Fallback / Round-Robin: Session Policy (Prompt Cache Retention) */}
+            {(current === "fallback" || current === "round-robin") && (
+              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-medium text-text-muted">Session Policy</span>
+                <Tooltip
+                  position="top"
+                  text={
+                    strategy.stickySession
+                      ? "Sticky Session: Pins conversation to this model/account for 2 hours to keep prompt cache warm. When multiple accounts are added, new conversations are distributed across them. Automatically fails over to the next member on error or rate limits (429)."
+                      : "Per-Turn: Requests are routed per-turn without session affinity. Cache resets on member switch."
+                  }
+                >
+                  <button
+                    type="button"
+                    onClick={() => onSetStrategy({ stickySession: !strategy.stickySession })}
+                    className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-[11px] transition-colors cursor-pointer ${
+                      strategy.stickySession
+                        ? "border-primary/50 bg-primary/10 text-primary font-medium hover:bg-primary/15"
+                        : "border-border/70 bg-black/[0.02] dark:bg-white/[0.02] text-text-main hover:border-primary/50 hover:bg-primary/5"
+                    }`}
+                  >
+                    <span className={`material-symbols-outlined text-[13px] ${strategy.stickySession ? "text-primary" : "text-text-muted"}`}>
+                      {strategy.stickySession ? "lock" : "sync"}
+                    </span>
+                    <span className="font-medium">
+                      {strategy.stickySession ? "Sticky Session" : "Per-Turn"}
+                    </span>
+                  </button>
+                </Tooltip>
+              </div>
+            )}
           </div>
         </div>
 

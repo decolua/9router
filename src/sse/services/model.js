@@ -45,25 +45,33 @@ export async function getModelInfo(modelStr) {
       const openaiNodes = await getProviderNodes({ type: "openai-compatible" });
       const matchedOpenAI = openaiNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedOpenAI) {
-        return { provider: matchedOpenAI.id, model: parsed.model };
+        const res = { provider: matchedOpenAI.id, model: parsed.model };
+        if (parsed.connectionId) res.connectionId = parsed.connectionId;
+        return res;
       }
 
       const anthropicNodes = await getProviderNodes({ type: "anthropic-compatible" });
       const matchedAnthropic = anthropicNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedAnthropic) {
-        return { provider: matchedAnthropic.id, model: parsed.model };
+        const res = { provider: matchedAnthropic.id, model: parsed.model };
+        if (parsed.connectionId) res.connectionId = parsed.connectionId;
+        return res;
       }
 
       const embeddingNodes = await getProviderNodes({ type: "custom-embedding" });
       const matchedEmbedding = embeddingNodes.find((node) => node.prefix === parsed.providerAlias);
       if (matchedEmbedding) {
-        return { provider: matchedEmbedding.id, model: parsed.model };
+        const res = { provider: matchedEmbedding.id, model: parsed.model };
+        if (parsed.connectionId) res.connectionId = parsed.connectionId;
+        return res;
       }
     }
-    return {
+    const res = {
       provider: parsed.provider,
       model: parsed.model
     };
+    if (parsed.connectionId) res.connectionId = parsed.connectionId;
+    return res;
   }
 
   // Check if this is a combo name before resolving as alias
@@ -72,7 +80,9 @@ export async function getModelInfo(modelStr) {
   if (combo) {
     // Return null provider to signal this should be handled as combo
     // The caller (handleChat) will detect this and handle it as combo
-    return { provider: null, model: parsed.model };
+    const res = { provider: null, model: parsed.model };
+    if (parsed.connectionId) res.connectionId = parsed.connectionId;
+    return res;
   }
 
   return getModelInfoCore(modelStr, getModelAliases);

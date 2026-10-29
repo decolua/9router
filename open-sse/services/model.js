@@ -30,28 +30,46 @@ export function resolveProviderAlias(aliasOrId) {
 
 /**
  * Parse model string: "alias/model" or "provider/model" or just alias
+ * Also extracts optional connection affinity suffix "@connectionId"
  */
 export function parseModel(modelStr) {
   if (!modelStr) {
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
 
+  let connectionId = null;
+  let cleanStr = modelStr;
+  if (typeof cleanStr === "string" && cleanStr.includes("@")) {
+    const atIdx = cleanStr.lastIndexOf("@");
+    const suffix = cleanStr.slice(atIdx + 1).trim();
+    // A connectionId cannot contain slashes and cannot be empty.
+    // Also, the character before '@' must not be a slash (e.g. not Cloudflare's "/@cf/...").
+    if (suffix && !suffix.includes("/") && atIdx > 0 && cleanStr[atIdx - 1] !== "/") {
+      connectionId = suffix;
+      cleanStr = cleanStr.slice(0, atIdx);
+    }
+  }
+
   // Check if standard format: provider/model or alias/model
-  if (modelStr.includes("/")) {
-    const firstSlash = modelStr.indexOf("/");
-    const providerOrAlias = modelStr.slice(0, firstSlash);
-    const model = modelStr.slice(firstSlash + 1);
+  if (cleanStr.includes("/")) {
+    const firstSlash = cleanStr.indexOf("/");
+    const providerOrAlias = cleanStr.slice(0, firstSlash);
+    const model = cleanStr.slice(firstSlash + 1);
     const provider = resolveProviderAlias(providerOrAlias);
-    return { provider, model, isAlias: false, providerAlias: providerOrAlias };
+    const out = { provider, model, isAlias: false, providerAlias: providerOrAlias };
+    if (connectionId) out.connectionId = connectionId;
+    return out;
   }
 
   // Alias format (model alias, not provider alias)
-  return {
+  const out = {
     provider: null,
-    model: modelStr,
+    model: cleanStr,
     isAlias: true,
     providerAlias: null,
   };
+  if (connectionId) out.connectionId = connectionId;
+  return out;
 }
 
 /**
@@ -95,10 +113,12 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
   const parsed = parseModel(modelStr);
 
   if (!parsed.isAlias) {
-    return {
+    const res = {
       provider: parsed.provider,
       model: parsed.model,
     };
+    if (parsed.connectionId) res.connectionId = parsed.connectionId;
+    return res;
   }
 
   // Get aliases (from object or function)
@@ -112,14 +132,19 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
     resolveModelAliasFromMap(parsed.model, aliases) ||
     resolveModelAliasFromMap(parsed.model, BUILTIN_MODEL_ALIASES);
   if (resolved) {
-    return resolved;
+    const res = { ...resolved };
+    const connId = parsed.connectionId || resolved.connectionId;
+    if (connId) res.connectionId = connId;
+    return res;
   }
 
   // Fallback: infer provider from model name prefix
-  return {
+  const res = {
     provider: inferProviderFromModelName(parsed.model),
     model: parsed.model,
   };
+  if (parsed.connectionId) res.connectionId = parsed.connectionId;
+  return res;
 }
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
