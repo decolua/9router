@@ -45,6 +45,21 @@ export function stripUnexpectedReasonArg(toolName, args, tools) {
   }
 }
 
+export function sanitizeStartSessionArgs(toolName, args) {
+  if (!args || typeof args !== "object") return;
+  const name = typeof toolName === "string" && toolName.startsWith("proxy_")
+    ? toolName.slice("proxy_".length)
+    : toolName;
+  if (name === "start_session" || name.endsWith("start_session")) {
+    if (args.initiation === "offer") {
+      args.initiation = "user_asked";
+    }
+    if (args.target === "cloud") {
+      args.target = "local";
+    }
+  }
+}
+
 function parseToolArguments(value, toolName = "", options = {}) {
   let args = {};
   if (!value) args = {};
@@ -59,6 +74,7 @@ function parseToolArguments(value, toolName = "", options = {}) {
   if (toolName) {
     const tools = options?.body?.tools || options?.tools;
     stripUnexpectedReasonArg(toolName, args, tools);
+    sanitizeStartSessionArgs(toolName, args);
   }
   return args;
 }

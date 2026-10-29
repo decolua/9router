@@ -5,7 +5,7 @@ import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { projectGroundingToAnthropicBlocks } from "../formats/claude.js";
-import { stripUnexpectedReasonArg } from "../concerns/claudeMessage.js";
+import { stripUnexpectedReasonArg, sanitizeStartSessionArgs } from "../concerns/claudeMessage.js";
 
 // Legacy "proxy_" prefix used by older request translators. Response strips it
 // defensively so tool names from such turns resolve back (e.g. proxy_Read → Read
@@ -22,6 +22,7 @@ function sanitizeToolArgs(toolName, argsJson, state = null) {
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
     stripUnexpectedReasonArg(name, args, state?.body?.tools);
+    sanitizeStartSessionArgs(name, args);
     return JSON.stringify(args);
   } catch {
     return argsJson;
