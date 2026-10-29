@@ -1,6 +1,7 @@
 # Unreleased
 
 ## Fixes
+- **Codex**: add Responses beta/routing headers; keep compaction retries on `/compact`; preserve requested includes; sanitize call IDs and repair interrupted tool histories; inline native remote images; parse structured SSE errors before visible output; use a Codex model by default in CLI quick setup
 - **Models**: collect models.dev context/output limits for every model a gateway lists upstream instead of only the ones the static registry enumerates, so a model outside that curated subset (one the registry has not caught up on, or one a user added by hand) no longer falls back to the generic pattern tables — `nvidia/stepfun-ai/step-5-preview` advertised 128K against upstream's 1M and dragged the whole combo's window down with it. Limits stay scoped to gateways 9router actually registers, and `build()` now detaches the installed catalog while resolving so a repeated run cannot drop its own deltas.
 
 # v0.5.113 (2026-10-29)
@@ -8,7 +9,6 @@
 ## Fixes
 - **Capabilities**: add the missing Qwen 3.8 rows to `PATTERN_CAPABILITIES` — the whole family fell through to the text-only `*qwen*` catch-all, so vision-capable 3.8 ids (incl. the open-weight `Qwen3.8-27B` on custom providers like Hetzner) were reported image-blind. The 27B line now resolves to vision with its real 262144 context **and** 262144 max output (per the models.dev listings for the weight, which cap both at the full window — not the 65536 the older 3.5/3.6-27b vendor entries carry), the API line (flash/flash-next) to vision + video at 1M/131072, and `qwen3.8-2.4t-a95b` is explicitly kept text-only
 - **Thinking**: route Qwen 3.8 through the official `reasoning_effort` param via a new `qwen-effort` thinking format instead of the legacy `enable_thinking`/`thinking_budget` — the 3.8 family's model-level enum is `none | xhigh (default) | medium | low` (probed live on Hetzner Inference), so the format passes the official levels through, clamps `minimal`→`low` and `high`/`max`/`ultra`→`xhigh` (upstream 400s on those), maps `none`→`reasoning_effort:"none"`, and omits the field on `auto` (upstream default applies). The level picker now advertises exactly `none/low/medium/xhigh` for the whole 3.8 family. The 3.8 pattern rows also move above the generic `*qwen*max*`/`*qwen*omni*` rows (first-match-wins), so `qwen3.8-max` (opencode-go / alitp-intl / tokenrouter lanes) stops inheriting the legacy format and the 3.7-era 65536 output cap — it now resolves to the vendor-listed 1M/131072 with video — and `qwen3.8-omni-flash` keeps its audio + video modality on the new format
-
 # v0.5.112 (2026-10-28)
 
 ## Features
@@ -26,7 +26,6 @@
 - **Providers**: keep full `LLM|id|secret` (Muse) key strings opaque in bulk-add instead of splitting on the first pipe into name/key, auto-naming them LLM 1, LLM 2, …
 - **DeepSeek**: replace the vendored PoW hash implementation with a noble-hashes keccak port (DeepSeekHashV1, SHA3-256 with round 0 skipped), shrinking `deepseek-pow-hash.js` by ~430 lines
 - **GitHub Copilot**: apply Claude 5.5 thinking rules to Copilot's dotted model ids (`claude-opus-5.5*`, `claude-sonnet-5.5`) and make `claude-haiku-5.5` adaptive-only on its Anthropic-native shim, whose budget-shaped thinking comes back 400
-
 # v0.5.111 (2026-10-26)
 
 ## Features
