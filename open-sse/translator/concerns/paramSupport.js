@@ -8,8 +8,8 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 const STRIP_RULES = [
   // All Claude models: temperature deprecated/rejected upstream (Anthropic 400). #1748
   { match: /claude/i, drop: ["temperature"] },
-  // GitHub Copilot gpt-5.4: temperature unsupported.
-  { provider: "github", match: /gpt-5\.4/i, drop: ["temperature"] },
+  // GitHub Copilot GPT-5.4+ temperature unsupported.
+  { provider: "github", match: /^gpt-(?:5\.(?:[4-9]|[1-9]\d+)|6(?:\.\d+)?)(?:-|$)/i, drop: ["temperature"] },
   // GitHub Copilot Claude (except opus/sonnet 4.6): thinking + reasoning_effort rejected. #713
   { provider: "github", match: (m) => /claude/i.test(m) && !/claude.*(opus|sonnet).*4\.6/i.test(m), drop: ["thinking", "reasoning_effort"] },
   // Cloudflare Workers AI: content must be plain string, rejects OpenAI content-part array (#1926)
