@@ -16,6 +16,7 @@ vi.mock("@/sse/handlers/chat.js", () => ({
 vi.mock("@/sse/services/auth.js", () => ({
   getProviderCredentials: mocks.getProviderCredentials,
   isValidApiKey: mocks.isValidApiKey,
+  checkApiKeyQuota: async (key, required) => !required ? null : !key ? { status: 401, error: "Missing API key" } : await mocks.isValidApiKey(key) ? null : { status: 401, error: "Invalid API key" },
   markAccountUnavailable: mocks.markAccountUnavailable,
   clearAccountError: mocks.clearAccountError,
 }));

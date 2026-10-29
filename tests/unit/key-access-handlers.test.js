@@ -28,16 +28,13 @@ vi.mock("@/lib/disabledModelsDb", () => ({ getDisabledModels: async () => ({}) }
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => fx.combos }));
 vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => fx.keys[k] || null }));
 vi.mock("@/lib/usageDb.js", () => ({ saveRequestUsage: vi.fn() }));
-vi.mock("@/sse/services/auth.js", () => ({
+vi.mock("@/sse/services/auth.js", async (importOriginal) => ({
+  ...await importOriginal(),
   getProviderCredentials: mocks.getProviderCredentials,
   markAccountUnavailable: vi.fn(async () => ({ shouldFallback: false })),
   clearAccountError: vi.fn(),
-  extractApiKey: (request) => {
-    const a = request.headers.get("Authorization");
-    return a?.startsWith("Bearer ") ? a.slice(7) : request.headers.get("x-api-key");
-  },
-  isValidApiKey: async () => true,
 }));
+
 vi.mock("@/sse/services/tokenRefresh.js", () => ({
   checkAndRefreshToken: async (_p, c) => c,
   updateProviderCredentials: vi.fn(),
@@ -179,6 +176,13 @@ const handlers = [
 ];
 
 describe.each(handlers)("%s handler is wired", (_name, call, allowed, denied) => {
+  it("blocks exhausted and paused keys in local mode before looking up credentials", async () => {
+    fx.keys["sk-exhausted"] = { id: "q", isActive: true, tokenLimit: 10, usedTokens: 10, access: { restricted: false, allow: [] } };
+    fx.keys["sk-paused"] = { id: "p", isActive: false, tokenLimit: 0, usedTokens: 0, access: { restricted: false, allow: [] } };
+    expect((await call(allowed, "sk-exhausted")).status).toBe(429);
+    expect((await call(allowed, "sk-paused")).status).toBe(401);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+  });
   it("denies an unlisted model with 403 before any credential lookup", async () => {
     const r = await call(denied, "sk-media");
     expect(r.status).toBe(403);
@@ -230,5 +234,18 @@ describe("/v1/models routes filter by key", () => {
     const one = all.find((m) => m.owned_by !== "combo").id;
     expect((await kind("sk-open", one.split("/"))).status).toBe(200);
     expect((await kind("sk-empty", one.split("/"))).status).toBe(404);
+  });
+});
+
+describe("quota authentication headers", () => {
+  it.each(["Authorization", "x-api-key", "x-goog-api-key", "query"])("enforces quotas with %s", async (header) => {
+    fx.keys["sk-exhausted"] = { id: "q", isActive: true, tokenLimit: 10, usedTokens: 10 };
+    const headers = { "Content-Type": "application/json" };
+    if (header !== "query") headers[header] = header === "Authorization" ? "Bearer sk-exhausted" : "sk-exhausted";
+    const request = new Request(`http://localhost/v1/chat/completions${header === "query" ? "?key=sk-exhausted" : ""}`, {
+      method: "POST", headers, body: JSON.stringify({ model: "openai/model-b", messages: [{ role: "user", content: "hi" }] }),
+    });
+    expect((await handleChat(request)).status).toBe(429);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
   });
 });

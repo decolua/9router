@@ -7,6 +7,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { keyAccessToColumns, resolveKeyAccessInput } from "@/shared/utils/keyAccess.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -248,6 +249,24 @@ export async function runMigrationOnce(adapter) {
 
   // 2. Additive sync (auto add missing columns/indexes declared in TABLES)
   syncSchemaFromTables(adapter);
+
+  // The early per-key branch stored a second rule list. Transfer it once,
+  // preserving canonical restricted rules, and clear the obsolete source so
+  // subsequently switching a key to unrestricted cannot revive old rules.
+  if (adapter.all(`PRAGMA table_info(apiKeys)`).some((col) => col.name === "allowedModels")) {
+    adapter.transaction(() => {
+      for (const row of adapter.all(`SELECT * FROM apiKeys WHERE allowedModels IS NOT NULL`)) {
+        if (row.accessRestricted !== 1 && row.accessRestricted !== true) {
+          let allowedModels;
+          try { allowedModels = JSON.parse(row.allowedModels); } catch { allowedModels = false; }
+          const checked = resolveKeyAccessInput({ allowedModels });
+          const cols = keyAccessToColumns(checked.ok ? checked.value : { restricted: true, allow: [] });
+          adapter.run(`UPDATE apiKeys SET accessRestricted = ?, accessAllow = ? WHERE id = ?`, [cols.accessRestricted, cols.accessAllow, row.id]);
+        }
+        adapter.run(`UPDATE apiKeys SET allowedModels = NULL WHERE id = ?`, [row.id]);
+      }
+    });
+  }
 
   // Stamp the schema version we just reached so future boots skip re-backup.
   setMetaSync(adapter, "backupSchemaVersion", SCHEMA_VERSION);
