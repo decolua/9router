@@ -299,13 +299,8 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
+  // onRequestSuccess is invoked by the caller (chatCore.js's notifyRequestSuccess)
+  // once this function returns success — calling it here too would fire it twice.
   const renameMap = toolNameMap?.renameMap || toolNameMap;
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, renameMap);
