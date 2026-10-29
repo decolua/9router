@@ -29,12 +29,12 @@ This fork is useful when you want:
 
 ## Current Base
 
-This fork is currently synced with upstream `decolua/9router` **v0.5.104**.
+This fork is currently synced with upstream `decolua/9router` **v0.5.112**.
 
 Current fork release:
 
 ```text
-fork-v0.5.106
+fork-v0.5.112
 ```
 
 Fork releases use the upstream version as the base version, then prefix it with `fork-`.
