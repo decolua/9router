@@ -267,6 +267,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
       const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
         ? upstreamStatus
         : HTTP_STATUS.BAD_GATEWAY;
+      appendLog({ status: `FAILED ${status}` });
       const result = createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
       result.origin = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599 ? "upstream_http" : "processing";
       return result;
@@ -298,6 +299,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
+  if (onRequestSuccess) {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
+  }
   const renameMap = toolNameMap?.renameMap || toolNameMap;
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, renameMap);
