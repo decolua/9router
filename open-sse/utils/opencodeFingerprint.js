@@ -23,6 +23,16 @@ import path from "node:path";
 /** Names required by the upstream free-tier gate. */
 export const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
 
+// A second, purely textual gate on the same route: a declared tool name
+// containing "terminal" (case-insensitive substring) is answered 429
+// FreeUsageLimitError regardless of quota, IP, session or payload size, while
+// the same body with only that name changed answers normally
+// (decolua/9router#5319). Only `tools[]` is inspected — history and system
+// prompt are not — so the declaration travels under an alias and the caller's
+// name is restored on the way back, like a fingerprint-name collision.
+export const GATED_TOOL_NAME_RE = /terminal/i;
+const GATED_TOOL_ALIAS = "run_command";
+
 // Verbatim from the OpenCode v2.0.26 CLI. Upstream compares description and
 // parameters, so do not reword or reformat these.
 const FINGERPRINT_TOOL_DEFINITIONS = {
@@ -153,7 +163,17 @@ export function concealFingerprintToolNames(tools) {
       continue;
     }
 
-    const key = fingerprintToolKey(toolNameOf(tool));
+    const name = toolNameOf(tool);
+    if (GATED_TOOL_NAME_RE.test(name)) {
+      let alias = GATED_TOOL_ALIAS;
+      for (let i = 2; taken.has(alias); i++) alias = `${GATED_TOOL_ALIAS}${i}`;
+      taken.add(alias);
+      map.set(alias, name);
+      out.push(withToolName(tool, alias));
+      continue;
+    }
+
+    const key = fingerprintToolKey(name);
     if (!key) {
       out.push(tool);
       continue;
