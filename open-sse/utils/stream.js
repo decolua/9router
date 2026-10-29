@@ -1,7 +1,7 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
-import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
+import { liftReasoningAliases, extractReasoningText } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds } from "./streamHelpers.js";
@@ -258,7 +258,9 @@ export function createSSEStream(options = {}) {
 
               const delta = parsed.choices?.[0]?.delta;
               const content = delta?.content;
-              const reasoning = delta?.reasoning_content;
+              // Cover vendor alias shapes (reasoning / reasoning_details) so thinking
+              // char counts in usage logs match what the client received.
+              const reasoning = extractReasoningText(delta);
               if (content && typeof content === "string") {
                 totalContentLength += content.length;
                 accumulatedContent += content;

@@ -43,8 +43,12 @@ export function hasValuableContent(chunk, format) {
   // OpenAI format
   if (format === FORMATS.OPENAI && chunk.choices?.[0]?.delta) {
     const delta = chunk.choices[0].delta;
+    // Some OpenAI-compatible engines (e.g. Hetzner Inference / SGLang fronting
+    // Qwen3.8) stream thinking as `delta.reasoning` instead of
+    // `delta.reasoning_content` — reasoning-only chunks must survive the filter.
     return delta.content && delta.content !== "" ||
            delta.reasoning_content && delta.reasoning_content !== "" ||
+           (typeof delta.reasoning === "string" && delta.reasoning !== "") ||
            delta.tool_calls && delta.tool_calls.length > 0 ||
            chunk.choices[0].finish_reason ||
            delta.role;

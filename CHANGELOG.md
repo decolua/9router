@@ -1,3 +1,7 @@
+# Unreleased
+
+## Fixes
+- **Streaming**: keep OpenAI-compatible thinking deltas on the alias shape — engines like Hetzner Inference (SGLang fronting `Qwen3.8-27B`) stream reasoning as `delta.reasoning` instead of `delta.reasoning_content`, and the passthrough filter dropped those chunks as "no valuable content", so OpenAI-format clients saw no thinking text at all (only `usage.reasoning_tokens`). `hasValuableContent` now counts a non-empty string `delta.reasoning` as content, and the thinking char accounting uses `extractReasoningText` so usage logs match what the client received. Claude-format clients were unaffected (the translate path already extracts the alias)
 # v0.5.112 (2026-10-28)
 
 ## Features
