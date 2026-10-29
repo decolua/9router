@@ -75,6 +75,11 @@ const PATTERN_THINKING = [
   // not serve, so this entry MUST stay above it.
   { pattern: "*deepseek-v4.1-flash-free*", levels: ["low", "high", "max"] },
   { pattern: "*deepseek-v4.*", levels: ["none", "low", "medium", "high", "xhigh", "max"] },
+  // Qwen 3.8 official API: reasoning_effort is none|xhigh|medium|low only —
+  // "high"/"minimal" 400 ("Unexpected reasoning effort", probed live on hetzner
+  // Inference). The openai format default would advertise minimal/high, so pin
+  // the supported set for the whole 3.8 family.
+  { pattern: "*qwen3.8*", levels: ["none", "low", "medium", "xhigh"] },
   // codebuddy-cn per-model effort sets — the server's product-config payload
   // publishes `reasoning.supportedEfforts` per model. NOTE: the chat endpoint
   // accepts any level you send (probed none/minimal/low/medium/high/xhigh/max

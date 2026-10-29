@@ -1,3 +1,9 @@
+# v0.5.113 (2026-10-29)
+
+## Fixes
+- **Capabilities**: add the missing Qwen 3.8 rows to `PATTERN_CAPABILITIES` — the whole family fell through to the text-only `*qwen*` catch-all, so vision-capable 3.8 ids (incl. the open-weight `Qwen3.8-27B` on custom providers like Hetzner) were reported image-blind. The 27B line now resolves to vision with its real 262144 context **and** 262144 max output (per the models.dev listings for the weight, which cap both at the full window — not the 65536 the older 3.5/3.6-27b vendor entries carry), the API line (flash/flash-next) to vision + video at 1M/131072, and `qwen3.8-2.4t-a95b` is explicitly kept text-only
+- **Thinking**: route Qwen 3.8 through the official `reasoning_effort` param via a new `qwen-effort` thinking format instead of the legacy `enable_thinking`/`thinking_budget` — the 3.8 family's model-level enum is `none | xhigh (default) | medium | low` (probed live on Hetzner Inference), so the format passes the official levels through, clamps `minimal`→`low` and `high`/`max`/`ultra`→`xhigh` (upstream 400s on those), maps `none`→`reasoning_effort:"none"`, and omits the field on `auto` (upstream default applies). The level picker now advertises exactly `none/low/medium/xhigh` for the whole 3.8 family. The 3.8 pattern rows also move above the generic `*qwen*max*`/`*qwen*omni*` rows (first-match-wins), so `qwen3.8-max` (opencode-go / alitp-intl / tokenrouter lanes) stops inheriting the legacy format and the 3.7-era 65536 output cap — it now resolves to the vendor-listed 1M/131072 with video — and `qwen3.8-omni-flash` keeps its audio + video modality on the new format
+
 # v0.5.112 (2026-10-28)
 
 ## Features

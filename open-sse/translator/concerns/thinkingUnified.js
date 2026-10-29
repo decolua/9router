@@ -353,6 +353,20 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "")
       if (Number.isFinite(budget) && budget > 0) body.thinking_budget = budget;
       break;
     }
+    case "qwen-effort": {
+      // Qwen 3.8 official API: reasoning_effort takes none | xhigh (default) |
+      // medium | low. "high"/"minimal" 400 ("Unexpected reasoning effort",
+      // probed live), so clamp to the nearest supported tier; "none" disables
+      // thinking (verified: reasoning_tokens 0). "auto" is not a valid variant —
+      // omit the field and let the upstream default (xhigh) apply.
+      if (none) { body.reasoning_effort = "none"; break; }
+      const level = toLevel(eff);
+      if (!level || level === "auto") break;
+      body.reasoning_effort = level === "minimal" ? "low"
+        : (level === "high" || level === "max" || level === "ultra") ? "xhigh"
+        : level;
+      break;
+    }
     case "deepseek": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
       body.thinking = { type: "enabled" };

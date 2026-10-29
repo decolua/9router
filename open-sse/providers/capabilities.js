@@ -56,7 +56,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step|nous
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|qwen-effort|deepseek|kimi|minimax|hunyuan|step|nous
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -562,6 +562,30 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*grok*",          caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
 
   // ── Qwen (3.5+ = native vision/video; coder & max = text-only; QwQ = thinking-only) ─
+  // Qwen 3.8 (Sep 2026) — its rows MUST stay above the generic *qwen*vl* /
+  // *qwen*omni* / *qwen*coder* / *qwen*max* rows (first-match-wins):
+  // qwen3.8-max, qwen3.8-omni-flash & co would otherwise inherit the
+  // legacy-format rows written for the 3.5–3.7 lines. The 27B/2.4t rows also
+  // keep the family off the text-only *qwen* catch-all (image-blind 27B).
+  // Qwen 3.8 moved thinking control to the official OpenAI-style
+  // `reasoning_effort` param — the legacy `enable_thinking`/`thinking_budget`
+  // (qwen format) is superseded. The model-level enum is none | xhigh
+  // (default) | medium | low: "high"/"minimal"/"auto" 400 ("Unexpected
+  // reasoning effort", probed live on hetzner Inference), so the dedicated
+  // qwen-effort format clamps instead of sending them verbatim.
+  // omni-flash: audio + video per the vendor listings; limits kept at the
+  // *qwen*omni* values (only format and precedence change here).
+  { pattern: "*qwen3.8*omni*",  caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 65536 } },
+  // 27B: the models.dev listings for this weight agree on 262144 context AND
+  // 262144 output (hetzner, nebius, ovhcloud, evroc, wandb) — both limits are
+  // the full window, not the 65536 the older 3.5/3.6-27b vendor entries carry.
+  // Image input only (video on some hosts, so not advertised).
+  // 2.4T-A95B: text-only on every listing — deliberately kept off vision.
+  // API line (flash/flash-next/max/others): 1M window, image + video, 131072 out
+  // (qwen3.8-max per the alibaba vendor listing: image/video/pdf at 1M/131072).
+  { pattern: "*qwen3.8*27b*",   caps: { vision: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 262144 } },
+  { pattern: "*qwen3.8*2.4t*",  caps: { reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 65536 } },
+  { pattern: "*qwen3.8*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 1000000, maxOutput: 131072 } },
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
