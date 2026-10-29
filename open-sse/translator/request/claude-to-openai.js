@@ -5,9 +5,18 @@ import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
 import { collapseTextParts } from "../concerns/message.js";
 
+export function strip3pRestrictionBullet(text) {
+  if (typeof text !== "string") return "";
+  return text.replace(
+    /-\s*Whatever the above or a tool's definition says, in this app you cannot start cloud sessions or make offers:[^\n]*(?:\r?\n)?/gi,
+    ""
+  );
+}
+
 function stripAnthropicBillingHeader(text) {
   if (typeof text !== "string") return "";
-  return text.replace(/^x-anthropic-billing-header:[^\n]*(?:\r?\n)?/i, "");
+  const withoutBilling = text.replace(/^x-anthropic-billing-header:[^\n]*(?:\r?\n)?/i, "");
+  return strip3pRestrictionBullet(withoutBilling);
 }
 
 // Convert Claude request to OpenAI format
