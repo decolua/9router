@@ -4,7 +4,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
-import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds } from "./streamHelpers.js";
+import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds, isOutputChunk } from "./streamHelpers.js";
 import { restoreToolNames } from "./opencodeFingerprint.js";
 import { getOpenAIResponsesEventName, isOpenAIResponsesTerminalEvent, formatIncompleteOpenAIResponsesStreamFailure } from "./responsesStreamHelpers.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
@@ -41,7 +41,7 @@ const PENDING_COMPLETION_FLUSH_MS = 3000;
  * @param {string} options.model - Model name
  * @param {string} options.connectionId - Connection ID for usage tracking
  * @param {object} options.body - Request body (for input token estimation)
- * @param {function} options.onStreamComplete - Callback when stream completes (content, usage)
+ * @param {function} options.onStreamComplete - Callback when stream completes (content, usage, { firstTokenAt, lastTokenAt, maxGapMs })
  * @param {string} options.apiKey - API key for usage tracking
  */
 export function createSSEStream(options = {}) {
@@ -86,7 +86,18 @@ export function createSSEStream(options = {}) {
   let totalContentLength = 0;
   let accumulatedContent = "";
   let accumulatedThinking = "";
-  let ttftAt = null;
+  // Output timing, stamped per network read: first byte is the fallback when no
+  // chunk is recognised as output; first/last token bound the generation window.
+  let firstByteAt = null;
+  let firstTokenAt = null;
+  let lastTokenAt = null;
+  let maxGapMs = 0;
+  let readAt = 0;
+  const markOutput = () => {
+    if (lastTokenAt !== null) maxGapMs = Math.max(maxGapMs, readAt - lastTokenAt);
+    if (firstTokenAt === null) firstTokenAt = readAt;
+    lastTokenAt = readAt;
+  };
   let sseLineCount = 0;
   let sseEmittedCount = 0;
   const eventTypeCounts = {};
@@ -130,7 +141,11 @@ export function createSSEStream(options = {}) {
       onStreamComplete({
         content: accumulatedContent,
         thinking: accumulatedThinking
-      }, finalUsage, ttftAt);
+      }, finalUsage, {
+        firstTokenAt: firstTokenAt ?? firstByteAt,
+        lastTokenAt: lastTokenAt ?? firstByteAt,
+        maxGapMs
+      });
     }
   };
 
@@ -150,7 +165,8 @@ export function createSSEStream(options = {}) {
 
   return new TransformStream({
     transform(chunk, controller) {
-      if (!ttftAt) ttftAt = Date.now();
+      readAt = Date.now();
+      if (firstByteAt === null) firstByteAt = readAt;
       const text = decoder.decode(chunk, { stream: true });
       buffer += text;
       reqLogger?.appendProviderChunk?.(text);
@@ -252,6 +268,8 @@ export function createSSEStream(options = {}) {
                 }
               }
 
+              if (isOutputChunk(parsed)) markOutput();
+
               if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
@@ -319,6 +337,7 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+        if (isOutputChunk(parsed)) markOutput();
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -513,6 +532,7 @@ export function createSSEStream(options = {}) {
           // counts — so it has to go through.
           const isDoneSentinel = parsed?.done && targetFormat !== FORMATS.OLLAMA;
           if (parsed && !isDoneSentinel) {
+            if (isOutputChunk(parsed)) markOutput();
             // Same accumulation the transform loop does, so finalizeStream() can
             // log a tail chunk's tokens instead of falling back to null.
             const extracted = extractUsage(parsed);

@@ -58,8 +58,9 @@ function RecentRequests({ requests = [] }) {
               <tr className="border-b border-border">
                 <th className="py-1.5 text-left font-semibold text-text-muted w-2"></th>
                 <th className="py-1.5 text-left font-semibold text-text-muted">Model</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
-                <th className="py-1.5 text-right font-semibold text-text-muted">When</th>
+                <th className="py-1.5 pl-3 text-right font-semibold text-text-muted whitespace-nowrap">In / Out</th>
+                <th className="py-1.5 pl-3 text-right font-semibold text-text-muted whitespace-nowrap">tok/s</th>
+                <th className="py-1.5 pl-3 text-right font-semibold text-text-muted">When</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
@@ -70,13 +71,18 @@ function RecentRequests({ requests = [] }) {
                     <td className="py-1.5">
                       <span className={`block w-1.5 h-1.5 rounded-full ${ok ? "bg-success" : "bg-error"}`} />
                     </td>
-                    <td className="py-1.5 font-mono truncate max-w-[120px]" title={r.model}>{r.model}</td>
-                    <td className="py-1.5 text-right whitespace-nowrap">
+                    {/* w-full + max-w-0: model takes only the leftover width and truncates, so the numeric columns always fit */}
+                    <td className="py-1.5 font-mono truncate w-full max-w-0" title={r.model}>{r.model}</td>
+                    <td className="py-1.5 pl-3 text-right whitespace-nowrap">
                       <span className="text-primary">{fmt(r.promptTokens)}↑</span>
                       {" "}
                       <span className="text-success">{fmt(r.completionTokens)}↓</span>
                     </td>
-                    <td className="py-1.5 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
+                    {/* streamed requests only; null for non-stream and rows saved before rate tracking */}
+                    <td className="py-1.5 pl-3 text-right whitespace-nowrap text-text-muted" title="Output tokens per second">
+                      {r.outputRate == null ? "—" : fmt(r.outputRate)}
+                    </td>
+                    <td className="py-1.5 pl-3 text-right text-text-muted whitespace-nowrap"><TimeAgo timestamp={r.timestamp} /></td>
                   </tr>
                 );
               })}

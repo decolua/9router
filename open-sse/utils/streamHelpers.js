@@ -1,5 +1,6 @@
 import { FORMATS } from "../translator/formats.js";
 import { fallbackToolCallId } from "../translator/concerns/toolCall.js";
+import { CLAUDE_EVENT, RESPONSES_EVENT_PREFIX } from "../translator/schema/index.js";
 import { buildErrorBody } from "./error.js";
 import { SSE_DONE } from "./sseConstants.js";
 
@@ -64,6 +65,52 @@ export function hasValuableContent(chunk, format) {
   }
 
   return true; // Other formats: keep all chunks
+}
+
+const nonEmpty = (v) => typeof v === "string" ? v.length > 0 : Array.isArray(v) && v.length > 0;
+
+// True when a parsed upstream chunk carries generated output (text, thinking or
+// tool-call arguments, or a Claude block that will carry them), in any provider
+// format. Role-only openers, message_start,
+// response.created, pings and usage trailers are not output — stream timing
+// (TTFT, tok/s, max gap) is measured on output chunks only.
+export function isOutputChunk(chunk) {
+  if (!chunk || typeof chunk !== "object") return false;
+
+  // OpenAI chat
+  const delta = chunk.choices?.[0]?.delta;
+  if (delta) {
+    return nonEmpty(delta.content) || nonEmpty(delta.reasoning_content) ||
+           nonEmpty(delta.reasoning) || nonEmpty(delta.tool_calls);
+  }
+
+  // Claude. A block start counts: with redacted thinking the thinking block opens
+  // as soon as generation starts, but its tokens (billed in output_tokens) never
+  // stream — the only delta is the signature when thinking ends.
+  if (chunk.type === CLAUDE_EVENT.CONTENT_BLOCK_START) return true;
+  if (chunk.type === CLAUDE_EVENT.CONTENT_BLOCK_DELTA) {
+    const d = chunk.delta || {};
+    return nonEmpty(d.text) || nonEmpty(d.thinking) || nonEmpty(d.partial_json);
+  }
+
+  // OpenAI Responses: every generated-output event is a non-empty response.*.delta
+  if (typeof chunk.type === "string" && chunk.type.startsWith(RESPONSES_EVENT_PREFIX)) {
+    return chunk.type.endsWith(".delta") && nonEmpty(chunk.delta);
+  }
+
+  // Gemini / Antigravity (the latter wraps the payload in `response`)
+  const parts = (chunk.response || chunk).candidates?.[0]?.content?.parts;
+  if (Array.isArray(parts)) {
+    return parts.some((p) => nonEmpty(p?.text) || p?.functionCall);
+  }
+
+  // Ollama
+  const msg = chunk.message;
+  if (msg) {
+    return nonEmpty(msg.content) || nonEmpty(msg.thinking) || nonEmpty(msg.tool_calls);
+  }
+
+  return false;
 }
 
 // Ensure every streamed tool_call carries an id.
