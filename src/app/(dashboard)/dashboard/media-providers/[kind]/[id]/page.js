@@ -172,8 +172,9 @@ export default function MediaProviderDetailPage() {
         />
       )}
 
-      {/* Models - hidden for tts/webSearch/webFetch (provider IS the model); custom uses prefix as alias */}
-      {kind !== "tts" && kind !== "webSearch" && kind !== "webFetch" && (
+      {/* Models — hidden for webSearch/webFetch (provider IS the model); tts and
+          embeddings can add extra model ids on top of the built-in catalog. */}
+      {kind !== "webSearch" && kind !== "webFetch" && (
         <ModelsCard
           providerId={id}
           kindFilter={kind}
