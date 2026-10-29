@@ -139,15 +139,63 @@ export function getModelLockKey(model) {
  * Reads flat field `modelLock_${model}` (or `modelLock___all` when model=null).
  */
 export function isModelLockActive(connection, model) {
-  const key = getModelLockKey(model);
-  const expiry = connection[key] || connection[MODEL_LOCK_ALL];
-  if (!expiry) return false;
-  return new Date(expiry).getTime() > Date.now();
+  const now = Date.now();
+  const stillLocked = (value) => {
+    if (!value) return false;
+    const until = new Date(value).getTime();
+    return Number.isFinite(until) && until > now;
+  };
+  // Each key is judged on its own expiry. `a || b` picked the per-model key on the
+  // truthiness of the string, so a stale one hid a still-active account-wide lock:
+  // the connection then read as free for exactly the model that had just failed,
+  // while still reading as locked for every other model. Nothing clears the stale
+  // key either -- the lazy cleanup runs only after a successful request, and an
+  // account under an `__all` lock never gets one. Same rule the sibling
+  // `getEarliestModelLockUntil` already applies when it skips expired entries.
+  return stillLocked(connection[getModelLockKey(model)]) || stillLocked(connection[MODEL_LOCK_ALL]);
+}
+
+/**
+ * When this connection becomes usable for *model* again, or null if it is usable now.
+ *
+ * The time-valued twin of `isModelLockActive`, and it has to agree with it key for key.
+ * That connection is locked while EITHER the per-model key or the account-wide key is
+ * live, so it frees up only once BOTH have passed -- the **later** of the two, not the
+ * earlier. It routes the model through `getModelLockKey` for the same reason, so a null
+ * or absent model resolves to the account-wide key here exactly as it does there.
+ *
+ * `getEarliestModelLockUntil` below cannot answer this: it scans every `modelLock_*`
+ * key, so on a connection locked for two models it returns the unrelated model's expiry.
+ * Used for retry timing that way, it advises a retry while this model is still locked,
+ * and the retry fails identically -- one wasted upstream request per caller, reported as
+ * a second rate-limit error.
+ */
+export function getModelLockUntil(connection, model) {
+  if (!connection) return null;
+  const now = Date.now();
+  const activeUntil = (value) => {
+    if (!value) return null;
+    const t = new Date(value).getTime();
+    return Number.isFinite(t) && t > now ? t : null;
+  };
+
+  const gates = [
+    activeUntil(connection[getModelLockKey(model)]),
+    activeUntil(connection[MODEL_LOCK_ALL]),
+  ].filter((t) => t !== null);
+
+  return gates.length ? new Date(Math.max(...gates)).toISOString() : null;
 }
 
 /**
  * Get earliest active model lock expiry across all modelLock_* fields.
- * Used for UI cooldown display.
+ *
+ * Connection-wide: "when does anything on this account free up". That is the right
+ * question for a per-connection cooldown badge and the wrong one for retry timing on a
+ * specific model -- use `getModelLockUntil` for that. Left as it is rather than widened:
+ * both of its callers wanted the model-scoped question and now ask for it by name, and
+ * making the scope depend on whether an argument was passed would bring back the
+ * undefined-versus-null divergence this file already had one of.
  */
 export function getEarliestModelLockUntil(connection) {
   if (!connection) return null;
