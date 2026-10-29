@@ -1,6 +1,6 @@
 {
   "name": "9router",
-  "version": "0.5.111",
+  "version": "0.5.112",
   "federationFork": true,
   "description": "9Router CLI - Start and manage 9Router server",
   "bin": {

@@ -141,3 +141,21 @@ tests/unit/headroom-responses-format.test.js :: compressWithHeadroom openai-resp
 # merge (git diff HEAD -- test file = empty). Needs its own QA row; excused here so the
 # backport gate stays scoped to merge-caused changes.
 tests/federation/qa-harness-cell-detection.test.js :: QA-battery cell detection (QA-9ROUTER-21/22/26) a missing-test-deps rc is INFRA, never a product result grades the missing-deps signature UNVERIFIED and a genuine fail OK
+
+# [2026-10-29 UPSTREAM-INTRODUCED, v0.5.112 sweep] Upstream 3fd925ab added codebuddy
+# conversation/request-id headers (randomUUID per call) to
+# open-sse/executors/default.js, but the translator golden snapshots were committed
+# BEFORE the feature (upstream master .snap has zero X-Conversation-ID lines) and
+# nothing mocks node:crypto — the 2 codebuddy cases cannot pass on any single run,
+# including upstream master itself (verified by regenerate + CI-mode rerun).
+# Upstream fix: mock randomUUID + regenerate the snapshot.
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) codebuddy-cn → headers (apiKey / oauth)
+tests/translator/golden-url-header.test.js :: GOLDEN buildHeaders (default executor providers) codebuddy-intl → headers (apiKey / oauth)
+
+# [2026-10-29 FEDERATION DOCTRINE, deliberate] Federation keeps combo stop-on-
+# request-scoped-4xx semantics (cf94867c, "avoid cooldown for request-scoped
+# failures"): the same request would fail on every member, so the combo hands back
+# the member that named the real cause instead of advancing. Upstream 3fd925ab
+# changed this test to expect advance-past-request-scoped. Divergence is recorded
+# here at the v0.5.112 backport.
+tests/unit/codebuddy-block-backoff.test.js :: CodeBuddy Intl block backoff (#5024) advances past a malformed CodeBuddy request without cooling the account

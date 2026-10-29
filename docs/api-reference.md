@@ -67,7 +67,8 @@ Two stricter classes sit inside that set:
   `/api/cli-tools/antigravity-mitm`, the install/enable/disable/check endpoints
   under `/api/tunnel/`, `/api/headroom/start`, `/api/headroom/stop`,
   `/api/headroom/proxy`, `/api/oauth/cursor/auto-import`,
-  `/api/oauth/kiro/auto-import`, `/api/oauth/zed/auto-import` and
+  `/api/oauth/kiro/auto-import`, `/api/oauth/zed/auto-import`,
+  `/api/oauth/minimax-code/lease`, `/api/oauth/minimax-code-global/lease` and
   `/api/auth/reset-password`) need the CLI token
   or a loopback client that is authenticated, so a remote session gets `403` even
   when its cookie is valid.
