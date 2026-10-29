@@ -259,6 +259,10 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     try {
       responseBody = await providerResponse.json();
     } catch (err) {
+      if (err.name === "AbortError") {
+        appendLog({ status: "FAILED 499" });
+        return createErrorResult(499, "Request aborted");
+      }
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       console.error(`[ChatCore] Failed to parse JSON from ${provider}:`, err.message);
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `Invalid JSON response from ${provider}`);
@@ -269,6 +273,21 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // bare OpenAI body and usage tracking sees data.usage. No-op unless the
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
+
+  if (responseBody?.error) {
+    const upstreamStatus = Number(responseBody.error.status);
+    const status = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599
+      ? upstreamStatus
+      : HTTP_STATUS.BAD_GATEWAY;
+    appendLog({ status: `FAILED ${status}` });
+    return createErrorResult(status, responseBody.error.message || "Upstream JSON response failed");
+  }
+
+  if (sourceFormat === FORMATS.OPENAI && targetFormat === FORMATS.OPENAI && (!Array.isArray(responseBody?.choices) || !responseBody.choices.length ||
+      !responseBody.choices.every(choice => choice?.message && typeof choice.message === "object"))) {
+    appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid Chat Completions response from upstream");
+  }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
