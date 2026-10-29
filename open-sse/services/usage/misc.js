@@ -24,46 +24,27 @@ export async function getIflowUsage(accessToken) {
   }
 }
 
-const OLLAMA_LIMIT_WINDOWS = {
+const OLLAMA_LEGACY_WINDOWS = {
   session: "Session (5h)",
   weekly: "Weekly (7d)",
-  monthly: "Monthly",
 };
-
-function addUtcMonths(date, months) {
-  const total = date.getUTCMonth() + months;
-  const year = date.getUTCFullYear() + Math.floor(total / 12);
-  const month = ((total % 12) + 12) % 12;
-  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
-  return new Date(Date.UTC(
-    year, month, Math.min(date.getUTCDate(), lastDay),
-    date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds(),
-  ));
-}
-
-// Free plan: "usage resets monthly from the date you signed up" (ollama.com/pricing).
-function nextMonthlyResetFromSignup(createdAt, now = new Date()) {
-  const anchor = new Date(createdAt);
-  if (Number.isNaN(anchor.getTime())) return null;
-  const elapsedMonths = (now.getUTCFullYear() - anchor.getUTCFullYear()) * 12
-    + (now.getUTCMonth() - anchor.getUTCMonth());
-  for (let i = Math.max(0, elapsedMonths); i <= elapsedMonths + 1; i++) {
-    const candidate = addUtcMonths(anchor, i);
-    if (candidate > now) return candidate.toISOString();
-  }
-  return null;
-}
 
 /**
  * Ollama Cloud Usage
- * GET https://ollama.com/api/usage — `limits.<window>.usage` is a 0..1 ratio
- *   (1.0 = limit reached). Paid plans report session (5h) + weekly (7d); the
- *   free plan reports a single monthly window. No reset timestamp exposed;
- *   the free monthly reset is derived from the account's signup date.
- * POST https://ollama.com/api/me — plan label + CreatedAt (fail-open).
+ * GET https://ollama.com/api/balance — credit-model usage for every plan,
+ *   Free included (effective 2026-08-31 pricing redesign). Returns
+ *   `included.{balance_usd,allowance_usd,period}` (the plan's monthly
+ *   credit pool, remaining balance, and a real reset timestamp) and an
+ *   optional `purchased.balance_usd` (unexpired pay-as-you-go top-up).
+ *   GET /api/usage (the endpoint this used to call) was repurposed on
+ *   2026-10-10 into pure spend-history and no longer reports limits — see
+ *   docs.ollama.com/api/balance + docs.ollama.com/api/cloud-usage. A
+ *   pre-migration account can still report the legacy
+ *   `included.session/weekly.{remaining_percent,resets_at}` shape;
+ *   both are handled below.
+ * POST https://ollama.com/api/me — plan label (fail-open).
  * Auth: Authorization: Bearer <apiKey>
  */
-const OLLAMA_USAGE_URL = "https://ollama.com/api/usage";
 const OLLAMA_ME_URL = "https://ollama.com/api/me";
 const OLLAMA_BALANCE_URL = "https://ollama.com/api/balance";
 
@@ -73,7 +54,7 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
   }
 
   try {
-    const response = await proxyAwareFetch(OLLAMA_USAGE_URL, {
+    const response = await proxyAwareFetch(OLLAMA_BALANCE_URL, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
@@ -110,98 +91,50 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
       ? planRaw.charAt(0).toUpperCase() + planRaw.slice(1).toLowerCase()
       : "Ollama Cloud";
 
-    const limits = data?.limits && typeof data.limits === "object" ? data.limits : {};
-
-    // Ollama `usage` is a 0..1 ratio (1.0 = limit reached). Convert to a 0..100
-    // bar. Do NOT set absolute `remaining` — QuotaTable reads remainingPercentage.
-    function ratioQuota(usageRatio, resetAt = null) {
-      const ratio = Math.max(0, Math.min(1, Number(usageRatio) || 0));
-      const usedPct = Math.round(ratio * 100);
-      return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
-    }
-
-    const monthlyResetAt = planRaw.toLowerCase() === "free" && me?.CreatedAt
-      ? nextMonthlyResetFromSignup(me.CreatedAt)
-      : null;
-
     const quotas = {};
-    for (const [key, label] of Object.entries(OLLAMA_LIMIT_WINDOWS)) {
-      const raw = limits[key]?.usage;
-      if (raw === undefined || raw === null) continue;
-      const ratio = Number(raw);
-      if (Number.isNaN(ratio)) continue;
-      quotas[label] = ratioQuota(ratio, key === "monthly" ? monthlyResetAt : null);
+    const included = data?.included && typeof data.included === "object" ? data.included : null;
+
+    if (included) {
+      const allowance = Number(included.allowance_usd);
+      const balance = Number(included.balance_usd);
+      if (Number.isFinite(allowance) && allowance > 0 && Number.isFinite(balance)) {
+        const used = Math.max(0, allowance - balance);
+        quotas.Monthly = {
+          used: Math.round(used * 100) / 100,
+          total: allowance,
+          remainingPercentage: Math.max(0, Math.min(100, Math.round((balance / allowance) * 10000) / 100)),
+          resetAt: included.period?.until || null,
+          unlimited: false,
+        };
+      } else {
+        // Legacy pre-credit-model shape, still seen on un-migrated accounts.
+        for (const [key, label] of Object.entries(OLLAMA_LEGACY_WINDOWS)) {
+          const window = included[key];
+          const remainingPct = Number(window?.remaining_percent);
+          if (!window || !Number.isFinite(remainingPct)) continue;
+          quotas[label] = {
+            used: Math.round((100 - remainingPct) * 100) / 100,
+            total: 100,
+            remainingPercentage: Math.max(0, Math.min(100, remainingPct)),
+            resetAt: window.resets_at || null,
+            unlimited: false,
+          };
+        }
+      }
     }
 
-    // Modern Ollama Cloud API reports limits and remaining credits via /api/balance
-    if (Object.keys(quotas).length === 0) {
-      let balanceResponse = null;
-      try {
-        balanceResponse = await proxyAwareFetch(OLLAMA_BALANCE_URL, {
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            Accept: "application/json",
-          },
-        }, proxyOptions);
-      } catch {
-        balanceResponse = null;
-      }
-
-      if (balanceResponse && balanceResponse.ok) {
-        let balanceData = null;
-        try {
-          balanceData = await balanceResponse.json();
-        } catch {
-          balanceData = null;
-        }
-        const inc = balanceData?.included;
-
-        if (inc?.session) {
-          const rem = Number(inc.session.remaining_percent);
-          const remPct = Number.isFinite(rem) ? Math.max(0, Math.min(100, rem)) : 100;
-          quotas["Session (5h)"] = {
-            used: Math.round((100 - remPct) * 100) / 100,
-            total: 100,
-            remainingPercentage: remPct,
-            resetAt: inc.session.resets_at || null,
-            unlimited: false,
-          };
-        }
-        if (inc?.weekly) {
-          const rem = Number(inc.weekly.remaining_percent);
-          const remPct = Number.isFinite(rem) ? Math.max(0, Math.min(100, rem)) : 100;
-          quotas["Weekly (7d)"] = {
-            used: Math.round((100 - remPct) * 100) / 100,
-            total: 100,
-            remainingPercentage: remPct,
-            resetAt: inc.weekly.resets_at || null,
-            unlimited: false,
-          };
-        }
-        if (inc?.allowance_usd !== undefined && inc?.balance_usd !== undefined) {
-          const allowance = Number(inc.allowance_usd) || 0;
-          const balance = Number(inc.balance_usd) || 0;
-          const used = Math.max(0, Math.round((allowance - balance) * 100) / 100);
-          const remPct = allowance > 0 ? Math.round((balance / allowance) * 10000) / 100 : 0;
-          quotas["Allowance ($)"] = {
-            used,
-            total: allowance,
-            remainingPercentage: remPct,
-            resetAt: inc.period?.until || null,
-            unlimited: false,
-            unit: "USD",
-          };
-        }
-        if (Number(balanceData?.purchased?.balance_usd) > 0) {
-          quotas["Purchased Credits"] = {
-            used: 0,
-            total: Number(balanceData.purchased.balance_usd),
-            remainingPercentage: 100,
-            isCreditBalance: true,
-            currency: "$",
-          };
-        }
-      }
+    // Unexpired pay-as-you-go top-up — a separate pool with no reset cycle,
+    // rendered as a credit balance (💰) rather than a used/total bar.
+    const purchasedBalance = Number(data?.purchased?.balance_usd);
+    if (Number.isFinite(purchasedBalance) && purchasedBalance > 0) {
+      quotas["Purchased credit"] = {
+        used: 0,
+        total: purchasedBalance,
+        isCreditBalance: true,
+        currency: "USD",
+        resetAt: null,
+        unlimited: false,
+      };
     }
 
     if (Object.keys(quotas).length === 0) {
@@ -217,8 +150,6 @@ export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions 
     return { message: `Ollama Cloud error: ${error.message}` };
   }
 }
-
-
 
 /**
  * Vercel AI Gateway usage — credit balance for the API key

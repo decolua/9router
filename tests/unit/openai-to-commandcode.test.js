@@ -184,7 +184,7 @@ describe("openaiToCommandCodeRequest — native image blocks", () => {
   const PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
   const DATA_URI = `data:image/png;base64,${PNG_B64}`;
 
-  it("maps OpenAI image_url data URI to CommandCode {type:image,image,mimeType}", () => {
+  it("maps OpenAI image_url data URI to CommandCode {type:image,image,mimeType,mediaType}", () => {
     const out = openaiToCommandCodeRequest(MODEL, {
       messages: [{
         role: "user",

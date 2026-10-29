@@ -65,7 +65,7 @@ async function runPassthrough({ toolNameMap, toolName = "read_client" }) {
   };
   const sse = `data: ${JSON.stringify(chunk)}\n\n` + "data: [DONE]\n\n";
 
-  const stream = createPassthroughStreamWithLogger("opencode", null, "m", "c1", null, null, null, toolNameMap);
+  const stream = createPassthroughStreamWithLogger("opencode", null, toolNameMap, "m", "c1");
   const writer = stream.writable.getWriter();
   const readPromise = drain(stream.readable);
   await writer.write(new TextEncoder().encode(sse));

@@ -221,7 +221,8 @@ describe("vertex (veo) video adapter", () => {
     });
 
     const body = await result.response.json();
-    expect(body.status).toBe("failed");
+    expect(result.success).toBe(false);
+    expect(result.response.status).toBe(502);
     expect(body.error.message).toBe("bad prompt");
   });
 

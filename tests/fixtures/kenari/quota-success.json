@@ -1,0 +1,18 @@
+{
+  "coupon": null,
+  "plan": {
+    "name": "Kreator",
+    "windows": {
+      "month": {
+        "remaining_rp": 545904,
+        "resets_at": "2026-09-09T05:49:05Z",
+        "used_rp": 54096
+      },
+      "week": {
+        "remaining_rp": 95904,
+        "resets_at": "2026-09-09T11:00:55Z",
+        "used_rp": 54096
+      }
+    }
+  }
+}

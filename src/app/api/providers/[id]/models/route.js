@@ -11,12 +11,14 @@ import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { ANTIGRAVITY_IDE_USER_AGENT, ANTIGRAVITY_IDE_VERSION } from "open-sse/providers/shared.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
+const ANTIGRAVITY_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
 // Model discovery must identify as the same Codex CLI version as inference.
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
@@ -221,13 +223,38 @@ const PROVIDER_MODELS_CONFIG = {
     })
   },
   antigravity: {
-    url: "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:models",
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    authHeader: "Authorization",
-    authPrefix: "Bearer ",
-    body: {},
-    parseResponse: (data) => data.models || []
+    customResolver: async (connection) => {
+      if (!connection.accessToken) {
+        return { error: "No valid token found", status: 401 };
+      }
+
+      const projectId = connection.projectId || connection.providerSpecificData?.projectId;
+      try {
+        const response = await fetch(ANTIGRAVITY_MODELS_URL, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${connection.accessToken}`,
+            "Content-Type": "application/json",
+            "User-Agent": ANTIGRAVITY_IDE_USER_AGENT,
+            "X-Client-Name": "antigravity",
+            "X-Client-Version": ANTIGRAVITY_IDE_VERSION,
+          },
+          body: JSON.stringify(projectId ? { project: projectId } : {}),
+        });
+
+        if (response.ok) {
+          const models = parseGeminiCliModels(await response.json());
+          if (models.length > 0) return { models };
+        }
+      } catch (error) {
+        console.log("Failed to fetch Antigravity models dynamically:", error.message);
+      }
+
+      return {
+        models: getStaticProviderModels("antigravity"),
+        warning: "Antigravity live model discovery is unavailable; using the static catalog.",
+      };
+    },
   },
   github: {
     url: "https://api.githubcopilot.com/models",
@@ -302,6 +329,7 @@ const PROVIDER_MODELS_CONFIG = {
 
   // OpenAI-compatible API key providers
   deepseek: createOpenAIModelsConfig("https://api.deepseek.com/models"),
+  kenari: createOpenAIModelsConfig("https://kenari.id/v1/models"),
   groq: createOpenAIModelsConfig("https://api.groq.com/openai/v1/models"),
   xai: createOpenAIModelsConfig("https://api.x.ai/v1/models"),
   mistral: createOpenAIModelsConfig("https://api.mistral.ai/v1/models"),
@@ -629,6 +657,15 @@ export async function GET(request, { params }) {
 
     const config = PROVIDER_MODELS_CONFIG[connection.provider];
     if (!config) {
+      const models = getStaticProviderModels(connection.provider);
+      if (models.length > 0) {
+        return NextResponse.json({
+          provider: connection.provider,
+          connectionId: connection.id,
+          models,
+          source: "local_catalog",
+        });
+      }
       return NextResponse.json(
         { error: `Provider ${connection.provider} does not support models listing` },
         { status: 400 }

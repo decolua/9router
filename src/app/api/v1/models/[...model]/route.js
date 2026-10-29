@@ -1,5 +1,5 @@
 import { buildModelsList } from "../route.js";
-import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyPolicy, filterModelsListForKey } from "@/sse/services/keyAccess.js";
 
 // URL slug → service kind(s). `web` covers both webSearch and webFetch.
 const KIND_SLUG_MAP = {
@@ -45,6 +45,8 @@ export async function GET(request, { params }) {
     const identifier = path.filter(Boolean).join("/");
     const kindFilter = path.length === 1 ? KIND_SLUG_MAP[identifier] : null;
     const keyAccess = await getKeyAccessContext(request);
+    const policyError = await enforceKeyPolicy(keyAccess);
+    if (policyError) return policyError;
 
     if (kindFilter) {
       const data = await filterModelsListForKey(keyAccess, await buildModelsList(kindFilter));

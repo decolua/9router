@@ -88,10 +88,11 @@ export function reorderByCapabilities(models, required) {
   const hard = [...required].filter((c) => HARD_CAPS.has(c));
   const soft = [...required].filter((c) => !HARD_CAPS.has(c));
 
-  const tierOf = (m) => {
-    const slash = typeof m === "string" ? m.indexOf("/") : -1;
-    const provider = slash > 0 ? m.slice(0, slash) : "";
-    const model = slash > 0 ? m.slice(slash + 1) : m;
+  const tierOf = (entry) => {
+    const value = typeof entry === "string" ? entry : entry?.model;
+    const slash = typeof value === "string" ? value.indexOf("/") : -1;
+    const provider = slash > 0 ? value.slice(0, slash) : "";
+    const model = slash > 0 ? value.slice(slash + 1) : value;
     const caps = getCapabilitiesForModel(provider, model);
     if (!hard.every((c) => caps[c] === true)) return 2;
     return soft.every((c) => caps[c] === true) ? 0 : 1;
@@ -293,6 +294,12 @@ export function getComboModelsFromData(modelStr, combosData) {
   return null;
 }
 
+function getComboModelValue(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object" && typeof entry.model === "string") return entry.model;
+  return "";
+}
+
 /**
  * Detect whether a 2xx JSON response contains zero usable content
  * (e.g. empty assistant message with in_progress/incomplete)
@@ -366,6 +373,14 @@ export async function handleComboChat({
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
 }) {
+  const modelValues = models.map(getComboModelValue);
+  const restoreEntries = (values) => {
+    const available = [...models];
+    return values.map((value) => {
+      const index = available.findIndex((entry) => getComboModelValue(entry) === value);
+      return index >= 0 ? available.splice(index, 1)[0] : value;
+    });
+  };
   let rotatedModels = models;
   let activeStickyModel = null;
 
@@ -386,24 +401,24 @@ export async function handleComboChat({
     }
 
     if (!isPerTurn && sessionId) {
-      activeStickyModel = getStickyComboModel(comboName, sessionId, models);
+      activeStickyModel = getStickyComboModel(comboName, sessionId, modelValues);
     }
 
     if (activeStickyModel) {
       if (isStrict) {
         // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
-        rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+        rotatedModels = restoreEntries([activeStickyModel, ...modelValues.filter((model) => model !== activeStickyModel)]);
         log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
       } else if (typeof resolveSmartChoice === "function") {
         // Smart Switch (Adaptive): check if the user's task drastically shifted
         try {
-          const smartResult = await resolveSmartChoice(body, models);
+            const smartResult = await resolveSmartChoice(body, modelValues);
           const newChoice = smartResult?.choice;
           const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
 
-          if (newChoice && newChoice !== activeStickyModel && models.includes(newChoice) && conf !== null && conf >= switchThreshold) {
+          if (newChoice && newChoice !== activeStickyModel && modelValues.includes(newChoice) && conf !== null && conf >= switchThreshold) {
             // Task changed with high confidence: switch model and update session
-            rotatedModels = orderModelsByChoice(models, smartResult);
+            rotatedModels = restoreEntries(orderModelsByChoice(modelValues, smartResult));
             log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${newChoice} (confidence: ${conf} >= ${switchThreshold})`);
             if (sessionId) {
               setStickyComboModel(comboName, sessionId, newChoice);
@@ -411,28 +426,28 @@ export async function handleComboChat({
             }
           } else {
             // Stay on current model to preserve warm prompt cache
-            rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+            rotatedModels = restoreEntries([activeStickyModel, ...modelValues.filter((model) => model !== activeStickyModel)]);
             log.info("COMBO", `smart-router [smart-switch] retained prompt cache model "${activeStickyModel}"`);
           }
         } catch (err) {
           // Fail open to active sticky model
-          rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+          rotatedModels = restoreEntries([activeStickyModel, ...modelValues.filter((model) => model !== activeStickyModel)]);
           log.warn("COMBO", `smart-router error, retained model "${activeStickyModel}"`, { error: err?.message || String(err) });
         }
       } else {
-        rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+        rotatedModels = restoreEntries([activeStickyModel, ...modelValues.filter((model) => model !== activeStickyModel)]);
       }
     } else if (typeof resolveSmartChoice === "function") {
       // Turn 1 or per-turn: evaluate System One to select initial model
       try {
-        const smartResult = await resolveSmartChoice(body, models);
+        const smartResult = await resolveSmartChoice(body, modelValues);
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
 
-        if (smartResult?.choice && models.includes(smartResult.choice)) {
+        if (smartResult?.choice && modelValues.includes(smartResult.choice)) {
           if (switchThreshold > 0 && conf !== null && conf < switchThreshold) {
-            log.info("COMBO", `smart-router confidence (${conf}) below threshold (${switchThreshold}), fallback to order: [${models.join(", ")}]`);
+            log.info("COMBO", `smart-router confidence (${conf}) below threshold (${switchThreshold}), fallback to order: [${modelValues.join(", ")}]`);
           } else {
-            rotatedModels = orderModelsByChoice(models, smartResult);
+            rotatedModels = restoreEntries(orderModelsByChoice(modelValues, smartResult));
             log.info("COMBO", `smart-router selected ${smartResult.choice} (confidence: ${conf ?? "N/A"})`);
             if (!isPerTurn && sessionId) {
               setStickyComboModel(comboName, sessionId, smartResult.choice);
@@ -469,11 +484,13 @@ export async function handleComboChat({
   let requestScopedResult = null;
 
   for (let i = 0; i < rotatedModels.length; i++) {
-    const modelStr = rotatedModels[i];
+    const modelEntry = rotatedModels[i];
+    const modelStr = getComboModelValue(modelEntry);
+    if (!modelStr) continue;
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const result = await handleSingleModel(body, modelStr, modelEntry);
       
       // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
       // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
@@ -575,7 +592,11 @@ export async function handleComboChat({
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
+      // A usage-store failure happened after upstream success; another model would
+      // make a second billable request without fixing the accounting failure.
+      if (result.status === 503 && errorText === "Unable to record API key usage") return result;
+
+      // Check if should fallback to the next model.
       const { provider } = parseModel(modelStr);
       const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
 
@@ -818,7 +839,8 @@ function collectPanel(calls, { minPanel, stragglerGraceMs, panelHardTimeoutMs })
  * @returns {Promise<Response>}
  */
 export async function handleFusionChat({ body, models, handleSingleModel, log, comboName, judgeModel, tuning }) {
-  const panel = Array.isArray(models) ? models.filter(Boolean) : [];
+  const panelEntries = Array.isArray(models) ? models.filter((entry) => getComboModelValue(entry)) : [];
+  const panel = panelEntries.map(getComboModelValue);
   if (panel.length === 0) {
     return new Response(
       JSON.stringify({ error: { message: "Fusion combo has no models" } }),
@@ -828,7 +850,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
 
   // A single-model fusion has nothing to fuse — just answer directly.
   if (panel.length === 1) {
-    return handleSingleModel(body, panel[0]);
+    return handleSingleModel(body, panel[0], panelEntries[0]);
   }
 
   const cfg = { ...FUSION_DEFAULTS, ...(tuning || {}) };
@@ -851,7 +873,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
 
   const t0 = Date.now();
-  const calls = panel.map((m) => withTimeout(handleSingleModel(panelBody, m, true), cfg.panelHardTimeoutMs));
+  const calls = panelEntries.map((entry) => withTimeout(handleSingleModel(panelBody, getComboModelValue(entry), entry, true), cfg.panelHardTimeoutMs));
   const settled = await collectPanel(calls, { ...cfg, minPanel });
   log.info("FUSION", `fan-out collected in ${Date.now() - t0}ms`);
 
@@ -868,7 +890,7 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
       const json = await res.clone().json();
       const text = extractPanelText(json);
       if (text) {
-        answers.push({ model, text });
+        answers.push({ model, entry: panelEntries[i], text });
         log.info("FUSION", `Panel ${model} ok (${text.length} chars)`);
       } else {
         log.warn("FUSION", `Panel ${model} returned empty content`);
@@ -888,13 +910,14 @@ export async function handleFusionChat({ body, models, handleSingleModel, log, c
   }
   if (answers.length === 1) {
     log.info("FUSION", `Only ${answers[0].model} succeeded — answering directly (no fusion)`);
-    return handleSingleModel(body, answers[0].model);
+    return handleSingleModel(body, answers[0].model, answers[0].entry);
   }
 
   // 4. Judge analyzes + writes one final answer (streams to client if requested).
   const judgeBody = appendUserTurn(body, buildJudgePrompt(answers));
   log.info("FUSION", `Judging ${answers.length} answers with ${judge}`);
-  return handleSingleModel(judgeBody, judge);
+  const judgeEntry = panelEntries.find((entry) => getComboModelValue(entry) === judge);
+  return handleSingleModel(judgeBody, judge, judgeEntry);
 }
 
 export {

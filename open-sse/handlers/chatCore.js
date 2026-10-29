@@ -21,7 +21,7 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
-import { takeRenamedToolNames } from "../utils/opencodeFingerprint.js";
+import { takeFingerprintMetadata } from "../utils/opencodeFingerprint.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
 import { injectCustomPrompt } from "../rtk/customPrompt.js";
@@ -61,7 +61,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, ensureOpenAIDone, providerThinking, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -355,11 +355,21 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
-    // Strict pools must never silently fall back to a direct connection —
-    // honored on the Cursor AgentService h2 path and in proxyFetch (#4333).
-    proxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || null,
-    strictProxy: credentials?.providerSpecificData?.strictProxy === true,
+// Strict pools must never silently fall back to a direct connection.
+    // Freebuff also requires strict proxy egress to prevent limited-IP rate limits.
+    proxyPoolId: credentials?.providerSpecificData?.proxyPoolId || credentials?.providerSpecificData?.connectionProxyPoolId || null,
+    strictProxy: credentials?.providerSpecificData?.strictProxy === true || provider === "freebuff",
   };
+
+  if (provider === "freebuff" && credentials?.providerSpecificData?.noFitPool === true) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(503, `Freebuff has no healthy proxy pool for ${model}; all assigned pools are cooling down after limited-IP errors.`);
+  }
+
+  if (provider === "freebuff" && !proxyOptions.vercelRelayUrl && !(proxyOptions.connectionProxyEnabled && proxyOptions.connectionProxyUrl)) {
+    trackPendingRequest(model, provider, connectionId, false, true);
+    return createErrorResult(503, `Freebuff requires a configured proxy pool for ${model}; direct egress is disabled to prevent limited-IP rate limits.`);
+  }
 
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
@@ -388,7 +398,7 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   }
 
   // Execute request
-  let providerResponse, providerUrl, providerHeaders, finalBody;
+  let providerResponse, providerUrl, providerHeaders, finalBody, toolResponseMetadata = null;
   // Most executors return their registry format. Cursor AgentService is an
   // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
@@ -410,34 +420,46 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     providerHeaders = result.headers;
     finalBody = result.transformedBody;
     providerResponseFormat = result.responseFormat || targetFormat;
-    const renamedToolNames = takeRenamedToolNames(translatedBody);
-    if (renamedToolNames?.size) {
-      toolNameMap = new Map([...(toolNameMap || []), ...renamedToolNames]);
+    const fingerprintMeta = takeFingerprintMetadata(translatedBody);
+    if (fingerprintMeta?.renameMap?.size) {
+      toolNameMap = new Map([...(toolNameMap || []), ...fingerprintMeta.renameMap]);
     }
+    toolResponseMetadata = fingerprintMeta
+      ? { renameMap: toolNameMap || fingerprintMeta.renameMap, injectedNames: fingerprintMeta.injectedNames }
+      : null;
     reqLogger.logTargetRequest(providerUrl, providerHeaders, finalBody);
   } catch (error) {
     trackPendingRequest(model, provider, connectionId, false, true);
-    appendRequestLog({ model, provider, connectionId, status: `FAILED ${error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY}` }).catch(() => { });
+    const upstreamStatus = Number.isInteger(error.status) && error.status >= 400 && error.status <= 599
+      ? error.status
+      : HTTP_STATUS.BAD_GATEWAY;
+    const resetAt = Number.isFinite(error.resetsAtMs) && error.resetsAtMs > 0
+      ? error.resetsAtMs
+      : undefined;
+    const isAborted = error.name === "AbortError";
+    appendRequestLog({ model, provider, connectionId, status: `FAILED ${isAborted ? 499 : upstreamStatus}` }).catch(() => { });
     saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency: { ttft: 0, total: Date.now() - requestStartTime },
       tokens: { prompt_tokens: 0, completion_tokens: 0 },
       request: extractRequestConfig(body, stream),
       providerRequest: translatedBody || null,
-      response: { error: error.message || String(error), status: error.name === "AbortError" ? 499 : 502, thinking: null },
+      response: { error: error.message || String(error), status: isAborted ? 499 : upstreamStatus, thinking: null },
       pxpipe: pxpipeSummary,
       status: "error"
     })).catch(() => { });
 
-    if (error.name === "AbortError") {
+    if (isAborted) {
       streamController.handleError(error);
       return createErrorResult(499, "Request aborted");
     }
-    const errMsg = formatProviderError(error, provider, model, HTTP_STATUS.BAD_GATEWAY);
+    const errMsg = formatProviderError(error, provider, model, upstreamStatus);
     if (log?.errorLine) {
-      log.errorLine(reqTag, "✗", `ERROR 502 · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
+      log.errorLine(reqTag, "✗", `ERROR ${upstreamStatus} · ${provider}/${model} · ${Date.now() - requestStartTime}ms\n    ${errMsg}${error.stack ? `\n    ${error.stack}` : ""}`);
     }
-    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, errMsg);
+    const errorResult = createErrorResult(upstreamStatus, errMsg, resetAt);
+    if (error.poolScoped) errorResult.poolScoped = error.poolScoped;
+    return errorResult;
   }
 
   // Handle 401/403 - try token refresh (skip for noAuth providers)
@@ -477,7 +499,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
           if (retryResult.response.ok) {
             providerResponse = retryResult.response;
             providerUrl = retryResult.url;
+            finalBody = retryResult.transformedBody;
             providerResponseFormat = retryResult.responseFormat || targetFormat;
+            const fingerprintMeta = takeFingerprintMetadata(translatedBody);
+            if (fingerprintMeta) {
+              toolResponseMetadata = {
+                renameMap: toolNameMap || fingerprintMeta.renameMap,
+                injectedNames: fingerprintMeta.injectedNames,
+              };
+            }
           }
         } catch { log?.warn?.("TOKEN", `${provider.toUpperCase()} | retry after refresh failed`); }
       } else {
@@ -516,26 +546,45 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
+  const notifyRequestSuccess = async () => {
+    try { await onRequestSuccess?.(); }
+    catch (error) { log?.warn?.("AUTH", `onRequestSuccess failed: ${error?.message || error}`); }
+  };
 
   // Provider forced streaming but client wants JSON. The Responses wire always
   // streams upstream (openaiToOpenAIResponsesRequest pins stream:true), so a
   // non-stream OpenAI/native client behind a Responses upstream must also take
   // this path — handleForcedSSEToJson returns null when the body is not SSE.
   if (!clientRequestedStreaming && (providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES)) {
-    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, toolNameMap, trackDone, appendLog });
-    if (result) { streamController.handleComplete(); return result; }
+    const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, toolNameMap: toolResponseMetadata || toolNameMap, trackDone, appendLog });
+    if (result) {
+      if (result.success) {
+        await notifyRequestSuccess();
+        streamController.handleComplete();
+      } else {
+        streamController.handleError(new Error(result.error || "Non-stream response failed"));
+      }
+      return result;
+    }
   }
 
   // True non-streaming response
   if (!stream) {
-    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap, customToolNames, trackDone, appendLog });
-    streamController.handleComplete();
+    const result = await handleNonStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, reqLogger, toolNameMap: toolResponseMetadata || toolNameMap, customToolNames, trackDone, appendLog });
+    if (result.success) {
+      // The handler owns this callback so bookkeeping failures cannot affect
+      // the already-valid response; forced-SSE-to-JSON above keeps this call here.
+      streamController.handleComplete();
+    } else {
+      streamController.handleError(new Error(result.error || "Non-stream response failed"));
+    }
     return result;
   }
 
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
-  return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, credentials });
+  const streamingResult = await handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap: toolResponseMetadata || toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, ensureOpenAIDone, credentials });
+  return streamingResult?.success ? { ...streamingResult, streaming: true } : streamingResult;
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

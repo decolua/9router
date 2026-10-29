@@ -150,23 +150,9 @@ export const MODEL_CAPABILITIES = {
   "glm-5.3-flash":     { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
   "glm-4.6v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 128000, maxOutput: 32768 },
   "glm-4.5v":          { vision: true, videoInput: true, reasoning: true, thinkingFormat: "zai", contextWindow: 64000, maxOutput: 16384 },
-  // GLM-5.2 has 1M context and maxOutput 131072. An exact entry shadows the *glm-5.2*
-  // pattern completely, so it must repeat that pattern's thinkingEffortSupported or
-  // reasoning_effort is dropped for GLM-5.2 (supported from 5.2 onward).
+  // GLM-5.2 has 1M context and maxOutput 131072. An exact entry shadows the pattern,
+  // so it must repeat thinkingEffortSupported.
   "glm-5.2":           { reasoning: true, thinkingFormat: "zai", thinkingEffortSupported: true, thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 131072 },
-  // OpenCode serves the same weights under this free id from its OWN inference
-  // service, which validates the body strictly: the zai `thinking` object the
-  // *glm-5.3* pattern emits is answered
-  //   400 [unknown_parameter] invalid request body: json: unknown field "thinking"
-  // while reasoning_effort is accepted (none/minimal/low/medium/high/xhigh/max → 200).
-  // Probed live 2026-10-18 on both lanes exposing the id: /inference/v1 (provider
-  // "opencode") and /zen/v1 (provider "opencode-zen"). Mirrors the
-  // PROVIDER_CAPABILITIES["opencode-go"] override for the paid glm-5.3-flash id;
-  // the zai shape stays correct for z.ai's own lines (glm / glm-cn). codebuddy-cn
-  // is unaffected — it already resolves glm-5.3-flash to the openai shape.
-  // Known gap, shared with the paid sibling: an intent that carries no level
-  // (Claude adaptive thinking, reasoning_effort "auto") still emits literal
-  // "auto" from the generic openai branch, which this service rejects.
   "glm-5.3-flash-free": { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
 
   // DeepSeek's first V4 model with image input; text limits match V4-Flash.
@@ -300,10 +286,8 @@ export const PROVIDER_CAPABILITIES = {
   },
   "codex": {
     "gpt-6-astra":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
-    "gpt-6-sol":                 { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
-    // Without its own entry gpt-6.1-sol fell through to *gpt-6* (1.05M), overstating
-    // the Codex window like any unlisted sibling would.
     "gpt-6.1-sol":               { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
+    "gpt-6-sol":                 { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 272000, maxOutput: 128000 },
     // codex-rs/models-manager/models.json: gpt-6.1-terra has context_window 500000 on Codex
     // (the API model is 1.05M; Codex caps the default window like its siblings).
     "gpt-6.1-terra":             { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 500000, maxOutput: 128000 },
@@ -680,9 +664,16 @@ export const PATTERN_CAPABILITIES = [
  * @param {number} [_depth] internal recursion depth guard
  * @returns {object|null} full capabilities object, or null for empty input
  */
+function getComboModelValue(entry) {
+  if (typeof entry === "string") return entry;
+  if (entry && typeof entry === "object" && typeof entry.model === "string") return entry.model;
+  return "";
+}
+
 export function aggregateComboCapabilities(comboModels, comboLookup = null, resolveCaps = null, _depth = 0) {
   if (!comboModels?.length || _depth > 6) return null;
-  const allCaps = comboModels.map((fullId) => {
+  const allCaps = comboModels.map((entry) => {
+    const fullId = getComboModelValue(entry);
     // Nested combo: bare name (no slash) that exists in the lookup — recurse
     if (!fullId.includes("/") && comboLookup?.[fullId]) {
       return aggregateComboCapabilities(comboLookup[fullId], comboLookup, resolveCaps, _depth + 1)

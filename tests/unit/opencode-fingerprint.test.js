@@ -7,6 +7,7 @@ import {
   fingerprintToolKey,
   restoreToolNames,
   takeRenamedToolNames,
+  takeFingerprintMetadata,
   OPENCODE_FINGERPRINT_TOOLS,
 } from "open-sse/utils/opencodeFingerprint.js";
 
@@ -111,10 +112,31 @@ describe("opencodeFingerprint — request side", () => {
     expect(body.tool_choice.function.name).toBe("read_client");
   });
 
-  it("records the rename map against the body for the response side", () => {
+  it("records request-local caller renames and injected names independently", () => {
     const body = { tools: flat(["read"]) };
     const map = applyFingerprintTools(body, true);
+    const metadata = takeFingerprintMetadata(body);
     expect(takeRenamedToolNames(body)).toBe(map);
+    expect(metadata.renameMap).toBe(map);
+    expect([...metadata.injectedNames].sort()).toEqual(["read", "shell"]);
+  });
+
+  it("records injected names when the caller supplied no tools", () => {
+    const body = { tools: [] };
+    applyFingerprintTools(body, true);
+    expect([...takeFingerprintMetadata(body).injectedNames].sort()).toEqual([...OPENCODE_FINGERPRINT_TOOLS].sort());
+  });
+
+  it("preserves the original metadata and injection classification on same-body retries", () => {
+    const body = { tools: flat(["Bash"]) };
+    const firstMap = applyFingerprintTools(body, true);
+    const firstMetadata = takeFingerprintMetadata(body);
+    const toolCount = body.tools.length;
+
+    expect(applyFingerprintTools(body, true)).toBe(firstMap);
+    expect(takeFingerprintMetadata(body)).toBe(firstMetadata);
+    expect(body.tools).toHaveLength(toolCount);
+    expect([...firstMetadata.injectedNames].sort()).toEqual([...OPENCODE_FINGERPRINT_TOOLS].sort());
   });
 
   it("never throws on malformed tools", () => {
@@ -313,6 +335,32 @@ describe("opencodeFingerprint — response side", () => {
   it("leaves unknown tool names untouched", () => {
     const body = { output: [{ type: "function_call", name: "Edit" }] };
     expect(restoreToolNames(body, map).output[0].name).toBe("Edit");
+  });
+
+  it("restores renamed caller tools while leaving injected decoys unchanged", () => {
+    const body = {
+      output: [
+        { type: "function_call", name: "read_client", call_id: "caller" },
+        { type: "function_call", name: "shell", call_id: "decoy" },
+      ],
+    };
+    const out = restoreToolNames(body, new Map([["read_client", "read"]]));
+    expect(out.output.map((item) => item.name)).toEqual(["read", "shell"]);
+  });
+
+  it("rejects injected-only calls even when no caller tool was renamed", () => {
+    const body = { tools: [] };
+    applyFingerprintTools(body, true);
+    const injectedOnly = {
+      output: [{ type: "function_call", name: "shell", call_id: "upstream" }],
+    };
+
+    try {
+      restoreToolNames(injectedOnly, takeFingerprintMetadata(body));
+      throw new Error("expected injected-only call to fail");
+    } catch (error) {
+      expect(error.code).toBe("upstream_undeclared_tool");
+    }
   });
 });
 

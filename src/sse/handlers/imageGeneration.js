@@ -7,7 +7,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import { getKeyAccessContext, evaluateKeyPolicy, getUsageRequestId } from "../services/keyAccess.js";
 import { handleImageGenerationCore } from "open-sse/handlers/imageGenerationCore.js";
 import { getImageAdapter } from "open-sse/handlers/imageProviders/index.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
@@ -20,7 +20,7 @@ import { saveRequestUsage } from "@/lib/usageDb.js";
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
 
-function recordImageRequestUsage({ provider, model, connectionId, apiKey, endpoint, usage }) {
+async function recordImageRequestUsage({ provider, model, connectionId, apiKey, endpoint, requestId, usage }) {
   if (!usage || typeof usage !== "object") return;
   const promptTokens = usage.prompt_tokens;
   const completionTokens = usage.completion_tokens;
@@ -29,15 +29,16 @@ function recordImageRequestUsage({ provider, model, connectionId, apiKey, endpoi
     return;
   }
 
-  saveRequestUsage({
+  await saveRequestUsage({
     provider,
     model,
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
+    requestId,
     endpoint: endpoint || null,
     tokens: usage,
     status: "success",
-  }).catch(() => {});
+  });
 }
 
 /**
@@ -69,9 +70,9 @@ export async function handleImageGeneration(request) {
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
 
-  // Per-key access control: requested target, before combo expansion.
-  const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
-  if (keyAccessDenied) return keyAccessDenied;
+  const keyAccess = await getKeyAccessContext(request);
+  const policyError = await evaluateKeyPolicy(keyAccess, modelStr);
+  if (policyError) return policyError;
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
@@ -83,7 +84,14 @@ export async function handleImageGeneration(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelImage(b, m, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname }),
+      handleSingleModel: (b, m, modelEntry) => handleSingleModelImage(b, m, {
+        wantsStream,
+        binaryOutput,
+        preferredConnectionId: modelEntry?.connectionId || preferredConnectionId,
+        apiKey,
+        endpoint: url.pathname,
+        requestId: getUsageRequestId(request),
+      }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -91,10 +99,10 @@ export async function handleImageGeneration(request) {
     });
   }
 
-  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname });
+  return handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint: url.pathname, requestId: getUsageRequestId(request) });
 }
 
-async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint } = {}) {
+async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutput, preferredConnectionId, apiKey, endpoint, requestId } = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -134,8 +142,9 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    // Skip accounts the adapter knows cannot generate images (e.g. ChatGPT Free on codex)
-    // without locking them: they stay usable for chat.
+    let usageWriteError = null;
+    // Skip accounts the adapter knows cannot generate images without locking them,
+    // so those accounts remain available for chat requests.
     const adapter = getImageAdapter(provider);
     if (adapter?.canUseCredentials && !adapter.canUseCredentials(refreshedCredentials)) {
       log.info("IMAGE", `[${provider}/${model}] skip connection ${credentials.connectionId.slice(0, 8)}: plan not entitled to image generation`);
@@ -159,15 +168,16 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
           testStatus: "active"
         });
       },
-      onUsage: (usage) => {
-        recordImageRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint,
-          usage,
-        });
+      onUsage: async (usage) => {
+        try {
+          await recordImageRequestUsage({ provider, model, connectionId: credentials.connectionId, apiKey, endpoint, requestId, usage });
+        } catch (error) {
+          if (wantsStream) {
+            log.error("IMAGE", `Streaming usage write failed after response commitment: ${error.message}`);
+          } else {
+            usageWriteError = error;
+          }
+        }
       },
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
@@ -179,6 +189,10 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       }
     });
 
+    if (usageWriteError) {
+      log.error("IMAGE", `Failed to record usage: ${usageWriteError.message}`);
+      return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Unable to record API key usage");
+    }
     if (result.success) return result.response;
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);

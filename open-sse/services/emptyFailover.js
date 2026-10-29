@@ -108,11 +108,15 @@ function inspectResponsesEvent(obj) {
 
 // Inspect one complete client-format SSE line (parsed with the shared parseSSELine) and report
 // whether it carries content and/or a finish reason. Non-data lines and "[DONE]" carry nothing.
-export function inspectSSELine(line) {
+export function inspectSSELine(line, eventName = null) {
   const parsed = parseSSELine(line.trimStart());
   if (!parsed || parsed.done) return { content: false, finishReason: null };
-  if (typeof parsed.type === "string" && !Array.isArray(parsed.choices)) {
-    return parsed.type.startsWith(RESPONSES_EVENT_PREFIX) ? inspectResponsesEvent(parsed) : inspectClaudeEvent(parsed);
+  const type = typeof parsed.type === "string" ? parsed.type : eventName;
+  if (parsed.response?.status === RESPONSES_STATUS.INCOMPLETE) {
+    return inspectResponsesEvent({ ...parsed, type: RESPONSES_EVENT.INCOMPLETE });
+  }
+  if (typeof type === "string" && !Array.isArray(parsed.choices)) {
+    return type.startsWith(RESPONSES_EVENT_PREFIX) ? inspectResponsesEvent({ ...parsed, type }) : inspectClaudeEvent(parsed);
   }
   let content = false, finishReason = null;
   for (const choice of parsed.choices || []) {
@@ -125,13 +129,19 @@ export function inspectSSELine(line) {
 // Scan the COMPLETE lines of a decoded SSE buffer and update the running decision.
 // The trailing fragment (a line still being received) is not parsed — it is returned in
 // `state.pending` for the caller to prepend to the next chunk. `sawContent` latches true.
-export function scanSSEBuffer(text, state = { sawContent: false, finishReason: null }) {
+export function scanSSEBuffer(text, state = { sawContent: false, finishReason: null, eventName: null }) {
   const lines = text.split("\n");
   state.pending = lines.pop();
   for (const line of lines) {
-    const info = inspectSSELine(line);
+    const eventMatch = /^event:\s*(\S.*)?\s*$/.exec(line);
+    if (eventMatch) {
+      state.eventName = eventMatch[1] || null;
+      continue;
+    }
+    const info = inspectSSELine(line, state.eventName);
     if (info.content) state.sawContent = true;
     if (info.finishReason) state.finishReason = info.finishReason;
+    if (line.startsWith("data:")) state.eventName = null;
   }
   return state;
 }

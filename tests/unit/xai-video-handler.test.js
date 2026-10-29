@@ -26,6 +26,9 @@ const tokenMocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/sse/services/auth.js", () => authMocks);
+vi.mock("@/lib/db/repos/connectionsRepo.js", () => ({
+  getProviderConnectionProviderById: vi.fn(async () => "xai"),
+}));
 vi.mock("@/sse/services/tokenRefresh.js", () => tokenMocks);
 vi.mock("@/lib/localDb", () => ({
   getSettings: vi.fn(async () => ({ requireApiKey: false })),
@@ -71,6 +74,14 @@ afterEach(() => {
 });
 
 describe("handleVideoCreate", () => {
+  it.each(["not-json", JSON.stringify({ error: { message: "upstream rejected" } }), JSON.stringify({ status: "pending" })])("returns a gateway failure for invalid upstream success: %s", async (body) => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce(account());
+    global.fetch.mockResolvedValueOnce(new Response(body, { status: 200, headers: { "Content-Type": "application/json" } }));
+    const response = await handleVideoCreate(makeRequest({ model: "xai/grok-imagine-video", prompt: "a cat" }), "generations");
+    expect(response.status).toBe(502);
+    expect(authMocks.clearAccountError).not.toHaveBeenCalled();
+  });
+
   it("strips the xai/ prefix from model before forwarding", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account());
     global.fetch.mockResolvedValueOnce(jsonResponse({ request_id: "r1" }));
@@ -193,6 +204,14 @@ describe("handleVideoCreate", () => {
 });
 
 describe("handleVideoGet", () => {
+  it.each(["not-json", JSON.stringify({ error: { message: "job failed" } }), JSON.stringify({ id: "req-1" })])("returns a gateway failure for invalid poll payload: %s", async (body) => {
+    authMocks.getProviderCredentials.mockResolvedValueOnce(account());
+    global.fetch.mockResolvedValueOnce(new Response(body, { status: 200, headers: { "Content-Type": "application/json" } }));
+    const response = await handleVideoGet(new Request("http://localhost/v1/videos/req-1"), "req-1");
+    expect(response.status).toBe(502);
+    expect(authMocks.clearAccountError).not.toHaveBeenCalled();
+  });
+
   it("polls upstream pinned to the x-connection-id account and passes status through", async () => {
     authMocks.getProviderCredentials.mockResolvedValueOnce(account({ connectionId: "conn-5" }));
     global.fetch.mockResolvedValueOnce(jsonResponse({ status: "pending", progress: 42 }));

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { Badge, Button, Card, CardSkeleton, Input, Modal, Toggle, ConfirmModal } from "@/shared/components";
 import { useNotificationStore } from "@/store/notificationStore";
+import ProxyFitnessCard from "./ProxyFitnessCard";
 
 function getStatusVariant(status) {
   if (status === "active") return "success";
@@ -1167,6 +1168,8 @@ export default function ProxyPoolsPage() {
         message={confirmState?.message}
         variant="danger"
       />
+      {/* Proxy Fitness */}
+      <ProxyFitnessCard proxyPools={proxyPools} />
     </div>
   );
 }

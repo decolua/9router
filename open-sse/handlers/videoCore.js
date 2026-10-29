@@ -263,24 +263,53 @@ export async function handleVideoProxyCore({
     }
   }
 
-  const bodyText = await upstream.text().catch(() => "");
+  let bodyText;
+  try {
+    bodyText = await upstream.text();
+  } catch (error) {
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, sanitizeSecrets(`[${provider}] video response read failed: ${error.message}`, credentials));
+  }
 
   if (!upstream.ok) {
     const message = sanitizeSecrets(bodyText || `HTTP ${upstream.status}`, credentials);
     return createErrorResult(upstream.status, `[${provider}] ${message.slice(0, 2000)}`);
   }
 
-  // Success: pass the upstream JSON through untouched (request_id / status / video.url),
-  // unless the adapter maps a provider-native shape onto it (Vertex operations).
+  let payload;
+  try {
+    payload = JSON.parse(bodyText);
+  } catch {
+    return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}] Invalid video response`);
+  }
   let outBody = bodyText;
   let outType = upstream.headers.get("content-type") || "application/json";
   if (adapter?.transformResponse) {
     try {
-      outBody = JSON.stringify(adapter.transformResponse(JSON.parse(bodyText)));
+      payload = adapter.transformResponse(payload);
+      outBody = JSON.stringify(payload);
       outType = "application/json";
     } catch {
-      // Non-JSON or unexpected shape — fall back to the raw upstream body.
+      return createErrorResult(HTTP_STATUS.BAD_GATEWAY, `[${provider}] Invalid video response`);
     }
+  }
+  const valid = payload && typeof payload === "object" && !Array.isArray(payload)
+    && !payload.error && payload.status !== "failed" && payload.status !== "error"
+    && (requestId
+      ? typeof payload.status === "string" && ["pending", "processing", "done", "completed"].includes(payload.status)
+      : (typeof payload.request_id === "string" && payload.request_id.length > 0)
+        || (typeof payload.id === "string" && payload.id.length > 0)
+        || (provider === "vertex" && typeof payload.name === "string" && payload.name.length > 0));
+  if (!valid) {
+    const message = sanitizeSecrets(
+      (typeof payload?.error === "string" ? payload.error : payload?.error?.message)
+        || `[${provider}] Invalid or failed video response`, credentials
+    );
+    return {
+      success: false,
+      status: HTTP_STATUS.BAD_GATEWAY,
+      error: message,
+      response: new Response(JSON.stringify({ error: { message } }), { status: HTTP_STATUS.BAD_GATEWAY, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }),
+    };
   }
 
   return {

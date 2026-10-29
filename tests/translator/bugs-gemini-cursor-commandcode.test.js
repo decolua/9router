@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import "./registerAll.js";
 import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
+import { cleanJSONSchemaForAntigravity } from "../../open-sse/translator/formats/gemini.js";
 
 const O2G = (body) => translateRequest(FORMATS.OPENAI, FORMATS.GEMINI, "m", body, true, null, "gemini");
 const O2C = (body) => translateRequest(FORMATS.OPENAI, FORMATS.CURSOR, "m", body, true, null, "cursor");
@@ -20,6 +21,37 @@ describe("OpenAI → Gemini", () => {
       ],
     });
     expect(JSON.stringify(out.systemInstruction), "earlier system lost").toContain("RULE_ONE");
+  });
+});
+
+describe("Antigravity JSON Schema cleanup", () => {
+  it("infers type=object for properties children and array-items children but not arbitrary nested values", () => {
+    // Gemini's proto predicates reject `items` on anything but type:"array"
+    // (enforceTypeConstraints, open-sse/translator/formats/gemini.js:393) — so
+    // the array-items case below is nested under an explicit array, not a
+    // sibling of the root's own `properties`.
+    const cleaned = cleanJSONSchemaForAntigravity({
+      properties: {
+        query: { type: "string" },
+        nested: {
+          properties: {
+            deep: { type: "string" },
+          },
+        },
+        list: {
+          type: "array",
+          items: {
+            properties: {
+              itemField: { type: "string" },
+            },
+          },
+        },
+      },
+    });
+
+    expect(cleaned.type).toBe("object");
+    expect(cleaned.properties.nested.type).toBe("object");
+    expect(cleaned.properties.list.items.type).toBe("object");
   });
 });
 

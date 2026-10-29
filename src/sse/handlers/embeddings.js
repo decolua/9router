@@ -7,7 +7,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, evaluateKeyPolicy, getUsageRequestId } from "../services/keyAccess.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -71,6 +71,8 @@ export async function handleEmbeddings(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   }
 
+  const keyAccess = await getKeyAccessContext(request);
+
   if (!body.input) {
     log.warn("EMBEDDINGS", "Missing input");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
@@ -85,8 +87,8 @@ export async function handleEmbeddings(request) {
   const { provider, model } = modelInfo;
 
   // Per-key access control: checked before any credential lookup.
-  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), modelStr, provider, model);
-  if (keyAccessDenied) return keyAccessDenied;
+  const policyError = await evaluateKeyPolicy(keyAccess, modelStr, { kind: "resolved", provider, model });
+  if (policyError) return policyError;
 
   if (modelStr !== `${provider}/${model}`) {
     log.info("ROUTING", `${modelStr} → ${provider}/${model}`);
@@ -142,15 +144,21 @@ export async function handleEmbeddings(request) {
     if (result.success) {
       const usage = exactEmbeddingUsage(result.usage);
       if (usage) {
-        saveRequestUsage({
-          provider,
-          model,
-          connectionId: credentials.connectionId,
-          apiKey,
-          endpoint: url.pathname,
-          tokens: usage,
-          status: "success",
-        }).catch(() => {});
+        try {
+          await saveRequestUsage({
+            provider,
+            model,
+            connectionId: credentials.connectionId,
+            apiKey,
+            requestId: getUsageRequestId(request),
+            endpoint: url.pathname,
+            tokens: usage,
+            status: "success",
+          });
+        } catch (error) {
+          log.error("EMBEDDINGS", `Failed to record usage: ${error.message}`);
+          return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Unable to record API key usage");
+        }
       }
       return result.response;
     }

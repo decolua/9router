@@ -33,6 +33,7 @@ export default function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={typeof label === "string" ? label : undefined}
         disabled={disabled}
         onClick={handleClick}
         className={cn(

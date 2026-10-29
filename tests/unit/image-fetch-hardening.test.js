@@ -2,12 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // Mock DNS lookup so we control which host resolves to what IP.
 const lookupMock = vi.fn();
-// image.js resolves with { all: true } (DNS pinning, c7d07448), which returns an array;
-// a bare record made every lookup fail, so private-IP cases passed for the wrong reason.
+// image.js resolves with { all: true } (DNS pinning, c7d07448), which returns an array.
+// lookupMock always resolves an array of address records, so return it as-is for
+// opts.all and the first record otherwise. Wrapping it again would hand the guard a
+// nested array whose .address is undefined, making every lookup look private.
 vi.mock("node:dns/promises", () => ({
   lookup: async (host, opts) => {
-    const record = await lookupMock(host, opts);
-    return opts?.all ? [record] : record;
+    const records = await lookupMock(host, opts);
+    return opts?.all ? records : records[0];
   },
 }));
 
@@ -30,7 +32,8 @@ function mockFetchOnce(bytes, ok = true) {
 
 beforeEach(() => {
   lookupMock.mockReset();
-  lookupMock.mockResolvedValue({ address: "93.184.216.34" }); // public by default
+  // dns.promises.lookup with { all: true } resolves to an array of address records.
+  lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]); // public by default
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -43,14 +46,14 @@ describe("fetchImageAsBase64 hardening", () => {
   });
 
   it("SSRF: rejects private IP (10.x)", async () => {
-    lookupMock.mockResolvedValue({ address: "10.0.0.5" });
+    lookupMock.mockResolvedValue([{ address: "10.0.0.5", family: 4 }]);
     mockFetchOnce(PNG);
     expect(await fetchImageAsBase64("http://internal.example/x.png")).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
   it("SSRF: rejects cloud metadata 169.254.169.254", async () => {
-    lookupMock.mockResolvedValue({ address: "169.254.169.254" });
+    lookupMock.mockResolvedValue([{ address: "169.254.169.254", family: 4 }]);
     mockFetchOnce(PNG);
     expect(await fetchImageAsBase64("http://metadata/x.png")).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -61,7 +64,7 @@ describe("fetchImageAsBase64 hardening", () => {
   });
 
   it("SSRF: rejects IPv6 loopback", async () => {
-    lookupMock.mockResolvedValue({ address: "::1" });
+    lookupMock.mockResolvedValue([{ address: "::1", family: 6 }]);
     mockFetchOnce(PNG);
     expect(await fetchImageAsBase64("http://x/y.png")).toBeNull();
     expect(globalThis.fetch).not.toHaveBeenCalled();

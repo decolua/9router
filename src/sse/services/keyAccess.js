@@ -2,7 +2,8 @@
 //
 // Two modes per key: UNRESTRICTED (default — exactly today's behaviour) or
 // RESTRICTED, where the key may call ONLY the combos and models in its allow
-// list. No wildcards, no deny mode. Matching is exact and case-insensitive, on
+// list. Provider and model-segment wildcards are supported, but no deny mode.
+// Matching is case-insensitive, on
 // RESOLVED identities, so every spelling that routes to the same target is
 // treated the same and no spelling can route somewhere the list does not name:
 //
@@ -22,21 +23,85 @@
 // does not grant calling a member directly by name — that needs its own entry.
 // The check runs before any credential lookup, so a denied request never
 // touches a provider account.
-import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
+import { randomUUID } from "node:crypto";
+import { getApiKeyByKey, touchApiKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
 import { getModelInfo, getComboModels } from "./model.js";
 import { resolveProviderId } from "@/shared/constants/providers.js";
+import { matchesWildcardPattern } from "@/shared/utils/modelPermissions.js";
 import {
   KEY_ACCESS_COMBO_OWNER,
   KEY_ACCESS_PROVIDER_AS_MODEL_KINDS,
   keyAccessDeniedMessage,
 } from "@/shared/constants/keyAccess.js";
 import { errorResponse } from "open-sse/utils/error.js";
+import { getDailyUsageForApiKey } from "@/lib/db/repos/usageRepo";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 
 const lower = (s) => String(s).toLowerCase();
-const canonicalModel = (provider, model) => lower(`${provider}/${model}`);
+const canonicalModel = (provider, model) => lower(`${resolveProviderId(lower(provider))}/${model}`);
+
+function matchesModelPattern(pattern, identity) {
+  const value = lower(pattern);
+  const target = lower(identity);
+  if (value.endsWith("/*") && !value.slice(0, -2).includes("*")) {
+    return target.startsWith(value.slice(0, -1)) && target.length > value.length - 1;
+  }
+  if (value.includes("/")) return matchesWildcardPattern(value, target);
+  return matchesWildcardPattern(value, target.slice(target.indexOf("/") + 1));
+}
+
+async function resolvePattern(entry) {
+  if (!entry.includes("/")) return entry;
+  const slash = entry.indexOf("/");
+  const prefix = entry.slice(0, slash);
+  const suffix = entry.slice(slash + 1);
+  const info = await getModelInfo(`${lower(prefix)}/__key_access_pattern__`);
+  return `${info?.provider || resolveProviderId(lower(prefix))}/${suffix}`;
+}
+
+function isAllowedModel(sets, provider, model) {
+  const identity = canonicalModel(provider, model);
+  return sets.models.has(identity) || sets.patterns.some((pattern) => matchesModelPattern(pattern, identity));
+}
+
+export async function enforceKeyPolicy(ctx) {
+  if (!ctx) return null;
+  if (ctx.expiresAt && new Date(ctx.expiresAt).getTime() <= Date.now()) {
+    return errorResponse(HTTP_STATUS.UNAUTHORIZED, "API key has expired");
+  }
+  if (ctx.maxRequestsPerDay != null || ctx.maxSpendUsdPerDay != null) {
+    let usage;
+    try {
+      usage = await getDailyUsageForApiKey(ctx.apiKey);
+    } catch (error) {
+      log.error("AUTH", `Failed to check daily key usage: ${error.message}`);
+      return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Unable to verify API key usage limit");
+    }
+    if (ctx.maxRequestsPerDay != null && usage.requests >= ctx.maxRequestsPerDay) {
+      return errorResponse(HTTP_STATUS.RATE_LIMITED, `Daily request limit reached (${usage.requests}/${ctx.maxRequestsPerDay})`);
+    }
+    if (ctx.maxSpendUsdPerDay != null && usage.cost >= ctx.maxSpendUsdPerDay) {
+      return errorResponse(HTTP_STATUS.RATE_LIMITED, `Daily spend limit reached ($${usage.cost.toFixed(4)}/$${ctx.maxSpendUsdPerDay})`);
+    }
+  }
+  return null;
+}
+
+export async function evaluateKeyPolicy(ctx, requested, target = {}) {
+  const policyError = await enforceKeyPolicy(ctx);
+  if (policyError) return policyError;
+  const accessError = target.kind === "resolved"
+    ? await enforceKeyAccessResolved(ctx, requested, target.provider, target.model)
+    : target.kind === "provider"
+      ? await enforceKeyAccessProvider(ctx, requested, target.comboModels)
+      : await enforceKeyAccess(ctx, requested);
+  if (accessError) return accessError;
+  if (ctx) touchApiKey(ctx.apiKey).catch((err) => log.warn("AUTH", `Failed to touch api key: ${err.message}`));
+  return null;
+}
 
 /**
  * The client key, read from the same places and in the same order as the
@@ -62,22 +127,47 @@ export function extractClientApiKey(request) {
 }
 
 /**
- * Access context for the request's key, or null when the request is
- * unrestricted (no key, unknown key, or a key whose access is unrestricted).
- * Keys are only authenticated elsewhere (middleware / requireApiKey); this only
- * decides what an identified key may call.
+ * Access context for a known key, including unrestricted keys; null when no
+ * known key is presented. Authentication remains the middleware's responsibility.
  */
+const requestContexts = new WeakMap();
+const requestIds = new WeakMap();
+
+export function getUsageRequestId(request) {
+  if (!requestIds.has(request)) requestIds.set(request, randomUUID());
+  return requestIds.get(request);
+}
+
+export async function recordKeyedUsage(request, ctx, entry) {
+  if (!ctx?.apiKey) return null;
+  try {
+    await saveRequestUsage({ ...entry, apiKey: ctx.apiKey, requestId: getUsageRequestId(request), status: "success" });
+    return null;
+  } catch (error) {
+    log.error("AUTH", `Failed to record API key usage: ${error.message}`);
+    return errorResponse(HTTP_STATUS.SERVICE_UNAVAILABLE, "Unable to record API key usage");
+  }
+}
+
 export async function getKeyAccessContext(request) {
+  if (requestContexts.has(request)) return requestContexts.get(request);
   const apiKey = extractClientApiKey(request);
   if (!apiKey) return null;
   const record = await getApiKeyByKey(apiKey);
-  if (!record?.access?.restricted) return null;
-  return {
+  if (!record) return null;
+  const ctx = {
     keyId: record.id,
     keyName: record.name || record.id,
-    allow: record.access.allow || [],
+    apiKey,
+    restricted: record.access?.restricted === true,
+    allow: record.access?.allow || [],
+    expiresAt: record.expiresAt,
+    maxRequestsPerDay: record.maxRequestsPerDay,
+    maxSpendUsdPerDay: record.maxSpendUsdPerDay,
     _sets: null,
   };
+  requestContexts.set(request, ctx);
+  return ctx;
 }
 
 // Resolve the allow list once per request: combo names, resolved model ids,
@@ -88,17 +178,24 @@ async function getAllowSets(ctx) {
   const combos = new Set();
   const models = new Set();
   const providers = new Set();
+  const patterns = [];
   for (const entry of ctx.allow) {
+    if (entry.includes("*")) {
+      patterns.push(await resolvePattern(entry));
+      continue;
+    }
     const key = lower(entry);
     if (comboNames.has(key)) {
       combos.add(key);
       continue;
     }
-    const info = await getModelInfo(entry);
+    const slash = entry.indexOf("/");
+    const resolvedEntry = slash >= 0 ? `${lower(entry.slice(0, slash))}${entry.slice(slash)}` : entry;
+    const info = await getModelInfo(resolvedEntry);
     if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
-    if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
+    if (slash < 0) providers.add(lower(resolveProviderId(lower(entry))));
   }
-  ctx._sets = { combos, models, providers };
+  ctx._sets = { combos, models, providers, patterns };
   return ctx._sets;
 }
 
@@ -107,7 +204,7 @@ async function isModelStringAllowed(ctx, requested) {
   const info = await getModelInfo(requested);
   // provider null ⇔ an existing combo with no members (routes nowhere).
   if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+  return isAllowedModel(sets, info.provider, info.model);
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -121,7 +218,7 @@ export function keyAccessDeniedResponse(ctx, requested) {
  * @returns {Promise<Response|null>} a 403 Response, or null when allowed.
  */
 export async function enforceKeyAccess(ctx, requested) {
-  if (!ctx) return null;
+  if (!ctx?.restricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const comboModels = await getComboModels(requested);
@@ -138,11 +235,11 @@ export async function enforceKeyAccess(ctx, requested) {
  * an unverifiable target is not an allowed one.
  */
 export async function enforceKeyAccessResolved(ctx, requested, provider, model) {
-  if (!ctx) return null;
+  if (!ctx?.restricted) return null;
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  return isAllowedModel(sets, provider, model) ? null : keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -150,12 +247,13 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
  * @param {string[]|null} comboModels - routing's own combo resolution for `requested`
  */
 export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
-  if (!ctx) return null;
+  if (!ctx?.restricted) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
+  const provider = lower(resolveProviderId(lower(requested)));
   const allowed = comboModels
     ? sets.combos.has(lower(requested))
-    : sets.providers.has(lower(resolveProviderId(requested)));
+    : sets.providers.has(provider) || sets.patterns.some((pattern) => lower(pattern) === `${provider}/*`);
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
 
@@ -166,7 +264,7 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
  * model just shortens the fallback list, so combo failover is unaffected.
  */
 export async function filterAdapterModels(ctx, augmented, original) {
-  if (!ctx || !Array.isArray(augmented)) return augmented;
+  if (!ctx?.restricted || !Array.isArray(augmented)) return augmented;
   const keep = new Set(original || []);
   const out = [];
   for (const m of augmented) {
@@ -178,7 +276,7 @@ export async function filterAdapterModels(ctx, augmented, original) {
 
 /** /v1/models: a restricted key sees only the combos and models it may call. */
 export async function filterModelsListForKey(ctx, list) {
-  if (!ctx || !Array.isArray(list)) return list;
+  if (!ctx?.restricted || !Array.isArray(list)) return list;
   const sets = await getAllowSets(ctx);
   const out = [];
   for (const entry of list) {
@@ -190,10 +288,10 @@ export async function filterModelsListForKey(ctx, list) {
     const info = await getModelInfo(entry.id);
     if (!info?.provider) continue;
     if (KEY_ACCESS_PROVIDER_AS_MODEL_KINDS.includes(entry.kind)) {
-      if (sets.providers.has(lower(info.provider))) out.push(entry);
+      if (sets.providers.has(lower(info.provider)) || sets.patterns.some((pattern) => lower(pattern) === `${lower(info.provider)}/*`)) out.push(entry);
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    if (isAllowedModel(sets, info.provider, info.model)) out.push(entry);
   }
   return out;
 }

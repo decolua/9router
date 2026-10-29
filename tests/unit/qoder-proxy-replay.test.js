@@ -7,6 +7,8 @@ vi.mock("../../open-sse/services/qoderModels.js", () => ({
   resolveQoderCredentials: vi.fn(),
 }));
 
+const EXPLICIT_PROXY = "http://proxy.test:3128";
+
 const request = {
   model: "auto",
   body: { messages: [{ role: "user", content: "hello" }], max_tokens: 32 },
@@ -51,8 +53,9 @@ describe("Qoder signed inference transport", () => {
       seen.add(authorization);
       throw new TypeError("response lost after upstream accepted request");
     });
-    const executor = await loadExecutor(fetchMock);
-    await expect(executor.execute({ ...request, proxyOptions })).rejects.toThrow("response lost");
+    const executor = await loadExecutor(fetchMock, false);
+    const effectiveProxyOptions = { ...(proxyOptions || {}), connectionProxyEnabled: true, connectionProxyUrl: EXPLICIT_PROXY, strictProxy: false };
+    await expect(executor.execute({ ...request, proxyOptions: effectiveProxyOptions })).rejects.toThrow("response lost");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][1].dispatcher).toBeDefined();
     if (proxyOptions) expect(proxyOptions.strictProxy).toBe(false);
@@ -62,9 +65,10 @@ describe("Qoder signed inference transport", () => {
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new TypeError("response lost"))
       .mockResolvedValueOnce(success());
-    const executor = await loadExecutor(fetchMock);
-    await expect(executor.execute(request)).rejects.toThrow("response lost");
-    const result = await executor.execute(request);
+    const executor = await loadExecutor(fetchMock, false);
+    const proxyRequest = { ...request, proxyOptions: { connectionProxyEnabled: true, connectionProxyUrl: EXPLICIT_PROXY } };
+    await expect(executor.execute(proxyRequest)).rejects.toThrow("response lost");
+    const result = await executor.execute(proxyRequest);
     expect(result.response.ok).toBe(true);
     await result.response.text();
     expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -77,11 +81,23 @@ describe("Qoder signed inference transport", () => {
   it.each([true, false])("still supports successful inference with proxy=%s", async (useProxy) => {
     const fetchMock = vi.fn(async () => success());
     const executor = await loadExecutor(fetchMock, useProxy);
-    const result = await executor.execute(request);
+    const result = await executor.execute({
+      ...request,
+      proxyOptions: useProxy ? { connectionProxyEnabled: true, connectionProxyUrl: EXPLICIT_PROXY } : null,
+    });
     expect(result.response.ok).toBe(true);
     await result.response.text();
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(!!fetchMock.mock.calls[0][1].dispatcher).toBe(useProxy);
+  });
+
+  it("uses an environment proxy without requiring explicit connection proxy", async () => {
+    const fetchMock = vi.fn(async () => success());
+    const executor = await loadExecutor(fetchMock, true);
+    const result = await executor.execute({ ...request, proxyOptions: null });
+    expect(result.response.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBeDefined();
   });
 
   it("preserves caller cancellation without replaying the request", async () => {
@@ -90,8 +106,12 @@ describe("Qoder signed inference transport", () => {
       controller.abort();
       throw options.signal.reason;
     });
-    const executor = await loadExecutor(fetchMock);
-    await expect(executor.execute({ ...request, signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+    const executor = await loadExecutor(fetchMock, false);
+    await expect(executor.execute({
+      ...request,
+      signal: controller.signal,
+      proxyOptions: { connectionProxyEnabled: true, connectionProxyUrl: EXPLICIT_PROXY },
+    })).rejects.toMatchObject({ name: "AbortError" });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

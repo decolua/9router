@@ -155,6 +155,13 @@ const getPageInfo = (pathname) => {
       icon: "settings",
       breadcrumbs: [],
     };
+  if (pathname.includes("/playground"))
+    return {
+      title: "Testing Studio",
+      description: "Test and compare models",
+      icon: "science",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/translator"))
     return {
       title: "Translator",
@@ -179,7 +186,7 @@ const getPageInfo = (pathname) => {
   return { title: "", description: "", breadcrumbs: [] };
 };
 
-export default function Header({ onMenuClick, showMenuButton = true }) {
+export default function Header({ onMenuClick, showMenuButton = true, sidebarOpen = false }) {
   const pathname = usePathname();
   const [displayName, setDisplayName] = useState("");
   const [loginMethod, setLoginMethod] = useState("");
@@ -234,6 +241,9 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           <button
             onClick={onMenuClick}
             className="text-text-main hover:text-primary transition-colors"
+            aria-label="Open menu"
+            aria-expanded={sidebarOpen}
+            aria-controls="mobile-sidebar"
           >
             <span className="material-symbols-outlined">menu</span>
           </button>
@@ -244,53 +254,56 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
       <div className="flex flex-col min-w-0 flex-1">
         {breadcrumbs.length > 0 ? (
           <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-            {breadcrumbs.map((crumb, index) => (
-              <div
-                key={`${crumb.label}-${crumb.href || "current"}`}
-                className={`items-center gap-1.5 sm:gap-2 min-w-0 ${
-                  index < breadcrumbs.length - 1 ? "hidden sm:flex shrink-0" : "flex flex-1"
-                }`}
-              >
-                {index > 0 && (
-                  <span className="material-symbols-outlined text-text-muted text-base hidden sm:inline">
-                    chevron_right
-                  </span>
-                )}
-                {crumb.href ? (
-                  <Link
-                    href={crumb.href}
-                    className="text-text-muted hover:text-primary transition-colors truncate"
-                  >
-                    {crumb.label}
-                  </Link>
-                ) : (
-                  <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
-                    {crumb.image && (
-                      <ProviderIcon
-                        src={crumb.image}
-                        alt={crumb.label}
-                        size={28}
-                        className="object-contain rounded max-w-[24px] max-h-[24px] sm:max-w-[28px] sm:max-h-[28px] shrink-0"
-                        fallbackText={crumb.label.slice(0, 2).toUpperCase()}
-                      />
-                    )}
-                    <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate">
-                      {translate(crumb.label)}
-                    </h1>
-                  </div>
-                )}
-              </div>
-            ))}
+            {breadcrumbs.map((crumb, index) => {
+              const isLast = index === breadcrumbs.length - 1;
+              return (
+                <div
+                  key={`${crumb.label}-${crumb.href || "current"}`}
+                  className={`items-center gap-1.5 sm:gap-2 min-w-0 ${
+                    isLast ? "flex flex-1" : "hidden sm:flex shrink-0"
+                  }`}
+                >
+                  {index > 0 && (
+                    <span className="material-symbols-outlined text-text-muted text-base hidden sm:inline">
+                      chevron_right
+                    </span>
+                  )}
+                  {crumb.href ? (
+                    <Link
+                      href={crumb.href}
+                      className="text-text-muted hover:text-primary transition-colors truncate"
+                    >
+                      {crumb.label}
+                    </Link>
+                  ) : (
+                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                      {crumb.image && (
+                        <ProviderIcon
+                          src={crumb.image}
+                          alt={crumb.label}
+                          size={28}
+                          className="object-contain rounded max-w-[24px] max-h-[24px] sm:max-w-[28px] sm:max-h-[28px] shrink-0"
+                          fallbackText={crumb.label.slice(0, 2).toUpperCase()}
+                        />
+                      )}
+                      <h1 className="text-base lg:text-2xl font-semibold text-text-main tracking-tight truncate min-w-0">
+                        {translate(crumb.label)}
+                      </h1>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : title ? (
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
               {icon && (
-                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl">
+                <span className="material-symbols-outlined text-primary text-xl lg:text-2xl shrink-0">
                   {icon}
                 </span>
               )}
-              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate">
+              <h1 className="text-base lg:text-2xl font-semibold tracking-tight truncate min-w-0">
                 {translate(title)}
               </h1>
             </div>
@@ -324,10 +337,12 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
           aria-label="Donate"
         >
           <span className="material-symbols-outlined text-[18px]">volunteer_activism</span>
-          <span className="hidden sm:inline">Donate</span>
+          <span className="hidden lg:inline">Donate</span>
         </button>
         <ThemeToggle />
-        <HeaderLanguage />
+        <div className="hidden sm:block">
+          <HeaderLanguage />
+        </div>
         <HeaderMenu onLogout={handleLogout} />
       </div>
       <DonateModal isOpen={donateOpen} onClose={() => setDonateOpen(false)} />
@@ -344,7 +359,7 @@ function HeaderSearch() {
   if (!visible) return null;
 
   return (
-    <div className="relative w-[160px] sm:w-[220px]">
+    <div className="relative w-[110px] sm:w-[220px]">
       <span className="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-text-muted text-[16px] pointer-events-none">
         search
       </span>
@@ -372,4 +387,5 @@ function HeaderSearch() {
 Header.propTypes = {
   onMenuClick: PropTypes.func,
   showMenuButton: PropTypes.bool,
+  sidebarOpen: PropTypes.bool,
 };

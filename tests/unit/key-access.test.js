@@ -11,6 +11,7 @@ const fx = vi.hoisted(() => ({
   nodes: [{ id: "openai-compatible-chat-n1", type: "openai-compatible", prefix: "mock" }],
   aliases: { fast: "openai/model-a", bee: "openai/model-b" },
   keys: {},
+  usage: { requests: 0, cost: 0 },
 }));
 
 vi.mock("@/lib/localDb", () => ({
@@ -19,7 +20,8 @@ vi.mock("@/lib/localDb", () => ({
   getProviderNodes: async (filter = {}) => fx.nodes.filter((n) => !filter.type || n.type === filter.type),
 }));
 vi.mock("@/lib/db/repos/combosRepo.js", () => ({ getCombos: async () => fx.combos }));
-vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => fx.keys[k] || null }));
+vi.mock("@/lib/db/repos/apiKeysRepo.js", () => ({ getApiKeyByKey: async (k) => fx.keys[k] || null, touchApiKey: vi.fn(async () => {}) }));
+vi.mock("@/lib/db/repos/usageRepo", () => ({ getDailyUsageForApiKey: async () => fx.usage }));
 vi.mock("@/sse/utils/logger.js", () => ({ warn: vi.fn(), info: vi.fn(), debug: vi.fn(), error: vi.fn() }));
 
 const engine = await import("../../src/sse/services/keyAccess.js");
@@ -43,6 +45,7 @@ async function status(k, model) {
 
 beforeEach(() => {
   fx.keys = {};
+  fx.usage = { requests: 0, cost: 0 };
   key("open", { restricted: false, allow: [] });
   key("combo", { restricted: true, allow: ["main"] }); // case differs from combo "Main" on purpose
   key("b", { restricted: true, allow: ["openai/MODEL-B"] });
@@ -50,13 +53,23 @@ beforeEach(() => {
   key("cx", { restricted: true, allow: ["cx/gpt-5"] });
   key("node", { restricted: true, allow: ["mock/glm-4"] });
   key("tavily", { restricted: true, allow: ["tavily", "Main"] });
+  key("wild", { restricted: true, allow: ["CX/*", "model-b*", "main"] });
+  key("scoped", { restricted: true, allow: ["openrouter/anthropic/*", "openai/model-*-plus"] });
+  key("custom-wild", { restricted: true, allow: ["MOCK/glm-*"] });
+  key("recursive", { restricted: true, allow: ["openrouter/*"] });
+  key("expired", { restricted: false, allow: [] });
+  fx.keys["sk-expired"].expiresAt = "2020-01-01T00:00:00.000Z";
+  key("limited", { restricted: false, allow: [] });
+  fx.keys["sk-limited"].maxRequestsPerDay = 2;
+  key("spend", { restricted: true, allow: ["openai/model-a"] });
+  fx.keys["sk-spend"].maxSpendUsdPerDay = 1;
 });
 
 describe("unrestricted passthrough", () => {
-  it("no key, unknown key and unrestricted key all yield no context (today's behaviour)", async () => {
+  it("no key and unknown key yield no context; unrestricted keys retain policy metadata", async () => {
     expect(await ctxFor(null)).toBeNull();
     expect(await ctxFor("sk-nope")).toBeNull();
-    expect(await ctxFor("sk-open")).toBeNull();
+    expect((await ctxFor("sk-open")).restricted).toBe(false);
     for (const m of ["Main", "openai/model-a", "fast", "anything/at-all"]) {
       expect(await status("sk-open", m)).toBe(200);
     }
@@ -194,6 +207,43 @@ describe("/v1/models filtering", () => {
   });
   it("leaves the list untouched for an unrestricted key", async () => {
     expect(await engine.filterModelsListForKey(await ctxFor("sk-open"), list)).toBe(list);
+  });
+});
+
+describe("policy limits for known keys", () => {
+  it("rejects an expired unrestricted key before model access", async () => {
+    expect((await engine.enforceKeyPolicy(await ctxFor("sk-expired"))).status).toBe(401);
+  });
+  it("rejects daily request and spend caps without relying on legacy access", async () => {
+    fx.usage = { requests: 2, cost: 1 };
+    expect((await engine.enforceKeyPolicy(await ctxFor("sk-limited"))).status).toBe(429);
+    expect((await engine.enforceKeyPolicy(await ctxFor("sk-spend"))).status).toBe(429);
+  });
+});
+
+describe("canonical wildcard matching", () => {
+  it("matches resolved provider aliases and segment-bounded model prefixes without exposing combos", async () => {
+    expect(await status("sk-wild", "codex/gpt-5")).toBe(200);
+    expect(await status("sk-wild", "bee")).toBe(200);
+    expect(await status("sk-wild", "openai/model-b-plus")).toBe(200);
+    expect(await status("sk-wild", "openai/model-a")).toBe(403);
+    expect(await status("sk-wild", "other")).toBe(403);
+    expect(await status("sk-wild", "Main")).toBe(200);
+    expect(await status("sk-scoped", "openrouter/anthropic/claude-4")).toBe(200);
+    expect(await status("sk-scoped", "openrouter/anthropic/team/claude-4")).toBe(200);
+    expect(await status("sk-recursive", "openrouter/anthropic/claude-4")).toBe(200);
+    expect(await status("sk-recursive", "openrouter/anthropic/team/claude-4")).toBe(200);
+    expect(await status("sk-recursive", "openrouter")).toBe(403);
+    expect(await status("sk-recursive", "openai/anthropic/claude-4")).toBe(403);
+    expect(await status("sk-scoped", "openrouter/openai/gpt-5")).toBe(403);
+    expect(await status("sk-scoped", "openrouter/anthropic")).toBe(403);
+    expect(await status("sk-scoped", "openai/model-b-plus")).toBe(200);
+    expect(await status("sk-scoped", "openai/model-b/plus")).toBe(403);
+    expect(await status("sk-custom-wild", "mock/glm-4")).toBe(200);
+    expect(await status("sk-custom-wild", "openai-compatible-chat-n1/glm-4")).toBe(200);
+    const ctx = await ctxFor("sk-wild");
+    expect(await engine.filterAdapterModels(ctx, ["openai/model-a", "cx/gpt-5"], ["openai/model-a"]))
+      .toEqual(["openai/model-a", "cx/gpt-5"]);
   });
 });
 

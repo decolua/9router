@@ -10,7 +10,7 @@ export default {
     textIcon: "OL",
     website: "https://ollama.com",
     notice: {
-      text: "Free tier: light usage, 1 cloud model at a time (limits reset every 5h & 7d). Pro $20/mo · Max $100/mo.",
+      text: "Free tier: monthly usage credit, 1 cloud model at a time. Pro $20/mo · Max $100/mo.",
       apiKeyUrl: "https://ollama.com/settings/keys",
     },
   },

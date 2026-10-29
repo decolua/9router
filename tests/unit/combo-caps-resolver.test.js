@@ -17,8 +17,6 @@ describe("aggregateComboCapabilities: resolveCaps override", () => {
 
   it("falls back to the pattern default without a resolver", () => {
     const caps = aggregateComboCapabilities(models);
-    // glm-5.3 has no exact glm-cn entry, so the *glm-5.3* pattern applies: 1M since
-    // 0f7f6e72 (#4544, "GLM-5.2/5.3 context is 1M, not the stale 200k pin").
     expect(caps.contextWindow).toBe(1_000_000);
   });
 
