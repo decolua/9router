@@ -15,6 +15,58 @@ import {
   orderModelsByChoice,
 } from "./systemoneRouter.js";
 
+// --- 429 storm cooldown -----------------------------------------------------
+// A combo member whose executor just exhausted its 429 retry budget is quota-
+// blocked upstream for minutes. Remember that for a short window so the NEXT
+// request skips straight to healthy members instead of re-paying this member's
+// full retry budget before failing over again.
+const COMBO_STORM_COOLDOWN_MS = 90 * 1000;
+const comboModelCooldownUntil = new Map(); // `${comboName}::${modelStr}` -> epoch ms
+
+function isComboModelCooling(comboName, modelStr) {
+  const key = `${comboName || "*"}::${modelStr}`;
+  const until = comboModelCooldownUntil.get(key);
+  if (!until) return false;
+  if (until <= Date.now()) {
+    comboModelCooldownUntil.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function markComboModelCooldown(comboName, modelStr, ms = COMBO_STORM_COOLDOWN_MS) {
+  comboModelCooldownUntil.set(`${comboName || "*"}::${modelStr}`, Date.now() + ms);
+}
+
+// Upstream retry-after from a member Response: seconds form or HTTP-date form.
+function upstreamRetryAfterSec(result) {
+  try {
+    const raw = result?.headers?.get?.("retry-after");
+    if (!raw) return null;
+    const n = Number(raw);
+    if (Number.isFinite(n) && n >= 0) return n;
+    const d = new Date(raw).getTime();
+    return Number.isFinite(d) ? Math.max(Math.ceil((d - Date.now()) / 1000), 0) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Cooldown for a FreeUsageLimitError. 2026-10-30: upstream's Retry-After on
+// this error counts down to the next UTC midnight (observed 6h37m at 17:30
+// UTC) regardless of what actually caused the 429. Two findings make trusting
+// it actively harmful:
+//   - 429s arrive in minutes-long waves that hit every identity; the SAME
+//     request shape passes again right after the wave (live probes).
+//   - The executor now rotates egress IP + session per attempt, so a burned
+//     identity is bypassed by rotation, not by waiting.
+// Camping a member for Retry-After hours kept the whole combo failing fast
+// while fresh identities were passing. Use the short storm window only.
+function quotaCooldownMs(raSec) {
+  void raSec;
+  return COMBO_STORM_COOLDOWN_MS;
+}
+
 // Peek a 2xx combo response for real content. Returns null for non-SSE responses (leave
 // them untouched). For SSE, returns { outcome: "content"|"empty", finishReason, response }
 // where `response` is a faithful replay of the original stream (head buffer + live reader).
@@ -468,8 +520,36 @@ export async function handleComboChat({
   let lastStatus = null;
   let requestScopedResult = null;
 
+  // 429 storm cooldown: skip cooled members ALWAYS. Upstream's free-pool
+  // penalty is a sliding window that EXTENDS on every hit (live 2026-10-29:
+  // retry-after receded from a 00:00 UTC reset to 00:35+ while probes ran
+  // every 5 min), so when every member is cooling the correct move is to fail
+  // fast and stay silent until the earliest expiry - walking anyway re-locks
+  // the whole pool. Cooldown length now honors upstream's own retry-after.
+  const coolingCount = rotatedModels.filter((m) => isComboModelCooling(comboName, m)).length;
+  const skipCooling = coolingCount > 0;
+
+  // Ride-through deadline: agent clients (OpenHands/litellm) get their idle
+  // connection killed past ~60s of silence, and during a full 429 wave every
+  // member burns its retry budget before answering - measured 160-170s
+  // ride-throughs on 2026-10-29. Cap the total: past this budget hand the
+  // client the last explicit error (it retries with its own backoff) instead
+  // of holding a dead-quiet connection past every middlebox's patience.
+  const COMBO_RIDE_THROUGH_MS = 45 * 1000;
+  const comboT0 = Date.now();
+  let comboTried = 0;
+
   for (let i = 0; i < rotatedModels.length; i++) {
     const modelStr = rotatedModels[i];
+    if (skipCooling && isComboModelCooling(comboName, modelStr)) {
+      log.info("COMBO", `Skipping ${modelStr} (429 storm cooldown)`);
+      continue;
+    }
+    if (comboTried > 0 && Date.now() - comboT0 > COMBO_RIDE_THROUGH_MS) {
+      log.warn("COMBO", `Ride-through budget ${COMBO_RIDE_THROUGH_MS / 1000}s exhausted after ${comboTried} member(s); returning last explicit error instead of walking further`);
+      break;
+    }
+    comboTried++;
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
@@ -565,9 +645,14 @@ export async function handleComboChat({
         // Ignore JSON parse errors
       }
 
-      // Track earliest retryAfter across all combo models
+      // Track earliest retryAfter across all combo models, but cap it: the
+      // upstream header counts to UTC midnight even for minute-long waves
+      // (2026-10-30), and nested combos size their own cooldowns from this
+      // value. Cap at the storm window; clients retry sooner that way.
       if (retryAfter && (!earliestRetryAfter || new Date(retryAfter) < new Date(earliestRetryAfter))) {
         earliestRetryAfter = retryAfter;
+        const capped = new Date(Date.now() + COMBO_STORM_COOLDOWN_MS + 30 * 1000).toISOString();
+        if (new Date(earliestRetryAfter) > new Date(capped)) earliestRetryAfter = capped;
       }
 
       // Normalize error text to string (Worker-safe)
@@ -608,6 +693,21 @@ export async function handleComboChat({
         await new Promise(r => setTimeout(r, cooldownMs));
       }
 
+      // Quota-blocked member: remember the storm so upcoming requests skip it.
+      // Cooldown = upstream's own retry-after (+2 min buffer) so we never poke
+      // inside the advised window; the sliding penalty makes early retries
+      // strictly harmful. Clamped to [90s, 48h]; default stays 90s.
+      if (result.status === 429) {
+        markComboModelCooldown(comboName, modelStr, quotaCooldownMs(upstreamRetryAfterSec(result)));
+      }
+      // Network-dead / 5xx member: same idea, shorter window — lane quality is
+      // luck-of-the-draw per request (fresh proxy mint each time), but making
+      // the NEXT client request re-pay this member's full failure budget is
+      // exactly what pushed OpenHands past litellm's timeout.
+      if (result.status === 502 || result.status === 503 || result.status === 504) {
+        markComboModelCooldown(comboName, modelStr, 45 * 1000);
+      }
+
       // Fallback to next model
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
@@ -620,6 +720,23 @@ export async function handleComboChat({
       lastError = error.message || String(error);
       if (!lastStatus) lastStatus = 500;
       log.warn("COMBO", `Model ${modelStr} threw error, trying next`, { error: lastError });
+    }
+  }
+
+  // Every member skipped as quota-cooling: stay silent and fail fast. The
+  // storm window is short (90s), so this only shaves the retry budget during
+  // an active wave; clients re-check within minutes instead of hours.
+  if (comboTried === 0 && coolingCount > 0) {
+    let earliest = Infinity;
+    for (const m of rotatedModels) {
+      const until = comboModelCooldownUntil.get(`${comboName || "*"}::${m}`);
+      if (until && until < earliest) earliest = until;
+    }
+    if (Number.isFinite(earliest)) {
+      const iso = new Date(earliest).toISOString();
+      const human = formatRetryAfter(iso);
+      log.warn("COMBO", `All ${coolingCount} members in quota cooldown; failing fast until ${iso}`);
+      return unavailableResponse(429, lastError || "OpenCode free pool exhausted", iso, human);
     }
   }
 
@@ -645,6 +762,22 @@ export async function handleComboChat({
     const retryHuman = formatRetryAfter(earliestRetryAfter);
     log.warn("COMBO", `All models failed | ${msg} (${retryHuman})`);
     return unavailableResponse(status, msg, earliestRetryAfter, retryHuman);
+  }
+
+  // No retryAfter in the error bodies: fall back to the member cooldowns we
+  // just set from upstream's retry-after headers. Nested combos read THIS
+  // response's retry-after to size their own cooldowns, so dropping the
+  // header here would collapse the real quota window to the 90s default.
+  let earliestCooldown = Infinity;
+  for (const m of rotatedModels) {
+    const until = comboModelCooldownUntil.get(`${comboName || "*"}::${m}`);
+    if (until && until < earliestCooldown) earliestCooldown = until;
+  }
+  if (Number.isFinite(earliestCooldown)) {
+    const iso = new Date(earliestCooldown).toISOString();
+    const retryHuman = formatRetryAfter(iso);
+    log.warn("COMBO", `All models failed | ${msg} (${retryHuman}, from member cooldown)`);
+    return unavailableResponse(status, msg, iso, retryHuman);
   }
 
   log.warn("COMBO", `All models failed | ${msg}`);

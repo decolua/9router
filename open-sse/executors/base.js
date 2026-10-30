@@ -119,7 +119,7 @@ export class BaseExecutor {
         if (dynamic != null) waitMs = dynamic;
       }
       retryAttemptsByUrl[urlIndex]++;
-      log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
+      console.log(`[NET-RETRY] ${this.provider} ${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
       await new Promise(resolve => setTimeout(resolve, waitMs));
       return true;
     };
@@ -189,7 +189,12 @@ export class BaseExecutor {
         clearTimeout(connectTimer);
         lastError = error;
         const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
-        dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
+        // Client is already gone (agent timeout / cancel): retrying would only
+        // burn budget against nobody and spam the log. Propagate immediately.
+        if (signal?.aborted) throw error;
+        // Visible at default log level: silent retry loops were invisible here
+        // and made every storm look like the gateway swallowed the request.
+        console.log(`[NET-RETRY] ${this.provider}/${model} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
         // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
         if (error.name === "AbortError" && !isConnectTimeout) throw error;
 

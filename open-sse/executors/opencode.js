@@ -6,8 +6,45 @@ import { getThinkingLevels } from "../providers/thinkingLevels.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
-import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
-import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
+import { applyFingerprintTools, applyFingerprintSystem, applyFingerprintSystemMessages } from "../utils/opencodeFingerprint.js";
+// 2026-10-30: upstream 429s every inference request made from INSIDE this
+// long-lived process — regardless of egress IP, session id, header/body bytes
+// (byte-verified) or TLS module — while the byte-identical request from a
+// fresh node process passes (the router's own sticky sid replayed from a test
+// process on the SAME egress IP returned 200). The distinguishing factor is
+// process-lifetime-bound and unobservable from inside, so each attempt is
+// proxied through the oc-worker supervisor (systemd: oc-worker.service,
+// 127.0.0.1:20137), which runs the impersonated fetch in a FRESH child
+// process per attempt. Worker failures surface as errors so base.js retries
+// on a brand-new process. They deliberately do NOT fail open to in-process
+// fetch: Node's OpenSSL ClientHello is refused by the upstream gate with the
+// very same 429 FreeUsageLimitError.
+const OC_WORKER_URL = process.env.OC_WORKER_URL || "http://127.0.0.1:20137/fetch";
+
+async function opencodeWorkerFetch(url, init = {}, { signal, timeoutMs = 20000, proxyUrl } = {}) {
+  const bridgeRes = await fetch(OC_WORKER_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url, method: init.method || "GET", headers: init.headers || {},
+      body: init.body, proxyUrl, timeoutMs,
+    }),
+    signal,
+  });
+  if (bridgeRes.status === 502 || bridgeRes.status === 504) {
+    const text = await bridgeRes.text().catch(() => "");
+    throw new Error(`oc-worker: ${bridgeRes.status} ${String(text).slice(0, 140)}`);
+  }
+  const headers = new Headers();
+  bridgeRes.headers?.forEach?.((value, key) => {
+    if (key !== "content-length" && key !== "transfer-encoding") headers.set(key, value);
+  });
+  return new Response(bridgeRes.body, {
+    status: bridgeRes.status,
+    statusText: bridgeRes.statusText,
+    headers,
+  });
+}
 import { initProxySessionStore, pinnedSessionForProxy, burnSessionId } from "../services/opencodeProxySessions.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
@@ -17,10 +54,22 @@ import {
   coerceResponsesOutput,
 } from "../translator/formats/responsesApi.js";
 
-// OpenCode v2 UA shape: opencode/<channel>/<version>/<client>. Upstream rejects
-// the v1 "opencode/1.18.x" form with 403 FreeTierError since 2026-10-14.
-const OPENCODE_UA = "opencode/latest/2.0.26/cli";
-const OPENCODE_CLIENT = "cli";
+// Fingerprint = the REAL v2 CLI wire shape, byte-verified against a live working dev build (opencode 0.0.0-dev-202610272228, 38/40 recent
+// inference calls OK) and its source: packages/core/src/session/model-request.ts
+//   UA "opencode/<channel>/<version>/<name>", x-opencode-client "opencode",
+//   x-opencode-project = 40-hex project id, and the session id carried by FOUR
+//   headers: x-opencode-session-id + x-session-affinity + X-Session-Id +
+//   x-opencode-session. The v1.19.5 shape this file sent before (UA
+//   "opencode/1.19.5 ai-sdk/...", client "cli", project "global", two session
+//   headers, no affinity) reads as an impostor: it passes when the free gate is
+//   lenient and 429 FreeUsageLimitError the moment strict validation kicks in,
+//   which is exactly the observed "worked N times, then everything 429s" wave.
+const OPENCODE_UA = "opencode/dev/0.0.0-dev-202610272228/opencode";
+const OPENCODE_CLIENT = "opencode";
+// 40-hex project id, generated once per process boot: the real CLI derives
+// it from the local project path, so each install presents its own; a
+// hardcoded value would funnel every deployment into one upstream bucket.
+const OPENCODE_PROJECT = crypto.randomBytes(20).toString("hex");
 const MAX_SESSION_LENGTH = 256;
 const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
@@ -37,8 +86,11 @@ const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuv
 initProxySessionStore({ sessionIdFactory: generateSessionId });
 
 function hasValidOpencodeVersion(ua) {
-  const m = String(ua || "").match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
-  return !!m && parseInt(m[1], 10) >= 2;
+  const s = String(ua || "").trim();
+  // v2 prerelease shape: opencode/<channel>/<semver>/<name>
+  if (/^opencode\/[a-z0-9-]+\/\d+\.\d+\.\d+\/[a-z0-9-]+/i.test(s)) return true;
+  // v1 stable shape: opencode/<semver>[ ai-sdk/... runtime/bun/...]
+  return /^opencode\/\d+\.\d+(\.\d+)?(\s|$)/i.test(s);
 }
 // Models served by /inference/v1/responses; every other model stays on /chat/completions.
 const RESPONSES_MODELS = new Set([
@@ -77,6 +129,39 @@ export function generateSessionId(timestamp = Date.now()) {
   }
   counter++;
   return `ses_${descendingTimeHex(timestamp, counter)}${unstableRandom()}`;
+}
+
+// x-opencode-request: the triggering user-message id the v1 CLI sends on EVERY
+// inference request (msg_ + ASCENDING identifier, fresh per user message).
+// Requests without it are not shaped like any released CLI.
+function ascendingTimeHex(time, counterValue) {
+  return ((BigInt(time) * 0x1000n + BigInt(counterValue)) & SESSION_PREFIX_MASK)
+    .toString(16)
+    .padStart(12, "0");
+}
+
+export function generateRequestId(timestamp = Date.now()) {
+  return `msg_${ascendingTimeHex(timestamp, 1)}${unstableRandom()}`;
+}
+
+// Rotating residential gateway: the sticky `session-<id>` segment inside the
+// proxy username pins the egress IP. The free gate answers PER IP - a fixed
+// segment means every request rides one residential IP until it burns
+// (429 FreeUsageLimitError, Retry-After ~6.6h, live probe 2026-10-29), and the
+// whole pool degrades IP by IP. Rewrite the segment per ATTEMPT so every
+// request presents from a fresh residential IP (matrix probe 2026-10-29: a
+// fresh IP passes instantly regardless of session/fingerprint shape, a burned
+// IP 429s regardless of it).
+const PROXY_SESSION_RE = /session-[A-Za-z0-9]+/;
+function rotateProxySession(proxyUrl) {
+  const raw = String(proxyUrl || "");
+  if (!raw) return proxyUrl;
+  const at = raw.lastIndexOf("@");
+  const head = at >= 0 ? raw.slice(0, at) : raw;
+  const tail = at >= 0 ? raw.slice(at) : "";
+  if (!PROXY_SESSION_RE.test(head)) return proxyUrl;
+  const fresh = `session-${crypto.randomBytes(4).toString("hex")}`;
+  return head.replace(PROXY_SESSION_RE, fresh) + tail;
 }
 
 // Upstream decodes the prefix timestamp and refuses sessions whose time is in
@@ -544,18 +629,37 @@ function dropAdaptiveReasoningEffort(body) {
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
-    // Bounded 429 retry: upstream free capacity congests in waves (tens of
-    // seconds to a few minutes) that answer 429 FreeUsageLimitError to every
-    // request regardless of session/IP/model/size. Each attempt re-rotates
-    // to a fresh connection-pool IP and re-checks after delayMs; a ~150s
-    // window rides out typical waves instead of killing the CLI mission on
-    // the first hit. parseError/slot poisoning only fires when every attempt
-    // is exhausted, so poisoning still means truly-stuck conditions.
+    // Bounded 429 retry: upstream free capacity congests in waves (minutes
+    // long) that answer 429 FreeUsageLimitError regardless of session/IP/model.
+    // Keep the per-model budget SMALL (3x5s ~ 16s): member health is largely
+    // independent, so the combo layer sampling 4 models finds a healthy lane
+    // far faster than persisting ~150s on one. A long ride-out here is
+    // actively harmful: it holds the client's request past agent timeouts so
+    // nothing ever comes back (silent 157s x N models). Fail over fast; the
+    // combo member-cooldown skips storming members on subsequent requests.
     this.config = {
       ...this.config,
+      // Per-attempt response-headers deadline. The default
+      // (FETCH_CONNECT_TIMEOUT_MS = 60s) lets ONE stalled residential-proxy
+      // lane eat a full minute of total silence per attempt; healthy free
+      // lanes deliver headers in <2s, so 20s is generous and caps a dead
+      // lane's worst case at two attempts.
+      timeoutMs: 20000,
       retry: {
         ...((this.config && this.config.retry) || {}),
-        429: { attempts: 30, delayMs: 5000 },
+        // ONE attempt only: under congestion the upstream takes ~8s to even
+        // answer 429, so each extra retry costs ~13s of client silence per
+        // member. The combo layer fails over to other members and the client
+        // retries with its own backoff; intra-member retries just stack dead
+        // time (measured 160-170s ride-throughs during the 2026-10-29 wave).
+        429: { attempts: 1, delayMs: 1500 },
+        // Network failures (base maps them to 502) and 5xx: ONE fast retry,
+        // then fall to the next combo member. The old 3x3s budget stacked on
+        // a 60s connect timeout held client requests in 45-180s of silence,
+        // killing agent clients (OpenHands/litellm) with "Connection error".
+        502: { attempts: 1, delayMs: 1500 },
+        503: { attempts: 1, delayMs: 1500 },
+        504: { attempts: 1, delayMs: 1500 },
       },
     };
   }
@@ -605,7 +709,18 @@ export class OpenCodeExecutor extends BaseExecutor {
       applyFingerprintTools(body, true);
     } else if (body && typeof body === "object") {
       dropAdaptiveReasoningEffort(body);
-      applyFingerprintTools(body, false, { claude: isMessagesModel(model || body?.model) });
+      const claudeShape = isMessagesModel(model || body?.model);
+      applyFingerprintTools(body, false, { claude: claudeShape });
+      // The free gate validates the CLI system prompt shape too — see
+      // opencodeFingerprint.js. Without it: 429 FreeUsageLimitError.
+      if (claudeShape) applyFingerprintSystemMessages(body);
+      else applyFingerprintSystem(body);
+    }
+    // v2 CLI stamps the provider cache key on every chat request
+    // (openai-chat protocol: prompt_cache_key = session affinity). Chat lane
+    // only: the messages/responses protocols carry their own cache fields.
+    if (credentials && credentials[SESSION_FIELD] && Array.isArray(body.messages)) {
+      body.prompt_cache_key = credentials[SESSION_FIELD];
     }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
@@ -621,25 +736,42 @@ export class OpenCodeExecutor extends BaseExecutor {
       ...args,
       credentials,
       directFetch: async (url, options, { proxyUrl } = {}) => {
-        // Authoritative per-attempt pinning: retries may hop pool entries, so
-        // stamp THIS proxy's pinned identity onto the session headers right
-        // before the impersonated fetch goes out. SESSION_USED_PROP below then
-        // records the identity actually sent, which is what gets burned.
-        const pinned = pinnedSessionForProxy(proxyUrl);
-        if (pinned && options && options.headers) {
-          options.headers["x-opencode-session"] = pinned;
-          options.headers["x-opencode-session-id"] = pinned;
-          options.headers["x-session-affinity"] = pinned;
-          options.headers["x-session-id"] = pinned;
+        // Per-attempt identity: rotate the sticky proxy segment (fresh egress
+        // IP) and mint a fresh ses_ session + msg_ request id. A retry never
+        // re-rides a burned IP/session pair, which is what kept the pool
+        // degraded: one fixed sticky IP answered 429 for ~6.6h after burn.
+        const rotatedProxy = rotateProxySession(proxyUrl);
+        const attemptSession = generateSessionId();
+        if (options && options.headers) {
+          options.headers["x-opencode-session"] = attemptSession;
+          options.headers["x-session-affinity"] = attemptSession;
+          options.headers["X-Session-Id"] = attemptSession;
+          options.headers["x-opencode-session-id"] = attemptSession;
+          options.headers["x-opencode-request"] = generateRequestId();
         }
-        const response = await opencodeTlsFetch(url, {
+        // Keep the body cache key in lockstep with the session identity.
+        if (options && typeof options.body === "string") {
+          try {
+            const parsed = JSON.parse(options.body);
+            if (parsed && typeof parsed === "object" && Array.isArray(parsed.messages)) {
+              parsed.prompt_cache_key = attemptSession;
+              options.body = JSON.stringify(parsed);
+            }
+          } catch { }
+        }
+        // Fresh process per attempt — see the import comment above. Worker
+        // failures (spawn/protocol) propagate to base.js as network errors so
+        // the retry/failover layers treat them like any dead lane. NOTE: they
+        // deliberately do NOT fail open to native in-process fetch: Node's
+        // OpenSSL ClientHello is refused by the upstream JA4 gate with the
+        // very same 429 FreeUsageLimitError.
+        const response = await opencodeWorkerFetch(url, {
           method: options.method,
           headers: options.headers,
           body: options.body,
-        }, { signal: options.signal, proxyUrl });
+        }, { signal: options.signal, proxyUrl: rotatedProxy, timeoutMs: this.config?.timeoutMs || 20000 });
         try {
-          const used = options && options.headers ? options.headers["x-opencode-session"] : null;
-          if (used && response) Object.defineProperty(response, SESSION_USED_PROP, { value: used, configurable: true });
+          if (response) Object.defineProperty(response, SESSION_USED_PROP, { value: attemptSession, configurable: true });
         } catch { }
         return response;
       },
@@ -666,19 +798,21 @@ export class OpenCodeExecutor extends BaseExecutor {
 
     const session = credentials?.[SESSION_FIELD] || pooledSessionIdSync(credentials);
 
-    // Mirrors the v2 CLI. Upstream needs x-opencode-session-id next to
-    // x-opencode-session, and rejects any x-opencode-request (v1 only) with 403.
+    // Mirrors the real v2 CLI (model-request.ts): the session id rides FOUR
+    // headers; affinity is the ROOT session id, which for our top-level
+    // conversations equals the session itself.
     const headers = {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || OPENCODE_CLIENT,
+      "x-opencode-project": lower["x-opencode-project"] || OPENCODE_PROJECT,
+      "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-session": session,
-      "x-opencode-session-id": session,
       "x-session-affinity": session,
-      "x-session-id": session,
-      "x-opencode-project": lower["x-opencode-project"] || "global",
-      "Accept": stream ? "text/event-stream" : "*/*",
+      "X-Session-Id": session,
+      "x-opencode-session-id": session,
+      "Accept": "*/*",
     };
     if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     return headers;

@@ -73,6 +73,12 @@ http.createServer = (...args) => {
     return handler(req, res);
   };
   const server = origCreate(...rest, wrapped);
+  // Raise keep-alive timeouts: Node defaults (keepAliveTimeout=5s) close idle
+  // pooled client connections aggressively; clients racing onto those dead
+  // sockets get instant ECONNRESET -> LiteLLM 'Connection error'. 72s keeps
+  // connections usable across normal idle gaps. headersTimeout must exceed it.
+  server.keepAliveTimeout = 72000;
+  server.headersTimeout = 76000;
   server.once("listening", () => {
     startBackgroundTokenRefreshFromCustomServer();
   });

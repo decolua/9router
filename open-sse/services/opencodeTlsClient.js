@@ -68,7 +68,11 @@ const sessionCache = new Map();
 
 // OPENCODE_TLS_FRESH=1 — one impersonated session per request (see header
 // comment). Sessions are closed when the response stream ends.
-const FRESH_TLS = process.env.OPENCODE_TLS_FRESH === "1" || process.env.OPENCODE_TLS_FRESH === "true";
+// Default ON (2026-10-30): with per-request sticky-segment rotation every
+// request targets a unique proxy URL, so pooled sessions would accumulate
+// unbounded. Fresh mode builds one impersonated session per request and
+// closes it when the response ends. OPENCODE_TLS_FRESH=0 restores pooling.
+const FRESH_TLS = process.env.OPENCODE_TLS_FRESH !== "0" && process.env.OPENCODE_TLS_FRESH !== "false";
 
 // Fresh connections through the rotating gateway occasionally stall before any
 // response headers arrive (slow residential node / gateway congestion); wreq's

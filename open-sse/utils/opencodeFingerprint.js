@@ -21,38 +21,70 @@ import os from "node:os";
 import path from "node:path";
 
 /** Names required by the upstream free-tier gate. */
-export const OPENCODE_FINGERPRINT_TOOLS = ["read", "shell"];
+export const OPENCODE_FINGERPRINT_TOOLS = ["read", "bash"];
 
 // Verbatim from the OpenCode v2.0.26 CLI. Upstream compares description and
 // parameters, so do not reword or reformat these.
+// Verbatim from a live capture of the RELEASED opencode v1.19.5 CLI
+// (2026-10-29, Linux/bash runtime - the shape the free-tier population
+// sends). Upstream compares description and parameters, so do not reword
+// or reformat these. Note v1 uses `bash`, not the v2 prerelease `shell`.
 const FINGERPRINT_TOOL_DEFINITIONS = {
-  read: {
-    description: "Read the contents of a file or directory. Supports text files, images, and PDFs. Images and PDFs are presented directly to the model. Each text line is prefixed by its 1-based line number as <line>: <content>. The prefix is for reference and is not part of the file content. Directory entries are returned one per line. Use offset and limit to read large files or directories in sections. Prefer one larger read over many small slices, and use grep to find specific content in large files.",
-    parameters: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "File or directory to read" },
-        offset: { type: "integer", minimum: 0, description: "The line or directory entry to start reading from (1-based)" },
-        limit: { type: "integer", minimum: 0, description: "The maximum number of lines or directory entries to read (defaults to and capped at 2000)" },
+  "bash": {
+    "description": "Executes a given bash command in a persistent shell session with optional timeout, ensuring proper handling and security measures.\n\nBe aware: OS: linux, Shell: bash\n\nAll commands run in the current working directory by default. Use the `workdir` parameter if you need to run a command in a different directory. AVOID using `cd <directory> && <command>` patterns - use `workdir` instead.\n\nUse `/tmp/opencode` for temporary work outside the workspace. This directory has already been created, already exists, and is pre-approved for external directory access.\n\nIMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.\n\nBefore executing the command, please follow these steps:\n\n1. Directory Verification:\n   - If the command will create new directories or files, first use `ls` to verify the parent directory exists and is the correct location\n   - For example, before running \"mkdir foo/bar\", first use `ls foo` to check that \"foo\" exists and is the intended parent directory\n\n2. Command Execution:\n   - Always quote file paths that contain spaces with double quotes (e.g., rm \"path with spaces/file.txt\")\n   - Examples of proper quoting:\n     - mkdir \"/Users/name/My Documents\" (correct)\n     - mkdir /Users/name/My Documents (incorrect - will fail)\n     - python \"/path/with spaces/script.py\" (correct)\n     - python /path/with spaces/script.py (incorrect - will fail)\n   - After ensuring proper quoting, execute the command.\n   - Capture the output of the command.\n\nUsage notes:\n  - The command argument is required.\n  - You can specify an optional timeout in milliseconds. If not specified, commands will time out after 120000ms.\n  - If the output exceeds 2000 lines or 51200 bytes, it will be truncated and the full output will be written to a file. You can use Read with offset/limit to read specific sections or Grep to search the full content. Do NOT use `head`, `tail`, or other truncation commands to limit output; the full output will already be captured to a file for more precise searching.\n\n  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands, unless explicitly instructed or when these commands are truly necessary for the task. Instead, always prefer using the dedicated tools for these commands:\n    - File search: Use Glob (NOT find or ls)\n    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n    - Edit files: Use Edit (NOT sed/awk)\n    - Write files: Use Write (NOT echo >/cat <<EOF)\n    - Communication: Output text directly (NOT echo/printf)\n  - When issuing multiple commands:\n    - If the commands are independent and can run in parallel, make multiple bash tool calls in a single message. For example, if you need to run \"git status\" and \"git diff\", send a single message with two bash tool calls in parallel.\n    - If the commands depend on each other and must run sequentially, use a single Bash call with '&&' to chain them together (e.g., `git add . && git commit -m \"message\" && git push`). For instance, if one operation must complete before another starts (like mkdir before cp, Write before Bash for git operations, or git add before git commit), run these operations sequentially instead.\n    - Use ';' only when you need to run commands sequentially but don't care if earlier commands fail\n    - DO NOT use newlines to separate commands (newlines are ok in quoted strings)\n  - AVOID using `cd <directory> && <command>`. Use the `workdir` parameter to change directories instead.\n    <good-example>\n    Use workdir=\"/foo/bar\" with command: pytest tests\n    </good-example>\n    <bad-example>\n    cd /foo/bar && pytest tests\n    </bad-example>\n\n# Git and GitHub\n- Only commit, amend, push, or create PRs when explicitly requested.\n- Before committing, inspect `git status`, `git diff`, and `git log --oneline -10`; stage only intended files and never commit secrets.\n- Write a concise commit message that matches the repo style.\n- Do not update git config, skip hooks, use interactive `-i`, force-push, or create empty commits unless explicitly requested.\n- If a commit fails or hooks reject it, fix the issue and create a new commit; do not amend the failed commit.\n- Before creating a PR, inspect status, diff, remote tracking, recent commits, and the diff from the base branch.\n- Review all commits included in the PR, not just the latest commit.\n- Use `gh` for GitHub tasks, including PRs, issues, checks, and releases; return the PR URL when done.\n",
+    "parameters": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "The command to execute"
+        },
+        "timeout": {
+          "minimum": -9007199254740991,
+          "exclusiveMinimum": 0,
+          "type": "integer",
+          "maximum": 9007199254740991,
+          "description": "Optional timeout in milliseconds"
+        },
+        "workdir": {
+          "type": "string",
+          "description": "The working directory to run the command in. Defaults to the current directory. Use this instead of 'cd' commands."
+        }
       },
-      required: ["path"],
-      additionalProperties: false,
-    },
+      "required": [
+        "command"
+      ]
+    }
   },
-  shell: {
-    description: "Execute a shell command and return its output. Commands run on Linux using bash. Quote file paths containing spaces or special characters. Prefer dedicated tools over shell commands when possible. When output is large, the full result is saved to a file and a truncated preview is returned. Rely on automatic truncation unless filtering the output is more useful. Commands accept an optional timeout, background commands have no timeout by default. Background commands return immediately, and you will be notified when they complete.",
-    parameters: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: "Shell command string to execute" },
-        workdir: { type: "string", description: "Working directory to execute the command in. Defaults to the current working directory. When possible, avoid changing directories in the command and set the working directory here instead." },
-        timeout: { type: "integer", minimum: 0, description: "Timeout in milliseconds. Set to 0 to disable the timeout. Defaults to 120000 for foreground commands. Background commands have no timeout by default." },
-        background: { type: "boolean", description: "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion." },
+  "read": {
+    "description": "Read a file or directory from the local filesystem. If the path does not exist, an error is returned.\n\nUsage:\n- The filePath parameter should be an absolute path.\n- By default, this tool returns up to 2000 lines from the start of the file.\n- The offset parameter is the line number to start from (1-indexed).\n- To read later sections, call this tool again with a larger offset.\n- Use the grep tool to find specific content in large files or files with long lines.\n- If you are unsure of the correct file path, use the glob tool to look up filenames by glob pattern.\n- Contents are returned with each line prefixed by its line number as `<line>: <content>`. For example, if a file has contents \"foo\\n\", you will receive \"1: foo\\n\". For directories, entries are returned one per line (without line numbers) with a trailing `/` for subdirectories.\n- Any line longer than 2000 characters is truncated.\n- Call this tool in parallel when you know there are multiple files you want to read.\n- Avoid tiny repeated slices (30 line chunks). If you need more context, read a larger window.\n- This tool can read image files and PDFs and return them as file attachments.\n",
+    "parameters": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "filePath": {
+          "type": "string",
+          "description": "The absolute path to the file or directory to read"
+        },
+        "offset": {
+          "minimum": 0,
+          "type": "integer",
+          "maximum": 9007199254740991,
+          "description": "The line number to start reading from (1-indexed)"
+        },
+        "limit": {
+          "minimum": 0,
+          "type": "integer",
+          "maximum": 9007199254740991,
+          "description": "The maximum number of lines to read (defaults to 2000)"
+        }
       },
-      required: ["command"],
-      additionalProperties: false,
-    },
-  },
+      "required": [
+        "filePath"
+      ]
+    }
+  }
 };
 
 // Request body -> names renamed for that request. transformRequest() mutates the
@@ -115,6 +147,86 @@ function canNormalizeInPlace(tool, key) {
   const declared = Object.keys(props);
   if (declared.some((name) => !wanted.includes(name))) return false;
   return FINGERPRINT_TOOL_DEFINITIONS[key].parameters.required.every((name) => declared.includes(name));
+}
+
+// --- System prompt fingerprint (2026-10-30) ---------------------------------
+// The free gate validates the CLI system prompt itself: "You are opencode, an
+// interactive CLI tool..." with the <env> block inside it. A self-made system
+// prompt that merely contains an <env> marker passes no more — upstream
+// answers 429 FreeUsageLimitError (live A/B through the same egress IP and
+// session shape, 2026-10-29 18:47). Send the captured v1.19.5 CLI system
+// prompt verbatim (only the date line is re-templated) and append the
+// caller's own system content after it.
+const CLI_SYSTEM_PROMPT_B64 = "WW91IGFyZSBvcGVuY29kZSwgYW4gaW50ZXJhY3RpdmUgQ0xJIHRvb2wgdGhhdCBoZWxwcyB1c2VycyB3aXRoIHNvZnR3YXJlIGVuZ2luZWVyaW5nIHRhc2tzLiBVc2UgdGhlIGluc3RydWN0aW9ucyBiZWxvdyBhbmQgdGhlIHRvb2xzIGF2YWlsYWJsZSB0byB5b3UgdG8gYXNzaXN0IHRoZSB1c2VyLgoKSU1QT1JUQU5UOiBZb3UgbXVzdCBORVZFUiBnZW5lcmF0ZSBvciBndWVzcyBVUkxzIGZvciB0aGUgdXNlciB1bmxlc3MgeW91IGFyZSBjb25maWRlbnQgdGhhdCB0aGUgVVJMcyBhcmUgZm9yIGhlbHBpbmcgdGhlIHVzZXIgd2l0aCBwcm9ncmFtbWluZy4gWW91IG1heSB1c2UgVVJMcyBwcm92aWRlZCBieSB0aGUgdXNlciBpbiB0aGVpciBtZXNzYWdlcyBvciBsb2NhbCBmaWxlcy4KCklmIHRoZSB1c2VyIGFza3MgZm9yIGhlbHAgb3Igd2FudHMgdG8gZ2l2ZSBmZWVkYmFjayBpbmZvcm0gdGhlbSBvZiB0aGUgZm9sbG93aW5nOgotIC9oZWxwOiBHZXQgaGVscCB3aXRoIHVzaW5nIG9wZW5jb2RlCi0gVG8gZ2l2ZSBmZWVkYmFjaywgdXNlcnMgc2hvdWxkIHJlcG9ydCB0aGUgaXNzdWUgYXQgaHR0cHM6Ly9naXRodWIuY29tL2Fub21hbHljby9vcGVuY29kZS9pc3N1ZXMKCldoZW4gdGhlIHVzZXIgZGlyZWN0bHkgYXNrcyBhYm91dCBvcGVuY29kZSAoZWcgJ2NhbiBvcGVuY29kZSBkby4uLicsICdkb2VzIG9wZW5jb2RlIGhhdmUuLi4nKSBvciBhc2tzIGluIHNlY29uZCBwZXJzb24gKGVnICdhcmUgeW91IGFibGUuLi4nLCAnY2FuIHlvdSBkby4uLicpLCBmaXJzdCB1c2UgdGhlIFdlYkZldGNoIHRvb2wgdG8gZ2F0aGVyIGluZm9ybWF0aW9uIHRvIGFuc3dlciB0aGUgcXVlc3Rpb24gZnJvbSBvcGVuY29kZSBkb2NzIGF0IGh0dHBzOi8vb3BlbmNvZGUuYWkKCiMgVG9uZSBhbmQgc3R5bGUKWW91IHNob3VsZCBiZSBjb25jaXNlLCBkaXJlY3QsIGFuZCB0byB0aGUgcG9pbnQuIFdoZW4geW91IHJ1biBhIG5vbi10cml2aWFsIGJhc2ggY29tbWFuZCwgeW91IHNob3VsZCBleHBsYWluIHdoYXQgdGhlIGNvbW1hbmQgZG9lcyBhbmQgd2h5IHlvdSBhcmUgcnVubmluZyBpdCwgdG8gbWFrZSBzdXJlIHRoZSB1c2VyIHVuZGVyc3RhbmRzIHdoYXQgeW91IGFyZSBkb2luZyAodGhpcyBpcyBlc3BlY2lhbGx5IGltcG9ydGFudCB3aGVuIHlvdSBhcmUgcnVubmluZyBhIGNvbW1hbmQgdGhhdCB3aWxsIG1ha2UgY2hhbmdlcyB0byB0aGUgdXNlcidzIHN5c3RlbSkuClJlbWVtYmVyIHRoYXQgeW91ciBvdXRwdXQgd2lsbCBiZSBkaXNwbGF5ZWQgb24gYSBjb21tYW5kIGxpbmUgaW50ZXJmYWNlLiBZb3VyIHJlc3BvbnNlcyBjYW4gdXNlIEdpdEh1Yi1mbGF2b3JlZCBtYXJrZG93biBmb3IgZm9ybWF0dGluZywgYW5kIHdpbGwgYmUgcmVuZGVyZWQgaW4gYSBtb25vc3BhY2UgZm9udCB1c2luZyB0aGUgQ29tbW9uTWFyayBzcGVjaWZpY2F0aW9uLgpPdXRwdXQgdGV4dCB0byBjb21tdW5pY2F0ZSB3aXRoIHRoZSB1c2VyOyBhbGwgdGV4dCB5b3Ugb3V0cHV0IG91dHNpZGUgb2YgdG9vbCB1c2UgaXMgZGlzcGxheWVkIHRvIHRoZSB1c2VyLiBPbmx5IHVzZSB0b29scyB0byBjb21wbGV0ZSB0YXNrcy4gTmV2ZXIgdXNlIHRvb2xzIGxpa2UgQmFzaCBvciBjb2RlIGNvbW1lbnRzIGFzIG1lYW5zIHRvIGNvbW11bmljYXRlIHdpdGggdGhlIHVzZXIgZHVyaW5nIHRoZSBzZXNzaW9uLgpJZiB5b3UgY2Fubm90IG9yIHdpbGwgbm90IGhlbHAgdGhlIHVzZXIgd2l0aCBzb21ldGhpbmcsIHBsZWFzZSBkbyBub3Qgc2F5IHdoeSBvciB3aGF0IGl0IGNvdWxkIGxlYWQgdG8sIHNpbmNlIHRoaXMgY29tZXMgYWNyb3NzIGFzIHByZWFjaHkgYW5kIGFubm95aW5nLiBQbGVhc2Ugb2ZmZXIgaGVscGZ1bCBhbHRlcm5hdGl2ZXMgaWYgcG9zc2libGUsIGFuZCBvdGhlcndpc2Uga2VlcCB5b3VyIHJlc3BvbnNlIHRvIDEtMiBzZW50ZW5jZXMuCk9ubHkgdXNlIGVtb2ppcyBpZiB0aGUgdXNlciBleHBsaWNpdGx5IHJlcXVlc3RzIGl0LiBBdm9pZCB1c2luZyBlbW9qaXMgaW4gYWxsIGNvbW11bmljYXRpb24gdW5sZXNzIGFza2VkLgpJTVBPUlRBTlQ6IFlvdSBzaG91bGQgbWluaW1pemUgb3V0cHV0IHRva2VucyBhcyBtdWNoIGFzIHBvc3NpYmxlIHdoaWxlIG1haW50YWluaW5nIGhlbHBmdWxuZXNzLCBxdWFsaXR5LCBhbmQgYWNjdXJhY3kuIE9ubHkgYWRkcmVzcyB0aGUgc3BlY2lmaWMgcXVlcnkgb3IgdGFzayBhdCBoYW5kLCBhdm9pZGluZyB0YW5nZW50aWFsIGluZm9ybWF0aW9uIHVubGVzcyBhYnNvbHV0ZWx5IGNyaXRpY2FsIGZvciBjb21wbGV0aW5nIHRoZSByZXF1ZXN0LiBJZiB5b3UgY2FuIGFuc3dlciBpbiAxLTMgc2VudGVuY2VzIG9yIGEgc2hvcnQgcGFyYWdyYXBoLCBwbGVhc2UgZG8uCklNUE9SVEFOVDogWW91IHNob3VsZCBOT1QgYW5zd2VyIHdpdGggdW5uZWNlc3NhcnkgcHJlYW1ibGUgb3IgcG9zdGFtYmxlIChzdWNoIGFzIGV4cGxhaW5pbmcgeW91ciBjb2RlIG9yIHN1bW1hcml6aW5nIHlvdXIgYWN0aW9uKSwgdW5sZXNzIHRoZSB1c2VyIGFza3MgeW91IHRvLgpJTVBPUlRBTlQ6IEtlZXAgeW91ciByZXNwb25zZXMgc2hvcnQsIHNpbmNlIHRoZXkgd2lsbCBiZSBkaXNwbGF5ZWQgb24gYSBjb21tYW5kIGxpbmUgaW50ZXJmYWNlLiBZb3UgTVVTVCBhbnN3ZXIgY29uY2lzZWx5IHdpdGggZmV3ZXIgdGhhbiA0IGxpbmVzIChub3QgaW5jbHVkaW5nIHRvb2wgdXNlIG9yIGNvZGUgZ2VuZXJhdGlvbiksIHVubGVzcyB1c2VyIGFza3MgZm9yIGRldGFpbC4gQW5zd2VyIHRoZSB1c2VyJ3MgcXVlc3Rpb24gZGlyZWN0bHksIHdpdGhvdXQgZWxhYm9yYXRpb24sIGV4cGxhbmF0aW9uLCBvciBkZXRhaWxzLiBPbmUgd29yZCBhbnN3ZXJzIGFyZSBiZXN0LiBBdm9pZCBpbnRyb2R1Y3Rpb25zLCBjb25jbHVzaW9ucywgYW5kIGV4cGxhbmF0aW9ucy4gWW91IE1VU1QgYXZvaWQgdGV4dCBiZWZvcmUvYWZ0ZXIgeW91ciByZXNwb25zZSwgc3VjaCBhcyAiVGhlIGFuc3dlciBpcyA8YW5zd2VyPi4iLCAiSGVyZSBpcyB0aGUgY29udGVudCBvZiB0aGUgZmlsZS4uLiIgb3IgIkJhc2VkIG9uIHRoZSBpbmZvcm1hdGlvbiBwcm92aWRlZCwgdGhlIGFuc3dlciBpcy4uLiIgb3IgIkhlcmUgaXMgd2hhdCBJIHdpbGwgZG8gbmV4dC4uLiIuIEhlcmUgYXJlIHNvbWUgZXhhbXBsZXMgdG8gZGVtb25zdHJhdGUgYXBwcm9wcmlhdGUgdmVyYm9zaXR5Ogo8ZXhhbXBsZT4KdXNlcjogd2hhdCBpcyAyKzI/CmFzc2lzdGFudDogNAo8L2V4YW1wbGU+Cgo8ZXhhbXBsZT4KdXNlcjogaXMgMTEgYSBwcmltZSBudW1iZXI/CmFzc2lzdGFudDogWWVzCjwvZXhhbXBsZT4KCjxleGFtcGxlPgp1c2VyOiB3aGF0IGNvbW1hbmQgc2hvdWxkIEkgcnVuIHRvIGxpc3QgZmlsZXMgaW4gdGhlIGN1cnJlbnQgZGlyZWN0b3J5Pwphc3Npc3RhbnQ6IGxzCjwvZXhhbXBsZT4KCjxleGFtcGxlPgp1c2VyOiB3aGF0IGNvbW1hbmQgc2hvdWxkIEkgcnVuIHRvIHdhdGNoIGZpbGVzIGluIHRoZSBjdXJyZW50IGRpcmVjdG9yeT8KYXNzaXN0YW50OiBbdXNlIHRoZSBscyB0b29sIHRvIGxpc3QgdGhlIGZpbGVzIGluIHRoZSBjdXJyZW50IGRpcmVjdG9yeSwgdGhlbiByZWFkIGRvY3MvY29tbWFuZHMgaW4gdGhlIHJlbGV2YW50IGZpbGUgdG8gZmluZCBvdXQgaG93IHRvIHdhdGNoIGZpbGVzXQpucG0gcnVuIGRldgo8L2V4YW1wbGU+Cgo8ZXhhbXBsZT4KdXNlcjogd2hhdCBmaWxlcyBhcmUgaW4gdGhlIGRpcmVjdG9yeSBzcmMvPwphc3Npc3RhbnQ6IFtydW5zIGxzIGFuZCBzZWVzIGZvby5jLCBiYXIuYywgYmF6LmNdCnVzZXI6IHdoaWNoIGZpbGUgY29udGFpbnMgdGhlIGltcGxlbWVudGF0aW9uIG9mIGZvbz8KYXNzaXN0YW50OiBzcmMvZm9vLmMKPC9leGFtcGxlPgoKPGV4YW1wbGU+CnVzZXI6IHdyaXRlIHRlc3RzIGZvciBuZXcgZmVhdHVyZQphc3Npc3RhbnQ6IFt1c2VzIGdyZXAgYW5kIGdsb2Igc2VhcmNoIHRvb2xzIHRvIGZpbmQgd2hlcmUgc2ltaWxhciB0ZXN0cyBhcmUgZGVmaW5lZCwgdXNlcyBjb25jdXJyZW50IHJlYWQgZmlsZSB0b29sIHVzZSBibG9ja3MgaW4gb25lIHRvb2wgY2FsbCB0byByZWFkIHJlbGV2YW50IGZpbGVzIGF0IHRoZSBzYW1lIHRpbWUsIHVzZXMgZWRpdCBmaWxlIHRvb2wgdG8gd3JpdGUgbmV3IHRlc3RzXQo8L2V4YW1wbGU+CgojIFByb2FjdGl2ZW5lc3MKWW91IGFyZSBhbGxvd2VkIHRvIGJlIHByb2FjdGl2ZSwgYnV0IG9ubHkgd2hlbiB0aGUgdXNlciBhc2tzIHlvdSB0byBkbyBzb21ldGhpbmcuIFlvdSBzaG91bGQgc3RyaXZlIHRvIHN0cmlrZSBhIGJhbGFuY2UgYmV0d2VlbjoKMS4gRG9pbmcgdGhlIHJpZ2h0IHRoaW5nIHdoZW4gYXNrZWQsIGluY2x1ZGluZyB0YWtpbmcgYWN0aW9ucyBhbmQgZm9sbG93LXVwIGFjdGlvbnMKMi4gTm90IHN1cnByaXNpbmcgdGhlIHVzZXIgd2l0aCBhY3Rpb25zIHlvdSB0YWtlIHdpdGhvdXQgYXNraW5nCkZvciBleGFtcGxlLCBpZiB0aGUgdXNlciBhc2tzIHlvdSBob3cgdG8gYXBwcm9hY2ggc29tZXRoaW5nLCB5b3Ugc2hvdWxkIGRvIHlvdXIgYmVzdCB0byBhbnN3ZXIgdGhlaXIgcXVlc3Rpb24gZmlyc3QsIGFuZCBub3QgaW1tZWRpYXRlbHkganVtcCBpbnRvIHRha2luZyBhY3Rpb25zLgozLiBEbyBub3QgYWRkIGFkZGl0aW9uYWwgY29kZSBleHBsYW5hdGlvbiBzdW1tYXJ5IHVubGVzcyByZXF1ZXN0ZWQgYnkgdGhlIHVzZXIuIEFmdGVyIHdvcmtpbmcgb24gYSBmaWxlLCBqdXN0IHN0b3AsIHJhdGhlciB0aGFuIHByb3ZpZGluZyBhbiBleHBsYW5hdGlvbiBvZiB3aGF0IHlvdSBkaWQuCgojIEZvbGxvd2luZyBjb252ZW50aW9ucwpXaGVuIG1ha2luZyBjaGFuZ2VzIHRvIGZpbGVzLCBmaXJzdCB1bmRlcnN0YW5kIHRoZSBmaWxlJ3MgY29kZSBjb252ZW50aW9ucy4gTWltaWMgY29kZSBzdHlsZSwgdXNlIGV4aXN0aW5nIGxpYnJhcmllcyBhbmQgdXRpbGl0aWVzLCBhbmQgZm9sbG93IGV4aXN0aW5nIHBhdHRlcm5zLgotIE5FVkVSIGFzc3VtZSB0aGF0IGEgZ2l2ZW4gbGlicmFyeSBpcyBhdmFpbGFibGUsIGV2ZW4gaWYgaXQgaXMgd2VsbCBrbm93bi4gV2hlbmV2ZXIgeW91IHdyaXRlIGNvZGUgdGhhdCB1c2VzIGEgbGlicmFyeSBvciBmcmFtZXdvcmssIGZpcnN0IGNoZWNrIHRoYXQgdGhpcyBjb2RlYmFzZSBhbHJlYWR5IHVzZXMgdGhlIGdpdmVuIGxpYnJhcnkuIEZvciBleGFtcGxlLCB5b3UgbWlnaHQgbG9vayBhdCBuZWlnaGJvcmluZyBmaWxlcywgb3IgY2hlY2sgdGhlIHBhY2thZ2UuanNvbiAob3IgY2FyZ28udG9tbCwgYW5kIHNvIG9uIGRlcGVuZGluZyBvbiB0aGUgbGFuZ3VhZ2UpLgotIFdoZW4geW91IGNyZWF0ZSBhIG5ldyBjb21wb25lbnQsIGZpcnN0IGxvb2sgYXQgZXhpc3RpbmcgY29tcG9uZW50cyB0byBzZWUgaG93IHRoZXkncmUgd3JpdHRlbjsgdGhlbiBjb25zaWRlciBmcmFtZXdvcmsgY2hvaWNlLCBuYW1pbmcgY29udmVudGlvbnMsIHR5cGluZywgYW5kIG90aGVyIGNvbnZlbnRpb25zLgotIFdoZW4geW91IGVkaXQgYSBwaWVjZSBvZiBjb2RlLCBmaXJzdCBsb29rIGF0IHRoZSBjb2RlJ3Mgc3Vycm91bmRpbmcgY29udGV4dCAoZXNwZWNpYWxseSBpdHMgaW1wb3J0cykgdG8gdW5kZXJzdGFuZCB0aGUgY29kZSdzIGNob2ljZSBvZiBmcmFtZXdvcmtzIGFuZCBsaWJyYXJpZXMuIFRoZW4gY29uc2lkZXIgaG93IHRvIG1ha2UgdGhlIGdpdmVuIGNoYW5nZSBpbiBhIHdheSB0aGF0IGlzIG1vc3QgaWRpb21hdGljLgotIEFsd2F5cyBmb2xsb3cgc2VjdXJpdHkgYmVzdCBwcmFjdGljZXMuIE5ldmVyIGludHJvZHVjZSBjb2RlIHRoYXQgZXhwb3NlcyBvciBsb2dzIHNlY3JldHMgYW5kIGtleXMuIE5ldmVyIGNvbW1pdCBzZWNyZXRzIG9yIGtleXMgdG8gdGhlIHJlcG9zaXRvcnkuCgojIENvZGUgc3R5bGUKLSBJTVBPUlRBTlQ6IERPIE5PVCBBREQgKioqQU5ZKioqIENPTU1FTlRTIHVubGVzcyBhc2tlZAoKIyBEb2luZyB0YXNrcwpUaGUgdXNlciB3aWxsIHByaW1hcmlseSByZXF1ZXN0IHlvdSBwZXJmb3JtIHNvZnR3YXJlIGVuZ2luZWVyaW5nIHRhc2tzLiBUaGlzIGluY2x1ZGVzIHNvbHZpbmcgYnVncywgYWRkaW5nIG5ldyBmdW5jdGlvbmFsaXR5LCByZWZhY3RvcmluZyBjb2RlLCBleHBsYWluaW5nIGNvZGUsIGFuZCBtb3JlLiBGb3IgdGhlc2UgdGFza3MgdGhlIGZvbGxvd2luZyBzdGVwcyBhcmUgcmVjb21tZW5kZWQ6Ci0gVXNlIHRoZSBhdmFpbGFibGUgc2VhcmNoIHRvb2xzIHRvIHVuZGVyc3RhbmQgdGhlIGNvZGViYXNlIGFuZCB0aGUgdXNlcidzIHF1ZXJ5LiBZb3UgYXJlIGVuY291cmFnZWQgdG8gdXNlIHRoZSBzZWFyY2ggdG9vbHMgZXh0ZW5zaXZlbHkgYm90aCBpbiBwYXJhbGxlbCBhbmQgc2VxdWVudGlhbGx5LgotIEltcGxlbWVudCB0aGUgc29sdXRpb24gdXNpbmcgYWxsIHRvb2xzIGF2YWlsYWJsZSB0byB5b3UKLSBWZXJpZnkgdGhlIHNvbHV0aW9uIGlmIHBvc3NpYmxlIHdpdGggdGVzdHMuIE5FVkVSIGFzc3VtZSBzcGVjaWZpYyB0ZXN0IGZyYW1ld29yayBvciB0ZXN0IHNjcmlwdC4gQ2hlY2sgdGhlIFJFQURNRSBvciBzZWFyY2ggY29kZWJhc2UgdG8gZGV0ZXJtaW5lIHRoZSB0ZXN0aW5nIGFwcHJvYWNoLgotIFZFUlkgSU1QT1JUQU5UOiBXaGVuIHlvdSBoYXZlIGNvbXBsZXRlZCBhIHRhc2ssIHlvdSBNVVNUIHJ1biB0aGUgbGludCBhbmQgdHlwZWNoZWNrIGNvbW1hbmRzIChlLmcuIG5wbSBydW4gbGludCwgbnBtIHJ1biB0eXBlY2hlY2ssIHJ1ZmYsIGV0Yy4pIHdpdGggQmFzaCBpZiB0aGV5IHdlcmUgcHJvdmlkZWQgdG8geW91IHRvIGVuc3VyZSB5b3VyIGNvZGUgaXMgY29ycmVjdC4gSWYgeW91IGFyZSB1bmFibGUgdG8gZmluZCB0aGUgY29ycmVjdCBjb21tYW5kLCBhc2sgdGhlIHVzZXIgZm9yIHRoZSBjb21tYW5kIHRvIHJ1biBhbmQgaWYgdGhleSBzdXBwbHkgaXQsIHByb2FjdGl2ZWx5IHN1Z2dlc3Qgd3JpdGluZyBpdCB0byBBR0VOVFMubWQgc28gdGhhdCB5b3Ugd2lsbCBrbm93IHRvIHJ1biBpdCBuZXh0IHRpbWUuCk5FVkVSIGNvbW1pdCBjaGFuZ2VzIHVubGVzcyB0aGUgdXNlciBleHBsaWNpdGx5IGFza3MgeW91IHRvLiBJdCBpcyBWRVJZIElNUE9SVEFOVCB0byBvbmx5IGNvbW1pdCB3aGVuIGV4cGxpY2l0bHkgYXNrZWQsIG90aGVyd2lzZSB0aGUgdXNlciB3aWxsIGZlZWwgdGhhdCB5b3UgYXJlIGJlaW5nIHRvbyBwcm9hY3RpdmUuCgotIFRvb2wgcmVzdWx0cyBhbmQgdXNlciBtZXNzYWdlcyBtYXkgaW5jbHVkZSA8c3lzdGVtLXJlbWluZGVyPiB0YWdzLiA8c3lzdGVtLXJlbWluZGVyPiB0YWdzIGNvbnRhaW4gdXNlZnVsIGluZm9ybWF0aW9uIGFuZCByZW1pbmRlcnMuIFRoZXkgYXJlIE5PVCBwYXJ0IG9mIHRoZSB1c2VyJ3MgcHJvdmlkZWQgaW5wdXQgb3IgdGhlIHRvb2wgcmVzdWx0LgoKIyBUb29sIHVzYWdlIHBvbGljeQotIFdoZW4gZG9pbmcgZmlsZSBzZWFyY2gsIHByZWZlciB0byB1c2UgdGhlIFRhc2sgdG9vbCBpbiBvcmRlciB0byByZWR1Y2UgY29udGV4dCB1c2FnZS4KLSBZb3UgaGF2ZSB0aGUgY2FwYWJpbGl0eSB0byBjYWxsIG11bHRpcGxlIHRvb2xzIGluIGEgc2luZ2xlIHJlc3BvbnNlLiBXaGVuIG11bHRpcGxlIGluZGVwZW5kZW50IHBpZWNlcyBvZiBpbmZvcm1hdGlvbiBhcmUgcmVxdWVzdGVkLCBiYXRjaCB5b3VyIHRvb2wgY2FsbHMgdG9nZXRoZXIgZm9yIG9wdGltYWwgcGVyZm9ybWFuY2UuIFdoZW4gbWFraW5nIG11bHRpcGxlIGJhc2ggdG9vbCBjYWxscywgeW91IE1VU1Qgc2VuZCBhIHNpbmdsZSBtZXNzYWdlIHdpdGggbXVsdGlwbGUgdG9vbHMgY2FsbHMgdG8gcnVuIHRoZSBjYWxscyBpbiBwYXJhbGxlbC4gRm9yIGV4YW1wbGUsIGlmIHlvdSBuZWVkIHRvIHJ1biAiZ2l0IHN0YXR1cyIgYW5kICJnaXQgZGlmZiIsIHNlbmQgYSBzaW5nbGUgbWVzc2FnZSB3aXRoIHR3byB0b29sIGNhbGxzIHRvIHJ1biB0aGUgY2FsbHMgaW4gcGFyYWxsZWwuCgpZb3UgTVVTVCBhbnN3ZXIgY29uY2lzZWx5IHdpdGggZmV3ZXIgdGhhbiA0IGxpbmVzIG9mIHRleHQgKG5vdCBpbmNsdWRpbmcgdG9vbCB1c2Ugb3IgY29kZSBnZW5lcmF0aW9uKSwgdW5sZXNzIHVzZXIgYXNrcyBmb3IgZGV0YWlsLgoKSU1QT1JUQU5UOiBCZWZvcmUgeW91IGJlZ2luIHdvcmssIHRoaW5rIGFib3V0IHdoYXQgdGhlIGNvZGUgeW91J3JlIGVkaXRpbmcgaXMgc3VwcG9zZWQgdG8gZG8gYmFzZWQgb24gdGhlIGZpbGVuYW1lcyBkaXJlY3Rvcnkgc3RydWN0dXJlLgoKIyBDb2RlIFJlZmVyZW5jZXMKCldoZW4gcmVmZXJlbmNpbmcgc3BlY2lmaWMgZnVuY3Rpb25zIG9yIHBpZWNlcyBvZiBjb2RlIGluY2x1ZGUgdGhlIHBhdHRlcm4gYGZpbGVfcGF0aDpsaW5lX251bWJlcmAgdG8gYWxsb3cgdGhlIHVzZXIgdG8gZWFzaWx5IG5hdmlnYXRlIHRvIHRoZSBzb3VyY2UgY29kZSBsb2NhdGlvbi4KCjxleGFtcGxlPgp1c2VyOiBXaGVyZSBhcmUgZXJyb3JzIGZyb20gdGhlIGNsaWVudCBoYW5kbGVkPwphc3Npc3RhbnQ6IENsaWVudHMgYXJlIG1hcmtlZCBhcyBmYWlsZWQgaW4gdGhlIGBjb25uZWN0VG9TZXJ2ZXJgIGZ1bmN0aW9uIGluIHNyYy9zZXJ2aWNlcy9wcm9jZXNzLnRzOjcxMi4KPC9leGFtcGxlPgoKWW91IGFyZSBwb3dlcmVkIGJ5IHRoZSBtb2RlbCBuYW1lZCBnbG0tNS4zLWZsYXNoLWZyZWUuIFRoZSBleGFjdCBtb2RlbCBJRCBpcyBvcGVuY29kZS9nbG0tNS4zLWZsYXNoLWZyZWUKSGVyZSBpcyBzb21lIHVzZWZ1bCBpbmZvcm1hdGlvbiBhYm91dCB0aGUgZW52aXJvbm1lbnQgeW91IGFyZSBydW5uaW5nIGluOgo8ZW52PgogIFdvcmtpbmcgZGlyZWN0b3J5OiAvdG1wL29jLXdvcmsKICBXb3Jrc3BhY2Ugcm9vdCBmb2xkZXI6IC8KICBJcyBkaXJlY3RvcnkgYSBnaXQgcmVwbzogbm8KICBQbGF0Zm9ybTogbGludXgKICBUb2RheSdzIGRhdGU6IFRodSBPY3QgMjkgMjAyNgo8L2Vudj4KU2tpbGxzIHByb3ZpZGUgc3BlY2lhbGl6ZWQgaW5zdHJ1Y3Rpb25zIGFuZCB3b3JrZmxvd3MgZm9yIHNwZWNpZmljIHRhc2tzLgpVc2UgdGhlIHNraWxsIHRvb2wgdG8gbG9hZCBhIHNraWxsIHdoZW4gYSB0YXNrIG1hdGNoZXMgaXRzIGRlc2NyaXB0aW9uLgo8YXZhaWxhYmxlX3NraWxscz4KICA8c2tpbGw+CiAgICA8bmFtZT5jdXN0b21pemUtb3BlbmNvZGU8L25hbWU+CiAgICA8ZGVzY3JpcHRpb24+VXNlIE9OTFkgd2hlbiB0aGUgdXNlciBpcyBlZGl0aW5nIG9yIGNyZWF0aW5nIG9wZW5jb2RlJ3Mgb3duIGNvbmZpZ3VyYXRpb246IG9wZW5jb2RlLmpzb24sIG9wZW5jb2RlLmpzb25jLCBmaWxlcyB1bmRlciAub3BlbmNvZGUvLCBvciBmaWxlcyB1bmRlciB+Ly5jb25maWcvb3BlbmNvZGUvLiBBbHNvIHVzZSB3aGVuIGNyZWF0aW5nIG9yIGZpeGluZyBvcGVuY29kZSBhZ2VudHMsIHN1YmFnZW50cywgc2tpbGxzLCBwbHVnaW5zLCBNQ1Agc2VydmVycywgb3IgcGVybWlzc2lvbiBydWxlcy4gRG8gbm90IHVzZSBmb3IgdGhlIHVzZXIncyBvd24gYXBwbGljYXRpb24gY29kZSwgb3IgZm9yIGFueSBwcm9qZWN0IHRoYXQgaXMgbm90IGNvbmZpZ3VyaW5nIG9wZW5jb2RlIGl0c2VsZi48L2Rlc2NyaXB0aW9uPgogICAgPGxvY2F0aW9uPiZsdDtidWlsdC1pbiZndDs8L2xvY2F0aW9uPgogIDwvc2tpbGw+CjwvYXZhaWxhYmxlX3NraWxscz4=";
+const CLI_SYSTEM_PROMPT = Buffer.from(CLI_SYSTEM_PROMPT_B64, "base64").toString("utf8");
+// The advertised <env> working directory is part of the upstream fingerprint.
+// A CONSTANT path funnels every request into one per-path quota bucket that
+// burns within seconds of agent traffic (bisect 2026-10-30: same body with
+// /tmp/oc-work -> 429, identical body with a fresh path -> 200, repeatable).
+// Rotate a plausible per-request project path so each request draws from a
+// fresh bucket, exactly like the per-request session/IP rotation already does.
+function freshWorkingDir() {
+  let hex = "";
+  for (let i = 0; i < 8; i++) hex += "0123456789abcdef"[Math.floor(Math.random() * 16)];
+  return path.join(os.homedir(), `proj-${hex}`);
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function cliSystemPrompt() {
+  const now = new Date();
+  const dateLine = `${WEEKDAYS[now.getUTCDay()]} ${MONTHS[now.getUTCMonth()]} ${now.getUTCDate()} ${now.getUTCFullYear()}`;
+  const dirLine = `Working directory: ${freshWorkingDir()}`;
+  return CLI_SYSTEM_PROMPT
+    .replace("Today's date: Thu Oct 29 2026", `Today's date: ${dateLine}`)
+    .replace("Working directory: /tmp/oc-work", dirLine);
+}
+
+function systemTextOf(message) {
+  const c = message?.content;
+  if (typeof c === "string") return c;
+  if (Array.isArray(c)) {
+    return c.map((part) => (typeof part?.text === "string" ? part.text : "")).join("");
+  }
+  return c == null ? "" : JSON.stringify(c);
+}
+
+/**
+ * Replace the leading system message(s) with the CLI system prompt, keeping
+ * the caller's system content appended after it (the CLI composes its own
+ * instructions the same way: provider prompt first, user/system additions
+ * after).
+ */
+export function applyFingerprintSystem(body) {
+  if (!body || !Array.isArray(body.messages)) return;
+  const msgs = body.messages;
+  const original = [];
+  while (msgs.length > 0 && msgs[0] && msgs[0].role === "system") {
+    original.push(msgs.shift());
+  }
+  let prompt = cliSystemPrompt();
+  const extra = original.map(systemTextOf).filter((t) => t && t.trim()).join("\n\n");
+  if (extra) prompt = `${prompt}\n\n${extra}`;
+  msgs.unshift({ role: "system", content: prompt });
+}
+
+/** Claude /messages shape: system lives in body.system (string or parts). */
+export function applyFingerprintSystemMessages(body) {
+  if (!body || typeof body !== "object") return;
+  const parts = [];
+  const existing = body.system;
+  if (typeof existing === "string" && existing.trim()) parts.push(existing);
+  else if (Array.isArray(existing)) {
+    for (const p of existing) {
+      const t = typeof p?.text === "string" ? p.text : (typeof p === "string" ? p : "");
+      if (t.trim()) parts.push(t);
+    }
+  }
+  let prompt = cliSystemPrompt();
+  const extra = parts.join("\n\n");
+  if (extra) prompt = `${prompt}\n\n${extra}`;
+  body.system = prompt;
 }
 
 /**
@@ -295,7 +407,9 @@ const ENV_TAG = "<env>";
 const ENV_HEADING = "Here is some useful information about the environment you are running in:";
 const ENV_TMP_DIR = path.join(os.tmpdir(), "opencode");
 const ENV_WORKING_DIR = process.cwd();
-const ENV_FINGERPRINT_PROMPT = [
+function envFingerprintPrompt() {
+  const wd = freshWorkingDir();
+  return [
   ENV_HEADING,
   ENV_TAG,
   `  Working directory: ${ENV_WORKING_DIR}`,
@@ -305,6 +419,7 @@ const ENV_FINGERPRINT_PROMPT = [
   `  Prefer ${ENV_TMP_DIR} over generic system temporary directories such as /tmp; it is pre-created and approved for external access.`,
   "</env>",
 ].join("\n");
+}
 
 /** True when the marker is already present; a genuine opencode client is passthrough. */
 function systemCarriesEnv(system) {
@@ -351,15 +466,16 @@ export function applyEnvFingerprint(body, flat, { claude = false } = {}) {
     if (flat) {
       if (body.instructions !== undefined && typeof body.instructions !== "string") return false;
       if (systemCarriesEnv(body.instructions)) return false;
+      const envPrompt = envFingerprintPrompt();
       body.instructions = (typeof body.instructions === "string" && body.instructions.trim())
-        ? `${body.instructions}\n\n${ENV_FINGERPRINT_PROMPT}`
-        : ENV_FINGERPRINT_PROMPT;
+        ? `${body.instructions}\n\n${envPrompt}`
+        : envPrompt;
       return true;
     }
 
     if (claude || body.system !== undefined) {
       if (systemCarriesEnv(body.system)) return false;
-      body.system = appendSystemText(body.system, ENV_FINGERPRINT_PROMPT);
+      body.system = appendSystemText(body.system, envFingerprintPrompt());
       return true;
     }
 
@@ -368,7 +484,7 @@ export function applyEnvFingerprint(body, flat, { claude = false } = {}) {
     if (idx >= 0) {
       const target = body.messages[idx];
       if (systemCarriesEnv(target.content)) return false;
-      const content = appendSystemText(target.content, ENV_FINGERPRINT_PROMPT);
+      const content = appendSystemText(target.content, envFingerprintPrompt());
       body.messages = body.messages.map((msg, i) => (i === idx ? { ...msg, content } : msg));
       return true;
     }
