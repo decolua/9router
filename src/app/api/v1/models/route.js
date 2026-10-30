@@ -52,11 +52,42 @@ const ALIAS_TO_PROVIDER_ID = {
   ...ALIAS_TO_ID,
 };
 
-function comboSeatCapabilities(seat) {
+// The prefix a connection's models are published under. Mirrors the publication
+// step in buildModelsList() so a combo seat prefix and a published model id
+// always denote the same provider.
+function seatPrefixFor(providerId, conn) {
+  return (
+    conn?.providerSpecificData?.prefix
+    || getProviderAlias(providerId)
+    || PROVIDER_ID_TO_ALIAS[providerId]
+    || providerId
+  ).trim();
+}
+
+// Seat prefix -> provider id, built from the live connections.
+//
+// ALIAS_TO_PROVIDER_ID only knows the built-in providers, so a custom
+// (OpenAI/Anthropic-compatible) provider node is missing from it. Its seat
+// prefix then resolved to the literal prefix string instead of the provider
+// id, and the seat fell through to the generic model-name patterns —
+// publishing a window the provider never claimed. Resolving the prefix
+// against the same connections the models are published from keeps combo
+// members on the same authoritative metadata as direct models.
+function buildSeatProviderIds(activeConnectionByProvider) {
+  const ids = new Map();
+  for (const [providerId, conn] of activeConnectionByProvider) {
+    const prefix = seatPrefixFor(providerId, conn);
+    if (prefix && !ids.has(prefix)) ids.set(prefix, providerId);
+  }
+  return ids;
+}
+
+function comboSeatCapabilities(seat, seatProviderIds) {
   const slash = seat.indexOf("/");
   if (slash <= 0) return null;
   const alias = seat.slice(0, slash);
-  return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
+  const provider = seatProviderIds?.get(alias) || ALIAS_TO_PROVIDER_ID[alias] || alias;
+  return getCapabilitiesForModel(provider, seat.slice(slash + 1));
 }
 
 // Per-provider live model resolvers. Each receives a connection record and
@@ -278,7 +309,15 @@ function comboMatchesKinds(combo, kindFilter) {
 // treated as a literal model and publishes the 200k floor. Expand nested
 // names (cycle-guarded) so the published window is the true min across the
 // whole chain.
-function comboSeatLimits(combo, combosByName, visiting = new Set()) {
+//
+// A seat that does not publish a limit (a provider that declares no output
+// budget, or a model whose metadata could not be resolved) makes that
+// dimension unknown for the whole combo: any seat may serve the request, so
+// the combo cannot promise more than an unknown seat can be relied on to
+// hold. An unknown dimension is published as absent rather than substituted
+// with an unrelated generic value — a single-member combo therefore publishes
+// exactly its member's limits, including the fields its member omits.
+function comboSeatLimits(combo, combosByName, seatProviderIds, visiting = new Set()) {
   const name = typeof combo?.name === "string" ? combo.name : null;
   if (name) {
     if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
@@ -287,6 +326,8 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
 
   let contextWindow = Infinity;
   let maxOutput = Infinity;
+  let contextUnknown = false;
+  let outputUnknown = false;
   try {
     for (const seat of Array.isArray(combo?.models) ? combo.models : []) {
       if (typeof seat !== "string") continue;
@@ -294,23 +335,27 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
       if (slash <= 0) {
         const nested = combosByName.get(seat);
         if (nested) {
-          const nestedLimits = comboSeatLimits(nested, combosByName, visiting);
+          const nestedLimits = comboSeatLimits(nested, combosByName, seatProviderIds, visiting);
           if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
+          else contextUnknown = true;
           if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
+          else outputUnknown = true;
           continue;
         }
       }
-      const caps = comboSeatCapabilities(seat) || getCapabilitiesForModel(null, seat);
+      const caps = comboSeatCapabilities(seat, seatProviderIds) || getCapabilitiesForModel(null, seat);
       if (Number.isFinite(caps?.contextWindow)) contextWindow = Math.min(contextWindow, caps.contextWindow);
+      else contextUnknown = true;
       if (Number.isFinite(caps?.maxOutput)) maxOutput = Math.min(maxOutput, caps.maxOutput);
+      else outputUnknown = true;
     }
   } finally {
     if (name) visiting.delete(name);
   }
 
   return {
-    contextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
-    maxOutput: Number.isFinite(maxOutput) ? maxOutput : undefined,
+    contextWindow: contextUnknown || !Number.isFinite(contextWindow) ? undefined : contextWindow,
+    maxOutput: outputUnknown || !Number.isFinite(maxOutput) ? undefined : maxOutput,
   };
 }
 
@@ -386,6 +431,12 @@ export async function buildModelsList(kindFilter, options = {}) {
   // Lookup map so aggregateComboCapabilities can recursively resolve nested combos
   const comboByName = Object.fromEntries(combos.map((c) => [c.name, c.models]));
 
+  // Seat prefix -> provider id, resolved from the same connections the models
+  // are published from, so a combo seat and a published model id always denote
+  // the same provider (including custom provider nodes, which the static
+  // alias registry does not know).
+  const seatProviderIds = buildSeatProviderIds(activeConnectionByProvider);
+
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
     if (!comboMatchesKinds(combo, kindFilter)) continue;
@@ -397,13 +448,13 @@ export async function buildModelsList(kindFilter, options = {}) {
     if (combo.kind === "webSearch" || combo.kind === "webFetch") {
       entry.kind = combo.kind;
     } else {
-      const comboCaps = aggregateComboCapabilities(combo.models, comboByName, comboSeatCapabilities);
+      const comboCaps = aggregateComboCapabilities(combo.models, comboByName, (seat) => comboSeatCapabilities(seat, seatProviderIds));
       if (comboCaps) entry.capabilities = comboCaps;
       // Any seat can serve the request, so the only window a combo can promise is
       // its smallest. Combo entries were the only models on this endpoint that
       // published no limits at all, which leaves a client to guess from the name —
       // and it guesses high (see the snake_case note on the per-provider path).
-      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName);
+      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, seatProviderIds);
       if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
       if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
     }
