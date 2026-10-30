@@ -57,7 +57,12 @@ export function cloakClaudeTools(body) {
   const tools = body.tools;
   if (!tools || tools.length === 0) return { body, toolNameMap: null };
 
-  const suffix = (name) => `${name}${CLAUDE_TOOL_SUFFIX}`;
+  // Avoid double-suffixing: client history echoed back already carries the suffix
+  // from the previous turn (GH decolua/9router#5170).
+  const suffix = (name) =>
+    typeof name === "string" && name.endsWith(CLAUDE_TOOL_SUFFIX)
+      ? name
+      : `${name}${CLAUDE_TOOL_SUFFIX}`;
   const toolNameMap = new Map();
   const clientToolNames = new Set();
   const clientDeclarations = [];
