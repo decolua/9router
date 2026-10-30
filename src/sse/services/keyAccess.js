@@ -1,3 +1,4 @@
+import { parseModelReference, formatModelReference } from "open-sse/utils/modelReference.js";
 // Per-API-key access control for the /v1/* inference keys.
 //
 // Two modes per key: UNRESTRICTED (default — exactly today's behaviour) or
@@ -76,6 +77,7 @@ export async function getKeyAccessContext(request) {
     keyId: record.id,
     keyName: record.name || record.id,
     allow: record.access.allow || [],
+    requestConnectionId: request?.headers?.get("x-connection-id")?.trim() || null,
     _sets: null,
   };
 }
@@ -96,12 +98,10 @@ async function getAllowSets(ctx) {
     }
     const info = await getModelInfo(entry);
     if (info?.provider && info.model) {
-      models.add(canonicalModel(info.provider, info.model));
-      if (info.connectionId) {
-        models.add(`${canonicalModel(info.provider, info.model)}@${info.connectionId.toLowerCase()}`);
-      }
+      models.add(formatModelReference(canonicalModel(info.provider, info.model), info.connectionId));
     }
-    if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
+    const reference = parseModelReference(entry);
+    if (!reference.model.includes("/")) providers.add(formatModelReference(lower(resolveProviderId(reference.model)), reference.connectionId));
   }
   ctx._sets = { combos, models, providers };
   return ctx._sets;
@@ -113,8 +113,8 @@ async function isModelStringAllowed(ctx, requested) {
   // provider null ⇔ an existing combo with no members (routes nowhere).
   if (!info?.provider) return sets.combos.has(lower(requested));
   const canonical = canonicalModel(info.provider, info.model);
-  const canonicalWithConn = info.connectionId ? `${canonical}@${info.connectionId.toLowerCase()}` : canonical;
-  return sets.models.has(canonical) || sets.models.has(canonicalWithConn) || sets.models.has(lower(requested));
+  const connectionId = info.connectionId || ctx.requestConnectionId;
+  return sets.models.has(canonical) || (connectionId && sets.models.has(formatModelReference(canonical, connectionId)));
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -144,12 +144,16 @@ export async function enforceKeyAccess(ctx, requested) {
  * (e.g. a multipart video body we do not parse) is denied for restricted keys:
  * an unverifiable target is not an allowed one.
  */
-export async function enforceKeyAccessResolved(ctx, requested, provider, model) {
+export async function enforceKeyAccessResolved(ctx, requested, provider, model, connectionId = null) {
   if (!ctx) return null;
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  const resolved = requested ? await getModelInfo(requested) : null;
+  const canonical = canonicalModel(provider, model);
+  const account = connectionId || resolved?.connectionId || ctx.requestConnectionId;
+  return sets.models.has(canonical) || (account && sets.models.has(formatModelReference(canonical, account)))
+    ? null : keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -160,9 +164,12 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
+  const reference = parseModelReference(requested);
+  const provider = lower(resolveProviderId(reference.model));
+  const account = reference.connectionId || ctx.requestConnectionId;
   const allowed = comboModels
     ? sets.combos.has(lower(requested))
-    : sets.providers.has(lower(resolveProviderId(requested)));
+    : sets.providers.has(provider) || (account && sets.providers.has(formatModelReference(provider, account)));
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
 
@@ -200,7 +207,43 @@ export async function filterModelsListForKey(ctx, list) {
       if (sets.providers.has(lower(info.provider))) out.push(entry);
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    const canonical = canonicalModel(info.provider, info.model);
+    if (sets.models.has(canonical)) out.push(entry);
+    else for (const rule of sets.models) {
+      if (rule.startsWith(`${canonical}@`)) out.push({ ...entry, id: formatModelReference(entry.id, rule.slice(canonical.length + 1)) });
+    }
   }
   return out;
+}
+
+/** Candidate constraints are checked by the selector on every retry. null means any account. */
+export async function getAllowedConnectionIds(ctx, provider, model) {
+  if (!ctx) return null;
+  const { models } = await getAllowSets(ctx);
+  const canonical = canonicalModel(provider, model);
+  if (models.has(canonical)) return null;
+  return new Set([...models].filter(rule => rule.startsWith(`${canonical}@`)).map(rule => rule.slice(canonical.length + 1)));
+}
+
+/** Polling has no model payload. Restrict it to accounts explicitly accessible for this provider. */
+export async function getProviderAllowedConnectionIds(ctx, provider) {
+  if (!ctx) return null;
+  const { models } = await getAllowSets(ctx);
+  const prefix = `${lower(provider)}/`;
+  const ids = new Set();
+  for (const rule of models) {
+    if (!rule.startsWith(prefix)) continue;
+    const info = await getModelInfo(rule);
+    if (!info.connectionId) return null;
+    ids.add(info.connectionId);
+  }
+  return ids;
+}
+
+export async function getAllowedProviderConnectionIds(ctx, provider) {
+  if (!ctx) return null;
+  const { providers } = await getAllowSets(ctx);
+  const canonical = lower(provider);
+  if (providers.has(canonical)) return null;
+  return new Set([...providers].filter(rule => rule.startsWith(`${canonical}@`)).map(rule => rule.slice(canonical.length + 1)));
 }

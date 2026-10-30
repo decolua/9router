@@ -232,7 +232,7 @@ describe("System One Smart Combo Router", () => {
       expect(calls[0]).toBe("cx/gpt-5-mini"); // Default first model
     });
 
-    it("falls back to the next candidate and clears sticky lock if the chosen model fails", async () => {
+    it("falls back to the next candidate and anchors the successful replacement", async () => {
       const calls = [];
       const handleSingleModel = vi.fn(async (_body, model) => {
         calls.push(model);
@@ -260,8 +260,8 @@ describe("System One Smart Combo Router", () => {
 
       expect(res.ok).toBe(true);
       expect(calls).toEqual(["ds/deepseek-v4", "cx/gpt-5-mini"]);
-      // Because ds/deepseek-v4 failed, the sticky lock should have been cleared
-      expect(getStickyComboModel("dev-combo", "session-error-fallback", ["cx/gpt-5-mini", "ds/deepseek-v4"])).toBeNull();
+      // The successful replacement now owns the session.
+      expect(getStickyComboModel("dev-combo", "session-error-fallback", ["cx/gpt-5-mini", "ds/deepseek-v4"])).toBe("cx/gpt-5-mini");
     });
 
     it("re-evaluates on each turn when sessionSticky is explicitly false", async () => {
@@ -716,17 +716,17 @@ describe("System One Smart Combo Router", () => {
 
   describe("parseModel connection affinity (@connectionId)", () => {
     it("parses model strings with connection affinity suffix", () => {
-      const res = parseModel("codex/gpt-5@conn-uuid-1234");
+      const res = parseModel("codex/gpt-5@6986e1f8-fe24-5889-b786-f84857826724");
       expect(res.provider).toBe("codex");
       expect(res.model).toBe("gpt-5");
-      expect(res.connectionId).toBe("conn-uuid-1234");
+      expect(res.connectionId).toBe("6986e1f8-fe24-5889-b786-f84857826724");
       expect(res.isAlias).toBe(false);
     });
 
     it("parses alias strings with connection affinity suffix", () => {
-      const res = parseModel("my-alias@conn-9876");
+      const res = parseModel("my-alias@9b2f8fc2-3cdf-556b-b579-758e14019584");
       expect(res.model).toBe("my-alias");
-      expect(res.connectionId).toBe("conn-9876");
+      expect(res.connectionId).toBe("9b2f8fc2-3cdf-556b-b579-758e14019584");
       expect(res.isAlias).toBe(true);
     });
 
@@ -745,10 +745,10 @@ describe("System One Smart Combo Router", () => {
     });
 
     it("correctly extracts connectionId on Cloudflare AI models when affinity is appended", () => {
-      const res = parseModel("cf/@cf/black-forest-labs/flux-2-klein-9b@conn-cf-uuid");
+      const res = parseModel("cf/@cf/black-forest-labs/flux-2-klein-9b@e68b87a0-23c5-52ef-94d3-d9fcb42316a6");
       expect(res.provider).toBe("cloudflare-ai");
       expect(res.model).toBe("@cf/black-forest-labs/flux-2-klein-9b");
-      expect(res.connectionId).toBe("conn-cf-uuid");
+      expect(res.connectionId).toBe("e68b87a0-23c5-52ef-94d3-d9fcb42316a6");
     });
   });
 });

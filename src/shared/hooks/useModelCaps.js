@@ -1,5 +1,6 @@
 "use client";
 
+import { parseModelReference } from "open-sse/utils/modelReference.js";
 import { useState, useEffect, useCallback } from "react";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
 import { ALIAS_TO_ID } from "@/shared/constants/providers";
@@ -45,7 +46,7 @@ function loadModelCaps() {
 // (e.g. any *claude*haiku* id reads as 200k regardless of the provider entry).
 export function resolveCaps(byFull, byId, key) {
   if (!key) return null;
-  const cleanKey = typeof key === "string" && key.includes("@") ? key.slice(0, key.lastIndexOf("@")) : key;
+  const { model: cleanKey } = parseModelReference(key);
   if (byFull[cleanKey]) return byFull[cleanKey];
   const bare = cleanKey.includes("/") ? cleanKey.slice(cleanKey.indexOf("/") + 1) : cleanKey;
   if (byId[bare]) return byId[bare];

@@ -1,3 +1,7 @@
+import { parseModelReference } from "../utils/modelReference.js";
+import { normalizeExecutionResult } from "../utils/executionResult.js";
+import { normalizeAccountFallbackMode } from "../config/accountRouting.js";
+import { getStickyComboRoute, withComboSessionLock } from "./comboSession.js";
 /**
  * Shared combo (model combo) handling with fallback support
  */
@@ -91,10 +95,7 @@ export function reorderByCapabilities(models, required) {
   const tierOf = (m) => {
     const slash = typeof m === "string" ? m.indexOf("/") : -1;
     const provider = slash > 0 ? m.slice(0, slash) : "";
-    let model = slash > 0 ? m.slice(slash + 1) : m;
-    if (typeof model === "string" && model.includes("@")) {
-      model = model.slice(0, model.lastIndexOf("@"));
-    }
+    const model = parseModelReference(slash > 0 ? m.slice(slash + 1) : m).model;
     const caps = getCapabilitiesForModel(provider, model);
     if (!hard.every((c) => caps[c] === true)) return 2;
     return soft.every((c) => caps[c] === true) ? 0 : 1;
@@ -303,8 +304,9 @@ export function getComboModelsFromData(modelStr, combosData) {
  * (e.g. empty assistant message with in_progress/incomplete)
  * so combo fallback can continue to the next model.
  */
-export function isZeroContentResponse(data) {
-  if (!data || typeof data !== "object") return false;
+export function isZeroContentResponse(data, { requireContent = false } = {}) {
+  if (!data || typeof data !== "object") return requireContent;
+  if (requireContent && data.error) return true;
 
   // OpenAI chat format
   if (Array.isArray(data.choices)) {
@@ -321,7 +323,7 @@ export function isZeroContentResponse(data) {
     const finish = choice.finish_reason;
     const isNormalFinish = finish === "stop" || finish === "length" || finish === "tool_calls" || finish === "function_call";
 
-    if (!hasContent && !hasToolCalls && !hasReasoning && (!isNormalFinish || finish === "in_progress" || finish === "incomplete")) {
+    if (!hasContent && !hasToolCalls && !hasReasoning && (requireContent || !isNormalFinish || finish === "in_progress" || finish === "incomplete")) {
       return true;
     }
   }
@@ -330,9 +332,17 @@ export function isZeroContentResponse(data) {
   if (Array.isArray(data.content)) {
     const hasContent = data.content.some((c) => (c.type === "text" && c.text?.trim().length > 0) || c.type === "tool_use");
     const stopReason = data.stop_reason;
-    if (!hasContent && (!stopReason || stopReason === "in_progress" || stopReason === "incomplete")) {
+    if (!hasContent && (requireContent || !stopReason || stopReason === "in_progress" || stopReason === "incomplete")) {
       return true;
     }
+  }
+
+  if (requireContent && Array.isArray(data.output)) {
+    const hasContent = data.output_text?.trim?.() || data.output.some(item =>
+      item.type?.endsWith("_call") || item.content?.some(part => part.text?.trim?.() || part.data)
+      || item.summary?.some(part => part.text?.trim?.())
+    );
+    if (!hasContent) return true;
   }
 
   return false;
@@ -357,7 +367,18 @@ export function isZeroContentResponse(data) {
  * @param {Function|null} [options.resolveSmartChoice=null] - Smart router resolver callback: (body, models) => Promise<{ choice, probabilities, confidence } | null>
  * @returns {Promise<Response>}
  */
-export async function handleComboChat({
+export async function handleComboChat(options) {
+  const sticky = options.comboStrategy === "smart"
+    ? options.smartPolicy !== "per-turn" && options.sessionSticky !== false
+    : options.stickySession;
+  const scopedSession = options.sessionNamespace
+    ? JSON.stringify([options.sessionNamespace, options.sessionId]) : options.sessionId;
+  const run = () => dispatchComboChat({ ...options, sessionId: scopedSession });
+  return sticky && options.sessionId && options.comboName
+    ? withComboSessionLock(options.comboName, scopedSession, run) : run();
+}
+
+async function dispatchComboChat({
   body,
   models,
   handleSingleModel,
@@ -372,7 +393,13 @@ export async function handleComboChat({
   stickySession = false,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  accountFallbackMode = "strict",
 }) {
+  const fingerprint = JSON.stringify([models, comboStrategy, normalizeAccountFallbackMode(accountFallbackMode), smartPolicy, sessionSticky, stickySession, confidenceThreshold, comboStickyLimit, autoSwitch]);
+  const stickyRoute = getStickyComboRoute(comboName, sessionId, models, fingerprint);
+  const remember = (member, target) => {
+    if (isSticky && sessionId && comboName) setStickyComboModel(comboName, sessionId, member, target, fingerprint);
+  };
   let rotatedModels = models;
   let activeStickyModel = null;
   const isSticky = comboStrategy === "smart"
@@ -416,7 +443,6 @@ export async function handleComboChat({
             rotatedModels = orderModelsByChoice(models, smartResult);
             log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${newChoice} (confidence: ${conf} >= ${switchThreshold})`);
             if (sessionId) {
-              setStickyComboModel(comboName, sessionId, newChoice);
               activeStickyModel = newChoice;
             }
           } else {
@@ -445,7 +471,6 @@ export async function handleComboChat({
             rotatedModels = orderModelsByChoice(models, smartResult);
             log.info("COMBO", `smart-router selected ${smartResult.choice} (confidence: ${conf ?? "N/A"})`);
             if (!isPerTurn && sessionId) {
-              setStickyComboModel(comboName, sessionId, smartResult.choice);
               activeStickyModel = smartResult.choice;
             }
           }
@@ -494,7 +519,11 @@ export async function handleComboChat({
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
-      const result = await handleSingleModel(body, modelStr);
+      const { response: result, target } = normalizeExecutionResult(await handleSingleModel(body, modelStr, {
+        returnTarget: true,
+        accountFallbackMode,
+        stickyConnectionId: stickyRoute?.model === modelStr ? stickyRoute.target?.connectionId : null,
+      }));
       
       // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.
       // MALFORMED_FUNCTION_CALL) still return 200 and stream empty content, which would
@@ -518,13 +547,17 @@ export async function handleComboChat({
 
         if (!peeked) {
           // Non-streaming (or non-SSE) response — not this peek's job. The zero-content
-          // JSON check still applies on a non-final seat.
+          // JSON check also prevents an empty final candidate from becoming sticky.
           const isLastModel = i === rotatedModels.length - 1;
-          if (!isLastModel) {
+          let canRemember = true;
+          {
             const contentType = result.headers?.get?.("content-type") || "";
             if (contentType.includes("application/json")) {
               try {
                 const peekBody = await result.clone().json();
+                // Normal empty finishes retain their retry behavior, but cannot
+                // establish successful session affinity.
+                canRemember = !isZeroContentResponse(peekBody, { requireContent: true });
                 if (isZeroContentResponse(peekBody)) {
                   log.warn("COMBO", `Model ${modelStr} returned HTTP 200 with zero usable content, falling back to next model`);
                   if (sessionId && modelStr === activeStickyModel) {
@@ -532,27 +565,23 @@ export async function handleComboChat({
                   }
                   lastError = "Zero usable content";
                   lastStatus = 200;
+                  if (isLastModel) return result;
                   continue;
                 }
               } catch {
-                // Ignore JSON parse errors
+                canRemember = false;
               }
             }
           }
 
-          if (comboStrategy !== "smart" && stickySession && sessionId && comboName) {
-            setStickyComboModel(comboName, sessionId, modelStr);
-            activeStickyModel = modelStr;
-          }
+          if (!canRemember && sessionId && modelStr === activeStickyModel) clearStickyComboSession(comboName, sessionId);
+          if (canRemember) remember(modelStr, target);
           log.info("COMBO", `Model ${modelStr} succeeded`);
           return result;
         }
 
         if (peeked.outcome === "content") {
-          if (comboStrategy !== "smart" && stickySession && sessionId && comboName) {
-            setStickyComboModel(comboName, sessionId, modelStr);
-            activeStickyModel = modelStr;
-          }
+          if (!peeked.timedOut) remember(modelStr, target);
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
           return peeked.response;
         }
@@ -562,6 +591,7 @@ export async function handleComboChat({
         // (empty) response as-is, preserving prior behaviour rather than manufacturing a 5xx.
         const reasonLabel = peeked.finishReason || "no-content";
         const isLast = i === rotatedModels.length - 1;
+        if (sessionId && modelStr === activeStickyModel) clearStickyComboSession(comboName, sessionId);
         if (isNoRetryFinish(peeked.finishReason) || isLast) {
           log.warn("COMBO", `Model ${modelStr} returned empty (${reasonLabel}) — ${isNoRetryFinish(peeked.finishReason) ? "no-retry class" : "last candidate"}, returning as-is`);
           return peeked.response;

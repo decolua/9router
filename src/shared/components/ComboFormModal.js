@@ -1,5 +1,6 @@
 "use client";
 
+import ModelReferenceLabel from "./ModelReferenceLabel";
 import { useState, useEffect } from "react";
 import Modal from "./Modal";
 import Input from "./Input";
@@ -9,7 +10,7 @@ import ModelSelectModal from "./ModelSelectModal";
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // Inline editable model item
-function ModelItem({ index, model, accountLabel, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, connections, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
   const commit = () => {
@@ -31,12 +32,7 @@ function ModelItem({ index, model, accountLabel, isFirst, isLast, onEdit, onMove
       ) : (
         <div className="min-w-0 flex-1 flex items-center gap-1.5 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
           onClick={() => setEditing(true)} title="Click to edit">
-          <span className="truncate">{model.includes("@") ? model.slice(0, model.lastIndexOf("@")) : model}</span>
-          {model.includes("@") && (
-            <span className="shrink-0 text-[10px] font-sans px-1.5 py-0.2 rounded-md bg-primary/10 text-primary border border-primary/20" title={`Pinned to account: ${accountLabel || model.slice(model.lastIndexOf("@") + 1)}`}>
-              @{accountLabel || model.slice(model.lastIndexOf("@") + 1).slice(0, 8)}
-            </span>
-          )}
+          <ModelReferenceLabel value={model} connections={connections} />
         </div>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
@@ -67,12 +63,6 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const getAccountLabel = (modelStr) => {
-    if (!modelStr || !modelStr.includes("@")) return null;
-    const connId = modelStr.slice(modelStr.lastIndexOf("@") + 1);
-    const conn = (activeProviders || []).find((c) => c?.id === connId);
-    return conn?.name?.trim() || conn?.displayName?.trim() || conn?.email?.trim() || connId.slice(0, 8);
-  };
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
@@ -156,7 +146,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
                 {models.map((model, index) => (
                   <ModelItem key={index} index={index} model={model}
-                    accountLabel={getAccountLabel(model)}
+                    connections={activeProviders}
                     isFirst={index === 0} isLast={index === models.length - 1}
                     onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
                     onMoveUp={() => handleMoveUp(index)}

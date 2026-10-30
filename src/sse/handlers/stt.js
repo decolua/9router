@@ -1,3 +1,4 @@
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   extractApiKey, isValidApiKey,
   getProviderCredentials, markAccountUnavailable, clearAccountError,
@@ -73,6 +74,8 @@ export async function handleStt(request) {
 
   const modelTransport = await resolveCustomModelTransport(provider, model);
 
+  if (!CREDENTIALED_PROVIDERS.has(provider) && (modelInfo.connectionId || request.headers.get("x-connection-id"))) return errorResponse(HTTP_STATUS.BAD_REQUEST, "This provider does not support account selection");
+
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
     const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig, transport: modelTransport });
@@ -80,13 +83,15 @@ export async function handleStt(request) {
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
   }
 
+  const selection = await accountSelectionOptions(modelInfo, request, { keyAccess: await getKeyAccessContext(request) });
+
   // Credentialed — fallback loop
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    let credentials = await getProviderCredentials(provider, excludeConnectionIds, model, selection);
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

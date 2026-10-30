@@ -1,3 +1,4 @@
+import { parseModelReference } from "../utils/modelReference.js";
 import REGISTRY from "../providers/registry/index.js";
 
 // Alias→id derived from registry single-source: id→id, alias→id, aliases[]→id.
@@ -37,18 +38,7 @@ export function parseModel(modelStr) {
     return { provider: null, model: null, isAlias: false, providerAlias: null };
   }
 
-  let connectionId = null;
-  let cleanStr = modelStr;
-  if (typeof cleanStr === "string" && cleanStr.includes("@")) {
-    const atIdx = cleanStr.lastIndexOf("@");
-    const suffix = cleanStr.slice(atIdx + 1).trim();
-    // A connectionId cannot contain slashes and cannot be empty.
-    // Also, the character before '@' must not be a slash (e.g. not Cloudflare's "/@cf/...").
-    if (suffix && !suffix.includes("/") && atIdx > 0 && cleanStr[atIdx - 1] !== "/") {
-      connectionId = suffix;
-      cleanStr = cleanStr.slice(0, atIdx);
-    }
-  }
+  const { model: cleanStr, connectionId } = parseModelReference(modelStr);
 
   // Check if standard format: provider/model or alias/model
   if (cleanStr.includes("/")) {
@@ -85,19 +75,18 @@ export function resolveModelAliasFromMap(alias, aliases) {
 
   // Resolved value is "provider/model" format
   if (typeof resolved === "string" && resolved.includes("/")) {
-    const firstSlash = resolved.indexOf("/");
-    const providerOrAlias = resolved.slice(0, firstSlash);
-    return {
-      provider: resolveProviderAlias(providerOrAlias),
-      model: resolved.slice(firstSlash + 1),
-    };
+    const parsed = parseModel(resolved);
+    return { provider: parsed.provider, model: parsed.model, ...(parsed.connectionId ? { connectionId: parsed.connectionId } : {}) };
   }
 
   // Or object { provider, model }
   if (typeof resolved === "object" && resolved.provider && resolved.model) {
+    const parsed = parseModelReference(resolved.model);
+    const connectionId = resolved.connectionId || parsed.connectionId;
     return {
       provider: resolveProviderAlias(resolved.provider),
-      model: resolved.model,
+      model: parsed.model,
+      ...(connectionId ? { connectionId } : {}),
     };
   }
 

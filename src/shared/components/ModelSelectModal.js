@@ -1,5 +1,6 @@
 "use client";
 
+import { formatModelReference } from "open-sse/utils/modelReference.js";
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
@@ -579,15 +580,15 @@ export default function ModelSelectModal({
   // Visible models available for batch actions (excluding placeholders)
   const visibleModels = useMemo(() => {
     const list = [];
-    Object.values(filteredGroups).forEach((group) => {
+    Object.entries(filteredGroups).forEach(([providerId, group]) => {
       group.models.forEach((m) => {
         if (!m.isPlaceholder) {
-          list.push(m);
+          list.push({ ...m, value: formatModelReference(m.value, selectedAccountsByProvider[providerId]) });
         }
       });
     });
     return list;
-  }, [filteredGroups]);
+  }, [filteredGroups, selectedAccountsByProvider]);
 
   const visibleUnadded = useMemo(() => {
     return visibleModels.filter((m) => !addedModelValues.includes(m.value));
@@ -773,8 +774,7 @@ export default function ModelSelectModal({
           const activeConnId = selectedAccountsByProvider[providerId] || null;
           const activeConn = activeConnId ? providerConns.find((c) => c.id === activeConnId) : null;
           const activeConnLabel = activeConn ? getConnectionLabel(activeConn) : null;
-          const connSuffix = activeConnId ? `@${activeConnId}` : "";
-          const wildcardValue = `${group.alias || providerId}/*${connSuffix}`;
+          const wildcardValue = formatModelReference(`${group.alias || providerId}/*`, activeConnId);
           const isWildcardAdded = allowProviderWildcard && addedModelValues.includes(wildcardValue);
 
           return (
@@ -793,7 +793,7 @@ export default function ModelSelectModal({
                     type="button"
                     onClick={() => handleSelect({ value: wildcardValue, name: activeConnLabel ? `${wildcardValue} [${activeConnLabel}]` : wildcardValue })}
                     title={isWildcardAdded ? `Click to remove wildcard ${wildcardValue}` : `Click to allow all models from ${group.name} (${wildcardValue})`}
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-all cursor-pointer border ${
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-all cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                       isWildcardAdded
                         ? "bg-primary text-white border-primary shadow-2xs hover:bg-primary-hover"
                         : "text-primary border-transparent hover:bg-primary/10 hover:border-primary/20"
@@ -819,12 +819,13 @@ export default function ModelSelectModal({
 
               {/* Multi-account selector chips when provider has > 1 connection */}
               {providerConns.length > 1 && (
-                <div className="flex items-center gap-1.5 mb-2 mt-0.5 flex-wrap">
-                  <span className="text-[10px] text-text-muted font-medium mr-0.5">Account:</span>
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-black/[0.02] p-2.5 mb-3 mt-1 dark:bg-white/[0.025]">
+                  <span className="text-xs text-text-muted font-medium mr-0.5">Use account:</span>
                   <button
                     type="button"
+                    aria-pressed={!activeConnId}
                     onClick={() => setSelectedAccountsByProvider((prev) => ({ ...prev, [providerId]: null }))}
-                    className={`inline-flex items-center justify-center h-[22px] px-2.5 rounded-full text-[10px] font-medium transition-all cursor-pointer border ${
+                    className={`inline-flex items-center justify-center h-8 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                       !activeConnId
                         ? "bg-primary text-white border-primary shadow-2xs"
                         : "bg-surface border-border/70 text-text-muted hover:border-border hover:text-text-main"
@@ -839,8 +840,9 @@ export default function ModelSelectModal({
                       <button
                         key={conn.id}
                         type="button"
+                        aria-pressed={isConnSelected}
                         onClick={() => setSelectedAccountsByProvider((prev) => ({ ...prev, [providerId]: conn.id }))}
-                        className={`inline-flex items-center justify-center gap-1 h-[22px] pl-1 pr-2.5 rounded-full text-[10px] font-medium transition-all cursor-pointer border ${
+                        className={`inline-flex items-center justify-center gap-1 h-8 pl-2 pr-3 rounded-lg text-xs font-medium transition-all cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                           isConnSelected
                             ? "bg-primary text-white border-primary shadow-2xs"
                             : "bg-surface border-border/70 text-text-muted hover:border-border hover:text-text-main"
@@ -857,7 +859,7 @@ export default function ModelSelectModal({
 
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
-                const targetValue = `${model.value}${connSuffix}`;
+                const targetValue = formatModelReference(model.value, activeConnId);
                 const isSelected = selectedModel === targetValue || selectedModel === model.value;
                 const isPlaceholder = model.isPlaceholder;
                 const isAdded = addedModelValues.includes(targetValue) || (!activeConnId && addedModelValues.includes(model.value));
@@ -895,7 +897,7 @@ export default function ModelSelectModal({
                         <>
                           <span>{model.name}</span>
                           {activeConnLabel && (
-                            <span className={`text-[9px] font-sans px-1 py-0.2 rounded ${isAdded || isSelected ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-primary"}`}>
+                            <span className={`text-[10px] font-sans px-1.5 py-0.5 rounded ${isAdded || isSelected ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-primary"}`}>
                               {activeConnLabel}
                             </span>
                           )}
@@ -906,7 +908,7 @@ export default function ModelSelectModal({
                         <>
                           <span>{model.name}</span>
                           {activeConnLabel && (
-                            <span className={`text-[9px] font-sans px-1 py-0.2 rounded ${isAdded || isSelected ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-primary"}`}>
+                            <span className={`text-[10px] font-sans px-1.5 py-0.5 rounded ${isAdded || isSelected ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-primary"}`}>
                               {activeConnLabel}
                             </span>
                           )}

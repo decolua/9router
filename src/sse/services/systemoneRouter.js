@@ -1,3 +1,4 @@
+import { accountSelectionOptions } from "./accountSelection.js";
 import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
@@ -56,7 +57,7 @@ export async function resolveSmartChoice({
     }
 
     const { provider, model } = modelInfo;
-    const credentials = await getProviderCredentials(provider, new Set(), model);
+    const credentials = await getProviderCredentials(provider, new Set(), model, await accountSelectionOptions(modelInfo, null));
     if (!credentials || credentials.allRateLimited) {
       log?.warn?.("COMBO", `smart-router: no credentials available for router provider "${provider}"`);
       return null;

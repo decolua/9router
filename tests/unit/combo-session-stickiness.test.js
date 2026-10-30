@@ -254,10 +254,10 @@ describe("Combo Session Stickiness & Account Affinity (Issue #5215)", () => {
 
   describe("Account Affinity Model Parsing & Capabilities", () => {
     it("parses model strings with connection affinity suffix cleanly", () => {
-      const parsed = parseModel("codex/gpt-5@conn-user-1234");
+      const parsed = parseModel("codex/gpt-5@72936477-897d-5a37-91bc-fb380446b9cd");
       expect(parsed.provider).toBe("codex");
       expect(parsed.model).toBe("gpt-5");
-      expect(parsed.connectionId).toBe("conn-user-1234");
+      expect(parsed.connectionId).toBe("72936477-897d-5a37-91bc-fb380446b9cd");
     });
 
     it("parses standard model strings without connectionId", () => {
@@ -275,15 +275,15 @@ describe("Combo Session Stickiness & Account Affinity (Issue #5215)", () => {
     });
 
     it("supports connection affinity on Cloudflare AI models", () => {
-      const parsed = parseModel("cf/@cf/meta/llama-3-8b-instruct@conn-cf-prod");
+      const parsed = parseModel("cf/@cf/meta/llama-3-8b-instruct@9e4f1b52-1bff-5047-90b1-6a30f27710f0");
       expect(parsed.provider).toBe("cloudflare-ai");
       expect(parsed.model).toBe("@cf/meta/llama-3-8b-instruct");
-      expect(parsed.connectionId).toBe("conn-cf-prod");
+      expect(parsed.connectionId).toBe("9e4f1b52-1bff-5047-90b1-6a30f27710f0");
     });
 
     it("resolveCaps cleanly strips connection affinity to look up model capabilities", () => {
       const byFull = { "codex/gpt-5": { vision: true, reasoning: true, contextWindow: 128000 } };
-      const caps = resolveCaps(byFull, {}, "codex/gpt-5@conn-user-1234");
+      const caps = resolveCaps(byFull, {}, "codex/gpt-5@72936477-897d-5a37-91bc-fb380446b9cd");
       expect(caps.vision).toBe(true);
       expect(caps.reasoning).toBe(true);
       expect(caps.contextWindow).toBe(128000);
@@ -297,17 +297,17 @@ describe("Combo Session Stickiness & Account Affinity (Issue #5215)", () => {
         allow: ["codex/gpt-5"],
       };
 
-      const result = await enforceKeyAccess(ctx, "codex/gpt-5@conn-user-1234");
+      const result = await enforceKeyAccess(ctx, "codex/gpt-5@72936477-897d-5a37-91bc-fb380446b9cd");
       expect(result).toBeNull(); // null means allowed
     });
 
     it("allows request when key specifically specifies connection affinity", async () => {
       const ctx = {
         keyName: "PinnedKey",
-        allow: ["codex/gpt-5@conn-work-account"],
+        allow: ["codex/gpt-5@4bbafe18-8303-55db-8572-360f6741b8b7"],
       };
 
-      const allowed = await enforceKeyAccess(ctx, "codex/gpt-5@conn-work-account");
+      const allowed = await enforceKeyAccess(ctx, "codex/gpt-5@4bbafe18-8303-55db-8572-360f6741b8b7");
       expect(allowed).toBeNull();
     });
   });
