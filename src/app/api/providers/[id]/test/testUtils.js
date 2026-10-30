@@ -959,6 +959,43 @@ case "llm7": {
         }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key", refreshed: false };
       }
+      case "codebuddy-cn":
+      case "codebuddy-intl": {
+        const key = (connection.apiKey || "").trim();
+        if (!key) return { valid: false, error: "Missing API key", refreshed: false };
+        const intl = connection.provider === "codebuddy-intl";
+        const url = intl ? "https://www.codebuddy.ai/v3/config" : "https://copilot.tencent.com/v3/config";
+        const res = await fetchWithConnectionProxy(url, {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${key}`,
+            "X-API-Key": key,
+            "X-User-Id": `anonymous_${key.slice(-8)}`,
+            "X-Product": "SaaS",
+            "X-IDE-Type": "WorkBuddy",
+            "X-IDE-Name": "WorkBuddy",
+            "X-IDE-Version": "5.9.3",
+            "User-Agent": intl
+              ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+              : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0",
+            "X-Requested-With": "XMLHttpRequest",
+            "X-Agent-Intent": "craft",
+            "X-Agent-Purpose": "conversation",
+          },
+        }, effectiveProxy);
+        if (res.status === 401 || res.status === 403) {
+          return { valid: false, error: "Invalid or expired API key", refreshed: false };
+        }
+        if (!res.ok) {
+          return { valid: false, error: `CodeBuddy API error (${res.status})`, refreshed: false };
+        }
+        const json = await res.json().catch(() => null);
+        if (json && json.code !== undefined && json.code !== 0) {
+          return { valid: false, error: json.msg || `CodeBuddy error (${json.code})`, refreshed: false };
+        }
+        return { valid: true, error: null, refreshed: false };
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

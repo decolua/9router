@@ -13,6 +13,15 @@ export class CodeBuddyIntlExecutor extends DefaultExecutor {
     super("codebuddy-intl");
   }
 
+  buildHeaders(credentials, stream = true, url, model, body = null) {
+    const headers = super.buildHeaders(credentials, stream, url, model, body);
+    const hint = body?.session_id || body?.conversation_id || body?.prompt_cache_key || body?.metadata?.session_id;
+    if (typeof hint === "string" && hint.trim()) {
+      headers["X-Conversation-ID"] = hint.trim().slice(0, 128);
+    }
+    return headers;
+  }
+
   transformRequest(model, body, stream, credentials) {
     const transformed = super.transformRequest(model, body, stream, credentials);
     transformed.stream = true;

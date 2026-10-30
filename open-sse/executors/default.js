@@ -48,12 +48,32 @@ const HEADER_HOOKS = {
   // from an official client" — the request never reaches the model.
   // The same request WITH these headers passes channel verification and gets
   // as far as the real rate limiter (429 / 6004).
-  codebuddyHeaders: (h) => {
+  codebuddyHeaders: (h, c) => {
     const requestId = randomUUID();
     h["X-Request-ID"] = requestId;
     h["X-Conversation-ID"] = randomUUID();
     h["X-Conversation-Request-ID"] = requestId;
+    h["X-Root-Request-ID"] = requestId;
     h["X-Conversation-Message-ID"] = requestId;
+    const apiKey = typeof c?.apiKey === "string" ? c.apiKey.trim() : "";
+    if (apiKey && !c?.accessToken) {
+      c.apiKey = apiKey;
+      const intl = h["X-IDE-Type"] === "IDE";
+      h["X-API-Key"] = apiKey;
+      h["X-User-Id"] = "anonymous_" + apiKey.slice(-8);
+      delete h["X-Domain"];
+      h["User-Agent"] = intl
+        ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+        : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0";
+      h["X-Product"] = "SaaS";
+      h["X-IDE-Type"] = "WorkBuddy";
+      h["X-IDE-Name"] = "WorkBuddy";
+      h["X-IDE-Version"] = "5.9.3";
+      h["X-Agent-Intent"] = "craft";
+      h["X-Agent-Purpose"] = "conversation";
+      h["X-Agent-Type"] = "main";
+      h["X-Agent-Runtime"] = "local-agent";
+    }
   },
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)
   kimiHeaders: (h, c) => Object.assign(h, buildKimiHeaders(c?.providerSpecificData?.deviceId)),

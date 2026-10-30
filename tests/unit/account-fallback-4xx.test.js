@@ -56,4 +56,16 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     expect(result.shouldFallback).toBe(true);
     expect(result.cooldownMs).toBeGreaterThan(0);
   });
+
+  it.each([
+    '{"code":11158,"msg":"model [gpt-6-luna] is not allowed for user type [personal_free_user]","displayMsg":{"en":"Your account type does not support this model.","zh":"当前账号类型暂不支持该模型。"}}',
+    "当前账号类型暂不支持该模型。",
+    "Your account type does not support this model.",
+    '{"error":{"code":"MODEL_NOT_IN_PLAN","message":"Model not included in plan"}}',
+  ])("falls back with 2m cooldown for account/plan model restriction on 400: %s", (message) => {
+    expect(checkFallbackError(400, message)).toEqual({
+      shouldFallback: true,
+      cooldownMs: 120000,
+    });
+  });
 });
