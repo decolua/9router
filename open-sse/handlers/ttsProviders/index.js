@@ -41,9 +41,11 @@ export async function synthesizeViaConfig(provider, text, model, credentials) {
   if (cfg.authType !== "none" && !apiKey) throw new Error(`${provider} API key required`);
   const { PROVIDER_MODELS } = await import("open-sse/config/providerModels.js");
   const ttsModels = (PROVIDER_MODELS[provider] || []).filter(m => (m.kind || m.type) === "tts");
-  const defaultModel = ttsModels[0]?.id || "";
-  const { modelId, voiceId } = parseModelVoice(model, defaultModel, "", ttsModels);
-  return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId });
+  const defaultModel = cfg.defaultModel || ttsModels[0]?.id || "";
+  // ttsConfig.defaultVoice lets a provider override the OpenAI "alloy" fallback that
+  // genericFormats applies — required for gateways relaying a non-OpenAI TTS vendor.
+  const { modelId, voiceId } = parseModelVoice(model, defaultModel, cfg.defaultVoice || "", ttsModels);
+  return handler({ baseUrl: cfg.baseUrl, apiKey, text, modelId, voiceId, defaultVoice: cfg.defaultVoice });
 }
 
 // Voice fetchers (used by /api/media-providers/tts/voices route)

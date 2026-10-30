@@ -131,7 +131,10 @@
     "nous": "nous",
     "nous-portal": "nous",
     "nous-research": "nous",
-    "ns": "nous"
+    "ns": "nous",
+    "hc": "hcnsec",
+    "hcn": "hcnsec",
+    "hcnsec": "hcnsec"
   },
   "idToAlias": {
     "agnes": "agnes",
@@ -196,6 +199,7 @@
     "grok-cli": "gcli",
     "grok-web": "grok-web",
     "groq": "groq",
+    "hcnsec": "hcnsec",
     "huggingface": "huggingface",
     "hyperbolic": "hyperbolic",
     "iflow": "if",
@@ -331,6 +335,7 @@
     "google-tts",
     "grok-web",
     "groq",
+    "hcnsec",
     "huggingface",
     "hunyuan",
     "hyperbolic",

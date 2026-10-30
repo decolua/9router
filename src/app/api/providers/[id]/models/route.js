@@ -327,6 +327,9 @@ const PROVIDER_MODELS_CONFIG = {
   atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
   agnes: createOpenAIModelsConfig("https://apihub.agnes-ai.com/v1/models"),
   bai: createOpenAIModelsConfig("https://api.b.ai/v1/models"),
+  // /v1/models is auth-gated here (401 without a key), so this entry — not the
+  // registry modelsFetcher — is what makes live discovery work once a key is saved.
+  hcnsec: createOpenAIModelsConfig("https://api.hcnsec.cn/v1/models"),
   kimchi: {
     customResolver: async (connection) => {
       const result = await resolveKimchiModels({

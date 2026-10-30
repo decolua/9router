@@ -154,7 +154,10 @@ async function tortoise({ baseUrl, text, voiceId }) {
 }
 
 // OpenAI-compatible upstream (qwen3-tts, etc.)
-async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
+// `defaultVoice` comes from ttsConfig.defaultVoice: "alloy" is an OpenAI-only id and
+// gateways that relay a third-party TTS vendor reject it with voice_id_invalid, so the
+// provider's own default must be able to override it.
+async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId, defaultVoice }) {
   const headers = { "Content-Type": "application/json" };
   if (apiKey) headers["Authorization"] = `Bearer ${apiKey}`;
   const res = await fetch(baseUrl, {
@@ -163,7 +166,7 @@ async function openaiCompat({ baseUrl, apiKey, text, modelId, voiceId }) {
     body: JSON.stringify({
       model: modelId,
       input: text,
-      voice: voiceId || "alloy",
+      voice: voiceId || defaultVoice || "alloy",
       response_format: "mp3",
       speed: 1.0,
     }),

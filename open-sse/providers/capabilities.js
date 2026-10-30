@@ -427,6 +427,22 @@ export const PROVIDER_CAPABILITIES = {
   },
 };
 
+// HCNSec (新疆幻城网安) — values read from the gateway's own pricing/model table.
+// Only the multimodal entries are listed: the rest of the catalogue (DeepSeek,
+// SenseNova, MiMo, stepaudio-*) is left to the family patterns so a text-only
+// relay model never inherits a vision flag it cannot serve. thinkingFormat is
+// "openai" everywhere because the relay accepts reasoning_effort for every
+// vendor — the registry sets it provider-wide too, this is the model-level echo
+// that keeps the table self-describing.
+PROVIDER_CAPABILITIES["hcnsec"] = {
+  "glm-5.3":               { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+  "glm-5.3-flash":         { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 131072 },
+  "MiniCPM-V-4.7-35B-A3B": { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 65536 },
+  "Qwen3.8-27B":           { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 200000, maxOutput: 65536 },
+  "Qwen3.8-Flash-Next":    { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 65536 },
+  "step-5-preview":        { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 64000 },
+};
+
 // Qoder model capability table. The model ids are opaque (`dmodel`, `kmodel`,
 // `qmodel_38max`), so the name heuristics in PATTERN_CAPABILITIES match none of
 // them — without this table every Qoder model is reported text-only and an

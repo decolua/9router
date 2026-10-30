@@ -1,3 +1,11 @@
+# Unreleased
+
+## Features
+- **Providers**: add HCNSec (`hc`) — OpenAI-compatible public-interest gateway (新疆幻城网安) relaying GLM, DeepSeek, Qwen, Step, MiMo, MiniCPM and SenseNova models. Ships the 19-id live catalogue, an Anthropic `/v1/messages` lane for the seven ids the gateway advertises as anthropic-capable, and embedding/TTS lanes; a provider-wide `thinkingFormat: "openai"` keeps every relayed vendor on `reasoning_effort` instead of its native thinking shape. No STT lane: `/v1/audio/transcriptions` answers 404 upstream for every request shape, including a real speech MP3 produced by the gateway's own TTS
+
+## Fixes
+- **TTS**: let a provider's `ttsConfig.defaultVoice` override the hardcoded `alloy` fallback in the OpenAI-compatible TTS handler, so gateways relaying a non-OpenAI voice vendor no longer fail with `voice_id_invalid` when the request carries no voice
+
 # v0.5.112 (2026-10-28)
 
 ## Features
@@ -19,6 +27,7 @@
 # v0.5.111 (2026-10-26)
 
 ## Features
+- **Providers**: add HCNSec (`hc`) — OpenAI-compatible public-interest gateway (新疆幻城网安) relaying GLM, DeepSeek, Qwen, Step, MiMo, MiniCPM and SenseNova models. Ships the 19-id live catalogue, an Anthropic `/v1/messages` lane for the seven ids the gateway advertises as anthropic-capable, and embedding/TTS lanes; a provider-wide `thinkingFormat: "openai"` keeps every relayed vendor on `reasoning_effort` instead of its native thinking shape. No STT lane: `/v1/audio/transcriptions` answers 404 upstream for every request shape, including a real speech MP3 produced by the gateway's own TTS
 - **Ollama**: add `ollama-local` TTS provider serving the Phonon family (15 tags, 38 preset voices), normalizing the requested format to wav/pcm, falling back to an installed tag and the `default` voice, and wrapping raw PCM in a WAV header so the dashboard can preview it
 - **Ollama**: add `ollama-local` embedding adapter for `/v1/embeddings`, normalizing a saved host that carries a `/v1` or `/v1/embeddings` suffix and sending a bearer token only when an API key is configured; catalog the 14 embedding model families with their dimensions
 - **Providers**: add Runcrate (`rc`) — OpenAI-compatible upstream serving DeepSeek, GLM, Qwen and gpt-oss models, validated through `GET /api/v1/billing/balance` because the public `/v1/models` answers 200 for any key
@@ -26,6 +35,7 @@
 - **OpenCode Go**: add Kimi K3.1 Pro on the chat lane with vision/video input, 1,048,576 context, 131,072 max output and dedicated K3 pricing
 
 ## Fixes
+- **TTS**: let a provider's `ttsConfig.defaultVoice` override the hardcoded `alloy` fallback in the OpenAI-compatible TTS handler, so gateways relaying a non-OpenAI voice vendor no longer fail with `voice_id_invalid` when the request carries no voice
 - **CLI Tools**: stop the Pi card from resetting every `contextWindow`/`maxTokens` in `~/.pi/agent/models.json` on Apply, add per-model context-window and max-output selectors, and sanitize corrupt cap values instead of writing them back
 - **CLI Tools**: treat `name === id` as unset on Apply so a hand-edited Pi model label is no longer overwritten
 - **OpenCode**: normalize a caller tool that collides with the OpenCode fingerprint in place (keeping the caller's name and adopting the fingerprint schema) instead of aliasing it to `<name>_client` and restoring it on the response (#4971, #5011)

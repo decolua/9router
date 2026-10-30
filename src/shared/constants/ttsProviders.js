@@ -70,6 +70,18 @@ export const TTS_PROVIDER_CONFIG = {
       { value: "pcm", label: "PCM (Raw)" },
     ],
   },
+  "hcnsec": {
+    // The gateway publishes no voice endpoint (/v1/audio/voices → 404), so the voice
+    // ids cannot be browsed — they were discovered by probing and are exposed as a
+    // free-text field seeded with the provider default. A blank voice falls back to
+    // ttsConfig.defaultVoice server-side, so the simplest `hcnsec/stepaudio-2.5-tts`
+    // model string still works.
+    hasModelSelector: true,
+    hasBrowseButton: false,
+    hasVoiceIdInput: true,
+    voiceSource: "config",
+    defaultVoiceId: "cixingnansheng",
+  },
   // ── Config-driven providers (load models from providers.js → ttsConfig.models) ──
   "nvidia": {
     hasModelSelector: true,

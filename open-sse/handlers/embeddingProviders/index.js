@@ -10,6 +10,8 @@ const OPENAI_COMPAT_PROVIDERS = [
   "openai", "openrouter", "mistral", "voyage-ai", "fireworks",
   "together", "nebius", "nvidia", "jina-ai",
   "vercel-ai-gateway",
+  // HCNSec relays embeddings over the plain OpenAI wire shape.
+  "hcnsec",
 ];
 
 const ADAPTERS = {
