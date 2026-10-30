@@ -49,6 +49,8 @@ export default {
       format: "openai-responses",
       baseUrl: "https://api.meta.ai/v1/responses",
       auth: { combined: true, header: "Authorization", scheme: "bearer", hooks: ["museHeaders"] },
+      // Strict Responses API: rejects top-level reasoning_effort, needs reasoning:{effort,summary}.
+      thinkingFormat: "openai-responses",
     },
   ],
   models: [

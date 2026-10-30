@@ -12,6 +12,8 @@ import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
+
+const NO_AUTH_VIDEO_PROVIDERS = new Set(["veoaifree-web"]);
 import * as log from "../utils/logger.js";
 
 // Video generation is xAI-only today; requests without a provider prefix
@@ -135,6 +137,22 @@ export async function handleVideoCreate(request, action) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const idempotencyKey = request.headers.get("idempotency-key") || null;
 
+  // noAuth providers — executor-driven generation, no credential needed
+  if (NO_AUTH_VIDEO_PROVIDERS.has(provider)) {
+    const result = await handleVideoProxyCore({
+      provider,
+      action,
+      rawBody: forwardBody,
+      contentType: bodyInfo.contentType || null,
+      idempotencyKey: null,
+      credentials: null,
+      signal: request.signal,
+      log,
+    });
+    if (result.success) return result.response;
+    return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Video generation failed");
+  }
+
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
@@ -169,6 +187,8 @@ export async function handleVideoCreate(request, action) {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
           refreshToken: newCreds.refreshToken,
+          // Executor-driven web providers rotate their cookie credential in place.
+          apiKey: newCreds.apiKey,
           providerSpecificData: newCreds.providerSpecificData,
           testStatus: "active",
         });

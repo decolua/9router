@@ -30,6 +30,10 @@ const STRIP_RULES = [
   { provider: "groq", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
   { provider: "mistral", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
   { provider: "cerebras", dropMessageFields: ["reasoning_content", "reasoning", "reasoning_details"] },
+  // NVIDIA NIM treats `reasoning` and `reasoning_content` as aliases for one
+  // field; sending both makes its deserializer report a duplicate field. Keep
+  // the OpenAI canonical spelling on assistant history.
+  { provider: "nvidia", renameMessageFields: { reasoning: "reasoning_content" } },
   // OpenCode Go's relay rejects `response_format` for its deepseek family with HTTP
   // 400 — both json_schema and json_object — while glm / kimi / mimo / minimax /
   // qwen / grok / gpt on the same relay accept it. The rejection body is either a
@@ -39,6 +43,9 @@ const STRIP_RULES = [
   // against /zen/go/v1/chat/completions with one key: 12/12 structured calls 400,
   // 4/4 identical calls without the field 200.
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
+  // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
+  // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
+  { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -59,14 +66,28 @@ export function stripUnsupportedParams(provider, model, body) {
   for (const rule of STRIP_RULES) {
     if (rule.provider && rule.provider !== provider) continue;
     if (!matches(rule, model)) continue;
+    // Rename params (keeps an explicit target value if the client already sent one).
+    for (const [from, to] of Object.entries(rule.renameParams || {})) {
+      if (body[from] === undefined) continue;
+      if (body[to] === undefined) body[to] = body[from];
+      delete body[from];
+    }
     for (const key of rule.drop || []) {
       if (body[key] !== undefined) delete body[key];
     }
-    // Per-message field drop (assistant turns only — that is where clients replay reasoning).
-    if (Array.isArray(rule.dropMessageFields) && Array.isArray(body.messages)) {
+    // Normalize and drop assistant-message fields (clients replay reasoning here).
+    if ((rule.renameMessageFields || rule.dropMessageFields) && Array.isArray(body.messages)) {
       for (const msg of body.messages) {
         if (!msg || msg.role !== "assistant") continue;
-        for (const key of rule.dropMessageFields) {
+        for (const [from, to] of Object.entries(rule.renameMessageFields || {})) {
+          if (msg[from] === undefined) continue;
+          const existing = msg[to];
+          if (existing === undefined || existing === null || (typeof existing === "string" && !existing.trim())) {
+            msg[to] = msg[from];
+          }
+          delete msg[from];
+        }
+        for (const key of rule.dropMessageFields || []) {
           if (msg[key] !== undefined) delete msg[key];
         }
       }

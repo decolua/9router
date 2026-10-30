@@ -126,23 +126,43 @@ export async function POST(request) {
 
     if (!existing.providers) existing.providers = {};
 
+    const existingProvider = existing.providers["9router"] || {};
+    const prevModels = new Map(
+      (Array.isArray(existingProvider.models) ? existingProvider.models : [])
+        .map((m) => (typeof m === "string" ? { id: m } : m))
+        .filter((m) => m?.id)
+        .map((m) => [m.id, m])
+    );
+
+    const cap = (v, fallback, max) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 && n <= max ? n : fallback;
+    };
+
     const normalizedBaseUrl = baseUrl.endsWith("/v1") ? baseUrl : `${baseUrl}/v1`;
+    const withDefaults = (m) => {
+      const prev = prevModels.get(m.id) || {};
+      return {
+        ...prev,
+        ...m,
+        // The card always sends name === id, so treat that as "unset" and keep
+        // a display name the user set by hand in models.json.
+        name: m.name && m.name !== m.id ? m.name : (prev.name || m.id),
+        contextWindow: cap(m.contextWindow ?? prev.contextWindow, 200000, 2000000),
+        maxTokens: cap(m.maxTokens ?? prev.maxTokens, 64000, 200000),
+      };
+    };
+
     let modelList = [];
     if (Array.isArray(rawBody.models) && rawBody.models.length > 0) {
-      modelList = rawBody.models.map((m) => {
-        if (typeof m === "string") {
-          return { id: m, name: m, contextWindow: 128000, maxTokens: 16384 };
-        }
-        return {
-          id: m.id || "provider/model-id",
-          name: m.name || m.id || "provider/model-id",
-          contextWindow: m.contextWindow || 128000,
-          maxTokens: m.maxTokens || 16384,
-        };
-      });
+      modelList = rawBody.models.map((m) =>
+        typeof m === "string"
+          ? withDefaults({ id: m })
+          : withDefaults({ ...m, id: m.id || "provider/model-id" })
+      );
     } else {
       const modelId = model || "provider/model-id";
-      modelList = [{ id: modelId, name: modelId, contextWindow: 128000, maxTokens: 16384 }];
+      modelList = [withDefaults({ id: modelId })];
     }
 
     existing.providers["9router"] = {
