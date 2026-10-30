@@ -9,9 +9,9 @@ export function getSmartPolicyDraft(strategy = {}) {
   return { policy, threshold };
 }
 
-export function getSmartPolicyLabel(strategy) {
+export function getSmartPolicyLabel(strategy, t = text => text) {
   const { policy, threshold } = getSmartPolicyDraft(strategy);
-  if (policy === "strict") return "Strict lock";
-  if (policy === "per-turn") return "Per turn";
-  return `${policy === "custom" ? "Custom" : "Smart"} ${threshold}%`;
+  if (policy === "strict") return t("Strict lock");
+  if (policy === "per-turn") return t("Per turn");
+  return `${t(policy === "custom" ? "Custom threshold" : "Smart switch")} ${threshold}%`;
 }

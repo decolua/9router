@@ -1,6 +1,7 @@
 "use client";
 
 import { formatModelReference } from "open-sse/utils/modelReference.js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
@@ -91,6 +92,7 @@ export default function ModelSelectModal({
   closeOnSelect = true,
   allowProviderWildcard = false,
 }) {
+  const t = useTranslation();
   // Live-fetched connections on modal open, fallback to activeProviders prop
   const [fetchedConnections, setFetchedConnections] = useState(null);
 
@@ -665,8 +667,8 @@ export default function ModelSelectModal({
             type="text"
             placeholder={
               allowProviderWildcard
-                ? "Search models (e.g. claude -haiku, oc/*, /regex/)..."
-                : "Search models (e.g. claude -haiku, !embed, /regex/)..."
+                ? t("Search models (e.g. claude -haiku, oc/*, /regex/)...")
+                : t("Search models (e.g. claude -haiku, !embed, /regex/)...")
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}

@@ -3,6 +3,7 @@
 import ComboModelControl from "@/shared/components/ComboModelControl";
 import ComboRoutingSettingsModal from "@/shared/components/ComboRoutingSettingsModal";
 import { getSmartPolicyLabel } from "@/shared/utils/comboRouting";
+import { useTranslation } from "@/i18n/useTranslation";
 import SessionAffinityControl from "@/shared/components/SessionAffinityControl";
 import ModelReferenceLabel from "@/shared/components/ModelReferenceLabel";
 import AccountFallbackControl from "@/shared/components/AccountFallbackControl";
@@ -63,6 +64,7 @@ const STRATEGY_OPTIONS = [
 ];
 
 export default function CombosPage() {
+  const t = useTranslation();
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -429,8 +431,8 @@ export default function CombosPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search combos…"
-              aria-label="Search combos"
+              placeholder={t("Search combos…")}
+              aria-label={t("Search combos")}
               className="w-full rounded-[10px] border border-transparent bg-surface-2 py-2 pl-10 pr-9 text-sm text-text-main transition-all duration-150 ease-out placeholder-text-muted/70 focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
             />
             {searchQuery && (
@@ -504,15 +506,15 @@ export default function CombosPage() {
               />
               <span>
                 {someSelected
-                  ? `${selectedIds.length} selected`
-                  : `Select all (${filteredCombos.length})`}
+                  ? `${t("Selected")}: ${selectedIds.length}`
+                  : `${t("Select all")} (${filteredCombos.length})`}
               </span>
             </label>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {normalizedQuery && (
                 <span className="text-xs text-text-muted">
-                  {filteredCombos.length} of {combos.length} shown
+                  {t("Shown")}: {filteredCombos.length} / {combos.length}
                 </span>
               )}
               {someSelected && (
@@ -670,6 +672,7 @@ function getRouterModelStatus(routerModel, activeProviders) {
 }
 
 function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
+  const t = useTranslation();
   const [showRoutingSettings, setShowRoutingSettings] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
@@ -728,9 +731,9 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             </div>
             {comboCaps && (
               <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
-                <span>ctx {fmtK(comboCaps.contextWindow)}</span>
+                <span>{t("ctx")} {fmtK(comboCaps.contextWindow)}</span>
                 <span className="opacity-40">·</span>
-                <span>max {fmtK(comboCaps.maxOutput)}</span>
+                <span>{t("max")} {fmtK(comboCaps.maxOutput)}</span>
               </div>
             )}
 
@@ -773,20 +776,20 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
       <div className="mt-4 grid grid-cols-1 gap-3 border-t border-border/60 pt-4 md:grid-cols-3">
         <div className="min-w-0 rounded-xl border border-border/60 bg-black/[0.015] p-3 dark:bg-white/[0.02]">
           <div className="mb-2 flex min-h-5 items-center text-xs font-medium text-text-main">Routing strategy</div>
-          <Select aria-label={`Routing strategy for ${combo.name}`} options={STRATEGY_OPTIONS} value={current}
+          <Select aria-label={`${t("Routing strategy")}: ${combo.name}`} options={STRATEGY_OPTIONS} value={current}
             onChange={event => onSetStrategy({ fallbackStrategy: event.target.value })}
             selectClassName="min-h-10 py-2! text-xs! border-border/60! bg-surface!" />
           <p className="mt-2 text-[11px] leading-relaxed text-text-muted">{current === "round-robin" ? "Distribute new requests across members." : isSmart ? "Let System One choose the right model." : isFusion ? "Combine answers from multiple models." : "Try the next member when a request fails."}</p>
         </div>
         <AccountFallbackControl comboName={combo.name} value={strategy.accountFallbackMode} onChange={value => onSetStrategy({ accountFallbackMode: value })} />
         {isSmart || isFusion ? <ComboModelControl comboName={combo.name} isSmart={isSmart} model={isSmart ? routerModel : judge}
-          policyLabel={isSmart ? getSmartPolicyLabel(strategy) : null} routerStatus={routerStatus}
-          onSelectAuto={() => onSetStrategy({ [isSmart ? "routerModel" : "judgeModel"]: "" })} onConfigure={() => setShowRoutingSettings(true)}
+          policyLabel={isSmart ? getSmartPolicyLabel(strategy, t) : null} routerStatus={routerStatus}
+          onSelectAuto={() => onSetStrategy({ [isSmart ? "routerModel" : "judgeModel"]: "" })} onConfigure={section => setShowRoutingSettings(section)}
         /> : <SessionAffinityControl comboName={combo.name} enabled={strategy.stickySession === true} onChange={value => onSetStrategy({ stickySession: value })} />}
       </div>
 
       {showRoutingSettings && <ComboRoutingSettingsModal combo={combo} strategy={strategy} activeProviders={activeProviders}
-        getRouterStatus={model => getRouterModelStatus(model, activeProviders)} onSave={onSetStrategy} onClose={() => setShowRoutingSettings(false)} />}
+        initialSection={showRoutingSettings} getRouterStatus={model => getRouterModelStatus(model, activeProviders)} onSave={onSetStrategy} onClose={() => setShowRoutingSettings(false)} />}
     </Card>
   );
 }
@@ -819,6 +822,7 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
 }
 
 function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) {
+  const t = useTranslation();
   const [showModelSelect, setShowModelSelect] = useState(false);
   const { enabled, roundRobin, models } = entry;
 
@@ -864,7 +868,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <code className="font-mono text-sm font-medium">{cap.label}</code>
+              <code className="font-mono text-sm font-medium">{t(cap.label)}</code>
               <span className="text-[10px] text-text-muted">— {cap.desc}</span>
             </div>
           </div>
