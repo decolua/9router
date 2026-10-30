@@ -169,6 +169,49 @@ describe("DB SQLite layer — public API parity", () => {
     });
   });
 
+  it("providerConnections: reauthorizing a quarantined Codex profile reactivates it", async () => {
+    const existing = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "reauth-quarantine@example.test",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+      providerSpecificData: { chatgptAccountId: "acct-reauth-quarantine" },
+    });
+    await sqliteDb.updateProviderConnection(existing.id, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: "invalidated oauth token",
+      lastErrorAt: "2026-08-09T00:00:00.000Z",
+      errorCode: 401,
+      backoffLevel: 4,
+      modelLock_gpt: "2099-01-01T00:00:00.000Z",
+    });
+
+    const repaired = await sqliteDb.createProviderConnection({
+      provider: "codex",
+      authType: "oauth",
+      email: "reauth-quarantine@example.test",
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      providerSpecificData: { chatgptAccountId: "acct-reauth-quarantine" },
+      testStatus: "active",
+    });
+
+    expect(repaired.id).toBe(existing.id);
+    expect(repaired.isActive).toBe(true);
+    const back = await sqliteDb.getProviderConnectionById(existing.id);
+    expect(back).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      testStatus: "active",
+      lastError: null,
+      errorCode: null,
+      backoffLevel: 0,
+      modelLock_gpt: null,
+    });
+  });
+
   it("providerConnections: active soft warnings survive the health reset", async () => {
     const c = await sqliteDb.createProviderConnection({
       provider: "health-reset-warning",

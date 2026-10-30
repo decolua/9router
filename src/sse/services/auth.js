@@ -11,6 +11,27 @@ let selectionMutex = Promise.resolve();
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
+// Codex returns these on a 401 when the OAuth grant itself is dead (refresh
+// token rotated/revoked). Retrying the same credentials cannot recover, so the
+// profile is quarantined until the user signs in again.
+const CODEX_REAUTH_MARKERS = [
+  "invalidated oauth token",
+  "authentication token has been invalidated",
+  "refresh_token_invalidated",
+  "refresh_token_reused",
+  "refresh token already used",
+  "token_expired",
+  "could not validate your token",
+  "invalid_grant",
+];
+
+function isCodexReauthFailure(status, errorText, provider) {
+  if (resolveProviderId(provider) !== "codex" || Number(status) !== 401) return false;
+  const message = typeof errorText === "string" ? errorText : JSON.stringify(errorText || "");
+  const normalized = message.toLowerCase();
+  return CODEX_REAUTH_MARKERS.some((marker) => normalized.includes(marker));
+}
+
 function githubMonthlyResetMs(status, errorText, provider) {
   if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
   if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
@@ -249,6 +270,21 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+  const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
+
+  if (isCodexReauthFailure(status, errorText, provider)) {
+    await updateProviderConnection(connectionId, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: reason,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} requires Codex reauthorization [${status}]`);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
@@ -271,7 +307,6 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {

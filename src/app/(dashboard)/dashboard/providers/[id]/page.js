@@ -1083,6 +1083,7 @@ export default function ProviderDetailPage() {
                   setShowEditModal(true);
                 }}
                 onDelete={() => handleDelete(conn.id)}
+                onReconnect={isOAuth ? triggerOAuthConnection : null}
                 oneByOneStatus={oneByOneResults[conn.id] || null}
               />
             </div>
