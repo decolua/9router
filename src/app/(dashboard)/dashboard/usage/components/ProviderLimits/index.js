@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import Link from "next/link";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
 import Toggle from "@/shared/components/Toggle";
@@ -1168,14 +1169,14 @@ export default function ProviderLimits() {
                         </p>
                       ) : null}
                       {conn.testStatus === "reauth_required" && (
-                        <a
+                        <Link
                           href={`/dashboard/providers/${conn.provider}`}
                           className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-600 transition-colors hover:bg-red-500/15 dark:text-red-400"
                           title="Sign in again from the provider page to repair this account"
                         >
                           <span className="material-symbols-outlined text-[12px]">sync_problem</span>
                           Re-auth required
-                        </a>
+                        </Link>
                       )}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
