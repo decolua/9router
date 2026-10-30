@@ -79,6 +79,8 @@ export function hasValuableContent(chunk, format) {
 // Fix: remember the id per tool-call index, and mint one when a fragment
 // opens an index the client has not seen yet. The id must be stable for the
 // rest of the call, so a later fragment with the same index reuses it.
+// Empty function-call placeholders carry no start metadata or argument delta.
+// Drop them before allocating ids, otherwise they become phantom tool calls.
 //
 // Returns true when a chunk was modified.
 export function ensureStreamToolCallIds(chunk, seenIds) {
@@ -86,8 +88,28 @@ export function ensureStreamToolCallIds(chunk, seenIds) {
   let changed = false;
 
   for (const choice of chunk.choices) {
-    const calls = choice?.delta?.tool_calls;
+    let calls = choice?.delta?.tool_calls;
     if (!Array.isArray(calls)) continue;
+
+    const nonEmpty = calls.filter(tc => {
+      if (!tc || typeof tc !== "object") return true;
+      // Do not interpret other tool types (e.g. custom input) as function calls.
+      if (tc.type && tc.type !== "function") return true;
+      // An extension can carry provider metadata even without standard fields.
+      // Only discard known empty shapes, not payloads we do not understand.
+      if (Object.keys(tc).some(key => !["index", "id", "type", "function"].includes(key))
+        || Object.keys(tc.function || {}).some(key => !["name", "arguments"].includes(key))) return true;
+      return [tc.id, tc.function?.name, tc.function?.arguments]
+        .some(value => value != null && value !== "");
+    });
+    if (nonEmpty.length !== calls.length) {
+      changed = true;
+      if (nonEmpty.length === 0) {
+        delete choice.delta.tool_calls;
+        continue;
+      }
+      choice.delta.tool_calls = calls = nonEmpty;
+    }
 
     for (const tc of calls) {
       if (!tc || typeof tc !== "object") continue;
