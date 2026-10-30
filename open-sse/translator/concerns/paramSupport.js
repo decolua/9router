@@ -92,14 +92,17 @@ export function stripUnsupportedParams(provider, model, body) {
         }
       }
     }
-    // CF Workers AI oneOf root schema only accepts content as plain string (#1926)
+    // CF Workers AI text-only models only accept content as a plain string (#1926).
+    // Vision models (kimi-k2.x, mistral-small-3.1, ...) DO accept the OpenAI
+    // content-part array with image_url parts, so only flatten when every part is
+    // text. Media a model can't read was already removed by stripUnsupportedModalities
+    // (chatCore), so a surviving non-text part means the target model supports it —
+    // flattening it here silently dropped the image.
     if (rule.flattenContent && Array.isArray(body.messages)) {
       for (const msg of body.messages) {
-        if (msg && Array.isArray(msg.content)) {
-          msg.content = msg.content
-            .map(b => (b?.type === "text" && typeof b.text === "string") ? b.text : "")
-            .join("");
-        }
+        if (!msg || !Array.isArray(msg.content)) continue;
+        const allText = msg.content.every((b) => b?.type === "text" && typeof b.text === "string");
+        if (allText) msg.content = msg.content.map((b) => b.text).join("");
       }
     }
     if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {

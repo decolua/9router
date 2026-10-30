@@ -247,6 +247,13 @@ export const PROVIDER_CAPABILITIES = {
     "deepseek-ai/deepseek-v4-pro": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
     "deepseek-ai/deepseek-v4-flash": { reasoning: true, thinkingFormat: "openai", contextWindow: 1000000, maxOutput: 65536 },
   },
+  // Cloudflare Workers AI: the generic *mistral* pattern carries no vision flag,
+  // but Mistral Small 3.1 on Workers AI accepts image_url parts (verified against
+  // /ai/v1/chat/completions). Without this, images were stripped or rerouted to
+  // the vision capacity adapter instead of reaching the model.
+  "cloudflare-ai": {
+    "@cf/mistralai/mistral-small-3.1-24b-instruct": { vision: true, contextWindow: 128000 },
+  },
   // glm-5.3-flash on OpenCode Go is served by a backend that rejects the z.ai
   // `thinking` object (400: unknown field "thinking") and wants reasoning_effort.
   // Overrides the global entry, whose z.ai shape is correct for z.ai itself.
