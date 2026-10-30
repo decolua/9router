@@ -1,4 +1,7 @@
 export function getStatusVariant(isActive, effectiveStatus) {
+  // A quarantined profile is disabled on purpose; keep it visible as an error
+  // instead of the neutral "disabled" badge so the repair action stands out.
+  if (effectiveStatus === "reauth_required") return "error";
   if (isActive === false) return "default";
   if (effectiveStatus === "active" || effectiveStatus === "success") return "success";
   if (effectiveStatus === "error" || effectiveStatus === "expired" || effectiveStatus === "unavailable") return "error";

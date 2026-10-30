@@ -209,7 +209,15 @@ export async function createProviderConnection(data) {
         err.existingName = existing.name;
         throw err;
       }
-      const normalized = resetHealthStateOnActivation(existing, data);
+      // A fresh OAuth grant for a quarantined profile is the repair action:
+      // re-enable the row so it can be selected again. Reset the stale error
+      // fields/locks through the normal activation path.
+      const reauthorized = existing.testStatus === "reauth_required"
+        && data.authType === "oauth"
+        && (data.accessToken || data.refreshToken)
+        ? { ...data, isActive: true, testStatus: "active" }
+        : data;
+      const normalized = resetHealthStateOnActivation(existing, reauthorized);
       const merged = { ...existing, ...normalized, updatedAt: now };
       upsert(db, merged);
       result = merged;

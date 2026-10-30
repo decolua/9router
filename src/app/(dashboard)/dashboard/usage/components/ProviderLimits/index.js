@@ -1167,6 +1167,16 @@ export default function ProviderLimits() {
                           {getConnectionSecondaryLabel(conn)}
                         </p>
                       ) : null}
+                      {conn.testStatus === "reauth_required" && (
+                        <a
+                          href={`/dashboard/providers/${conn.provider}`}
+                          className="mt-1 inline-flex items-center gap-1 rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-600 transition-colors hover:bg-red-500/15 dark:text-red-400"
+                          title="Sign in again from the provider page to repair this account"
+                        >
+                          <span className="material-symbols-outlined text-[12px]">sync_problem</span>
+                          Re-auth required
+                        </a>
+                      )}
                       {conn.provider === "kiro" && (
                         <div className="mt-1 flex flex-wrap items-center gap-1">
                           <span className="rounded-full bg-brand-500/10 px-2 py-0.5 text-[10px] font-semibold text-brand-600 dark:text-brand-300">
