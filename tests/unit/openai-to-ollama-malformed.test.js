@@ -5,6 +5,8 @@ import { ollamaBodyToOpenAI, ollamaToOpenAIResponse } from "../../open-sse/trans
 import { applyThinking } from "../../open-sse/translator/concerns/thinkingUnified.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { stripIncompatibleReasoningContent } from "../../open-sse/translator/concerns/reasoning.js";
+import { stripUnsupportedModalities } from "../../open-sse/translator/concerns/modality.js";
+import { FORMATS } from "../../open-sse/translator/formats.js";
 
 function reqWith(args) {
   return {
@@ -48,6 +50,7 @@ describe("Ollama native thinking", () => {
       applyThinking("ollama", "gemma4:cloud", body, "ollama");
       expect(body.think).toBe(true);
       expect(getCapabilitiesForModel("ollama", "gemma4:cloud")).toMatchObject({
+        vision: true,
         reasoning: true,
         thinkingFormat: "ollama",
       });
@@ -104,3 +107,48 @@ describe("Ollama native thinking", () => {
     expect(response.choices[0].message.reasoning_content).toBe("private thought");
   });
 });
+
+describe("Ollama Gemma 4 vision capability and modality forwarding", () => {
+  it("resolves vision: true, reasoning: true for gemma4:cloud and gemma4 patterns", () => {
+    const cloudCaps = getCapabilitiesForModel("ollama", "gemma4:cloud");
+    expect(cloudCaps.vision).toBe(true);
+    expect(cloudCaps.reasoning).toBe(true);
+    expect(cloudCaps.thinkingFormat).toBe("ollama");
+
+    const patternCaps1 = getCapabilitiesForModel(null, "gemma4:31b");
+    expect(patternCaps1.vision).toBe(true);
+    expect(patternCaps1.reasoning).toBe(true);
+    expect(patternCaps1.thinkingFormat).toBe("ollama");
+
+    const patternCaps2 = getCapabilitiesForModel(null, "gemma-4-it");
+    expect(patternCaps2.vision).toBe(true);
+    expect(patternCaps2.reasoning).toBe(true);
+    expect(patternCaps2.thinkingFormat).toBe("ollama");
+  });
+
+  it("does not strip images for gemma4:cloud and preserves images array in openaiToOllamaRequest", () => {
+    const caps = getCapabilitiesForModel("ollama", "gemma4:cloud");
+    const fakeBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const body = {
+      model: "gemma4:cloud",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "what is in this image?" },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${fakeBase64}` } },
+          ],
+        },
+      ],
+    };
+
+    stripUnsupportedModalities(body, FORMATS.OPENAI, caps);
+    expect(JSON.stringify(body)).not.toContain("[image omitted");
+    expect(body.messages[0].content.some((b) => b.type === "image_url")).toBe(true);
+
+    const ollamaReq = openaiToOllamaRequest("gemma4:cloud", body, false);
+    expect(ollamaReq.messages[0].content).toBe("what is in this image?");
+    expect(ollamaReq.messages[0].images).toEqual([fakeBase64]);
+  });
+});
+

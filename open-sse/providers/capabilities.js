@@ -385,7 +385,7 @@ export const PROVIDER_CAPABILITIES = {
   // Ollama's native toggle is the top-level `think` field (bool or
   // low/medium/high/max). Gemma 4 uses the native Ollama format below.
   "ollama": {
-    "gemma4:cloud": { reasoning: true, thinkingFormat: "ollama", contextWindow: 128000 },
+    "gemma4:cloud": { vision: true, reasoning: true, thinkingFormat: "ollama", contextWindow: 128000 },
     "deepseek-v4.1-flash:cloud": { vision: true, reasoning: true, thinkingFormat: "deepseek", contextWindow: 1000000, maxOutput: 384000 },
   },
   // MiniMax Code (mcode) credits lane — Anthropic messages on mavis; thinking
@@ -492,6 +492,8 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*gemini-2.5*",    caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, search: true, thinkingFormat: "gemini-budget", thinkingRange: { min: 0, max: 24576 }, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini-2*",      caps: { vision: true, audioInput: true, videoInput: true, search: true, contextWindow: 1048576, maxOutput: 65536 } },
   { pattern: "*gemini*",        caps: { vision: true, search: true, contextWindow: 1048576 } },
+  { pattern: "*gemma-4*",       caps: { vision: true, reasoning: true, thinkingFormat: "ollama", contextWindow: 128000 } },
+  { pattern: "*gemma4*",        caps: { vision: true, reasoning: true, thinkingFormat: "ollama", contextWindow: 128000 } },
   { pattern: "*gemma*",         caps: { vision: true, contextWindow: 128000 } },
   { pattern: "*nanobanana*",    caps: { vision: true, imageOutput: true } },
 

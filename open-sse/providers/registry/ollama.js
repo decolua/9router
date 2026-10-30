@@ -31,6 +31,7 @@ export default {
     { id: "qwen3.5", name: "Qwen3.5" },
     { id: "minimax-m3", name: "MiniMax M3" },
     { id: "deepseek-v4.1-flash:cloud", name: "DeepSeek V4.1 Flash" },
+    { id: "gemma4:cloud", name: "Gemma 4" },
     { id: "clef", name: "Clef", kind: "systemone" },
     { id: "clef-flash", name: "Clef Flash", kind: "systemone" },
     { id: "clef:cloud", name: "Clef (Cloud)", kind: "systemone" },
