@@ -60,6 +60,41 @@ export function sanitizeStartSessionArgs(toolName, args) {
   }
 }
 
+export function sanitizeAskUserQuestionArgs(toolName, args) {
+  if (!args || typeof args !== "object") return;
+  const name = typeof toolName === "string" && toolName.startsWith("proxy_")
+    ? toolName.slice("proxy_".length)
+    : toolName;
+  if (name !== "AskUserQuestion" && !name.endsWith("AskUserQuestion")) return;
+
+  // 1. If annotations has non-object values (e.g. annotations.reason = "string")
+  if (args.annotations && typeof args.annotations === "object") {
+    for (const [key, val] of Object.entries(args.annotations)) {
+      if (typeof val !== "object" || val === null || Array.isArray(val)) {
+        delete args.annotations[key];
+      }
+    }
+    if (Object.keys(args.annotations).length === 0) {
+      delete args.annotations;
+    }
+  }
+
+  // 2. If answers has synthetic reason key that doesn't match a question
+  if (args.answers && typeof args.answers === "object") {
+    if ("reason" in args.answers) {
+      delete args.answers.reason;
+    }
+    if (Object.keys(args.answers).length === 0) {
+      delete args.answers;
+    }
+  }
+
+  // 3. Top-level reason parameter
+  if ("reason" in args) {
+    delete args.reason;
+  }
+}
+
 function parseToolArguments(value, toolName = "", options = {}) {
   let args = {};
   if (!value) args = {};
@@ -75,6 +110,7 @@ function parseToolArguments(value, toolName = "", options = {}) {
     const tools = options?.body?.tools || options?.tools;
     stripUnexpectedReasonArg(toolName, args, tools);
     sanitizeStartSessionArgs(toolName, args);
+    sanitizeAskUserQuestionArgs(toolName, args);
   }
   return args;
 }
