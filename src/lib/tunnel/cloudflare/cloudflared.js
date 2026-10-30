@@ -418,10 +418,12 @@ function killCloudflaredByPort(port) {
 }
 
 export function killCloudflared(localPort) {
-  intentionalKill = true;
+  // ponytail: one in-process tunnel at a time; use per-PID termination state if concurrent tunnels are added.
+  let killed = false;
   if (cloudflaredProcess) {
     try {
       cloudflaredProcess.kill();
+      killed = true;
     } catch (e) { /* ignore */ }
     cloudflaredProcess = null;
   }
@@ -430,10 +432,14 @@ export function killCloudflared(localPort) {
   if (pid) {
     try {
       process.kill(pid);
+      killed = true;
     } catch (e) { /* ignore */ }
     clearPid();
   }
 
+  // Do not mark the next fresh child as intentionally killed when no prior
+  // process existed; its early exit must retain the real error diagnostics.
+  intentionalKill = killed;
   killCloudflaredByPort(localPort);
 }
 
