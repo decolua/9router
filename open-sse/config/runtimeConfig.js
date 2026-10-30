@@ -63,6 +63,11 @@ export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000)
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Max wall-clock budget a single provider seat may consume (connect attempts + retry delays)
+// before the combo is allowed to move on. 0 disables the guard (legacy behaviour).
+// Env: SEAT_ATTEMPT_BUDGET_MS.
+export const SEAT_ATTEMPT_BUDGET_MS = envMs("SEAT_ATTEMPT_BUDGET_MS", 0);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 

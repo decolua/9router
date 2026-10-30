@@ -1,4 +1,4 @@
-import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtimeConfig.js";
+import { HTTP_STATUS, RETRY_CONFIG, DEFAULT_RETRY_CONFIG, resolveRetryEntry, FETCH_CONNECT_TIMEOUT_MS, SEAT_ATTEMPT_BUDGET_MS } from "../config/runtimeConfig.js";
 import { shouldRefreshCredentials } from "../services/oauthCredentialManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { dbg } from "../utils/debugLog.js";
@@ -103,6 +103,13 @@ export class BaseExecutor {
     let lastStatus = 0;
     const retryAttemptsByUrl = {};
 
+    // Seat attempt budget: max wall-clock time this seat may consume before combo falls over
+    // Priority: providerOverrides.seatBudgetMs > SEAT_ATTEMPT_BUDGET_MS (env) > 0 (disabled)
+    const overrideBudget = providerOverrides?.seatBudgetMs;
+    const sanitizedBudget = Number.isFinite(overrideBudget) && overrideBudget >= 0 ? overrideBudget : null;
+    const seatBudgetMs = sanitizedBudget ?? SEAT_ATTEMPT_BUDGET_MS;
+    const seatStartedAt = Date.now();
+
     // Merge default retry config with provider-specific config
     const retryConfig = { ...DEFAULT_RETRY_CONFIG, ...this.config.retry };
 
@@ -117,6 +124,14 @@ export class BaseExecutor {
         const dynamic = await this.computeRetryDelay(response, retryAttemptsByUrl[urlIndex] + 1, delayMs);
         if (dynamic === false) return false; // hook vetoes retry (e.g. Retry-After too long)
         if (dynamic != null) waitMs = dynamic;
+      }
+      // Seat budget guard: if budget exceeded, skip retry and let combo move to next seat
+      if (seatBudgetMs > 0) {
+        const elapsed = Date.now() - seatStartedAt;
+        if (elapsed + waitMs > seatBudgetMs) {
+          log?.debug?.("RETRY", `${reason} seat budget exceeded (elapsed ${elapsed}ms + wait ${waitMs}ms > ${seatBudgetMs}ms)`);
+          return false;
+        }
       }
       retryAttemptsByUrl[urlIndex]++;
       log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
@@ -135,8 +150,17 @@ export class BaseExecutor {
 
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
-      const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      // Priority: providerOverrides.timeoutMs (valid finite positive) > config.timeoutMs > FETCH_CONNECT_TIMEOUT_MS
+      const overrideTimeout = providerOverrides?.timeoutMs;
+      const sanitizedOverride = Number.isFinite(overrideTimeout) && overrideTimeout > 0 ? overrideTimeout : null;
+      const timeoutMs = sanitizedOverride ?? this.config?.timeoutMs ?? FETCH_CONNECT_TIMEOUT_MS;
+      // Seat budget bounds the in-flight connect attempt, not just the next retry
+      const remaining = seatBudgetMs > 0 ? Math.max(1, seatBudgetMs - (Date.now() - seatStartedAt)) : null;
+      const attemptTimeoutMs = remaining != null ? Math.min(timeoutMs, remaining) : timeoutMs;
+      if (attemptTimeoutMs !== timeoutMs) {
+        dbg("FETCH", `${this.provider.toUpperCase()} connect timeout bounded by seat budget: configured=${timeoutMs}ms attempt=${attemptTimeoutMs}ms remaining=${remaining}ms`);
+      }
+      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), attemptTimeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
