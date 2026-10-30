@@ -182,8 +182,8 @@ export function isShimPath(bin, platform = process.platform) {
  * never introduce a second argv element or a shell operator.
  * @returns {{command:string,args:string[],options:object}|{error:string}}
  */
-export function buildSpawnPlan(bin, args) {
-  if (!isShimPath(bin)) return { command: bin, args, options: {} };
+export function buildSpawnPlan(bin, args, platform = process.platform) {
+  if (!isShimPath(bin, platform)) return { command: bin, args, options: {} };
 
   const target = resolveShimTarget(bin);
   if (!target) {

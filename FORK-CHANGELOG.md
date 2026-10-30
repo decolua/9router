@@ -23,6 +23,25 @@ against, the 2.1.301 binary (the rate-limit schema is the same as on 2.1.295).
 
 ### Fixes
 
+#### The image's lazy runtime deps are held to their package.json ranges
+
+v0.5.112's Dockerfile installs `wreq-js` and `playwright-core` into the runner by bare
+name, i.e. whatever is `latest` on the day Jenkins builds — a new major would land
+unreviewed, against code written for `^3.2.0` / `^1.62.1`. The install now names those
+ranges, the same ones `package.json` and `LAZY_DEP_VERSIONS` use.
+
+#### The claude-cli tests pass on Linux and against an org-managed account
+
+`buildSpawnPlan(bin, args, platform)` takes the platform the way `isShimPath` already
+did, so the two `.cmd`-shim tests exercise the Windows path on any host instead of
+failing everywhere but Windows (production callers still pass two arguments). In the
+live suite (`REAL_CLI_TESTS=1`): the oversized system prompt was 31,822 characters, under
+the 32,767 limit its own premise checks, so it now has 150 sections (~40k); the
+concurrency-slot test waits for an earlier test's child to release its slot before
+counting; and the token-precedence test also accepts the refusal an org that enforces
+remote managed settings gives a bogus token — it is still the token, not the config
+directory, being used.
+
 #### A failure inside an HTTP 200 now falls through to the next model
 
 kimchi answers a model whose provider has no credits left with

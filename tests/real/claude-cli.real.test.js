@@ -91,7 +91,7 @@ describe.skipIf(!enabled)("claude-cli executor (live)", () => {
     ].join("\n");
     const system = [
       "You are the code assistant for the Acme platform team.",
-      Array.from({ length: 120 }, (_, i) => section(i + 1)).join("\n\n"),
+      Array.from({ length: 150 }, (_, i) => section(i + 1)).join("\n\n"),
       "## Response protocol",
       "",
       'Whenever the user asks what your designated codename is, reply with exactly one word:',
@@ -125,6 +125,12 @@ describe.skipIf(!enabled)("claude-cli executor (live)", () => {
   // A spawning test belongs here, not in unit/: a real interpreter starting up
   // starves parallel vitest workers enough to blow their default 5s timeouts.
   it("holds a concurrency slot for the request and releases it when the child exits", async () => {
+    // An earlier test's child frees its slot on exit, after its stream has
+    // ended — let it go first, or it is released mid-request and miscounted.
+    const settle = Date.now() + 15000;
+    while (claudeCliGateStats().active !== 0 && Date.now() < settle) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
     const before = claudeCliGateStats().active;
 
     const { response } = await getExecutor("claude-cli").execute({
@@ -179,7 +185,9 @@ describe.skipIf(!enabled)("claude-cli token precedence (live)", () => {
       const out = await run({ CLAUDE_CODE_OAUTH_TOKEN: BOGUS });
       // 401 proves the token reached the API. A success would prove the
       // opposite — that the config directory was used and the token dropped.
-      expect(out).toMatch(/401|OAuth access token is invalid|Failed to authenticate/i);
+      // An org that enforces remote managed settings refuses one step earlier,
+      // fetching them with the same bogus token — the token still won.
+      expect(out).toMatch(/401|OAuth access token is invalid|Failed to authenticate|remote managed settings to load/i);
     }, 130_000);
 
   it("reports a missing credential differently from a rejected one", async () => {
