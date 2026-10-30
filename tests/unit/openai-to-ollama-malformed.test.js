@@ -150,5 +150,26 @@ describe("Ollama Gemma 4 vision capability and modality forwarding", () => {
     expect(ollamaReq.messages[0].content).toBe("what is in this image?");
     expect(ollamaReq.messages[0].images).toEqual([fakeBase64]);
   });
+
+  it("preserves image-only messages without text blocks in openaiToOllamaRequest", () => {
+    const fakeBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
+    const bodyOnlyImage = {
+      model: "gemma4:cloud",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "image_url", image_url: { url: `data:image/png;base64,${fakeBase64}` } },
+          ],
+        },
+      ],
+    };
+
+    const ollamaReq = openaiToOllamaRequest("gemma4:cloud", bodyOnlyImage, false);
+    expect(ollamaReq.messages.length).toBe(1);
+    expect(ollamaReq.messages[0].role).toBe("user");
+    expect(ollamaReq.messages[0].content).toBe("");
+    expect(ollamaReq.messages[0].images).toEqual([fakeBase64]);
+  });
 });
 
