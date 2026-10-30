@@ -1,6 +1,7 @@
 "use client";
 
 import Tooltip from "./Tooltip";
+import SegmentedControl from "./SegmentedControl";
 
 export default function SessionAffinityControl({ enabled, onChange, comboName }) {
   return (
@@ -13,15 +14,8 @@ export default function SessionAffinityControl({ enabled, onChange, comboName })
           </button>
         </Tooltip>
       </div>
-      <div className="flex rounded-lg border border-border/60 bg-surface p-0.5" role="group" aria-label={`Session affinity for ${comboName}`}>
-        {[{ value: false, label: "Per turn", icon: "sync" }, { value: true, label: "Sticky", icon: "lock" }].map(option => (
-          <button key={option.label} type="button" aria-pressed={enabled === option.value} onClick={() => onChange(option.value)}
-            className={`flex min-h-9 min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-2 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${enabled === option.value ? "bg-primary/12 text-primary shadow-xs" : "text-text-muted hover:bg-black/5 hover:text-text-main dark:hover:bg-white/5"}`}>
-            <span aria-hidden="true" className="material-symbols-outlined text-[15px]">{option.icon}</span>
-            <span>{option.label}</span>
-          </button>
-        ))}
-      </div>
+      <SegmentedControl variant="panel" ariaLabel={`Session affinity for ${comboName}`} value={enabled} onChange={onChange}
+        options={[{ value: false, label: "Per turn", icon: "sync" }, { value: true, label: "Sticky", icon: "lock" }]} />
       <p className="mt-2 text-[11px] leading-relaxed text-text-muted">{enabled ? "Keep each conversation on its successful account." : "Choose a combo member on each request."}</p>
     </div>
   );
