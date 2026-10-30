@@ -697,6 +697,16 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
     return override ? { ...local, ...override } : local;
   });
   const first = allCaps[0];
+  // A seat with an unknown limit must not poison the aggregate with NaN (which
+  // serialises as null). Unknown context contributes nothing to the min and
+  // unknown output contributes nothing to the max; a field with no known
+  // member is dropped rather than published as null.
+  const knownContexts = allCaps
+    .map((c) => c.contextWindow)
+    .filter((v) => Number.isFinite(v));
+  const knownOutputs = allCaps
+    .map((c) => c.maxOutput)
+    .filter((v) => Number.isFinite(v));
   return {
     vision:      allCaps.some((c) => c.vision),
     pdf:         allCaps.some((c) => c.pdf),
@@ -710,8 +720,8 @@ export function aggregateComboCapabilities(comboModels, comboLookup = null, reso
     thinkingFormat:     first.thinkingFormat,
     thinkingCanDisable: first.thinkingCanDisable,
     thinkingRange:      first.thinkingRange,
-    contextWindow: Math.min(...allCaps.map((c) => c.contextWindow)),
-    maxOutput:     Math.max(...allCaps.map((c) => c.maxOutput)),
+    ...(knownContexts.length ? { contextWindow: Math.min(...knownContexts) } : {}),
+    ...(knownOutputs.length ? { maxOutput: Math.max(...knownOutputs) } : {}),
   };
 }
 
