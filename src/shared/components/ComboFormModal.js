@@ -1,5 +1,6 @@
 "use client";
 
+import ModelReferenceLabel from "./ModelReferenceLabel";
 import { useState, useEffect } from "react";
 import Modal from "./Modal";
 import Input from "./Input";
@@ -9,7 +10,7 @@ import ModelSelectModal from "./ModelSelectModal";
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
 // Inline editable model item
-function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ index, model, connections, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(model);
   const commit = () => {
@@ -29,8 +30,10 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
         <input autoFocus value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit} onKeyDown={handleKeyDown}
           className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20" />
       ) : (
-        <div className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-          onClick={() => setEditing(true)} title="Click to edit">{model}</div>
+        <div className="min-w-0 flex-1 flex items-center gap-1.5 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          onClick={() => setEditing(true)} title="Click to edit">
+          <ModelReferenceLabel value={model} connections={connections} />
+        </div>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
         <button onClick={onMoveUp} disabled={isFirst}
@@ -59,6 +62,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   const [models, setModels] = useState(combo?.models || []);
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
+
   const [nameError, setNameError] = useState("");
   const [modelAliases, setModelAliases] = useState({});
 
@@ -142,6 +146,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
               <div className="flex max-h-[55vh] min-w-0 flex-col gap-1 overflow-y-auto sm:max-h-[350px]">
                 {models.map((model, index) => (
                   <ModelItem key={index} index={index} model={model}
+                    connections={activeProviders}
                     isFirst={index === 0} isLast={index === models.length - 1}
                     onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
                     onMoveUp={() => handleMoveUp(index)}

@@ -12,7 +12,7 @@ vi.mock("@/lib/localDb.js", () => ({ getSettings: async () => ({ requireApiKey: 
 vi.mock("@/sse/services/auth.js", () => ({ extractApiKey: () => "offline-key", isValidApiKey: async () => true, getProviderCredentials: async () => credentials, clearAccountError: async () => {}, markAccountUnavailable: async () => ({ shouldFallback: false }) }));
 vi.mock("open-sse/utils/proxyFetch.js", () => ({ proxyAwareFetch: (url, options) => options.directFetch(url, options) }));
 vi.mock("@/sse/services/model.js", () => ({ getModelInfo: async () => ({ provider: "codex", model: "transcribe" }) }));
-vi.mock("@/sse/services/keyAccess.js", () => ({ getKeyAccessContext: async () => ({}), enforceKeyAccessResolved: async () => null }));
+vi.mock("@/sse/services/keyAccess.js", () => ({ getKeyAccessContext: async () => null, enforceKeyAccessResolved: async () => null }));
 vi.mock("@/lib/network/connectionProxy.js", () => ({ resolveConnectionProxyConfig: async () => ({}) }));
 vi.mock("open-sse/services/oauthCredentialManager.js", () => ({ shouldRefreshCredentials: () => true, refreshProviderCredentials: mocks.refresh }));
 const { POST } = await import("../../src/app/api/v1/audio/transcriptions/route.js");

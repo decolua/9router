@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/sse/services/auth.js", () => ({ extractApiKey: () => null, isValidApiKey: vi.fn(), getProviderCredentials: mocks.get, clearAccountError: mocks.clear, markAccountUnavailable: mocks.mark }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({}), getCustomModels: async () => [] }));
 vi.mock("@/sse/services/model.js", () => ({ getModelInfo: async () => ({ provider: "codex", model: "transcribe" }) }));
-vi.mock("@/sse/services/keyAccess.js", () => ({ getKeyAccessContext: async () => ({}), enforceKeyAccessResolved: mocks.access }));
+vi.mock("@/sse/services/keyAccess.js", () => ({ getKeyAccessContext: async () => null, enforceKeyAccessResolved: mocks.access }));
 vi.mock("@/sse/services/tokenRefresh.js", () => ({ checkAndRefreshToken: mocks.refresh }));
 vi.mock("@/lib/network/connectionProxy.js", () => ({ resolveConnectionProxyConfig: mocks.proxy }));
 vi.mock("open-sse/handlers/sttCore.js", () => ({ handleSttCore: mocks.core }));

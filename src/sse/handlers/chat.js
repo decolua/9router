@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import { accountSelectionOptions } from "../services/accountSelection.js";
+import { executionResult } from "open-sse/utils/executionResult.js";
 import "open-sse/index.js";
 
 import {
@@ -26,7 +29,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
-import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels, extractClientApiKey } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
 
 /**
@@ -127,7 +130,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null, { grantedByCombo: true, accountFallbackMode: comboStrategies[modelStr]?.accountFallbackMode });
         },
         log,
         comboName: modelStr,
@@ -143,7 +146,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m, routing) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, { ...routing, grantedByCombo: !adapterAdded.includes(m) }),
         adapterAdded
       ),
       log,
@@ -153,6 +156,9 @@ export async function handleChat(request, clientRawRequest = null) {
       sessionId,
       smartPolicy: comboCfg.smartPolicy || "smart",
       sessionSticky: comboCfg.sessionSticky !== false,
+      stickySession: comboCfg.stickySession === true,
+      accountFallbackMode: comboCfg.accountFallbackMode,
+      sessionNamespace: createHash("sha256").update(extractClientApiKey(request) || "local").digest("hex"),
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
       resolveSmartChoice: comboStrategy === "smart"
         ? (b, m) => resolveSmartChoice({
@@ -175,12 +181,15 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: soloAugmented,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+        (b, m, routing) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, { ...routing }),
         adapterAdded
       ),
       log,
       comboName: modelStr,
-      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings)
+      comboStrategy: getActiveAdapterStrategy(requiredCapabilities, settings),
+      sessionId,
+      stickySession: true,
+      sessionNamespace: createHash("sha256").update(extractClientApiKey(request) || "local").digest("hex"),
     });
   }
 
@@ -190,7 +199,7 @@ export async function handleChat(request, clientRawRequest = null) {
 /**
  * Handle single model chat request
  */
-async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null) {
+async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, routing = {}) {
   const modelInfo = await getModelInfo(modelStr);
 
   // If provider is null, this might be a combo name - check and handle
@@ -220,7 +229,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
               cleanRawReq = { ...clientRawRequest, body: cleanBody };
             }
-            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
+            return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null, { grantedByCombo: true, accountFallbackMode: comboStrategies[modelStr]?.accountFallbackMode });
           },
           log,
           comboName: modelStr,
@@ -238,7 +247,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
+          (b, m, routing) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, { ...routing, grantedByCombo: !adapterAdded.includes(m) }),
           adapterAdded
         ),
         log,
@@ -248,6 +257,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         sessionId: nestedSessionId,
         smartPolicy: comboCfg.smartPolicy || "smart",
         sessionSticky: comboCfg.sessionSticky !== false,
+        stickySession: comboCfg.stickySession === true,
+      accountFallbackMode: comboCfg.accountFallbackMode,
+      sessionNamespace: createHash("sha256").update(extractClientApiKey(request) || "local").digest("hex"),
         confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
         resolveSmartChoice: comboStrategy === "smart"
           ? (b, m) => resolveSmartChoice({
@@ -264,6 +276,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   }
 
   const { provider, model } = modelInfo;
+  const selection = await accountSelectionOptions(modelInfo, request, { ...routing, keyAccess: await getKeyAccessContext(request) });
 
   // Routing shown in the unified "▶" line (client model → provider/model)
 
@@ -277,7 +290,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastHeaders = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      ...selection,
+      requestedModel: requestedModel ? `${model}[${stripModelContextMarker(requestedModel).contextMarker}]` : model,
+    });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -357,7 +373,9 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) return routing.returnTarget
+      ? executionResult(result.response, { provider, model, connectionId: credentials.connectionId || null })
+      : result.response;
 
     // Antigravity 409/429: refresh live quota to get exact resetAt before locking
     let quotaResetMs = null;

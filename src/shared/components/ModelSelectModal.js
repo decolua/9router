@@ -1,5 +1,7 @@
 "use client";
 
+import { formatModelReference } from "open-sse/utils/modelReference.js";
+import { useTranslation } from "@/i18n/useTranslation";
 import { useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
@@ -90,6 +92,7 @@ export default function ModelSelectModal({
   closeOnSelect = true,
   allowProviderWildcard = false,
 }) {
+  const t = useTranslation();
   // Live-fetched connections on modal open, fallback to activeProviders prop
   const [fetchedConnections, setFetchedConnections] = useState(null);
 
@@ -135,6 +138,17 @@ export default function ModelSelectModal({
   const [providerNodes, setProviderNodes] = useState([]);
   const [customModels, setCustomModels] = useState([]);
   const [disabledModels, setDisabledModels] = useState({});
+  const [selectedAccountsByProvider, setSelectedAccountsByProvider] = useState({});
+
+  const getConnectionLabel = (conn) => {
+    if (!conn) return "";
+    return (
+      conn.name?.trim() ||
+      conn.displayName?.trim() ||
+      conn.email?.trim() ||
+      `Account ${conn.id?.slice(0, 6)}`
+    );
+  };
   // Cursor and Cline expose the usable catalog per account, so the static catalog is
   // kept only as a fallback: it goes stale quickly and entitlements differ per account.
   // Single map driven by LIVE_CATALOG_PROVIDERS so the constant cannot drift
@@ -499,6 +513,11 @@ export default function ModelSelectModal({
       }
     });
 
+    // Attach active connections per provider so callers can select individual accounts
+    Object.entries(groups).forEach(([providerId, group]) => {
+      group.connections = filteredActiveProviders.filter((p) => p && p.provider === providerId && p.id);
+    });
+
     return groups;
   }, [filteredActiveProviders, modelAliases, allProviders, providerNodes, customModels, disabledModels, kindFilter, effectiveConnections, deactivatedProviderIds, cursorModels, clineModels, clinepassModels, zedModels]);
 
@@ -563,15 +582,15 @@ export default function ModelSelectModal({
   // Visible models available for batch actions (excluding placeholders)
   const visibleModels = useMemo(() => {
     const list = [];
-    Object.values(filteredGroups).forEach((group) => {
+    Object.entries(filteredGroups).forEach(([providerId, group]) => {
       group.models.forEach((m) => {
         if (!m.isPlaceholder) {
-          list.push(m);
+          list.push({ ...m, value: formatModelReference(m.value, selectedAccountsByProvider[providerId]) });
         }
       });
     });
     return list;
-  }, [filteredGroups]);
+  }, [filteredGroups, selectedAccountsByProvider]);
 
   const visibleUnadded = useMemo(() => {
     return visibleModels.filter((m) => !addedModelValues.includes(m.value));
@@ -626,6 +645,7 @@ export default function ModelSelectModal({
       size={size}
       className="p-4!"
       footer={null}
+      zIndex="z-[60]"
     >
       {/* Info bar */}
       <div className="flex items-center gap-2 mb-3 px-2.5 py-2 bg-primary/8 border border-primary/20 rounded-lg text-xs text-text-muted">
@@ -647,8 +667,8 @@ export default function ModelSelectModal({
             type="text"
             placeholder={
               allowProviderWildcard
-                ? "Search models (e.g. claude -haiku, oc/*, /regex/)..."
-                : "Search models (e.g. claude -haiku, !embed, /regex/)..."
+                ? t("Search models (e.g. claude -haiku, oc/*, /regex/)...")
+                : t("Search models (e.g. claude -haiku, !embed, /regex/)...")
             }
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
@@ -752,7 +772,11 @@ export default function ModelSelectModal({
 
         {/* Provider models */}
         {Object.entries(filteredGroups).map(([providerId, group]) => {
-          const wildcardValue = `${group.alias || providerId}/*`;
+          const providerConns = group.connections || [];
+          const activeConnId = selectedAccountsByProvider[providerId] || null;
+          const activeConn = activeConnId ? providerConns.find((c) => c.id === activeConnId) : null;
+          const activeConnLabel = activeConn ? getConnectionLabel(activeConn) : null;
+          const wildcardValue = formatModelReference(`${group.alias || providerId}/*`, activeConnId);
           const isWildcardAdded = allowProviderWildcard && addedModelValues.includes(wildcardValue);
 
           return (
@@ -769,9 +793,9 @@ export default function ModelSelectModal({
                 {allowProviderWildcard ? (
                   <button
                     type="button"
-                    onClick={() => handleSelect({ value: wildcardValue, name: wildcardValue })}
+                    onClick={() => handleSelect({ value: wildcardValue, name: activeConnLabel ? `${wildcardValue} [${activeConnLabel}]` : wildcardValue })}
                     title={isWildcardAdded ? `Click to remove wildcard ${wildcardValue}` : `Click to allow all models from ${group.name} (${wildcardValue})`}
-                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-all cursor-pointer border ${
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium transition-all cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                       isWildcardAdded
                         ? "bg-primary text-white border-primary shadow-2xs hover:bg-primary-hover"
                         : "text-primary border-transparent hover:bg-primary/10 hover:border-primary/20"
@@ -795,14 +819,60 @@ export default function ModelSelectModal({
                 </span>
               </div>
 
+              {/* Multi-account selector chips when provider has > 1 connection */}
+              {providerConns.length > 1 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/60 bg-black/[0.02] p-2.5 mb-3 mt-1 dark:bg-white/[0.025]">
+                  <span className="text-xs text-text-muted font-medium mr-0.5">Use account:</span>
+                  <button
+                    type="button"
+                    aria-pressed={!activeConnId}
+                    onClick={() => setSelectedAccountsByProvider((prev) => ({ ...prev, [providerId]: null }))}
+                    className={`inline-flex items-center justify-center h-8 px-3 rounded-lg text-xs font-medium transition-all cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                      !activeConnId
+                        ? "bg-primary text-white border-primary shadow-2xs"
+                        : "bg-surface border-border/70 text-text-muted hover:border-border hover:text-text-main"
+                    }`}
+                  >
+                    All Accounts (Auto)
+                  </button>
+                  {providerConns.map((conn) => {
+                    const isConnSelected = activeConnId === conn.id;
+                    const label = getConnectionLabel(conn);
+                    return (
+                      <button
+                        key={conn.id}
+                        type="button"
+                        aria-pressed={isConnSelected}
+                        onClick={() => setSelectedAccountsByProvider((prev) => ({ ...prev, [providerId]: conn.id }))}
+                        className={`inline-flex items-center justify-center gap-1 h-8 pl-2 pr-3 rounded-lg text-xs font-medium transition-all cursor-pointer border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
+                          isConnSelected
+                            ? "bg-primary text-white border-primary shadow-2xs"
+                            : "bg-surface border-border/70 text-text-muted hover:border-border hover:text-text-main"
+                        }`}
+                        title={`Pin models to account: ${label}`}
+                      >
+                        <span className="material-symbols-outlined leading-none shrink-0 opacity-90 -translate-y-[0.5px]" style={{ fontSize: "14px" }}>account_circle</span>
+                        <span className="truncate max-w-[125px] leading-none">{label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
             <div className="flex flex-wrap gap-1.5">
               {group.models.map((model) => {
-                const isSelected = selectedModel === model.value;
+                const targetValue = formatModelReference(model.value, activeConnId);
+                const isSelected = selectedModel === targetValue || selectedModel === model.value;
                 const isPlaceholder = model.isPlaceholder;
+                const isAdded = addedModelValues.includes(targetValue) || (!activeConnId && addedModelValues.includes(model.value));
                 return (
                   <button
-                    key={model.value}
-                    onClick={() => handleSelect(model)}
+                    key={targetValue}
+                    onClick={() => handleSelect({
+                      ...model,
+                      value: targetValue,
+                      name: activeConnLabel ? `${model.name} [${activeConnLabel}]` : model.name,
+                    })}
                     title={isPlaceholder ? "Select to pre-fill, then edit model ID in the input" : undefined}
                     className={`
                       px-2 py-1 rounded-xl text-xs font-medium transition-all border hover:cursor-pointer
@@ -810,14 +880,14 @@ export default function ModelSelectModal({
                         ? "border-dashed border-border text-text-muted hover:border-primary/50 hover:text-primary bg-surface italic"
                         : isSelected
                           ? "bg-primary text-white border-primary"
-                          : addedModelValues.includes(model.value)
+                          : isAdded
                             ? "bg-primary border-primary text-white hover:bg-primary-hover"
                             : "bg-surface border-border text-text-main hover:border-primary/50 hover:bg-primary/5"
                       }
                     `}
                   >
                     <span className="flex items-center gap-1">
-                      {addedModelValues.includes(model.value) && !isPlaceholder && (
+                      {isAdded && !isPlaceholder && (
                         <span className="material-symbols-outlined leading-none" style={{ fontSize: "10px" }}>check</span>
                       )}
                       {isPlaceholder ? (
@@ -827,13 +897,23 @@ export default function ModelSelectModal({
                         </>
                       ) : model.isCustom ? (
                         <>
-                          {model.name}
+                          <span>{model.name}</span>
+                          {activeConnLabel && (
+                            <span className={`text-[10px] font-sans px-1.5 py-0.5 rounded ${isAdded || isSelected ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-primary"}`}>
+                              {activeConnLabel}
+                            </span>
+                          )}
                           <span className="text-[9px] opacity-60 font-normal">custom</span>
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       ) : (
                         <>
-                          {model.name}
+                          <span>{model.name}</span>
+                          {activeConnLabel && (
+                            <span className={`text-[10px] font-sans px-1.5 py-0.5 rounded ${isAdded || isSelected ? "bg-white/20 text-white" : "bg-black/5 dark:bg-white/10 text-primary"}`}>
+                              {activeConnLabel}
+                            </span>
+                          )}
                           <CapacityBadges caps={getCaps(model.value)} />
                         </>
                       )}
