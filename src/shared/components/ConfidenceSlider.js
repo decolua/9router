@@ -18,9 +18,9 @@ export default function ConfidenceSlider({ id, value, onChange }) {
       <input id={id} type="range" min={MIN} max={MAX} step="1" value={value} onChange={event => onChange(Number(event.target.value))}
         aria-valuetext={`${value}%`} className={styles.slider} style={{ "--range-progress": `${progress}%` }} />
       <div aria-hidden="true" className="flex justify-between text-[10px] text-text-muted"><span>{MIN}%</span><span>{MAX}%</span></div>
-      <div className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label={t("Confidence presets")}>
+      <div className="mt-3 grid grid-cols-6 gap-1" role="group" aria-label={t("Confidence presets")}>
         {[60, 70, 75, 80, 85, 90].map(preset => <button key={preset} type="button" onClick={() => onChange(preset)} aria-pressed={value === preset}
-          className={`rounded-md px-2 py-1 text-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${value === preset ? "bg-primary/10 font-medium text-primary" : "text-text-muted hover:bg-surface-2"}`}>{preset}%</button>)}
+          className={`flex h-8 min-w-0 items-center justify-center rounded-md text-xs tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${value === preset ? "bg-primary/10 font-medium text-primary" : "text-text-muted hover:bg-surface-2"}`}>{preset}%</button>)}
       </div>
     </div>
   );
