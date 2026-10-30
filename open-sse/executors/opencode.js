@@ -416,7 +416,13 @@ export class OpenCodeExecutor extends BaseExecutor {
         method: options.method,
         headers: options.headers,
         body: options.body,
-      }, { signal: options.signal }),
+      }, {
+        signal: options.signal,
+        // wreq's timeout covers the entire response body (0 disables it).
+        // The base executor still bounds header wait and forwards cancellation.
+        // Do not cap healthy streaming bodies at 120 seconds (#5334).
+        timeoutMs: args.stream ? 0 : undefined,
+      }),
     });
   }
 
