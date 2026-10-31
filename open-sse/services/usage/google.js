@@ -169,6 +169,9 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
     if (!isFreeTier && data.models) {
       // Filter only recommended/important models (must match PROVIDER_MODELS ag ids)
       const importantModels = [
+        'gemini-4-argon-high',
+        'gemini-4-argon-medium',
+        'gemini-4-argon-low',
         'gemini-3.8-flash-high',
         'gemini-3.8-flash-medium',
         'gemini-3.8-flash-low',
@@ -178,10 +181,17 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         'gemini-3.6-flash-high',
         'gemini-3.6-flash-medium',
         'gemini-3.6-flash-low',
-        'gemini-3.5-flash-low',
-        'gemini-3.5-flash-extra-low',
+        'gemini-3.1-pro-high',
         'gemini-pro-agent',
         'gemini-3.1-pro-low',
+        'claude-sonnet-5-5-high',
+        'claude-sonnet-5-5-medium',
+        'claude-sonnet-5-5-low',
+        'claude-sonnet-5-5',
+        'claude-opus-5-5-high',
+        'claude-opus-5-5-medium',
+        'claude-opus-5-5-low',
+        'claude-opus-5-5',
         'claude-sonnet-4-6',
         'claude-opus-4-6-thinking',
         'gpt-oss-120b-medium',
@@ -228,39 +238,37 @@ export async function getAntigravityUsage(accessToken, providerSpecificData, pro
         proxyOptions
       );
 
-      // Reconcile weekly quota against model family status:
+      // Reconcile short-window session quota if models are exhausted:
       // If every model in a family is locked/exhausted (remainingPercentage === 0)
-      // until a future reset time, the weekly limit cannot be 100% available.
-      // On Google's Free Starter tier, retrieveUserQuotaSummary buggily reports
-      // remainingFraction: 1 even after the starter quota is depleted and all models 429.
+      // until a future reset time, update the 5h session row (not the weekly row).
       const entries = Object.entries(quotas);
       const geminiModels = entries.filter(([k]) => k.startsWith("gemini-") && !k.includes("image"));
       const claudeModels = entries.filter(([k]) => k.startsWith("claude-"));
 
-      if (weeklyQuotas.gemini_weekly && geminiModels.length > 0) {
+      if (weeklyQuotas.gemini_session && geminiModels.length > 0) {
         const allGeminiExhausted = geminiModels.every(([, q]) => (q.remainingPercentage ?? 0) === 0);
-        if (allGeminiExhausted && weeklyQuotas.gemini_weekly.remainingPercentage > 0) {
+        if (allGeminiExhausted && weeklyQuotas.gemini_session.remainingPercentage > 0) {
           const maxResetAt = geminiModels.reduce((max, [, q]) =>
             !max || (q.resetAt && new Date(q.resetAt) > new Date(max)) ? q.resetAt : max, null
           );
-          weeklyQuotas.gemini_weekly.used = weeklyQuotas.gemini_weekly.total;
-          weeklyQuotas.gemini_weekly.remainingPercentage = 0;
+          weeklyQuotas.gemini_session.used = weeklyQuotas.gemini_session.total;
+          weeklyQuotas.gemini_session.remainingPercentage = 0;
           if (maxResetAt) {
-            weeklyQuotas.gemini_weekly.resetAt = maxResetAt;
+            weeklyQuotas.gemini_session.resetAt = maxResetAt;
           }
         }
       }
 
-      if (weeklyQuotas.claude_gpt_weekly && claudeModels.length > 0) {
+      if (weeklyQuotas.claude_gpt_session && claudeModels.length > 0) {
         const allClaudeExhausted = claudeModels.every(([, q]) => (q.remainingPercentage ?? 0) === 0);
-        if (allClaudeExhausted && weeklyQuotas.claude_gpt_weekly.remainingPercentage > 0) {
+        if (allClaudeExhausted && weeklyQuotas.claude_gpt_session.remainingPercentage > 0) {
           const maxResetAt = claudeModels.reduce((max, [, q]) =>
             !max || (q.resetAt && new Date(q.resetAt) > new Date(max)) ? q.resetAt : max, null
           );
-          weeklyQuotas.claude_gpt_weekly.used = weeklyQuotas.claude_gpt_weekly.total;
-          weeklyQuotas.claude_gpt_weekly.remainingPercentage = 0;
+          weeklyQuotas.claude_gpt_session.used = weeklyQuotas.claude_gpt_session.total;
+          weeklyQuotas.claude_gpt_session.remainingPercentage = 0;
           if (maxResetAt) {
-            weeklyQuotas.claude_gpt_weekly.resetAt = maxResetAt;
+            weeklyQuotas.claude_gpt_session.resetAt = maxResetAt;
           }
         }
       }

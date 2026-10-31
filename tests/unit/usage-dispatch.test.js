@@ -14,12 +14,14 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
 const load = () => import("../../open-sse/services/usage.js");
 const SUPPORTED = [
   "github", "gemini-cli", "antigravity", "claude", "codex", "kiro",
-  "qoder", "iflow", "ollama", "glm", "glm-cn",
+  "qoder", "qoder-cn", "iflow", "ollama", "glm", "glm-cn",
   "minimax", "minimax-cn", "vercel-ai-gateway", "grok-cli", "kimi",
   "deepseek", "opencode-go", "zed", "commandcode",
 ];
 
-describe("usage dispatch", () => {
+// The first case imports the usage-provider graph, which exceeds the 5s default under
+// full-suite load (it passes in isolation).
+describe("usage dispatch", { timeout: 20_000 }, () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("unsupported provider → not-implemented message", async () => {

@@ -73,7 +73,6 @@ describe("Antigravity quota tracker: Gemini 3.6 Flash usage bars", () => {
       "gemini-3.6-flash-high",
       "gemini-3.6-flash-medium",
       "gemini-3.6-flash-low",
-      "gemini-3.5-flash-low",
     ]);
   });
 });

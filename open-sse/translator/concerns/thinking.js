@@ -34,6 +34,8 @@ export function effortToThinkingLevel(effort) {
 
 // Numeric budget → nearest discrete level (reverse map via thresholds).
 // Returns null when budget <= 0 (no reasoning).
+// Thresholds are midpoints between LEVEL_TO_BUDGET values: max (128000) is
+// reachable, with the xhigh/max boundary at the 32768/128000 midpoint (80384).
 export function budgetToLevel(budget) {
   const b = Number(budget);
   if (!b || b <= 0) return null;
@@ -41,7 +43,8 @@ export function budgetToLevel(budget) {
   if (b <= 4096) return "low";
   if (b <= 16384) return "medium";
   if (b <= 28672) return "high";
-  return "xhigh";
+  if (b <= 80384) return "xhigh";
+  return "max";
 }
 
 // Gemini thinkingBudget (numeric) → OpenAI reasoning_effort (antigravity reverse map).

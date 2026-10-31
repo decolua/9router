@@ -1,5 +1,6 @@
 // Acceptance suite for the Zed native-app auth fix.
-// RUN WITH AN ISOLATED DB:  DATA_DIR=$(mktemp -d) npx vitest run unit/zed-native-auth.test.js
+// Self-isolating: DATA_DIR points at a temp dir before the DB layer loads,
+// so criterion 3's connection save never reaches the real ~/.9router DB.
 //
 // Covers criteria:
 //   1. Zed proxy starts
@@ -9,24 +10,37 @@
 //   5. systemId identical authorize → exchange → stored connection
 //   6. register-session failure is distinguishable (backend contract)
 //   8. (backend) reopen/re-register creates a fresh session
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import {
   createZedNativeAuthData,
   parseZedCallbackPayload,
   decryptZedAccessToken,
 } from "open-sse/shared/zedAuth.js";
-import {
-  startZedProxy,
-  stopZedProxy,
-  registerZedSession,
-  getZedSessionStatus,
-  clearZedSession,
-} from "@/lib/oauth/utils/server.js";
-import {
-  generateAuthData,
-  exchangeTokens,
-} from "@/lib/oauth/providers/index.js";
+
+// Imports must be dynamic so DATA_DIR is set before the DB layer loads.
+const originalDataDir = process.env.DATA_DIR;
+let startZedProxy, stopZedProxy, registerZedSession, getZedSessionStatus, clearZedSession;
+let generateAuthData, exchangeTokens;
+
+// Importing the OAuth + DB module graph after vi.resetModules() exceeds the 10s default
+// hook timeout under full-suite load (it passes in isolation), so allow 30s.
+beforeAll(async () => {
+  process.env.DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "9router-zed-auth-"));
+  vi.resetModules();
+  ({ startZedProxy, stopZedProxy, registerZedSession, getZedSessionStatus, clearZedSession } =
+    await import("@/lib/oauth/utils/server.js"));
+  ({ generateAuthData, exchangeTokens } = await import("@/lib/oauth/providers/index.js"));
+}, 30_000);
+
+afterAll(() => {
+  fs.rmSync(process.env.DATA_DIR, { recursive: true, force: true });
+  if (originalDataDir === undefined) delete process.env.DATA_DIR;
+  else process.env.DATA_DIR = originalDataDir;
+});
 
 const realFetch = globalThis.fetch;
 

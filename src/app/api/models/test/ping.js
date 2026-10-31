@@ -43,7 +43,10 @@ async function getInternalHeaders() {
   let apiKey = null;
   try {
     const keys = await getApiKeys();
-    apiKey = keys.find((k) => k.isActive !== false)?.key || null;
+    // Prefer an unrestricted key so a dashboard model test is not refused just
+    // because the first key happens to be restricted.
+    const activeKeys = keys.filter((k) => k.isActive !== false);
+    apiKey = (activeKeys.find((k) => !k.access?.restricted) || activeKeys[0])?.key || null;
   } catch {}
 
   const headers = { "Content-Type": "application/json" };
@@ -128,6 +131,36 @@ export async function pingModelByKind(model, kind, baseUrl = `http://127.0.0.1:$
     const text = typeof parsed?.text === "string" ? parsed.text : "";
     if (!text.trim()) {
       return { ok: false, latencyMs, status: res.status, error: "Provider returned no transcription text for this model" };
+    }
+    return { ok: true, latencyMs, error: null, status: res.status };
+  }
+
+  if (kind === "systemone") {
+    const res = await fetch(`${baseUrl}/api/v1/systemone`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        model,
+        state: "Customer: I was charged twice for my order this morning.",
+        questions: {
+          probe: { type: "noul", instructions: "Is the customer reporting a billing problem?" },
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    });
+    const latencyMs = Date.now() - start;
+    const rawText = await res.text().catch(() => "");
+    let parsed = null;
+    try { parsed = rawText ? JSON.parse(rawText) : null; } catch {}
+
+    if (!res.ok) {
+      const detail = parsed?.error?.message || parsed?.msg || parsed?.message || parsed?.error || rawText;
+      return { ok: false, latencyMs, error: `HTTP ${res.status}${detail ? `: ${String(detail).slice(0, 240)}` : ""}`, status: res.status };
+    }
+
+    const hasAnswers = parsed?.answers && typeof parsed.answers === "object" && Object.keys(parsed.answers).length > 0;
+    if (!hasAnswers) {
+      return { ok: false, latencyMs, status: res.status, error: "Provider returned no answers for this model" };
     }
     return { ok: true, latencyMs, error: null, status: res.status };
   }

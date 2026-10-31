@@ -133,6 +133,30 @@ describe("inspectAndWrapCommandCodeResponse", () => {
     expect(text).toContain("data: [DONE]");
   });
 
+  it("preserves all lines in a multi-line packet when inspecting tool-input-start", async () => {
+    const packet = [
+      JSON.stringify({ type: "start" }),
+      JSON.stringify({ type: "start-step" }),
+      JSON.stringify({ type: "tool-input-start", id: "call_1", toolName: "terminal" }),
+      JSON.stringify({ type: "tool-input-delta", id: "call_1", delta: '{"command": "ls"}' }),
+      JSON.stringify({ type: "finish-step", finishReason: "tool-calls" }),
+      JSON.stringify({ type: "finish", finishReason: "tool-calls" }),
+    ].join("\n") + "\n";
+
+    const ndjsonBody = createNdjsonStream([packet]);
+
+    const fakeResponse = new Response(ndjsonBody, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+
+    const result = await inspectAndWrapCommandCodeResponse(fakeResponse, "cmc/deepseek/deepseek-v4.1-flash");
+    expect(result.ok).toBe(true);
+    const text = await result.text();
+    expect(text).toContain('"name":"terminal"');
+    expect(text).toContain('"arguments":"{\\"command\\": \\"ls\\"}"');
+  });
+
   it("retries when initial stream yields an error and succeeds on second attempt", async () => {
     let callCount = 0;
     const executor = new CommandCodeExecutor();

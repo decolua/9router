@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   proxyAwareFetch: vi.fn(),
@@ -14,6 +14,7 @@ import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/compon
 
 const USAGE_URL = "https://ollama.com/api/usage";
 const ME_URL = "https://ollama.com/api/me";
+const BALANCE_URL = "https://ollama.com/api/balance";
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -39,6 +40,27 @@ const SAMPLE_USAGE = {
       models: [
         { name: "glm-5.2", request_count: 5967 },
         { name: "kimi-k2.5", request_count: 2 },
+      ],
+    },
+  },
+};
+
+const SAMPLE_FREE_USAGE = {
+  activity: {
+    cost: "0.00000",
+    period: {
+      type: "last_4_weeks",
+      starting_at: "2026-08-24T00:00:00Z",
+      ending_at: "2026-09-18T15:03:00Z",
+    },
+    models: [],
+  },
+  limits: {
+    monthly: {
+      usage: 0.021,
+      models: [
+        { name: "gpt-oss:120b", request_count: 6 },
+        { name: "gemma4:31b", request_count: 6 },
       ],
     },
   },
@@ -103,6 +125,98 @@ describe("getUsageForProvider(ollama)", () => {
     expect(meOpts.headers["Content-Length"]).toBe("0");
   });
 
+  it("maps the free plan's monthly window", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse(SAMPLE_FREE_USAGE))
+      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("Free");
+    expect(Object.keys(usage.quotas)).toEqual(["Monthly"]);
+    expect(usage.quotas["Monthly"]).toMatchObject({
+      used: 2,
+      total: 100,
+      remainingPercentage: 98,
+      unlimited: false,
+    });
+    expect(usage.quotas["Monthly"].remaining).toBeUndefined();
+    expect(usage.quotas["Monthly"].resetAt).toBeNull();
+  });
+
+  describe("free plan monthly reset from signup date", () => {
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function monthlyResetAt(createdAt, now) {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(now));
+      proxyAwareFetch
+        .mockResolvedValueOnce(jsonResponse(SAMPLE_FREE_USAGE))
+        .mockResolvedValueOnce(jsonResponse({ Plan: "free", CreatedAt: createdAt }));
+
+      const usage = await getUsageForProvider({
+        provider: "ollama",
+        apiKey: "k",
+        providerSpecificData: {},
+      });
+      return usage.quotas["Monthly"].resetAt;
+    }
+
+    it("uses the signup day of the next month", async () => {
+      expect(await monthlyResetAt("2025-09-06T22:15:39.871687Z", "2026-09-18T15:03:00Z"))
+        .toBe("2026-10-06T22:15:39.000Z");
+    });
+
+    it("stays in the current month when the signup day is still ahead", async () => {
+      expect(await monthlyResetAt("2026-09-18T09:50:49.514335Z", "2026-09-18T15:33:33Z"))
+        .toBe("2026-10-18T09:50:49.000Z");
+      expect(await monthlyResetAt("2025-09-25T10:00:00Z", "2026-09-18T15:33:33Z"))
+        .toBe("2026-09-25T10:00:00.000Z");
+    });
+
+    it("clamps the signup day to shorter months", async () => {
+      expect(await monthlyResetAt("2026-01-31T12:00:00Z", "2026-02-10T00:00:00Z"))
+        .toBe("2026-02-28T12:00:00.000Z");
+    });
+
+    it("skips the reset when the plan is not free", async () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-09-18T15:03:00Z"));
+      proxyAwareFetch
+        .mockResolvedValueOnce(jsonResponse(SAMPLE_FREE_USAGE))
+        .mockResolvedValueOnce(jsonResponse({ Plan: "pro", CreatedAt: "2025-09-06T22:15:39Z" }));
+
+      const usage = await getUsageForProvider({
+        provider: "ollama",
+        apiKey: "k",
+        providerSpecificData: {},
+      });
+      expect(usage.quotas["Monthly"].resetAt).toBeNull();
+    });
+  });
+
+  it("reports no limits when no known window is present", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({ activity: {}, limits: {} }))
+      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toMatch(/no usage limits/i);
+    expect(usage.quotas).toEqual({});
+  });
+
   it("surfaces invalid key message on 401", async () => {
     proxyAwareFetch.mockResolvedValueOnce(
       jsonResponse({ error: "unauthorized" }, 401),
@@ -125,6 +239,90 @@ describe("getUsageForProvider(ollama)", () => {
 
     expect(usage.message).toMatch(/api key/i);
     expect(proxyAwareFetch).not.toHaveBeenCalled();
+  });
+
+  it("falls back to /api/balance when /api/usage has no limits", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({ activity: {} }))
+      .mockResolvedValueOnce(jsonResponse({ Plan: "pro" }))
+      .mockResolvedValueOnce(jsonResponse({
+        included: {
+          session: {
+            remaining_percent: 85.5,
+            resets_at: "2026-10-19T18:00:00Z",
+          },
+          weekly: {
+            remaining_percent: 92,
+            resets_at: "2026-10-25T00:00:00Z",
+          },
+        },
+      }));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("Pro");
+    expect(usage.quotas["Session (5h)"]).toEqual({
+      used: 14.5,
+      total: 100,
+      remainingPercentage: 85.5,
+      resetAt: "2026-10-19T18:00:00Z",
+      unlimited: false,
+    });
+    expect(usage.quotas["Weekly (7d)"]).toEqual({
+      used: 8,
+      total: 100,
+      remainingPercentage: 92,
+      resetAt: "2026-10-25T00:00:00Z",
+      unlimited: false,
+    });
+
+    expect(proxyAwareFetch).toHaveBeenCalledTimes(3);
+    expect(proxyAwareFetch.mock.calls[2][0]).toBe(BALANCE_URL);
+  });
+
+  it("handles allowance and purchased credits from /api/balance", async () => {
+    proxyAwareFetch
+      .mockResolvedValueOnce(jsonResponse({ activity: {} }))
+      .mockResolvedValueOnce(jsonResponse({ Plan: "free" }))
+      .mockResolvedValueOnce(jsonResponse({
+        included: {
+          allowance_usd: "2.50",
+          balance_usd: "1.25",
+          period: { until: "2026-11-01T00:00:00Z" },
+        },
+        purchased: {
+          balance_usd: "10.00",
+        },
+      }));
+
+    const usage = await getUsageForProvider({
+      provider: "ollama",
+      apiKey: "k",
+      providerSpecificData: {},
+    });
+
+    expect(usage.message).toBeUndefined();
+    expect(usage.plan).toBe("Free");
+    expect(usage.quotas["Allowance ($)"]).toEqual({
+      used: 1.25,
+      total: 2.5,
+      remainingPercentage: 50,
+      resetAt: "2026-11-01T00:00:00Z",
+      unlimited: false,
+      unit: "USD",
+    });
+    expect(usage.quotas["Purchased Credits"]).toEqual({
+      used: 0,
+      total: 10,
+      remainingPercentage: 100,
+      isCreditBalance: true,
+      currency: "$",
+    });
   });
 });
 
@@ -160,6 +358,46 @@ describe("parseQuotaData(ollama)", () => {
       used: 100,
       total: 100,
       remainingPercentage: 0,
+    });
+  });
+
+  it("forwards isCreditBalance, currency, and unit for dashboard display", () => {
+    const rows = parseQuotaData("ollama", {
+      plan: "Free",
+      quotas: {
+        "Allowance ($)": {
+          used: 1.25,
+          total: 2.5,
+          remainingPercentage: 50,
+          resetAt: "2026-11-01T00:00:00Z",
+          unlimited: false,
+          unit: "USD",
+        },
+        "Purchased Credits": {
+          used: 0,
+          total: 10,
+          remainingPercentage: 100,
+          isCreditBalance: true,
+          currency: "$",
+        },
+      },
+    });
+
+    expect(rows).toHaveLength(2);
+    expect(rows[0]).toMatchObject({
+      name: "Allowance ($)",
+      used: 1.25,
+      total: 2.5,
+      remainingPercentage: 50,
+      unit: "USD",
+    });
+    expect(rows[1]).toMatchObject({
+      name: "Purchased Credits",
+      used: 0,
+      total: 10,
+      remainingPercentage: 100,
+      isCreditBalance: true,
+      currency: "$",
     });
   });
 });

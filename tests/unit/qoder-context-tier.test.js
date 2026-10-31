@@ -171,7 +171,7 @@ describe("applyQoderContextTier", () => {
 });
 
 describe("routableQoderModels", () => {
-  it("lists visible models first, then hidden (enable:false) catalog keys", () => {
+  it("leads with static-only keys, then visible, then hidden catalog keys", () => {
     const catalog = {
       models: [{ id: "qmodel_38max", name: "Qwen3.8-Max" }],
       rawConfigs: new Map([
@@ -180,11 +180,29 @@ describe("routableQoderModels", () => {
         ["dmodel", { key: "dmodel", enable: false }],
       ]),
     };
+    // Sonus (smodel) / Cantus (cmodel) are absent from the catalog but the
+    // executor still routes them via QODER_STATIC_MODEL_CONFIGS, so they lead
+    // the list instead of vanishing from /v1/models.
     expect(routableQoderModels(catalog)).toEqual([
+      { id: "smodel", name: "Sonus", hidden: false },
+      { id: "cmodel", name: "Cantus", hidden: false },
       { id: "qmodel_38max", name: "Qwen3.8-Max", hidden: false },
       { id: "qfmodel", name: "Qwen Fast", hidden: true },
       { id: "dmodel", name: "dmodel", hidden: true },
     ]);
+  });
+
+  it("lets a catalog entry win over the static block for the same key", () => {
+    const catalog = {
+      models: [{ id: "smodel", name: "Sonus from catalog" }],
+      rawConfigs: new Map(),
+    };
+    const out = routableQoderModels(catalog);
+    expect(out.filter((m) => m.id === "smodel")).toEqual([
+      { id: "smodel", name: "Sonus from catalog", hidden: false },
+    ]);
+    // cmodel is still absent upstream, so the static entry covers it.
+    expect(out.some((m) => m.id === "cmodel")).toBe(true);
   });
 
   it("returns [] for a failed catalog fetch", () => {

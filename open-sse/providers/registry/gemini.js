@@ -36,6 +36,7 @@ export default {
     },
   },
   models: [
+    { id: "gemini-4-argon", name: "Gemini 4 Argon" },
     { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash" },
     { id: "gemini-3.7-flash", name: "Gemini 3.7 Flash" },
     { id: "gemini-3.6-flash", name: "Gemini 3.6 Flash" },
@@ -58,6 +59,7 @@ export default {
     { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", params: ["language","prompt"], kind: "stt" },
     { id: "gemini-2.5-flash-lite", name: "Gemini 2.5 Flash Lite (Cheapest)", params: ["language","prompt"], kind: "stt" },
     { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash", params: ["language","prompt"], kind: "stt" },
+    { id: "gemini-2.5-flash-native-audio-preview-09-17", name: "Gemini Live Transcription (Realtime)", params: ["language","prompt","system_instruction","setup_timeout_ms","turn_timeout_ms"], kind: "stt", transport: "gemini-live" },
     { id: "gemini-3.1-flash-tts-preview", name: "Gemini 3.1 Flash TTS", kind: "tts" },
     { id: "gemini-2.5-flash-preview-tts", name: "Gemini 2.5 Flash TTS", kind: "tts" },
     { id: "gemini-2.5-pro-preview-tts", name: "Gemini 2.5 Pro TTS", kind: "tts" },

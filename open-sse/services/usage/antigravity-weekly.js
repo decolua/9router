@@ -25,10 +25,18 @@ export function _clearWeeklyCache() {
   weeklyCache.clear();
 }
 
-// — Group-name to stable key mapping ——————————————————————
-const GROUP_MATCHERS = [
-  { pattern: /gemini/i, key: "gemini_weekly", displayName: "Gemini (Weekly)" },
-  { pattern: /claude|gpt/i, key: "claude_gpt_weekly", displayName: "Claude & GPT (Weekly)" },
+// — Group-name and window to stable key mapping ——————————————————————
+const GROUP_CONFIGS = [
+  {
+    pattern: /gemini/i,
+    weekly: { key: "gemini_weekly", displayName: "Gemini (Weekly)" },
+    session: { key: "gemini_session", displayName: "Gemini (5h)" },
+  },
+  {
+    pattern: /claude|gpt/i,
+    weekly: { key: "claude_gpt_weekly", displayName: "Claude & GPT (Weekly)" },
+    session: { key: "claude_gpt_session", displayName: "Claude & GPT (5h)" },
+  },
 ];
 
 /**
@@ -60,32 +68,40 @@ export function parseWeeklyQuotaSummary(data) {
     for (const bucket of buckets) {
       if (!bucket || typeof bucket !== "object") continue;
 
-      // Identify weekly buckets by checking bucketId + displayName for "weekly"
+      const windowType = String(bucket.window || "").toLowerCase();
       const bucketText = `${bucket.bucketId || ""} ${bucket.displayName || ""}`.toLowerCase();
-      if (!bucketText.includes("weekly")) continue;
+      const isWeekly = windowType === "weekly" || bucketText.includes("weekly");
+      const isSession = windowType === "5h" || bucketText.includes("five hour") || bucketText.includes("5h") || bucketText.includes("daily") || windowType === "daily";
 
-      // Skip disabled buckets
-      if (bucket.disabled === true) continue;
+      if (!isWeekly && !isSession) continue;
 
-      const remainingFraction = Number(bucket.remainingFraction);
+      // If a session (5h) bucket is marked disabled by upstream (because weekly was hit),
+      // keep it so the UI shows the 5h row, but with remainingFraction: 0.
+      // Disabled weekly buckets are truly disabled and skipped.
+      if (bucket.disabled === true && isWeekly) continue;
+
+      const remainingFraction = bucket.disabled === true ? 0 : Number(bucket.remainingFraction);
       if (!Number.isFinite(remainingFraction)) continue;
 
       // Match group to a known family
-      for (const matcher of GROUP_MATCHERS) {
-        if (matcher.pattern.test(displayName)) {
+      for (const config of GROUP_CONFIGS) {
+        if (config.pattern.test(displayName)) {
+          const target = isWeekly ? config.weekly : config.session;
+          if (result[target.key]) break; // first matching bucket per type wins
+
           const total = 1000;
           const remaining = Math.round(total * remainingFraction);
           const used = Math.max(0, total - remaining);
 
-          result[matcher.key] = {
+          result[target.key] = {
             used,
             total,
             resetAt: parseResetTime(bucket.resetTime),
             remainingPercentage: remainingFraction * 100,
             unlimited: false,
-            displayName: matcher.displayName,
+            displayName: target.displayName,
           };
-          break; // first matching bucket per family wins
+          break;
         }
       }
     }

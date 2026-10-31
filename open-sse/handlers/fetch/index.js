@@ -1,4 +1,4 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish
 // Returns normalized shape across all providers
 
 const DEFAULT_TIMEOUT_MS = 15000;
@@ -129,11 +129,41 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
         baseUrl: providerConfig?.baseUrl,
       });
     }
+    if (provider === "tinyfish") {
+      return await runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
+    }
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
   } catch (err) {
     log?.("fetch handler error:", err?.message || err);
     return { success: false, status: 502, error: err?.message || "Internal fetch error" };
   }
+}
+
+async function runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl }) {
+  if (!["markdown", "html"].includes(fmt)) return { success: false, status: 400, error: `Unsupported TinyFish format: ${fmt}` };
+  const upstreamStart = Date.now();
+  const r = await tryFetch(baseUrl, {
+    method: "POST",
+    headers: { "content-type": "application/json", "X-API-Key": apiKey },
+    body: JSON.stringify({ urls: [url], format: fmt }),
+  }, timeoutMs);
+  if (!r.ok) return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json } = await readJsonOrText(r.res);
+  if (!r.res.ok) return { success: false, status: r.res.status, error: json?.error?.message || `TinyFish error: ${r.res.status}` };
+  const failure = json?.errors?.[0];
+  if (failure) return { success: false, status: failure.status || 502, error: `TinyFish fetch failed: ${failure.error || "unknown error"}` };
+  const page = json?.results?.[0];
+  if (!page || typeof page.text !== "string") return { success: false, status: 502, error: "TinyFish returned no extractable content" };
+  const text = truncate(page.text, maxCharacters);
+  return {
+    success: true,
+    data: {
+      ...buildData({ provider: "tinyfish", url, title: page.title, format: fmt, text, links: page.links,
+        costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
+      metadata: { author: page.author || null, published_at: page.published_date || null, language: page.language || null },
+    },
+  };
 }
 
 async function runFirecrawl({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt }) {

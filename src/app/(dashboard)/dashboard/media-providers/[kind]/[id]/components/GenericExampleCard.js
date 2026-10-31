@@ -9,8 +9,14 @@ import { Row, KIND_EXAMPLE_CONFIG } from "./exampleShared";
 
 const CLOUDFLARE_TEST_IMAGE_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog.png";
 const CLOUDFLARE_TEST_MASK_URL = "https://pub-1fb693cb11cc46b2b2f656f51e015a2c.r2.dev/dog-mask.png";
+// HuggingFace router edit models need a source image; reuse the public dog sample so
+// the card is runnable as-is. The router derives it from inputs, not from the Hub host.
+const HUGGINGFACE_TEST_IMAGE_URL = CLOUDFLARE_TEST_IMAGE_URL;
 
 function getImageEditDefaults(providerId, modelId) {
+  if (providerId === "huggingface") {
+    return { image: HUGGINGFACE_TEST_IMAGE_URL };
+  }
   if (providerId !== "cloudflare-ai") return {};
   if (modelId === "@cf/runwayml/stable-diffusion-v1-5-img2img") {
     return { image: CLOUDFLARE_TEST_IMAGE_URL };
@@ -38,8 +44,8 @@ export function GenericExampleCard({ providerId, kind }) {
 
   // Get models for this kind (e.g., type="image")
   const kindModels = getModelsByProviderId(providerId).filter((m) => getModelKind(m) === kind);
-  // Kinds that need a model identifier in the request (image/video/music)
-  const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText"]);
+  // Kinds that need a model identifier in the request (image/video/music/systemone)
+  const KIND_NEEDS_MODEL = new Set(["image", "video", "music", "imageToText", "systemone"]);
   const needsModel = KIND_NEEDS_MODEL.has(kind);
   const allowManualModel = needsModel && kindModels.length === 0;
   const [selectedModel, setSelectedModel] = useState(kindModels[0]?.id ?? "");
@@ -48,6 +54,7 @@ export function GenericExampleCard({ providerId, kind }) {
   const supportsMask = !!selectedModelObj?.capabilities?.includes("mask");
 
   const [input, setInput] = useState(safeExConfig.defaultInput || "");
+  const [question, setQuestion] = useState("Does this request require urgent attention?");
   const [refImage, setRefImage] = useState("");
   const [maskImage, setMaskImage] = useState("");
   const [extraValues, setExtraValues] = useState(() =>
@@ -111,11 +118,20 @@ export function GenericExampleCard({ providerId, kind }) {
     acc[k] = v;
     return acc;
   }, {});
+  const systemoneQuestions = kind === "systemone" ? {
+    questions: {
+      is_urgent: {
+        type: "noul",
+        instructions: question.trim() || "Does this request require urgent attention?",
+      },
+    },
+  } : {};
   const requestBody = {
     model: modelFull,
     [exConfig.bodyKey]: input,
     ...exConfig.extraBody,
     ...extraBodyFromFields,
+    ...systemoneQuestions,
     ...(supportsEdit && effectiveRefImage ? { image: effectiveRefImage } : {}),
     ...(supportsMask && effectiveMaskImage ? { mask_image: effectiveMaskImage } : {}),
   };
@@ -215,13 +231,21 @@ export function GenericExampleCard({ providerId, kind }) {
     if (Array.isArray(obj)) return obj.map(maskB64);
     const out = {};
     for (const [k, v] of Object.entries(obj)) {
-      out[k] = (k === "b64_json" && typeof v === "string" && v.length > 100)
-        ? `<${v.length} chars base64>`
-        : maskB64(v);
+      if (k === "b64_json" && typeof v === "string" && v.length > 100) {
+        out[k] = `<${v.length} chars base64>`;
+      } else if (typeof v === "string" && v.length > 100 && /^data:[^,]+,/.test(v)) {
+        out[k] = `<${v.length} chars data URI>`;
+      } else {
+        out[k] = maskB64(v);
+      }
     }
     return out;
   };
   const resultJson = result ? JSON.stringify(maskB64(result.data), null, 2) : "";
+  // Video preview: xAI/grok shape {video:{url}} or array shape {data:[{url}]}
+  const videoUrl = result
+    ? result.data?.video?.url || result.data?.data?.[0]?.url || null
+    : null;
 
   return (
     <Card>
@@ -322,6 +346,29 @@ export function GenericExampleCard({ providerId, kind }) {
           </div>
         </Row>
 
+        {/* Question for System One */}
+        {kind === "systemone" && (
+          <Row label="Question">
+            <div className="relative">
+              <input
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder="Enter evaluation question or criteria"
+                className="w-full px-3 py-1.5 pr-7 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+              />
+              {question && (
+                <button
+                  type="button"
+                  onClick={() => setQuestion("")}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              )}
+            </div>
+          </Row>
+        )}
+
         {/* Reference image (only for edit-capable image models) */}
         {supportsEdit && (
           <Row label="Ref Image (URL)">
@@ -416,6 +463,42 @@ export function GenericExampleCard({ providerId, kind }) {
                 onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               />
+            ) : f.type === "image" ? (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={extraValues[f.key] ?? ""}
+                  placeholder="https://… or click Upload"
+                  onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                />
+                <label className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-border rounded-lg bg-background hover:bg-accent cursor-pointer transition-colors">
+                  <span className="material-symbols-outlined text-[16px]">upload</span>
+                  Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => setExtraValues((s) => ({ ...s, [f.key]: String(reader.result || "") }));
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+              </div>
+            ) : f.type === "boolean" ? (
+              <label className="inline-flex items-center gap-2 text-sm text-text-main">
+                <input
+                  type="checkbox"
+                  checked={extraValues[f.key] === true}
+                  onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.checked }))}
+                  className="size-4 accent-primary"
+                />
+                {extraValues[f.key] ? "Enabled" : "Disabled"}
+              </label>
             ) : (
               <input
                 type="number"
@@ -516,11 +599,8 @@ export function GenericExampleCard({ providerId, kind }) {
               </button>
             )}
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">
-            {result ? resultJson : exConfig.defaultResponse}
-          </pre>
           {kind === "image" && (binaryImageUrl || result?.data?.data?.[0]) && (
-            <div className="mt-2">
+            <div className="mb-2">
               <div className="flex items-center justify-end mb-1.5">
                 <a
                   href={binaryImageUrl || (result?.data?.data?.[0]?.b64_json ? `data:image/png;base64,${result.data.data[0].b64_json}` : result?.data?.data?.[0]?.url || "")}
@@ -540,6 +620,28 @@ export function GenericExampleCard({ providerId, kind }) {
               />
             </div>
           )}
+          {kind === "video" && videoUrl && (
+            <div className="mb-2">
+              <div className="flex items-center justify-end mb-1.5">
+                <a
+                  href={videoUrl}
+                  download="video.mp4"
+                  className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[14px]">download</span>
+                  Download
+                </a>
+              </div>
+              <video
+                controls
+                src={videoUrl}
+                className="max-w-full rounded-lg border border-border"
+              />
+            </div>
+          )}
+          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">
+            {result ? resultJson : exConfig.defaultResponse}
+          </pre>
         </div>
       </div>
     </Card>

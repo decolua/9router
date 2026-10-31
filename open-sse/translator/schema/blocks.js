@@ -11,6 +11,12 @@ export const OPENAI_BLOCK = {
   FUNCTION: "function",
 };
 
+// CommandCode native content blocks.
+export const COMMANDCODE_BLOCK = {
+  TOOL_CALL: "tool-call",
+  TOOL_RESULT: "tool-result",
+};
+
 // Claude content blocks.
 export const CLAUDE_BLOCK = {
   TEXT: "text",
@@ -18,6 +24,7 @@ export const CLAUDE_BLOCK = {
   DOCUMENT: "document",
   TOOL_USE: "tool_use",
   TOOL_RESULT: "tool_result",
+  CONTAINER_UPLOAD: "container_upload",
   THINKING: "thinking",
   REDACTED_THINKING: "redacted_thinking",
   SERVER_TOOL_USE: "server_tool_use",

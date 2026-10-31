@@ -1172,7 +1172,7 @@
   "Theme": "Tema",
   "Thinking": "Berpikir",
   "Thinking Process": "Proses Berpikir",
-  "This is the only time you will see this key. Store it securely.": "Ini satu-satunya saat Anda akan melihat kunci ini. Simpan dengan aman.",
+  "Store this key securely. You can view or copy it later from the API Keys list.": "Simpan kunci ini dengan aman. Anda dapat melihat atau menyalinnya nanti dari daftar Kunci API.",
   "This provider is ready to use.": "Penyedia ini siap digunakan.",
   "This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.": "Penyedia ini siap digunakan. Secara opsional rutekan permintaan melalui proxy pool untuk melewati batasan berbasis IP.",
   "This value is write-only after saving.": "Nilai ini hanya dapat ditulis setelah disimpan.",

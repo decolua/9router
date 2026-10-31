@@ -50,6 +50,27 @@ function mockHappyPath() {
   });
 }
 
+function mockGoPlanPath() {
+  proxyAwareFetch.mockImplementation(async (url) => {
+    const u = String(url);
+    if (u.includes("/alpha/whoami")) return jsonResponse(WHOAMI);
+    if (u.includes("/alpha/billing/credits")) {
+      return jsonResponse({
+        credits: { monthlyCredits: 6.39, purchasedCredits: 0, freeCredits: 0 },
+      });
+    }
+    if (u.includes("/alpha/billing/subscriptions")) {
+      return jsonResponse({
+        data: {
+          planId: "go",
+          currentPeriodEnd: "2026-10-29T00:00:00.000Z",
+        },
+      });
+    }
+    return jsonResponse({ error: "unexpected " + u }, 404);
+  });
+}
+
 describe("commandcode registry usage flags", () => {
   it("is listed for apikey quota dashboard", () => {
     expect(USAGE_SUPPORTED_PROVIDERS).toContain("commandcode");
@@ -82,6 +103,8 @@ describe("getUsageForProvider(commandcode)", () => {
     expect(urls.some((u) => u.includes("/alpha/billing/credits") && u.includes("orgId=org_1"))).toBe(true);
     expect(urls.some((u) => u.includes("/alpha/billing/subscriptions") && u.includes("orgId=org_1"))).toBe(true);
     expect(proxyAwareFetch.mock.calls[0][1].headers.Authorization).toBe("Bearer user_test");
+    expect(proxyAwareFetch.mock.calls[0][1].headers["x-command-code-version"]).toBe("1.88.0");
+    expect(proxyAwareFetch.mock.calls[0][1].headers["User-Agent"]).toBe("cli");
   });
 
   it("maps remaining credits vs plan cap and rate windows", async () => {
@@ -95,18 +118,84 @@ describe("getUsageForProvider(commandcode)", () => {
     expect(usage.quotas.Credits).toMatchObject({
       used: 56,
       total: 70,
+      percentage: 80,
       unlimited: false,
     });
     expect(usage.quotas["Session (5h)"]).toMatchObject({
       used: 2,
       total: 10,
+      percentage: 20,
       unlimited: false,
     });
     expect(usage.quotas.Weekly).toMatchObject({
       used: 20,
       total: 70,
+      percentage: 29,
     });
     expect(new Date(usage.quotas.Credits.resetAt).toISOString()).toBe("2026-10-01T00:00:00.000Z");
+  });
+
+  it("recognizes the API's short Go plan id", async () => {
+    mockGoPlanPath();
+    const usage = await getUsageForProvider({
+      provider: "commandcode",
+      apiKey: "user_test",
+    });
+
+    expect(usage.plan).toBe("Go");
+    expect(usage.quotas.Credits).toMatchObject({
+      total: 10,
+      remaining: 6.39,
+      unlimited: false,
+    });
+    expect(usage.quotas.Credits.used).toBeCloseTo(3.61, 10);
+  });
+
+  it("recognizes the API's individual Go v1 plan id", async () => {
+    proxyAwareFetch.mockImplementation(async (url) => {
+      const u = String(url);
+      if (u.includes("/alpha/whoami")) return jsonResponse({ user: {}, org: null });
+      if (u.includes("/alpha/billing/credits")) {
+        return jsonResponse({
+          credits: { monthlyCredits: 6.389691728, purchasedCredits: 0, freeCredits: 0 },
+          windowLimits: {
+            fiveHour: { used: 0, cap: 3, resetAt: 0 },
+            weekly: { used: 2.296017498, cap: 6, resetAt: 1792683377745 },
+          },
+        });
+      }
+      if (u.includes("/alpha/billing/subscriptions")) {
+        return jsonResponse({
+          data: { planId: "individual-go-v1", currentPeriodEnd: "2026-10-29T07:18:18.000Z" },
+        });
+      }
+      return jsonResponse({}, 404);
+    });
+
+    const usage = await getUsageForProvider({
+      provider: "commandcode",
+      apiKey: "user_test",
+    });
+
+    expect(usage.plan).toBe("Go");
+    expect(usage.quotas.Credits).toMatchObject({
+      total: 10,
+      percentage: 36,
+      remaining: 6.389691728,
+      unlimited: false,
+    });
+    expect(usage.quotas.Credits.used).toBeCloseTo(3.610308272, 10);
+    expect(usage.quotas["Session (5h)"]).toMatchObject({
+      used: 0,
+      total: 3,
+      percentage: 0,
+      emptyMessage: "No usage in this window",
+    });
+    expect(usage.quotas.Weekly).toMatchObject({
+      used: 2.296017498,
+      total: 6,
+      percentage: 38,
+    });
   });
 
   it("returns an auth message on 401", async () => {

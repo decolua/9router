@@ -29,6 +29,29 @@ const entry = (k, v) => Buffer.concat([
 ]);
 
 describe("Cursor AgentService codec (cursorProtobuf.js)", () => {
+  for (const [model, effort, key, value] of [
+    ["gpt-5.2", "high", "reasoning", "high"],
+    ["claude-4.6-opus", "minimal", "effort", "low"],
+    ["composer-2.5", "ultra", "effort", "max"],
+  ]) {
+    it(`forwards ${effort} as a RequestedModel parameter for ${model}`, () => {
+      const frame = buildAgentRunFrame([{ role: "user", content: "hi" }], model, [], effort);
+      const run = decodeMessage(decodeMessage(frame.subarray(5)).get(1)[0].value);
+      const requested = decodeMessage(run.get(9)[0].value);
+      const parameter = decodeMessage(requested.get(3)[0].value);
+      expect(Buffer.from(parameter.get(1)[0].value).toString()).toBe(key);
+      expect(Buffer.from(parameter.get(2)[0].value).toString()).toBe(value);
+      expect(Buffer.from(requested.get(1)[0].value).toString()).toBe(model);
+      expect(run.has(3)).toBe(true);
+    });
+  }
+  for (const effort of [null, "none", ""]) {
+    it(`does not invent a RequestedModel parameter for ${String(effort)}`, () => {
+      const frame = buildAgentRunFrame([{ role: "user", content: "hi" }], "gpt-5.2", [], effort);
+      const run = decodeMessage(decodeMessage(frame.subarray(5)).get(1)[0].value);
+      expect(decodeMessage(run.get(9)[0].value).has(3)).toBe(false);
+    });
+  }
   describe("google.protobuf.Value round-trip", () => {
     const cases = [
       ["null", null],
@@ -246,6 +269,15 @@ describe("Cursor AgentService executor helpers (cursor.js)", () => {
       const run = decodeMessage(clientMsg.get(1)[0].value);
       expect(run.has(2)).toBe(true); // action
       expect(run.has(9)).toBe(true); // requested_model
+      // custom_system_prompt (field 8) makes AgentService return an empty turn.
+      expect(run.has(8)).toBe(false);
+      expect(run.has(3)).toBe(true); // ModelDetails — required for thinking variants
+      const action = decodeMessage(run.get(2)[0].value);
+      const userAction = decodeMessage(action.get(1)[0].value);
+      const userMessage = decodeMessage(userAction.get(1)[0].value);
+      const userText = Buffer.from(userMessage.get(1)[0].value).toString("utf8");
+      expect(userText).toContain("be brief");
+      expect(userText).toContain("hi");
     });
 
     it("encodes mcp_tools (field 4) when tools are provided", () => {

@@ -289,3 +289,68 @@ describe("extractReasoningText (response shapes)", () => {
     expect(extractReasoningText({ content: "hello" })).toBe("");
   });
 });
+
+describe("OpenCode Free ids with no capabilities entry (#2690)", () => {
+  const bunny = (effort) => ({
+    model: "oc/space-bunny-free",
+    messages: [{ role: "user", content: "hi" }],
+    reasoning_effort: effort,
+  });
+
+  it("keeps the client reasoning_effort for space-bunny-free", () => {
+    for (const level of ["low", "medium", "high", "xhigh", "none"]) {
+      expect(apply("openai", "oc/space-bunny-free", bunny(level), "oc").reasoning_effort).toBe(level);
+      expect(apply("openai-responses", "oc/space-bunny-free", bunny(level), "oc").reasoning_effort).toBe(level);
+    }
+  });
+
+  it("clamps max to xhigh (openai format has no max)", () => {
+    expect(apply("openai", "oc/space-bunny-free", bunny("max"), "oc").reasoning_effort).toBe("xhigh");
+    expect(apply("openai-responses", "oc/space-bunny-free", bunny("max"), "oc").reasoning_effort).toBe("xhigh");
+  });
+
+  it("still strips it for a model that has no entry at all (control)", () => {
+    expect(apply("openai", "oc/no-such-model-xyz", bunny("high"), "oc").reasoning_effort).toBeUndefined();
+  });
+});
+
+// Refs #3014. A multi-endpoint provider declares, per transports[] entry, the thinking shape that
+// endpoint accepts. OpenCode Go's /responses 503s ("Endpoint is unavailable") on the Chat-shaped
+// fields the deepseek format emits (thinking:{type} + reasoning_effort), while its /chat/completions
+// needs exactly those. Muse (Meta) used to be a hardcoded special case of the same rule.
+describe("transport-declared thinkingFormat (Responses endpoints)", () => {
+  const responsesBody = (effort) => ({ input: [{ role: "user", content: "hi" }], reasoning: { effort } });
+  const chatBody = (effort) => ({ messages: [{ role: "user", content: "hi" }], reasoning_effort: effort });
+
+  it("opencode-go /responses nests reasoning:{effort,summary} and drops Chat-shaped fields", () => {
+    const out = apply("openai-responses", "deepseek-v4.1-flash", responsesBody("high"), "opencode-go");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+
+  it("opencode-go /chat/completions still gets the model's own (deepseek) shape", () => {
+    const out = apply("openai", "deepseek-v4.1-flash", chatBody("high"), "opencode-go");
+    expect(out.thinking).toEqual({ type: "enabled" });
+    expect(out.reasoning_effort).toBe("high");
+    expect(out.reasoning).toBeUndefined();
+  });
+
+  it("opencode-go /responses expresses 'none' by omitting reasoning", () => {
+    const out = apply("openai-responses", "deepseek-v4.1-flash", responsesBody("none"), "opencode-go");
+    expect(out.reasoning).toBeUndefined();
+    expect(out.reasoning_effort).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+  });
+
+  it("muse /responses keeps the nested shape now that it is declared on the transport", () => {
+    const out = apply("openai-responses", "muse-spark-1.3", responsesBody("high"), "muse");
+    expect(out.reasoning).toEqual({ effort: "high", summary: "auto" });
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+
+  it("a provider without the declaration keeps its existing Responses behaviour (control)", () => {
+    const out = apply("openai-responses", "oc/space-bunny-free", chatBody("high"), "oc");
+    expect(out.reasoning_effort).toBe("high");
+  });
+});

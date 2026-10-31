@@ -14,8 +14,8 @@ function streamFromText(text) {
 describe("Codex fast tier and capacity handling", () => {
   it("maps Codex fast tier to priority and max reasoning to xhigh", () => {
     const executor = new CodexExecutor();
-    const body = executor.transformRequest("gpt-5.5", {
-      model: "gpt-5.5",
+    const body = executor.transformRequest("gpt-reserve", {
+      model: "gpt-reserve",
       input: "hi",
       reasoning_effort: "max",
       service_tier: "fast",

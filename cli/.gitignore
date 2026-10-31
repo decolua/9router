@@ -1,2 +1,3 @@
 app/*
 node_modules/*
+.tray-build/

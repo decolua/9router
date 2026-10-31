@@ -22,6 +22,16 @@ const DISPLAY_NAME_FIELD = 4;
 const DISPLAY_NAME_SHORT_FIELD = 5;
 const RESPONSE_MODELS_FIELD = 1;
 
+// agent.v1.AvailableModels (response field 2) carries the model-picker flags
+// AgentService honours: agent support, chat-only, hidden, and the account's
+// default-on pick used to resolve the "Auto (Server Picks)" entry.
+const RESPONSE_AVAILABLE_MODELS_FIELD = 2;
+const AVAILABLE_MODEL_NAME_FIELD = 1;
+const AVAILABLE_MODEL_DEFAULT_ON_FIELD = 2;
+const AVAILABLE_MODEL_IS_CHAT_ONLY_FIELD = 4;
+const AVAILABLE_MODEL_SUPPORTS_AGENT_FIELD = 5;
+const AVAILABLE_MODEL_IS_HIDDEN_FIELD = 35;
+
 /** @type {Map<string, { expiresAt: number, models: { id: string, name: string }[] }>} */
 const catalogCache = new Map();
 
@@ -44,6 +54,11 @@ function firstString(fields, fieldNumber) {
   const value = fields.get(fieldNumber)?.[0]?.value;
   if (!value || typeof value === "number") return "";
   return Buffer.from(value).toString("utf8");
+}
+
+function firstBool(fields, fieldNumber) {
+  const value = fields.get(fieldNumber)?.[0]?.value;
+  return value === 1;
 }
 
 /**
@@ -151,7 +166,69 @@ async function fetchCursorCatalog(credentials, signal) {
     throw error;
   }
 
-  return parseCursorUsableModels(new Uint8Array(response.body));
+  return mergeCursorModelFlags(parseCursorUsableModels(new Uint8Array(response.body)), response.body);
+}
+
+/**
+ * Attach model-picker flags (supportsAgent/defaultOn/…) from the response's
+ * AvailableModels onto the usable-models list so callers can resolve the
+ * auto/default entry. Only mutates when the server sent field 2, keeping the
+ * parsed shape backward compatible.
+ */
+export function mergeCursorModelFlags(models, payload) {
+  const available = parseCursorAvailableModels(payload);
+  if (!available.length || !Array.isArray(models)) return models;
+  const flagsById = new Map(available.map((model) => [model.id, model]));
+  return models.map((model) => {
+    const flags = flagsById.get(model.id);
+    return flags ? { ...model, ...flags } : model;
+  });
+}
+
+/**
+ * Decode the current Cursor model-picker catalog (response field 2,
+ * agent.v1.AvailableModels): the canonical AgentService model name plus the
+ * picker flags needed to resolve "Auto (Server Picks)" to a real model.
+ */
+export function parseCursorAvailableModels(payload) {
+  const response = decodeMessage(payload);
+  const seen = new Set();
+  const models = [];
+
+  for (const entry of response.get(RESPONSE_AVAILABLE_MODELS_FIELD) || []) {
+    if (!entry?.value || typeof entry.value === "number") continue;
+    const fields = decodeMessage(entry.value);
+    const id = firstString(fields, AVAILABLE_MODEL_NAME_FIELD).trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+
+    models.push({
+      id,
+      defaultOn: firstBool(fields, AVAILABLE_MODEL_DEFAULT_ON_FIELD),
+      isChatOnly: firstBool(fields, AVAILABLE_MODEL_IS_CHAT_ONLY_FIELD),
+      supportsAgent: firstBool(fields, AVAILABLE_MODEL_SUPPORTS_AGENT_FIELD),
+      isHidden: firstBool(fields, AVAILABLE_MODEL_IS_HIDDEN_FIELD),
+    });
+  }
+
+  return models;
+}
+
+/**
+ * "Auto (Server Picks)" / "default" is not a real AgentService model id —
+ * sending it verbatim makes Run come back empty. Resolve it to the account's
+ * default agent-capable model so the server picks like the IDE does. Prefers
+ * the picker's defaultOn model, then the first usable agent model.
+ */
+export function resolveAutoModelSelection(models) {
+  if (!Array.isArray(models) || models.length === 0) return null;
+  const usable = models.filter((model) => model.supportsAgent && !model.isChatOnly && !model.isHidden);
+  if (usable.length === 0) return null;
+  const preferred = usable.find((model) => model.defaultOn) || usable[0];
+  return {
+    modelId: preferred.id,
+    matchedBy: "auto-default",
+  };
 }
 
 /**

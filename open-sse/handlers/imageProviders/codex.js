@@ -1,4 +1,4 @@
-// Codex (ChatGPT Plus/Pro) image generation via Responses API + SSE
+// Codex (paid ChatGPT plans: Go/Plus/Pro/...) image generation via Responses API + SSE
 import { randomUUID } from "node:crypto";
 import { nowSec } from "./_base.js";
 import { PROVIDERS } from "../../config/providers.js";
@@ -9,7 +9,8 @@ const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";
-const CODEX_IMAGES_MAIN_MODEL = "gpt-5.5";
+// Only drives the image_generation tool call; any chat model on the plan works as host.
+const CODEX_IMAGES_MAIN_MODEL = "gpt-6-sol";
 const CODEX_TOOL_IMAGE_MODELS = new Set([
   "gpt-image-1.5",
   "gpt-image-2",
@@ -18,17 +19,29 @@ const CODEX_TOOL_IMAGE_MODELS = new Set([
   "gpt-image-2.5-sunburst",
 ]);
 
-function decodeAccountId(idToken) {
+function decodeOpenAIAuthClaims(token) {
   try {
-    const parts = String(idToken || "").split(".");
+    const parts = String(token || "").split(".");
     if (parts.length !== 3) return null;
     const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
     const pad = (4 - (b64.length % 4)) % 4;
     const payload = JSON.parse(Buffer.from(b64 + "=".repeat(pad), "base64").toString("utf8"));
-    return payload?.["https://api.openai.com/auth"]?.chatgpt_account_id || null;
+    return payload?.["https://api.openai.com/auth"] || null;
   } catch {
     return null;
   }
+}
+
+function decodeAccountId(idToken) {
+  return decodeOpenAIAuthClaims(idToken)?.chatgpt_account_id || null;
+}
+
+// Token claims first: the stored chatgptPlanType is only set at OAuth/import time and goes stale on plan changes.
+function resolveChatgptPlanType(creds) {
+  return decodeOpenAIAuthClaims(creds?.accessToken)?.chatgpt_plan_type
+    || decodeOpenAIAuthClaims(creds?.idToken)?.chatgpt_plan_type
+    || creds?.providerSpecificData?.chatgptPlanType
+    || null;
 }
 
 function stripImageSuffix(model) {
@@ -59,6 +72,24 @@ function buildContent(prompt, refs, detail = CODEX_REF_DETAIL) {
   return content;
 }
 
+function normalizeResponsesUsage(raw) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const input = raw.input_tokens ?? raw.prompt_tokens;
+  const output = raw.output_tokens ?? raw.completion_tokens;
+  if (!Number.isSafeInteger(input) || input < 0 || !Number.isSafeInteger(output) || output < 0) return null;
+
+  const usage = {
+    prompt_tokens: input,
+    completion_tokens: output,
+    total_tokens: Number.isSafeInteger(raw.total_tokens) ? raw.total_tokens : input + output,
+  };
+  const cached = raw.input_tokens_details?.cached_tokens ?? raw.prompt_tokens_details?.cached_tokens;
+  const reasoning = raw.output_tokens_details?.reasoning_tokens ?? raw.completion_tokens_details?.reasoning_tokens;
+  if (Number.isSafeInteger(cached) && cached >= 0) usage.cached_tokens = cached;
+  if (Number.isSafeInteger(reasoning) && reasoning >= 0) usage.reasoning_tokens = reasoning;
+  return usage;
+}
+
 // Parse Codex SSE stream → final base64 image. Optional callbacks for client streaming.
 async function parseStream(response, log, callbacks = {}) {
   const reader = response.body.getReader();
@@ -68,6 +99,7 @@ async function parseStream(response, log, callbacks = {}) {
   let lastEvent = null;
   let bytesReceived = 0;
   let lastProgressLogMs = 0;
+  let usage = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -117,13 +149,20 @@ async function parseStream(response, log, callbacks = {}) {
           }
         } catch {}
       }
+
+      if ((eventName === "response.completed" || eventName === "response.done") && dataStr) {
+        try {
+          const data = JSON.parse(dataStr);
+          usage = normalizeResponsesUsage(data?.response?.usage ?? data?.usage) || usage;
+        } catch {}
+      }
     }
   }
-  return imageB64;
+  return { imageB64, usage };
 }
 
 // SSE Response that pipes codex progress + partial + done events to client
-function buildSseResponse(providerResponse, log, onSuccess) {
+function buildSseResponse(providerResponse, log, onSuccess, onUsage) {
   const stream = new ReadableStream({
     async start(controller) {
       const enc = new TextEncoder();
@@ -131,13 +170,14 @@ function buildSseResponse(providerResponse, log, onSuccess) {
         controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
       try {
-        const b64 = await parseStream(providerResponse, log, {
+        const { imageB64: b64, usage } = await parseStream(providerResponse, log, {
           onProgress: (info) => send("progress", info),
           onPartialImage: (info) => send("partial_image", info),
         });
         if (!b64) {
-          send("error", { message: "Codex did not return an image. Account may not be entitled (Plus/Pro required)." });
+          send("error", { message: "Codex did not return an image. Account may not be entitled (paid ChatGPT plan required)." });
         } else {
+          if (usage && onUsage) await onUsage(usage);
           if (onSuccess) await onSuccess();
           send("done", { created: nowSec(), data: [{ b64_json: b64 }] });
         }
@@ -161,6 +201,10 @@ function buildSseResponse(providerResponse, log, onSuccess) {
 
 export default {
   stream: true,
+  // ChatGPT Free accounts have the image_generation tool stripped server-side
+  // (upstream returns 400 "Tool choice 'image_generation' must be specified with 'tools' parameter").
+  // Unknown plan is allowed so accounts without plan claims keep working.
+  canUseCredentials: (creds) => resolveChatgptPlanType(creds) !== "free",
   buildUrl: () => CODEX_RESPONSES_URL,
   buildHeaders: (creds) => {
     const accountId = creds?.providerSpecificData?.chatgptAccountId || decodeAccountId(creds?.idToken);
@@ -205,14 +249,15 @@ export default {
     };
   },
   // Custom: codex parses SSE → either pipe to client or collect b64
-  async parseResponse(response, { log, streamToClient, onRequestSuccess }) {
+  async parseResponse(response, { log, streamToClient, onRequestSuccess, onUsage }) {
     if (streamToClient) {
-      return { sseResponse: buildSseResponse(response, log, onRequestSuccess) };
+      return { sseResponse: buildSseResponse(response, log, onRequestSuccess, onUsage) };
     }
-    const b64 = await parseStream(response, log);
+    const { imageB64: b64, usage } = await parseStream(response, log);
     if (!b64) {
-      throw new Error("Codex did not return an image. Account may not be entitled (Plus/Pro required).");
+      throw new Error("Codex did not return an image. Account may not be entitled (paid ChatGPT plan required).");
     }
+    if (usage && onUsage) await onUsage(usage);
     return { created: nowSec(), data: [{ b64_json: b64 }] };
   },
   normalize: (responseBody) => responseBody,
