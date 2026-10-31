@@ -62,10 +62,26 @@ describe("checkFallbackError — request-scoped vs account-scoped failures", () 
     "当前账号类型暂不支持该模型。",
     "Your account type does not support this model.",
     '{"error":{"code":"MODEL_NOT_IN_PLAN","message":"Model not included in plan"}}',
-  ])("falls back with 2m cooldown for account/plan model restriction on 400: %s", (message) => {
+    '{"code":14018,"msg":"credits exhausted"}',
+    "额度已用尽",
+  ])("falls back with 2m cooldown for account/plan model restriction or exhausted credits on 400: %s", (message) => {
     expect(checkFallbackError(400, message)).toEqual({
       shouldFallback: true,
       cooldownMs: 120000,
+    });
+  });
+
+  it("cools down for 30m when CodeBuddy returns 11140 unusual activity account restriction", () => {
+    expect(
+      checkFallbackError(
+        403,
+        '{"code":11140,"msg":"request illegal","displayMsg":{"en":"Your account has been restricted due to unusual activity","zh":"账号存在异常行为，已被限制使用"}}',
+        0,
+        "codebuddy-intl"
+      )
+    ).toEqual({
+      shouldFallback: true,
+      cooldownMs: 1800000,
     });
   });
 });

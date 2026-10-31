@@ -16,6 +16,14 @@ const REQUIRED = [
 
 const CREDS = { accessToken: "TESTTOKEN", apiKey: null };
 const API_KEY_CREDS = { accessToken: null, apiKey: "  ck_test_key_1234567890abcdef29s\n" };
+const JWT_CREDS = {
+  accessToken:
+    Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64url") +
+    "." +
+    Buffer.from(JSON.stringify({ sub: "user-jwt-sub-777", enterprise_id: "ent-jwt-888" })).toString("base64url") +
+    ".sig",
+  apiKey: null,
+};
 
 function buildHeaders(id, creds = CREDS, body = {}) {
   const executor = getExecutor(id);
@@ -57,6 +65,19 @@ describe("codebuddy channel headers", () => {
         const h = buildHeaders(id);
         expect(h.Authorization).toBe("Bearer TESTTOKEN");
         expect(h["X-API-Key"]).toBeUndefined();
+      });
+
+      it("extracts X-User-Id and X-Enterprise-Id / X-Tenant-Id from OAuth JWT payload", () => {
+        const h = buildHeaders(id, JWT_CREDS);
+        expect(h["X-User-Id"]).toBe("user-jwt-sub-777");
+        expect(h["X-Enterprise-Id"]).toBe("ent-jwt-888");
+        expect(h["X-Tenant-Id"]).toBe("ent-jwt-888");
+        expect(h["X-Domain"]).toBe(id === "codebuddy-intl" ? "www.codebuddy.ai" : "copilot.tencent.com");
+        expect(h["User-Agent"]).toBe(
+          id === "codebuddy-intl"
+            ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+            : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0"
+        );
       });
 
       it("sends dual auth (Bearer + X-API-Key), anonymous_<last8> X-User-Id, and WorkBuddy 5.9.3 headers in API key mode", () => {

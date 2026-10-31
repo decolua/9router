@@ -55,24 +55,41 @@ const HEADER_HOOKS = {
     h["X-Conversation-Request-ID"] = requestId;
     h["X-Root-Request-ID"] = requestId;
     h["X-Conversation-Message-ID"] = requestId;
+    const intl = h["X-IDE-Type"] === "IDE" || String(h["User-Agent"] || "").includes("workbuddy-ai");
+    h["User-Agent"] = intl
+      ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+      : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0";
+    h["X-Product"] = "SaaS";
+    h["X-IDE-Type"] = "WorkBuddy";
+    h["X-IDE-Name"] = "WorkBuddy";
+    h["X-IDE-Version"] = "5.9.3";
+    h["X-Agent-Intent"] = "craft";
+    h["X-Agent-Purpose"] = "conversation";
+    h["X-Agent-Type"] = "main";
+    h["X-Agent-Runtime"] = "local-agent";
     const apiKey = typeof c?.apiKey === "string" ? c.apiKey.trim() : "";
     if (apiKey && !c?.accessToken) {
       c.apiKey = apiKey;
-      const intl = h["X-IDE-Type"] === "IDE";
       h["X-API-Key"] = apiKey;
       h["X-User-Id"] = "anonymous_" + apiKey.slice(-8);
       delete h["X-Domain"];
-      h["User-Agent"] = intl
-        ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
-        : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0";
-      h["X-Product"] = "SaaS";
-      h["X-IDE-Type"] = "WorkBuddy";
-      h["X-IDE-Name"] = "WorkBuddy";
-      h["X-IDE-Version"] = "5.9.3";
-      h["X-Agent-Intent"] = "craft";
-      h["X-Agent-Purpose"] = "conversation";
-      h["X-Agent-Type"] = "main";
-      h["X-Agent-Runtime"] = "local-agent";
+    } else if (typeof c?.accessToken === "string" && c.accessToken) {
+      delete h["X-API-Key"];
+      h["X-Domain"] = intl ? "www.codebuddy.ai" : "copilot.tencent.com";
+      try {
+        const parts = c.accessToken.split(".");
+        if (parts.length >= 2) {
+          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+          if (typeof payload?.sub === "string" && payload.sub.trim()) {
+            h["X-User-Id"] = payload.sub.trim();
+          }
+          if (typeof payload?.enterprise_id === "string" && payload.enterprise_id.trim()) {
+            const ent = payload.enterprise_id.trim();
+            h["X-Enterprise-Id"] = ent;
+            h["X-Tenant-Id"] = ent;
+          }
+        }
+      } catch {}
     }
   },
   // Stable device_id from OAuth connection (CLIProxyAPI KimiTokenStorage.DeviceID)

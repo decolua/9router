@@ -31,7 +31,21 @@ export class CodeBuddyExecutor extends DefaultExecutor {
       delete transformed.max_completion_tokens;
     }
     if (Array.isArray(transformed.messages)) {
-      transformed.messages = transformed.messages.map((m) => (m && m.role === "developer" ? { ...m, role: "system" } : m));
+      transformed.messages = transformed.messages.map((m) => {
+        if (!m || typeof m !== "object") return m;
+        const next = m.role === "developer" ? { ...m, role: "system" } : { ...m };
+        if (next.role === "assistant" && (next.reasoning_content !== undefined || next.reasoning_details !== undefined)) {
+          const rc = typeof next.reasoning_content === "string" && next.reasoning_content
+            ? next.reasoning_content
+            : Array.isArray(next.reasoning_details)
+              ? next.reasoning_details.map((d) => (typeof d?.text === "string" ? d.text : typeof d?.summary === "string" ? d.summary : "")).join("")
+              : "";
+          if (rc && !(typeof next.reasoning === "string" && next.reasoning)) next.reasoning = rc;
+          delete next.reasoning_content;
+          delete next.reasoning_details;
+        }
+        return next;
+      });
     }
 
     // Tencent's content filter flags CLI agent system prompts ("You are Claude
