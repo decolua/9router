@@ -295,6 +295,19 @@ export function calculatePercentage(used, total) {
 }
 
 /**
+ * Round a remaining percentage for display. Values just under 100% keep one
+ * decimal so tiny usage (e.g. 0.15% of a token grant) does not render as 100%.
+ */
+function roundRemainingPercentage(value) {
+  const clamped = Math.max(0, Math.min(100, Number(value) || 0));
+  const rounded = Math.round(clamped);
+  if (rounded === 100 && clamped < 100 && clamped >= 99) {
+    return Math.round(clamped * 10) / 10;
+  }
+  return rounded;
+}
+
+/**
  * Get remaining percentage from a normalized quota row
  * @param {Object} quota - Normalized quota object
  * @returns {number} Remaining percentage (0-100)
@@ -303,7 +316,7 @@ export function getRemainingPercentage(quota) {
   if (quota?.percentage !== undefined) {
     // Providers may report the used share; the UI renders the remaining one.
     const value = quota.percentageIsUsed === true ? 100 - quota.percentage : quota.percentage;
-    return Math.max(0, Math.round(value));
+    return roundRemainingPercentage(value);
   }
 
   if (quota?.remaining !== undefined) {
@@ -810,6 +823,9 @@ export function parseQuotaData(provider, data) {
               colorPercentage: quota.colorPercentage,
               percentageIsUsed: quota.percentageIsUsed === true,
               resetAt: quota.resetAt || null,
+              expiresAt: quota.expiresAt || null,
+              recurring: quota.recurring,
+              absoluteReset: quota.absoluteReset === true,
               emptyMessage: quota.emptyMessage || null,
             });
           });
