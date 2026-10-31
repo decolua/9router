@@ -293,6 +293,7 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
         "grok-cli",
         "muse",
         "glm",
+        "zcode",
         "minimax-code",
         "minimax-code-global",
         "nous",
@@ -340,6 +341,8 @@ export default function OAuthModal({ isOpen, provider, providerInfo, onSuccess, 
           ? { _kimiDeviceId: data._kimiDeviceId }
           : provider === "glm"
           ? { _zcodePollToken: data._zcodePollToken }
+          : provider === "zcode"
+          ? { _zcodePollToken: data._zcodePollToken, _zcodeFamily: data._zcodeFamily }
           : (provider === "minimax-code" || provider === "minimax-code-global")
           ? { _minimaxPollByUser: data._minimaxPollByUser }
           : null;

@@ -131,6 +131,18 @@ export const GROK_CLI_CONFIG = { ...PROVIDER_OAUTH["grok-cli"] };
 // (Meta rejects refresh_token grants; the minted Model API key never expires).
 export const MUSE_CONFIG = { ...PROVIDER_OAUTH["muse"] };
 
+// ZCode (Z.ai / BigModel) — device login through the official ZCode CLI
+// polling flow (cli/init + cli/poll). The browser-based authorization-code
+// flow cannot be used: the desktop client id only registers the
+// zcode:// deep-link redirect, so 9Router callbacks are rejected.
+// Poll "ready" carries data.token (zcode JWT, used by the start plan) and
+// data.zai.access_token (Z.AI business token used for coding-plan keys).
+export const ZCODE_CONFIG = {
+  ...PROVIDER_OAUTH["zcode"],
+  businessLoginUrl: "https://api.z.ai/api/auth/z/login",
+  clientVersion: "3.17.1",
+};
+
 // Trae (ByteDance marscode) OAuth — authorization_code flow with local callback.
 //   1) POST GetLoginGuidance {loginTraceID} → {Result.LoginHost}
 //   2) Browser opens ${loginHost}/authorization?client_id=...&login_trace_id=...&auth_callback_url=${cb}
