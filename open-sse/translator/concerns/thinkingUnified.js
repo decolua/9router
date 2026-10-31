@@ -125,7 +125,7 @@ function openAIThinkingDisplay(body) {
   return undefined;
 }
 
-const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
+const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "zai-anthropic", "kiro"]);
 
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
@@ -174,6 +174,31 @@ function normalizeOpenAILevel(level, supportedLevels) {
   if (supportedLevels?.includes(level)) return level;
   if (level === "ultra" && supportedLevels?.includes("max")) return "max";
   return "xhigh";
+}
+
+const EFFORT_ORDER = ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"];
+
+// Map a requested effort onto the model's declared effort set. Unsupported
+// levels move to the nearest higher supported level (e.g. xhigh -> max for
+// low|high|max); if no higher level exists, fall back to the nearest lower one
+// (e.g. max -> high when the model stops at high).
+export function mapEffortToSupportedLevel(level, supportedLevels) {
+  const levels = Array.isArray(supportedLevels) ? supportedLevels.filter(Boolean) : [];
+  if (!levels.length) return level && level !== "auto" ? level : "high";
+  if (!level || level === "auto") return levels.includes("high") ? "high" : levels[levels.length - 1];
+  if (levels.includes(level)) return level;
+  const target = EFFORT_ORDER.indexOf(level);
+  if (target < 0) return levels.includes("high") ? "high" : null;
+
+  let up = null;
+  let down = null;
+  for (const candidate of levels) {
+    const index = EFFORT_ORDER.indexOf(candidate);
+    if (index < 0) continue;
+    if (index > target && (up === null || index < EFFORT_ORDER.indexOf(up))) up = candidate;
+    if (index < target && (down === null || index > EFFORT_ORDER.indexOf(down))) down = candidate;
+  }
+  return up ?? down ?? null;
 }
 
 function toGeminiThinkingLevel(cfg) {
@@ -344,6 +369,22 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "")
           : (zaiLvl === "high" || zaiLvl === "medium") ? "high"
           : "max";
       }
+      break;
+    }
+    case "zai-anthropic": {
+      // ZCode plan gateway (Anthropic Messages): thinking is a binary switch and
+      // the effort level rides in output_config.effort. GLM-5.2 may stop thinking
+      // on none/minimal; the 5.3 line must always send thinking enabled.
+      const level = toLevel(eff);
+      if (canDisable && (none || level === "none" || level === "minimal")) {
+        body.thinking = { type: "disabled" };
+        delete body.output_config;
+        break;
+      }
+      body.thinking = { type: "enabled" };
+      const mapped = mapEffortToSupportedLevel(level, supportedLevels);
+      if (mapped) body.output_config = { effort: mapped };
+      else delete body.output_config;
       break;
     }
     case "qwen": {
