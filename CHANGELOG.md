@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Thinking**: stop sending `thinkingLevel: "MINIMAL"` to the tiered Gemini 3.8/3.7/3.6 Flash family — those models serve `low|medium|high` only and 400 on MINIMAL ("Thinking level MINIMAL is not supported for this model"). The `gemini-level` format's default level set (`L.gemini`) carries "minimal" for the original Gemini 3 models that do have that tier, and the `applyFormat` clamp only fires for levels *outside* the declared set, so every intent that produces "minimal" (client `reasoning_effort: "none"`/`"minimal"`, a sub-768-token budget, a `(minimal)` model suffix, or the none→minimal clamp for can't-disable models) sailed through and reached Google as-is. Added `PATTERN_THINKING` rows for `*gemini-3.8*`/`*gemini-3.7*`/`*gemini-3.6*` declaring `["low","medium","high"]` (same shape as the existing `*gemini-4*` Argon row) — the clamp now floors such intents at `low` and the level picker no longer advertises "minimal" for the tiered family. Original Gemini 3 models (`gemini-3-flash-preview`, `gemini-3.1-pro-preview`, …) keep their MINIMAL tier.
+
 # v0.5.112 (2026-10-28)
 
 ## Features

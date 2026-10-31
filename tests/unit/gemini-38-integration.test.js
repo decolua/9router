@@ -7,6 +7,7 @@ import { dirname, join } from "node:path";
 import { getModelUpstreamId } from "../../open-sse/config/providerModels.js";
 import { AntigravityExecutor } from "../../open-sse/executors/antigravity.js";
 import { applyThinking, stripThinkingSuffix } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import gemini from "../../open-sse/providers/registry/gemini.js";
 import { MODEL_PRICING } from "../../open-sse/providers/pricing.js";
 import { MITM_TOOLS } from "../../src/shared/constants/cliTools.js";
@@ -72,6 +73,61 @@ describe("Gemini 3.8 Antigravity tiers", () => {
   it("preserves direct tiered model IDs", () => {
     const upstreamModel = getModelUpstreamId("ag", "gemini-3.8-flash-high", {});
     expect(upstreamModel).toBe("gemini-3.8-flash-high(high)");
+  });
+});
+
+describe("Gemini 3.8 thinking level floor (no MINIMAL tier)", () => {
+  // gemini-3.8-flash only supports low|medium|high — thinkingLevel "MINIMAL" is
+  // a 400 ("Thinking level MINIMAL is not supported for this model"). Every
+  // intent that would emit "minimal" must clamp to low.
+  it.each(["antigravity", "gemini", "vertex"])("exposes only low|medium|high to the picker on %s", (provider) => {
+    const model = provider === "antigravity" ? "gemini-3.8-flash-high" : "gemini-3.8-flash";
+    expect(getThinkingLevels(provider, model)).toEqual(["low", "medium", "high"]);
+  });
+
+  it("clamps reasoning_effort none to low on the reported model", () => {
+    const upstreamModel = getModelUpstreamId("ag", "gemini-3.8-flash-high", { reasoning_effort: "none" });
+    const body = {
+      model: stripThinkingSuffix(upstreamModel),
+      request: { contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: {} },
+    };
+    applyThinking("antigravity", upstreamModel, body, "antigravity");
+    expect(body.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
+  });
+
+  it("clamps an explicit minimal effort to low", () => {
+    const upstreamModel = getModelUpstreamId("ag", "gemini-3.8-flash-high", { reasoning_effort: "minimal" });
+    const body = {
+      model: stripThinkingSuffix(upstreamModel),
+      request: { contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: {} },
+    };
+    applyThinking("antigravity", upstreamModel, body, "antigravity");
+    expect(body.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
+  });
+
+  it("clamps an explicit minimal on the direct gemini lane to low", () => {
+    // No tier mapping on this lane — the PATTERN_THINKING floor is the only guard.
+    const body = { reasoning_effort: "minimal" };
+    applyThinking("gemini", "gemini-3.8-flash", body, "gemini");
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
+  });
+
+  it("clamps a (minimal) model suffix to low", () => {
+    const body = { model: "gemini-3.8-flash" };
+    applyThinking("gemini", "gemini-3.8-flash(minimal)", body, "gemini");
+    expect(body.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
+  });
+
+  it("clamps a minimal-sized thinking budget to low", () => {
+    // 512 budget tokens convert to the "minimal" level, which the tiered
+    // family rejects — must land on low.
+    const body = {
+      model: "gemini-3.8-flash",
+      thinking: { type: "enabled", budget_tokens: 512 },
+      request: { contents: [{ role: "user", parts: [{ text: "hi" }] }], generationConfig: {} },
+    };
+    applyThinking("antigravity", "gemini-3.8-flash", body, "antigravity");
+    expect(body.request.generationConfig.thinkingConfig).toEqual({ thinkingLevel: "low", includeThoughts: true });
   });
 });
 
