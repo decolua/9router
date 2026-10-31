@@ -408,7 +408,7 @@ async function showConnectionActions(connection, providerId, breadcrumb = []) {
  * @param {string} authType - "oauth" or "apikey"
  */
 // Providers that use Device Code Flow (terminal-based polling)
-const DEVICE_CODE_PROVIDERS = ["github", "qwen", "kiro", "glm"];
+const DEVICE_CODE_PROVIDERS = ["github", "qwen", "kiro", "glm", "zcode"];
 
 /**
  * Handle adding new connection - auto-detect flow type

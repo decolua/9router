@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Card from "@/shared/components/Card";
 import Button from "@/shared/components/Button";
 import Drawer from "@/shared/components/Drawer";
@@ -110,6 +110,9 @@ export default function RequestDetailsTab() {
   const [loading, setLoading] = useState(false);
   const [selectedDetail, setSelectedDetail] = useState(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState(null);
+  const detailAbortRef = useRef(null);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
   const [filters, setFilters] = useState({
@@ -162,9 +165,48 @@ export default function RequestDetailsTab() {
     fetchDetails();
   }, [fetchDetails]);
 
-  const handleViewDetail = (detail) => {
+  const handleViewDetail = async (detail) => {
+    // The list response is intentionally redacted; fetch the full payload for
+    // the drawer. The detail endpoint requires a valid dashboard session.
     setSelectedDetail(detail);
     setIsDrawerOpen(true);
+    setDetailError(null);
+    setDetailLoading(true);
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+
+    try {
+      const res = await fetch(`/api/usage/request-details/${encodeURIComponent(detail.id)}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(
+          data?.error ||
+            (res.status === 401
+              ? "Dashboard session required. Please sign in again."
+              : `Failed to load request detail (${res.status})`)
+        );
+      }
+      if (!controller.signal.aborted && data?.detail) {
+        setSelectedDetail(data.detail);
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") setDetailError(error.message);
+    } finally {
+      if (!controller.signal.aborted) setDetailLoading(false);
+    }
+  };
+
+  const handleCloseDrawer = () => {
+    detailAbortRef.current?.abort();
+    detailAbortRef.current = null;
+    setDetailLoading(false);
+    setDetailError(null);
+    setIsDrawerOpen(false);
   };
 
   const handlePageChange = (newPage) => {
@@ -345,7 +387,7 @@ export default function RequestDetailsTab() {
 
       <Drawer
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={handleCloseDrawer}
         title="Request Details"
         width="lg"
       >
@@ -455,6 +497,19 @@ export default function RequestDetailsTab() {
               </div>
             )}
 
+            {detailLoading ? (
+              <div className="flex items-center gap-2 rounded-lg border border-black/5 bg-black/5 p-4 text-sm text-text-muted dark:border-white/5 dark:bg-white/5">
+                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+                Loading full request detail…
+              </div>
+            ) : detailError ? (
+              <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-600 dark:text-red-400">
+                {detailError}
+                <p className="mt-1 text-xs text-text-muted">
+                  Full payloads require a signed-in dashboard session.
+                </p>
+              </div>
+            ) : (
             <div className="space-y-4">
               <CollapsibleSection title="1. Client Request (Input)" defaultOpen={true} icon="input">
                 <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
@@ -502,6 +557,7 @@ export default function RequestDetailsTab() {
                 </pre>
               </CollapsibleSection>
             </div>
+            )}
           </div>
         )}
       </Drawer>
