@@ -6,6 +6,7 @@ import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
+import { MODEL_SERVICE_TIER_MODIFIERS } from "../../config/modelModifiers.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
 const FORMAT_TO_NATIVE = {
@@ -32,17 +33,34 @@ export function stripThinkingSuffix(model) {
 // Parse model-name suffix "model(value)" → { cleanModel, override }.
 // value: level name (high) | number (8192) | auto | none. null override when absent.
 export function parseSuffix(model) {
-  if (typeof model !== "string") return { cleanModel: model, override: null };
+  const { cleanModel, override } = parseModelModifiers(model);
+  return { cleanModel, override };
+}
+
+// A suffix can contain one thinking value and one service tier, in either order.
+// Reject ambiguous/unknown combinations as a whole rather than enabling priority
+// processing from just the recognized part of a malformed suffix.
+export function parseModelModifiers(model) {
+  if (typeof model !== "string") return { cleanModel: model, override: null, serviceTier: null };
   const m = model.match(/^(.*)\(([^()]+)\)\s*$/);
-  if (!m) return { cleanModel: model, override: null };
+  if (!m) return { cleanModel: model, override: null, serviceTier: null };
   const cleanModel = m[1].trim();
-  const raw = m[2].trim().toLowerCase();
-  if (raw === "none" || raw === "off") return { cleanModel, override: { mode: "none" } };
-  if (raw === "auto") return { cleanModel, override: { mode: "auto" } };
-  if (raw === "ultra") return { cleanModel, override: { mode: "level", level: raw } };
-  if (/^\d+$/.test(raw)) return { cleanModel, override: { mode: "budget", budget: Number(raw) } };
-  if (LEVEL_TO_BUDGET[raw] !== undefined) return { cleanModel, override: { mode: "level", level: raw } };
-  return { cleanModel, override: null };
+  const empty = { cleanModel, override: null, serviceTier: null };
+  const tokens = m[2].toLowerCase().split(",").map((token) => token.trim());
+  const tiers = tokens.filter((token) => Object.hasOwn(MODEL_SERVICE_TIER_MODIFIERS, token));
+  const thinking = tokens.filter((token) => !Object.hasOwn(MODEL_SERVICE_TIER_MODIFIERS, token));
+  if (tiers.length > 1 || thinking.length > 1 || thinking.includes("")) return empty;
+
+  const raw = thinking[0];
+  let override = null;
+  if (raw === "none" || raw === "off") override = { mode: "none" };
+  else if (raw === "auto") override = { mode: "auto" };
+  else if (raw === "ultra") override = { mode: "level", level: raw };
+  else if (/^\d+$/.test(raw)) override = { mode: "budget", budget: Number(raw) };
+  else if (Object.hasOwn(LEVEL_TO_BUDGET, raw)) override = { mode: "level", level: raw };
+  else if (raw !== undefined) return empty;
+
+  return { cleanModel, override, serviceTier: tiers.length ? MODEL_SERVICE_TIER_MODIFIERS[tiers[0]] : null };
 }
 
 // Extract unified thinking intent from a request body (post-translation, mixed shapes).
