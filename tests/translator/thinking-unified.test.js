@@ -6,6 +6,7 @@ import {
   extractThinking,
   applyThinking,
 } from "../../open-sse/translator/concerns/thinkingUnified.js";
+import { getThinkingLevels } from "../../open-sse/providers/thinkingLevels.js";
 import { extractReasoningText } from "../../open-sse/translator/concerns/reasoning.js";
 
 const apply = (targetFormat, model, body, provider) => {
@@ -170,6 +171,70 @@ describe("applyThinking per provider format", () => {
   it("QwQ cannot disable → clamp minimal", () => {
     const out = apply("openai", "qwq-32b", { reasoning_effort: "none" }, "qwen");
     expect(out.enable_thinking).toBe(true);
+  });
+  it.each([
+    ["xhigh", "xhigh"],
+    ["medium", "medium"],
+    ["low", "low"],
+  ])("Qwen 3.8 %s → reasoning_effort=%s (official levels pass through)", (input, expected) => {
+    const out = apply("openai", "Qwen3.8-27B", { reasoning_effort: input }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe(expected);
+    expect(out.enable_thinking).toBeUndefined();
+    expect(out.thinking_budget).toBeUndefined();
+  });
+  it("Qwen 3.8 none → reasoning_effort=none (verified: disables thinking upstream)", () => {
+    const out = apply("openai", "Qwen3.8-27B", { reasoning_effort: "none" }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("none");
+  });
+  it("Qwen 3.8 off → reasoning_effort=none", () => {
+    const out = apply("openai", "Qwen3.8-27B", { thinking: { type: "disabled" } }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("none");
+  });
+  it.each([
+    // "high"/"minimal" 400 upstream ("Unexpected reasoning effort"), so clamp
+    // to the nearest supported tier; max/ultra have no counterpart → xhigh.
+    ["minimal", "low"],
+    ["high", "xhigh"],
+    ["max", "xhigh"],
+    ["ultra", "xhigh"],
+  ])("Qwen 3.8 unsupported level %s clamps to %s", (input, expected) => {
+    const out = apply("openai", "Qwen3.8-27B", { reasoning_effort: input }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe(expected);
+  });
+  it("Qwen 3.8 auto omits the field (not a valid variant; upstream default xhigh applies)", () => {
+    const out = apply("openai", "Qwen3.8-27B", { reasoning_effort: "auto" }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+  it("Qwen 3.8 legacy enable_thinking:false → reasoning_effort=none", () => {
+    const out = apply("openai", "Qwen3.8-27B", { enable_thinking: false }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("none");
+    expect(out.enable_thinking).toBeUndefined();
+  });
+  it("Qwen 3.8 Claude budget maps to a supported effort (no thinking_budget leak)", () => {
+    const out = apply("claude", "Qwen3.8-27B", { thinking: { type: "enabled", budget_tokens: 24576 } }, "openai-compatible-chat-test");
+    expect(out.thinking_budget).toBeUndefined();
+    expect(out.enable_thinking).toBeUndefined();
+    // 24576 → budgetToLevel "high" → clamped to xhigh
+    expect(out.reasoning_effort).toBe("xhigh");
+  });
+  it("Qwen 3.8 model suffix (medium) reaches the wire", () => {
+    const out = apply("openai", "Qwen3.8-27B(medium)", { messages: [] }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("medium");
+  });
+  it("Qwen 3.8 exposes only the supported levels to the picker", () => {
+    expect(getThinkingLevels("openai-compatible-chat-test", "Qwen3.8-27B")).toEqual(["none", "low", "medium", "xhigh"]);
+    expect(getThinkingLevels(null, "qwen3.8-flash")).toEqual(["none", "low", "medium", "xhigh"]);
+  });
+  it("Qwen 3.7 keeps the legacy qwen format (format switch is 3.8-scoped)", () => {
+    const out = apply("openai", "qwen3.7", { reasoning_effort: "medium" }, "openai-compatible-chat-test");
+    expect(out.enable_thinking).toBe(true);
+    expect(out.reasoning_effort).toBeUndefined();
+  });
+  it("Qwen 3.8 max id also resolves to qwen-effort (not the legacy *qwen*max* row)", () => {
+    const out = apply("openai", "qwen3.8-max", { reasoning_effort: "medium" }, "openai-compatible-chat-test");
+    expect(out.reasoning_effort).toBe("medium");
+    expect(out.enable_thinking).toBeUndefined();
+    expect(out.thinking_budget).toBeUndefined();
   });
   it("DeepSeek → enabled + reasoning_effort high (low→high)", () => {
     const out = apply("openai", "deepseek-v4-pro", { reasoning_effort: "low" }, "deepseek");

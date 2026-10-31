@@ -124,8 +124,16 @@ export class BaseExecutor {
       return true;
     };
 
+    let cachedUrlIndex = -1;
+    let cachedUrl;
     for (let urlIndex = 0; urlIndex < fallbackCount; urlIndex++) {
-      const url = this.buildUrl(model, stream, urlIndex, credentials);
+      // A retry at the same URL index must retain its original route even when
+      // transformRequest mutates the request body used by buildUrl.
+      if (cachedUrlIndex !== urlIndex) {
+        cachedUrl = this.buildUrl(model, stream, urlIndex, credentials, body);
+        cachedUrlIndex = urlIndex;
+      }
+      const url = cachedUrl;
       const transformedBody = this.transformRequest(model, body, stream, credentials);
       const headers = this.buildHeaders(credentials, stream, url, model, transformedBody);
       // User per-provider override wins over registry headers (blocked names filtered at the API)
