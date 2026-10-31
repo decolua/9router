@@ -255,7 +255,21 @@ async function fetchWithTlsFallback(url, options, proxyUrl) {
   try {
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
-    if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
+    if (options.directFetch) {
+      if (!proxyUrl) return await options.directFetch(url, options);
+      // Opt-in: TLS-impersonating adapters (opencode free tier) that can ride
+      // the connection proxy themselves (wreq-js per-request proxy). Without
+      // this, proxied requests fall back to Node's OpenSSL ClientHello and the
+      // upstream free-tier JA4 gate answers 429 FreeUsageLimitError.
+      if (options.directFetchProxy) {
+        try {
+          return await options.directFetch(url, options, { proxyUrl });
+        } catch (err) {
+          if (err?.name !== "OpencodeTlsUnavailableError") throw err;
+          console.warn(`[ProxyFetch] directFetch unavailable (${err.message}); failing open to native proxied fetch`);
+        }
+      }
+    }
     const dispatcher = proxyUrl ? await getDispatcher(proxyUrl) : undefined;
     return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
