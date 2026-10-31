@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Tunnel**: point Tailscale Funnel / Cloudflare quick tunnel at the port the server is actually listening on — `enableTailscale`/`enableTunnel` defaulted `localPort` to `20128` and every caller (dashboard enable routes, watchdog auto-restart) passed no argument, so with only `bun run dev` running (port 20127) the public endpoint forwarded to a dead port. Both now default to a new `getAppPort()` helper that resolves `process.env.PORT` (written by Next.js to the resolved listen port at server startup, or set explicitly by the CLI launcher) and falls back to the canonical `20128`.
+
 # v0.5.112 (2026-10-28)
 
 ## Features

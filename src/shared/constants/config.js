@@ -32,6 +32,15 @@ export const UPDATER_CONFIG = {
   appPort: 20128,
 };
 
+// The port the app server is actually listening on. Next.js writes the resolved listen
+// port to process.env.PORT at server startup (next/dist/server/lib/start-server.js) for
+// both `next dev --port` and `next start --port`; the CLI launcher sets PORT explicitly.
+// Fall back to the canonical appPort when PORT is unset/invalid.
+export function getAppPort() {
+  const p = Number.parseInt(process.env.PORT, 10);
+  return Number.isFinite(p) && p > 0 ? p : UPDATER_CONFIG.appPort;
+}
+
 // Theme configuration
 export const THEME_CONFIG = {
   storageKey: "theme",
