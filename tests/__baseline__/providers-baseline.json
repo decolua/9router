@@ -1275,5 +1275,40 @@
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",
     "authType": "cookie"
+  },
+  "dothoosh": {
+    "baseUrl": "https://gateway.dothoosh.com/v1/chat/completions",
+    "validateUrl": "https://gateway.dothoosh.com/v1/models",
+    "format": "openai",
+    "transports": [
+      {
+        "format": "openai",
+        "baseUrl": "https://gateway.dothoosh.com/v1/chat/completions",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      },
+      {
+        "format": "claude",
+        "baseUrl": "https://gateway.dothoosh.com/anthropic/v1/messages",
+        "auth": {
+          "combined": true,
+          "header": "x-api-key",
+          "scheme": "raw",
+          "anthropicVersion": true
+        }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://gateway.dothoosh.com/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer"
+        }
+      }
+    ]
   }
 }
