@@ -623,6 +623,49 @@ export async function POST(request) {
           break;
         }
 
+        case "codebuddy-cn":
+        case "codebuddy-intl": {
+          const key = (apiKey || "").trim();
+          const intl = provider === "codebuddy-intl";
+          const url = intl ? "https://www.codebuddy.ai/v3/config" : "https://copilot.tencent.com/v3/config";
+          const res = await fetch(url, {
+            method: "GET",
+            headers: {
+              Accept: "application/json",
+              Authorization: `Bearer ${key}`,
+              "X-API-Key": key,
+              "X-User-Id": `anonymous_${key.slice(-8)}`,
+              "X-Product": "SaaS",
+              "X-IDE-Type": "WorkBuddy",
+              "X-IDE-Name": "WorkBuddy",
+              "X-IDE-Version": "5.9.3",
+              "User-Agent": intl
+                ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+                : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0",
+              "X-Requested-With": "XMLHttpRequest",
+              "X-Agent-Intent": "craft",
+              "X-Agent-Purpose": "conversation",
+            },
+            signal: AbortSignal.timeout(10000),
+          });
+          if (res.status === 401 || res.status === 403) {
+            isValid = false;
+            error = "Invalid or expired API key";
+          } else if (res.ok) {
+            const json = await res.json().catch(() => null);
+            if (json && json.code !== undefined && json.code !== 0) {
+              isValid = false;
+              error = json.msg || `CodeBuddy error (${json.code})`;
+            } else {
+              isValid = true;
+            }
+          } else {
+            isValid = false;
+            error = `CodeBuddy API error (${res.status})`;
+          }
+          break;
+        }
+
         default: {
           // Generic probe for OpenAI-compatible providers (config-driven from PROVIDERS)
           const cfg = PROVIDERS[provider];

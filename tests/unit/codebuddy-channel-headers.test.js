@@ -10,14 +10,24 @@ const REQUIRED = [
   "X-Request-ID",
   "X-Conversation-ID",
   "X-Conversation-Request-ID",
+  "X-Root-Request-ID",
   "X-Conversation-Message-ID",
 ];
 
 const CREDS = { accessToken: "TESTTOKEN", apiKey: null };
+const API_KEY_CREDS = { accessToken: null, apiKey: "  ck_test_key_1234567890abcdef29s\n" };
+const JWT_CREDS = {
+  accessToken:
+    Buffer.from(JSON.stringify({ alg: "RS256" })).toString("base64url") +
+    "." +
+    Buffer.from(JSON.stringify({ sub: "user-jwt-sub-777", enterprise_id: "ent-jwt-888" })).toString("base64url") +
+    ".sig",
+  apiKey: null,
+};
 
-function buildHeaders(id) {
+function buildHeaders(id, creds = CREDS, body = {}) {
   const executor = getExecutor(id);
-  return executor.buildHeaders(CREDS, true, PROVIDERS[id].baseUrl, "deepseek-v4.1-flash", {});
+  return executor.buildHeaders({ ...creds }, true, PROVIDERS[id].baseUrl, "deepseek-v4.1-flash", body);
 }
 
 describe("codebuddy channel headers", () => {
@@ -38,11 +48,57 @@ describe("codebuddy channel headers", () => {
       it("reuses one request id across the request/conversation pair", () => {
         const headers = buildHeaders(id);
         expect(headers["X-Request-ID"]).toBe(headers["X-Conversation-Request-ID"]);
+        expect(headers["X-Root-Request-ID"]).toBe(headers["X-Conversation-Request-ID"]);
         expect(headers["X-Conversation-ID"]).not.toBe(headers["X-Conversation-Message-ID"]);
       });
 
+      it("reuses caller session_id / conversation_id / prompt_cache_key as X-Conversation-ID", () => {
+        const h1 = buildHeaders(id, CREDS, { session_id: "sess-stable-123" });
+        const h2 = buildHeaders(id, CREDS, { conversation_id: "conv-stable-456" });
+        const h3 = buildHeaders(id, CREDS, { prompt_cache_key: "cache-stable-789" });
+        expect(h1["X-Conversation-ID"]).toBe("sess-stable-123");
+        expect(h2["X-Conversation-ID"]).toBe("conv-stable-456");
+        expect(h3["X-Conversation-ID"]).toBe("cache-stable-789");
+      });
+
       it("still applies the bearer token after the hook runs", () => {
-        expect(buildHeaders(id).Authorization).toBe("Bearer TESTTOKEN");
+        const h = buildHeaders(id);
+        expect(h.Authorization).toBe("Bearer TESTTOKEN");
+        expect(h["X-API-Key"]).toBeUndefined();
+      });
+
+      it("extracts X-User-Id and X-Enterprise-Id / X-Tenant-Id from OAuth JWT payload", () => {
+        const h = buildHeaders(id, JWT_CREDS);
+        expect(h["X-User-Id"]).toBe("user-jwt-sub-777");
+        expect(h["X-Enterprise-Id"]).toBe("ent-jwt-888");
+        expect(h["X-Tenant-Id"]).toBe("ent-jwt-888");
+        expect(h["X-Domain"]).toBe(id === "codebuddy-intl" ? "www.codebuddy.ai" : "copilot.tencent.com");
+        expect(h["User-Agent"]).toBe(
+          id === "codebuddy-intl"
+            ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+            : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0"
+        );
+      });
+
+      it("sends dual auth (Bearer + X-API-Key), anonymous_<last8> X-User-Id, and WorkBuddy 5.9.3 headers in API key mode", () => {
+        const h = buildHeaders(id, API_KEY_CREDS, { session_id: "sess-key-01" });
+        expect(h.Authorization).toBe("Bearer ck_test_key_1234567890abcdef29s");
+        expect(h["X-API-Key"]).toBe("ck_test_key_1234567890abcdef29s");
+        expect(h["X-User-Id"]).toBe("anonymous_bcdef29s");
+        expect(h["X-Domain"]).toBeUndefined();
+        expect(h["X-IDE-Type"]).toBe("WorkBuddy");
+        expect(h["X-IDE-Name"]).toBe("WorkBuddy");
+        expect(h["X-IDE-Version"]).toBe("5.9.3");
+        expect(h["X-Agent-Intent"]).toBe("craft");
+        expect(h["X-Agent-Purpose"]).toBe("conversation");
+        expect(h["X-Agent-Type"]).toBe("main");
+        expect(h["X-Agent-Runtime"]).toBe("local-agent");
+        expect(h["X-Conversation-ID"]).toBe("sess-key-01");
+        expect(h["User-Agent"]).toBe(
+          id === "codebuddy-intl"
+            ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+            : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0"
+        );
       });
 
       it("issues fresh ids per request", () => {

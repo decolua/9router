@@ -49,6 +49,50 @@ async function getCodeBuddyUsage(providerId, accessToken, apiKey, providerSpecif
     return { message: `CodeBuddy (${providerId}) credential not available.` };
   }
 
+  if (!accessToken && apiKey) {
+    const key = String(apiKey).trim();
+    const intl = providerId === "codebuddy-intl";
+    const cfgUrl = intl ? "https://www.codebuddy.ai/v3/config" : "https://copilot.tencent.com/v3/config";
+    try {
+      const res = await proxyAwareFetch(cfgUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${key}`,
+          "X-API-Key": key,
+          "X-User-Id": `anonymous_${key.slice(-8)}`,
+          "X-Product": "SaaS",
+          "X-IDE-Type": "WorkBuddy",
+          "X-IDE-Name": "WorkBuddy",
+          "X-IDE-Version": "5.9.3",
+          "User-Agent": intl
+            ? "WorkBuddy/5.9.3 workbuddy-ai/5.9.3 CLI/2.165.0"
+            : "WorkBuddy/5.9.3 WorkBuddy/5.9.3 CLI/2.165.0",
+          "X-Requested-With": "XMLHttpRequest",
+          "X-Agent-Intent": "craft",
+          "X-Agent-Purpose": "conversation",
+          Accept: "application/json",
+        },
+      }, proxyOptions);
+      if (res.status === 401 || res.status === 403) {
+        return { message: "CodeBuddy API key invalid or expired." };
+      }
+      if (!res.ok) {
+        return { message: `CodeBuddy config API error (${res.status}).` };
+      }
+      const j = await res.json().catch(() => null);
+      if (j && j.code !== undefined && j.code !== 0) {
+        return { message: `CodeBuddy API key error: ${j.msg || j.code}` };
+      }
+      return {
+        plan: "API Key",
+        quotas: {},
+        message: "WorkBuddy API key active. Credit balance is not reported via API key.",
+      };
+    } catch (error) {
+      return { message: `CodeBuddy (${providerId}) error: ${error.message}` };
+    }
+  }
+
   try {
     const response = await proxyAwareFetch(U(providerId).url, {
       method: "POST",

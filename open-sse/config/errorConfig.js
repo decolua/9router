@@ -59,6 +59,14 @@ const COOLDOWN = {
 export const ERROR_RULES = [
   // --- Text-based rules (checked first, order = priority) ---
   { provider: "codex", text: "model is not supported when using codex with a chatgpt account", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { text: "model_not_in_plan",        cooldownMs: COOLDOWN.long },
+  { text: "当前账号类型暂不支持该模型",  cooldownMs: COOLDOWN.long },
+  { text: "your account type does not support this model", cooldownMs: COOLDOWN.long },
+  { text: "is not allowed for user type", cooldownMs: COOLDOWN.long },
+  { text: "account has been restricted due to unusual activity", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { text: "账号存在异常行为", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { text: "credits exhausted", cooldownMs: COOLDOWN.long },
+  { text: "额度已用尽", cooldownMs: COOLDOWN.long },
   // Intl gateway blocks affect the account/IP, so let the connection back off.
   { provider: "codebuddy-intl", text: "request illegal", backoff: true },
   { provider: "codebuddy-intl", text: "conversation id missing", backoff: true },
