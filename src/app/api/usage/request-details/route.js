@@ -48,11 +48,10 @@ export async function GET(request) {
     
     const result = await getRequestDetails(filter);
 
-    // Redact conversation payloads: the stored details include full request
-    // bodies (user prompts, tool calls) and provider responses. Returning them
-    // wholesale lets any dashboard-authenticated user (or, if requireLogin is
-    // disabled, anyone) read every user's conversation history. Keep the
-    // metadata (model, tokens, latency, status) but drop message content.
+    // Redact conversation payloads from the list: the stored details include
+    // full request bodies (user prompts, tool calls) and provider responses.
+    // The signed-in dashboard fetches one full record on demand through the
+    // session-protected GET /api/usage/request-details/:id endpoint.
     const redactedDetails = (result.details || []).map((d) => {
       const redacted = { ...d };
       for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
