@@ -215,7 +215,14 @@ export class DefaultExecutor extends BaseExecutor {
     // a node fronting Kimi or GLM answers on its own ids and never matches, so
     // gateways that would choke on unknown beta flags are left untouched.
     const isClaudeModel = typeof model === "string" && /^claude-/.test(model);
-    const clientBeta = credentials?.rawHeaders?.["anthropic-beta"];
+    const clientVersion = Object.entries(credentials?.rawHeaders || {}).find(([key]) => key.toLowerCase() === "anthropic-version")?.[1];
+    if (clientVersion && (this.provider === "claude" || this.provider === "anthropic" || this.provider?.startsWith?.("anthropic-compatible-"))) {
+      for (const key of Object.keys(headers)) {
+        if (key.toLowerCase() === "anthropic-version") delete headers[key];
+      }
+      headers["Anthropic-Version"] = clientVersion;
+    }
+    const clientBeta = Object.entries(credentials?.rawHeaders || {}).find(([key]) => key.toLowerCase() === "anthropic-beta")?.[1];
     if (model && (this.provider === "claude"
       || (this.provider?.startsWith?.("anthropic-compatible-") && isClaudeModel))) {
       headers["Anthropic-Beta"] = mergeAnthropicBeta(selectAnthropicBeta(model, body), clientBeta);

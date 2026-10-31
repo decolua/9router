@@ -11,7 +11,7 @@ describe("mergeAnthropicBeta", () => {
   });
 });
 
-describe("DefaultExecutor.buildHeaders() forwards client anthropic-beta", () => {
+describe("DefaultExecutor.buildHeaders() forwards native Anthropic headers", () => {
   let DefaultExecutor;
 
   beforeEach(async () => {
@@ -19,9 +19,29 @@ describe("DefaultExecutor.buildHeaders() forwards client anthropic-beta", () => 
     ({ DefaultExecutor } = await import("open-sse/executors/default.js"));
   });
 
+  it.each(["claude", "anthropic", "anthropic-compatible-custom"])("preserves mixed-case Anthropic-Version header on %s", (provider) => {
+    const executor = new DefaultExecutor(provider);
+    const headers = executor.buildHeaders({ apiKey: "k", rawHeaders: { "AnThRoPiC-VeRsIoN": "2099-01-01" } }, false);
+    const versionHeaders = Object.entries(headers).filter(([key]) => key.toLowerCase() === "anthropic-version");
+    expect(versionHeaders).toHaveLength(1);
+    expect(versionHeaders.map(([, value]) => value)).toEqual(["2099-01-01"]);
+  });
+
+  it("includes default Anthropic-Version header for Claude", () => {
+    const executor = new DefaultExecutor("claude");
+    const headers = executor.buildHeaders({ apiKey: "k" }, false);
+    expect(new Headers(headers).get("anthropic-version")).toBe("2023-06-01");
+  });
+
+  it("does not forward Anthropic-Version when rawHeaders set for non-Anthropic provider", () => {
+    const executor = new DefaultExecutor("openai");
+    const headers = executor.buildHeaders({ apiKey: "k", rawHeaders: { "anthropic-version": "2099-01-01" } }, false);
+    expect(new Headers(headers).get("anthropic-version")).toBeNull();
+  });
+
   it("keeps unknown client flags alongside the pinned set on claude", () => {
     const executor = new DefaultExecutor("claude");
-    const rawHeaders = { "anthropic-beta": "safeguards-2026-09-01,context-1m-2025-08-07" };
+    const rawHeaders = { "AnThRoPiC-BeTa": "safeguards-2026-09-01,context-1m-2025-08-07" };
     const flags = betaFlags(executor.buildHeaders({ apiKey: "k", rawHeaders }, true, undefined, "claude-opus-5"));
     expect(flags).toContain("safeguards-2026-09-01");
     expect(flags).toContain("context-1m-2025-08-07");
