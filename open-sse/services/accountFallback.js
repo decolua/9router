@@ -69,7 +69,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   }
 
   // Default: transient cooldown for any unmatched error
-  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS, FALLBACK_ELIGIBLE_CLIENT_STATUSES };
+  return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
 /**

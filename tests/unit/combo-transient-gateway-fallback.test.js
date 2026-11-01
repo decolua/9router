@@ -6,6 +6,7 @@
 // fallback combo aborted on the first such error and never tried its backup
 // members. (#4911)
 import { describe, expect, it, vi } from "vitest";
+import { TRANSIENT_COOLDOWN_MS } from "../../open-sse/config/errorConfig.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
 import { handleComboChat } from "../../open-sse/services/combo.js";
@@ -14,8 +15,7 @@ describe("checkFallbackError — transient gateway statuses fall back", () => {
   it.each([408, 425, 499])("falls back on %d", (status) => {
     const result = checkFallbackError(status, "upstream stalled");
 
-    expect(result.shouldFallback).toBe(true);
-    expect(result.cooldownMs).toBeGreaterThan(0);
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS });
   });
 
   it.each([408, 425, 499])("lets a combo move on to the next member on %d", async (status) => {
@@ -68,7 +68,6 @@ describe("checkFallbackError — account-scoped and server errors are unchanged"
   it("keeps the transient cooldown for unmatched server errors", () => {
     const result = checkFallbackError(503, "upstream exploded");
 
-    expect(result.shouldFallback).toBe(true);
-    expect(result.cooldownMs).toBeGreaterThan(0);
+    expect(result).toEqual({ shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS });
   });
 });
