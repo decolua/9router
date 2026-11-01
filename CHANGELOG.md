@@ -1,3 +1,8 @@
+# v0.5.346 (2026-10-29) · 1 commit
+
+## UI
+- **Evergreen welcome banner content.** Replaced hardcoded feature highlights in the post-login Welcome modal with enduring, general-purpose platform copy so frequent upstream feature additions no longer cause description drift.
+
 # v0.5.345 (2026-10-29) · 1 commit
 
 ## UI

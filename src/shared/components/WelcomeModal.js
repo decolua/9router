@@ -72,9 +72,9 @@ export default function WelcomeModal() {
   if (!isOpen && !changelogOpen) return null;
 
   const facts = [
-    "One key and one base URL in front of every provider you connect.",
-    "Model combos route across providers, with per-model quotas and proxy pools.",
-    "Custom plugins per model: vision, deep reasoning, JSON repair, tool bridge, anti-slop.",
+    "Manage and monitor all your AI connections and keys in one centralized dashboard.",
+    "Stay updated with continuous improvements, fixes, and ecosystem enhancements.",
+    "Inspect latest updates, changes, and release history directly in the changelog.",
   ];
 
   return (
@@ -107,14 +107,13 @@ export default function WelcomeModal() {
               )}
             </p>
             <p className="text-xs text-text-muted">
-              Welcome back. Here&apos;s a quick tour of what this dashboard can do:
+              Welcome back to your unified gateway and management dashboard.
             </p>
           </div>
         </div>
 
         <p className="mt-4 text-sm text-text-muted leading-relaxed">
-          One OpenAI-compatible gateway for every model you connect. Use built-in
-          providers, your own endpoints, or a combo of both.
+          Centralized AI router and gateway. Seamlessly manage, configure, and monitor your AI infrastructure with zero lock-in.
         </p>
 
         {/* Plain facts, no cards: the dialog is the container, so the list does
