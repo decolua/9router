@@ -1,3 +1,11 @@
+# v0.5.351 (2026-11-01) · 1 commit
+
+## Providers & Infrastructure
+- **Z.ai Web Browser Transport (Playwright Integration)**:
+  - Fixed runtime resolution of Playwright for Z.ai browser transport by lazily resolving installed browser drivers from `/root/shot/node_modules` without triggering Webpack static bundle errors.
+  - Added essential Linux container Chromium launch flags (`--no-sandbox`, `--disable-setuid-sandbox`) to allow headless browser automation in root environments.
+  - Ensured reliable fallback to Playwright bundled Chromium when system browser channels are absent.
+
 # v0.5.350 (2026-11-01) · 1 commit
 
 ## Providers & UI

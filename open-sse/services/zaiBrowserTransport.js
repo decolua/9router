@@ -36,41 +36,49 @@ const _require = createRequire(import.meta.url);
 let _chromium;
 export async function getChromium() {
   if (_chromium) return _chromium;
+  // 1. Try lazyRuntime loader
   try {
     const mod = await loadRuntimeDep("playwright-core");
     _chromium = mod.chromium || mod.default?.chromium || mod;
-    return _chromium;
-  } catch {
+    if (_chromium) return _chromium;
+  } catch {}
+
+  // 2. Try global or local shot installation if available
+  const candidatePaths = [
+    "/root/shot/node_modules/playwright-core/index.js",
+    "/root/shot/node_modules/playwright/index.js",
+  ];
+  for (const p of candidatePaths) {
     try {
-      _chromium = _require("playwright-core").chromium || null;
-    } catch {
-      _chromium = null;
-    }
+      const mod = await import(/* webpackIgnore: true */ p);
+      _chromium = mod.chromium || mod.default?.chromium || mod;
+      if (_chromium) return _chromium;
+    } catch {}
   }
-  if (!_chromium) {
-    throw new Error(
-      "playwright-core is not installed. Run `npm install playwright-core` and " +
-        "have a Chrome or Edge channel available to use the Z.ai browser transport."
-    );
-  }
-  return _chromium;
+
+  throw new Error(
+    "playwright-core is not installed. Run `npm install playwright-core` and " +
+      "have a Chrome or Edge channel available to use the Z.ai browser transport."
+  );
 }
 
 export function chromium() {
-  if (!_chromium) {
+  if (_chromium) return _chromium;
+  const candidatePaths = [
+    "/root/shot/node_modules/playwright-core/index.js",
+    "/root/shot/node_modules/playwright/index.js",
+  ];
+  for (const p of candidatePaths) {
     try {
-      _chromium = _require("playwright-core").chromium || null;
-    } catch {
-      _chromium = null;
-    }
+      const mod = _require(p);
+      _chromium = mod.chromium || mod.default?.chromium || mod;
+      if (_chromium) return _chromium;
+    } catch {}
   }
-  if (!_chromium) {
-    throw new Error(
-      "playwright-core is not installed. Run `npm install playwright-core` and " +
-        "have a Chrome or Edge channel available to use the Z.ai browser transport."
-    );
-  }
-  return _chromium;
+  throw new Error(
+    "playwright-core is not installed. Run `npm install playwright-core` and " +
+      "have a Chrome or Edge channel available to use the Z.ai browser transport."
+  );
 }
 
 const ZAI_BASE_URL = "https://chat.z.ai";
@@ -201,12 +209,18 @@ async function getBrowser() {
     const headless = process.env.ER_ZAI_BROWSER_HEADED !== "1";
     let lastError = null;
     const cr = await getChromium();
+    const commonArgs = [
+      "--no-first-run",
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-blink-features=AutomationControlled",
+    ];
     for (const channel of CHANNELS) {
       try {
         const browser = await cr.launch({
           channel,
           headless,
-          args: ["--no-first-run", "--disable-blink-features=AutomationControlled"],
+          args: commonArgs,
         });
         sharedBrowser = browser;
         return browser;
@@ -216,11 +230,11 @@ async function getBrowser() {
     }
     // Fall back to playwright's own bundled chromium if any (rare installs).
     try {
-      const browser = await cr.launch({ headless, args: ["--no-first-run"] });
+      const browser = await cr.launch({ headless, args: commonArgs });
       sharedBrowser = browser;
       return browser;
-    } catch {
-      /* keep the descriptive error below */
+    } catch (err) {
+      lastError = err;
     }
     throw new Error(
       `no Chromium-based browser found (tried channels: ${CHANNELS.join(", ")}). ` +
