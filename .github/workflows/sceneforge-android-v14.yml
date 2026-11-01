@@ -46,8 +46,16 @@ jobs:
           test -s app/build/outputs/apk/debug/app-debug.apk
           unzip -t app/build/outputs/apk/debug/app-debug.apk
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
+          sha256sum app/build/outputs/apk/debug/app-debug.apk | tee app/build/outputs/apk/debug/app-debug.apk.sha256
+      - name: Verify SceneForge v15 Android release identity
+        run: |
+          grep -Fq 'applicationId = "com.sceneforge.studio"' app/build.gradle.kts
+          grep -Fq 'versionCode = 15' app/build.gradle.kts
+          grep -Fq 'versionName = "0.15-debug"' app/build.gradle.kts
       - uses: actions/upload-artifact@v4
         with:
           name: SceneForge-v15-debug-APK
-          path: sceneforge-android/app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            sceneforge-android/app/build/outputs/apk/debug/app-debug.apk
+            sceneforge-android/app/build/outputs/apk/debug/app-debug.apk.sha256
           if-no-files-found: error
