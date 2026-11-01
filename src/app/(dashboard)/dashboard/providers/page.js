@@ -116,6 +116,7 @@ export default function ProvidersPage() {
   const [opencodeInstalled, setOpencodeInstalled] = useState(true);
   // OpenCode Free is one card with two lanes; the hammer on that card flips this.
   const [opencodeCliMode, setOpencodeCliMode] = useState(false);
+  const [selectedLaneMode, setSelectedLaneMode] = useState(false);
   const [togglingCliMode, setTogglingCliMode] = useState(false);
   const [laneBannerOpen, setLaneBannerOpen] = useState(false);
   const notify = useNotificationStore();
@@ -172,7 +173,9 @@ export default function ProvidersPage() {
         const nodesData = await nodesRes.json();
         if (settingsRes.ok) {
           const settingsData = await settingsRes.json();
-          setOpencodeCliMode(settingsData?.opencodeCliMode === true);
+          const isCli = settingsData?.opencodeCliMode === true;
+          setOpencodeCliMode(isCli);
+          setSelectedLaneMode(isCli);
         }
         if (connectionsRes.ok) {
           setConnections(connectionsData.connections || []);
@@ -190,21 +193,21 @@ export default function ProvidersPage() {
     fetchData();
   }, []);
 
-  const toggleOpencodeCliMode = async () => {
+  const applyOpencodeCliMode = async (targetMode) => {
     if (togglingCliMode) return;
-    const next = !opencodeCliMode;
     setTogglingCliMode(true);
-    setOpencodeCliMode(next);
+    setOpencodeCliMode(targetMode);
     try {
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opencodeCliMode: next }),
+        body: JSON.stringify({ opencodeCliMode: targetMode }),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      notify.success(next ? "OpenCode Free: local CLI lane" : "OpenCode Free: direct lane");
+      notify.success(targetMode ? "OpenCode Free: CLI lane" : "OpenCode Free: Direct lane");
     } catch (error) {
-      setOpencodeCliMode(!next);
+      setOpencodeCliMode(!targetMode);
+      setSelectedLaneMode(!targetMode);
       notify.error(`Could not switch lane: ${error.message}`);
     } finally {
       setTogglingCliMode(false);
@@ -628,7 +631,10 @@ export default function ProvidersPage() {
                 authType="free"
                 opencodeInstalled={opencodeInstalled}
                 cliMode={opencodeCliMode}
-                onOpenLaneModal={key === "opencode" ? () => setLaneBannerOpen(true) : null}
+                onOpenLaneModal={key === "opencode" ? () => {
+                  setSelectedLaneMode(opencodeCliMode);
+                  setLaneBannerOpen(true);
+                } : null}
                 onToggle={(active) =>
                   handleToggleProvider(key, freeAuthTypes, active)
                 }
@@ -764,7 +770,7 @@ export default function ProvidersPage() {
           <div className="flex items-center gap-2 p-3 rounded-lg border border-border-subtle bg-surface-2">
             <span className="material-symbols-outlined text-[20px] text-brand-500">handyman</span>
             <div>
-              <p className="text-xs text-text-muted">Current Lane</p>
+              <p className="text-xs text-text-muted">Current Active Lane</p>
               <p className="text-sm font-semibold text-text-main">
                 {opencodeCliMode ? "CLI Lane (Using Local CLI)" : "Direct Lane (No CLI / Fast TLS)"}
               </p>
@@ -772,25 +778,43 @@ export default function ProvidersPage() {
           </div>
 
           <div className="flex flex-col gap-3">
-            <div className={`p-3 rounded-lg border transition-all ${!opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
-              <div className="flex items-center gap-2 font-medium text-text-main mb-1">
-                <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
-                <span>Direct Lane (Default / Recommended)</span>
+            <button
+              type="button"
+              onClick={() => setSelectedLaneMode(false)}
+              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${!selectedLaneMode ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500/30" : "border-border-subtle bg-surface-2/40 hover:bg-surface-2/70"}`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2 font-medium text-text-main">
+                  <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
+                  <span>Direct Lane (Default / Recommended)</span>
+                </div>
+                {!selectedLaneMode && (
+                  <span className="material-symbols-outlined text-[18px] text-brand-500">check_circle</span>
+                )}
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
                 Requests are sent directly to upstream via impersonated TLS (Bun-shaped ClientHello). Fast (~400ms), lightweight, and requires no local OpenCode CLI or Bun runtime installed on the host.
               </p>
-            </div>
+            </button>
 
-            <div className={`p-3 rounded-lg border transition-all ${opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
-              <div className="flex items-center gap-2 font-medium text-text-main mb-1">
-                <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
-                <span>CLI Lane</span>
+            <button
+              type="button"
+              onClick={() => setSelectedLaneMode(true)}
+              className={`p-3 rounded-lg border text-left transition-all cursor-pointer ${selectedLaneMode ? "border-brand-500 bg-brand-500/10 ring-1 ring-brand-500/30" : "border-border-subtle bg-surface-2/40 hover:bg-surface-2/70"}`}
+            >
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex items-center gap-2 font-medium text-text-main">
+                  <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
+                  <span>CLI Lane</span>
+                </div>
+                {selectedLaneMode && (
+                  <span className="material-symbols-outlined text-[18px] text-brand-500">check_circle</span>
+                )}
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
                 Spawns the local <code className="text-[11px] bg-surface px-1 py-0.5 rounded">opencode</code> binary and Bun sidecar transport on the host. Requires the CLI installed locally; otherwise requests will hang and time out.
               </p>
-            </div>
+            </button>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-subtle">
@@ -807,11 +831,11 @@ export default function ProvidersPage() {
               size="sm"
               disabled={togglingCliMode}
               onClick={async () => {
-                await toggleOpencodeCliMode();
+                await applyOpencodeCliMode(selectedLaneMode);
                 setLaneBannerOpen(false);
               }}
             >
-              {togglingCliMode ? "Switching..." : `Confirm: Switch to ${opencodeCliMode ? "Direct Lane" : "CLI Lane"}`}
+              {togglingCliMode ? "Switching..." : "Konfirmasi"}
             </Button>
           </div>
         </div>
