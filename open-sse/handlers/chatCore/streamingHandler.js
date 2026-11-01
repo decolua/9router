@@ -12,7 +12,7 @@ import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { calledModelName } from "../../utils/modelAlias.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
-import { applyUsageMultipliers } from "../../utils/usageTracking.js";
+import { applyUsageMultipliers, estimateInputTokens, estimateOutputTokens, hasValidUsage } from "../../utils/usageTracking.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -127,6 +127,59 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
 
   const onStreamComplete = (contentObj, usage, ttftAt) => {
     let finalUsage = usage;
+    const outTokens = finalUsage?.completion_tokens ?? finalUsage?.output_tokens ?? 0;
+    const contentLength = contentObj?.totalContentLength ||
+      (contentObj?.content && contentObj.content !== "[Empty streaming response]" ? contentObj.content.length : 0) +
+      (contentObj?.thinking ? contentObj.thinking.length : 0);
+
+    if (outTokens === 0 && contentLength > 0) {
+      const estimatedOut = estimateOutputTokens(contentLength);
+      if (estimatedOut > 0) {
+        if (!finalUsage || !hasValidUsage(finalUsage)) {
+          const estimatedIn = estimateInputTokens(body);
+          finalUsage = {
+            prompt_tokens: estimatedIn,
+            completion_tokens: estimatedOut,
+            total_tokens: estimatedIn + estimatedOut,
+            estimated: true,
+          };
+        } else {
+          finalUsage = { ...finalUsage };
+          if (finalUsage.completion_tokens !== undefined || finalUsage.prompt_tokens !== undefined) {
+            finalUsage.completion_tokens = estimatedOut;
+            finalUsage.total_tokens = (finalUsage.prompt_tokens || 0) + estimatedOut;
+          } else if (finalUsage.output_tokens !== undefined || finalUsage.input_tokens !== undefined) {
+            finalUsage.output_tokens = estimatedOut;
+            finalUsage.total_tokens = (finalUsage.input_tokens || 0) + estimatedOut;
+          }
+        }
+      }
+    }
+
+    const inTokens = finalUsage?.prompt_tokens ?? finalUsage?.input_tokens ?? 0;
+    if (inTokens === 0 && body) {
+      const estimatedIn = estimateInputTokens(body);
+      if (estimatedIn > 0) {
+        if (!finalUsage) {
+          finalUsage = {
+            prompt_tokens: estimatedIn,
+            completion_tokens: outTokens,
+            total_tokens: estimatedIn + outTokens,
+            estimated: true,
+          };
+        } else {
+          finalUsage = { ...finalUsage };
+          if (finalUsage.prompt_tokens !== undefined || finalUsage.completion_tokens !== undefined) {
+            finalUsage.prompt_tokens = estimatedIn;
+            finalUsage.total_tokens = estimatedIn + (finalUsage.completion_tokens || 0);
+          } else if (finalUsage.input_tokens !== undefined || finalUsage.output_tokens !== undefined) {
+            finalUsage.input_tokens = estimatedIn;
+            finalUsage.total_tokens = estimatedIn + (finalUsage.output_tokens || 0);
+          }
+        }
+      }
+    }
+
     if (modelMultipliers && finalUsage) {
       finalUsage = applyUsageMultipliers(finalUsage, modelMultipliers);
     }

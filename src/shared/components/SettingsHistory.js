@@ -95,7 +95,7 @@ export default function SettingsHistory({ onReverted }) {
         {entries.map((entry) => (
           <div
             key={entry.id}
-            className="flex items-center gap-3 py-2.5 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0"
+            className="flex items-center gap-3 py-2.5 border-b border-border-subtle last:border-b-0"
           >
             <div className="min-w-0 flex-1">
               <p className="text-xs text-text-main">

@@ -30,17 +30,14 @@ describe("theme: the site-wide mode is a password-session setting", () => {
     expect(settings).toContain("403");
   });
 
-  it("ThemeModal shows a lock to a key session instead of clickable modes", () => {
-    const modal = read("src/shared/components/ThemeModal.js");
-    expect(modal).toContain("canChangeTheme");
-    expect(modal).toContain("disabled={!canChangeTheme}");
-    expect(modal).toContain("Administrator setting");
+  it("ThemeModal is removed completely and theme cannot be switched from UI", () => {
+    expect(existsSync(resolve(root, "src/shared/components/ThemeModal.js"))).toBe(false);
   });
 
-  it("HeaderMenu hides the Theme row from a key session", () => {
+  it("HeaderMenu does not expose a Theme option", () => {
     const menu = read("src/shared/components/HeaderMenu.js");
-    expect(menu).toContain('role !== "apikey"');
-    expect(menu).toContain("canChangeTheme && (");
+    expect(menu).not.toContain("ThemeModal");
+    expect(menu).not.toContain('label="Theme"');
   });
 
   it("the theme is loaded from the server for every visitor", () => {

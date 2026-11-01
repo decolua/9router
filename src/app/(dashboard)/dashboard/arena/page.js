@@ -733,7 +733,7 @@ function FinalResult({ ranked, pick, setPick, runId }) {
                 className={`flex flex-col gap-1.5 p-3 rounded-xl border text-left transition-colors ${
                   pick === winner.index
                     ? "border-primary/50 bg-primary/5"
-                    : "border-border hover:border-primary/30 hover:bg-black/[0.02] dark:hover:bg-white/[0.03]"
+                    : "border-border hover:border-primary/30 hover:bg-surface-2"
                 }`}
               >
                 <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
@@ -868,7 +868,7 @@ function MetricCell({ entry, metric, format }) {
           </span>
         ) : null}
       </span>
-      <span className="block w-full min-w-[42px] max-w-[90px] h-1 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden">
+      <span className="block w-full min-w-[42px] max-w-[90px] h-1 rounded-full bg-surface-2 overflow-hidden">
         <span
           className="block h-full rounded-full"
           style={{

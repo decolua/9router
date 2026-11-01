@@ -2,7 +2,7 @@ import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
-import { addBufferToUsage, filterUsageForFormat, applyUsageMultipliers } from "../../utils/usageTracking.js";
+import { addBufferToUsage, filterUsageForFormat, applyUsageMultipliers, estimateInputTokens, estimateResponseOutputTokens, hasValidUsage } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { rescueResponse } from "../../translator/concerns/toolCallRescue.js";
 import { applyJsonGuard } from "../../translator/concerns/jsonGuard.js";
@@ -432,6 +432,65 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
   let usage = extractUsageFromResponse(responseBody);
+  const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
+  const inTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? 0;
+
+  if (!usage || (inTokens === 0 && outTokens === 0)) {
+    const estimatedOut = estimateResponseOutputTokens(responseBody);
+    const estimatedIn = estimateInputTokens(body);
+    if (estimatedIn > 0 || estimatedOut > 0) {
+      usage = {
+        prompt_tokens: estimatedIn,
+        completion_tokens: estimatedOut,
+        total_tokens: estimatedIn + estimatedOut,
+        estimated: true,
+      };
+      if (responseBody && typeof responseBody === "object") {
+        responseBody.usage = usage;
+      }
+    }
+  } else if (outTokens === 0) {
+    const estimatedOut = estimateResponseOutputTokens(responseBody);
+    if (estimatedOut > 0) {
+      if (usage.completion_tokens !== undefined || usage.prompt_tokens !== undefined) {
+        usage.completion_tokens = estimatedOut;
+        usage.total_tokens = (usage.prompt_tokens || 0) + estimatedOut;
+      } else if (usage.output_tokens !== undefined || usage.input_tokens !== undefined) {
+        usage.output_tokens = estimatedOut;
+        usage.total_tokens = (usage.input_tokens || 0) + estimatedOut;
+      }
+      if (responseBody?.usage) {
+        if (responseBody.usage.completion_tokens !== undefined) {
+          responseBody.usage.completion_tokens = estimatedOut;
+          responseBody.usage.total_tokens = (responseBody.usage.prompt_tokens || 0) + estimatedOut;
+        } else if (responseBody.usage.output_tokens !== undefined) {
+          responseBody.usage.output_tokens = estimatedOut;
+          responseBody.usage.total_tokens = (responseBody.usage.input_tokens || 0) + estimatedOut;
+        }
+      }
+    }
+  } else if (inTokens === 0 && body) {
+    const estimatedIn = estimateInputTokens(body);
+    if (estimatedIn > 0) {
+      if (usage.prompt_tokens !== undefined || usage.completion_tokens !== undefined) {
+        usage.prompt_tokens = estimatedIn;
+        usage.total_tokens = estimatedIn + (usage.completion_tokens || 0);
+      } else if (usage.input_tokens !== undefined || usage.output_tokens !== undefined) {
+        usage.input_tokens = estimatedIn;
+        usage.total_tokens = estimatedIn + (usage.output_tokens || 0);
+      }
+      if (responseBody?.usage) {
+        if (responseBody.usage.prompt_tokens !== undefined) {
+          responseBody.usage.prompt_tokens = estimatedIn;
+          responseBody.usage.total_tokens = estimatedIn + (responseBody.usage.completion_tokens || 0);
+        } else if (responseBody.usage.input_tokens !== undefined) {
+          responseBody.usage.input_tokens = estimatedIn;
+          responseBody.usage.total_tokens = estimatedIn + (responseBody.usage.output_tokens || 0);
+        }
+      }
+    }
+  }
+
   if (modelMultipliers && usage) {
     usage = applyUsageMultipliers(usage, modelMultipliers);
   }

@@ -27,6 +27,8 @@
 // `pickFenceStyle` chooses per provider; parsers accept both either way so a
 // model that mixes styles still gets its call recovered.
 
+import { estimateInputTokens, estimateOutputTokens } from "../utils/usageTracking.js";
+
 const MARKER = "<<TOOL_CALL>>";
 const RESULT_MARKER = "<<TOOL_RESULT>>";
 const FENCE_OPEN = "```tool_call";
@@ -341,7 +343,7 @@ export function emitToolCallChunks(chunkFn, ensureRoleFn, calls) {
   return true;
 }
 
-export function buildToolCallResponse({ id, model, messageText, calls, reasoningContent }) {
+export function buildToolCallResponse({ id, model, messageText, calls, reasoningContent, body }) {
   const message = {
     role: "assistant",
     content: messageText || null,
@@ -352,13 +354,23 @@ export function buildToolCallResponse({ id, model, messageText, calls, reasoning
     })),
   };
   if (reasoningContent) message.reasoning_content = reasoningContent;
+  const outputLen = (messageText ? messageText.length : 0) +
+    (reasoningContent ? reasoningContent.length : 0) +
+    (calls?.length ? JSON.stringify(calls).length : 0);
+  const promptTokens = body ? estimateInputTokens(body) : 0;
+  const completionTokens = estimateOutputTokens(outputLen);
   return {
     id: id || `chatcmpl-${Date.now()}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model,
     choices: [{ index: 0, message, finish_reason: "tool_calls" }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      estimated: true,
+    },
   };
 }
 

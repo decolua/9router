@@ -76,9 +76,9 @@ export default function MitmPageClient() {
 
   return (
     <div className="flex w-full flex-col gap-6">
-      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-yellow-500/10 border border-yellow-500/30">
-        <span className="material-symbols-outlined text-[16px] text-yellow-500 mt-0.5 shrink-0">warning</span>
-        <p className="text-xs text-red-600 dark:text-yellow-400 leading-relaxed">
+      <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30">
+        <span className="material-symbols-outlined text-[16px] text-warning mt-0.5 shrink-0">warning</span>
+        <p className="text-xs text-warning leading-relaxed">
           MITM redirects HTTPS traffic from IDE tools (Antigravity, GitHub Copilot, Kiro) through a local CA to your providers, which may violate ToS and get your account banned, so use it at your own risk.
         </p>
       </div>

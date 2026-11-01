@@ -1,71 +1,47 @@
 "use client";
 
 import { create } from "zustand";
-import { THEME_CONFIG } from "@/shared/constants/config";
 
-// Two modes, both dark-based: glass is the default (a glassmorphism variant
-// that keeps the exact same palette while surfaces turn translucent), and solid
-// dark stays as the fallback.
-export const THEME_IDS = ["glass", "dark"];
+// Theme is locked strictly to 'glass' across the entire application.
+export const THEME_IDS = ["glass"];
 
-// The mode belongs to the installation, not to one browser. It is stored in
-// settings.theme, written only by a password session, and mirrored into the
-// document for every visitor, so switching it changes the whole site at once
-// instead of quietly applying to whoever happened to click.
-function normalize(theme) {
-  return THEME_IDS.includes(theme) ? theme : "glass";
+function normalize() {
+  return "glass";
 }
 
 const useThemeStore = create((set, get) => ({
   theme: "glass",
   canChangeTheme: false,
-  hydrated: false,
-
-  /** Called by the shell with the server value; also used for the SSR default. */
-  setServerTheme: (theme, canChange = false) => {
-    const id = normalize(theme);
-    set({ theme: id, canChangeTheme: !!canChange, hydrated: true });
-    applyTheme(id);
-  },
+  hydrated: true,
 
   /**
-   * Applies and persists a new mode. Returns false without touching anything
-   * when the session is not allowed to change it (an API-key sign-in), so the
-   * control can never repaint the site behind the administrator's back.
+   * Called by ThemeProvider / shell. The persisted site-wide theme is
+   * strictly glass (/api/theme).
    */
-  setTheme: async (theme) => {
-    if (!get().canChangeTheme) return false;
-    const id = normalize(theme);
-    set({ theme: id });
-    applyTheme(id);
-    try {
-      const res = await fetch("/api/theme", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ theme: id }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      return true;
-    } catch (error) {
-      // Roll back so the document never shows a mode the server refused.
-      const previous = get().theme;
-      set({ theme: previous });
-      applyTheme(previous);
-      console.error("Theme change rejected:", error);
-      return false;
-    }
+  setServerTheme: (_theme, _canChange = false) => {
+    set({ theme: "glass", canChangeTheme: false, hydrated: true });
+    applyTheme("glass");
   },
 
-  toggleTheme: () => get().setTheme(get().theme === "glass" ? "dark" : "glass"),
+  /** Theme is locked strictly to glass; no switching is allowed. */
+  setTheme: async () => {
+    set({ theme: "glass" });
+    applyTheme("glass");
+    return true;
+  },
+
+  toggleTheme: () => {
+    applyTheme("glass");
+    return "glass";
+  },
 }));
 
-// Apply theme to document. "dark" always stays on (both modes are dark);
-// "glass" adds the frosted-token overrides in globals.css.
-export function applyTheme(theme) {
+// Apply theme to document. Both "dark" and "glass" classes always stay on.
+export function applyTheme(_theme = "glass") {
   if (typeof window === "undefined") return;
   const root = document.documentElement;
   root.classList.add("dark");
-  root.classList.toggle("glass", normalize(theme) === "glass");
+  root.classList.add("glass");
 }
 
 export default useThemeStore;

@@ -151,7 +151,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
               const selectedCount = Object.values(sel).filter(Boolean).length;
               return (
                 <div key={s.url} className="rounded border border-transparent hover:border-border">
-                  <div className="flex items-start gap-2 px-2 py-2 hover:bg-black/5 dark:hover:bg-white/5">
+                  <div className="flex items-start gap-2 px-2 py-2 hover:bg-surface-2">
                     {s.iconUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={s.iconUrl} alt="" className="size-7 rounded shrink-0 object-contain" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
@@ -181,7 +181,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                         added
                           ? "bg-green-500/10 text-green-600 cursor-default"
                           : expanded
-                          ? "bg-surface border border-border text-text-muted hover:bg-black/5"
+                          ? "bg-surface border border-border text-text-muted hover:bg-surface-2"
                           : "bg-primary/10 border border-primary/40 text-primary hover:bg-primary/20"
                       }`}
                     >
@@ -220,7 +220,7 @@ export default function McpMarketplaceModal({ isOpen, onClose, onAdd, addedNames
                           </div>
                           <div className="grid grid-cols-2 gap-1 max-h-40 overflow-y-auto">
                             {toolKeys.map((t) => (
-                              <label key={t} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-black/5 dark:hover:bg-white/5 px-1 rounded">
+                              <label key={t} className="flex items-center gap-1.5 text-[10px] cursor-pointer hover:bg-surface-2 px-1 rounded">
                                 <input
                                   type="checkbox"
                                   checked={!!sel[t]}

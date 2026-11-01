@@ -413,6 +413,97 @@ export function estimateOutputTokens(contentLength) {
 }
 
 /**
+ * Count total characters in an assistant response payload across formats (OpenAI, Claude, Gemini, Responses).
+ */
+export function countResponseOutputChars(responseBody) {
+  if (!responseBody || typeof responseBody !== "object") return 0;
+  let totalChars = 0;
+
+  // OpenAI format (choices array)
+  if (Array.isArray(responseBody.choices)) {
+    for (const choice of responseBody.choices) {
+      const msg = choice?.message || choice?.delta;
+      if (!msg) continue;
+      if (typeof msg.content === "string") totalChars += msg.content.length;
+      else if (Array.isArray(msg.content)) {
+        for (const part of msg.content) {
+          if (typeof part === "string") totalChars += part.length;
+          else if (part?.text) totalChars += part.text.length;
+        }
+      }
+      if (typeof msg.reasoning_content === "string") totalChars += msg.reasoning_content.length;
+      if (typeof msg.thinking === "string") totalChars += msg.thinking.length;
+      if (Array.isArray(msg.tool_calls)) {
+        for (const tc of msg.tool_calls) {
+          if (tc.function?.name) totalChars += tc.function.name.length;
+          if (typeof tc.function?.arguments === "string") totalChars += tc.function.arguments.length;
+          else if (tc.function?.arguments) totalChars += JSON.stringify(tc.function.arguments).length;
+        }
+      }
+    }
+  }
+
+  // Claude format (content blocks)
+  if (Array.isArray(responseBody.content)) {
+    for (const block of responseBody.content) {
+      if (typeof block === "string") totalChars += block.length;
+      else if (block && typeof block === "object") {
+        if (typeof block.text === "string") totalChars += block.text.length;
+        if (typeof block.thinking === "string") totalChars += block.thinking.length;
+        if (block.name) totalChars += String(block.name).length;
+        if (typeof block.input === "string") totalChars += block.input.length;
+        else if (block.input) totalChars += JSON.stringify(block.input).length;
+      }
+    }
+  }
+
+  // Gemini format (candidates parts)
+  if (Array.isArray(responseBody.candidates)) {
+    for (const cand of responseBody.candidates) {
+      const parts = cand?.content?.parts;
+      if (Array.isArray(parts)) {
+        for (const part of parts) {
+          if (typeof part.text === "string") totalChars += part.text.length;
+          if (part.functionCall) {
+            if (part.functionCall.name) totalChars += part.functionCall.name.length;
+            if (part.functionCall.args) totalChars += JSON.stringify(part.functionCall.args).length;
+          }
+        }
+      }
+    }
+  }
+
+  // Responses API format (output items)
+  if (Array.isArray(responseBody.output)) {
+    for (const item of responseBody.output) {
+      if (item?.type === "message" && Array.isArray(item.content)) {
+        for (const c of item.content) {
+          if (typeof c?.text === "string") totalChars += c.text.length;
+        }
+      } else if (item?.type === "function_call") {
+        if (item.name) totalChars += item.name.length;
+        if (typeof item.arguments === "string") totalChars += item.arguments.length;
+        else if (item.arguments) totalChars += JSON.stringify(item.arguments).length;
+      } else if (item?.type === "reasoning" && Array.isArray(item.summary)) {
+        for (const s of item.summary) {
+          if (typeof s?.text === "string") totalChars += s.text.length;
+        }
+      }
+    }
+  }
+
+  return totalChars;
+}
+
+/**
+ * Estimate output/completion tokens from response body payload
+ */
+export function estimateResponseOutputTokens(responseBody) {
+  const chars = countResponseOutputChars(responseBody);
+  return estimateOutputTokens(chars);
+}
+
+/**
  * Format usage object based on target format
  * @param {number} inputTokens - Input/prompt tokens
  * @param {number} outputTokens - Output/completion tokens

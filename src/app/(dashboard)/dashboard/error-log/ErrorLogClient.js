@@ -7,21 +7,21 @@ function getStatusBadge(code) {
   const num = Number(code) || 500;
   if (num >= 500) {
     return {
-      bg: "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25",
+      bg: "bg-danger/10 text-danger border border-danger/25",
       label: num,
       icon: "error",
     };
   }
   if (num === 429) {
     return {
-      bg: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25",
+      bg: "bg-warning/10 text-warning border border-warning/25",
       label: "429 Limit",
       icon: "speed",
     };
   }
   if (num === 401 || num === 403) {
     return {
-      bg: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/25",
+      bg: "bg-primary/10 text-primary border border-primary/25",
       label: num === 403 ? "403 Forbidden" : "401 Auth",
       icon: "lock",
     };
@@ -183,21 +183,21 @@ export default function ErrorLogClient() {
 
         {/* Quick Metric Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          <div className="p-3 rounded-xl border border-border/60 bg-surface flex flex-col">
+          <div className="p-3 rounded-xl border border-border-subtle bg-surface flex flex-col">
             <span className="text-[11px] text-text-muted font-medium uppercase tracking-wider">Total Recorded</span>
             <span className="text-lg font-bold text-text-main mt-0.5">{metrics.total}</span>
           </div>
-          <div className="p-3 rounded-xl border border-rose-500/20 bg-rose-500/5 flex flex-col">
-            <span className="text-[11px] text-rose-600 dark:text-rose-400 font-medium uppercase tracking-wider">5xx Server</span>
-            <span className="text-lg font-bold text-rose-600 dark:text-rose-400 mt-0.5">{metrics.server5xx}</span>
+          <div className="p-3 rounded-xl border border-danger/20 bg-danger/5 flex flex-col">
+            <span className="text-[11px] text-danger font-medium uppercase tracking-wider">5xx Server</span>
+            <span className="text-lg font-bold text-danger mt-0.5">{metrics.server5xx}</span>
           </div>
-          <div className="p-3 rounded-xl border border-amber-500/20 bg-amber-500/5 flex flex-col">
-            <span className="text-[11px] text-amber-600 dark:text-amber-400 font-medium uppercase tracking-wider">429 Rate Limits</span>
-            <span className="text-lg font-bold text-amber-600 dark:text-amber-400 mt-0.5">{metrics.rate429}</span>
+          <div className="p-3 rounded-xl border border-warning/20 bg-warning/5 flex flex-col">
+            <span className="text-[11px] text-warning font-medium uppercase tracking-wider">429 Rate Limits</span>
+            <span className="text-lg font-bold text-warning mt-0.5">{metrics.rate429}</span>
           </div>
-          <div className="p-3 rounded-xl border border-purple-500/20 bg-purple-500/5 flex flex-col">
-            <span className="text-[11px] text-purple-600 dark:text-purple-400 font-medium uppercase tracking-wider">401/403 Auth</span>
-            <span className="text-lg font-bold text-purple-600 dark:text-purple-400 mt-0.5">{metrics.auth4xx}</span>
+          <div className="p-3 rounded-xl border border-primary/20 bg-primary/5 flex flex-col">
+            <span className="text-[11px] text-primary font-medium uppercase tracking-wider">401/403 Auth</span>
+            <span className="text-lg font-bold text-primary mt-0.5">{metrics.auth4xx}</span>
           </div>
         </div>
 

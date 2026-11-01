@@ -115,8 +115,8 @@ export default function KeyQuotaCard({ quota }) {
           <div className="flex items-center gap-1.5 pt-2 border-t border-border/40 text-xs">
             <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-medium ${
               isExpired
-                ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                ? "bg-rose-500/15 text-danger border border-rose-500/20"
+                : "bg-amber-500/10 text-warning border border-amber-500/20"
             }`}>
               <span className="material-symbols-outlined text-[13px] leading-none">
                 {isExpired ? "event_busy" : "timer"}

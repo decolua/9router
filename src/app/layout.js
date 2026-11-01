@@ -31,12 +31,10 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Apply persisted theme before first paint so a reload does not flash the
-            default (light) theme before the client store hydrates. Mirrors the
-            zustand-persist "theme" key and the `dark` class applyTheme() sets. */}
+        {/* Lock theme strictly to glass before first paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{var s=JSON.parse(localStorage.getItem('theme')||'null');var t=s&&s.state&&s.state.theme;document.documentElement.classList.add('dark');if(t!=='dark')document.documentElement.classList.add('glass')}catch(e){document.documentElement.classList.add('dark')}`,
+            __html: `document.documentElement.classList.add('dark','glass');`,
           }}
         />
         <script

@@ -13,6 +13,7 @@ const ICON_ALIASES = {
   // MiniMax Code rides the existing MiniMax brand mark
   "minimax-code": "minimax",
   "minimax-code-global": "minimax",
+  "zai-web": "glm",
 };
 
 const TYPE_PREFIX_ALIASES = {

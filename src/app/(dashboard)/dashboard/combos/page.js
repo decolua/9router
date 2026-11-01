@@ -467,7 +467,7 @@ export default function CombosPage() {
           )}
           {/* Selection toolbar */}
           {someSelected && (
-            <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-black/5 bg-black/[0.015] px-3 py-2 dark:border-white/5 dark:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 flex-col gap-2 rounded-lg border border-border-subtle bg-surface-2 px-3 py-2 sm:flex-row sm:items-center sm:justify-between">
               <span className="text-xs text-text-muted select-none">
                 {selectedIds.length} selected
               </span>
@@ -639,7 +639,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                     ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
                     : getCaps?.(model);
                   return (
-                    <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
+                    <code key={index} className="inline-flex items-center gap-1 rounded bg-surface-2 border border-border-subtle px-1.5 py-0.5 font-mono text-xs text-text-muted">
                       <span>{model}</span>
                       <span className="opacity-70" title={`${Number(memberCaps?.contextWindow || 0).toLocaleString()} tokens`}>
                         {fmtK(memberCaps?.contextWindow)}
@@ -706,7 +706,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-primary"
               title="Copy combo name"
             >
               <span className="material-symbols-outlined text-[18px]">
@@ -716,7 +716,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             </button>
             <button
               onClick={onEdit}
-              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+              className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-surface-2 hover:text-primary"
               title="Edit"
             >
               <span className="material-symbols-outlined text-[18px]">edit</span>
@@ -862,7 +862,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
         <div className="mt-3 overflow-hidden rounded-lg border border-border/50">
           <table className="w-full text-left text-xs">
             <thead>
-              <tr className="border-b border-border/40 bg-black/[0.02] text-text-muted dark:bg-white/[0.02]">
+              <tr className="border-b border-border/40 bg-surface-2 text-text-muted">
                 <th className="w-12 px-3 py-1.5 font-medium text-center">#</th>
                 <th className="px-3 py-1.5 font-medium">Model</th>
                 <th className="w-24 px-3 py-1.5 font-medium text-center">Order</th>
@@ -871,7 +871,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
             </thead>
             <tbody className="divide-y divide-border/30 font-mono">
               {models.map((model, index) => (
-                <tr key={`${model}-${index}`} className="hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors">
+                <tr key={`${model}-${index}`} className="hover:bg-surface-2 transition-colors">
                   <td className="px-3 py-2 text-center text-text-muted text-[11px] font-sans">
                     #{index + 1}
                   </td>
@@ -880,7 +880,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                       <span className="truncate">{model}</span>
                       <CapacityBadges caps={getCaps?.(model)} />
                       {model === DEFAULT_FALLBACK_MODEL && (
-                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-sans text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+                        <span className="rounded bg-emerald-500/10 px-1.5 py-0.5 font-sans text-[10px] font-medium text-success">
                           free default
                         </span>
                       )}
@@ -895,7 +895,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                         className={`p-1 rounded transition-colors ${
                           !enabled || index === 0
                             ? "text-text-muted/20 cursor-not-allowed"
-                            : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"
+                            : "text-text-muted hover:text-primary hover:bg-surface-2"
                         }`}
                         title="Move up"
                       >
@@ -908,7 +908,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
                         className={`p-1 rounded transition-colors ${
                           !enabled || index === models.length - 1
                             ? "text-text-muted/20 cursor-not-allowed"
-                            : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"
+                            : "text-text-muted hover:text-primary hover:bg-surface-2"
                         }`}
                         title="Move down"
                       >
@@ -981,7 +981,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
     <div
       ref={setNodeRef}
       style={style}
-      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-black/[0.02] hover:bg-black/[0.04] dark:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
+      className={`group flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 bg-surface-2 hover:bg-surface-3 transition-colors ${isDragging ? "shadow-md ring-1 ring-primary/30" : ""}`}
     >
       {/* Drag handle */}
       <button
@@ -1009,11 +1009,11 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
           onKeyDown={handleKeyDown}
-          className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20"
+          className="min-w-0 flex-1 rounded border border-primary/40 bg-surface border border-border px-1.5 py-0.5 font-mono text-xs text-text-main outline-none"
         />
       ) : (
         <div
-          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
+          className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-surface-2"
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
@@ -1024,7 +1024,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
       {/* Priority arrows */}
       <div className="flex shrink-0 items-center gap-0.5">
         <span
-          className="mr-1 shrink-0 rounded bg-black/[0.04] px-1 py-0.5 font-mono text-[10px] text-text-muted dark:bg-white/[0.04]"
+          className="mr-1 shrink-0 rounded bg-surface-2 px-1 py-0.5 font-mono text-[10px] text-text-muted"
           title={context ? `${Number(context).toLocaleString()} tokens` : "Context window unknown"}
         >
           {fmtK(context)}
@@ -1032,7 +1032,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
         <button
           onClick={onMoveUp}
           disabled={isFirst}
-          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          className={`p-0.5 rounded ${isFirst ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`}
           title="Move up"
         >
           <span className="material-symbols-outlined text-[12px]">arrow_upward</span>
@@ -1040,7 +1040,7 @@ function ModelItem({ id, index, model, isFirst, isLast, context, onEdit, onMoveU
         <button
           onClick={onMoveDown}
           disabled={isLast}
-          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-black/5 dark:hover:bg-white/5"}`}
+          className={`p-0.5 rounded ${isLast ? "text-text-muted/20 cursor-not-allowed" : "text-text-muted hover:text-primary hover:bg-surface-2"}`}
           title="Move down"
         >
           <span className="material-symbols-outlined text-[12px]">arrow_downward</span>
@@ -1200,7 +1200,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             <label className="text-sm font-medium mb-1.5 block">Models</label>
 
             {models.length === 0 ? (
-              <div className="text-center py-4 border border-dashed border-black/10 dark:border-white/10 rounded-lg bg-black/[0.01] dark:bg-white/[0.01]">
+              <div className="text-center py-4 border border-dashed border-border-subtle rounded-lg bg-surface-2/40">
                 <span className="material-symbols-outlined text-text-muted text-xl mb-1">layers</span>
                 <p className="text-xs text-text-muted">No models added yet</p>
               </div>
@@ -1235,7 +1235,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
             {/* Add Model button */}
             <button
               onClick={() => setShowModelSelect(true)}
-              className="w-full mt-2 py-2 border border-dashed border-black/10 dark:border-white/10 rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
+              className="w-full mt-2 py-2 border border-dashed border-border-subtle rounded-lg text-xs text-primary font-medium hover:text-primary hover:border-primary/50 transition-colors flex items-center justify-center gap-1"
             >
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
@@ -1245,7 +1245,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
           {/* Context window */}
           <div>
             <label className="text-sm font-medium mb-1.5 block">Context Window</label>
-            <div className="flex rounded-lg border border-black/10 bg-black/[0.02] p-1 dark:border-white/10 dark:bg-white/[0.02]">
+            <div className="flex rounded-lg border border-black/10 bg-surface-2 p-1 border-border-subtle">
               <button
                 type="button"
                 onClick={() => setContextMode("auto")}
@@ -1272,7 +1272,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                   onChange={(e) => setContextInput(e.target.value.replace(/[^\d]/g, ""))}
                   inputMode="numeric"
                   placeholder={String(autoContext || 200000)}
-                  className="mt-1.5 w-full rounded border border-black/10 bg-white px-2 py-1.5 font-mono text-sm outline-none focus:border-primary dark:border-white/10 dark:bg-black/20"
+                  className="mt-1.5 w-full rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm outline-none focus:border-primary"
                 />
                 <p className="text-[10px] text-text-muted mt-0.5">
                   Tokens clients may send before compaction. Leave empty to fall back to {fmtK(autoContext)}.

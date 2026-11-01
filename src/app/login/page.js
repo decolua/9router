@@ -224,7 +224,7 @@ export default function LoginPage() {
         <Card>
           {mustChange ? (
             <form onSubmit={handleSetNewPassword} className="flex flex-col gap-4">
-              <p className="text-sm text-amber-600 dark:text-amber-400 text-center">
+              <p className="text-sm text-warning text-center">
                 Set a new password before accessing the dashboard remotely.
               </p>
               <div className="flex flex-col gap-2">
@@ -262,7 +262,7 @@ export default function LoginPage() {
             {passwordAvailable ? (
               <form onSubmit={handleLogin} className="flex flex-col gap-4">
                 {isSsoEnabled && !ssoAvailable && (
-                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                  <p className="text-xs text-warning text-center">
                     {activeSsoType === "saml" ? "SAML SSO" : "OIDC"} login is enabled, but configuration is incomplete. Password login is still available for recovery.
                   </p>
                 )}
@@ -304,7 +304,7 @@ export default function LoginPage() {
                     />
                     {error && <p className="text-xs text-red-500">{error}</p>}
                     {retryAfter > 0 && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400">
+                      <p className="text-xs text-warning">
                         Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
                       </p>
                     )}

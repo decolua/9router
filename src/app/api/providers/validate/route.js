@@ -535,6 +535,44 @@ export async function POST(request) {
           break;
         }
 
+        case "zai-web": {
+          const raw = String(apiKey || "").trim();
+          let token = raw;
+          if (raw.startsWith("{")) {
+            try {
+              const parsed = JSON.parse(raw);
+              token = parsed.token || parsed.accessToken || raw;
+            } catch {
+              token = raw;
+            }
+          }
+          if (token.toLowerCase().startsWith("bearer ")) {
+            token = token.slice(7).trim();
+          }
+          if (!token) {
+            isValid = false;
+            error = "Token is required. Copy the 'token' string from chat.z.ai Local Storage.";
+            break;
+          }
+          try {
+            const probeRes = await fetch("https://chat.z.ai/api/v1/users/user/settings", {
+              headers: { Authorization: `Bearer ${token}` },
+              signal: AbortSignal.timeout(8000),
+            });
+            if (probeRes.status === 200 || probeRes.status === 429) {
+              isValid = true;
+            } else if (probeRes.status === 401 || probeRes.status === 403) {
+              isValid = false;
+              error = "Token expired or invalid (HTTP 401). Please copy fresh token from chat.z.ai Local Storage.";
+            } else {
+              isValid = true; // fail-open for rate limits or other codes
+            }
+          } catch (e) {
+            isValid = true; // network fail-open
+          }
+          break;
+        }
+
         case "qoder":
         case "qoder-cn": {
           // PAT (pt-...) needs the job-token exchange before it can sign

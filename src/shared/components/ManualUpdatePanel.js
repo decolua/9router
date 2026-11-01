@@ -46,7 +46,7 @@ export default function ManualUpdatePanel({ latestVersion, installCmd, copied, o
       <ol className="text-xs text-text-muted space-y-1 list-decimal list-inside mb-4">
         <li>Click <strong>Copy & Shutdown</strong> below.</li>
         <li>Paste the command into your terminal and press Enter.</li>
-        <li>Run <code className="px-1 rounded bg-surface-3 text-green-500 dark:text-green-400">9router</code> again after install.</li>
+        <li>Run <code className="px-1 rounded bg-surface-3 text-success">9router</code> again after install.</li>
       </ol>
 
       {isDisconnected ? (

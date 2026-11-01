@@ -271,7 +271,7 @@ export default function PxpipeClient() {
       <Card className="p-4" id="logs">
         <h3 className="font-medium mb-3">PXPIPE Logs</h3>
         {logs?.installLog ? (
-          <pre className="rounded bg-black/5 dark:bg-white/5 p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">
+          <pre className="rounded-lg bg-surface-2 border border-border-subtle p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto whitespace-pre-wrap">
             {logs.installLog}
           </pre>
         ) : (

@@ -1,3 +1,24 @@
+# v0.5.349 (2026-11-01) · 1 commit
+
+## UI & Theme System
+- **Enforce glass theme exclusively across the dashboard**:
+  - Removed theme switch button and `ThemeModal` completely from `HeaderMenu` and component tree.
+  - Locked site-wide theme strictly to `glass` across `themeStore`, `ThemeProvider`, RootLayout, `settingsRepo`, and `/api/theme`.
+  - Removed 'dark' theme option and ensured `<html class="dark glass">` is applied prior to first paint.
+  - Comprehensive design system audit: eliminated ad-hoc raw colors, replaced hardcoded dark-mode utility classes with official semantic tokens (`bg-surface`, `bg-surface-2`, `bg-surface-3`, `border-border`, `border-border-subtle`, `text-success`, `text-warning`, `text-info`, `text-danger`).
+  - Strengthened frosted borders and backdrop blur for cards, dialogs, and panels under the glass theme in `globals.css`.
+
+## Providers & Usage Fixes
+- **Web Cookie Token Usage Tracking (Fix Output Tokens 0)**:
+  - Added fallback character and token counting logic in `usageTracking.js`, `gemini-web.js`, `webCookieToolBridge.js`, and stream/non-stream handlers so completion tokens are accurately estimated and logged in `usageHistory` even when web providers return 0 tokens.
+- **Gemini Web Cookie Models**:
+  - Validated and audited full model catalogue (`gemini-3.8-flash`, `gemini-3.5-flash-lite`, `gemini-3.1-pro`, `gemini-4-argon`, and all `-thinking` variants).
+  - Verified active Google RPC HEX mappings, multi-format prompt normalization, and auto-retry session refresh.
+- **Z.ai Web Cookie Provider (`zai-web`)**:
+  - Registered `zai-web` as a full webCookie provider supporting GLM-5.3, GLM-5.3 Flash, GLM-5.2, GLM-5.1, GLM-5 Turbo, and GLM-5V Turbo.
+  - Implemented token validation and connection testing against `chat.z.ai`.
+  - Configured session token input guidance and token usage estimation.
+
 # v0.5.348 (2026-10-29) · 1 commit
 
 ## UI

@@ -52,7 +52,7 @@ export default function ModelRow({ model, fullModel, alias, copied, onCopy, test
           <button
             onClick={() => onCopy(displayModel, `model-${model.id}`)}
             title={copied === `model-${model.id}` ? "Copied" : "Copy"}
-            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all shrink-0"
+            className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all shrink-0"
           >
             <span className="material-symbols-outlined text-[14px] leading-none">
               {copied === `model-${model.id}` ? "check" : "content_copy"}

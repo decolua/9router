@@ -879,6 +879,30 @@ case "llm7": {
         const probe = await probeGeminiWebCookie(connection.apiKey);
         return { valid: probe.valid, error: probe.valid ? null : probe.error, warning: probe.warning || null, refreshed: false };
       }
+      case "zai-web": {
+        const raw = String(connection?.apiKey || "").trim();
+        let token = raw;
+        if (raw.startsWith("{")) {
+          try {
+            const parsed = JSON.parse(raw);
+            token = parsed.token || parsed.accessToken || raw;
+          } catch {
+            token = raw;
+          }
+        }
+        if (token.toLowerCase().startsWith("bearer ")) token = token.slice(7).trim();
+        if (!token) return { valid: false, error: "Token is required", refreshed: false };
+        try {
+          const probeRes = await fetch("https://chat.z.ai/api/v1/users/user/settings", {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: AbortSignal.timeout(8000),
+          });
+          const valid = probeRes.status === 200 || probeRes.status === 429;
+          return { valid, error: valid ? null : "Token expired or invalid", refreshed: false };
+        } catch (e) {
+          return { valid: true, error: null, refreshed: false }; // fail-open
+        }
+      }
       default:
         return { valid: false, error: "Provider test not supported" };
     }

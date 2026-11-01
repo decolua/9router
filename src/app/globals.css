@@ -792,6 +792,17 @@ button:disabled,
    underneath instead of being buried. */
 .dark.glass {
   --color-scrim: rgba(8, 11, 16, 0.34);
+  --color-border: rgba(255, 255, 255, 0.12);
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-text-subtle: #9ca3af;
+}
+
+.dark.glass .border-border {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.dark.glass .border-border-subtle {
+  border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
 /* Derived surfaces follow the same frost ladder the explicit utilities above
@@ -809,10 +820,17 @@ button:disabled,
   --color-surface-secondary: rgba(255, 255, 255, 0.11);
 }
 
-/* Nested menus, modals and popovers inherit the same frost. */
-.dark.glass [class*="bg-surface"] {
+/* Nested menus, modals, cards and popovers inherit the same frost. */
+.dark.glass [class*="bg-surface"],
+.dark.glass [class*="bg-bg-alt"],
+.dark.glass [class*="bg-bg-subtle"] {
   backdrop-filter: blur(16px) saturate(150%);
   -webkit-backdrop-filter: blur(16px) saturate(150%);
+}
+
+.dark.glass select option {
+  background-color: #171b24;
+  color: #ededed;
 }
 
 /* Inputs keep a solid base; a translucent field loses the caret against blur. */

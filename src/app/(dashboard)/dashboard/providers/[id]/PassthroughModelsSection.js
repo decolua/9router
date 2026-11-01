@@ -38,7 +38,7 @@ function PassthroughModelRow({ modelId, fullModel, copied, onCopy, onDeleteAlias
           <button
             onClick={() => onCopy(fullModel, `model-${modelId}`)}
             title={copied === `model-${modelId}` ? "Copied" : "Copy"}
-            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all shrink-0"
+            className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all shrink-0"
           >
             <span className="material-symbols-outlined text-[14px]">
               {copied === `model-${modelId}` ? "check" : "content_copy"}

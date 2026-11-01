@@ -159,7 +159,7 @@ export default function ModelStudioPage() {
         <p className="text-xs text-text-muted mt-0.5">
           Give any model your own name, context size and behaviour, and it becomes a callable model ID for clients, combos, and API keys.
         </p>
-        <div className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-border bg-black/[0.02] dark:bg-white/[0.03] px-3 py-2">
+        <div className="mt-2 flex items-start justify-between gap-3 rounded-xl border border-border-subtle bg-surface-2 px-3 py-2">
           <div className="min-w-0">
             <span className="flex items-center gap-1.5 text-xs font-semibold text-text-main">
               <span className="material-symbols-outlined text-[16px] leading-none text-primary">
@@ -395,7 +395,7 @@ function ModelStudioContent({ antiProbe = true }) {
                       type="button"
                       onClick={() => copy(model.callName, model.callName)}
                       title="Copy model name"
-                      className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all shrink-0"
+                      className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all shrink-0"
                     >
                       <span className="material-symbols-outlined text-[14px]">
                         {copiedName === model.callName ? "check" : "content_copy"}
@@ -410,7 +410,7 @@ function ModelStudioContent({ antiProbe = true }) {
                   <button
                     onClick={() => openDuplicate(model)}
                     title="Duplicate"
-                    className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                   >
                     <span className="material-symbols-outlined text-[14px]">content_copy</span>
                   </button>
@@ -435,7 +435,7 @@ function ModelStudioContent({ antiProbe = true }) {
               </div>
 
               <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-                <span className="px-2 py-0.5 rounded-full bg-black/5 dark:bg-white/5 text-text-muted font-mono truncate max-w-full">
+                <span className="px-2 py-0.5 rounded-full bg-surface-2 border border-border-subtle text-text-muted font-mono truncate max-w-full">
                   {model.targetLabel || model.targetModel}
                 </span>
                 {!String(model.targetModel || "").includes("/") && (
@@ -449,7 +449,7 @@ function ModelStudioContent({ antiProbe = true }) {
                   </span>
                 )}
                 {(model.inputMultiplier > 0 || model.outputMultiplier > 0) && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium">
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-success font-medium">
                     {model.inputMultiplier ? `${model.inputMultiplier}x In` : ""}
                     {model.inputMultiplier && model.outputMultiplier ? " · " : ""}
                     {model.outputMultiplier ? `${model.outputMultiplier}x Out` : ""}
@@ -458,7 +458,7 @@ function ModelStudioContent({ antiProbe = true }) {
               </div>
 
               {model.systemPrompt && (
-                <div className="rounded-lg bg-black/5 dark:bg-white/5 px-2.5 py-2">
+                <div className="rounded-lg bg-surface-2 border border-border-subtle px-2.5 py-2">
                   <p className="text-[10px] uppercase tracking-wide text-text-muted/70 mb-0.5">
                     System prompt
                   </p>
@@ -851,7 +851,7 @@ function StudioFormModal({
 
 
           {antiProbe ? (
-          <div className="rounded-xl border border-border bg-black/[0.02] dark:bg-white/[0.03] p-3 flex flex-col gap-2.5">
+          <div className="rounded-xl border border-border-subtle bg-surface-2 p-3 flex flex-col gap-2.5">
             <div className="flex items-center justify-between gap-2">
               <span className="flex items-center gap-1.5 text-xs font-semibold text-text-main">
                 <span className="material-symbols-outlined text-[16px] leading-none text-primary">
@@ -1081,7 +1081,7 @@ function PrefixCard({ nodes, onSaved }) {
           {compatible.map((node) => (
             <div
               key={node.id}
-              className="flex items-center justify-between gap-2 rounded-lg border border-black/5 dark:border-white/5 bg-black/5 dark:bg-white/5 px-2.5 py-2"
+              className="flex items-center justify-between gap-2 rounded-lg border border-border-subtle bg-surface-2 px-2.5 py-2"
             >
               <div className="min-w-0 flex-1">
                 <p className="text-xs font-medium text-text-main truncate">{node.name}</p>

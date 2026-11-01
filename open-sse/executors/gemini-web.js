@@ -22,6 +22,8 @@
 import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { createHash } from "node:crypto";
+import { estimateInputTokens, estimateOutputTokens } from "../utils/usageTracking.js";
+import { FORMATS } from "../translator/formats.js";
 import {
   buildToolInstructions,
   buildToolReminder,
@@ -57,7 +59,7 @@ const THINKING_EXTENDED = 2;
 // listing. Hex ids rotate whenever Google swaps the served build, so these are
 // re-read from the listing instead of being trusted forever; the aliases below
 // keep the previous ids working.
-const HEX = {
+export const HEX = {
   flashLite: "8c46e95b1a07cecc",
   flash: "56fdd199312815e2",
   pro: "e6fa609c3fa255c0",
@@ -66,10 +68,18 @@ const HEX = {
 
 // Superseded ids still seen in older listings. Resolving one of these falls
 // through to the model that replaced it.
-const LEGACY_HEX = {
+export const LEGACY_HEX = {
   fbb127bbb056c959: "gemini-3.8-flash",
   cf41b0e0dd7d53e5: "gemini-3.5-flash-lite",
   "9d8ca3786ebdfbea": "gemini-3.1-pro",
+};
+
+export const HEX_TO_MODEL = {
+  [HEX.flashLite]: "gemini-3.5-flash-lite",
+  [HEX.flash]: "gemini-3.8-flash",
+  [HEX.pro]: "gemini-3.1-pro",
+  [HEX.argon]: "gemini-4-argon",
+  ...LEGACY_HEX,
 };
 
 /**
@@ -102,21 +112,147 @@ export const GEMINI_WEB_MODELS = {
   "gemini-4-argon-thinking": { hexID: HEX.argon, mode: 8, thinking: true, needsCookie: true },
 };
 
+export const MODEL_ALIASES = {
+  // Flash aliases
+  "gemini-3.8-flash": "gemini-3.8-flash",
+  "gemini-3.7-flash": "gemini-3.8-flash",
+  "gemini-3.6-flash": "gemini-3.8-flash",
+  "gemini-3.5-flash": "gemini-3.8-flash",
+  "gemini-3-flash": "gemini-3.8-flash",
+  "gemini-3.0-flash": "gemini-3.8-flash",
+  "gemini-2.5-flash": "gemini-3.8-flash",
+  "gemini-2.0-flash": "gemini-3.8-flash",
+  "gemini-1.5-flash": "gemini-3.8-flash",
+  "gemini-flash": "gemini-3.8-flash",
+  flash: "gemini-3.8-flash",
+  default: "gemini-3.8-flash",
+  auto: "gemini-3.8-flash",
+
+  // Flash Lite aliases
+  "gemini-3.5-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-3.1-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-3-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-3.0-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-2.0-flash-lite": "gemini-3.5-flash-lite",
+  "gemini-flash-lite": "gemini-3.5-flash-lite",
+  "flash-lite": "gemini-3.5-flash-lite",
+
+  // Pro aliases
+  "gemini-3.1-pro": "gemini-3.1-pro",
+  "gemini-3.5-pro": "gemini-3.1-pro",
+  "gemini-3-pro": "gemini-3.1-pro",
+  "gemini-3.0-pro": "gemini-3.1-pro",
+  "gemini-2.5-pro": "gemini-3.1-pro",
+  "gemini-2.0-pro": "gemini-3.1-pro",
+  "gemini-1.5-pro": "gemini-3.1-pro",
+  "gemini-pro": "gemini-3.1-pro",
+  pro: "gemini-3.1-pro",
+
+  // Argon aliases
+  "gemini-4-argon": "gemini-4-argon",
+  "gemini-argon": "gemini-4-argon",
+  argon: "gemini-4-argon",
+};
+
 export const DEFAULT_MODEL = "gemini-3.8-flash";
 
 export function resolveGeminiWebModel(model) {
-  const id = String(model ?? "").trim() || DEFAULT_MODEL;
-  if (LEGACY_HEX[id]) return resolveGeminiWebModel(LEGACY_HEX[id]);
-  const cfg = GEMINI_WEB_MODELS[id];
-  // Default thinking to false explicitly: callers branch on truthiness and a
-  // missing key would read as undefined.
-  if (cfg) return { thinking: false, mode: 1, needsCookie: false, ...cfg, id };
-  const base = id.replace(/-thinking$/, "");
-  const baseCfg = GEMINI_WEB_MODELS[base];
-  if (baseCfg) return { id, ...baseCfg, thinking: id.endsWith("-thinking") };
-  // Unknown model: send no header so the server picks its own default rather
-  // than pretending a model exists.
-  return { id, hexID: "", mode: 1, thinking: false, needsCookie: false, unknown: true };
+  const rawId = String(model ?? "").trim();
+  if (!rawId) return { ...GEMINI_WEB_MODELS[DEFAULT_MODEL], id: DEFAULT_MODEL, thinking: false };
+
+  // Strip provider prefix if present ("gemini-web/gemini-3.8-flash", "gweb/pro", etc.)
+  let id = rawId.includes("/") ? rawId.slice(rawId.lastIndexOf("/") + 1).trim() : rawId;
+  if (!id) id = DEFAULT_MODEL;
+
+  const lower = id.toLowerCase();
+  const isThinking = lower.endsWith("-thinking") || lower.endsWith(":thinking") || lower.endsWith("-think") || lower.endsWith(":think");
+  const baseName = isThinking ? lower.replace(/[-:](?:thinking|think)$/, "") : lower;
+
+  // 1. Direct hex lookup (active or superseded)
+  if (HEX_TO_MODEL[baseName] || LEGACY_HEX[baseName]) {
+    const targetModel = HEX_TO_MODEL[baseName] || LEGACY_HEX[baseName];
+    const targetKey = isThinking ? `${targetModel}-thinking` : targetModel;
+    const cfg = GEMINI_WEB_MODELS[targetKey] || GEMINI_WEB_MODELS[targetModel];
+    return {
+      thinking: isThinking || !!cfg?.thinking,
+      mode: 1,
+      needsCookie: true,
+      ...cfg,
+      id: isThinking ? `${targetModel}-thinking` : targetModel,
+    };
+  }
+
+  // 2. Direct match in GEMINI_WEB_MODELS
+  const exactKey = Object.keys(GEMINI_WEB_MODELS).find((k) => k.toLowerCase() === lower);
+  if (exactKey) {
+    const cfg = GEMINI_WEB_MODELS[exactKey];
+    return { thinking: false, mode: 1, needsCookie: false, ...cfg, id: exactKey };
+  }
+
+  // 3. Match base in GEMINI_WEB_MODELS
+  const baseExactKey = Object.keys(GEMINI_WEB_MODELS).find((k) => k.toLowerCase() === baseName);
+  if (baseExactKey) {
+    const baseCfg = GEMINI_WEB_MODELS[baseExactKey];
+    const resolvedId = isThinking ? `${baseExactKey}-thinking` : baseExactKey;
+    const thinkingCfg = isThinking ? GEMINI_WEB_MODELS[resolvedId] : null;
+    return {
+      ...baseCfg,
+      ...(thinkingCfg || {}),
+      id: resolvedId,
+      thinking: isThinking || !!baseCfg.thinking,
+    };
+  }
+
+  // 4. Model aliases map
+  if (MODEL_ALIASES[baseName]) {
+    const targetModel = MODEL_ALIASES[baseName];
+    const targetKey = isThinking ? `${targetModel}-thinking` : targetModel;
+    const cfg = GEMINI_WEB_MODELS[targetKey] || GEMINI_WEB_MODELS[targetModel];
+    return {
+      ...cfg,
+      id: targetKey,
+      thinking: isThinking || !!cfg?.thinking,
+    };
+  }
+
+  // 5. Raw 16-hex ID passthrough
+  if (/^[0-9a-f]{16}$/i.test(baseName)) {
+    return {
+      id: isThinking ? `${baseName}-thinking` : baseName,
+      hexID: baseName.toLowerCase(),
+      mode: 1,
+      thinking: isThinking,
+      needsCookie: true,
+      rawHex: true,
+    };
+  }
+
+  // 6. Heuristic keyword fallback for model families
+  let familyModel = null;
+  if (baseName.includes("argon")) {
+    familyModel = "gemini-4-argon";
+  } else if (baseName.includes("lite")) {
+    familyModel = "gemini-3.5-flash-lite";
+  } else if (baseName.includes("pro")) {
+    familyModel = "gemini-3.1-pro";
+  } else if (baseName.includes("flash") || baseName.includes("gemini")) {
+    familyModel = "gemini-3.8-flash";
+  }
+
+  if (familyModel) {
+    const targetKey = isThinking ? `${familyModel}-thinking` : familyModel;
+    const cfg = GEMINI_WEB_MODELS[targetKey] || GEMINI_WEB_MODELS[familyModel];
+    return {
+      ...cfg,
+      id: targetKey,
+      thinking: isThinking || !!cfg?.thinking,
+      inferredFrom: id,
+    };
+  }
+
+  // 7. Unknown model: send no header so the server picks its own default
+  return { id, hexID: "", mode: 1, thinking: isThinking, needsCookie: false, unknown: true };
 }
 
 export function normalizeGeminiCookieInput(raw, cookieName = "__Secure-1PSID") {
@@ -216,9 +352,12 @@ export function buildInnerPayload(prompt, { mode = 1, thinking = false, uuid = "
 }
 
 export function buildGeminiPrompt(messages) {
-  const textMessages = (messages || []).filter(
-    (m) => typeof m.content === "string" && m.content.trim().length > 0
-  );
+  const textMessages = (messages || [])
+    .map((m) => {
+      const content = extractText(m?.content ?? "");
+      return { role: m?.role || "user", content };
+    })
+    .filter((m) => m.content.trim().length > 0);
   const userMessages = textMessages.filter((m) => m.role === "user");
   const lastUser = userMessages[userMessages.length - 1];
   const lastUserContent = lastUser?.content ?? "";
@@ -533,30 +672,17 @@ export class GeminiWebExecutor extends BaseExecutor {
     const modelCfg = resolveGeminiWebModel(model || bodyObj.model);
     const modelId = modelCfg.id;
 
-    let session;
-    try {
-      session = await fetchSessionParams(cookie, false, proxyOptions);
-    } catch (err) {
-      return {
-        response: errorResponse(502, `Gemini session fetch failed: ${describeFetchError(err)}`),
-        url: GEMINI_URL,
-        headers: {},
-        transformedBody: body,
-      };
-    }
-    if (!session) {
-      return {
-        response: errorResponse(401, "Gemini cookie expired or invalid, re-copy __Secure-1PSID from gemini.google.com cookies"),
-        url: GEMINI_URL,
-        headers: {},
-        transformedBody: body,
-      };
-    }
-
     let prompt;
     let toolMode = false;
+    let messages = Array.isArray(bodyObj.messages) ? [...bodyObj.messages] : [];
+    if (messages.length === 0 && (typeof bodyObj.prompt === "string" || Array.isArray(bodyObj.prompt))) {
+      const promptText = typeof bodyObj.prompt === "string" ? bodyObj.prompt : extractText(bodyObj.prompt);
+      if (promptText.trim().length > 0) {
+        messages = [{ role: "user", content: promptText }];
+      }
+    }
+
     try {
-      const messages = Array.isArray(bodyObj.messages) ? bodyObj.messages : [];
       let disableToolCalling = false;
       try {
         const { getSettings } = await import("@/lib/localDb.js");
@@ -578,10 +704,10 @@ export class GeminiWebExecutor extends BaseExecutor {
         transformedBody: body,
       };
     }
-    const hasUser = (Array.isArray(bodyObj.messages) ? bodyObj.messages : []).some(
+    const hasUser = messages.some(
       (m) => m.role === "user" && extractText(m.content).trim().length > 0
     );
-    if (!prompt || !hasUser) {
+    if (!prompt || !prompt.trim() || (!hasUser && messages.length === 0)) {
       return {
         response: errorResponse(400, "No user message found"),
         url: GEMINI_URL,
@@ -590,11 +716,44 @@ export class GeminiWebExecutor extends BaseExecutor {
       };
     }
 
+    let session;
+    try {
+      session = await fetchSessionParams(cookie, false, proxyOptions);
+    } catch (err) {
+      return {
+        response: errorResponse(502, `Gemini session fetch failed: ${describeFetchError(err)}`),
+        url: GEMINI_URL,
+        headers: {},
+        transformedBody: body,
+      };
+    }
+    if (!session) {
+      return {
+        response: errorResponse(401, "Gemini cookie expired or invalid, re-copy __Secure-1PSID from gemini.google.com cookies"),
+        url: GEMINI_URL,
+        headers: {},
+        transformedBody: body,
+      };
+    }
+
+    // Handle thinking parameter overrides from request body (OpenAI reasoning_effort, thinking object, or budget)
+    let isThinking = !!modelCfg.thinking;
+    if (bodyObj.thinking?.type === "disabled" || bodyObj.reasoning_effort === "none") {
+      isThinking = false;
+    } else if (
+      bodyObj.thinking?.type === "enabled" ||
+      (typeof bodyObj.reasoning_effort === "string" && bodyObj.reasoning_effort !== "none") ||
+      (typeof bodyObj.thinking_budget === "number" && bodyObj.thinking_budget > 0) ||
+      (typeof bodyObj.budget_tokens === "number" && bodyObj.budget_tokens > 0)
+    ) {
+      isThinking = true;
+    }
+
     const reqUuid = uuid4();
-    const thinkVal = modelCfg.thinking ? THINKING_EXTENDED : THINKING_NORMAL;
+    const thinkVal = isThinking ? THINKING_EXTENDED : THINKING_NORMAL;
     const innerJson = buildInnerPayload(prompt, {
       mode: modelCfg.mode ?? 1,
-      thinking: !!modelCfg.thinking,
+      thinking: isThinking,
       uuid: reqUuid,
     });
     const outerJson = JSON.stringify([null, innerJson]);
@@ -645,6 +804,37 @@ export class GeminiWebExecutor extends BaseExecutor {
       };
     }
 
+    // Retry once with a forced session refresh if rejected with 400/401/403 (e.g. stale XSRF token)
+    if (!upstream.ok && (upstream.status === 400 || upstream.status === 401 || upstream.status === 403)) {
+      log?.warn?.("GEMINI-WEB", `Upstream HTTP ${upstream.status}, attempting session refresh`);
+      try {
+        const freshSession = await fetchSessionParams(cookie, true, proxyOptions);
+        if (freshSession?.at) {
+          session = freshSession;
+          const retryParams = new URLSearchParams({
+            bl: session.bl,
+            hl: "en",
+            _reqid: String(Math.floor(Math.random() * 900000) + 100000),
+            rt: "c",
+          });
+          const retryForm = new URLSearchParams();
+          retryForm.set("f.req", outerJson);
+          retryForm.set("at", session.at);
+          upstream = await geminiFetch(`${STREAM_URL}?${retryParams.toString()}`, {
+            method: "POST",
+            headers: {
+              ...headers,
+              "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
+            },
+            body: retryForm.toString(),
+            signal: signal ?? undefined,
+          }, proxyOptions);
+        }
+      } catch (retryErr) {
+        log?.warn?.("GEMINI-WEB", `Session refresh retry failed: ${describeFetchError(retryErr)}`);
+      }
+    }
+
     if (!upstream.ok) {
       const errText = await upstream.text().catch(() => "");
       log?.error?.("GEMINI-WEB", `Upstream HTTP ${upstream.status}`);
@@ -682,6 +872,19 @@ export class GeminiWebExecutor extends BaseExecutor {
     const content = parsed.content || "";
     const calls = parsed.calls;
 
+    // Calculate token usage based on request body and actual generated output
+    const outputLen = (content ? content.length : 0) +
+      (reasoning ? reasoning.length : 0) +
+      (calls?.length ? JSON.stringify(calls).length : 0);
+    const promptTokens = estimateInputTokens(body);
+    const completionTokens = estimateOutputTokens(outputLen);
+    const calculatedUsage = {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      estimated: true,
+    };
+
     if (stream) {
       const encoder = new TextEncoder();
       const id = `chatcmpl-gwe-${Date.now()}`;
@@ -689,10 +892,14 @@ export class GeminiWebExecutor extends BaseExecutor {
       const base = { id, object: "chat.completion.chunk", created, model: modelId };
       const readable = new ReadableStream({
         start(controller) {
-          const push = (delta, finishReason) =>
+          const push = (delta, finishReason, usage) =>
             controller.enqueue(
               encoder.encode(
-                `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, ...(finishReason ? { finish_reason: finishReason } : {}) }] })}\n\n`
+                `data: ${JSON.stringify({
+                  ...base,
+                  choices: [{ index: 0, delta, ...(finishReason ? { finish_reason: finishReason } : {}) }],
+                  ...(usage ? { usage } : {}),
+                })}\n\n`
               )
             );
           if (reasoning) push({ reasoning_content: reasoning }, null);
@@ -705,7 +912,8 @@ export class GeminiWebExecutor extends BaseExecutor {
               calls
             );
           }
-          if (!sentCalls) push({}, "stop");
+          if (!sentCalls) push({}, "stop", calculatedUsage);
+          else push({}, null, calculatedUsage);
           controller.enqueue(encoder.encode("data: [DONE]\n\n"));
           controller.close();
         },
@@ -722,6 +930,7 @@ export class GeminiWebExecutor extends BaseExecutor {
         url: GEMINI_URL,
         headers: {},
         transformedBody: body,
+        responseFormat: FORMATS.OPENAI,
       };
     }
 
@@ -748,13 +957,14 @@ export class GeminiWebExecutor extends BaseExecutor {
               finish_reason: calls.length ? "tool_calls" : "stop",
             },
           ],
-          usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+          usage: calculatedUsage,
         }),
         { status: 200, headers: { "Content-Type": "application/json" } }
       ),
       url: GEMINI_URL,
       headers: {},
       transformedBody: body,
+      responseFormat: FORMATS.OPENAI,
     };
   }
 }

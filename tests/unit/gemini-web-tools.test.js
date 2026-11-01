@@ -7,13 +7,52 @@ import {
   makeSapisidHash,
   parseStreamReasoning,
   resolveGeminiWebModel,
+  HEX,
+  LEGACY_HEX,
+  HEX_TO_MODEL,
+  GEMINI_WEB_MODELS,
+  GeminiWebExecutor,
 } from "../../open-sse/executors/gemini-web.js";
+import geminiWebRegistry from "../../open-sse/providers/registry/gemini-web.js";
 import {
   buildToolInstructions,
   buildToolReminder,
   hasTools,
   parseToolCallReply,
 } from "../../open-sse/executors/webCookieToolBridge.js";
+
+describe("gemini-web registry and models", () => {
+  it("lists all 8 supported models in registry", () => {
+    const expectedModelIds = [
+      "gemini-3.8-flash",
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-pro",
+      "gemini-4-argon",
+      "gemini-3.8-flash-thinking",
+      "gemini-3.5-flash-lite-thinking",
+      "gemini-3.1-pro-thinking",
+      "gemini-4-argon-thinking",
+    ];
+    const registeredIds = geminiWebRegistry.models.map((m) => m.id);
+    expect(registeredIds).toEqual(expectedModelIds);
+    expect(geminiWebRegistry.passthroughModels).toBe(true);
+  });
+
+  it("resolves all registry models to active hexes and correct thinking mode", () => {
+    for (const model of geminiWebRegistry.models) {
+      const cfg = resolveGeminiWebModel(model.id);
+      expect(cfg.hexID).toBeTruthy();
+      expect(typeof cfg.hexID).toBe("string");
+      expect(cfg.hexID.length).toBe(16);
+      expect(cfg.mode).toBeGreaterThan(0);
+      if (model.id.endsWith("-thinking")) {
+        expect(cfg.thinking).toBe(true);
+      } else {
+        expect(cfg.thinking).toBe(false);
+      }
+    }
+  });
+});
 
 describe("gemini-web model table", () => {
   it("defaults to 3.8 Flash", () => {
@@ -27,15 +66,84 @@ describe("gemini-web model table", () => {
     expect(resolveGeminiWebModel("gemini-4-argon").hexID).toBe("95a4c0abcba24364");
   });
 
+  it("resolves active hexes directly to their corresponding models", () => {
+    expect(resolveGeminiWebModel(HEX.flashLite).id).toBe("gemini-3.5-flash-lite");
+    expect(resolveGeminiWebModel(HEX.flashLite).hexID).toBe(HEX.flashLite);
+
+    expect(resolveGeminiWebModel(HEX.flash).id).toBe("gemini-3.8-flash");
+    expect(resolveGeminiWebModel(HEX.flash).hexID).toBe(HEX.flash);
+
+    expect(resolveGeminiWebModel(HEX.pro).id).toBe("gemini-3.1-pro");
+    expect(resolveGeminiWebModel(HEX.pro).hexID).toBe(HEX.pro);
+
+    expect(resolveGeminiWebModel(HEX.argon).id).toBe("gemini-4-argon");
+    expect(resolveGeminiWebModel(HEX.argon).hexID).toBe(HEX.argon);
+
+    // Active hexes with -thinking
+    expect(resolveGeminiWebModel(`${HEX.flashLite}-thinking`).id).toBe("gemini-3.5-flash-lite-thinking");
+    expect(resolveGeminiWebModel(`${HEX.flashLite}-thinking`).thinking).toBe(true);
+  });
+
   it("keeps the previous hexes resolving to their replacement", () => {
     expect(resolveGeminiWebModel("9d8ca3786ebdfbea").id).toBe("gemini-3.1-pro");
     expect(resolveGeminiWebModel("cf41b0e0dd7d53e5").id).toBe("gemini-3.5-flash-lite");
+    expect(resolveGeminiWebModel("fbb127bbb056c959").id).toBe("gemini-3.8-flash");
   });
 
   it("treats 3.7 as an alias of 3.8 (same hex)", () => {
     expect(resolveGeminiWebModel("gemini-3.7-flash").hexID).toBe(
       resolveGeminiWebModel("gemini-3.8-flash").hexID
     );
+  });
+
+  it("resolves shorthand aliases and family names", () => {
+    expect(resolveGeminiWebModel("flash").id).toBe("gemini-3.8-flash");
+    expect(resolveGeminiWebModel("flash").hexID).toBe(HEX.flash);
+
+    expect(resolveGeminiWebModel("pro").id).toBe("gemini-3.1-pro");
+    expect(resolveGeminiWebModel("pro").hexID).toBe(HEX.pro);
+
+    expect(resolveGeminiWebModel("flash-lite").id).toBe("gemini-3.5-flash-lite");
+    expect(resolveGeminiWebModel("flash-lite").hexID).toBe(HEX.flashLite);
+
+    expect(resolveGeminiWebModel("argon").id).toBe("gemini-4-argon");
+    expect(resolveGeminiWebModel("argon").hexID).toBe(HEX.argon);
+
+    // Shorthand thinking
+    expect(resolveGeminiWebModel("flash-thinking").id).toBe("gemini-3.8-flash-thinking");
+    expect(resolveGeminiWebModel("flash-thinking").thinking).toBe(true);
+
+    expect(resolveGeminiWebModel("pro-thinking").id).toBe("gemini-3.1-pro-thinking");
+    expect(resolveGeminiWebModel("pro-thinking").thinking).toBe(true);
+
+    // Colon thinking syntax :thinking
+    expect(resolveGeminiWebModel("gemini-3.8-flash:thinking").id).toBe("gemini-3.8-flash-thinking");
+    expect(resolveGeminiWebModel("gemini-3.8-flash:thinking").thinking).toBe(true);
+  });
+
+  it("strips provider prefix like gemini-web/ and gweb/", () => {
+    expect(resolveGeminiWebModel("gemini-web/gemini-3.8-flash").id).toBe("gemini-3.8-flash");
+    expect(resolveGeminiWebModel("gemini-web/gemini-3.8-flash").hexID).toBe(HEX.flash);
+
+    expect(resolveGeminiWebModel("gweb/pro").id).toBe("gemini-3.1-pro");
+    expect(resolveGeminiWebModel("gweb/pro").hexID).toBe(HEX.pro);
+
+    expect(resolveGeminiWebModel("gemini-cookie/gemini-4-argon-thinking").id).toBe("gemini-4-argon-thinking");
+    expect(resolveGeminiWebModel("gemini-cookie/gemini-4-argon-thinking").thinking).toBe(true);
+  });
+
+  it("resolves passthrough model names with keyword inference", () => {
+    expect(resolveGeminiWebModel("gemini-3.1-pro-preview").hexID).toBe(HEX.pro);
+    expect(resolveGeminiWebModel("gemini-2.5-flash").hexID).toBe(HEX.flash);
+    expect(resolveGeminiWebModel("gemini-2.5-pro").hexID).toBe(HEX.pro);
+    expect(resolveGeminiWebModel("gemini-2.5-pro-thinking").thinking).toBe(true);
+  });
+
+  it("accepts raw 16-hex string passthrough", () => {
+    const raw = "1122334455667788";
+    const cfg = resolveGeminiWebModel(raw);
+    expect(cfg.hexID).toBe(raw);
+    expect(cfg.rawHex).toBe(true);
   });
 
   it("marks -thinking variants as thinking, base models as not", () => {
@@ -183,6 +291,53 @@ describe("web-cookie tool bridge", () => {
     const r = parseToolCallReply('run it\n{"name": "x", "arguments": {"a": 1,}}');
     expect(r.calls).toHaveLength(1);
     expect(r.calls[0].arguments.a).toBe(1);
+  });
+});
+
+describe("gemini-web prompt construction", () => {
+  it("extracts text from structured message content arrays without throwing 400", () => {
+    const messages = [
+      { role: "system", content: [{ type: "text", text: "You are helpful." }] },
+      { role: "user", content: [{ type: "text", text: "Hello from parts!" }] },
+    ];
+    const prompt = buildPromptWithTools(messages, { messages }).prompt;
+    expect(prompt).toContain("You are helpful.");
+    expect(prompt).toContain("Hello from parts!");
+  });
+});
+
+describe("gemini-web executor input validation", () => {
+  const executor = new GeminiWebExecutor();
+
+  it("returns 401 when cookies are missing", async () => {
+    const res = await executor.execute({
+      model: "gemini-3.8-flash",
+      body: { messages: [{ role: "user", content: "hello" }] },
+      credentials: {},
+    });
+    expect(res.response.status).toBe(401);
+  });
+
+  it("returns 400 when prompt and user message are empty", async () => {
+    const res = await executor.execute({
+      model: "gemini-3.8-flash",
+      body: { messages: [{ role: "user", content: "   " }] },
+      credentials: { apiKey: "__Secure-1PSID=fake-psid" },
+    });
+    expect(res.response.status).toBe(400);
+    const data = await res.response.json();
+    expect(data.error.message).toContain("No user message found");
+  });
+
+  it("accepts top-level body.prompt string instead of messages", async () => {
+    // If prompt is valid, it proceeds past prompt validation to session fetching (which fails with fake cookie -> 401 or 502)
+    const res = await executor.execute({
+      model: "gemini-3.8-flash",
+      body: { prompt: "Hello Gemini" },
+      credentials: { apiKey: "__Secure-1PSID=fake-psid" },
+    });
+    // Should NOT be 400 "No user message found"
+    expect(res.response.status).not.toBe(400);
   });
 });
 

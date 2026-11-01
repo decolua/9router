@@ -8,15 +8,10 @@ import { getDashboardAuthSession } from "@/lib/auth/dashboardSession";
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  try {
-    const settings = await getSettings();
-    return NextResponse.json(
-      { theme: settings.theme === "dark" ? "dark" : "glass" },
-      { headers: { "Cache-Control": "no-store" } }
-    );
-  } catch (error) {
-    return NextResponse.json({ theme: "glass" }, { status: 200 });
-  }
+  return NextResponse.json(
+    { theme: "glass" },
+    { headers: { "Cache-Control": "no-store" } }
+  );
 }
 
 // Writing is the administrator's: a key-signed session is refused here even if
@@ -36,10 +31,9 @@ export async function POST(request) {
       );
     }
 
-    const body = await request.json().catch(() => ({}));
-    const theme = body.theme === "dark" ? "dark" : "glass";
-    await updateSettings({ theme });
-    return NextResponse.json({ theme, ok: true });
+    // Theme is locked strictly to glass site-wide
+    await updateSettings({ theme: "glass" });
+    return NextResponse.json({ theme: "glass", ok: true });
   } catch (error) {
     console.log("Error setting theme:", error);
     return NextResponse.json({ error: "Failed to set theme" }, { status: 500 });

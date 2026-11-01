@@ -6,6 +6,8 @@
 // and parsing the model's JSON answer blocks back into standard tool_calls
 // deltas, so downstream CLI tools and agents work as if the support were native.
 
+import { estimateInputTokens, estimateOutputTokens } from "../utils/usageTracking.js";
+
 const TOOL_CALL_MARKER = "<<TOOL_CALL>>";
 const TOOL_RESULT_MARKER = "<<TOOL_RESULT>>";
 
@@ -189,19 +191,29 @@ export function emitToolCallChunks(chunkFn, ensureRoleFn, calls) {
   return true;
 }
 
-export function buildToolCallResponse({ id, model, messageText, calls, reasoningContent }) {
+export function buildToolCallResponse({ id, model, messageText, calls, reasoningContent, body }) {
   const message = { role: "assistant", content: messageText || null, tool_calls: calls.map((call) => ({
     id: generateToolCallId(),
     type: "function",
     function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
   })) };
   if (reasoningContent) message.reasoning_content = reasoningContent;
+  const outputLen = (messageText ? messageText.length : 0) +
+    (reasoningContent ? reasoningContent.length : 0) +
+    (calls?.length ? JSON.stringify(calls).length : 0);
+  const promptTokens = body ? estimateInputTokens(body) : 0;
+  const completionTokens = estimateOutputTokens(outputLen);
   return {
     id: id || `chatcmpl-${Date.now()}`,
     object: "chat.completion",
     created: Math.floor(Date.now() / 1000),
     model,
     choices: [{ index: 0, message, finish_reason: "tool_calls" }],
-    usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
+    usage: {
+      prompt_tokens: promptTokens,
+      completion_tokens: completionTokens,
+      total_tokens: promptTokens + completionTokens,
+      estimated: true,
+    },
   };
 }

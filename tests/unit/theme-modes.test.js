@@ -1,17 +1,12 @@
 /**
- * Theme switching stays on two dark-based modes with no orphan classes.
+ * Theme is strictly locked to 'glass' across the entire application.
  *
- * Both modes keep `.dark` on <html> (every component renders from dark-tuned
- * tokens); `.glass` adds the frosted overrides. An unknown persisted value
- * must degrade to the glass default rather than a class combination the CSS never
- * defines, which would silently render a broken theme.
- *
- * The suite runs in the node environment, so window/document/localStorage are
- * stubbed before the store module loads - zustand-persist reads localStorage at
- * import time.
+ * Both `.dark` and `.glass` stay on <html> (components render from dark-tuned
+ * tokens with frosted glass overrides). Switching is disallowed and any attempt
+ * to set other themes strictly degrades to 'glass'.
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 let classes;
 let store;
@@ -19,10 +14,11 @@ let store;
 function stubDom() {
   classes = new Set();
   const classList = {
-    add: (c) => classes.add(c),
-    remove: (c) => classes.delete(c),
+    add: (...cs) => cs.forEach((c) => classes.add(c)),
+    remove: (...cs) => cs.forEach((c) => classes.delete(c)),
     toggle: (c, on) => (on ? classes.add(c) : classes.delete(c)),
     contains: (c) => classes.has(c),
+    has: (c) => classes.has(c),
   };
   const mem = {};
   vi.stubGlobal("window", globalThis);
@@ -41,58 +37,54 @@ describe("theme mode contract", () => {
     const mod = await import("../../src/store/themeStore.js");
     store = mod.default;
     globalThis.__THEME_IDS__ = mod.THEME_IDS;
+    globalThis.__applyTheme__ = mod.applyTheme;
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("only knows Dark and Glass", () => {
-    expect(globalThis.__THEME_IDS__).toEqual(["glass", "dark"]);
+  it("only knows Glass as the active theme ID", () => {
+    expect(globalThis.__THEME_IDS__).toEqual(["glass"]);
   });
 
-  it("applies dark as plain .dark and glass as .dark.glass", () => {
-    const setTheme = store.getState().setTheme;
-
-    setTheme("glass");
+  it("applies theme strictly as .dark.glass", () => {
+    globalThis.__applyTheme__();
     expect(classes.has("dark")).toBe(true);
     expect(classes.has("glass")).toBe(true);
-
-    setTheme("dark");
-    expect(classes.has("dark")).toBe(true);
-    expect(classes.has("glass")).toBe(false);
   });
 
-  it("degrades an unknown persisted value to the glass default", () => {
+  it("locks theme strictly to glass on setTheme", async () => {
     const setTheme = store.getState().setTheme;
 
-    setTheme("light");
+    await setTheme("dark");
+    expect(store.getState().theme).toBe("glass");
+    expect(classes.has("glass")).toBe(true);
+    expect(classes.has("dark")).toBe(true);
+
+    await setTheme("light");
     expect(store.getState().theme).toBe("glass");
     expect(classes.has("glass")).toBe(true);
     expect(classes.has("dark")).toBe(true);
   });
 
-  it("toggles between the two modes starting from the glass default", () => {
+  it("toggleTheme always returns glass and preserves .dark.glass", () => {
     const { toggleTheme } = store.getState();
 
     expect(store.getState().theme).toBe("glass");
 
-    toggleTheme();
-    expect(store.getState().theme).toBe("dark");
-    expect(classes.has("glass")).toBe(false);
-
-    toggleTheme();
+    const result = toggleTheme();
+    expect(result).toBe("glass");
     expect(store.getState().theme).toBe("glass");
     expect(classes.has("glass")).toBe(true);
+    expect(classes.has("dark")).toBe(true);
   });
 
-  it("re-applies the persisted mode on init (page reload path)", () => {
-    store.getState().setTheme("glass");
-
-    // Simulate reload: classes wiped, store hydrated from persistence.
+  it("setServerTheme ensures glass is active", () => {
     classes.clear();
-    store.getState().initTheme();
+    store.getState().setServerTheme("dark");
 
+    expect(store.getState().theme).toBe("glass");
     expect(classes.has("dark")).toBe(true);
     expect(classes.has("glass")).toBe(true);
   });

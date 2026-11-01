@@ -10,7 +10,7 @@ import { translateResponse, initState } from "../../translator/index.js";
 import { toOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { collectJsonFrames } from "../../transformer/jsonToStreamConverter.js";
 import { applyModelAlias, calledModelName } from "../../utils/modelAlias.js";
-import { applyUsageMultipliers } from "../../utils/usageTracking.js";
+import { applyUsageMultipliers, estimateInputTokens, estimateResponseOutputTokens, hasValidUsage } from "../../utils/usageTracking.js";
 import { ROLE, RESPONSES_ITEM, OPENAI_BLOCK, CLAUDE_BLOCK, CLAUDE_EVENT, RESPONSES_EVENT, OPENAI_FINISH, MODEL_FALLBACK } from "../../translator/schema/index.js";
 
 // Frames whose `type` is a provider event name, mapped to the translator format
@@ -499,6 +499,49 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
     if (onRequestSuccess) await onRequestSuccess();
 
     let usage = parsed.usage || {};
+    const outTokens = usage?.completion_tokens ?? usage?.output_tokens ?? 0;
+    const inTokens = usage?.prompt_tokens ?? usage?.input_tokens ?? 0;
+
+    if (!hasValidUsage(usage)) {
+      const estimatedOut = estimateResponseOutputTokens(parsed);
+      const estimatedIn = estimateInputTokens(body);
+      if (estimatedIn > 0 || estimatedOut > 0) {
+        usage = {
+          prompt_tokens: estimatedIn,
+          completion_tokens: estimatedOut,
+          total_tokens: estimatedIn + estimatedOut,
+          estimated: true,
+        };
+        parsed.usage = usage;
+      }
+    } else if (outTokens === 0) {
+      const estimatedOut = estimateResponseOutputTokens(parsed);
+      if (estimatedOut > 0) {
+        usage = { ...usage };
+        if (usage.completion_tokens !== undefined || usage.prompt_tokens !== undefined) {
+          usage.completion_tokens = estimatedOut;
+          usage.total_tokens = (usage.prompt_tokens || 0) + estimatedOut;
+        } else if (usage.output_tokens !== undefined || usage.input_tokens !== undefined) {
+          usage.output_tokens = estimatedOut;
+          usage.total_tokens = (usage.input_tokens || 0) + estimatedOut;
+        }
+        parsed.usage = usage;
+      }
+    } else if (inTokens === 0 && body) {
+      const estimatedIn = estimateInputTokens(body);
+      if (estimatedIn > 0) {
+        usage = { ...usage };
+        if (usage.prompt_tokens !== undefined || usage.completion_tokens !== undefined) {
+          usage.prompt_tokens = estimatedIn;
+          usage.total_tokens = estimatedIn + (usage.completion_tokens || 0);
+        } else if (usage.input_tokens !== undefined || usage.output_tokens !== undefined) {
+          usage.input_tokens = estimatedIn;
+          usage.total_tokens = estimatedIn + (usage.output_tokens || 0);
+        }
+        parsed.usage = usage;
+      }
+    }
+
     if (modelMultipliers && usage) {
       usage = applyUsageMultipliers(usage, modelMultipliers);
     }

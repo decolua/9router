@@ -357,10 +357,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* API Key */}
         {selectedMethod === "api-key" && (
           <div className="space-y-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="bg-info/10 p-3 rounded-lg border border-info/30">
               <div className="flex gap-2">
-                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
-                <p className="text-sm text-blue-800 dark:text-blue-200">
+                <span className="material-symbols-outlined text-info">info</span>
+                <p className="text-sm text-info">
                   A long-lived Kiro/CodeWhisperer key, validated against AWS and stored as a bearer credential without refreshing.
                 </p>
               </div>
@@ -394,8 +394,8 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
             </div>
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <div className="bg-danger/10 p-3 rounded-lg border border-danger/30">
+                <p className="text-sm text-danger">{error}</p>
               </div>
             )}
 
@@ -413,14 +413,14 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Social Login Info (Google) */}
         {selectedMethod === "social-google" && (
           <div className="space-y-4">
-            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+            <div className="bg-warning/10 p-4 rounded-lg border border-warning/30">
               <div className="flex gap-2">
-                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">info</span>
+                <span className="material-symbols-outlined text-warning">info</span>
                 <div className="flex-1 text-sm">
-                  <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">
+                  <p className="font-medium text-warning mb-1">
                     Manual Callback Required
                   </p>
-                  <p className="text-amber-800 dark:text-amber-200">
+                  <p className="text-warning">
                     After login, you&apos;ll need to copy the callback URL from your browser and paste it back here.
                   </p>
                 </div>
@@ -441,14 +441,14 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Social Login Info (GitHub) */}
         {selectedMethod === "social-github" && (
           <div className="space-y-4">
-            <div className="bg-amber-50 dark:bg-amber-900/20 p-4 rounded-lg border border-amber-200 dark:border-amber-800">
+            <div className="bg-warning/10 p-4 rounded-lg border border-warning/30">
               <div className="flex gap-2">
-                <span className="material-symbols-outlined text-amber-600 dark:text-amber-400">info</span>
+                <span className="material-symbols-outlined text-warning">info</span>
                 <div className="flex-1 text-sm">
-                  <p className="font-medium text-amber-900 dark:text-amber-100 mb-1">
+                  <p className="font-medium text-warning mb-1">
                     Manual Callback Required
                   </p>
-                  <p className="text-amber-800 dark:text-amber-200">
+                  <p className="text-warning">
                     After login, you&apos;ll need to copy the callback URL from your browser and paste it back here.
                   </p>
                 </div>
@@ -489,10 +489,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
               <>
                 {/* Success message if auto-detected */}
                 {autoDetected && (
-                  <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-200 dark:border-green-800">
+                  <div className="bg-success/10 p-3 rounded-lg border border-success/30">
                     <div className="flex gap-2">
-                      <span className="material-symbols-outlined text-green-600 dark:text-green-400">check_circle</span>
-                      <p className="text-sm text-green-800 dark:text-green-200">
+                      <span className="material-symbols-outlined text-success">check_circle</span>
+                      <p className="text-sm text-success">
                         Token auto-detected from Kiro IDE successfully!
                       </p>
                     </div>
@@ -501,10 +501,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
 
                 {/* Info message if not auto-detected */}
                 {!autoDetected && !error && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="bg-info/10 p-3 rounded-lg border border-info/30">
                     <div className="flex gap-2">
-                      <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
-                      <p className="text-sm text-blue-800 dark:text-blue-200">
+                      <span className="material-symbols-outlined text-info">info</span>
+                      <p className="text-sm text-info">
                         Paste your refresh token manually because the Kiro IDE was not detected.
                       </p>
                     </div>
@@ -524,8 +524,8 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
                 </div>
 
                 {error && (
-                  <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
-                    <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+                  <div className="bg-danger/10 p-3 rounded-lg border border-danger/30">
+                    <p className="text-sm text-danger">{error}</p>
                   </div>
                 )}
 
@@ -545,10 +545,10 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
         {/* Import CLIProxyAPI JSON */}
         {selectedMethod === "import-cli-proxy" && (
           <div className="space-y-4">
-            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-200 dark:border-blue-800">
+            <div className="bg-info/10 p-3 rounded-lg border border-info/30">
               <div className="flex gap-2">
-                <span className="material-symbols-outlined text-blue-600 dark:text-blue-400">info</span>
-                <p className="text-sm text-blue-800 dark:text-blue-200">
+                <span className="material-symbols-outlined text-info">info</span>
+                <p className="text-sm text-info">
                   The Kiro CLIProxyAPI auth JSON with auth_method=external_idp, accepting only Microsoft login token endpoints.
                 </p>
               </div>
@@ -567,8 +567,8 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
             </div>
 
             {error && (
-              <div className="bg-red-50 dark:bg-red-900/20 p-3 rounded-lg border border-red-200 dark:border-red-800">
-                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              <div className="bg-danger/10 p-3 rounded-lg border border-danger/30">
+                <p className="text-sm text-danger">{error}</p>
               </div>
             )}
 

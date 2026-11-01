@@ -16,10 +16,10 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
   const credentialLabel = isCookie
-    ? (provider === "gemini-web" ? "Session" : "Cookie Value")
+    ? (provider === "gemini-web" ? "Session" : provider === "zai-web" ? "Session Token (JWT)" : "Cookie Value")
     : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
-    ? (provider === "gemini-web" ? "__Secure-1PSID value" : "eyJhbGciOi...")
+    ? (provider === "gemini-web" ? "__Secure-1PSID value" : provider === "zai-web" ? "Paste 'token' from chat.z.ai Local Storage" : "eyJhbGciOi...")
     : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
 
   const isGeminiWeb = provider === "gemini-web";

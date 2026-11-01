@@ -12,7 +12,7 @@ const variants = {
   // Opt-in only (one caller: providers "Add OpenAI Compatible"). Fixed white in
   // every theme, so it stays legible on the glass aurora and on light surfaces.
   white:
-    "bg-white text-neutral-900 border border-black/15 dark:border-white/30 shadow-sm hover:bg-neutral-100 hover:shadow disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500",
+    "bg-white text-neutral-900 border border-white/30 shadow-sm hover:bg-neutral-100 hover:shadow disabled:shadow-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-500",
   ghost: "text-text-muted hover:bg-surface-2 hover:text-text-main",
   danger:
     "bg-red-500 hover:bg-red-600 text-white shadow-sm disabled:bg-surface-3 disabled:text-text-muted",

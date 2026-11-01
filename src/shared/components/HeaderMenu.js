@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import ChangelogModal from "./ChangelogModal";
 import { ConfirmModal } from "./Modal";
-import ThemeModal from "./ThemeModal";
 import { useSessionStore } from "@/store/sessionStore";
 
 function MenuItem({ icon, label, onClick, trailing, danger }) {
@@ -35,16 +34,12 @@ MenuItem.propTypes = {
 };
 
 export default function HeaderMenu({ onLogout }) {
-  // The site-wide theme is an administrator setting; a key-signed session gets
-  // no control over it at all.
   const role = useSessionStore((state) => state.role);
-  const canChangeTheme = role !== "apikey";
-  // Same rule as the theme row: a key session is a guest, not an operator, so
-  // it never sees the control (the route refuses it anyway).
+  // Same rule: a key session is a guest, not an operator, so
+  // it never sees shutdown (the route refuses it anyway).
   const canShutdown = role !== "apikey";
   const [isOpen, setIsOpen] = useState(false);
   const [changelogOpen, setChangelogOpen] = useState(false);
-  const [themeModalOpen, setThemeModalOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const menuRef = useRef(null);
@@ -92,13 +87,6 @@ export default function HeaderMenu({ onLogout }) {
               label="Change Log"
               onClick={() => { close(); setChangelogOpen(true); }}
             />
-            {canChangeTheme && (
-              <MenuItem
-                icon="palette"
-                label="Theme"
-                onClick={() => { close(); setThemeModalOpen(true); }}
-              />
-            )}
             {canShutdown && (
               <MenuItem
                 icon="power_settings_new"
@@ -118,7 +106,6 @@ export default function HeaderMenu({ onLogout }) {
       </div>
 
       <ChangelogModal isOpen={changelogOpen} onClose={() => setChangelogOpen(false)} />
-      <ThemeModal isOpen={themeModalOpen} onClose={() => setThemeModalOpen(false)} />
       <ConfirmModal
         isOpen={shutdownOpen}
         onClose={() => setShutdownOpen(false)}

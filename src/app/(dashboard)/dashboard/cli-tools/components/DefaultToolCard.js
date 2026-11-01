@@ -111,18 +111,18 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
           const isError = note.type === "cloudCheck" && !cloudEnabled && !tunnelEnabled;
           
           let bgClass = "bg-blue-500/10 border-blue-500/30";
-          let textClass = "text-blue-600 dark:text-blue-400";
+          let textClass = "text-info";
           let iconClass = "text-blue-500";
           let icon = "info";
           
           if (isWarning) {
             bgClass = "bg-yellow-500/10 border-yellow-500/30";
-            textClass = "text-yellow-600 dark:text-yellow-400";
+            textClass = "text-warning";
             iconClass = "text-yellow-500";
             icon = "warning";
           } else if (isError) {
             bgClass = "bg-red-500/10 border-red-500/30";
-            textClass = "text-red-600 dark:text-red-400";
+            textClass = "text-danger";
             iconClass = "text-red-500";
             icon = "error";
           }

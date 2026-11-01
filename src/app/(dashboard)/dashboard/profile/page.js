@@ -1117,7 +1117,7 @@ export default function ProfilePage() {
                   />
                 </div>
                 {dbStatus.message && (
-                  <p className={`text-sm ${dbStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+                  <p className={`text-sm ${dbStatus.type === "error" ? "text-danger" : "text-success"}`}>
                     {dbStatus.message}
                   </p>
                 )}
@@ -1234,7 +1234,7 @@ export default function ProfilePage() {
               {/* SSO Protocol Switcher Tabs */}
               <div className="flex flex-col gap-2">
                 <label className="font-medium text-sm sm:text-base">SSO Protocol</label>
-                <div className="flex p-1 rounded-lg bg-black/5 dark:bg-white/5 border border-border">
+                <div className="flex p-1 rounded-lg bg-surface-2 border border-border-subtle">
                   <button
                     type="button"
                     onClick={() => setSsoTypeTab("saml")}
@@ -1299,7 +1299,7 @@ export default function ProfilePage() {
                           "text-left rounded-lg border p-3 transition-colors",
                           active
                             ? "border-primary bg-primary/5"
-                            : "border-border bg-bg hover:bg-black/5 dark:hover:bg-white/5"
+                            : "border-border bg-surface hover:bg-surface-2"
                         )}
                         disabled={loading || oidcLoading || samlLoading}
                       >
@@ -1681,13 +1681,13 @@ export default function ProfilePage() {
               )}
 
               {settings.authMode === "oidc" || settings.authMode === "saml" || settings.authMode === "sso" ? (
-                <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                <p className="text-xs sm:text-sm text-warning">
                   SSO login ({settings.ssoType === "saml" ? "SAML 2.0" : "OIDC"}) is currently active. Password login is disabled until you switch back.
                 </p>
               ) : null}
 
               {settings.authMode === "both" && (
-                <p className="text-xs sm:text-sm text-amber-600 dark:text-amber-400">
+                <p className="text-xs sm:text-sm text-warning">
                   Password and SSO login ({settings.ssoType === "saml" ? "SAML 2.0" : "OIDC"}) are both active.
                 </p>
               )}
@@ -2041,7 +2041,7 @@ export default function ProfilePage() {
         </div>
         </div>
         {tgStatus.message && (
-        <p className={`text-sm ${tgStatus.type === "error" ? "text-red-500" : "text-green-600 dark:text-green-400"}`}>
+        <p className={`text-sm ${tgStatus.type === "error" ? "text-danger" : "text-success"}`}>
         {tgStatus.message}
         </p>
         )}

@@ -134,7 +134,7 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
                 value={form.anchor}
                 onChange={(e) => update({ anchor: e.target.value })}
                 error={anchorValid ? "" : "Use HH:MM"}
-                inputClassName="ring-1 ring-black/10 dark:ring-white/15"
+                inputClassName="ring-1 ring-border-subtle"
               />
               <Input
                 label="Window (hours)"
@@ -145,7 +145,7 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
                 value={form.windowHours}
                 onChange={(e) => update({ windowHours: e.target.value })}
                 error={windowValid ? "" : "0.5 – 24"}
-                inputClassName="ring-1 ring-black/10 dark:ring-white/15"
+                inputClassName="ring-1 ring-border-subtle"
               />
               <Input
                 label="Pings per day"
@@ -157,7 +157,7 @@ export default function AutoPingScheduleModal({ isOpen, onClose, onSave, connect
                 onChange={(e) => update({ slotsPerDay: e.target.value })}
                 error={slotsValid ? "" : `1 – ${slotsMax}`}
                 hint={slotsValid ? `Max ${slotsMax}` : ""}
-                inputClassName="ring-1 ring-black/10 dark:ring-white/15"
+                inputClassName="ring-1 ring-border-subtle"
               />
             </div>
 
