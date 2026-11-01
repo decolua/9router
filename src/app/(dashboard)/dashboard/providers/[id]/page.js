@@ -1601,8 +1601,8 @@ export default function ProviderDetailPage() {
                   disabled={switchingLane}
                   title={
                     opencodeCliMode
-                      ? "Lane: CLI — klik untuk ubah"
-                      : "Lane: Direct — klik untuk ubah"
+                      ? "Lane: CLI — click to switch"
+                      : "Lane: Direct — click to switch"
                   }
                   className={`flex size-7 shrink-0 items-center justify-center rounded-lg border transition-all ${
                     opencodeCliMode
@@ -2109,16 +2109,16 @@ export default function ProviderDetailPage() {
       <Modal
         isOpen={laneBannerOpen}
         onClose={() => setLaneBannerOpen(false)}
-        title="Ubah Mode OpenCode Free"
+        title="Switch OpenCode Free Lane"
         size="md"
       >
         <div className="flex flex-col gap-4 text-sm text-text-muted">
           <div className="flex items-center gap-2 p-3 rounded-lg border border-border-subtle bg-surface-2">
             <span className="material-symbols-outlined text-[20px] text-brand-500">handyman</span>
             <div>
-              <p className="text-xs text-text-muted">Mode Saat Ini</p>
+              <p className="text-xs text-text-muted">Current Lane</p>
               <p className="text-sm font-semibold text-text-main">
-                {opencodeCliMode ? "Mode CLI (Using Local CLI)" : "Mode Direct (Tanpa CLI / Fast TLS)"}
+                {opencodeCliMode ? "CLI Lane (Using Local CLI)" : "Direct Lane (No CLI / Fast TLS)"}
               </p>
             </div>
           </div>
@@ -2127,20 +2127,20 @@ export default function ProviderDetailPage() {
             <div className={`p-3 rounded-lg border transition-all ${!opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
               <div className="flex items-center gap-2 font-medium text-text-main mb-1">
                 <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
-                <span>Mode Direct (Default / Rekomendasi)</span>
+                <span>Direct Lane (Default / Recommended)</span>
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
-                Permintaan langsung dikirim ke upstream via impersonated TLS (ClientHello Bun). Cepat (~400ms), hemat resource, dan tidak memerlukan instalasi tool OpenCode CLI atau Bun di mesin host.
+                Requests are sent directly to upstream via impersonated TLS (Bun-shaped ClientHello). Fast (~400ms), lightweight, and requires no local OpenCode CLI or Bun runtime installed on the host.
               </p>
             </div>
 
             <div className={`p-3 rounded-lg border transition-all ${opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
               <div className="flex items-center gap-2 font-medium text-text-main mb-1">
                 <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
-                <span>Mode CLI</span>
+                <span>CLI Lane</span>
               </div>
               <p className="text-xs text-text-muted leading-relaxed">
-                Menjalankan binary <code className="text-[11px] bg-surface px-1 py-0.5 rounded">opencode</code> lokal dan transport sidecar Bun di host. Membutuhkan CLI terinstall di server; jika tidak ada, permintaan akan timeout.
+                Spawns the local <code className="text-[11px] bg-surface px-1 py-0.5 rounded">opencode</code> binary and Bun sidecar transport on the host. Requires the CLI installed locally; otherwise requests will hang and time out.
               </p>
             </div>
           </div>
@@ -2152,7 +2152,7 @@ export default function ProviderDetailPage() {
               onClick={() => setLaneBannerOpen(false)}
               disabled={switchingLane}
             >
-              Batal
+              Cancel
             </Button>
             <Button
               variant="primary"
@@ -2163,7 +2163,7 @@ export default function ProviderDetailPage() {
                 setLaneBannerOpen(false);
               }}
             >
-              {switchingLane ? "Mengubah..." : `Konfirmasi: Beralih ke ${opencodeCliMode ? "Mode Direct" : "Mode CLI"}`}
+              {switchingLane ? "Switching..." : `Confirm: Switch to ${opencodeCliMode ? "Direct Lane" : "CLI Lane"}`}
             </Button>
           </div>
         </div>
