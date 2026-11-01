@@ -14,7 +14,9 @@ export default {
     textIcon: "GW",
     website: "https://gemini.google.com",
     notice: {
+      signupUrl: "https://gemini.google.com",
       apiKeyUrl: "https://gemini.google.com",
+      text: "Gemini free web chat (Gemini 3.8 Flash, 3.5 Flash Lite, 3.1 Pro, 4 Argon, and thinking variants). Open gemini.google.com, log in, then copy the \"__Secure-1PSID\" cookie (and optional \"__Secure-1PSIDTS\") from DevTools → Application → Cookies → gemini.google.com and paste it here. For best session longevity, exporting from Firefox is recommended.",
     },
   },
   category: "webCookie",

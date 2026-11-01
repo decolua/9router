@@ -1,3 +1,11 @@
+# v0.5.350 (2026-11-01) · 1 commit
+
+## Providers & UI
+- **Gemini Web Cookie Info Banner**:
+  - Added notice text to `gemini-web` provider registry with explicit instructions for extracting `__Secure-1PSID` and optional `__Secure-1PSIDTS` cookies.
+  - Aligned blue info banner appearance across both `gemini-web` and `zai-web` web cookie providers.
+  - Changed action link text from generic "Get API Key" to "Open Web" for web cookie providers.
+
 # v0.5.349 (2026-11-01) · 1 commit
 
 ## UI & Theme System

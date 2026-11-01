@@ -1655,7 +1655,7 @@ export default function ProviderDetailPage() {
                   className="text-xs text-primary hover:underline inline-flex items-center gap-1"
                 >
                   <span className="material-symbols-outlined text-sm">open_in_new</span>
-                  {providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
+                  {isWebCookie ? "Open Web" : providerInfo.notice?.apiKeyUrl ? "Get API Key" : "Sign up / Learn more"}
                 </a>
               )}
             </div>
@@ -1684,7 +1684,7 @@ export default function ProviderDetailPage() {
               rel="noopener noreferrer"
               className="inline-flex justify-center rounded bg-blue-500 px-2 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-600 sm:py-0.5"
             >
-              Get API Key →
+              {isWebCookie ? "Open Web →" : "Get API Key →"}
             </a>
           )}
         </div>
