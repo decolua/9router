@@ -1692,24 +1692,24 @@ export default function ProviderDetailPage() {
 
       {/* Web Cookie Provider Tool Calling Banner */}
       {isWebCookie && (
-        <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-surface-2/60 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-start gap-3">
+        <div className="flex items-center justify-between gap-4 rounded-xl border border-border-subtle bg-surface-2/60 p-4">
+          <div className="flex items-start gap-3 min-w-0 flex-1">
             <div className="size-9 rounded-lg bg-brand-500/10 flex items-center justify-center shrink-0 mt-0.5">
               <span className="material-symbols-outlined text-[20px] text-brand-500">construction</span>
             </div>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-text-main">Support Tool Calling</h3>
+                <h3 className="text-sm font-semibold text-text-main truncate">Support Tool Calling</h3>
                 <Badge variant={webCookieToolCalling ? "success" : "default"} size="sm" dot>
                   {webCookieToolCalling ? "Enabled" : "Disabled"}
                 </Badge>
               </div>
-              <p className="text-xs text-text-muted mt-1 leading-relaxed max-w-xl">
+              <p className="text-xs text-text-muted mt-1 leading-relaxed">
                 Enable OpenAI-compatible function calling bridge for web session models. Encodes schemas into system prompt and reconstructs returned structured output into valid tool calls.
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border-subtle">
+          <div className="flex items-center shrink-0">
             <Toggle
               checked={webCookieToolCalling}
               disabled={updatingToolCalling}

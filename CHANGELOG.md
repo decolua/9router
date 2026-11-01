@@ -1,3 +1,8 @@
+# v0.5.348 (2026-10-29) · 1 commit
+
+## UI
+- **Fixed Tool Calling toggle placement.** The switch is now aligned directly to the right side of the banner across all screen widths rather than stacking below the text description.
+
 # v0.5.347 (2026-10-29) · 1 commit
 
 ## Features & Cleanup
