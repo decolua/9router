@@ -1,7 +1,7 @@
 name: SceneForge Studio Android debug APK
 on:
   push:
-    branches: [sceneforge-android-v14]
+    branches: [master, sceneforge-android-v14, 'feature/sceneforge-*']
     paths: ['sceneforge-android/**', '.github/workflows/sceneforge-android-v14.yml']
   pull_request:
     paths: ['sceneforge-android/**', '.github/workflows/sceneforge-android-v14.yml']
@@ -29,6 +29,16 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.10.2'
+      - name: Verify origin-restricted native export bridge
+        run: |
+          test -f app/src/main/java/com/sceneforge/studio/MainActivity.java
+          grep -Fq 'WebViewCompat.addWebMessageListener' app/src/main/java/com/sceneforge/studio/MainActivity.java
+          grep -Fq 'Collections.singleton(APP_URL)' app/src/main/java/com/sceneforge/studio/MainActivity.java
+          grep -Fq '!isMainFrame' app/src/main/java/com/sceneforge/studio/MainActivity.java
+          if grep -Fq 'addJavascriptInterface' app/src/main/java/com/sceneforge/studio/MainActivity.java; then
+            echo "::error::Unrestricted JavaScript bridge must not be used"
+            exit 1
+          fi
       - name: Build SceneForge native Android WebView wrapper
         run: gradle :app:assembleDebug --stacktrace --no-daemon
       - name: Check APK and Android signature
@@ -38,6 +48,6 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: SceneForge-v14-debug-APK
+          name: SceneForge-v15-debug-APK
           path: sceneforge-android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error

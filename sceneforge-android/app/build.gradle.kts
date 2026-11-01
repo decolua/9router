@@ -6,8 +6,8 @@ android {
         applicationId = "com.sceneforge.studio"
         minSdk = 26
         targetSdk = 35
-        versionCode = 14
-        versionName = "0.14-debug"
+        versionCode = 15
+        versionName = "0.15-debug"
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -16,4 +16,9 @@ android {
     buildTypes {
         getByName("release") { isMinifyEnabled = false }
     }
+}
+
+dependencies {
+    // Restrict the JavaScript message bridge to the exact trusted web origin.
+    implementation("androidx.webkit:webkit:1.16.0")
 }
