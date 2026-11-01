@@ -49,6 +49,30 @@ describe("Gemini 3.8 Antigravity tiers", () => {
       });
     }
   );
+
+  it.each([
+    ["high effort", { reasoning_effort: "high" }, "gemini-3.8-flash-high(high)"],
+    ["low effort", { reasoning_effort: "low" }, "gemini-3.8-flash-low(low)"],
+    ["medium effort", { reasoning_effort: "medium" }, "gemini-3.8-flash-medium(medium)"],
+    ["default medium when omitted", {}, "gemini-3.8-flash-medium(medium)"],
+    ["high via budget tokens", { thinking: { budget_tokens: 24576 } }, "gemini-3.8-flash-high(high)"],
+    ["low via budget tokens", { thinking: { budget_tokens: 2048 } }, "gemini-3.8-flash-low(low)"],
+    ["medium via budget tokens", { thinking: { budget_tokens: 8192 } }, "gemini-3.8-flash-medium(medium)"],
+    ["output_config effort", { output_config: { effort: "high" } }, "gemini-3.8-flash-high(high)"],
+  ])("resolves unadorned gemini-3.8-flash to %s based on client request", (_, body, expectedUpstream) => {
+    const upstreamModel = getModelUpstreamId("ag", "gemini-3.8-flash", body);
+    expect(upstreamModel).toBe(expectedUpstream);
+  });
+
+  it("preserves explicit model suffix over body", () => {
+    const upstreamModel = getModelUpstreamId("ag", "gemini-3.8-flash(low)", { reasoning_effort: "high" });
+    expect(upstreamModel).toBe("gemini-3.8-flash-low(low)");
+  });
+
+  it("preserves direct tiered model IDs", () => {
+    const upstreamModel = getModelUpstreamId("ag", "gemini-3.8-flash-high", {});
+    expect(upstreamModel).toBe("gemini-3.8-flash-high(high)");
+  });
 });
 
 describe("Gemini 3.8 MITM model extraction", () => {

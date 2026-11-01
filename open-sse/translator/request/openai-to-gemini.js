@@ -20,6 +20,7 @@ import {
 } from "../formats/gemini.js";
 import { deriveSessionId, toNumericSessionId } from "../../utils/sessionManager.js";
 import { ROLE, GEMINI_ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { isGemini4Model } from "../../providers/capabilities.js";
 
 // Sanitize function names for Gemini API.
 // Gemini requires: starts with [a-zA-Z_], followed by [a-zA-Z0-9_.:\-], max 64 chars.
@@ -81,14 +82,15 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     safetySettings: DEFAULT_SAFETY_SETTINGS
   };
 
-  // Generation config
-  if (body.temperature !== undefined) {
+  // Generation config — Gemini 4 removed the sampling params, forwarding them fails the request
+  const allowSampling = !isGemini4Model(model);
+  if (allowSampling && body.temperature !== undefined) {
     result.generationConfig.temperature = body.temperature;
   }
-  if (body.top_p !== undefined) {
+  if (allowSampling && body.top_p !== undefined) {
     result.generationConfig.topP = body.top_p;
   }
-  if (body.top_k !== undefined) {
+  if (allowSampling && body.top_k !== undefined) {
     result.generationConfig.topK = body.top_k;
   }
   if (body.max_tokens !== undefined) {
@@ -304,7 +306,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
     }
   }
 
-  result.contents = normalizeGeminiContents(result.contents);
+  result.contents = normalizeGeminiContents(result.contents, model);
   return result;
 }
 
@@ -502,7 +504,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
     envelope.request.systemInstruction = { role: GEMINI_ROLE.USER, parts: systemParts };
   }
 
-  envelope.request.contents = normalizeGeminiContents(envelope.request.contents);
+  envelope.request.contents = normalizeGeminiContents(envelope.request.contents, model);
   return envelope;
 }
 

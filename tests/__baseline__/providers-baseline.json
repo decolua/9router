@@ -29,7 +29,7 @@
     ],
     "format": "antigravity",
     "headers": {
-      "User-Agent": "antigravity/ide/2.11.0 darwin/arm64"
+      "User-Agent": "antigravity/hub/2.24.0 darwin/arm64"
     },
     "retry": {
       "429": {
@@ -201,11 +201,11 @@
     "baseUrl": "https://chatgpt.com/backend-api/codex/responses",
     "format": "openai-responses",
     "forceStream": true,
-    "cliVersion": "0.155.0",
+    "cliVersion": "0.159.0",
     "headers": {
       "originator": "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.155.0",
-      "version": "0.155.0"
+      "User-Agent": "codex_cli_rs/0.159.0",
+      "version": "0.159.0"
     },
     "usage": {
       "url": "https://chatgpt.com/backend-api/wham/usage",
@@ -225,8 +225,11 @@
     "format": "commandcode",
     "forceStream": true,
     "headers": {
-      "x-command-code-version": "0.25.7",
-      "x-cli-environment": "cli"
+      "User-Agent": "cli",
+      "x-command-code-version": "1.88.0",
+      "x-cli-environment": "production",
+      "x-cli-surface": "cli",
+      "x-taste-learning": "false"
     }
   },
   "cursor": {
@@ -239,7 +242,12 @@
       "Content-Type": "application/connect+proto",
       "User-Agent": "connect-es/1.6.1"
     },
-    "clientVersion": "3.12.17"
+    "clientVersion": "3.12.17",
+    "usage": {
+      "url": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetCurrentPeriodUsage",
+      "planInfoUrl": "https://api2.cursor.sh/aiserver.v1.DashboardService/GetPlanInfo",
+      "authUsageUrl": "https://api2.cursor.sh/auth/usage"
+    }
   },
   "deepgram": {
     "baseUrl": "https://api.deepgram.com/v1/listen",
@@ -548,6 +556,18 @@
             "kimiHeaders"
           ]
         }
+      },
+      {
+        "format": "openai-responses",
+        "baseUrl": "https://api.kimi.com/coding/v1/responses",
+        "auth": {
+          "combined": true,
+          "header": "Authorization",
+          "scheme": "bearer",
+          "hooks": [
+            "kimiHeaders"
+          ]
+        }
       }
     ]
   },
@@ -771,7 +791,8 @@
           "combined": true,
           "header": "Authorization",
           "scheme": "bearer"
-        }
+        },
+        "thinkingFormat": "openai-responses"
       }
     ]
   },
@@ -820,6 +841,9 @@
     },
     "forceStream": true,
     "noAuth": true,
+    "reasoningInject": {
+      "scope": "all"
+    },
     "quirks": {
       "forceAutoToolChoiceModels": [
         "muse-spark-1.3-contributor-free"
@@ -1117,22 +1141,6 @@
     "validateUrl": "https://api.b.ai/v1/models",
     "format": "openai"
   },
-  "bedrock": {
-    "baseUrl": "https://bedrock-runtime.{region}.amazonaws.com",
-    "format": "claude",
-    "auth": {
-      "header": "aws-sigv4",
-      "scheme": "raw"
-    }
-  },
-  "bedrock-xai": {
-    "baseUrl": "https://bedrock-runtime.{region}.amazonaws.com",
-    "auth": {
-      "header": "aws-sigv4",
-      "scheme": "raw"
-    },
-    "format": "openai"
-  },
   "muse": {
     "baseUrl": "https://api.meta.ai/v1/chat/completions",
     "validateUrl": "https://api.meta.ai/v1/models",
@@ -1171,8 +1179,101 @@
           "hooks": [
             "museHeaders"
           ]
-        }
+        },
+        "thinkingFormat": "openai-responses"
       }
     ]
+  },
+  "minimax-code": {
+    "baseUrl": "https://agent.minimax.cn/mavis/api/v1/llm/v1/messages",
+    "format": "claude",
+    "thinkingFormat": "claude-adaptive",
+    "headers": {
+      "User-Agent": "MiniMaxAgent",
+      "X-Mavis-Agent-Id": "main"
+    },
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer",
+      "anthropicVersion": true,
+      "hooks": [
+        "minimaxHeaders"
+      ]
+    },
+    "clientId": "mcode-public",
+    "tokenUrl": "https://account.minimax.cn/oauth2/token"
+  },
+  "minimax-code-global": {
+    "baseUrl": "https://agent.minimax.io/mavis/api/v1/llm/v1/messages",
+    "format": "claude",
+    "thinkingFormat": "claude-adaptive",
+    "headers": {
+      "User-Agent": "MiniMaxAgent",
+      "X-Mavis-Agent-Id": "main"
+    },
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer",
+      "anthropicVersion": true,
+      "hooks": [
+        "minimaxHeaders"
+      ]
+    },
+    "clientId": "mcode-public",
+    "tokenUrl": "https://account.minimax.io/oauth2/token"
+  },
+  "bedrock": {
+    "baseUrl": "https://bedrock-runtime.{region}.amazonaws.com",
+    "format": "claude",
+    "auth": {
+      "header": "aws-sigv4",
+      "scheme": "raw"
+    }
+  },
+  "bedrock-xai": {
+    "baseUrl": "https://bedrock-runtime.{region}.amazonaws.com",
+    "auth": {
+      "header": "aws-sigv4",
+      "scheme": "raw"
+    },
+    "format": "openai"
+  },
+  "nous": {
+    "baseUrl": "https://inference-api.nousresearch.com/v1/chat/completions",
+    "format": "openai",
+    "auth": {
+      "combined": true,
+      "header": "Authorization",
+      "scheme": "bearer"
+    },
+    "clientId": "hermes-cli",
+    "tokenUrl": "https://portal.nousresearch.com/api/oauth/token"
+  },
+  "deepseek-web": {
+    "baseUrl": "https://chat.deepseek.com/api/v0/chat/completion",
+    "format": "openai",
+    "authType": "cookie"
+  },
+  "gemini-web": {
+    "baseUrl": "https://gemini.google.com/app",
+    "format": "openai",
+    "authType": "cookie"
+  },
+  "muse-web": {
+    "baseUrl": "https://muse.ai",
+    "format": "openai",
+    "authType": "cookie"
+  },
+  "chatgpt-web": {
+    "baseUrl": "https://chatgpt.com",
+    "format": "openai",
+    "authType": "cookie"
+  },
+  "uc-web": {
+    "baseUrl": "https://internal.chatuncensored.ai",
+    "format": "openai",
+    "authType": "cookie"
   }
 }
