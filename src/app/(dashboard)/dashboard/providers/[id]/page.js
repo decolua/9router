@@ -78,6 +78,7 @@ export default function ProviderDetailPage() {
   // OpenCode Free's lane switch: false = direct request, true = local CLI.
   const [opencodeCliMode, setOpencodeCliMode] = useState(false);
   const [switchingLane, setSwitchingLane] = useState(false);
+  const [laneBannerOpen, setLaneBannerOpen] = useState(false);
   const [providerStickyLimit, setProviderStickyLimit] = useState("");
   const [thinkingMode, setThinkingMode] = useState("auto");
   const [autoPing, setAutoPing] = useState({ enabled: false, connections: {}, schedules: {} });
@@ -1596,21 +1597,20 @@ export default function ProviderDetailPage() {
               {providerId === "opencode" && (
                 <button
                   type="button"
-                  onClick={toggleOpencodeCliMode}
+                  onClick={() => setLaneBannerOpen(true)}
                   disabled={switchingLane}
                   title={
                     opencodeCliMode
-                      ? "CLI lane active — click to use the direct request"
-                      : "Direct lane active — click to use the local CLI"
+                      ? "Lane: CLI — klik untuk ubah"
+                      : "Lane: Direct — klik untuk ubah"
                   }
-                  className={`inline-flex items-center gap-1 rounded-[var(--r-chip)] border px-2 py-0.5 text-xs font-semibold transition-colors disabled:opacity-60 ${
+                  className={`flex size-7 shrink-0 items-center justify-center rounded-lg border transition-all ${
                     opencodeCliMode
-                      ? "border-brand-500/40 bg-brand-500/10 text-brand-600 dark:text-brand-300"
-                      : "border-border/60 text-text-muted hover:text-text-main"
+                      ? "border-brand-500/50 bg-brand-500/15 text-brand-500 hover:bg-brand-500/25"
+                      : "border-border/60 bg-surface text-text-muted hover:text-text-main hover:border-border"
                   }`}
                 >
-                  <span className="material-symbols-outlined text-[14px]">handyman</span>
-                  {opencodeCliMode ? "CLI" : "Direct"}
+                  <span className="material-symbols-outlined text-[16px]">handyman</span>
                 </button>
               )}
               {(providerInfo.notice?.apiKeyUrl || providerInfo.notice?.signupUrl || providerInfo.website) && (
@@ -2105,6 +2105,70 @@ export default function ProviderDetailPage() {
           setShowAddApiKeyModal(false);
         }}
       />
+      {/* OpenCode Free Lane Switch Banner Modal */}
+      <Modal
+        isOpen={laneBannerOpen}
+        onClose={() => setLaneBannerOpen(false)}
+        title="Ubah Mode OpenCode Free"
+        size="md"
+      >
+        <div className="flex flex-col gap-4 text-sm text-text-muted">
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-border-subtle bg-surface-2">
+            <span className="material-symbols-outlined text-[20px] text-brand-500">handyman</span>
+            <div>
+              <p className="text-xs text-text-muted">Mode Saat Ini</p>
+              <p className="text-sm font-semibold text-text-main">
+                {opencodeCliMode ? "Mode CLI (Using Local CLI)" : "Mode Direct (Tanpa CLI / Fast TLS)"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className={`p-3 rounded-lg border transition-all ${!opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
+              <div className="flex items-center gap-2 font-medium text-text-main mb-1">
+                <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
+                <span>Mode Direct (Default / Rekomendasi)</span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Permintaan langsung dikirim ke upstream via impersonated TLS (ClientHello Bun). Cepat (~400ms), hemat resource, dan tidak memerlukan instalasi tool OpenCode CLI atau Bun di mesin host.
+              </p>
+            </div>
+
+            <div className={`p-3 rounded-lg border transition-all ${opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
+              <div className="flex items-center gap-2 font-medium text-text-main mb-1">
+                <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
+                <span>Mode CLI</span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Menjalankan binary <code className="text-[11px] bg-surface px-1 py-0.5 rounded">opencode</code> lokal dan transport sidecar Bun di host. Membutuhkan CLI terinstall di server; jika tidak ada, permintaan akan timeout.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-subtle">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setLaneBannerOpen(false)}
+              disabled={switchingLane}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={switchingLane}
+              onClick={async () => {
+                await toggleOpencodeCliMode();
+                setLaneBannerOpen(false);
+              }}
+            >
+              {switchingLane ? "Mengubah..." : `Konfirmasi: Beralih ke ${opencodeCliMode ? "Mode Direct" : "Mode CLI"}`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       <EditConnectionModal
         isOpen={showEditModal}
         connection={selectedConnection}

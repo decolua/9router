@@ -8,6 +8,7 @@ import {
   Badge,
   Button,
   Toggle,
+  Modal,
 } from "@/shared/components";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import PageShell from "@/shared/components/PageShell";
@@ -116,6 +117,7 @@ export default function ProvidersPage() {
   // OpenCode Free is one card with two lanes; the hammer on that card flips this.
   const [opencodeCliMode, setOpencodeCliMode] = useState(false);
   const [togglingCliMode, setTogglingCliMode] = useState(false);
+  const [laneBannerOpen, setLaneBannerOpen] = useState(false);
   const notify = useNotificationStore();
   const searchQuery = useHeaderSearchStore((s) => s.query);
   const registerSearch = useHeaderSearchStore((s) => s.register);
@@ -626,7 +628,7 @@ export default function ProvidersPage() {
                 authType="free"
                 opencodeInstalled={opencodeInstalled}
                 cliMode={opencodeCliMode}
-                onToggleCliMode={key === "opencode" ? toggleOpencodeCliMode : null}
+                onOpenLaneModal={key === "opencode" ? () => setLaneBannerOpen(true) : null}
                 onToggle={(active) =>
                   handleToggleProvider(key, freeAuthTypes, active)
                 }
@@ -751,6 +753,70 @@ export default function ProvidersPage() {
         }}
         />
 
+      {/* OpenCode Free Lane Switch Banner Modal */}
+      <Modal
+        isOpen={laneBannerOpen}
+        onClose={() => setLaneBannerOpen(false)}
+        title="Ubah Mode OpenCode Free"
+        size="md"
+      >
+        <div className="flex flex-col gap-4 text-sm text-text-muted">
+          <div className="flex items-center gap-2 p-3 rounded-lg border border-border-subtle bg-surface-2">
+            <span className="material-symbols-outlined text-[20px] text-brand-500">handyman</span>
+            <div>
+              <p className="text-xs text-text-muted">Mode Saat Ini</p>
+              <p className="text-sm font-semibold text-text-main">
+                {opencodeCliMode ? "Mode CLI (Using Local CLI)" : "Mode Direct (Tanpa CLI / Fast TLS)"}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            <div className={`p-3 rounded-lg border transition-all ${!opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
+              <div className="flex items-center gap-2 font-medium text-text-main mb-1">
+                <span className="material-symbols-outlined text-[18px] text-success">bolt</span>
+                <span>Mode Direct (Default / Rekomendasi)</span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Permintaan langsung dikirim ke upstream via impersonated TLS (ClientHello Bun). Cepat (~400ms), hemat resource, dan tidak memerlukan instalasi tool OpenCode CLI atau Bun di mesin host.
+              </p>
+            </div>
+
+            <div className={`p-3 rounded-lg border transition-all ${opencodeCliMode ? "border-brand-500/50 bg-brand-500/5" : "border-border-subtle bg-surface-2/40"}`}>
+              <div className="flex items-center gap-2 font-medium text-text-main mb-1">
+                <span className="material-symbols-outlined text-[18px] text-warning">terminal</span>
+                <span>Mode CLI</span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Menjalankan binary <code className="text-[11px] bg-surface px-1 py-0.5 rounded">opencode</code> lokal dan transport sidecar Bun di host. Membutuhkan CLI terinstall di server; jika tidak ada, permintaan akan timeout.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border-subtle">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setLaneBannerOpen(false)}
+              disabled={togglingCliMode}
+            >
+              Batal
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={togglingCliMode}
+              onClick={async () => {
+                await toggleOpencodeCliMode();
+                setLaneBannerOpen(false);
+              }}
+            >
+              {togglingCliMode ? "Mengubah..." : `Konfirmasi: Beralih ke ${opencodeCliMode ? "Mode Direct" : "Mode CLI"}`}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
       {/* No overlay while a batch test runs: handleBatchTest() reports it into
           the task store, so the bell owns the readout and the page stays
           usable. The results modal below is the outcome, not the progress. */}
@@ -785,7 +851,7 @@ export default function ProvidersPage() {
   );
 }
 
-function ProviderCard({ providerId, provider, stats, authType, onToggle, opencodeInstalled = true, cliMode = false, onToggleCliMode = null }) {
+function ProviderCard({ providerId, provider, stats, authType, onToggle, opencodeInstalled = true, cliMode = false, onOpenLaneModal = null }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
 
@@ -830,29 +896,6 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="truncate font-semibold">{provider.name}</h3>
-                {providerId === "opencode" && onToggleCliMode && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onToggleCliMode();
-                    }}
-                    title={
-                      cliMode
-                        ? "CLI lane active — click to use the direct request"
-                        : "Direct lane active — click to use the local CLI"
-                    }
-                    className={`inline-flex items-center gap-1 rounded-[var(--r-chip)] border px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
-                      cliMode
-                        ? "border-brand-500/40 bg-brand-500/10 text-brand-600 dark:text-brand-300"
-                        : "border-border/60 text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[12px]">handyman</span>
-                    {cliMode ? "CLI" : "Direct"}
-                  </button>
-                )}
               </div>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
                 {allDisabled ? (
@@ -884,6 +927,25 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {providerId === "opencode" && onOpenLaneModal && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onOpenLaneModal();
+                }}
+                title={cliMode ? "Lane: CLI — klik untuk ubah" : "Lane: Direct — klik untuk ubah"}
+                aria-label="Ubah mode OpenCode Free"
+                className={`flex size-7 shrink-0 items-center justify-center rounded-lg border transition-all ${
+                  cliMode
+                    ? "border-brand-500/50 bg-brand-500/15 text-brand-500 hover:bg-brand-500/25"
+                    : "border-border/60 bg-surface text-text-muted hover:text-text-main hover:border-border"
+                }`}
+              >
+                <span className="material-symbols-outlined text-[16px]">handyman</span>
+              </button>
+            )}
             {stats.total > 0 && (
               <div
                 className="opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100"
@@ -925,7 +987,7 @@ ProviderCard.propTypes = {
   authType: PropTypes.string,
   onToggle: PropTypes.func,
   cliMode: PropTypes.bool,
-  onToggleCliMode: PropTypes.func,
+  onOpenLaneModal: PropTypes.func,
 };
 
 function ApiKeyProviderCard({
@@ -995,29 +1057,6 @@ function ApiKeyProviderCard({
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="truncate font-semibold">{provider.name}</h3>
-                {providerId === "opencode" && onToggleCliMode && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      onToggleCliMode();
-                    }}
-                    title={
-                      cliMode
-                        ? "CLI lane active — click to use the direct request"
-                        : "Direct lane active — click to use the local CLI"
-                    }
-                    className={`inline-flex items-center gap-1 rounded-[var(--r-chip)] border px-1.5 py-0.5 text-[10px] font-semibold transition-colors ${
-                      cliMode
-                        ? "border-brand-500/40 bg-brand-500/10 text-brand-600 dark:text-brand-300"
-                        : "border-border/60 text-text-muted hover:text-text-main"
-                    }`}
-                  >
-                    <span className="material-symbols-outlined text-[12px]">handyman</span>
-                    {cliMode ? "CLI" : "Direct"}
-                  </button>
-                )}
               </div>
               <div className="flex min-w-0 items-center gap-1.5 text-xs flex-wrap">
                 {allDisabled ? (
@@ -1094,8 +1133,6 @@ ApiKeyProviderCard.propTypes = {
   }).isRequired,
   authType: PropTypes.string,
   onToggle: PropTypes.func,
-  cliMode: PropTypes.bool,
-  onToggleCliMode: PropTypes.func,
 };
 
 function ProviderTestResultsView({ results }) {
