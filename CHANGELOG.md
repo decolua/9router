@@ -1,3 +1,9 @@
+# v0.5.347 (2026-10-29) · 1 commit
+
+## Features & Cleanup
+- **Removed Custom Plugins system and menu.** The Custom Plugins sidebar navigation, route page, mark badges, and runtime interceptors have been completely removed for streamlined production stability.
+- **Web Cookie Provider Tool Calling Banner.** All web-cookie providers (e.g. Gemini Web) now feature an in-page banner card allowing users to toggle OpenAI-compatible tool calling support on or off per provider.
+
 # v0.5.346 (2026-10-29) · 1 commit
 
 ## UI

@@ -22,19 +22,13 @@ const PLUGIN_COVERED_CAPS = { imageVision: "vision" };
 
 export default function CapacityBadges({ caps, marks, className = "", colorOverride, size = 16 }) {
   const active = caps ? Object.keys(CAPACITY_META).filter((k) => caps[k]) : [];
-  const pluginKeys = pluginMarksFor({ caps, pluginMarks: marks });
-  const covered = new Set(pluginKeys.map((k) => PLUGIN_COVERED_CAPS[k] || k));
-  const nativeKeys = active.filter((k) => !covered.has(k));
-  if (active.length === 0 && pluginKeys.length === 0) return null;
+  if (active.length === 0) return null;
 
-  // Every mark is a monogram in one ink now, so the colour is decided once here
-  // instead of per plugin: muted by default because these ride on dense model
-  // rows, overridable by a surface that wants the accent.
   const tone = colorOverride || "text-text-muted";
 
   return (
     <span className={`inline-flex items-center gap-0.5 ${className}`}>
-      {nativeKeys.map((k) => {
+      {active.map((k) => {
         const meta = CAPACITY_META[k];
         return (
           <Tooltip key={k} text={`${meta.label} - ${meta.desc}`}>
@@ -43,20 +37,6 @@ export default function CapacityBadges({ caps, marks, className = "", colorOverr
               style={{ width: `${size}px`, height: `${size}px` }}
             >
               <PluginMark name={meta.mark} size={size} strokeWidth={1.9} />
-            </span>
-          </Tooltip>
-        );
-      })}
-      {pluginKeys.map((key) => {
-        const meta = PLUGIN_MARK_META[key];
-        if (!meta) return null;
-        return (
-          <Tooltip key={`plugin-${key}`} text={`${meta.label} - ${meta.desc}`}>
-            <span
-              className={`inline-flex items-center justify-center cursor-help ${tone}`}
-              style={{ width: `${size}px`, height: `${size}px` }}
-            >
-              <PluginMark name={key} size={size} strokeWidth={1.9} />
             </span>
           </Tooltip>
         );

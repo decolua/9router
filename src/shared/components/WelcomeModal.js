@@ -116,8 +116,8 @@ export default function WelcomeModal() {
           Centralized AI router and gateway. Seamlessly manage, configure, and monitor your AI infrastructure with zero lock-in.
         </p>
 
-        {/* Plain facts, no cards: the dialog is the container, so the list does
-            not need its own. */}
+    {/* Plain facts, no cards: the dialog is the container, so the list does
+        not need its own. */}
         <ul className="mt-4 list-disc space-y-2 pl-5 text-sm text-text-main marker:text-text-muted">
           {facts.map((fact) => (
             <li key={fact} className="leading-relaxed">

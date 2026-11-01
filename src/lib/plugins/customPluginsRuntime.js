@@ -377,49 +377,13 @@ export function applyToolCallingBridge(body, sourceFormat) {
  * ------------------------------------------------------------------ */
 
 export async function applyCustomPlugins(body, provider, model, sourceFormat, requestedModel) {
-  const config = await getPluginConfig();
-  const keysToTest = modelKeysToTest(requestedModel, provider, model);
-  const checkMatch = (modelList) => keysToTest.some((key) => matchesModel(modelList, key));
-
-  let caps = null;
-  try {
-    caps = getCapabilitiesForModel(provider, model);
-  } catch {
-    caps = null;
-  }
-
-  const result = {
+  return {
     isAdaptiveThinkingActive: false,
     isVisionActive: false,
     isThinkDeeperActive: false,
     isToolBridgeActive: false,
     isToolBridgeRewritten: false,
   };
-
-  if (config.imageVision?.enabled && checkMatch(config.imageVision.models)) {
-    result.isVisionActive = true;
-    await applyImageVision(body, caps);
-  }
-
-  if (config.adaptiveThinking?.enabled && checkMatch(config.adaptiveThinking.models)) {
-    result.isAdaptiveThinkingActive = true;
-    result.isThinkDeeperActive = true; // backward compat with existing loggers/badges
-    applyAdaptiveThinking(body, sourceFormat);
-  }
-
-  if (config.openaiToolBridge?.enabled && checkMatch(config.openaiToolBridge.models)) {
-    result.isToolBridgeActive = true;
-    // A native tool lane is left alone: rewriting a request that already works
-    // would trade a real schema for prompt text. Only an upstream with no tools
-    // lane at all (a browser session, or a model whose capabilities say so) gets
-    // the prompt rewrite, and those requests are fetched whole so the reply can
-    // be parsed back into calls.
-    if (caps?.tools === false || (await isWebSessionProvider(provider))) {
-      result.isToolBridgeRewritten = applyToolCallingBridge(body, sourceFormat);
-    }
-  }
-
-  return result;
 }
 
 export { getPluginConfig };

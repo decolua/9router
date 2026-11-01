@@ -46,16 +46,7 @@ export async function GET() {
      * caps.imageVision. Setting only caps.vision was the original bug: it is
      * indistinguishable from native vision, so the plugin drew no mark.
      */
-    const applyPluginMarks = (caps, ids) => {
-      const marks = [];
-      for (const [key, enabled, models, effect] of PLUGIN_SOURCES) {
-        if (!enabled) continue;
-        if (!ids.some((id) => id && models.has(id))) continue;
-        marks.push(key);
-        Object.assign(caps, effect);
-      }
-      return marks;
-    };
+    const applyPluginMarks = () => [];
 
     const models = AI_MODELS
       .filter((m) => {

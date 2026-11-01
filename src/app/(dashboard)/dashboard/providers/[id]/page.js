@@ -89,6 +89,8 @@ export default function ProviderDetailPage() {
   const [liveModels, setLiveModels] = useState([]);
   // Live-catalog fetch warning/error (surfaced for zed only; cursor behavior unchanged).
   const [liveModelsError, setLiveModelsError] = useState(null);
+  const [webCookieToolCalling, setWebCookieToolCalling] = useState(true);
+  const [updatingToolCalling, setUpdatingToolCalling] = useState(false);
   const [kiloFreeModels, setKiloFreeModels] = useState([]);
   const [disabledModelIds, setDisabledModelIds] = useState([]);
   const [confirmState, setConfirmState] = useState(null);
@@ -120,6 +122,29 @@ export default function ProviderDetailPage() {
       setSelectedLaneMode(!targetMode);
     } finally {
       setSwitchingLane(false);
+    }
+  };
+
+  // Toggle tool calling for web-cookie providers (e.g. Gemini Web)
+  const handleToggleWebCookieToolCalling = async (enabled) => {
+    if (updatingToolCalling) return;
+    setUpdatingToolCalling(true);
+    setWebCookieToolCalling(enabled);
+    try {
+      const settingsRes = await fetch("/api/settings", { cache: "no-store" });
+      const current = settingsRes.ok ? await settingsRes.json() : {};
+      const tc = { ...(current.webCookieToolCalling || {}) };
+      tc[providerId] = enabled;
+      await fetch("/api/settings", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webCookieToolCalling: tc }),
+      });
+    } catch (e) {
+      console.warn("Failed to update tool calling setting:", e.message);
+      setWebCookieToolCalling(!enabled);
+    } finally {
+      setUpdatingToolCalling(false);
     }
   };
 
@@ -192,6 +217,7 @@ export default function ProviderDetailPage() {
   const isOAuth = !!OAUTH_PROVIDERS[providerId] || !!FREE_PROVIDERS[providerId] || authModes.includes("oauth");
   const supportsApiKeyAuth = !!APIKEY_PROVIDERS[providerId] || authModes.includes("apikey");
   const isFreeNoAuth = !!FREE_PROVIDERS[providerId]?.noAuth;
+  const isWebCookie = !!WEB_COOKIE_PROVIDERS[providerId] || providerInfo?.category === "webCookie" || providerInfo?.authType === "cookie";
   const staticModels = getModelsByProviderId(providerId);
   const models = (providerId === "cursor" || providerId === "zed") && liveModels.length > 0
     ? liveModels
@@ -378,6 +404,8 @@ export default function ProviderDetailPage() {
       const isCli = settingsData.opencodeCliMode === true;
       setOpencodeCliMode(isCli);
       setSelectedLaneMode(isCli);
+      const isTcEnabled = settingsData?.webCookieToolCalling?.[providerId] !== false;
+      setWebCookieToolCalling(isTcEnabled);
       setProviderStrategy(override.fallbackStrategy || null);
       setProviderStickyLimit(override.stickyRoundRobinLimit != null ? String(override.stickyRoundRobinLimit) : "1");
       // Load per-provider thinking config
@@ -1659,6 +1687,35 @@ export default function ProviderDetailPage() {
               Get API Key →
             </a>
           )}
+        </div>
+      )}
+
+      {/* Web Cookie Provider Tool Calling Banner */}
+      {isWebCookie && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border-subtle bg-surface-2/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="size-9 rounded-lg bg-brand-500/10 flex items-center justify-center shrink-0 mt-0.5">
+              <span className="material-symbols-outlined text-[20px] text-brand-500">construction</span>
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-text-main">Support Tool Calling</h3>
+                <Badge variant={webCookieToolCalling ? "success" : "default"} size="sm" dot>
+                  {webCookieToolCalling ? "Enabled" : "Disabled"}
+                </Badge>
+              </div>
+              <p className="text-xs text-text-muted mt-1 leading-relaxed max-w-xl">
+                Enable OpenAI-compatible function calling bridge for web session models. Encodes schemas into system prompt and reconstructs returned structured output into valid tool calls.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-border-subtle">
+            <Toggle
+              checked={webCookieToolCalling}
+              disabled={updatingToolCalling}
+              onChange={handleToggleWebCookieToolCalling}
+            />
+          </div>
         </div>
       )}
 

@@ -247,8 +247,8 @@ export function buildGeminiPrompt(messages) {
  * Assistant tool_calls and tool results are folded in as readable transcript
  * lines so a multi-step agent loop stays coherent.
  */
-export function buildPromptWithTools(messages, body) {
-  const toolMode = hasTools(body);
+export function buildPromptWithTools(messages, body, options = {}) {
+  const toolMode = options.disableToolCalling ? false : hasTools(body);
   if (!toolMode) return { prompt: buildGeminiPrompt(messages), toolMode: false };
   const instructions = buildToolInstructions(body, "fenced");
   const { mode, forced } = selectableTools(body);
@@ -557,7 +557,17 @@ export class GeminiWebExecutor extends BaseExecutor {
     let toolMode = false;
     try {
       const messages = Array.isArray(bodyObj.messages) ? bodyObj.messages : [];
-      const built = buildPromptWithTools(messages, bodyObj);
+      let disableToolCalling = false;
+      try {
+        const { getSettings } = await import("@/lib/localDb.js");
+        const settings = await getSettings();
+        if (settings?.webCookieToolCalling?.["gemini-web"] === false) {
+          disableToolCalling = true;
+        }
+      } catch {
+        // fail-open
+      }
+      const built = buildPromptWithTools(messages, bodyObj, { disableToolCalling });
       prompt = built.prompt;
       toolMode = built.toolMode;
     } catch (err) {

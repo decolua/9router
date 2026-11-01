@@ -83,6 +83,10 @@ const DEFAULT_SETTINGS = {
   // OpenCode Free ships one card with two lanes; this flag picks the lane the
   // `opencode` executor uses (false = direct TLS request, true = local CLI).
   opencodeCliMode: false,
+  // Per-provider web-cookie tool calling enablement: { [providerId]: boolean }
+  webCookieToolCalling: {
+    "gemini-web": true,
+  },
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
 };
