@@ -6,6 +6,7 @@ import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
 import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
+import McpProxySelect from "./McpProxySelect";
 
 const ENDPOINT = "/api/cli-tools/cowork-settings";
 
@@ -400,6 +401,12 @@ export default function CoworkToolCard({
                       <a href="https://mcp.so" target="_blank" rel="noopener noreferrer" className="text-[10px] text-text-muted hover:text-primary underline ml-auto">Find MCPs →</a>
                     </div>
                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">
+                  <span className="w-32 shrink-0 text-sm font-semibold text-text-main text-right pt-1.5">MCP Proxy</span>
+                  <span className="material-symbols-outlined text-text-muted text-[14px] mt-2">arrow_forward</span>
+                  <McpProxySelect scope="mcp" />
                 </div>
 
                 <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_auto_1fr] sm:items-start sm:gap-2">

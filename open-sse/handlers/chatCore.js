@@ -33,6 +33,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { buildProxyOptions } from "../utils/proxyContext.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -350,16 +351,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log, provider, model, reqTag
   });
 
-  const proxyOptions = {
-    connectionProxyEnabled: credentials?.providerSpecificData?.connectionProxyEnabled === true,
-    connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
-    connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
-    vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
-    // Strict pools must never silently fall back to a direct connection —
-    // honored on the Cursor AgentService h2 path and in proxyFetch (#4333).
-    proxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || null,
-    strictProxy: credentials?.providerSpecificData?.strictProxy === true,
-  };
+  // Strict pools must never silently fall back to a direct connection —
+  // honored on the Cursor AgentService h2 path and in proxyFetch (#4333).
+  const proxyOptions = buildProxyOptions(credentials);
 
   if (proxyOptions.vercelRelayUrl) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";

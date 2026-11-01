@@ -12,6 +12,17 @@ import { AI_PROVIDERS } from "@/shared/constants/providers";
 import * as log from "../utils/logger.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy.js";
+import { runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
+
+// STT keeps the canonical resolver as its `proxyOptions` contract (the codex
+// transport has always accepted that shape) but now resolves it for every
+// provider, not just codex, and publishes it for the request so the bare
+// fetches inside the other transports inherit the pool too.
+async function resolveSttProxyOptions(credentials) {
+  const source =
+    credentials?._connection?.providerSpecificData || credentials?.providerSpecificData || {};
+  return resolveConnectionProxyConfig(source);
+}
 
 // Providers requiring credentials for STT
 const CREDENTIALED_PROVIDERS = new Set(
@@ -75,6 +86,7 @@ export async function handleStt(request) {
 
   // noAuth providers
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
+    await ensureProxyFetchPatched();
     const result = await handleSttCore({ provider, model, formData, sttConfig: AI_PROVIDERS[provider]?.sttConfig, transport: modelTransport });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "STT failed");
@@ -104,15 +116,19 @@ export async function handleStt(request) {
     try {
       const isCodex = provider === "codex";
       if (isCodex) credentials = await checkAndRefreshToken(provider, credentials);
-      const proxyOptions = isCodex
-        ? await resolveConnectionProxyConfig(credentials._connection?.providerSpecificData || credentials.providerSpecificData)
-        : undefined;
+      // Every transport inside the core fetches on its own, so the resolved
+      // pool is published for the whole request (AsyncLocalStorage) in addition
+      // to being passed explicitly to the transports that accept it (codex).
+      const proxyOptions = await resolveSttProxyOptions(credentials);
       const args = { provider, model, formData, credentials, sttConfig: AI_PROVIDERS[provider]?.sttConfig, transport: modelTransport, signal: request.signal, proxyOptions };
-      result = await handleSttCore(args);
+      await ensureProxyFetchPatched();
+      result = await runWithProxyOptions(proxyOptions, () => handleSttCore(args));
       if (isCodex && result.status === 401 && credentials.refreshToken && !request.signal.aborted) {
         const previous = credentials.accessToken;
         credentials = await checkAndRefreshToken(provider, credentials, { force: true });
-        if (credentials.accessToken !== previous) result = await handleSttCore({ ...args, credentials });
+        if (credentials.accessToken !== previous) {
+          result = await runWithProxyOptions(await resolveSttProxyOptions(credentials), () => handleSttCore({ ...args, credentials }));
+        }
       }
       if (result.success) {
         if (isCodex) await clearAccountError(credentials.connectionId, credentials, model);

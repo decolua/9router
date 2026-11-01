@@ -1,6 +1,8 @@
 "use server";
 
 import { NextResponse } from "next/server";
+import { resolveSurfaceProxyOptions } from "@/lib/network/connectionProxy.js";
+import { runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 
 const REGISTRY_URL = "https://api.anthropic.com/mcp-registry/v0/servers";
 const VISIBILITY = "commercial,gsuite,gsuite-google";
@@ -66,7 +68,11 @@ export async function GET(request) {
     return NextResponse.json({ cached: true, ...cache.data });
   }
   try {
-    const servers = await fetchAll();
+    // Registry read is outbound MCP-related traffic → same surface pool as the
+    // MCP probe. The process-wide cache stays outside the request scope.
+    const proxyOptions = await resolveSurfaceProxyOptions("mcp");
+    await ensureProxyFetchPatched();
+    const servers = await runWithProxyOptions(proxyOptions, () => fetchAll());
     const data = { servers, total: servers.length };
     cache.ts = Date.now();
     cache.data = data;

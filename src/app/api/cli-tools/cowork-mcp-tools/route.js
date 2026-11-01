@@ -3,6 +3,8 @@
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
+import { resolveSurfaceProxyOptions } from "@/lib/network/connectionProxy.js";
+import { runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 
 const TIMEOUT_MS = 8000;
 
@@ -97,7 +99,11 @@ export async function POST(request) {
         return NextResponse.json({ error: "URL not allowed" }, { status: 400 });
       }
     }
-    const result = await probeMcp(url);
+    // MCP has no provider connection of its own — route the probe through the
+    // pool bound to the "mcp" surface in settings (if any).
+    const proxyOptions = await resolveSurfaceProxyOptions("mcp");
+    await ensureProxyFetchPatched();
+    const result = await runWithProxyOptions(proxyOptions, () => probeMcp(url));
     return NextResponse.json(result);
   } catch (e) {
     return NextResponse.json({ error: e.message, tools: [] }, { status: 500 });

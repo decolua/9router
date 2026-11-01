@@ -9,6 +9,7 @@ import { getSettings } from "@/lib/localDb";
 import { getModelInfo } from "../services/model.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
 import { handleEmbeddingsCore } from "open-sse/handlers/embeddingsCore.js";
+import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
@@ -122,7 +123,10 @@ export async function handleEmbeddings(request) {
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
 
-    const result = await handleEmbeddingsCore({
+    // The core's adapter fetches upstream directly — publish the pool of the
+    // account serving this attempt for the duration of the call.
+    await ensureProxyFetchPatched();
+    const result = await runWithProxyOptions(buildProxyOptions(refreshedCredentials), () => handleEmbeddingsCore({
       body: { ...body, model: `${provider}/${model}` },
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
@@ -137,7 +141,7 @@ export async function handleEmbeddings(request) {
       onRequestSuccess: async () => {
         await clearAccountError(credentials.connectionId, credentials, model);
       }
-    });
+    }));
 
     if (result.success) {
       const usage = exactEmbeddingUsage(result.usage);
