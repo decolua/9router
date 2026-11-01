@@ -89,16 +89,16 @@ export const COOKIE_CAPTURE = {
     authorization: true,
     mode: "bare",
   },
+  "deepseek-web": {
+    label: "Capture from DeepSeek",
+    domains: ["chat.deepseek.com"],
+    localStorage: ["userToken"],
+    mode: "bare",
+  },
   "inxorastudio-web": {
     label: "Capture from Inxora Studio",
     domains: ["labs.inxorastudio.com"],
     authorization: true,
-    mode: "bare",
-  },
-  "zai-web": {
-    label: "Capture from Z.ai",
-    domains: ["chat.z.ai"],
-    localStorage: ["token"],
     mode: "bare",
   },
   "doubao-web": {

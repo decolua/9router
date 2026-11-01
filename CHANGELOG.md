@@ -1,3 +1,17 @@
+# v0.5.352 (2026-11-01) · 1 commit
+
+## Providers & Web Cookie
+- **Remove Z.ai Web Cookie Provider (`zai-web`)**:
+  - Removed `zai-web` provider registry, executor, browser transport, and unit tests cleanly.
+  - Purged all references in UI modals, test utils, probe budgets, and settings repos.
+- **Add DeepSeek Web Cookie Provider (`deepseek-web`)**:
+  - Registered `deepseek-web` under the Web Cookie category with full SHA3-256 / DeepSeekHashV1 PoW challenge solver and SSE parser.
+  - Added native support for full model catalogue: `deepseek-chat` (V3 / V4.1), `deepseek-reasoner` (R1 / V4.1 Thinking), `deepseek-v4.1-flash`, `deepseek-v4.1-pro`, `deepseek-v4.1-reasoner`, `deepseek-v3`, and `deepseek-r1`.
+  - Added OpenAI-compatible tool calling bridge support (`deepseekWebToolBridge.js`) and in-page toggle banner with dynamic DB settings integration.
+  - Added connection testing, validation routes, and UI session credential placeholders (`userToken`).
+- **Update ZCode Integration**:
+  - Refined `glm` provider as official `ZCode (Z.ai GLM)` with dual-auth (OAuth CLI polling flow + GLM Coding Plan API Key) supporting both OpenAI and Anthropic Claude formats.
+
 # v0.5.351 (2026-11-01) · 1 commit
 
 ## Providers & Infrastructure

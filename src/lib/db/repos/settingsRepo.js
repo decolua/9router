@@ -84,7 +84,7 @@ const DEFAULT_SETTINGS = {
   // Per-provider web-cookie tool calling enablement: { [providerId]: boolean }
   webCookieToolCalling: {
     "gemini-web": true,
-    "zai-web": true,
+    "deepseek-web": true,
   },
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},

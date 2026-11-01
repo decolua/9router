@@ -15,7 +15,7 @@ import { resolveProviderId } from "@/shared/constants/providers.js";
  * session-page fetch), so the snappy REST budget below would turn every one
  * of their models into "The operation was aborted due to timeout".
  */
-export const WEB_COOKIE_PROVIDERS = new Set(["gemini-web", "zai-web"]);
+export const WEB_COOKIE_PROVIDERS = new Set(["gemini-web", "deepseek-web"]);
 
 /**
  * Free-tier providers whose probe rides the normal chat fallback chain.

@@ -80,7 +80,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
 
   const isOAuth = connection?.authType === "oauth";
   const isGeminiWeb = connection?.provider === "gemini-web";
-  const isZaiWeb = connection?.provider === "zai-web";
+  const isDeepSeekWeb = connection?.provider === "deepseek-web";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
   const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
@@ -305,12 +305,12 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           <>
             <div className="flex gap-2">
               <Input
-                label={isZaiWeb ? "Session Token (JWT)" : connection?.authType === "cookie" ? "Cookie Value" : "API Key"}
+                label={isDeepSeekWeb ? "User Token" : connection?.authType === "cookie" ? "Cookie Value" : "API Key"}
                 type={connection?.authType === "cookie" ? "text" : "password"}
                 value={formData.apiKey}
                 onChange={(e) => setFormData({ ...formData, apiKey: e.target.value })}
-                placeholder={isZaiWeb ? "Paste new token from chat.z.ai Local Storage" : connection?.authType === "cookie" ? "Enter new cookie value" : "Enter new API key"}
-                hint={isZaiWeb ? "Leave blank to keep current token." : connection?.authType === "cookie" ? "Leave blank to keep current cookie." : "Leave blank to keep the current API key."}
+                placeholder={isDeepSeekWeb ? "Paste new userToken from chat.deepseek.com Local Storage" : connection?.authType === "cookie" ? "Enter new cookie value" : "Enter new API key"}
+                hint={isDeepSeekWeb ? "Leave blank to keep current userToken." : connection?.authType === "cookie" ? "Leave blank to keep current cookie." : "Leave blank to keep the current API key."}
                 className="flex-1"
               />
               <div className="pt-6">
