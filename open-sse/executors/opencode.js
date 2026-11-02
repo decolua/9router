@@ -219,6 +219,24 @@ function bodyHasSessionHints(body) {
   }
 }
 
+const RECOGNIZED_SESSION_HEADERS = [
+  "x-session-id",
+  "session-id",
+  "session_id",
+  "x-amp-thread-id",
+  "x-claude-code-session-id",
+  "x-client-request-id",
+  "x-conversation-id",
+];
+
+function headersHaveSessionHints(headers) {
+  if (!headers || typeof headers !== "object") return false;
+  for (const k of Object.keys(headers)) {
+    if (RECOGNIZED_SESSION_HEADERS.includes(k.toLowerCase()) && headers[k]) return true;
+  }
+  return false;
+}
+
 // Strip the thinking suffix "model(level)" so registry lookups hit the base id.
 function baseModelId(model) {
   return String(model || "").replace(/\([^()]+\)\s*$/, "").trim();
@@ -254,7 +272,7 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
     return translateSessionId(String(explicitClient), clientTool);
   }
 
-  if (credentials?.connectionId || bodyHasSessionHints(body)) {
+  if (credentials?.connectionId || bodyHasSessionHints(body) || headersHaveSessionHints(headers)) {
     let viaManager = null;
     try {
       viaManager = resolveSessionId({

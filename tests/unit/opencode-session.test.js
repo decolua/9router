@@ -264,6 +264,23 @@ describe("OpenCode Free User-Agent Validation", () => {
     const headers2 = executor.buildHeaders(conv2);
     expect(headers1["x-opencode-session"]).not.toBe(headers2["x-opencode-session"]);
   });
+
+  it("keeps separate conversations with header-only session hints isolated without connectionId", () => {
+    const executor = getExecutor("opencode");
+    const conv1 = executor.prepareRequestCredentials({
+      credentials: { rawHeaders: { "x-session-id": "conv-header-alice" } },
+      body: { messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    const conv2 = executor.prepareRequestCredentials({
+      credentials: { rawHeaders: { "x-session-id": "conv-header-bob" } },
+      body: { messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    expect(conv1._opencodeSession).not.toBe(conv2._opencodeSession);
+
+    const headers1 = executor.buildHeaders(conv1);
+    const headers2 = executor.buildHeaders(conv2);
+    expect(headers1["x-opencode-session"]).not.toBe(headers2["x-opencode-session"]);
+  });
 });
 
 describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
