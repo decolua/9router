@@ -17,9 +17,16 @@ import {
 } from "../translator/formats/responsesApi.js";
 
 // OpenCode v2 UA shape: opencode/<channel>/<version>/<client>. Upstream rejects
-// the v1 "opencode/1.18.x" form with 403 FreeTierError since 2026-10-14.
-const OPENCODE_UA = "opencode/latest/2.0.26/cli";
-const OPENCODE_CLIENT = "cli";
+// legacy shapes and requires wire parity with the current released v2 CLI.
+const OPENCODE_UA = "opencode/dev/0.0.0-dev-202610272228/opencode";
+const OPENCODE_CLIENT = "opencode";
+// 40-hex project id generated once per process boot: mirrors the real CLI which derives
+// it from the local workspace path, avoiding grouping all router users into a single bucket.
+const OPENCODE_PROJECT = crypto.randomBytes(20).toString("hex");
+
+export function generateRequestId() {
+  return "req_" + crypto.randomBytes(12).toString("hex");
+}
 const MAX_SESSION_LENGTH = 256;
 const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
@@ -399,6 +406,9 @@ export class OpenCodeExecutor extends BaseExecutor {
       dropAdaptiveReasoningEffort(body);
       applyFingerprintTools(body, false, { claude: isMessagesModel(model || body?.model) });
     }
+    if (body && typeof body === "object" && credentials?.[SESSION_FIELD]) {
+      body.prompt_cache_key = credentials[SESSION_FIELD];
+    }
     return injectReasoningContent({ provider: this.provider, model, body });
   }
 
@@ -412,11 +422,15 @@ export class OpenCodeExecutor extends BaseExecutor {
     return super.execute({
       ...args,
       credentials,
-      directFetch: (url, options) => opencodeTlsFetch(url, {
+      directFetch: (url, options, extra = {}) => opencodeTlsFetch(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
-      }, { signal: options.signal }),
+      }, {
+        signal: options.signal,
+        proxyUrl: extra.proxyUrl || options.proxyUrl,
+      }),
+      directFetchProxy: true,
     });
   }
 
@@ -439,18 +453,20 @@ export class OpenCodeExecutor extends BaseExecutor {
 
     const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
 
-    // Mirrors the v2 CLI. Upstream needs x-opencode-session-id next to
-    // x-opencode-session, and rejects any x-opencode-request (v1 only) with 403.
+    // Mirrors the real v2 CLI wire shape: session id is sent on all four headers
+    // (session, session-id, session-affinity, X-Session-Id), x-opencode-request
+    // is generated per request, and project id is dynamically randomized.
     const headers = {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || OPENCODE_CLIENT,
+      "x-opencode-project": lower["x-opencode-project"] || OPENCODE_PROJECT,
+      "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-session": session,
       "x-opencode-session-id": session,
       "x-session-affinity": session,
-      "x-session-id": session,
-      "x-opencode-project": lower["x-opencode-project"] || "global",
+      "X-Session-Id": session,
       "Accept": stream ? "text/event-stream" : "*/*",
     };
     if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
