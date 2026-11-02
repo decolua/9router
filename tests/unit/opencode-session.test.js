@@ -249,6 +249,36 @@ describe("OpenCode Free User-Agent Validation", () => {
     expect(headers2["x-opencode-request"]).toMatch(/^req_/);
     expect(headers2["x-opencode-request"]).not.toBe(headers1["x-opencode-request"]);
   });
+
+  it("maintains the same session ID and project ID across multi-turn conversation without client session hints", () => {
+    const executor = getExecutor("opencode");
+    const turn1Body = {
+      messages: [{ role: "user", content: "Explain quantum entanglement in simple terms" }],
+    };
+    const turn1Creds = executor.prepareRequestCredentials({ body: turn1Body });
+    const turn1Headers = executor.buildHeaders(turn1Creds);
+
+    const session1 = turn1Headers["x-opencode-session"];
+    const project1 = turn1Headers["x-opencode-project"];
+
+    // Turn 2 adds the assistant reply and next user message (no client session header supplied)
+    const turn2Body = {
+      messages: [
+        { role: "user", content: "Explain quantum entanglement in simple terms" },
+        { role: "assistant", content: "Quantum entanglement is a phenomenon where two particles become connected..." },
+        { role: "user", content: "Can this be used for faster than light communication?" },
+      ],
+    };
+    const turn2Creds = executor.prepareRequestCredentials({ body: turn2Body });
+    const turn2Headers = executor.buildHeaders(turn2Creds);
+
+    const session2 = turn2Headers["x-opencode-session"];
+    const project2 = turn2Headers["x-opencode-project"];
+
+    expect(session2).toBe(session1);
+    expect(project2).toBe(project1);
+    expect(turn2Headers["x-opencode-request"]).not.toBe(turn1Headers["x-opencode-request"]);
+  });
 });
 
 describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
