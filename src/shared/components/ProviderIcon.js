@@ -27,7 +27,7 @@ export default function ProviderIcon({
   if (!effectiveSrc || errored) {
     return (
       <span
-        className={`inline-flex items-center justify-center font-bold rounded-lg ${className}`.trim()}
+        className={`inline-flex items-center justify-center font-bold rounded-xl ${className}`.trim()}
         style={{
           width: size,
           height: size,
@@ -46,7 +46,7 @@ export default function ProviderIcon({
       alt={alt}
       width={size}
       height={size}
-      className={className}
+      className={`rounded-xl ${className || ""}`.trim()}
       loading="lazy"
       decoding="async"
       onError={() => {

@@ -905,7 +905,7 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
                 src={`/providers/${provider.id}.png`}
                 alt={provider.name}
                 size={30}
-                className="object-contain max-w-[32px] max-h-[32px]"
+                className="object-contain rounded-xl max-w-[32px] max-h-[32px]"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
@@ -1061,7 +1061,7 @@ function ApiKeyProviderCard({
                 src={getIconPath()}
                 alt={provider.name}
                 size={30}
-                className="object-contain max-w-[30px] max-h-[30px]"
+                className="object-contain rounded-xl max-w-[30px] max-h-[30px]"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }

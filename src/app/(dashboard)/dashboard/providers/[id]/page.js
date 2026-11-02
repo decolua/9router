@@ -1669,7 +1669,7 @@ export default function ProviderDetailPage() {
                 alt={providerInfo.name}
                 width={48}
                 height={48}
-                className="max-h-12 max-w-12 object-contain"
+                className="max-h-12 max-w-12 object-contain rounded-2xl"
                 sizes="48px"
                 onError={() => {
                   markProviderIconMissing(providerInfo.id);

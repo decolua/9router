@@ -1,3 +1,10 @@
+# v0.5.356 (2026-11-01) · 1 commit
+
+## UI & Visual Design
+- **Rounded Corners for Provider Logos**:
+  - Added gentle rounded corners (`rounded-xl` / `rounded-2xl`) directly to `ProviderIcon` and provider header images.
+  - Eliminated sharp square edges on all logo images across provider lists, model selectors, and detail pages.
+
 # v0.5.355 (2026-11-01) · 1 commit
 
 ## UI & Visual Design
