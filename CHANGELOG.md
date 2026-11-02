@@ -1,3 +1,12 @@
+# v0.5.353 (2026-11-01) · 1 commit
+
+## Providers & Features
+- **ZCode Promotional Bonus Claim System**:
+  - Added `zcodeClaimService.js` to preview and claim ZCode promotional token plans (e.g. `ZCODE WEEKEND BUILD`, `Trust Build`).
+  - Added `/api/providers/glm/bonus` endpoint for detecting and claiming bonuses directly from connected ZCode accounts.
+  - Implemented desktop client request emulation with `X-Device-Mid`, `X-ZCode-App-Version`, and headless browser Aliyun verification fallback.
+  - Added dedicated Bonus Voucher card and 1-click "Claim Bonus" button in the ZCode (`glm`) provider dashboard.
+
 # v0.5.352 (2026-11-01) · 1 commit
 
 ## Providers & Web Cookie

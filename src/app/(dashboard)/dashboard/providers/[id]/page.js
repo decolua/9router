@@ -67,6 +67,9 @@ export default function ProviderDetailPage() {
   const [studioModels, setStudioModels] = useState([]);
   const [headerImgError, setHeaderImgError] = useState(false);
   const [opencodeInstalled, setOpencodeInstalled] = useState(true);
+  const [zcodeBonuses, setZcodeBonuses] = useState([]);
+  const [zcodeClaiming, setZcodeClaiming] = useState(false);
+  const [zcodeClaimMessage, setZcodeClaimMessage] = useState(null);
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
@@ -376,6 +379,64 @@ export default function ProviderDetailPage() {
       .then((data) => { if (data.models?.length) setKiloFreeModels(data.models); })
       .catch(() => {});
   }, [providerId]);
+
+  // Check for claimable promotional bonuses for ZCode / GLM
+  useEffect(() => {
+    if (providerId !== "glm") return;
+    fetch("/api/providers/glm/bonus")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.ok && Array.isArray(data.available) && data.available.length > 0) {
+          const list = [];
+          for (const item of data.available) {
+            for (const plan of item.plans || []) {
+              list.push({ ...plan, connectionId: item.connectionId, accountName: item.accountName });
+            }
+          }
+          setZcodeBonuses(list);
+        } else {
+          setZcodeBonuses([]);
+        }
+      })
+      .catch(() => {});
+  }, [providerId, connections]);
+
+  const handleClaimZCodeBonus = async (bonus) => {
+    setZcodeClaiming(true);
+    setZcodeClaimMessage(null);
+    try {
+      const res = await fetch("/api/providers/glm/bonus", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ connectionId: bonus.connectionId, planId: bonus.planId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (data.ok) {
+        setZcodeClaimMessage({ type: "success", text: data.message || "Bonus successfully claimed!" });
+        // Refresh bonuses list after 2 seconds
+        setTimeout(() => {
+          fetch("/api/providers/glm/bonus")
+            .then((r) => r.json())
+            .then((d) => {
+              if (d.ok && Array.isArray(d.available)) {
+                const list = [];
+                for (const item of d.available) {
+                  for (const p of item.plans || []) list.push({ ...p, connectionId: item.connectionId });
+                }
+                setZcodeBonuses(list);
+              }
+            })
+            .catch(() => {});
+        }, 2000);
+      } else {
+        setZcodeClaimMessage({ type: "error", text: data.error || "Failed to claim bonus." });
+      }
+    } catch (e) {
+      setZcodeClaimMessage({ type: "error", text: e.message || "Network error while claiming." });
+    } finally {
+      setZcodeClaiming(false);
+    }
+  };
 
   const fetchConnections = useCallback(async () => {
     try {
@@ -1687,6 +1748,55 @@ export default function ProviderDetailPage() {
               {isWebCookie ? "Open Web →" : "Get API Key →"}
             </a>
           )}
+        </div>
+      )}
+
+      {/* ZCode Claimable Bonus Banner */}
+      {providerId === "glm" && (zcodeBonuses.length > 0 || zcodeClaimMessage) && (
+        <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-[20px] text-amber-500">card_giftcard</span>
+              <h3 className="text-sm font-semibold text-text-main">ZCode Promotional Plan Available</h3>
+            </div>
+            <Badge variant="warning" size="sm">Bonus</Badge>
+          </div>
+
+          {zcodeClaimMessage && (
+            <div className={`text-xs px-3 py-2 rounded-lg ${zcodeClaimMessage.type === "success" ? "bg-success/15 text-success border border-success/30" : "bg-danger/15 text-danger border border-danger/30"}`}>
+              {zcodeClaimMessage.text}
+            </div>
+          )}
+
+          {zcodeBonuses.map((bonus) => (
+            <div key={bonus.planId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-surface/80 rounded-lg p-3 border border-border-subtle">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-text-main">{bonus.name}</span>
+                  {bonus.grants ? (
+                    <span className="text-xs text-amber-400 font-mono bg-amber-500/15 px-2 py-0.5 rounded">
+                      {typeof bonus.grants === "number" ? `${(bonus.grants / 1000000).toFixed(0)}M Tokens` : bonus.grants}
+                    </span>
+                  ) : null}
+                </div>
+                {bonus.description && (
+                  <p className="text-xs text-text-muted mt-0.5">{bonus.description}</p>
+                )}
+                {bonus.accountName && (
+                  <p className="text-xs text-text-subtle mt-0.5">Account: {bonus.accountName}</p>
+                )}
+              </div>
+              <Button
+                variant="primary"
+                size="sm"
+                disabled={zcodeClaiming}
+                onClick={() => handleClaimZCodeBonus(bonus)}
+                className="shrink-0"
+              >
+                {zcodeClaiming ? "Claiming..." : "Claim Bonus"}
+              </Button>
+            </div>
+          ))}
         </div>
       )}
 
