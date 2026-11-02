@@ -46,7 +46,8 @@
     "sql.js": "^1.14.1",
     "undici": "^7.30.1",
     "uuid": "^13.0.0",
-    "zustand": "^5.0.10"
+    "zustand": "^5.0.10",
+    "minimatch": "^11.0.4"
   },
   "optionalDependencies": {
     "@aws-sdk/credential-providers": "^3.1135.0",
@@ -68,6 +69,7 @@
   },
   "overrides": {
     "dompurify": "^3.4.17",
-    "ip-address": "^10.7.4"
+    "ip-address": "^10.7.4",
+    "minimatch": "^11.0.4"
   }
 }
