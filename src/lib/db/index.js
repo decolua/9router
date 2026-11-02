@@ -69,6 +69,12 @@ export {
   saveRequestDetail, getRequestDetails, getRequestDetailById, getDistinctProviders,
 } from "./repos/requestDetailsRepo.js";
 
+// Passkeys (WebAuthn dashboard login) — not part of exportDb/importDb
+export {
+  getPasskeys, getPasskeyById, countPasskeys, countRemotePasskeys,
+  createPasskey, updatePasskeyUsage, renamePasskey, deletePasskey,
+} from "./repos/passkeysRepo.js";
+
 // Export/import full DB
 export async function exportDb() {
   const db = await getAdapter();

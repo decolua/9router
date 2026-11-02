@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSettings, updateSettings } from "@/lib/localDb";
+import { getSettings, updateSettings, countRemotePasskeys } from "@/lib/localDb";
+import { PASSKEY_MODES } from "@/lib/auth/passkeyMode";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 import { resetComboRotation } from "open-sse/services/combo.js";
 import bcrypt from "bcryptjs";
@@ -41,6 +42,20 @@ export async function PATCH(request) {
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
+
+    if (Object.prototype.hasOwnProperty.call(body, "passkeyMode")) {
+      if (!PASSKEY_MODES.includes(body.passkeyMode)) {
+        return NextResponse.json({ error: `passkeyMode must be one of: ${PASSKEY_MODES.join(", ")}` }, { status: 400 });
+      }
+      // "Passkey only" needs a passkey a remote owner can use. One bound to localhost only
+      // works on the host, where password login stays allowed anyway, so it does not count.
+      if (body.passkeyMode === "only" && (await countRemotePasskeys()) === 0) {
+        return NextResponse.json(
+          { error: "Add a passkey on the dashboard's domain name (not localhost) before enabling passkey-only login" },
+          { status: 409 }
+        );
+      }
+    }
 
     // If updating password, hash it
     if (body.newPassword) {

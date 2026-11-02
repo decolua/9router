@@ -305,7 +305,7 @@ export default function Header({ onMenuClick, showMenuButton = true }) {
 
       {/* Right actions */}
       <div className="flex items-center gap-1 shrink-0">
-        {displayName && (loginMethod === "OIDC" || loginMethod === "SAML") && (
+        {displayName && (loginMethod === "OIDC" || loginMethod === "SAML" || loginMethod === "Passkey") && (
           <div
             className="hidden sm:flex items-center max-w-[220px] px-3 py-1.5 rounded-full border border-border bg-surface/70 text-xs text-text-muted truncate"
             title={displayName}

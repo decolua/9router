@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { DATA_DIR } from "@/lib/dataDir";
-import { getSettings } from "@/lib/localDb";
+import { getSettings, getPasskeyById } from "@/lib/localDb";
 
 const DEFAULT_PASSWORD = "123456";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
@@ -23,6 +23,13 @@ function loadJwtSecret() {
 
 const SECRET = new TextEncoder().encode(loadJwtSecret());
 
+// Stable per-install identifier for `label`, derived from the session secret so it
+// needs no storage of its own and reveals nothing about the secret.
+export function deriveInstallId(label, bytes = 32) {
+  const digest = crypto.createHmac("sha256", SECRET).update(String(label)).digest();
+  return new Uint8Array(digest.subarray(0, Math.min(bytes, digest.length)));
+}
+
 export function shouldUseSecureCookie(request) {
   const forceSecureCookie = process.env.AUTH_COOKIE_SECURE === "true";
   const forwardedProto = request?.headers?.get?.("x-forwarded-proto");
@@ -39,10 +46,16 @@ export async function createDashboardAuthToken(claims = {}) {
 }
 
 export async function verifyDashboardAuthToken(token) {
-  if (!token) return false;
+  return Boolean(await getDashboardAuthSession(token));
+}
+
+// A passkey session lives only as long as its credential: removing a passkey (lost
+// device, unknown enrolment) also ends every session it issued instead of leaving them
+// valid for up to 24h. Fails closed if the lookup errors.
+async function passkeyStillEnrolled(payload) {
+  if (typeof payload.passkeyId !== "string" || !payload.passkeyId) return false;
   try {
-    await jwtVerify(token, SECRET);
-    return true;
+    return Boolean(await getPasskeyById(payload.passkeyId));
   } catch {
     return false;
   }
@@ -50,12 +63,14 @@ export async function verifyDashboardAuthToken(token) {
 
 export async function getDashboardAuthSession(token) {
   if (!token) return null;
+  let payload;
   try {
-    const { payload } = await jwtVerify(token, SECRET);
-    return payload;
+    ({ payload } = await jwtVerify(token, SECRET));
   } catch {
     return null;
   }
+  if (payload.passkey && !(await passkeyStillEnrolled(payload))) return null;
+  return payload;
 }
 
 export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {

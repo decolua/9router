@@ -17,5 +17,7 @@ export {
   getCustomModels, addCustomModel, deleteCustomModel,
   getMitmAlias, setMitmAliasAll,
   getPricing, getPricingForModel, updatePricing, resetPricing, resetAllPricing,
+  getPasskeys, getPasskeyById, countPasskeys, countRemotePasskeys,
+  createPasskey, updatePasskeyUsage, renamePasskey, deletePasskey,
   exportDb, importDb,
 } from "@/lib/db/index.js";

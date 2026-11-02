@@ -3,20 +3,14 @@ import { getSettings } from "@/lib/localDb";
 import bcrypt from "bcryptjs";
 import { cookies } from "next/headers";
 import { setDashboardAuthCookie } from "@/lib/auth/dashboardSession";
-import { isOidcConfigured } from "@/lib/auth/oidc";
-import { isSamlConfigured } from "@/lib/auth/saml.js";
+import { getEnforcedSsoType } from "@/lib/auth/ssoPolicy";
 import { checkLock, recordFail, recordSuccess, getClientIp } from "@/lib/auth/loginLimiter";
 import { isLocalRequest } from "@/dashboardGuard";
+import { isTunnelLoginBlocked } from "@/lib/auth/tunnelAccess";
+import { getEffectivePasskeyMode } from "@/lib/auth/passkeyMode";
 
 const RESET_HINT = "Forgot password? Reset to default via 9Router CLI → Settings → Reset Password to Default.";
 const NO_STORE_HEADERS = { "Cache-Control": "no-store" };
-
-function isTunnelRequest(request, settings) {
-  const host = (request.headers.get("host") || "").split(":")[0].toLowerCase();
-  const tunnelHost = settings.tunnelUrl ? new URL(settings.tunnelUrl).hostname.toLowerCase() : "";
-  const tailscaleHost = settings.tailscaleUrl ? new URL(settings.tailscaleUrl).hostname.toLowerCase() : "";
-  return (tunnelHost && host === tunnelHost) || (tailscaleHost && host === tailscaleHost);
-}
 
 export async function POST(request) {
   try {
@@ -33,21 +27,29 @@ export async function POST(request) {
     const settings = await getSettings();
 
     // Block login via tunnel/tailscale if dashboard access is disabled
-    if (isTunnelRequest(request, settings) && settings.tunnelDashboardAccess !== true) {
+    if (isTunnelLoginBlocked(request, settings)) {
       return NextResponse.json({ error: "Dashboard access via tunnel is disabled" }, { status: 403 });
+    }
+
+    // Passkey-only mode: refuse remote password attempts before any bcrypt compare,
+    // so scanners get no password oracle. Local requests keep password login as the
+    // owner's recovery path (e.g. lost authenticator).
+    if (await getEffectivePasskeyMode(settings) === "only" && !isLocalRequest(request)) {
+      return NextResponse.json(
+        { error: "Password login is disabled. Sign in with a passkey.", passkeyOnly: true },
+        { status: 403, headers: NO_STORE_HEADERS }
+      );
     }
 
     // Default password is '123456' if not set
     const storedHash = settings.password;
 
-    if (settings.authMode === "sso" || settings.authMode === "saml" || settings.authMode === "oidc") {
-      const ssoType = settings.ssoType || (settings.authMode === "saml" ? "saml" : "oidc");
-      if (ssoType === "saml" && isSamlConfigured(settings)) {
-        return NextResponse.json({ error: "Password login is disabled. Use SAML SSO sign in." }, { status: 403 });
-      }
-      if (ssoType === "oidc" && isOidcConfigured(settings)) {
-        return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
-      }
+    const enforcedSso = getEnforcedSsoType(settings);
+    if (enforcedSso === "saml") {
+      return NextResponse.json({ error: "Password login is disabled. Use SAML SSO sign in." }, { status: 403 });
+    }
+    if (enforcedSso === "oidc") {
+      return NextResponse.json({ error: "Password login is disabled. Use OIDC sign in." }, { status: 403 });
     }
 
     let isValid = false;

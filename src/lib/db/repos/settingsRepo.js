@@ -39,6 +39,8 @@ const DEFAULT_SETTINGS = {
   samlLoginLabel: "Sign in with SAML SSO",
   samlAttributeEmail: "email",
   samlAttributeName: "name",
+  // Passkey (WebAuthn) dashboard login: "off" | "on" | "only" (password refused for remote requests).
+  passkeyMode: "off",
   enableObservability: false,
   observabilityMaxRecords: 1000,
   observabilityBatchSize: 20,
