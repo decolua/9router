@@ -149,11 +149,28 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
 
   let body = res.body;
   if (FRESH_TLS) {
-    if (body && typeof body.pipeThrough === "function") {
-      body = body.pipeThrough(new TransformStream({
-        flush() { closeSession(); },
-        cancel() { closeSession(); }
-      }));
+    if (body && typeof body.getReader === "function") {
+      const reader = body.getReader();
+      body = new ReadableStream({
+        async pull(controller) {
+          try {
+            const { done, value } = await reader.read();
+            if (done) {
+              closeSession();
+              controller.close();
+            } else {
+              controller.enqueue(value);
+            }
+          } catch (err) {
+            closeSession();
+            controller.error(err);
+          }
+        },
+        async cancel(reason) {
+          closeSession();
+          try { await reader.cancel(reason); } catch {}
+        }
+      });
     } else {
       closeSession();
     }

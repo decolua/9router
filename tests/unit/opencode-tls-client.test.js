@@ -51,16 +51,37 @@ describe("opencodeTlsClient", () => {
     expect(result.headers.get("content-type")).toBe("text/event-stream");
   });
 
-  it("reuses one session across requests", async () => {
+  it("builds a fresh session per request by default and closes it when the stream completes", async () => {
+    const closeMock = vi.fn();
     const fetchMock = vi.fn().mockImplementation(async () => new Response("ok", { status: 200 }));
-    createSessionMock.mockResolvedValue({ fetch: fetchMock, close: vi.fn() });
+    createSessionMock.mockResolvedValue({ fetch: fetchMock, close: closeMock });
 
     const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
-    await opencodeTlsFetch("https://opencode.ai/a", {});
-    await opencodeTlsFetch("https://opencode.ai/b", {});
+    const resA = await opencodeTlsFetch("https://opencode.ai/a", {});
+    await resA.text();
+    const resB = await opencodeTlsFetch("https://opencode.ai/b", {});
+    await resB.text();
 
-    expect(createSessionMock).toHaveBeenCalledTimes(1);
+    expect(createSessionMock).toHaveBeenCalledTimes(2);
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(closeMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reuses one session across requests when OPENCODE_TLS_FRESH=0 is configured", async () => {
+    process.env.OPENCODE_TLS_FRESH = "0";
+    try {
+      const fetchMock = vi.fn().mockImplementation(async () => new Response("ok", { status: 200 }));
+      createSessionMock.mockResolvedValue({ fetch: fetchMock, close: vi.fn() });
+
+      const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+      await opencodeTlsFetch("https://opencode.ai/a", {});
+      await opencodeTlsFetch("https://opencode.ai/b", {});
+
+      expect(createSessionMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    } finally {
+      delete process.env.OPENCODE_TLS_FRESH;
+    }
   });
 
   it("surfaces an actionable error when wreq-js is unavailable", async () => {

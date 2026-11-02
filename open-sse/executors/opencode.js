@@ -20,9 +20,12 @@ import {
 // legacy shapes and requires wire parity with the current released v2 CLI.
 const OPENCODE_UA = "opencode/dev/0.0.0-dev-202610272228/opencode";
 const OPENCODE_CLIENT = "opencode";
-// 40-hex project id generated once per process boot: mirrors the real CLI which derives
-// it from the local workspace path, avoiding grouping all router users into a single bucket.
-const OPENCODE_PROJECT = crypto.randomBytes(20).toString("hex");
+// 40-hex project id generator: mirrors the real CLI which derives it
+// from the local workspace path, ensuring each conversation/session is
+// isolated and not grouped into a single bucket.
+export function generateProjectId() {
+  return crypto.randomBytes(20).toString("hex");
+}
 
 export function generateRequestId() {
   return "req_" + crypto.randomBytes(12).toString("hex");
@@ -461,7 +464,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || OPENCODE_CLIENT,
-      "x-opencode-project": lower["x-opencode-project"] || OPENCODE_PROJECT,
+      "x-opencode-project": lower["x-opencode-project"] || generateProjectId(),
       "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
       "x-opencode-session": session,
       "x-opencode-session-id": session,
