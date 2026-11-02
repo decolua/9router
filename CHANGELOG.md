@@ -1,18 +1,25 @@
-# v0.5.356 (2026-11-01) · 1 commit
+# v0.5.357 (2026-11-02) · 1 commit
+
+## Documentation & Maintenance
+- **Changelog Date Alignment**:
+  - Audited and updated release dates in `CHANGELOG.md` to match exact commit timestamps (`2026-11-02`).
+  - Aligned chronological entries for v0.5.353 through v0.5.356.
+
+# v0.5.356 (2026-11-02) · 1 commit
 
 ## UI & Visual Design
 - **Rounded Corners for Provider Logos**:
   - Added gentle rounded corners (`rounded-xl` / `rounded-2xl`) directly to `ProviderIcon` and provider header images.
   - Eliminated sharp square edges on all logo images across provider lists, model selectors, and detail pages.
 
-# v0.5.355 (2026-11-01) · 1 commit
+# v0.5.355 (2026-11-02) · 1 commit
 
 ## UI & Visual Design
 - **Transparent Background for Provider Logos**:
   - Removed container background color tint (`style={{ backgroundColor: ... }}`) across all provider cards and detail headers.
   - Logos now render cleanly on a fully transparent background, blending seamlessly into the glass dashboard theme.
 
-# v0.5.354 (2026-11-01) · 1 commit
+# v0.5.354 (2026-11-02) · 1 commit
 
 ## UI & Visual Design
 - **Complete Refresh of Provider Logos**:
@@ -20,7 +27,7 @@
   - Standardized transparency, aspect ratios, and padding across all AI labs, cloud hyperscalers, and code editor providers (OpenAI, Anthropic, Gemini, DeepSeek, Groq, xAI, Qwen, Z.ai/Zhipu, Mistral, Perplexity, Cohere, Meta, Azure, AWS Bedrock, Cloudflare, etc.).
   - Preserved internal and tool-specific assets intact with high-fidelity fallbacks.
 
-# v0.5.353 (2026-11-01) · 1 commit
+# v0.5.353 (2026-11-02) · 1 commit
 
 ## Providers & Features
 - **ZCode Promotional Bonus Claim System**:
