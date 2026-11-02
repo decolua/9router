@@ -3,6 +3,7 @@ import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
+import { normalizeClaudeAssistantTail } from "../translator/concerns/claudeAssistantTail.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
@@ -326,6 +327,11 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (pxpipeResult.body) translatedBody = pxpipeResult.body;
     if (pxpipeSummary?.applied) xf.push(`PXPIPE:${pxpipeSummary.imageCount}img`);
     try { onPxpipeEvent?.({ provider, model, ...pxpipeSummary }); } catch { /* stats must not break requests */ }
+  }
+
+  // All savers, including Headroom/PXPIPE, may change the final assistant text.
+  if (finalFormat === FORMATS.CLAUDE) {
+    translatedBody = normalizeClaudeAssistantTail(translatedBody);
   }
 
   if (xf.length && log?.line) log.line(reqTag, "⚙", xf.join(" · "));
