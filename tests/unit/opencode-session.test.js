@@ -250,34 +250,19 @@ describe("OpenCode Free User-Agent Validation", () => {
     expect(headers2["x-opencode-request"]).not.toBe(headers1["x-opencode-request"]);
   });
 
-  it("maintains the same session ID and project ID across multi-turn conversation without client session hints", () => {
+  it("keeps separate conversations with identical initial prompts isolated", () => {
     const executor = getExecutor("opencode");
-    const turn1Body = {
-      messages: [{ role: "user", content: "Explain quantum entanglement in simple terms" }],
-    };
-    const turn1Creds = executor.prepareRequestCredentials({ body: turn1Body });
-    const turn1Headers = executor.buildHeaders(turn1Creds);
+    const conv1 = executor.prepareRequestCredentials({
+      body: { session_id: "conv-user-alice", messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    const conv2 = executor.prepareRequestCredentials({
+      body: { session_id: "conv-user-bob", messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    expect(conv1._opencodeSession).not.toBe(conv2._opencodeSession);
 
-    const session1 = turn1Headers["x-opencode-session"];
-    const project1 = turn1Headers["x-opencode-project"];
-
-    // Turn 2 adds the assistant reply and next user message (no client session header supplied)
-    const turn2Body = {
-      messages: [
-        { role: "user", content: "Explain quantum entanglement in simple terms" },
-        { role: "assistant", content: "Quantum entanglement is a phenomenon where two particles become connected..." },
-        { role: "user", content: "Can this be used for faster than light communication?" },
-      ],
-    };
-    const turn2Creds = executor.prepareRequestCredentials({ body: turn2Body });
-    const turn2Headers = executor.buildHeaders(turn2Creds);
-
-    const session2 = turn2Headers["x-opencode-session"];
-    const project2 = turn2Headers["x-opencode-project"];
-
-    expect(session2).toBe(session1);
-    expect(project2).toBe(project1);
-    expect(turn2Headers["x-opencode-request"]).not.toBe(turn1Headers["x-opencode-request"]);
+    const headers1 = executor.buildHeaders(conv1);
+    const headers2 = executor.buildHeaders(conv2);
+    expect(headers1["x-opencode-session"]).not.toBe(headers2["x-opencode-session"]);
   });
 });
 
