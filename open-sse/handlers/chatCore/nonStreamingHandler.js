@@ -61,7 +61,7 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
     const fn = tc.function || {};
     const rawName = fn.name || "";
     const cleanName = rawName.replace(/^functions\./, "");
-    const custom = customToolNames?.has(rawName) || customToolNames?.has(cleanName) || cleanName === "exec";
+    const custom = Boolean(customToolNames?.has(rawName) || customToolNames?.has(cleanName));
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,

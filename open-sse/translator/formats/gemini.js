@@ -145,25 +145,27 @@ export function generateProjectId() {
 
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
-function removeUnsupportedKeywords(obj, keywords) {
+function removeUnsupportedKeywords(obj, keywords, inPropertiesMap = false) {
   if (!obj || typeof obj !== "object") return;
 
   if (Array.isArray(obj)) {
     for (const item of obj) {
-      removeUnsupportedKeywords(item, keywords);
+      removeUnsupportedKeywords(item, keywords, false);
     }
     return;
   }
 
   for (const key of Object.keys(obj)) {
-    if (keywords.includes(key) || key.startsWith("x-")) {
+    // Never delete property definitions inside a `properties` dictionary even if their name
+    // matches an unsupported schema keyword (e.g. parameter named "encrypted" or "deprecated").
+    if (!inPropertiesMap && (keywords.includes(key) || key.startsWith("x-"))) {
       delete obj[key];
       continue;
     }
 
     const value = obj[key];
     if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
+      removeUnsupportedKeywords(value, keywords, key === "properties");
     }
   }
 }

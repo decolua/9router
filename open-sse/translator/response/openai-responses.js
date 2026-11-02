@@ -325,7 +325,7 @@ function closeMessage(state, emit, idx) {
 
 function isCustomTool(state, name) {
   if (!name) return false;
-  return !!state.customToolNames?.has(name) || !!state.customToolNames?.has(name.replace(/^functions\./, "")) || name === "exec";
+  return !!state.customToolNames?.has(name) || !!state.customToolNames?.has(name.replace(/^functions\./, ""));
 }
 
 function extractCustomToolInput(argumentsText) {

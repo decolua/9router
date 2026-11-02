@@ -187,4 +187,68 @@ describe("OpenAI Chat stream → Codex custom_tool_call", () => {
       input: 'await tools.exec_command({cmd: "ls"});',
     });
   });
+
+  it("keeps ordinary function named exec as function_call when not declared as custom", () => {
+    const state = initState(FORMATS.OPENAI_RESPONSES);
+    state.customToolNames = new Set(["custom_runner"]);
+    const chunks = [
+      { id: "chatcmpl-exec", choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_ord", type: "function", function: { name: "exec", arguments: "{\"command\":\"ls\"}" } }] }, finish_reason: null }] },
+      { id: "chatcmpl-exec", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+    ];
+
+    const events = chunks.flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
+    const added = events.find((event) => event.event === "response.output_item.added");
+    const done = events.find((event) => event.event === "response.output_item.done");
+
+    expect(added.data.item.type).toBe("function_call");
+    expect(done.data.item).toMatchObject({
+      type: "function_call",
+      call_id: "call_ord",
+      name: "exec",
+      arguments: '{"command":"ls"}',
+    });
+  });
+
+  it("normalizes namespaced tool calls in assistant message history", () => {
+    const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
+      input: [
+        {
+          type: "message",
+          role: "assistant",
+          content: [],
+        },
+        {
+          type: "custom_tool_call",
+          call_id: "call_hist_1",
+          name: "functions.exec",
+          input: 'tools.exec_command({cmd: "pwd"});',
+        },
+      ],
+    }, true, null);
+
+    const assistantMsg = out.messages.find((m) => m.role === "assistant");
+    expect(assistantMsg).toBeDefined();
+    expect(assistantMsg.tool_calls[0].function.name).toBe("exec");
+  });
+
+  it("does not delete legitimate parameter properties named encrypted in Gemini schema cleaning", async () => {
+    const { cleanJSONSchemaForAntigravity } = await import("../../open-sse/translator/formats/gemini.js");
+    const schema = {
+      type: "object",
+      properties: {
+        encrypted: {
+          type: "boolean",
+          description: "Whether data is encrypted",
+        },
+        payload: {
+          type: "string",
+          encrypted: true,
+        },
+      },
+    };
+    const cleaned = cleanJSONSchemaForAntigravity(schema);
+    expect(cleaned.properties.encrypted).toBeDefined();
+    expect(cleaned.properties.encrypted.type).toBe("boolean");
+    expect(cleaned.properties.payload.encrypted).toBeUndefined();
+  });
 });

@@ -113,7 +113,11 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const cleanItemName = item.name.replace(/^functions\./, "");
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) {
+        customToolNames.add(item.name);
+        customToolNames.add(cleanItemName);
+      }
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
@@ -121,7 +125,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name: cleanItemName,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
@@ -175,12 +179,21 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
 
   // Convert tools format.
   // Responses API supports tools grouped into namespaces (e.g. { type: "namespace", name: "functions", tools: [...] })
-  // as well as "hosted" tools without explicit names. Unpack namespace tools into top-level declarations
+  // as well as "hosted" tools without explicit names. Recursively unpack namespace tools into top-level declarations
   // so downstream models (Gemini, Claude, etc.) can discover and call them.
-  const unpackTools = (tools) =>
-    (Array.isArray(tools) ? tools : []).flatMap(t =>
-      t?.type === "namespace" && Array.isArray(t.tools) ? t.tools : [t]
-    );
+  const unpackTools = (tools) => {
+    if (!Array.isArray(tools)) return [];
+    const flat = [];
+    for (const t of tools) {
+      if (!t || typeof t !== "object") continue;
+      if (t.type === "namespace" && Array.isArray(t.tools)) {
+        flat.push(...unpackTools(t.tools));
+      } else {
+        flat.push(t);
+      }
+    }
+    return flat;
+  };
 
   const responseTools = [
     ...unpackTools(body.tools),
