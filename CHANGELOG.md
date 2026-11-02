@@ -1,3 +1,11 @@
+# v0.5.354 (2026-11-01) · 1 commit
+
+## UI & Visual Design
+- **Complete Refresh of Provider Logos**:
+  - Replaced over 85 provider icons with modern, high-resolution official brand marks sourced from LobeHub AI Icons and SVGL vector libraries.
+  - Standardized transparency, aspect ratios, and padding across all AI labs, cloud hyperscalers, and code editor providers (OpenAI, Anthropic, Gemini, DeepSeek, Groq, xAI, Qwen, Z.ai/Zhipu, Mistral, Perplexity, Cohere, Meta, Azure, AWS Bedrock, Cloudflare, etc.).
+  - Preserved internal and tool-specific assets intact with high-fidelity fallbacks.
+
 # v0.5.353 (2026-11-01) · 1 commit
 
 ## Providers & Features
