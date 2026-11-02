@@ -46,7 +46,12 @@ function normalizeProxyPoolUpdate(body = {}) {
 }
 
 function countBoundConnections(connections = [], proxyPoolId) {
-  return connections.filter((connection) => connection?.providerSpecificData?.proxyPoolId === proxyPoolId).length;
+  return connections.filter((connection) => {
+    const psd = connection?.providerSpecificData;
+    if (psd?.proxyPoolId === proxyPoolId) return true;
+    if (Array.isArray(psd?.proxyPoolIds) && psd.proxyPoolIds.includes(proxyPoolId)) return true;
+    return false;
+  }).length;
 }
 
 // GET /api/proxy-pools/[id] - Get proxy pool

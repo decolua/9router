@@ -64,16 +64,32 @@ function normalizeLegacyProxy(providerSpecificData = {}) {
  * 3. No Proxy
  */
 export async function resolveConnectionProxyConfig(
-  providerSpecificData = {}
+  providerSpecificData = {},
+  options = {}
 ) {
   try {
-    const proxyPoolIdRaw = normalizeString(
-      providerSpecificData?.proxyPoolId
-    );
+    const rawList = Array.isArray(providerSpecificData?.proxyPoolIds)
+      ? providerSpecificData.proxyPoolIds
+      : null;
 
-    // "__none__" means explicitly disabled
-    const proxyPoolId =
-      proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
+    let proxyPoolId = "";
+    if (rawList && rawList.length > 0) {
+      const sanitized = rawList
+        .map(normalizeString)
+        .filter((id) => id && id !== "__none__");
+      if (sanitized.length > 0) {
+        const strategy = providerSpecificData?.proxyRotateStrategy || "round-robin";
+        const rotationKey = options?.connectionId || options?.providerId || "default";
+        proxyPoolId = pickProxyPoolId(sanitized, strategy, rotationKey) || "";
+      }
+    }
+
+    if (!proxyPoolId) {
+      const proxyPoolIdRaw = normalizeString(
+        providerSpecificData?.proxyPoolId
+      );
+      proxyPoolId = proxyPoolIdRaw === "__none__" ? "" : proxyPoolIdRaw;
+    }
 
     const legacy = normalizeLegacyProxy(providerSpecificData);
 

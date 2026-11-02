@@ -32,10 +32,16 @@ function buildUsageMap(connections = []) {
   const usageMap = new Map();
 
   for (const connection of connections) {
-    const proxyPoolId = connection?.providerSpecificData?.proxyPoolId;
-    if (!proxyPoolId) continue;
+    const psd = connection?.providerSpecificData;
+    const poolIds = new Set();
+    if (psd?.proxyPoolId) poolIds.add(psd.proxyPoolId);
+    if (Array.isArray(psd?.proxyPoolIds)) {
+      for (const id of psd.proxyPoolIds) if (id) poolIds.add(id);
+    }
 
-    usageMap.set(proxyPoolId, (usageMap.get(proxyPoolId) || 0) + 1);
+    for (const proxyPoolId of poolIds) {
+      usageMap.set(proxyPoolId, (usageMap.get(proxyPoolId) || 0) + 1);
+    }
   }
 
   return usageMap;

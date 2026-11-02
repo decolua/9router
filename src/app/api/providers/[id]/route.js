@@ -56,8 +56,42 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   return { hasProxyPoolField: true, proxyPoolId };
 }
 
-function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
-  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+async function normalizeProxyPoolIdsUpdate(proxyPoolIdsInput) {
+  if (proxyPoolIdsInput === undefined) {
+    return { hasField: false, proxyPoolIds: null };
+  }
+
+  if (proxyPoolIdsInput === null || proxyPoolIdsInput === "") {
+    return { hasField: true, proxyPoolIds: null };
+  }
+
+  const rawList = Array.isArray(proxyPoolIdsInput)
+    ? proxyPoolIdsInput
+    : String(proxyPoolIdsInput)
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+  const sanitized = rawList
+    .map((s) => String(s || "").trim())
+    .filter((id) => id && id !== "__none__");
+
+  if (sanitized.length === 0) {
+    return { hasField: true, proxyPoolIds: null };
+  }
+
+  for (const id of sanitized) {
+    const pool = await getProxyPoolById(id);
+    if (!pool) {
+      return { hasField: true, error: `Proxy pool "${id}" not found` };
+    }
+  }
+
+  return { hasField: true, proxyPoolIds: sanitized };
+}
+
+function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField, hasPoolIdsField, hasRotateStrategy) {
+  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField || hasPoolIdsField || hasRotateStrategy;
 }
 
 // GET /api/providers/[id] - Get single connection
@@ -110,6 +144,13 @@ export async function PUT(request, { params }) {
       return NextResponse.json({ error: proxyPoolResult.error }, { status: 400 });
     }
 
+    const proxyPoolIdsResult = await normalizeProxyPoolIdsUpdate(body.proxyPoolIds);
+    if (proxyPoolIdsResult.error) {
+      return NextResponse.json({ error: proxyPoolIdsResult.error }, { status: 400 });
+    }
+
+    const hasRotateStrategy = Object.prototype.hasOwnProperty.call(body, "proxyRotateStrategy");
+
     const updateData = {};
     if (name !== undefined) updateData.name = name;
     if (priority !== undefined) updateData.priority = priority;
@@ -126,7 +167,9 @@ export async function PUT(request, { params }) {
         existing.providerSpecificData,
         providerSpecificData,
         proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
+        proxyPoolResult.hasProxyPoolField,
+        proxyPoolIdsResult.hasField,
+        hasRotateStrategy
       )
     ) {
       const incomingProviderSpecificData = { ...(providerSpecificData || {}) };
@@ -155,6 +198,23 @@ export async function PUT(request, { params }) {
           delete updateData.providerSpecificData.proxyPoolId;
         } else {
           updateData.providerSpecificData.proxyPoolId = proxyPoolResult.proxyPoolId;
+        }
+      }
+
+      if (proxyPoolIdsResult.hasField) {
+        if (proxyPoolIdsResult.proxyPoolIds === null) {
+          delete updateData.providerSpecificData.proxyPoolIds;
+        } else {
+          updateData.providerSpecificData.proxyPoolIds = proxyPoolIdsResult.proxyPoolIds;
+        }
+      }
+
+      if (hasRotateStrategy) {
+        const strategy = String(body.proxyRotateStrategy || "").trim();
+        if (!strategy || strategy === "none") {
+          delete updateData.providerSpecificData.proxyRotateStrategy;
+        } else {
+          updateData.providerSpecificData.proxyRotateStrategy = strategy;
         }
       }
     }
