@@ -306,3 +306,45 @@ describe("dashboard guard helpers", () => {
     expect(__test__.extractApiKey(apiRequest)).toBe("header-key");
   });
 });
+
+describe("dashboard guard passkey routes", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    process.env.NINEROUTER_PEER_TOKEN = PEER_TOKEN;
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+  });
+
+  it.each([
+    "/api/auth/passkey/login/options",
+    "/api/auth/passkey/login/verify",
+  ])("lets unauthenticated remote callers reach %s", async (pathname) => {
+    const response = await proxy(request(pathname, { host: "router.example.com" }));
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+
+  it.each([
+    "/api/auth/passkey/register/options",
+    "/api/auth/passkey/register/verify",
+    "/api/auth/passkey/credentials",
+    "/api/auth/passkey/credentials/abc123",
+    "/api/auth/passkey",
+    "/api/auth/passkey/loginx",
+  ])("requires dashboard auth for %s", async (pathname) => {
+    const response = await proxy(request(pathname, { host: "router.example.com" }));
+
+    expect(response.status).toBe(401);
+  });
+
+  it("allows passkey management with a valid dashboard session", async () => {
+    mocks.verifyDashboardAuthToken.mockResolvedValue(true);
+    const authed = request("/api/auth/passkey/credentials", { host: "router.example.com" });
+    authed.cookies.get = vi.fn(() => ({ value: "jwt" }));
+
+    const response = await proxy(authed);
+
+    expect(response).toBe(mocks.nextResponse);
+  });
+});

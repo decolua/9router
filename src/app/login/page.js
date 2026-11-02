@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { startAuthentication } from "@simplewebauthn/browser";
 import { Card, Button, Input } from "@/shared/components";
 
 export default function LoginPage() {
@@ -18,6 +19,11 @@ export default function LoginPage() {
   const [samlLoginLabel, setSamlLoginLabel] = useState("Sign in with SAML SSO");
   const [mustChange, setMustChange] = useState(false);
   const [newPassword, setNewPassword] = useState("");
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  const [passwordLoginAllowed, setPasswordLoginAllowed] = useState(true);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyHint, setPasskeyHint] = useState("");
+  const [secureContext, setSecureContext] = useState(true);
 
   // Countdown for rate-limit
   useEffect(() => {
@@ -51,6 +57,9 @@ export default function LoginPage() {
           setOidcLoginLabel(data.oidcLoginLabel || "Sign in with OIDC");
           setSamlConfigured(data.samlConfigured === true);
           setSamlLoginLabel(data.samlLoginLabel || "Sign in with SAML SSO");
+          setPasskeyAvailable(data.passkeyAvailable === true);
+          setPasswordLoginAllowed(data.passwordLoginAllowed !== false);
+          setSecureContext(window.isSecureContext === true);
         } else {
           // Safe fallback on non-OK response to avoid infinite loading state.
           setHasPassword(true);
@@ -120,6 +129,55 @@ export default function LoginPage() {
     }
   };
 
+  // Passkey sign-in: server issues a one-time challenge, the browser asks the
+  // authenticator (Touch ID / Windows Hello / security key) to sign it.
+  const handlePasskeyLogin = async () => {
+    setPasskeyLoading(true);
+    setError("");
+    setResetHint("");
+    setPasskeyHint("");
+    try {
+      const optionsRes = await fetch("/api/auth/passkey/login/options", { method: "POST" });
+      const optionsJSON = await optionsRes.json().catch(() => ({}));
+      if (!optionsRes.ok) {
+        setError(optionsJSON.error || "Passkey sign-in is unavailable");
+        if (optionsJSON.retryAfter) setRetryAfter(Number(optionsJSON.retryAfter));
+        return;
+      }
+
+      let assertion;
+      try {
+        assertion = await startAuthentication({ optionsJSON });
+      } catch (err) {
+        // Dismissed, timed out, or no passkey for this hostname (browsers report all of
+        // these the same way): a quiet hint rather than an error.
+        if (err?.name === "NotAllowedError" || err?.name === "AbortError") {
+          setPasskeyHint("Passkey sign-in was cancelled, or this device has no passkey for this address.");
+          return;
+        }
+        setError(err?.message || "Passkey sign-in was not completed");
+        return;
+      }
+
+      const verifyRes = await fetch("/api/auth/passkey/login/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: assertion }),
+      });
+      if (verifyRes.ok) {
+        window.location.assign("/dashboard");
+        return;
+      }
+      const data = await verifyRes.json().catch(() => ({}));
+      setError(data.error || "Passkey sign-in failed");
+      if (data.retryAfter) setRetryAfter(Number(data.retryAfter));
+    } catch (err) {
+      setError("An error occurred. Please try again.");
+    } finally {
+      setPasskeyLoading(false);
+    }
+  };
+
   const handleOidcLogin = () => {
     window.location.href = "/api/auth/oidc/start";
   };
@@ -135,7 +193,9 @@ export default function LoginPage() {
   const oidcAvailable = isSsoEnabled && activeSsoType === "oidc" && oidcConfigured;
   const ssoAvailable = samlAvailable || oidcAvailable;
 
-  const passwordAvailable = authMode === "password" || authMode === "both" || !ssoAvailable;
+  const passwordAvailable =
+    passwordLoginAllowed && (authMode === "password" || authMode === "both" || !ssoAvailable);
+  const passkeyOffered = passkeyAvailable && !mustChange;
 
   // Show loading state while checking password
   if (hasPassword === null) {
@@ -161,6 +221,8 @@ export default function LoginPage() {
               ? "Sign in with SAML 2.0 Single Sign-On"
               : oidcAvailable
               ? "Sign in with your OIDC provider to access the dashboard"
+              : passkeyOffered && !passwordAvailable
+              ? "Sign in with your passkey to access the dashboard"
               : "Enter your password to access the dashboard"}
           </p>
         </div>
@@ -189,6 +251,43 @@ export default function LoginPage() {
             </form>
           ) : (
           <div className="flex flex-col gap-4">
+            {passkeyOffered && (
+              secureContext ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  className="w-full"
+                  icon="passkey"
+                  onClick={handlePasskeyLogin}
+                  loading={passkeyLoading}
+                  disabled={retryAfter > 0}
+                >
+                  {retryAfter > 0 ? `Wait ${retryAfter}s` : "Sign in with passkey"}
+                </Button>
+              ) : (
+                <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                  Passkeys need HTTPS or http://localhost. Open the dashboard via its domain name (not an IP address) to sign in with a passkey.
+                </p>
+              )
+            )}
+
+            {passkeyOffered && passkeyHint && (
+              <p className="text-xs text-text-muted text-center">{passkeyHint}</p>
+            )}
+
+            {passkeyOffered && !passwordAvailable && (
+              <>
+                {error && <p className="text-xs text-red-500 text-center">{error}</p>}
+                {retryAfter > 0 && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 text-center">
+                    Locked. Retry in <span className="font-mono">{retryAfter}s</span>.
+                  </p>
+                )}
+              </>
+            )}
+
+            {passkeyOffered && (samlAvailable || oidcAvailable || passwordAvailable) && <div className="h-px bg-border/60" />}
+
             {samlAvailable && (
               <Button type="button" variant="primary" className="w-full" onClick={handleSamlLogin}>
                 {samlLoginLabel}
@@ -259,8 +358,14 @@ export default function LoginPage() {
                   </p>
                 )}
               </form>
+            ) : !passwordLoginAllowed ? (
+              <p className="text-xs text-text-muted text-center">
+                Password login is disabled for remote access. To recover, sign in with the password on the host machine
+                (http://localhost), or use <code className="bg-sidebar px-1 rounded">9router</code> CLI → <b>Settings</b> → <b>Reset Password to Default</b>,
+                which turns password login back on.
+              </p>
             ) : (
-              error && <p className="text-xs text-red-500">{error}</p>
+              !passkeyOffered && error && <p className="text-xs text-red-500">{error}</p>
             )}
           </div>
           )}

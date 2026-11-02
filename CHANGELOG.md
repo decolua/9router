@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Dashboard Auth**: add passkey (WebAuthn) sign-in — Touch ID, Face ID, Windows Hello or security keys — as a toggleable `passkeyMode` (`off` / `on` alongside password / `only`, which refuses remote password login before any password check while keeping local http://localhost password login for recovery). Passkeys are managed from Profile → Passkeys (add with current-password step-up, rename, remove; max 20), stored in a dedicated `passkeys` table outside settings and DB export, signed in via discoverable credentials with required user verification, single-use 5-minute challenges (per-client and per-ceremony pools, so a public options flood cannot evict someone else's sign-in), Origin/Host-bound RP ID, a per-install user handle, the login lockout limiter and the tunnel access block. Passkey sign-in is suspended while SSO-only login is enforced, sessions end when their passkey is removed, "Passkey only" requires a passkey for a domain (localhost passkeys don't count), and recovery works via CLI → Reset Password to Default or `PASSKEY_MODE_OVERRIDE=on` (e.g. in Docker)
+
 # v0.5.112 (2026-10-28)
 
 ## Features

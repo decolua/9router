@@ -29,6 +29,8 @@ const PUBLIC_API_PATHS = [
   "/api/auth/status",
   "/api/auth/oidc",
   "/api/auth/saml",
+  // Passkey sign-in only; register/* and credentials/* stay behind dashboard auth.
+  "/api/auth/passkey/login",
   "/api/version",
   "/api/settings/require-login",
 ];
