@@ -225,7 +225,6 @@ const RECOGNIZED_SESSION_HEADERS = [
   "session_id",
   "x-amp-thread-id",
   "x-claude-code-session-id",
-  "x-client-request-id",
   "x-conversation-id",
 ];
 
@@ -267,7 +266,15 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
   const hinted = incoming || normalizeSession(providerSessionId);
   if (hinted) return translateSessionId(hinted, clientTool);
 
-  const explicitClient = body?.prompt_cache_key || body?.session_id || body?.conversation_id;
+  let explicitClient = body?.prompt_cache_key || body?.session_id || body?.conversation_id;
+  if (!explicitClient) {
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() === "x-conversation-id" && v) {
+        explicitClient = v;
+        break;
+      }
+    }
+  }
   if (explicitClient) {
     return translateSessionId(String(explicitClient), clientTool);
   }
