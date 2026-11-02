@@ -1,3 +1,10 @@
+# v0.5.355 (2026-11-01) · 1 commit
+
+## UI & Visual Design
+- **Transparent Background for Provider Logos**:
+  - Removed container background color tint (`style={{ backgroundColor: ... }}`) across all provider cards and detail headers.
+  - Logos now render cleanly on a fully transparent background, blending seamlessly into the glass dashboard theme.
+
 # v0.5.354 (2026-11-01) · 1 commit
 
 ## UI & Visual Design

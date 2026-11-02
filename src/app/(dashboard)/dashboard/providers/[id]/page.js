@@ -1658,10 +1658,7 @@ export default function ProviderDetailPage() {
           Back to Providers
         </Link>
         <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-          <div
-            className="flex size-12 shrink-0 items-center justify-center rounded-lg"
-            style={{ backgroundColor: `${providerInfo.color}15` }}
-          >
+          <div className="flex size-12 shrink-0 items-center justify-center bg-transparent">
             {headerImgError || !getHeaderIconPath() ? (
               <span className="text-sm font-bold" style={{ color: providerInfo.color }}>
                 {providerInfo.textIcon || providerInfo.id.slice(0, 2).toUpperCase()}
@@ -1672,7 +1669,7 @@ export default function ProviderDetailPage() {
                 alt={providerInfo.name}
                 width={48}
                 height={48}
-                className="max-h-12 max-w-12 rounded-lg object-contain"
+                className="max-h-12 max-w-12 object-contain"
                 sizes="48px"
                 onError={() => {
                   markProviderIconMissing(providerInfo.id);

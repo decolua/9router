@@ -83,12 +83,12 @@ export default function MediaProviderDetailPage() {
 
         {/* Header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
-          <div className="size-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: `${provider.color}15` }}>
+          <div className="size-12 flex items-center justify-center shrink-0 bg-transparent">
             <ProviderIcon
               src={getCustomLogo(provider) || `/providers/${provider.id}.png`}
               alt={provider.name}
               size={48}
-              className="object-contain rounded-lg max-w-[48px] max-h-[48px]"
+              className="object-contain max-w-[48px] max-h-[48px]"
               fallbackText={provider.textIcon || provider.id.slice(0, 2).toUpperCase()}
               fallbackColor={provider.color}
             />
