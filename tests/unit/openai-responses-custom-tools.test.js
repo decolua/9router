@@ -3,6 +3,7 @@ import {
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.js";
 import { openaiToOpenAIResponsesResponse } from "../../open-sse/translator/response/openai-responses.js";
+import { translateNonStreamingResponse } from "../../open-sse/handlers/chatCore/nonStreamingHandler.js";
 import { initState } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
@@ -80,6 +81,13 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
 
   it("unpacks namespace tools in additional_tools and body.tools into top-level function declarations", () => {
     const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
+      tools: [
+        {
+          type: "namespace",
+          name: "clock",
+          tools: [{ type: "function", name: "get_time", parameters: { type: "object", properties: {} } }],
+        },
+      ],
       input: [
         {
           type: "additional_tools",
@@ -101,7 +109,7 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
     }, true, null);
 
     const toolNames = out.tools.map((tool) => tool.function.name);
-    expect(toolNames).toEqual(["exec", "wait", "spawn_agent"]);
+    expect(toolNames).toEqual(["get_time", "exec", "wait", "spawn_agent"]);
     expect(out._customToolNames).toContain("exec");
     expect(out._customToolNames).toContain("functions.exec");
   });
@@ -250,5 +258,31 @@ describe("OpenAI Chat stream → Codex custom_tool_call", () => {
     expect(cleaned.properties.encrypted).toBeDefined();
     expect(cleaned.properties.encrypted.type).toBe("boolean");
     expect(cleaned.properties.payload.encrypted).toBeUndefined();
+  });
+
+  it("normalizes namespaced tools in non-streaming responses", () => {
+    const raw = {
+      id: "chatcmpl-test",
+      choices: [
+        {
+          message: {
+            role: "assistant",
+            tool_calls: [
+              {
+                id: "call_1",
+                type: "function",
+                function: { name: "functions.exec", arguments: '{"input":"pwd"}' },
+              },
+            ],
+          },
+        },
+      ],
+    };
+    const res = translateNonStreamingResponse(raw, FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, new Set(["exec"]));
+    expect(res.output[0]).toMatchObject({
+      type: "custom_tool_call",
+      name: "exec",
+      input: "pwd",
+    });
   });
 });
