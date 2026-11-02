@@ -1,3 +1,10 @@
+# v0.5.358 (2026-11-02) · 1 commit
+
+## UI & Visual Design
+- **Official Z.ai Logo for ZCode**:
+  - Replaced ZCode / GLM brand assets with the official Z.ai vector brand mark (`glm.png`, `glm-cn.png`, `zcode.png`).
+  - Rendered with transparent background and high-resolution geometry matching Z.ai's official brand guidelines.
+
 # v0.5.357 (2026-11-02) · 1 commit
 
 ## Documentation & Maintenance
