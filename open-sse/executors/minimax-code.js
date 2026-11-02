@@ -1,5 +1,6 @@
 import { DefaultExecutor } from "./default.js";
 import { refreshMiniMaxCodeToken } from "../services/tokenRefresh.js";
+import { getLeaseToken, invalidateLeaseToken, isLeaseConnection } from "../services/minimaxCodeLease.js";
 
 // MiniMax Code reports credit/quota exhaustion as 402/403 (and 429) with a
 // body that names the balance. chatCore treats 401/403 as refresh-and-retry
@@ -42,15 +43,34 @@ export async function normalizeQuotaResponse(response) {
 
 export class MinimaxCodeExecutor extends DefaultExecutor {
   async execute(args) {
+    // Lease connections carry no stored token — borrow one from the desktop
+    // broker per request (the lease manager caches until near expiry).
+    if (isLeaseConnection(args?.credentials)) {
+      const lease = await getLeaseToken(args.credentials, args.log);
+      args = { ...args, credentials: { ...args.credentials, accessToken: lease.accessToken } };
+    }
     const result = await super.execute(args);
     if (!result?.response) return result;
     return { ...result, response: await normalizeQuotaResponse(result.response) };
   }
 
-  // Route the on-401 refresh through REFRESH_HANDLERS' handler (single-use
-  // refresh tokens, deduped by token value) instead of the generic grant
-  // builder — the default path would re-send a spent refresh token.
+  // Lease mode: a 401 means the borrowed token went stale (or the desktop
+  // app rotated it) — drop the cache and take a fresh lease. No refresh token
+  // is involved, so returning { accessToken } reuses chatCore's retry-once
+  // path unchanged. OAuth mode: route through REFRESH_HANDLERS' handler
+  // (single-use refresh tokens, deduped by token value) instead of the
+  // generic grant builder — the default path would re-send a spent token.
   async refreshCredentials(credentials, log) {
+    if (isLeaseConnection(credentials)) {
+      try {
+        invalidateLeaseToken(credentials, "upstream 401", log);
+        const lease = await getLeaseToken(credentials, log);
+        return { accessToken: lease.accessToken };
+      } catch (error) {
+        log?.warn?.("TOKEN", `MCODE lease refresh failed: ${error.message}`);
+        return null;
+      }
+    }
     if (!credentials?.refreshToken) return null;
     return refreshMiniMaxCodeToken(this.provider, credentials.refreshToken, log);
   }

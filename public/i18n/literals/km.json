@@ -1174,7 +1174,7 @@
   "Theme": "រូបរាង",
   "Thinking": "ការគិត",
   "Thinking Process": "ដំណើរការគិត",
-  "This is the only time you will see this key. Store it securely.": "នេះជាលើកតែមួយដែលអ្នកនឹងឃើញ Key នេះ។ សូមរក្សាទុកវាឱ្យមានសុវត្ថិភាព។",
+  "Store this key securely. You can view or copy it later from the API Keys list.": "សូមរក្សាទុក Key នេះឱ្យមានសុវត្ថិភាព។ អ្នកអាចមើល ឬចម្លងវានៅពេលក្រោយពីបញ្ជី API Keys។",
   "This provider is ready to use.": "អ្នកផ្តល់សេវានេះរួចរាល់សម្រាប់ប្រើ។",
   "This provider is ready to use. Optionally route requests through a proxy pool to bypass IP-based limits.": "អ្នកផ្តល់សេវានេះរួចរាល់សម្រាប់ប្រើ។ អ្នកអាចជ្រើសបញ្ជូនសំណើតាម Proxy Pool ដើម្បីរំលងកម្រិតផ្អែកលើ IP។",
   "This value is write-only after saving.": "តម្លៃនេះអាចសរសេរបានតែប៉ុណ្ណោះ បន្ទាប់ពីរក្សាទុក។",

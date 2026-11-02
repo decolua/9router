@@ -31,7 +31,10 @@ export default {
   transports: [
     { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
     { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
-    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+    // /responses rejects the Chat-shaped thinking fields (reasoning_effort, thinking:{type}) with
+    // 503 "Endpoint is unavailable" (probed live on deepseek-v4.1-flash); it accepts the nested
+    // reasoning:{effort,summary} for every model it serves (deepseek-v4*, gpt-*-luna, grok-4.*).
+    { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" }, thinkingFormat: "openai-responses" },
   ],
   // supportedFormats follow the endpoint table in https://opencode.ai/docs/go/
   models: [
@@ -45,6 +48,7 @@ export default {
     { id: "kimi-k2.6", name: "Kimi K2.6", supportedFormats: ["openai"] },
     { id: "kimi-k2.5", name: "Kimi K2.5", supportedFormats: ["openai"] },
     { id: "kimi-k3", name: "Kimi K3", supportedFormats: ["openai"] },
+    { id: "kimi-k3.1-pro", name: "Kimi K3.1 Pro", supportedFormats: ["openai"] },
     { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro", supportedFormats: ["openai", "claude", "openai-responses"] },
     { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash", supportedFormats: ["openai", "claude", "openai-responses"] },
     { id: "deepseek-v4-flash-vision-exp", name: "DeepSeek V4 Flash Vision (Exp)", supportedFormats: ["openai", "claude", "openai-responses"] },
