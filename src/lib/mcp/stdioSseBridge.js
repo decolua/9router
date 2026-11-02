@@ -153,6 +153,20 @@ function unregisterSession(name, sid) {
   const entry = getStore().get(name);
   if (!entry) return;
   entry.sessions.delete(sid);
+  // No sessions left → kill child to avoid idle orphan process leak.
+  if (entry.sessions.size === 0) {
+    try { entry.proc.kill(); } catch { /* ignore */ }
+    getStore().delete(name);
+  }
+}
+
+// Kill all spawned MCP children — called on app shutdown to prevent orphans.
+function killAllBridges() {
+  const store = getStore();
+  for (const [name, entry] of store) {
+    try { entry.proc.kill(); } catch { /* ignore */ }
+    store.delete(name);
+  }
 }
 
 function sendToChild(name, jsonRpc) {
@@ -166,4 +180,4 @@ function isRunning(name) {
   return !!(entry?.proc && !entry.proc.killed && entry.proc.exitCode === null);
 }
 
-module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin };
+module.exports = { getOrSpawn, registerSession, unregisterSession, sendToChild, isRunning, findPlugin, killAllBridges };

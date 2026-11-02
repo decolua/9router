@@ -141,11 +141,14 @@ function initWindowsTray(options) {
 /**
  * macOS/Linux tray via systray binary
  *
- * Prefers `systray2` (active fork of `systray`, ships newer
- * getlantern/systray-portable binaries that work on macOS 14+ and Apple
- * Silicon under Rosetta). Falls back to legacy `systray@1.0.5` if systray2
- * is not available, though that binary's Mach-O headers are rejected by
- * modern dyld and the icon will not appear.
+ * Prefers `systray2`, the active fork of `systray`. Both ship only an x86_64
+ * `tray_darwin_release` and select it by process.platform alone, so on Apple
+ * Silicon the tray runs under Rosetta 2 and fails with EBADARCH when Rosetta is
+ * absent. hooks/trayRuntime.js overlays a native arm64 build over that file to
+ * avoid the dependency; the fallbacks below are Intel-only.
+ *
+ * Falls back to legacy `systray@1.0.5` if systray2 is unavailable, though that
+ * binary's Mach-O headers are rejected by modern dyld and no icon will appear.
  */
 function resolveSystray() {
   let runtimeDir = null;

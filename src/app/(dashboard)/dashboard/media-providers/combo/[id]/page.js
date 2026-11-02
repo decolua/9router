@@ -77,7 +77,7 @@ export default function ComboDetailPage() {
         const k = await keysRes.json();
         setApiKey((k.keys || []).find((x) => x.isActive !== false)?.key || "");
       }
-      if (connsRes.ok) setConnections((await connsRes.json()).connections || []);
+      if (connsRes.ok) setConnections(((await connsRes.json()).connections || []).filter((x) => x.isActive !== false));
       if (!comboRes.ok) { setCombo(null); setLoading(false); return; }
       const c = await comboRes.json();
       setCombo(c);
@@ -357,7 +357,7 @@ export default function ComboDetailPage() {
                       Download
                     </a>
                   </div>
-                  <img src={testResult.imageUrl} alt="Generated" className="max-w-full rounded-lg border border-border" />
+                  <img src={testResult.imageUrl} alt="Generated" className="max-w-full rounded-lg border border-border" loading="lazy" decoding="async" />
                 </div>
               )}
               {testResult.audioUrl && (
@@ -393,18 +393,20 @@ export default function ComboDetailPage() {
         )}
       </Card>
 
-      <ModelSelectModal
-        isOpen={showPicker}
-        onClose={() => setShowPicker(false)}
-        onSelect={handleAddModel}
-        onDeselect={handleDeselectModel}
-        activeProviders={connections}
-        modelAliases={modelAliases}
-        title={`Add ${kindLabel} Model`}
-        kindFilter={combo.kind}
-        addedModelValues={providers}
-        closeOnSelect={false}
-      />
+      {showPicker && (
+        <ModelSelectModal
+          isOpen={showPicker}
+          onClose={() => setShowPicker(false)}
+          onSelect={handleAddModel}
+          onDeselect={handleDeselectModel}
+          activeProviders={connections}
+          modelAliases={modelAliases}
+          title={`Add ${kindLabel} Model`}
+          kindFilter={combo.kind}
+          addedModelValues={providers}
+          closeOnSelect={false}
+        />
+      )}
     </div>
   );
 }

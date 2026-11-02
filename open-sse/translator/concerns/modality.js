@@ -62,6 +62,19 @@ function stripOpenAI(body, caps) {
   if (!Array.isArray(body.messages)) return;
   const last = body.messages.length - 1;
   body.messages.forEach((msg, i) => {
+    if (caps.vision === false) {
+      if (Array.isArray(msg.images)) delete msg.images;
+      if (Array.isArray(msg.experimental_attachments)) {
+        msg.experimental_attachments = msg.experimental_attachments.filter(
+          (a) => !(a?.contentType?.startsWith("image/") || (typeof a?.url === "string" && a.url.startsWith("data:image/")))
+        );
+      }
+      if (Array.isArray(msg.attachments)) {
+        msg.attachments = msg.attachments.filter(
+          (a) => !(a?.contentType?.startsWith("image/") || (typeof a?.url === "string" && a.url.startsWith("data:image/")))
+        );
+      }
+    }
     if (!Array.isArray(msg.content)) return;
     const removed = new Set();
     msg.content = filterBlocks(msg.content, capForOpenAIBlock, caps, removed, i === last);

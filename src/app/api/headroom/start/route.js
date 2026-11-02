@@ -22,7 +22,11 @@ export async function POST() {
       return NextResponse.json({ error: "External Headroom proxies must be started outside 9Router", code: "EXTERNAL_PROXY" }, { status: 400 });
     }
     const port = parsePortFromUrl(url) || 8787;
-    const result = await startHeadroomProxy({ port });
+    const result = await startHeadroomProxy({
+      port,
+      codeAware: settings.headroomCodeAware === true,
+      kompress: settings.headroomKompress !== false,
+    });
     return NextResponse.json({ success: true, ...result });
   } catch (error) {
     const status = error.code === "NOT_INSTALLED" ? 400 : 500;

@@ -6,7 +6,8 @@ import Modal from "@/shared/components/Modal";
 import Input from "@/shared/components/Input";
 import Button from "@/shared/components/Button";
 import Badge from "@/shared/components/Badge";
-import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
+import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
+import Select from "@/shared/components/Select";
 
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
@@ -21,6 +22,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
+  const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
+  const [region, setRegion] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState(null);
   const [validating, setValidating] = useState(false);
@@ -46,17 +50,50 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
+        const psd = connection.providerSpecificData || {};
+        setAwsData({
+          profile: psd.profile || "",
+          region: psd.region || "",
+          accessKeyId: psd.accessKeyId || "",
+          sessionToken: "",
+        });
+        setClearAwsSessionToken(false);
+      }
+      // Load region for providers that support it (e.g. xiaomi-tokenplan)
+      const providerCfg = AI_PROVIDERS?.[connection.provider];
+      if (providerCfg?.regions) {
+        const savedRegion = connection.providerSpecificData?.region || providerCfg.defaultRegion || providerCfg.regions[0]?.id || "";
+        setRegion(savedRegion);
+      }
       setTestResult(null);
       setValidationResult(null);
     }
-  }, [connection]);
+  }, [connection, isOpen]);
 
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
     : false;
+  const providerRegions = connection ? (AI_PROVIDERS?.[connection.provider]?.regions || null) : null;
+
+  // Build providerSpecificData for region-aware providers
+  const buildRegionSpecificData = () => {
+    if (providerRegions && region) return { ...((connection?.providerSpecificData) || {}), region };
+    return undefined;
+  };
+
+  // The server keeps a saved session token when this password field is blank. Other empty
+  // fields still clear their saved values so a profile can be switched to static keys.
+  const buildAwsSpecificData = () => ({
+    profile: awsData.profile.trim(),
+    region: awsData.region.trim(),
+    accessKeyId: awsData.accessKeyId.trim(),
+    sessionToken: clearAwsSessionToken ? null : awsData.sessionToken.trim(),
+  });
 
   const handleTest = async () => {
     if (!connection?.provider) return;
@@ -86,6 +123,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
+          ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
         }),
       });
       const data = await res.json();
@@ -120,6 +159,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
+                ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
               }),
             });
             const data = await res.json();
@@ -149,6 +190,13 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (usesAwsCredentialForm) {
+        updates.providerSpecificData = buildAwsSpecificData();
+      }
+      // Persist updated region for region-aware providers
+      if (providerRegions && region) {
+        updates.providerSpecificData = buildRegionSpecificData();
       }
       
       await onSave(updates);
@@ -243,6 +291,62 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           </div>
         )}
 
+        {usesAwsCredentialForm && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">AWS Bedrock Credentials</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="AWS Profile (SSO — recommended)"
+                value={awsData.profile}
+                onChange={(e) => setAwsData({ ...awsData, profile: e.target.value })}
+                placeholder="my-sso-profile"
+                hint="Clear this to use static keys instead; a profile takes precedence."
+              />
+              <Input
+                label="Region"
+                value={awsData.region}
+                onChange={(e) => setAwsData({ ...awsData, region: e.target.value })}
+                placeholder="us-east-1"
+              />
+              <Input
+                label="Access Key ID (only for static keys)"
+                value={awsData.accessKeyId}
+                onChange={(e) => setAwsData({ ...awsData, accessKeyId: e.target.value })}
+                placeholder="AKIA..."
+              />
+              <Input
+                label="Session Token (only for temporary ASIA… keys)"
+                type="password"
+                value={awsData.sessionToken}
+                onChange={(e) => setAwsData({ ...awsData, sessionToken: e.target.value })}
+                placeholder="FwoGZXIvYXdz..."
+                hint="Leave blank to keep the saved token. Enter a new token to replace it."
+                disabled={clearAwsSessionToken}
+              />
+              <label className="flex items-center gap-2 text-sm text-text-muted">
+                <input
+                  type="checkbox"
+                  checked={clearAwsSessionToken}
+                  onChange={(e) => {
+                    setClearAwsSessionToken(e.target.checked);
+                    if (e.target.checked) setAwsData({ ...awsData, sessionToken: "" });
+                  }}
+                />
+                Remove saved session token
+              </label>
+            </div>
+          </div>
+        )}
+
+        {providerRegions && (
+          <Select
+            label="Region"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+            options={providerRegions.map((r) => ({ value: r.id, label: r.label }))}
+          />
+        )}
+
         {!isCompatible && !isAzure && !isCloudflareAi && (
           <div className="flex items-center gap-3">
             <Button onClick={handleTest} variant="secondary" disabled={testing}>
@@ -283,4 +387,3 @@ EditConnectionModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };
-

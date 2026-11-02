@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Card, Button, ModelSelectModal, ManualConfigModal } from "@/shared/components";
 import Image from "next/image";
 import BaseUrlSelect from "./BaseUrlSelect";
+import { rememberEndpoint } from "./cliEndpointPresets";
 import ApiKeySelect from "./ApiKeySelect";
 import { matchKnownEndpoint } from "./cliEndpointMatch";
 
@@ -39,6 +40,8 @@ export default function DroidToolCard({
   const [customBaseUrl, setCustomBaseUrl] = useState("");
   const hasInitializedModel = useRef(false);
 
+  const currentBaseUrl = droidStatus?.settings?.customModels?.find((m) => m.id?.startsWith("custom:9Router"))?.baseUrl || "";
+
   const getConfigStatus = () => {
     if (!droidStatus?.installed) return null;
     // Check for any 9Router model entry (support multi-model: custom:9Router-0, custom:9Router-1, ...)
@@ -60,11 +63,10 @@ export default function DroidToolCard({
   }, [initialStatus]);
 
   useEffect(() => {
-    if (isExpanded && !droidStatus) {
-      checkDroidStatus();
+    if (isExpanded) {
+      if (!droidStatus) checkDroidStatus();
       fetchModelAliases();
     }
-    if (isExpanded) fetchModelAliases();
   }, [isExpanded]);
 
   const fetchModelAliases = async () => {
@@ -155,6 +157,8 @@ export default function DroidToolCard({
       });
       const data = await res.json();
       if (res.ok) {
+        // Remember the endpoint so it stays selectable next time
+        rememberEndpoint(getEffectiveBaseUrl(), { tunnelPublicUrl, tailscaleUrl });
         setMessage({ type: "success", text: "Settings applied successfully!" });
         checkDroidStatus();
       } else {
@@ -225,7 +229,7 @@ export default function DroidToolCard({
       <div className="flex items-start justify-between gap-3 hover:cursor-pointer sm:items-center" onClick={onToggle}>
         <div className="flex min-w-0 items-center gap-3">
           <div className="size-8 flex items-center justify-center shrink-0">
-            <Image src="/providers/droid.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} />
+            <Image src="/providers/droid.png" alt={tool.name} width={32} height={32} className="size-8 object-contain rounded-lg" sizes="32px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
           </div>
           <div className="min-w-0">
             <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -300,6 +304,7 @@ export default function DroidToolCard({
                     tunnelPublicUrl={tunnelPublicUrl}
                     tailscaleEnabled={tailscaleEnabled}
                     tailscaleUrl={tailscaleUrl}
+                    currentUrl={currentBaseUrl}
                   />
                 </div>
 
@@ -389,15 +394,17 @@ export default function DroidToolCard({
         </div>
       )}
 
-      <ModelSelectModal
-        isOpen={modalOpen}
-        onClose={() => setModalOpen(false)}
-        onSelect={handleModelSelect}
-        selectedModel={null}
-        activeProviders={activeProviders}
-        modelAliases={modelAliases}
-        title="Select Model for Factory Droid"
-      />
+      {modalOpen && (
+        <ModelSelectModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSelect={handleModelSelect}
+          selectedModel={null}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
+          title="Select Model for Factory Droid"
+        />
+      )}
 
       <ManualConfigModal
         isOpen={showManualConfigModal}

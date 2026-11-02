@@ -247,9 +247,24 @@ function mergeChunksToResponse(chunks, sourceFormat) {
 
       if (messageStart?.message) {
         finalChunk = messageStart.message;
-        // Merge usage if available
-        if (messageDelta?.usage) {
-          finalChunk.usage = messageDelta.usage;
+        // message_start.usage has input + cache; message_delta.usage has the
+        // final output_tokens. Merge so cache survives (delta omits it).
+        const startUsage = messageStart.message.usage;
+        const deltaUsage = messageDelta?.usage;
+        if (startUsage || deltaUsage) {
+          finalChunk.usage = {
+            ...(startUsage || {}),
+            ...(deltaUsage || {}),
+            ...(startUsage?.cache_read_input_tokens !== undefined
+              ? { cache_read_input_tokens: startUsage.cache_read_input_tokens }
+              : {}),
+            ...(startUsage?.cache_creation_input_tokens !== undefined
+              ? { cache_creation_input_tokens: startUsage.cache_creation_input_tokens }
+              : {}),
+            ...(startUsage?.input_tokens !== undefined
+              ? { input_tokens: startUsage.input_tokens }
+              : {})
+          };
         }
       }
     }

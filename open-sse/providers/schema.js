@@ -36,6 +36,13 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * MediaConfig: { serviceKinds:[...], ttsConfig, sttConfig, embeddingConfig, imageConfig,
  *   searchViaChat:{defaultModel,pricingUrl}, hiddenKinds } — each *Config: {baseUrl,authType,authHeader,
  *   format,defaultModel,models:[{id,name,dimensions?}]}.
+ *
+ * imageConfig.modelMap (optional): maps a client-facing model id to a provider-resolved id when
+ *   those differ — e.g. the HuggingFace Inference Providers router, where a Hub id like
+ *   `black-forest-labs/FLUX.1-schnell` is addressed as `fal-ai/fal-ai/flux/schnell`. A value is
+ *   either the provider path, or `{path, task}` when the request shape differs per task
+ *   (HuggingFace uses task:"image-to-image" to move the prompt under `parameters.prompt`).
+ *   Ignored by providers whose model ids are sent verbatim.
  */
 
 // Shared transport defaults — provider only overrides fields that differ.

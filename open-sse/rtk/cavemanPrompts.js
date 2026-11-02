@@ -18,6 +18,14 @@ const SHARED_AUTO_CLARITY = "Auto-Clarity: drop caveman for security warnings, i
 
 const SHARED_PERSISTENCE = "ACTIVE EVERY RESPONSE. No revert after many turns. No filler drift. Still active if unsure.";
 
+const SHARED_NO_INVENTED_ABBREV = "No invented abbreviations. Standard well-known tech acronyms (DB, API, HTTP, URL, JSON, ID, OS, CPU) OK. Names of code symbols, function names, API names, error strings: keep verbatim.";
+
+const SHARED_PRESERVE_LANGUAGE = "Preserve the user's dominant language. User wrote Vietnamese, reply Vietnamese. User wrote English, reply English. Wenyan/classical-Chinese levels override this language-preservation rule. Code identifiers, error strings, file paths, commands: keep in their original form regardless of language.";
+
+const SHARED_NO_SELF_REFERENCE = 'No self-reference. Do not name or announce the style (no "caveman mode", no "me caveman think", no "compressed mode active"). Just respond.';
+
+const SHARED_NO_DECORATION = 'No decorative emoji. No narrating tool calls ("I will now search", "I used X to find Y"). No status phrases ("Sure!", "Of course!", "I\'d be happy to"). No causal arrow shorthand ("A -> B -> fails"). State the thing, the action, the reason. Then next step.';
+
 export const CAVEMAN_PROMPTS = {
   [CAVEMAN_LEVELS.LITE]: [
     "Respond tersely. Keep grammar and full sentences but drop filler, hedging and pleasantries (just/really/basically/sure/of course/I'd be happy to).",
@@ -26,6 +34,10 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
+    SHARED_NO_SELF_REFERENCE,
+    SHARED_NO_DECORATION,
   ].join(" "),
 
   [CAVEMAN_LEVELS.FULL]: [
@@ -36,16 +48,24 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
+    SHARED_NO_SELF_REFERENCE,
+    SHARED_NO_DECORATION,
   ].join(" "),
 
   [CAVEMAN_LEVELS.ULTRA]: [
     "Respond ultra-terse. Maximum compression. Telegraphic.",
-    "Abbreviate (DB/auth/config/req/res/fn/impl), strip conjunctions, use arrows for causality (X → Y). One word when one word enough.",
-    "Pattern: [thing] → [result]. [fix].",
+    "Strip conjunctions. One word when one word enough.",
+    "Pattern: [thing] [action] [reason]. [next step].",
     SHARED_EXAMPLES,
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
+    SHARED_NO_SELF_REFERENCE,
+    SHARED_NO_DECORATION,
   ].join(" "),
 
   [CAVEMAN_LEVELS.WENYAN_LITE]: [
@@ -55,6 +75,10 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
+    SHARED_NO_SELF_REFERENCE,
+    SHARED_NO_DECORATION,
   ].join(" "),
 
   [CAVEMAN_LEVELS.WENYAN]: [
@@ -65,6 +89,10 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
+    SHARED_NO_SELF_REFERENCE,
+    SHARED_NO_DECORATION,
   ].join(" "),
 
   [CAVEMAN_LEVELS.WENYAN_ULTRA]: [
@@ -74,5 +102,9 @@ export const CAVEMAN_PROMPTS = {
     SHARED_BOUNDARIES,
     SHARED_AUTO_CLARITY,
     SHARED_PERSISTENCE,
+    SHARED_NO_INVENTED_ABBREV,
+    SHARED_PRESERVE_LANGUAGE,
+    SHARED_NO_SELF_REFERENCE,
+    SHARED_NO_DECORATION,
   ].join(" "),
 };

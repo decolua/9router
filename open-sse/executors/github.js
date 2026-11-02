@@ -4,17 +4,29 @@ import { OAUTH_ENDPOINTS, GITHUB_COPILOT } from "../config/appConstants.js";
 import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { openaiToOpenAIResponsesRequest } from "../translator/request/openai-responses.js";
 import { openaiResponsesToOpenAIResponse } from "../translator/response/openai-responses.js";
-import { initState } from "../translator/index.js";
+import { initState, translateRequest, translateResponse } from "../translator/index.js";
+import { FORMATS } from "../translator/formats.js";
 import { parseSSELine, formatSSE } from "../utils/streamHelpers.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { SSE_DONE } from "../utils/sseConstants.js";
+import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import crypto from "crypto";
 
 export class GithubExecutor extends BaseExecutor {
   constructor() {
     super("github", PROVIDERS.github);
     this.knownCodexModels = new Set();
+  }
+
+  // Claude models get routed to Copilot's Anthropic-native /v1/messages shim (see
+  // executeWithMessagesEndpoint below) — the only Copilot endpoint that surfaces
+  // prompt-cache token counts. gpt/gemini/grok models stay on /chat/completions
+  // (or /responses). Name-pattern check, not a registry field: Copilot's live model
+  // catalog (services/copilotModels.js) regularly exposes claude-* variants ahead
+  // of the static registry (registry/github.js).
+  isClaudeModel(model) {
+    return /claude/i.test(model || "");
   }
 
   buildUrl(model, stream, urlIndex = 0) {
@@ -35,47 +47,20 @@ export class GithubExecutor extends BaseExecutor {
       "x-request-id": crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`,
       "x-vscode-user-agent-library-version": "electron-fetch",
       "X-Initiator": "user",
+      // Harmless no-op on /chat/completions and /responses; required by /v1/messages.
+      "anthropic-version": ANTHROPIC_API_VERSION,
       "Accept": stream ? "text/event-stream" : "application/json"
     };
   }
 
-  // Sanitize messages for GitHub Copilot /chat/completions endpoint.
+  // Sanitize messages for GitHub Copilot /chat/completions endpoint (gpt/gemini/grok models —
+  // claude models never reach this, see execute() below).
   // The endpoint only accepts 'text' and 'image_url' content part types.
   // Tool-related content (tool_use, tool_result, thinking) must be serialized as text.
   sanitizeMessagesForChatCompletions(body) {
     if (!body?.messages) return body;
 
     const sanitized = { ...body };
-    
-    // Handle response_format for Claude models via GitHub
-    // GitHub's internal translation doesn't respect response_format, so we inject it as a system prompt
-    // AND prepend a reminder to the last user message for maximum effectiveness
-    if (body.response_format && body.model?.includes('claude')) {
-      const responseFormat = body.response_format;
-      let systemInstruction = '';
-      if (responseFormat.type === 'json_schema' && responseFormat.json_schema?.schema) {
-        systemInstruction = 'CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks. Never wrap JSON in triple backticks. Output ONLY the raw JSON object.';
-      } else if (responseFormat.type === 'json_object') {
-        systemInstruction = 'CRITICAL: You must ONLY output raw JSON. Never use markdown code blocks. Never use backticks.';
-      }
-      if (systemInstruction) {
-        // Add to system message
-        const systemIdx = body.messages.findIndex(m => m.role === 'system');
-        if (systemIdx >= 0) {
-          body.messages[systemIdx].content = systemInstruction + '\n\n' + body.messages[systemIdx].content;
-        } else {
-          body.messages.unshift({ role: 'system', content: systemInstruction });
-        }
-        
-        // Also prepend to the last user message as a reminder
-        const lastUserIdx = body.messages.map((m, i) => m.role === 'user' ? i : -1).filter(i => i >= 0).pop();
-        if (lastUserIdx >= 0) {
-          const userMsg = body.messages[lastUserIdx];
-          const userContent = typeof userMsg.content === 'string' ? userMsg.content : JSON.stringify(userMsg.content);
-          userMsg.content = 'Respond with ONLY raw JSON (no markdown, no backticks, no code blocks): ' + userContent;
-        }
-      }
-    }
     sanitized.messages = body.messages.map(msg => {
       // assistant messages with only tool_calls have content: null — leave as-is
       if (!msg.content) return msg;
@@ -138,6 +123,15 @@ export class GithubExecutor extends BaseExecutor {
   async execute(options) {
     const { model, log } = options;
 
+    // Claude models: route to Copilot's Anthropic-native /v1/messages shim — the only
+    // Copilot endpoint that surfaces prompt-cache token counts for Claude. Detected by
+    // model NAME (not a registry field): Copilot's live model catalog regularly exposes
+    // claude-* variants the static registry hasn't caught up with yet (see registry/github.js).
+    if (this.isClaudeModel(model)) {
+      log?.debug("GITHUB", `Using /v1/messages route for ${model}`);
+      return this.executeWithMessagesEndpoint(options);
+    }
+
     // Only use /responses for models that are explicitly known to need it (e.g. gpt codex models)
     // and that the /responses endpoint actually serves (excludes Gemini/Claude, see #1062).
     if (this.knownCodexModels.has(model) && this.supportsResponsesEndpoint(model)) {
@@ -145,8 +139,8 @@ export class GithubExecutor extends BaseExecutor {
       return this.executeWithResponsesEndpoint(options);
     }
 
-    // Sanitize messages before sending to /chat/completions
-    // This handles Claude models on GitHub Copilot which reject non-text/image_url content types
+    // Sanitize messages before sending to /chat/completions (gpt/gemini/grok — the
+    // endpoint rejects non-text/image_url content parts).
     const sanitizedOptions = {
       ...options,
       body: this.sanitizeMessagesForChatCompletions(options.body)
@@ -229,6 +223,101 @@ export class GithubExecutor extends BaseExecutor {
             if (converted) {
               controller.enqueue(new TextEncoder().encode(formatSSE(converted, "openai")));
             }
+          }
+        }
+      }
+    });
+
+    if (!response.body) {
+      return { response: new Response("", { status: response.status, headers: response.headers }), url, headers, transformedBody };
+    }
+    const convertedStream = response.body.pipeThrough(transformStream);
+
+    return {
+      response: new Response(convertedStream, {
+        status: response.status,
+        statusText: response.statusText,
+        headers: response.headers
+      }),
+      url,
+      headers,
+      transformedBody
+    };
+  }
+
+  // Claude models arrive here OpenAI-shape (chatCore.js targets "openai" for github —
+  // see the note in execute() above), so we translate to Anthropic-native ourselves.
+  // This is what makes prepareClaudeRequest() (translator/formats/claude.js) inject
+  // cache_control — /chat/completions never gets there, so it never sees cache tokens.
+  async executeWithMessagesEndpoint({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+    const url = this.config.messagesUrl;
+    const headers = this.buildHeaders(credentials, stream);
+
+    // Force stream:true upstream regardless of client preference, same as
+    // executeWithResponsesEndpoint below — chatCore.js's non-streaming handler already
+    // knows how to buffer an SSE response into a single JSON reply when the client
+    // asked for stream:false.
+    const transformedBody = translateRequest(FORMATS.OPENAI, FORMATS.CLAUDE, model, body, true, credentials, "github");
+    // _toolNameMap is internal bookkeeping (see openai-to-claude.js) — chatCore.js
+    // normally strips it before dispatch and threads it into the response state to
+    // restore original tool names; we must do the same here, or Anthropic's strict
+    // schema rejects the extra field with a 400.
+    const toolNameMap = transformedBody._toolNameMap;
+    delete transformedBody._toolNameMap;
+
+    log?.debug("GITHUB", "Sending translated request to /v1/messages");
+
+    const response = await proxyAwareFetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(transformedBody),
+      signal
+    }, proxyOptions);
+
+    if (!response.ok) {
+      return { response, url, headers, transformedBody };
+    }
+
+    const state = initState(FORMATS.CLAUDE);
+    state.model = model;
+    if (toolNameMap) state.toolNameMap = toolNameMap;
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const emitAll = (controller, chunks) => {
+      for (const c of chunks) {
+        controller.enqueue(new TextEncoder().encode(formatSSE(c, "openai")));
+      }
+    };
+
+    const transformStream = new TransformStream({
+      async transform(chunk, controller) {
+        buffer += decoder.decode(chunk, { stream: true });
+        const lines = buffer.split("\n");
+
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          const parsed = parseSSELine(trimmed);
+          if (!parsed) continue;
+
+          if (parsed.done && stream === true) {
+            controller.enqueue(new TextEncoder().encode(SSE_DONE));
+            continue;
+          }
+
+          emitAll(controller, translateResponse(FORMATS.CLAUDE, FORMATS.OPENAI, parsed, state));
+        }
+      },
+      flush(controller) {
+        if (buffer.trim()) {
+          const parsed = parseSSELine(buffer.trim());
+          if (parsed && !parsed.done) {
+            emitAll(controller, translateResponse(FORMATS.CLAUDE, FORMATS.OPENAI, parsed, state));
           }
         }
       }

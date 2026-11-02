@@ -33,6 +33,72 @@ const GEMINI_VOICES = [
   "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat",
 ].map((id) => ({ id, name: id, type: "tts" }));
 
+// Xiaomi MiMo preset voices (from https://mimo.mi.com/docs/zh-CN/quick-start/usage-guide/audio/speech-synthesis-v2.5).
+// Voice id is passed via `audio.voice`; `mimo_default` = default (冰糖 on CN cluster, Mia elsewhere).
+// Voices are language-independent — the spoken language is a separate hint, not bound to the voice.
+const MIMO_VOICES = [
+  { id: "mimo_default", name: "mimo_default" },
+  { id: "冰糖",           name: "冰糖" },
+  { id: "茉莉",           name: "茉莉" },
+  { id: "苏打",           name: "苏打" },
+  { id: "白桦",           name: "白桦" },
+  { id: "Mia",           name: "Mia" },
+  { id: "Chloe",         name: "Chloe" },
+  { id: "Milo",          name: "Milo" },
+  { id: "Dean",          name: "Dean" },
+].map((v) => ({ type: "tts", ...v }));
+
+// Gradium Phonon voices supported natively by Ollama (phonon / phonon:latest)
+const PHONON_VOICES_FULL = [
+  { id: "default",                    name: "Default (Neutral)" },
+  // US English Female
+  { id: "Zoey",                       name: "Zoey (US Female)" },
+  { id: "Juniper",                    name: "Juniper (US Female)" },
+  { id: "Everly",                     name: "Everly (US Female)" },
+  { id: "Harper",                     name: "Harper (US Female)" },
+  { id: "Hadley",                     name: "Hadley (US Female)" },
+  { id: "Delia",                      name: "Delia (US Female)" },
+  // US English Male
+  { id: "Easton",                     name: "Easton (US Male)" },
+  { id: "Micah",                      name: "Micah (US Male)" },
+  { id: "Trevor",                     name: "Trevor (US Male)" },
+  { id: "Russell",                    name: "Russell (US Male)" },
+  { id: "Preston",                    name: "Preston (US Male)" },
+  { id: "Miles",                      name: "Miles (US Male)" },
+  // UK English Female
+  { id: "Maeve",                      name: "Maeve (UK Female)" },
+  { id: "Freya",                      name: "Freya (UK Female)" },
+  { id: "Pippa",                      name: "Pippa (UK Female)" },
+  { id: "Elodie-Rose",                name: "Elodie-Rose (UK Female)" },
+  { id: "Imogen",                     name: "Imogen (UK Female)" },
+  { id: "Lottie",                     name: "Lottie (UK Female)" },
+  { id: "Bryony",                     name: "Bryony (UK Female)" },
+  // UK English Male
+  { id: "Alfie",                      name: "Alfie (UK Male)" },
+  { id: "Hugh",                       name: "Hugh (UK Male)" },
+  { id: "Edwin",                      name: "Edwin (UK Male)" },
+  { id: "Spencer",                    name: "Spencer (UK Male)" },
+  { id: "Toby",                       name: "Toby (UK Male)" },
+  { id: "Teddy",                      name: "Teddy (UK Male)" },
+  // Character Voices
+  { id: "Azgorath",                   name: "Azgorath (Character)" },
+  { id: "Captain Silas Blackwater",   name: "Captain Silas (Character)" },
+  { id: "Fairy Godmother",            name: "Fairy Godmother (Character)" },
+  { id: "Fennick the Young Elf",      name: "Fennick Elf (Character)" },
+  { id: "Grub the Ogre",              name: "Grub the Ogre (Character)" },
+  { id: "Master Aldric",              name: "Master Aldric (Character)" },
+  { id: "Morwenna of the Deep",       name: "Morwenna (Character)" },
+  { id: "Old Mortlake",               name: "Old Mortlake (Character)" },
+  { id: "Sir Bramwell",               name: "Sir Bramwell (Character)" },
+  { id: "The Snow Queen",             name: "Snow Queen (Character)" },
+  { id: "The Thing Under the Stairs", name: "Thing Under Stairs (Character)" },
+  { id: "Vyrmathrax the Ancient",     name: "Vyrmathrax (Character)" },
+].map((v) => ({ ...v, type: "tts" }));
+
+const PHONON_DEFAULT_VOICE = [
+  { id: "default", name: "Default", type: "tts" },
+];
+
 // ── TTS Config (config-driven, single source of truth) ─────────────────────
 export const TTS_MODELS_CONFIG = {
   openai: {
@@ -106,6 +172,51 @@ export const TTS_MODELS_CONFIG = {
       "gemini-2.5-pro-preview-tts":   GEMINI_VOICES,
     },
     allVoices: GEMINI_VOICES,
+  },
+  "xiaomi-mimo": {
+    models: [
+      { id: "mimo-v2.5-tts", name: "MiMo V2.5 TTS", type: "tts" },
+    ],
+    voices: {
+      "mimo-v2.5-tts": MIMO_VOICES,
+    },
+  },
+  "ollama-local": {
+    models: [
+      { id: "phonon:latest",           name: "Phonon (Latest)",         type: "tts" },
+      { id: "phonon",                  name: "Phonon",                  type: "tts" },
+      { id: "phonon:multilingual",     name: "Phonon Multilingual",     type: "tts" },
+      { id: "phonon:40m-multilingual", name: "Phonon 40M Multilingual", type: "tts" },
+      { id: "phonon:en",               name: "Phonon English",          type: "tts" },
+      { id: "phonon:31m-en",           name: "Phonon 31M English",      type: "tts" },
+      { id: "phonon:40m-en",           name: "Phonon 40M English",      type: "tts" },
+      { id: "phonon:de",               name: "Phonon German",           type: "tts" },
+      { id: "phonon:40m-de",           name: "Phonon 40M German",       type: "tts" },
+      { id: "phonon:es",               name: "Phonon Spanish",          type: "tts" },
+      { id: "phonon:40m-es",           name: "Phonon 40M Spanish",      type: "tts" },
+      { id: "phonon:fr",               name: "Phonon French",           type: "tts" },
+      { id: "phonon:40m-fr",           name: "Phonon 40M French",       type: "tts" },
+      { id: "phonon:pt",               name: "Phonon Portuguese",       type: "tts" },
+      { id: "phonon:40m-pt",           name: "Phonon 40M Portuguese",   type: "tts" },
+    ],
+    voices: {
+      "phonon:latest": PHONON_VOICES_FULL,
+      phonon: PHONON_VOICES_FULL,
+      "phonon:en": PHONON_VOICES_FULL,
+      "phonon:31m-en": PHONON_VOICES_FULL,
+      "phonon:40m-en": PHONON_VOICES_FULL,
+      "phonon:multilingual": PHONON_DEFAULT_VOICE,
+      "phonon:40m-multilingual": PHONON_DEFAULT_VOICE,
+      "phonon:de": PHONON_DEFAULT_VOICE,
+      "phonon:40m-de": PHONON_DEFAULT_VOICE,
+      "phonon:es": PHONON_DEFAULT_VOICE,
+      "phonon:40m-es": PHONON_DEFAULT_VOICE,
+      "phonon:fr": PHONON_DEFAULT_VOICE,
+      "phonon:40m-fr": PHONON_DEFAULT_VOICE,
+      "phonon:pt": PHONON_DEFAULT_VOICE,
+      "phonon:40m-pt": PHONON_DEFAULT_VOICE,
+    },
+    allVoices: PHONON_VOICES_FULL,
   },
 };
 

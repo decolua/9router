@@ -4,21 +4,29 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
+import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
-export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, onSave, onBulkDone, onClose }) {
+export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
   const isCookie = authType === "cookie";
   const isXaiApiKey = provider === "xai" && !isCookie;
-  const credentialLabel = isCookie ? "Cookie Value" : "API Key";
+  const credentialLabel = isCookie ? "Cookie Value" : provider === "qoder" || provider === "qoder-cn" ? "Personal Access Token (PAT)" : "API Key";
   const credentialPlaceholder = isCookie
     ? (provider === "grok-web" ? "sso=xxxxx... or just the raw value" : "eyJhbGciOi...")
-    : (isXaiApiKey ? "xai-..." : "");
+    : (isXaiApiKey ? "xai-..." : provider === "qoder" || provider === "qoder-cn" ? "pt-..." : "");
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
+  // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
+  const usesAwsCredentialForm =
+    AI_PROVIDERS?.[provider]?.credentialForm === "aws";
+  // Registry-declared: names the providerSpecificData field that stands in for an API key, so
+  // a provider whose credential lives outside the key field can be saved without one.
+  const apiKeyOptionalWith = AI_PROVIDERS?.[provider]?.apiKeyOptionalWith || null;
   const providerRegions = AI_PROVIDERS?.[provider]?.regions || null;
   const defaultRegion = AI_PROVIDERS?.[provider]?.defaultRegion || providerRegions?.[0]?.id || "";
 
@@ -37,10 +45,22 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [bedrockData, setBedrockData] = useState({
+    profile: "",
+    region: "",
+    accessKeyId: "",
+    sessionToken: "",
+  });
   const [region, setRegion] = useState(defaultRegion);
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
   const [saving, setSaving] = useState(false);
+  const bulkPlaceholder = isCloudflareAi
+    ? `name1|sk-key1|acc123456\nname2|sk-key2|def789012\nsk-key-only-auto-named`
+    : provider === "qoder" || provider === "qoder-cn"
+      ? `name1|pt-xxxxx\nname2|pt-yyyyy\npt-only-auto-named`
+      : BULK_PLACEHOLDER;
+
   const [mode, setMode] = useState("single"); // "single" | "bulk"
   const [bulkText, setBulkText] = useState("");
   const [bulkResult, setBulkResult] = useState(null); // { success, failed }
@@ -60,10 +80,31 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
     }
+    if (usesAwsCredentialForm) {
+      // Only send what the user filled in: an empty `profile` would otherwise select profile
+      // mode and shadow static keys, since detectCredentialMode prefers a profile.
+      const data = {};
+      if (bedrockData.profile.trim()) data.profile = bedrockData.profile.trim();
+      if (bedrockData.region.trim()) data.region = bedrockData.region.trim();
+      if (bedrockData.accessKeyId.trim()) data.accessKeyId = bedrockData.accessKeyId.trim();
+      if (bedrockData.sessionToken.trim()) data.sessionToken = bedrockData.sessionToken.trim();
+      return Object.keys(data).length ? data : undefined;
+    }
     if (providerRegions && region) {
       return { region };
     }
     return undefined;
+  };
+
+  // One place decides whether the credential requirement is met. The button's disabled state and
+  // handleSubmit's early return both read it; encoding the rule twice is what let Save look
+  // clickable while silently doing nothing for profile-only Bedrock connections.
+  const apiKeySatisfied = () => {
+    const psd = buildProviderSpecificData();
+    if (apiKeyOptionalWith && psd?.[apiKeyOptionalWith]) return true;
+    // AWS static keys are a pair: a secret alone saves a connection that can never sign.
+    if (usesAwsCredentialForm) return !!formData.apiKey && !!psd?.accessKeyId;
+    return !!formData.apiKey;
   };
 
   const handleValidate = async () => {
@@ -85,7 +126,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const handleSubmit = async () => {
     if (!provider) return;
-    if (!isOllamaLocal && !formData.apiKey) return;
+    if (!isOllamaLocal && !apiKeySatisfied()) return;
     if (!isOllamaLocal) {
       // Non-ollama providers require a name
       if (!formData.name) return;
@@ -127,22 +168,45 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleBulkSubmit = async () => {
-    const lines = bulkText.split("\n").map(l => l.trim()).filter(Boolean);
+    const lines = bulkText.split("\n");
     if (!lines.length) return;
+    // Plan collision-free names against existing connections so a generated
+    // "Key N" never matches a saved name (which the backend would upsert /
+    // overwrite instead of inserting). See bulkAdd.js for the full rationale.
+    const plan = planBulkAdd(lines, existingNames, { isCloudflareAi });
+    if (!plan.length) return;
     setSaving(true);
     setBulkResult(null);
     let success = 0;
     let failed = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const parts = lines[i].split("|");
-      const apiKey = parts.length >= 2 ? parts.slice(1).join("|").trim() : parts[0].trim();
-      const baseName = parts.length >= 2 ? parts[0].trim() : "Key";
-      const name = `${baseName} ${i + 1}`;
+    for (const entry of plan) {
       try {
+        // Validate each key before saving so bulk-added connections get a
+        // real status (active/unknown) like single adds, instead of a
+        // hardcoded "unknown" that never flips until a manual test.
+        let isValid = false;
+        try {
+          const vres = await fetch("/api/providers/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ provider, apiKey: entry.apiKey }),
+          });
+          const vdata = await vres.json().catch(() => ({}));
+          isValid = !!vdata.valid;
+        } catch {
+          isValid = false;
+        }
         const res = await fetch("/api/providers", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ provider, apiKey, name, priority: 1, testStatus: "unknown" }),
+          body: JSON.stringify({
+            provider,
+            apiKey: entry.apiKey,
+            name: entry.name,
+            priority: 1,
+            testStatus: isValid ? "active" : "unknown",
+            ...(entry.providerSpecificData ? { providerSpecificData: entry.providerSpecificData } : {}),
+          }),
         });
         if (res.ok) success++;
         else failed++;
@@ -160,18 +224,28 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   return (
     <Modal isOpen={isOpen} title={`Add ${providerName || provider} ${credentialLabel}`} onClose={onClose}>
       <div className="flex flex-col gap-4">
-        {/* Mode switcher */}
-        <div className="flex gap-2">
-          <Button size="sm" variant={mode === "single" ? "primary" : "ghost"} onClick={() => { setMode("single"); setBulkResult(null); }}>Single</Button>
-          <Button size="sm" variant={mode === "bulk" ? "primary" : "ghost"} onClick={() => { setMode("bulk"); setBulkResult(null); }}>Bulk Add</Button>
-        </div>
+        {/* Mode switcher. Hidden for AWS credentials: bulk lines carry only a key, so a
+            Bedrock entry would be saved with no access key id or profile and never work. */}
+        {!usesAwsCredentialForm && (
+          <div className="flex gap-2">
+            <Button size="sm" variant={mode === "single" ? "primary" : "ghost"} onClick={() => { setMode("single"); setBulkResult(null); }}>Single</Button>
+            <Button size="sm" variant={mode === "bulk" ? "primary" : "ghost"} onClick={() => { setMode("bulk"); setBulkResult(null); }}>Bulk Add</Button>
+          </div>
+        )}
 
         {mode === "bulk" && (
           <div className="flex flex-col gap-3">
-            <p className="text-xs text-text-muted">One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</p>
+            <p className="text-xs text-text-muted">
+              {isCloudflareAi
+                ? <>One key per line. Format: <code>name|apiKey|accountId</code> or just <code>apiKey</code> (auto-named by index).</>
+                : provider === "qoder" || provider === "qoder-cn"
+                  ? <>One PAT per line. Format: <code>name|pt-...</code> or just <code>pt-...</code> (auto-named by index).</>
+                  : <>One key per line. Format: <code>name|apiKey</code> or just <code>apiKey</code> (auto-named by index).</>
+              }
+            </p>
             <textarea
               className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[140px] focus:outline-none focus:ring-1 focus:ring-primary"
-              placeholder={BULK_PLACEHOLDER}
+              placeholder={bulkPlaceholder}
               value={bulkText}
               onChange={(e) => setBulkText(e.target.value)}
             />
@@ -223,7 +297,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
               className="flex-1"
             />
             <div className="pt-6">
-              <Button onClick={handleValidate} disabled={!formData.apiKey || validating || saving} variant="secondary">
+              <Button onClick={handleValidate} disabled={!apiKeySatisfied() || validating || saving} variant="secondary">
                 {validating ? "Checking..." : "Check"}
               </Button>
             </div>
@@ -295,6 +369,49 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             </p>
           </div>
         )}
+        {usesAwsCredentialForm && (
+          <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
+            <h3 className="font-semibold mb-3 text-sm">AWS Bedrock Credentials</h3>
+            <div className="flex flex-col gap-3">
+              <Input
+                label="AWS Profile (SSO — recommended)"
+                value={bedrockData.profile}
+                onChange={(e) => setBedrockData({ ...bedrockData, profile: e.target.value })}
+                placeholder="my-sso-profile"
+              />
+              <Input
+                label="Region"
+                value={bedrockData.region}
+                onChange={(e) => setBedrockData({ ...bedrockData, region: e.target.value })}
+                placeholder="us-east-1"
+              />
+            </div>
+            <p className="text-xs text-text-muted mt-2">
+              Set a profile from <code>~/.aws/config</code> and leave the API key empty, then run
+              {" "}<code>aws sso login --profile {bedrockData.profile || "my-sso-profile"}</code>.
+              Credentials refresh automatically.
+            </p>
+            <div className="flex flex-col gap-3 mt-4">
+              <Input
+                label="Access Key ID (only for static keys)"
+                value={bedrockData.accessKeyId}
+                onChange={(e) => setBedrockData({ ...bedrockData, accessKeyId: e.target.value })}
+                placeholder="AKIA..."
+              />
+              <Input
+                label="Session Token (only for temporary ASIA… keys)"
+                type="password"
+                value={bedrockData.sessionToken}
+                onChange={(e) => setBedrockData({ ...bedrockData, sessionToken: e.target.value })}
+                placeholder="FwoGZXIvYXdz..."
+              />
+            </div>
+            <p className="text-xs text-text-muted mt-2">
+              For static keys instead: put the AWS <strong>secret</strong> access key in the API Key
+              field above and the access key id here. A profile, if set, takes precedence.
+            </p>
+          </div>
+        )}
         {isAzure && (
           <div className="bg-sidebar/50 p-4 rounded-lg border border-accent/20">
             <h3 className="font-semibold mb-3 text-sm">Azure OpenAI Configuration</h3>
@@ -356,7 +473,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
         </p>
 
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !formData.apiKey)) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
+          <Button onClick={handleSubmit} fullWidth disabled={saving || (!isOllamaLocal && (!formData.name || !apiKeySatisfied())) || (isCompatible && !formData.defaultModel.trim()) || (isAzure && (!azureData.azureEndpoint || !azureData.deployment || !azureData.organization)) || (isCloudflareAi && !cloudflareData.accountId)}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
@@ -383,6 +500,7 @@ AddApiKeyModal.propTypes = {
     name: PropTypes.string,
   })),
   error: PropTypes.string,
+  existingNames: PropTypes.arrayOf(PropTypes.string),
   onSave: PropTypes.func.isRequired,
   onBulkDone: PropTypes.func,
   onClose: PropTypes.func.isRequired,

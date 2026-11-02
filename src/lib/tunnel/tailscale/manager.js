@@ -1,6 +1,7 @@
 import { loadState, generateShortId } from "../shared/state.js";
 import { startFunnel, stopFunnel, isTailscaleRunning, isTailscaleRunningStrict, isTailscaleLoggedIn, isTailscaleLoggedInStrict, startLogin, startDaemonWithPassword, provisionCert } from "./tailscale.js";
 import { waitForHealth } from "./healthCheck.js";
+import { HEALTH_CHECK } from "./config.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { getCachedPassword, loadEncryptedPassword, initDbHooks } from "@/mitm/manager";
 
@@ -88,7 +89,7 @@ export async function enableTailscale(localPort = 20128) {
     // Verify funnel serves /api/health — timeout is non-fatal (DNS may still be propagating)
     let reachableNow = false;
     try {
-      await waitForHealth(result.tunnelUrl, token);
+      await waitForHealth(result.tunnelUrl, token, { timeoutMs: HEALTH_CHECK.enableTimeoutMs });
       reachableNow = true;
     } catch (he) {
       if (!he.message.startsWith("Health check timeout")) throw he;

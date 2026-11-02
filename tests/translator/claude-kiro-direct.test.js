@@ -6,14 +6,45 @@ import "./registerAll.js";
 import { translateRequest, translateResponse } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
-const C2K = (body) =>
-  translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, "claude-sonnet-4.5", body, true, null, "kiro");
+// Kiro rejects a top-level systemPrompt (400 REQUEST_BODY_INVALID; 1892ed77), so the
+// system prompt, thinking tags and agentic prompt travel at the start of the first user
+// turn, ahead of the "[Context: Current time …]" line. This returns that prompt part.
+const kiroPromptOf = (out) => {
+  const cs = out?.conversationState || {};
+  const content = (cs.history || []).find((t) => t.userInputMessage)?.userInputMessage?.content
+    ?? cs.currentMessage?.userInputMessage?.content ?? "";
+  const at = content.indexOf("[Context: Current time");
+  return (at >= 0 ? content.slice(0, at) : content).trim();
+};
+
+const C2K = (body, credentials = null, model = "claude-sonnet-4.5") =>
+  translateRequest(FORMATS.CLAUDE, FORMATS.KIRO, model, body, true, credentials, "kiro");
 
 describe("Claude → Kiro (direct route)", () => {
   it("produces a Kiro conversationState payload", () => {
     const out = C2K({ messages: [{ role: "user", content: "hello" }] });
     expect(out.conversationState).toBeTruthy();
     expect(out.conversationState.currentMessage.userInputMessage.content).toContain("hello");
+  });
+
+  it("keeps conversationId stable from client session headers and replays frozen msg0", () => {
+    const credentials = {
+      rawHeaders: { "x-session-id": "hermes-session-123-claude-replay" },
+      connectionId: "kiro-account-1",
+    };
+    const first = C2K({ messages: [{ role: "user", content: "first" }] }, credentials);
+    const second = C2K({ messages: [{ role: "user", content: "second" }] }, credentials);
+
+    expect(first.conversationState.conversationId).toBe("hermes-session-123-claude-replay");
+    expect(second.conversationState.conversationId).toBe("hermes-session-123-claude-replay");
+    expect(first.conversationState).not.toHaveProperty("agentContinuationId");
+    expect(second.conversationState).not.toHaveProperty("agentTaskType");
+    expect(second.conversationState.history[0].userInputMessage.content).toBe(
+      first.conversationState.currentMessage.userInputMessage.content
+    );
+    expect(second.conversationState.history[0].userInputMessage.modelId).toBe("claude-sonnet-4.5");
+    expect(second.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
+    expect(second.conversationState.currentMessage.userInputMessage.content).toContain("second");
   });
 
   it("guard 1: with no tools, a dangling tool_result is flattened to text (no structured ref)", () => {
@@ -60,20 +91,127 @@ describe("Claude → Kiro (direct route)", () => {
       null,
       "kiro"
     );
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain(
+    expect(kiroPromptOf(out)).toContain(
       "<thinking_mode>enabled</thinking_mode>"
     );
+    expect(out).not.toHaveProperty("agentMode");
   });
 
-  it("maps output_config.effort high to Kiro max_thinking_length 24576", () => {
+  it("does not send additionalModelRequestFields for Kiro models without effort support", () => {
     const out = C2K({
       output_config: { effort: "high" },
       messages: [{ role: "user", content: "think with adaptive effort" }],
     });
 
-    expect(out.conversationState.currentMessage.userInputMessage.content).toContain(
-      "<max_thinking_length>24576</max_thinking_length>"
+    expect(out.additionalModelRequestFields).toBeUndefined();
+    expect(out.thinking).toBeUndefined();
+    expect(kiroPromptOf(out)).toContain("<max_thinking_length>24576</max_thinking_length>");
+  });
+
+  it("normalizes an unsupported Kiro intensity suffix while preserving agentic behavior", () => {
+    const out = C2K(
+      { messages: [{ role: "user", content: "hello" }] },
+      null,
+      "claude-sonnet-4.5-thinking-agentic(high)",
     );
+
+    expect(out.conversationState.currentMessage.userInputMessage.modelId).toBe("claude-sonnet-4.5");
+    expect(out.additionalModelRequestFields).toBeUndefined();
+    expect(kiroPromptOf(out)).toContain("CHUNKED WRITE PROTOCOL");
+  });
+
+  it("maps output_config.effort high to Kiro CLI-style additionalModelRequestFields for effort models", () => {
+    const out = C2K({
+      output_config: { effort: "high" },
+      messages: [{ role: "user", content: "think with adaptive effort" }],
+    }, null, "claude-sonnet-5");
+
+    expect(out.additionalModelRequestFields).toEqual({
+      thinking: { type: "adaptive", display: "summarized" },
+      output_config: { effort: "high" },
+    });
+    expect(out.thinking).toBeUndefined();
+    expect(kiroPromptOf(out)).toContain("<max_thinking_length>24576</max_thinking_length>");
+  });
+
+  it("maps Claude-format effort to GPT-5.6 reasoning fields without legacy prompt tags", () => {
+    const out = C2K({
+      output_config: { effort: "low" },
+      messages: [{ role: "user", content: "think lightly" }],
+    }, null, "gpt-5.6-sol");
+
+    expect(out.additionalModelRequestFields).toEqual({
+      reasoning: { effort: "low" },
+    });
+    expect(kiroPromptOf(out)).not.toContain("<thinking_mode>");
+    expect(kiroPromptOf(out)).not.toContain("<max_thinking_length>");
+  });
+
+  it.each(["auto", "minimal", "ultra"])(
+    "keeps the legacy thinking fallback for unsupported GPT-5.6 effort %s",
+    (effort) => {
+      const out = C2K({
+        output_config: { effort },
+        messages: [{ role: "user", content: "Use legacy thinking" }],
+      }, null, "gpt-5.6-sol");
+
+      expect(out.additionalModelRequestFields).toBeUndefined();
+      expect(kiroPromptOf(out)).toContain("<thinking_mode>enabled</thinking_mode>");
+      expect(kiroPromptOf(out)).toContain("<max_thinking_length>");
+    }
+  );
+
+  it.each(["none", "off", "disabled"])(
+    "keeps GPT-5.6 reasoning intentionally disabled for effort %s",
+    (effort) => {
+      const out = C2K({
+        output_config: { effort },
+        messages: [{ role: "user", content: "Do not reason" }],
+      }, null, "gpt-5.6-sol");
+
+      expect(out.additionalModelRequestFields).toBeUndefined();
+      expect(kiroPromptOf(out)).not.toContain("<thinking_mode>");
+      expect(kiroPromptOf(out)).not.toContain("<max_thinking_length>");
+    }
+  );
+
+  it("keeps explicit Claude effort ahead of an injected OpenAI effort", () => {
+    const out = C2K({
+      output_config: { effort: "low" },
+      reasoning_effort: "high",
+      messages: [{ role: "user", content: "honor the client effort" }],
+    }, null, "gpt-5.6-sol");
+
+    expect(out.additionalModelRequestFields).toEqual({
+      reasoning: { effort: "low" },
+    });
+  });
+
+  it("sends Claude system in the first user turn, never as a top-level systemPrompt", () => {
+    const out = C2K({
+      system: "system-only instruction",
+      messages: [{ role: "user", content: "hello" }],
+    });
+
+    expect(out).not.toHaveProperty("systemPrompt");
+    expect(kiroPromptOf(out)).toBe("system-only instruction");
+    expect(out.conversationState.currentMessage.userInputMessage.content).toContain("system-only instruction");
+  });
+
+  it("keeps the system prompt stable across turns", () => {
+    const first = C2K({
+      system: "stable instruction",
+      messages: [{ role: "user", content: "first" }],
+    });
+    const second = C2K({
+      system: "stable instruction",
+      messages: [{ role: "user", content: "second" }],
+    });
+
+    expect(kiroPromptOf(first)).toBe("stable instruction");
+    expect(kiroPromptOf(first)).toBe(kiroPromptOf(second));
+    expect(kiroPromptOf(first)).not.toContain("Current time");
+    expect(first.conversationState.currentMessage.userInputMessage.content).toContain("Current time");
   });
 });
 
@@ -171,6 +309,7 @@ describe("Kiro → Claude (direct route, OpenAI-shaped chunks from executor)", (
     const jsonDelta = events.find(
       (e) => e.type === "content_block_delta" && e.delta.type === "input_json_delta"
     );
+    expect(jsonDelta.index).toBeDefined();
     expect(jsonDelta.delta.partial_json).toBe('{"q":"x"}');
     const md = events.find((e) => e.type === "message_delta");
     expect(md.delta.stop_reason).toBe("tool_use");

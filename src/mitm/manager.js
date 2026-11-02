@@ -496,9 +496,15 @@ async function startServer(apiKey, sudoPassword, forceKillPort443 = false) {
     fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
   } catch (e) {
     if (e.code === "EEXIST") {
-      throw new Error("MITM server is already starting (lock contention)");
-    }
-    throw e;
+      let stale = false;
+      try {
+        const pid = parseInt(fs.readFileSync(LOCK_FILE, "utf-8").trim(), 10);
+        stale = !pid || !isProcessAlive(pid);
+      } catch { stale = true; } // unreadable lock → treat as stale
+      if (!stale) throw new Error("MITM server is already starting (lock contention)");
+      try { fs.unlinkSync(LOCK_FILE); } catch { /* ignore */ }
+      fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: "wx" });
+    } else throw e;
   }
 
   try {

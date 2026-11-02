@@ -1,5 +1,7 @@
 // Tool call helper functions for translator
 
+import { FORMATS } from "../formats.js";
+
 // Anthropic tool_use.id must match: ^[a-zA-Z0-9_-]+$
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
@@ -149,5 +151,32 @@ export function fixMissingToolResponses(body) {
 
   body.messages = newMessages;
   return body;
+}
+
+// Default `type: "custom"` on Claude-format tools that arrive without one.
+// Anthropic's Claude tool schema requires `type` to be explicitly set; strict gateways
+// (e.g., MiniMax Anthropic-compatible endpoint, error 2013) reject legacy payloads that
+// omit it with HTTP 400. Tools that already carry a truthy `type` (e.g., `computer_use`,
+// `bash`, `web_search_20250305`) are passed through untouched.
+//
+// Spread order matters: `{ ...tool, type: "custom" }` (spread first, override last)
+// ensures that falsy `type` values (null, undefined, "") in the original tool don't
+// overwrite the default. `{ type: "custom", ...tool }` would let `type: null` survive.
+export function defaultClaudeToolType(tools) {
+  if (!Array.isArray(tools)) return tools;
+  return tools.map(tool => tool?.type ? tool : { ...tool, type: "custom" });
+}
+
+// Whether Claude-format tools need explicit `type` defaulting before dispatch.
+// Only gateways that declare the `requireClaudeToolType` quirk (MiniMax) reject typeless
+// tools. Applying the default globally breaks Claude-format endpoints that only accept the
+// legacy typeless tool shape — DeepSeek's Anthropic-compatible endpoint answers HTTP 400
+// "unknown variant `custom`" and every Claude Code request routed there fails (#3905).
+export function shouldDefaultClaudeToolType(provider, finalFormat, tools, PROVIDERS) {
+  return (
+    finalFormat === FORMATS.CLAUDE
+    && Array.isArray(tools)
+    && PROVIDERS?.[provider]?.quirks?.requireClaudeToolType === true
+  );
 }
 

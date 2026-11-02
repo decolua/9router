@@ -17,6 +17,10 @@ for (const entry of REGISTRY) {
   for (const a of entry.aliases || []) ALIAS_TO_PROVIDER_ID[a] = entry.id;
 }
 
+const BUILTIN_MODEL_ALIASES = {
+  "grok-build": "gcli/grok-build",
+};
+
 /**
  * Resolve provider alias to provider ID
  */
@@ -104,7 +108,9 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
       : aliasesOrGetter;
 
   // Resolve alias
-  const resolved = resolveModelAliasFromMap(parsed.model, aliases);
+  const resolved =
+    resolveModelAliasFromMap(parsed.model, aliases) ||
+    resolveModelAliasFromMap(parsed.model, BUILTIN_MODEL_ALIASES);
   if (resolved) {
     return resolved;
   }
@@ -118,7 +124,24 @@ export async function getModelInfoCore(modelStr, aliasesOrGetter) {
 
 // Config-driven prefix → provider inference (first match wins, fallback "openai").
 const MODEL_PREFIX_PROVIDERS = [
+  // Codex CLI sends this bare virtual model for auto-review - keep it on OAuth Codex (#1398).
+  [/^codex-auto-review$/, "codex"],
+  // Codex-only GPT model slugs: present in backend-api/codex/models but not on the
+  // OpenAI API.  Without these rules a bare model id (e.g. "gpt-5.6-terra" from the
+  // Codex CLI /model picker) resolves to provider "openai", which 404s for users that
+  // only have a Codex OAuth account and no OpenAI API key (#4405).
+  // Ranges covered: gpt-5.x, gpt-6.x, gpt-daybreak-*, gpt-reserve* — all are
+  // Codex-backend models.  Plain "gpt-4*" / "gpt-3.5*" / "gpt-4o*" fall through to
+  // the generic gpt-* → openai rule below.
+  [/^gpt-[56]\./, "codex"],
+  [/^gpt-6-/, "codex"],
+  [/^gpt-daybreak-/, "codex"],
+  [/^gpt-reserve/, "codex"],
   [/^claude-/, "anthropic"],
+  // Bedrock inference profile IDs: us.anthropic.*, global.anthropic.*, eu.anthropic.*, etc.
+  // Claude Code stores the Bedrock model ID directly (e.g. us.anthropic.claude-sonnet-4-6),
+  // so bare usage without a provider/ prefix must route to bedrock, not fall through to openai.
+  [/^(us|eu|ap|global)\.(anthropic|meta|amazon|mistral|xai)\./, "bedrock"],
   [/^gemini-/, "gemini"],
   [/^gpt-/, "openai"],
   [/^o[134]/, "openai"],

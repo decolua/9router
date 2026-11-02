@@ -5,8 +5,34 @@ import { translateRequest } from "../../open-sse/translator/index.js";
 import { FORMATS } from "../../open-sse/translator/formats.js";
 
 const O2K = (body) => translateRequest(FORMATS.OPENAI, FORMATS.KIRO, "m", body, true, null, "kiro");
+const R2K = (model, body) => translateRequest(
+  FORMATS.OPENAI_RESPONSES,
+  FORMATS.KIRO,
+  model,
+  body,
+  true,
+  null,
+  "kiro"
+);
 
 describe("OpenAI → Kiro", () => {
+  it.each([
+    ["high", "gpt-5.6-sol"],
+    ["medium", "gpt-5.6-terra"],
+    ["low", "gpt-5.6-luna"],
+  ])("preserves Responses reasoning.effort %s through the full Kiro route", (effort, model) => {
+    const out = R2K(model, {
+      input: "Use the requested effort",
+      reasoning: { effort },
+    });
+
+    expect(out.additionalModelRequestFields).toEqual({
+      reasoning: { effort },
+    });
+    expect(out.systemPrompt || "").not.toContain("<thinking_mode>");
+    expect(out.systemPrompt || "").not.toContain("<max_thinking_length>");
+  });
+
   // openai-to-kiro.js — safeJSONParse guards bad tool-call JSON (fixed in PR #1582)
   it("malformed tool arguments do not throw the whole request", () => {
     expect(() =>

@@ -85,8 +85,6 @@ export class AntigravityService {
       "Authorization": `Bearer ${accessToken}`,
       "Content-Type": "application/json",
       "User-Agent": this.config.loadCodeAssistUserAgent,
-      "X-Goog-Api-Client": this.config.loadCodeAssistApiClient,
-      "Client-Metadata": this.config.loadCodeAssistClientMetadata,
     };
   }
 

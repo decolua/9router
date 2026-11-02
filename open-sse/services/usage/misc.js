@@ -1,36 +1,16 @@
 /**
- * Misc usage handlers (Qwen, iFlow, Ollama, GLM, Vercel AI Gateway, Qoder)
+ * Misc usage handlers (iFlow, Ollama, GLM, Vercel AI Gateway, Qoder)
  */
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { U } from "./shared.js";
 
-// GLM quota endpoints (region-aware) — url from registry transport.usage
-const GLM_QUOTA_URLS = {
-  international: U("glm").url,
-  china: U("glm-cn").url,
-};
+export { getGlmUsage } from "./glm.js";
+
 
 // Vercel AI Gateway credits endpoint
 // Returns { balance: "95.50", total_used: "4.50" } (USD as decimal strings).
 const VERCEL_AI_GATEWAY_CREDITS_URL = U("vercel-ai-gateway").url;
-
-/**
- * Qwen Usage
- */
-export async function getQwenUsage(accessToken, providerSpecificData) {
-  try {
-    const resourceUrl = providerSpecificData?.resourceUrl;
-    if (!resourceUrl) {
-      return { message: "Qwen connected. No resource URL available." };
-    }
-
-    // Qwen may have usage endpoint at resource URL
-    return { message: "Qwen connected. Usage tracked per request." };
-  } catch (error) {
-    return { message: "Unable to fetch Qwen usage." };
-  }
-}
 
 /**
  * iFlow Usage
@@ -44,85 +24,201 @@ export async function getIflowUsage(accessToken) {
   }
 }
 
-/**
- * Ollama Cloud Usage
- * Ollama Cloud uses an API key from ollama.com/settings/keys
- * and has no public usage API — free tier has light usage limits (resets every 5h & 7d).
- * This returns an informational message with the plan details.
- */
-export async function getOllamaUsage(accessToken, providerSpecificData) {
-  try {
-    // Ollama Cloud does not expose a public quota/usage API.
-    // The provider is configured as noAuth with a notice explaining limits.
-    // We return a graceful message so the UI shows a friendly state instead of an error.
-    const plan = providerSpecificData?.plan || "Free";
-    return {
-      plan,
-      message: "Ollama Cloud uses a free tier with light usage limits (resets every 5h & 7d). For detailed usage tracking, visit ollama.com/settings/keys.",
-      quotas: [],
-    };
-  } catch (error) {
-    return { message: "Unable to fetch Ollama Cloud usage." };
+const OLLAMA_LIMIT_WINDOWS = {
+  session: "Session (5h)",
+  weekly: "Weekly (7d)",
+  monthly: "Monthly",
+};
+
+function addUtcMonths(date, months) {
+  const total = date.getUTCMonth() + months;
+  const year = date.getUTCFullYear() + Math.floor(total / 12);
+  const month = ((total % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(
+    year, month, Math.min(date.getUTCDate(), lastDay),
+    date.getUTCHours(), date.getUTCMinutes(), date.getUTCSeconds(),
+  ));
+}
+
+// Free plan: "usage resets monthly from the date you signed up" (ollama.com/pricing).
+function nextMonthlyResetFromSignup(createdAt, now = new Date()) {
+  const anchor = new Date(createdAt);
+  if (Number.isNaN(anchor.getTime())) return null;
+  const elapsedMonths = (now.getUTCFullYear() - anchor.getUTCFullYear()) * 12
+    + (now.getUTCMonth() - anchor.getUTCMonth());
+  for (let i = Math.max(0, elapsedMonths); i <= elapsedMonths + 1; i++) {
+    const candidate = addUtcMonths(anchor, i);
+    if (candidate > now) return candidate.toISOString();
   }
+  return null;
 }
 
 /**
- * GLM Coding Plan usage (international + China regions)
+ * Ollama Cloud Usage
+ * GET https://ollama.com/api/usage — `limits.<window>.usage` is a 0..1 ratio
+ *   (1.0 = limit reached). Paid plans report session (5h) + weekly (7d); the
+ *   free plan reports a single monthly window. No reset timestamp exposed;
+ *   the free monthly reset is derived from the account's signup date.
+ * POST https://ollama.com/api/me — plan label + CreatedAt (fail-open).
+ * Auth: Authorization: Bearer <apiKey>
  */
-export async function getGlmUsage(apiKey, provider, proxyOptions = null) {
+const OLLAMA_USAGE_URL = "https://ollama.com/api/usage";
+const OLLAMA_ME_URL = "https://ollama.com/api/me";
+const OLLAMA_BALANCE_URL = "https://ollama.com/api/balance";
+
+export async function getOllamaUsage(apiKey, providerSpecificData, proxyOptions = null) {
   if (!apiKey) {
-    return { message: "GLM API key not available." };
+    return { message: "Ollama Cloud API key not available." };
   }
 
-  const region = provider === "glm-cn" ? "china" : "international";
-  const quotaUrl = GLM_QUOTA_URLS[region];
-
   try {
-    const response = await proxyAwareFetch(quotaUrl, {
+    const response = await proxyAwareFetch(OLLAMA_USAGE_URL, {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         Accept: "application/json",
       },
     }, proxyOptions);
 
-    if (!response.ok) {
-      if (response.status === 401) {
-        return { message: "GLM API key invalid or expired." };
-      }
-      return { message: `GLM quota API error (${response.status}).` };
+    if (response?.status === 401 || response?.status === 403) {
+      return { message: "Ollama Cloud API key invalid or expired." };
     }
 
-    const json = await response.json();
-    const data = json?.data && typeof json.data === "object" ? json.data : {};
-    const limits = Array.isArray(data.limits) ? data.limits : [];
+    if (response && !response.ok) {
+      return { message: `Ollama Cloud usage API error (${response.status}).` };
+    }
+
+    let data;
+    try {
+      data = response ? await response.json() : null;
+    } catch {
+      return { message: "Ollama Cloud usage response was not JSON." };
+    }
+
+    // Best-effort plan label from /api/me
+    const me = await proxyAwareFetch(OLLAMA_ME_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        Accept: "application/json",
+        "Content-Length": "0",
+      },
+    }, proxyOptions).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
+
+    const planRaw = typeof me?.Plan === "string" ? me.Plan : "";
+    const plan = planRaw
+      ? planRaw.charAt(0).toUpperCase() + planRaw.slice(1).toLowerCase()
+      : "Ollama Cloud";
+
+    const limits = data?.limits && typeof data.limits === "object" ? data.limits : {};
+
+    // Ollama `usage` is a 0..1 ratio (1.0 = limit reached). Convert to a 0..100
+    // bar. Do NOT set absolute `remaining` — QuotaTable reads remainingPercentage.
+    function ratioQuota(usageRatio, resetAt = null) {
+      const ratio = Math.max(0, Math.min(1, Number(usageRatio) || 0));
+      const usedPct = Math.round(ratio * 100);
+      return { used: usedPct, total: 100, remainingPercentage: 100 - usedPct, resetAt, unlimited: false };
+    }
+
+    const monthlyResetAt = planRaw.toLowerCase() === "free" && me?.CreatedAt
+      ? nextMonthlyResetFromSignup(me.CreatedAt)
+      : null;
+
     const quotas = {};
+    for (const [key, label] of Object.entries(OLLAMA_LIMIT_WINDOWS)) {
+      const raw = limits[key]?.usage;
+      if (raw === undefined || raw === null) continue;
+      const ratio = Number(raw);
+      if (Number.isNaN(ratio)) continue;
+      quotas[label] = ratioQuota(ratio, key === "monthly" ? monthlyResetAt : null);
+    }
 
-    for (const limit of limits) {
-      if (!limit || limit.type !== "TOKENS_LIMIT") continue;
-      const usedPercent = Number(limit.percentage) || 0;
-      const resetMs = Number(limit.nextResetTime) || 0;
-      const remaining = Math.max(0, 100 - usedPercent);
+    // Modern Ollama Cloud API reports limits and remaining credits via /api/balance
+    if (Object.keys(quotas).length === 0) {
+      let balanceResponse = null;
+      try {
+        balanceResponse = await proxyAwareFetch(OLLAMA_BALANCE_URL, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: "application/json",
+          },
+        }, proxyOptions);
+      } catch {
+        balanceResponse = null;
+      }
 
-      quotas["session"] = {
-        used: usedPercent,
-        total: 100,
-        remaining,
-        remainingPercentage: remaining,
-        resetAt: resetMs > 0 ? new Date(resetMs).toISOString() : null,
-        unlimited: false,
+      if (balanceResponse && balanceResponse.ok) {
+        let balanceData = null;
+        try {
+          balanceData = await balanceResponse.json();
+        } catch {
+          balanceData = null;
+        }
+        const inc = balanceData?.included;
+
+        if (inc?.session) {
+          const rem = Number(inc.session.remaining_percent);
+          const remPct = Number.isFinite(rem) ? Math.max(0, Math.min(100, rem)) : 100;
+          quotas["Session (5h)"] = {
+            used: Math.round((100 - remPct) * 100) / 100,
+            total: 100,
+            remainingPercentage: remPct,
+            resetAt: inc.session.resets_at || null,
+            unlimited: false,
+          };
+        }
+        if (inc?.weekly) {
+          const rem = Number(inc.weekly.remaining_percent);
+          const remPct = Number.isFinite(rem) ? Math.max(0, Math.min(100, rem)) : 100;
+          quotas["Weekly (7d)"] = {
+            used: Math.round((100 - remPct) * 100) / 100,
+            total: 100,
+            remainingPercentage: remPct,
+            resetAt: inc.weekly.resets_at || null,
+            unlimited: false,
+          };
+        }
+        if (inc?.allowance_usd !== undefined && inc?.balance_usd !== undefined) {
+          const allowance = Number(inc.allowance_usd) || 0;
+          const balance = Number(inc.balance_usd) || 0;
+          const used = Math.max(0, Math.round((allowance - balance) * 100) / 100);
+          const remPct = allowance > 0 ? Math.round((balance / allowance) * 10000) / 100 : 0;
+          quotas["Allowance ($)"] = {
+            used,
+            total: allowance,
+            remainingPercentage: remPct,
+            resetAt: inc.period?.until || null,
+            unlimited: false,
+            unit: "USD",
+          };
+        }
+        if (Number(balanceData?.purchased?.balance_usd) > 0) {
+          quotas["Purchased Credits"] = {
+            used: 0,
+            total: Number(balanceData.purchased.balance_usd),
+            remainingPercentage: 100,
+            isCreditBalance: true,
+            currency: "$",
+          };
+        }
+      }
+    }
+
+    if (Object.keys(quotas).length === 0) {
+      return {
+        plan,
+        message: "Ollama Cloud connected. No usage limits reported.",
+        quotas: {},
       };
     }
 
-    const levelRaw = typeof data.level === "string" ? data.level : "";
-    const plan = levelRaw
-      ? levelRaw.charAt(0).toUpperCase() + levelRaw.slice(1).toLowerCase()
-      : "Unknown";
-
     return { plan, quotas };
   } catch (error) {
-    return { message: `GLM error: ${error.message}` };
+    return { message: `Ollama Cloud error: ${error.message}` };
   }
 }
+
+
 
 /**
  * Vercel AI Gateway usage — credit balance for the API key
@@ -206,13 +302,13 @@ export async function getVercelAiGatewayUsage(apiKey, proxyOptions = null) {
   }
 }
 
-export async function getQoderUsage(accessToken, proxyOptions = null) {
+export async function getQoderUsage(accessToken, proxyOptions = null, providerId = "qoder") {
   if (!accessToken) {
     return { message: "Qoder usage unavailable: no access token" };
   }
   try {
     const response = await proxyAwareFetch(
-      U("qoder").url,
+      U(providerId).url,
       {
         method: "GET",
         headers: {
@@ -234,13 +330,26 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
     // siblings so the dashboard parser doesn't try to render them as rows.
     const userQuota = body.userQuota || {};
     const orgQuota = body.orgResourcePackage || {};
+    // Add-on credits (free grants / promos). Qoder emits this block only when
+    // the account actually holds a grant — an account that never redeemed one,
+    // or consumed it, omits the key entirely. Verified against both regions:
+    // qoder CN returns it (e.g. 2200 total) after redeeming the free-credit
+    // promo, while an intl account without a grant has no such key. Gating on
+    // total > 0 keeps the intl/no-grant shape byte-identical to before.
+    const addOnQuota = body.addOnQuota || {};
+    const addOnTotal = Number(addOnQuota.total) || 0;
     // Qoder publishes a single absolute reset timestamp (`expiresAt` in ms);
     // surface it on every quota record as ISO so the table can render
-    // "resets at" alongside used/total.
+    // "resets at" alongside used/total. 253402214400000 (9999-12-31T00:00:00Z)
+    // is Qoder's "never expires" sentinel, returned by both regions for
+    // open-ended plans — rendering a reset date in the year 9999 is noise, so
+    // flag it instead and let the tracker word it as "Never expires".
     const expiresAtMs = Number.isFinite(Number(body.expiresAt)) && Number(body.expiresAt) > 0
       ? Number(body.expiresAt)
       : null;
-    const resetAt = expiresAtMs ? new Date(expiresAtMs).toISOString() : null;
+    const NO_RESET_SENTINEL_MS = 253402214400000;
+    const neverExpires = expiresAtMs === NO_RESET_SENTINEL_MS;
+    const resetAt = expiresAtMs && !neverExpires ? new Date(expiresAtMs).toISOString() : null;
     const quotas = {
       user: {
         total: Number(userQuota.total) || 0,
@@ -248,6 +357,7 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
         remaining: Number(userQuota.remaining) || 0,
         unit: userQuota.unit || "credits",
         resetAt,
+        neverExpires,
       },
       organization: {
         total: Number(orgQuota.total) || 0,
@@ -255,8 +365,28 @@ export async function getQoderUsage(accessToken, proxyOptions = null) {
         remaining: Number(orgQuota.remaining) || 0,
         unit: orgQuota.unit || "credits",
         resetAt,
+        neverExpires,
       },
     };
+    if (addOnTotal > 0) {
+      quotas.addOn = {
+        total: addOnTotal,
+        used: Number(addOnQuota.used) || 0,
+        remaining: Number(addOnQuota.remaining) || 0,
+        unit: addOnQuota.unit || "credits",
+        // The add-on block carries no expiry of its own in this API. Qoder's
+        // web console lists every redeemed resource package with its own
+        // deadline (check-in bonuses do expire, typically ~30 days), but
+        // openapi only exposes the account-level `expiresAt` sentinel above,
+        // which describes the plan, not the grants — reusing it here would
+        // advertise "never expires" for credits that actually expire. So
+        // leave the reset date unset and let the row link to Qoder's own
+        // usage page (detailUrl) where the per-package dates live.
+        resetAt: null,
+        neverExpires: false,
+        detailUrl: addOnQuota.detailUrl || null,
+      };
+    }
     return {
       quotas,
       totalUsagePercentage: Number(body.totalUsagePercentage) || 0,

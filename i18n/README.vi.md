@@ -1,21 +1,15 @@
-Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ nguyên toàn bộ cú pháp và cấu trúc kỹ thuật.
-
 <div align="center">
   <img src="../images/9router.png?1" alt="Bảng điều khiển 9Router" width="800"/>
   
-  # 9Router - Free AI Router
+  # 9Router - Free AI Router & Token Saver
   
-  **Không bao giờ ngừng code. Tự động định tuyến tới các mô hình AI MIỄN PHÍ & giá rẻ với cơ chế dự phòng thông minh.**
+  **Không bao giờ ngừng code. Tiết kiệm 20-40% token với RTK + tự động dự phòng sang các mô hình AI MIỄN PHÍ & giá rẻ.**
   
-  **Nhà cung cấp AI Miễn cho OpenClaw.**
-  
-  <p align="center">
-    <img src="../public/providers/openclaw.png" alt="OpenClaw" width="80"/>
-  </p>
+  **Kết nối tất cả công cụ AI Code (Claude Code, Codex, Cursor, Cline, Copilot, Antigravity...) tới 40+ Nhà cung cấp AI & 100+ Mô hình.**
   
   [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
   [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
-  [![License](https://img.shields.io/npm/l/9router.svg)](https://github.com/decolua/9router/blob/main/LICENSE)
+  [![License](https://github.com/decolua/9router/blob/main/LICENSE)](https://github.com/decolua/9router/blob/main/LICENSE)
   
   [🚀 Bắt đầu nhanh](#-quick-start) • [💡 Tính năng](#-key-features) • [📖 Cài đặt](#-setup-guide) • [🌐 Website](https://9router.com)
 </div>
@@ -24,19 +18,21 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
 
 ## 🤔 Tại sao chọn 9Router?
 
-**Ngừng lãng phí tiền bạc và gặp phải giới hạn:**
+**Ngừng lãng phí tiền bạc, token và không bao giờ lo chạm giới hạn (rate limit):**
 
 - ❌ Hạn mức gói đăng ký hết hạn mỗi tháng mà không dùng hết
-- ❌ Giới hạn tốc độ (rate limit) ngăn bạn giữaừng khi code
-- ❌ Các API đắt đỏ ($20-50/tháng cho mỗi nhà cung cấp)
-- ❌ Phải chuyển đổi thủ công giữa các nhà cung cấp
+- ❌ Giới hạn tốc độ (rate limit) làm gián đoạn công việc mid-coding
+- ❌ Kết quả của công cụ (git diff, grep, ls...) ngốn rất nhiều token
+- ❌ Chi phí API đắt đỏ ($20-50/tháng cho từng nhà cung cấp)
+- ❌ Phải chuyển đổi thủ công giữa các nhà cung cấp AI
 
 **9Router giải quyết vấn đề này:**
 
-- ✅ **Tối đa hóa gói đăng ký** - Theo dõi hạn mức, sử dụng từng bit trước khi reset
-- ✅ **Tự động dự phòng** - Gói đăng ký → Giá rẻ → Miễn phí, thời gian chết bằng không
-- ✅ **Đa tài khoản** - Vòng tròn (round-robin) các tài khoản của mỗi nhà cung cấp
-- ✅ **Phổ quát** - Hoạt động với Claude Code, Codex, Gemini CLI, Cursor, Cline, bất kỳ công cụ CLI nào
+- ✅ **RTK Token Saver** - Tự động nén nội dung `tool_result`, tiết kiệm 20-40% token trên mỗi request
+- ✅ **Tối đa hóa gói đăng ký** - Theo dõi hạn mức, tận dụng triệt để trước khi reset
+- ✅ **Tự động dự phòng (Auto Fallback)** - Gói đăng ký → Giá rẻ → Miễn phí, không lo downtime
+- ✅ **Đa tài khoản (Multi-account)** - Xoay vòng (round-robin) các tài khoản cho mỗi nhà cung cấp
+- ✅ **Phổ quát (Universal)** - Hoạt động với Claude Code, Codex, Cursor, Cline, Antigravity và mọi công cụ CLI
 
 ---
 
@@ -44,25 +40,26 @@ Dưới đây là bản dịch tiếng Việt của tài liệu Markdown, giữ 
 
 ```
 ┌─────────────┐
-│  Your CLI   │  (Claude Code, Codex, Gemini CLI, OpenClaw, Cursor, Cline...)
-│   Tool      │
+│  Công cụ    │  (Claude Code, Codex, OpenClaw, Cursor, Cline, Antigravity...)
+│  CLI AI     │
 └──────┬──────┘
        │ http://localhost:20128/v1
        ↓
-┌────────────────────────────────────────┐
-│           9Router (Smart Router)        │
-│  • Format translation (OpenAI ↔ Claude) │
-│  • Quota tracking                       │
-│  • Auto token refresh                   │
-└──────┬──────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│           9Router (Smart Router)            │
+│  • RTK Token Saver (nén tool_result token) │
+│  • Dịch chuyển định dạng (OpenAI ↔ Claude) │
+│  • Quota tracking (theo dõi hạn mức)       │
+│  • Tự động làm mới OAuth Token             │
+└──────┬──────────────────────────────────────┘
        │
-       ├─→ [Tier 1: SUBSCRIPTION] Claude Code, Codex, Gemini CLI
-       │   ↓ quota exhausted
-       ├─→ [Tier 2: CHEAP] GLM ($0.6/1M), MiniMax ($0.2/1M)
-       │   budget limit
-       └─→ [Tier 3: FREE] iFlow, Qwen, Kiro (unlimited)
+       ├─→ [Tier 1: GÓI ĐĂNG KÝ] Claude Code, Codex, GitHub Copilot
+       │   ↓ hết hạn mức quota
+       ├─→ [Tier 2: GIÁ RẺ] GLM ($0.6/1M), MiniMax ($0.2/1M)
+       │   ↓ chạm ngân sách
+       └─→ [Tier 3: MIỄN PHÍ] Kiro AI, OpenCode Free, Vertex AI ($300 credits)
 
-Result: Never stop coding, minimal cost
+Kết quả: Không bao giờ ngừng code, chi phí tối thiểu + tiết kiệm 20-40% token qua RTK
 ```
 
 ---
@@ -76,26 +73,26 @@ npm install -g 9router
 9router
 ```
 
-🎉 Bảng điều khiển mở tại `http://localhost:20128`
+🎉 Bảng điều khiển (Dashboard) sẽ tự động mở tại `http://localhost:20128`
 
 **2. Kết nối nhà cung cấp MIỄN PHÍ (không cần đăng ký):**
 
-Bảng điều khiển → Providers -> Kết nối **ude Code** hoặc **Antigravity** -> Đăng nhập OAuth -> Xong!
+Bảng điều khiển → Providers → Kết nối **Kiro AI** (~50 credits/tháng miễn phí: Claude 4.5 + GLM-5 + MiniMax) hoặc **OpenCode Free** (không cần auth) → Xong!
 
 **3. Sử dụng trong công cụ CLI của bạn:**
 
 ```
-Cài đặt Claude Code/Codex/Gemini CLI/OpenClaw/Cursor/Cline:
+Cài đặt Claude Code/Codex/OpenClaw/Cursor/Cline/Antigravity:
   Endpoint: http://localhost:20128/v1
   API Key: [sao chép từ bảng điều khiển]
-  Model: if/kimi-k2-thinking
+  Model: kr/claude-sonnet-4.5
 ```
 
-**Xong rồi!** Bắt đầu code với các mô hình AI MIỄN PHÍ.
+**Thế là xong!** Bắt đầu code ngay với các mô hình AI MIỄN PHÍ.
 
-**Phương án khác: chạy từ nguồn (k lưu trữ này):**
+**Phương án khác: chạy từ mã nguồn (repository này):**
 
-Gói kho lưu trữ này là riêng tư (`9router-app`), vì vậy việc thực thi nguồn/Docker là đường dẫn phát triển cục bộ dự kiến.
+Gói kho lưu trữ này là riêng tư (`9router-app`), vì vậy việc chạy từ nguồn/Docker là cách phát triển cục bộ mặc định.
 
 ```bash
 cp .env.example .env
@@ -111,10 +108,11 @@ PORT=20128 HOSTNAME=0.0.0.0 NEXT_PUBLIC_BASE_URL=http://localhost:20128 npm run 
 ```
 
 URL mặc định:
-- Bảng điều khiển: `http://localhost:20128/dashboard`
+- Bảng điều khiển Dashboard: `http://localhost:20128/dashboard`
 - API tương thích OpenAI: `http://localhost:20128/v1`
 
 ---
+
 
 ## 🎥 Hướng dẫn Video
 

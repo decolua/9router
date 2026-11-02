@@ -39,11 +39,24 @@ const USAGE_EXTRACTORS = {
   },
   kiro(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
-    return { promptTokens: input, completionTokens: output, totalTokens: input + output };
+    // ponytail: Amazon Q (Kiro upstream) does not expose cache fields today,
+    // but pass through any cache_read/cache_creation/cached_tokens if the
+    // event shape grows them later so cost tracking keeps working without
+    // a second pass.
+    const cached = n(raw.cache_read_input_tokens) || n(raw.cachedTokens) || n(raw.cached_tokens);
+    const cacheCreation = n(raw.cache_creation_input_tokens);
+    const out = { promptTokens: input, completionTokens: output, totalTokens: input + output };
+    if (cached > 0) out.cachedTokens = cached;
+    if (cacheCreation > 0) out.cacheCreationTokens = cacheCreation;
+    return out;
   },
   ollama(raw) {
-    const input = n(raw.prompt_eval_count), output = n(raw.eval_count);
-    return { promptTokens: input, completionTokens: output, totalTokens: input + output };
+    const input = n(raw.prompt_eval_count),
+      output = n(raw.eval_count),
+      // prompt_eval_cached_count is a cache-read subset of prompt_eval_count
+      // (Ollama reports prompt tokens cache-INCLUSIVE, matching OpenAI/Gemini).
+      cached = n(raw.prompt_eval_cached_count);
+    return { promptTokens: input, completionTokens: output, totalTokens: input + output, cachedTokens: cached };
   },
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);

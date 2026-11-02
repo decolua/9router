@@ -46,6 +46,14 @@ function convertFinishReason(reason) {
  * Convert one OpenAI-format chunk (from KiroExecutor) into Claude SSE events.
  * Returns an array of Claude events, or null when the chunk yields nothing.
  */
+// Kiro only accepts sanitized tool names; the request translator leaves the
+// reverse map on the stream state so calls come back under the client's names.
+function restoreToolName(stateOrData, name) {
+  const raw = name || "";
+  const map = stateOrData?.toolNameMap || stateOrData?._toolNameMap;
+  return map && typeof map.get === "function" && map.has(raw) ? map.get(raw) : raw;
+}
+
 export function kiroToClaudeResponse(chunk, state) {
   // KiroExecutor emits chat.completion.chunk objects; tolerate string chunks
   // by attempting a parse (defensive — the direct path is always objects).
@@ -75,6 +83,15 @@ export function kiroToClaudeResponse(chunk, state) {
         ? data.usage.completion_tokens
         : 0;
     state.usage = { input_tokens: promptTokens, output_tokens: outputTokens };
+    // Claude clients read cache_read/cache_creation to price a turn and to size
+    // their prompt cache. Both spellings are accepted because the Kiro executor
+    // emits the Chat shape and passthrough responses use the nested details form.
+    const cacheRead = data.usage.cache_read_input_tokens
+      ?? data.usage.prompt_tokens_details?.cached_tokens;
+    const cacheCreation = data.usage.cache_creation_input_tokens
+      ?? data.usage.prompt_tokens_details?.cache_creation_tokens;
+    if (typeof cacheRead === "number") state.usage.cache_read_input_tokens = cacheRead;
+    if (typeof cacheCreation === "number") state.usage.cache_creation_input_tokens = cacheCreation;
   }
 
   // First chunk → emit message_start.
@@ -152,7 +169,7 @@ export function kiroToClaudeResponse(chunk, state) {
         const toolBlockIndex = state.nextBlockIndex++;
         state.toolCalls.set(idx, {
           id: tc.id,
-          name: tc.function?.name || "",
+          name: restoreToolName(state, tc.function?.name),
           blockIndex: toolBlockIndex,
         });
         results.push({
@@ -161,7 +178,7 @@ export function kiroToClaudeResponse(chunk, state) {
           content_block: {
             type: "tool_use",
             id: tc.id,
-            name: tc.function?.name || "",
+            name: restoreToolName(state, tc.function?.name),
             input: {},
           },
         });
@@ -237,7 +254,7 @@ export function kiroToClaudeNonStreaming(data) {
       content.push({
         type: "tool_use",
         id: tc.id || `toolu_${Date.now()}`,
-        name: tc.function?.name || "",
+        name: restoreToolName(data, tc.function?.name),
         input,
       });
     }
@@ -254,6 +271,13 @@ export function kiroToClaudeNonStreaming(data) {
     usage: {
       input_tokens: usage.prompt_tokens || 0,
       output_tokens: usage.completion_tokens || 0,
+      // Same cache preservation as the streaming path above.
+      ...(typeof (usage.cache_read_input_tokens ?? usage.prompt_tokens_details?.cached_tokens) === "number"
+        ? { cache_read_input_tokens: usage.cache_read_input_tokens ?? usage.prompt_tokens_details.cached_tokens }
+        : {}),
+      ...(typeof (usage.cache_creation_input_tokens ?? usage.prompt_tokens_details?.cache_creation_tokens) === "number"
+        ? { cache_creation_input_tokens: usage.cache_creation_input_tokens ?? usage.prompt_tokens_details.cache_creation_tokens }
+        : {}),
     },
   };
 }

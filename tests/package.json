@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Unit tests for 9router embeddings endpoint",
   "scripts": {
-    "test": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest run --reporter=verbose",
-    "test:watch": "NODE_PATH=/tmp/node_modules /tmp/node_modules/.bin/vitest --reporter=verbose"
+    "test": "vitest run --reporter=verbose",
+    "test:watch": "vitest --reporter=verbose"
   },
   "devDependencies": {
     "vitest": "^4.0.0"
