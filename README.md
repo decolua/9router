@@ -28,23 +28,24 @@ The gateway accepts a request in OpenAI, Claude or Gemini shape, translates it t
 
 | Sign-in | Providers |
 | --- | --- |
-| OAuth | Claude, OpenAI Codex, Gemini CLI, Antigravity, Kiro, Kimi (Moonshot), Grok CLI, xAI, Cursor, GitHub Copilot, GitLab, Windsurf, Trae, Zed, iFlow, Qoder, Cline, KiloCode, CodeBuddy, Xiaomi MIMO |
-| API key | OpenAI, Anthropic, DeepSeek, GLM (Z.ai / Zhipu), MiniMax, Mistral, Perplexity, Groq, Together, Fireworks, Cerebras, SambaNova, SiliconFlow, Nebius, Hugging Face, Venice, Voyage and dozens more |
+| OAuth | Claude, OpenAI Codex, Gemini CLI, Antigravity, Kiro, Kimi (Moonshot), Grok CLI, xAI, Cursor, GitHub Copilot, GitLab, Windsurf, Trae, Zed, iFlow, Qoder, Cline, KiloCode, CodeBuddy, Xiaomi MIMO, ZCode |
+| API key | OpenAI, Anthropic, DeepSeek, GLM (Z.ai / Zhipu), MiniMax, Mistral, Perplexity, Groq, Together, Fireworks, Cerebras, SambaNova, SiliconFlow, Nebius, Hugging Face, Venice, Voyage, and dozens more |
 | Free tier | OpenRouter, OpenCode, Kiro, Gemini, Cloudflare AI, NVIDIA, Morph, Poolside, Kimchi, LLM7, api-airforce |
-| Web cookie | DeepSeek Web, Gemini Web, Kimi Web |
+| Web cookie | DeepSeek Web, Gemini Web |
 | Local | Ollama, LM Studio style self-hosted nodes, self-hosted TTS/STT/embeddings |
 
 It is not only chat. The same gateway also serves text to image, image to text, video generation, text to speech, speech to text, embeddings, web search and web fetch, each with its own `/v1`-style endpoint.
 
-## What this fork adds
+## Architecture & Core Design
 
-Everything lives alongside upstream's features. The short version:
+9Router functions as a unified gateway layer between AI client applications and model providers. It abstracts protocol differences, authentication mechanisms, and request lifecycle management so downstream tools only need to speak one standard interface.
 
-- **Per-key control** - every key carries its own token limit, reset interval, expiry and model allow-list, enforced on every endpoint.
-- **Custom models & plugins** - models that answer under your own name (the real target never leaks), per-model plugin badges, a model playground and comparisons.
-- **Operability** - scheduled backups to Telegram or GitHub, proxy pools, a security log of who signed in and from where, a theme that applies to the whole site, and an in-dashboard update banner.
+- **Universal Protocol Adapter**: Ingests requests in OpenAI, Anthropic Claude, or Google Gemini format, translates them on-the-fly to the target provider's native schema, and transparently streams standardized responses back.
+- **Unified Credential & Key Management**: Single interface for managing OAuth sessions, direct API keys, reverse-engineered web sessions, and custom local models.
+- **Failover & Traffic Routing**: Dynamic routing policies including intelligent fallback chains, load balancing, model aliases, and latency-optimized dispatching.
+- **Enterprise Controls**: Granular token quotas, rate limiting (RPM/TPM), budget caps, IP allowlisting, and automated state backups.
 
-The [changelog](./CHANGELOG.md) is the source of truth: it is regenerated on every release, so it always lists what is actually new. Anything not written here yet may already ship in your build - check the changelog rather than this file.
+For granular version updates, newly added providers, and ongoing improvements, refer directly to the [CHANGELOG.md](./CHANGELOG.md).
 
 ## Getting started
 

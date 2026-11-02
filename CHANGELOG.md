@@ -1,3 +1,10 @@
+# v0.5.359 (2026-11-02) · 1 commit
+
+## Documentation & Maintenance
+- **Evergreen README Restructure**:
+  - Replaced the volatile "What this fork adds" section with timeless "Architecture & Core Design" documentation covering protocol adaptation, unified credentials, routing policies, and enterprise controls.
+  - Offloaded all version-specific changelog details exclusively to `CHANGELOG.md` so the main README never requires recurring manual edits.
+
 # v0.5.358 (2026-11-02) · 1 commit
 
 ## UI & Visual Design
