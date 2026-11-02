@@ -282,8 +282,12 @@ function resolveOpencodeSession(body, credentials, providerSessionId, clientTool
   if (credentials?.connectionId || bodyHasSessionHints(body) || headersHaveSessionHints(headers)) {
     let viaManager = null;
     try {
+      const sanitizedHeaders = {};
+      for (const [k, v] of Object.entries(headers)) {
+        if (k.toLowerCase() !== "x-client-request-id") sanitizedHeaders[k] = v;
+      }
       viaManager = resolveSessionId({
-        headers,
+        headers: sanitizedHeaders,
         body,
         connectionId: credentials?.connectionId,
         scope: "opencode",

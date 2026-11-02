@@ -303,6 +303,30 @@ describe("OpenCode Free User-Agent Validation", () => {
       expect(req1._opencodeSession).toBe(req2._opencodeSession);
     }
   });
+
+  it("does not fragment conversations across sessions when x-client-request-id changes per turn with connectionId", () => {
+    const executor = getExecutor("opencode");
+    const credentialsTurn1 = {
+      connectionId: "conn_test_123",
+      rawHeaders: { "x-client-request-id": "req-turn-1-uuid" },
+    };
+    const req1 = executor.prepareRequestCredentials({
+      credentials: credentialsTurn1,
+      body: { messages: [{ role: "user", content: "hello" }] },
+    });
+
+    const credentialsTurn2 = {
+      connectionId: "conn_test_123",
+      rawHeaders: { "x-client-request-id": "req-turn-2-uuid" },
+    };
+    const req2 = executor.prepareRequestCredentials({
+      credentials: credentialsTurn2,
+      body: { messages: [{ role: "user", content: "hello again" }] },
+    });
+
+    expect(req1._opencodeSession).toMatch(OPENCODE_SESSION_RE);
+    expect(req1._opencodeSession).toBe(req2._opencodeSession);
+  });
 });
 
 describe("OpenCode Stable Session Reuse (429 follow-up)", () => {
