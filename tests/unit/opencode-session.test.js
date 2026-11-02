@@ -226,19 +226,28 @@ describe("OpenCode Free User-Agent Validation", () => {
     expect(headers["User-Agent"]).toBe("opencode/latest/2.0.29/desktop");
   });
 
-  it("sends the v2 session headers and per-request request ID", () => {
+  it("sends the v2 session headers, per-request request ID, and stable project ID", () => {
     const executor = getExecutor("opencode");
-    const headers = executor.buildHeaders({
+    const headers1 = executor.buildHeaders({
       rawHeaders: { "x-opencode-request": "msg_0ae8d9cd3001swxaFbM248jcIF" },
     });
-    const session = headers["x-opencode-session"];
+    const session = headers1["x-opencode-session"];
     expect(session).toMatch(OPENCODE_SESSION_RE);
-    expect(headers["x-opencode-session-id"]).toBe(session);
-    expect(headers["x-session-affinity"]).toBe(session);
-    expect(headers["X-Session-Id"]).toBe(session);
-    expect(headers["x-opencode-client"]).toBe("opencode");
-    expect(headers["x-opencode-request"]).toMatch(/^req_/);
-    expect(headers["x-opencode-project"]).toMatch(/^[0-9a-f]{40}$/);
+    expect(headers1["x-opencode-session-id"]).toBe(session);
+    expect(headers1["x-session-affinity"]).toBe(session);
+    expect(headers1["X-Session-Id"]).toBe(session);
+    expect(headers1["x-opencode-client"]).toBe("opencode");
+    expect(headers1["x-opencode-request"]).toMatch(/^req_/);
+    expect(headers1["x-opencode-project"]).toMatch(/^[0-9a-f]{40}$/);
+
+    // Subsequent request in the same session reuses the same project ID
+    const headers2 = executor.buildHeaders({
+      _opencodeSession: session,
+    });
+    expect(headers2["x-opencode-project"]).toBe(headers1["x-opencode-project"]);
+    // But gets a distinct per-request request ID
+    expect(headers2["x-opencode-request"]).toMatch(/^req_/);
+    expect(headers2["x-opencode-request"]).not.toBe(headers1["x-opencode-request"]);
   });
 });
 

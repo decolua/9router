@@ -106,4 +106,26 @@ describe("opencodeTlsClient", () => {
 
     expect(fetchMock.mock.calls[0][1].signal).toBe(controller.signal);
   });
+
+  it("closes the session when the response stream is canceled by the consumer", async () => {
+    const closeMock = vi.fn().mockResolvedValue(undefined);
+    const mockBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("chunk-1"));
+      },
+    });
+    createSessionMock.mockResolvedValue({
+      fetch: vi.fn().mockResolvedValue(new Response(mockBody, { status: 200 })),
+      close: closeMock,
+    });
+
+    const { opencodeTlsFetch } = await import("../../open-sse/services/opencodeTlsClient.js");
+    const res = await opencodeTlsFetch("https://opencode.ai/stream", {});
+    const reader = res.body.getReader();
+    const firstChunk = await reader.read();
+    expect(firstChunk.done).toBe(false);
+
+    await reader.cancel();
+    expect(closeMock).toHaveBeenCalledTimes(1);
+  });
 });

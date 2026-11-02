@@ -21,9 +21,12 @@ import {
 const OPENCODE_UA = "opencode/dev/0.0.0-dev-202610272228/opencode";
 const OPENCODE_CLIENT = "opencode";
 // 40-hex project id generator: mirrors the real CLI which derives it
-// from the local workspace path, ensuring each conversation/session is
-// isolated and not grouped into a single bucket.
-export function generateProjectId() {
+// from the local workspace path, ensuring requests within the same conversation
+// share a stable project identity while isolating different conversations.
+export function generateProjectId(session) {
+  if (session && typeof session === "string") {
+    return crypto.createHash("sha1").update(`project:${session}`).digest("hex");
+  }
   return crypto.randomBytes(20).toString("hex");
 }
 
@@ -456,16 +459,19 @@ export class OpenCodeExecutor extends BaseExecutor {
 
     const session = credentials?.[SESSION_FIELD] || this.prepareRequestCredentials({ credentials })[SESSION_FIELD];
 
+    const projectHeader = lower["x-opencode-project"];
+    const validProject = typeof projectHeader === "string" && /^[0-9a-f]{40}$/i.test(projectHeader);
+
     // Mirrors the real v2 CLI wire shape: session id is sent on all four headers
     // (session, session-id, session-affinity, X-Session-Id), x-opencode-request
-    // is generated per request, and project id is dynamically randomized.
+    // is freshly generated per request, and project id is stably derived per session.
     const headers = {
       "Content-Type": "application/json",
       "Authorization": "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || OPENCODE_CLIENT,
-      "x-opencode-project": lower["x-opencode-project"] || generateProjectId(),
-      "x-opencode-request": lower["x-opencode-request"] || generateRequestId(),
+      "x-opencode-project": validProject ? projectHeader.toLowerCase() : generateProjectId(session),
+      "x-opencode-request": generateRequestId(),
       "x-opencode-session": session,
       "x-opencode-session-id": session,
       "x-session-affinity": session,
