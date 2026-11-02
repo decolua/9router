@@ -207,16 +207,16 @@ describe("OpenCode Free User-Agent Validation", () => {
   it("defaults User-Agent to the v2 CLI form for non-opencode downstream clients", () => {
     const executor = getExecutor("opencode");
     const headersNoUa = executor.buildHeaders({});
-    expect(headersNoUa["User-Agent"]).toBe("opencode/latest/2.0.26/cli");
+    expect(headersNoUa["User-Agent"]).toBe("opencode/dev/0.0.0-dev-202610272228/opencode");
 
     const headersClaude = executor.buildHeaders({ rawHeaders: { "user-agent": "Claude-Code/1.0" } });
-    expect(headersClaude["User-Agent"]).toBe("opencode/latest/2.0.26/cli");
+    expect(headersClaude["User-Agent"]).toBe("opencode/dev/0.0.0-dev-202610272228/opencode");
   });
 
   it("replaces v1-style opencode User-Agents, which upstream now rejects with 403", () => {
     const executor = getExecutor("opencode");
     for (const ua of ["opencode", "opencode/1.15.0", "opencode/1.18.31 ai-sdk/provider-utils/4.0.40 runtime/bun/1.3.14"]) {
-      expect(executor.buildHeaders({ rawHeaders: { "user-agent": ua } })["User-Agent"]).toBe("opencode/latest/2.0.26/cli");
+      expect(executor.buildHeaders({ rawHeaders: { "user-agent": ua } })["User-Agent"]).toBe("opencode/dev/0.0.0-dev-202610272228/opencode");
     }
   });
 
@@ -226,18 +226,106 @@ describe("OpenCode Free User-Agent Validation", () => {
     expect(headers["User-Agent"]).toBe("opencode/latest/2.0.29/desktop");
   });
 
-  it("sends the v2 session headers and never x-opencode-request", () => {
+  it("sends the v2 session headers, per-request request ID, and stable project ID", () => {
     const executor = getExecutor("opencode");
-    const headers = executor.buildHeaders({
+    const headers1 = executor.buildHeaders({
       rawHeaders: { "x-opencode-request": "msg_0ae8d9cd3001swxaFbM248jcIF" },
     });
-    const session = headers["x-opencode-session"];
+    const session = headers1["x-opencode-session"];
     expect(session).toMatch(OPENCODE_SESSION_RE);
-    expect(headers["x-opencode-session-id"]).toBe(session);
-    expect(headers["x-session-affinity"]).toBe(session);
-    expect(headers["x-session-id"]).toBe(session);
-    expect(headers["x-opencode-client"]).toBe("cli");
-    expect("x-opencode-request" in headers).toBe(false);
+    expect(headers1["x-opencode-session-id"]).toBe(session);
+    expect(headers1["x-session-affinity"]).toBe(session);
+    expect(headers1["X-Session-Id"]).toBe(session);
+    expect(headers1["x-opencode-client"]).toBe("opencode");
+    expect(headers1["x-opencode-request"]).toMatch(/^req_/);
+    expect(headers1["x-opencode-project"]).toMatch(/^[0-9a-f]{40}$/);
+
+    // Subsequent request in the same session reuses the same project ID
+    const headers2 = executor.buildHeaders({
+      _opencodeSession: session,
+    });
+    expect(headers2["x-opencode-project"]).toBe(headers1["x-opencode-project"]);
+    // But gets a distinct per-request request ID
+    expect(headers2["x-opencode-request"]).toMatch(/^req_/);
+    expect(headers2["x-opencode-request"]).not.toBe(headers1["x-opencode-request"]);
+  });
+
+  it("keeps separate conversations with identical initial prompts isolated", () => {
+    const executor = getExecutor("opencode");
+    const conv1 = executor.prepareRequestCredentials({
+      body: { session_id: "conv-user-alice", messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    const conv2 = executor.prepareRequestCredentials({
+      body: { session_id: "conv-user-bob", messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    expect(conv1._opencodeSession).not.toBe(conv2._opencodeSession);
+
+    const headers1 = executor.buildHeaders(conv1);
+    const headers2 = executor.buildHeaders(conv2);
+    expect(headers1["x-opencode-session"]).not.toBe(headers2["x-opencode-session"]);
+  });
+
+  it("keeps separate conversations with header-only session hints isolated without connectionId", () => {
+    const executor = getExecutor("opencode");
+    const conv1 = executor.prepareRequestCredentials({
+      credentials: { rawHeaders: { "x-session-id": "conv-header-alice" } },
+      body: { messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    const conv2 = executor.prepareRequestCredentials({
+      credentials: { rawHeaders: { "x-session-id": "conv-header-bob" } },
+      body: { messages: [{ role: "user", content: "Hello, world!" }] },
+    });
+    expect(conv1._opencodeSession).not.toBe(conv2._opencodeSession);
+
+    const headers1 = executor.buildHeaders(conv1);
+    const headers2 = executor.buildHeaders(conv2);
+    expect(headers1["x-opencode-session"]).not.toBe(headers2["x-opencode-session"]);
+  });
+
+  it("produces stable session IDs across repeated requests for each supported header hint", () => {
+    const executor = getExecutor("opencode");
+    const hints = [
+      { "x-session-id": "test-stable-session" },
+      { "x-conversation-id": "test-stable-conv" },
+      { "x-claude-code-session-id": "test-stable-claude" },
+    ];
+
+    for (const rawHeaders of hints) {
+      const req1 = executor.prepareRequestCredentials({
+        credentials: { rawHeaders },
+        body: { messages: [{ role: "user", content: "hello" }] },
+      });
+      const req2 = executor.prepareRequestCredentials({
+        credentials: { rawHeaders },
+        body: { messages: [{ role: "user", content: "hello again" }] },
+      });
+      expect(req1._opencodeSession).toMatch(OPENCODE_SESSION_RE);
+      expect(req1._opencodeSession).toBe(req2._opencodeSession);
+    }
+  });
+
+  it("does not fragment conversations across sessions when x-client-request-id changes per turn with connectionId", () => {
+    const executor = getExecutor("opencode");
+    const credentialsTurn1 = {
+      connectionId: "conn_test_123",
+      rawHeaders: { "x-client-request-id": "req-turn-1-uuid" },
+    };
+    const req1 = executor.prepareRequestCredentials({
+      credentials: credentialsTurn1,
+      body: { messages: [{ role: "user", content: "hello" }] },
+    });
+
+    const credentialsTurn2 = {
+      connectionId: "conn_test_123",
+      rawHeaders: { "x-client-request-id": "req-turn-2-uuid" },
+    };
+    const req2 = executor.prepareRequestCredentials({
+      credentials: credentialsTurn2,
+      body: { messages: [{ role: "user", content: "hello again" }] },
+    });
+
+    expect(req1._opencodeSession).toMatch(OPENCODE_SESSION_RE);
+    expect(req1._opencodeSession).toBe(req2._opencodeSession);
   });
 });
 

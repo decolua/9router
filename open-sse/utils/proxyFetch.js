@@ -254,8 +254,11 @@ async function getDispatcher(proxyUrl, insecure = false) {
 async function fetchWithTlsFallback(url, options, proxyUrl) {
   try {
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
-    // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
-    if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
+    // When directFetchProxy is set (e.g. OpenCode TLS impersonation), directFetch
+    // also handles proxy egress directly rather than escaping to Node's OpenSSL agent.
+    if (options.directFetch && (options.directFetchProxy || !proxyUrl)) {
+      return await options.directFetch(url, options, { proxyUrl });
+    }
     const dispatcher = proxyUrl ? await getDispatcher(proxyUrl) : undefined;
     return await originalFetch(url, dispatcher ? { ...options, dispatcher } : options);
   } catch (err) {
