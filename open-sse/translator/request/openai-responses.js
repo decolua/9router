@@ -174,13 +174,17 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   }
 
   // Convert tools format.
-  // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
-  // explicit `name` field and cannot be represented as Chat Completions function declarations.
-  // Filter them out to avoid sending nameless functionDeclarations to downstream providers
-  // such as Gemini, which strictly validates function names.
+  // Responses API supports tools grouped into namespaces (e.g. { type: "namespace", name: "functions", tools: [...] })
+  // as well as "hosted" tools without explicit names. Unpack namespace tools into top-level declarations
+  // so downstream models (Gemini, Claude, etc.) can discover and call them.
+  const unpackTools = (tools) =>
+    (Array.isArray(tools) ? tools : []).flatMap(t =>
+      t?.type === "namespace" && Array.isArray(t.tools) ? t.tools : [t]
+    );
+
   const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
+    ...unpackTools(body.tools),
+    ...unpackTools(additionalTools),
   ];
   if (responseTools.length > 0) {
     result.tools = responseTools
@@ -195,6 +199,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         if (!name || typeof name !== "string" || name.trim() === "") return null;
         if (tool.type === "custom") {
           customToolNames.add(name);
+          customToolNames.add(`functions.${name}`);
           const formatHint = [tool.format?.syntax, tool.format?.definition].filter(Boolean).join("\n");
           return {
             type: OPENAI_BLOCK.FUNCTION,

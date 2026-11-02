@@ -324,7 +324,8 @@ function closeMessage(state, emit, idx) {
 }
 
 function isCustomTool(state, name) {
-  return !!name && state.customToolNames?.has(name);
+  if (!name) return false;
+  return !!state.customToolNames?.has(name) || !!state.customToolNames?.has(name.replace(/^functions\./, "")) || name === "exec";
 }
 
 function extractCustomToolInput(argumentsText) {
@@ -339,7 +340,8 @@ function extractCustomToolInput(argumentsText) {
 function emitToolCall(state, emit, tc) {
   const tcIdx = tc.index ?? 0;
   const newCallId = tc.id;
-  const funcName = tc.function?.name;
+  const rawFuncName = tc.function?.name;
+  const funcName = typeof rawFuncName === "string" ? rawFuncName.replace(/^functions\./, "") : rawFuncName;
 
   if (funcName) state.funcNames[tcIdx] = funcName;
   if (newCallId) state.funcCallIds[tcIdx] = newCallId;

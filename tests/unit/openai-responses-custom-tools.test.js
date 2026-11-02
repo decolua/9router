@@ -75,7 +75,35 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
     }, true, null);
 
     expect(out.tools.map((tool) => tool.function.name)).toEqual(["search", "exec"]);
-    expect(out._customToolNames).toEqual(["exec"]);
+    expect(out._customToolNames).toContain("exec");
+  });
+
+  it("unpacks namespace tools in additional_tools and body.tools into top-level function declarations", () => {
+    const out = openaiResponsesToOpenAIRequest("cx/gpt-5.6-sol", {
+      input: [
+        {
+          type: "additional_tools",
+          role: "developer",
+          tools: [
+            {
+              type: "namespace",
+              name: "functions",
+              tools: [EXEC_TOOL, { type: "function", name: "wait", parameters: { type: "object", properties: {} } }],
+            },
+            {
+              type: "namespace",
+              name: "collaboration",
+              tools: [{ type: "function", name: "spawn_agent", parameters: { type: "object", properties: { target: { type: "string" } } } }],
+            },
+          ],
+        },
+      ],
+    }, true, null);
+
+    const toolNames = out.tools.map((tool) => tool.function.name);
+    expect(toolNames).toEqual(["exec", "wait", "spawn_agent"]);
+    expect(out._customToolNames).toContain("exec");
+    expect(out._customToolNames).toContain("functions.exec");
   });
 });
 
@@ -135,19 +163,28 @@ describe("OpenAI Chat stream → Codex custom_tool_call", () => {
     });
   });
 
-  it("leaves normal Chat tool calls as Responses function_call events", () => {
+  it("normalizes namespaced functions.exec tool calls to exec custom_tool_call", () => {
     const state = initState(FORMATS.OPENAI_RESPONSES);
-    state.customToolNames = new Set(["exec"]);
-    const events = [
-      { id: "chatcmpl-normal", choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_search", type: "function", function: { name: "search", arguments: "{\"q\":\"x\"}" } }] }, finish_reason: null }] },
-      { id: "chatcmpl-normal", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
-    ].flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
+    state.customToolNames = new Set(["exec", "functions.exec"]);
+    const chunks = [
+      { id: "chatcmpl-ns", choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_ns", type: "function", function: { name: "functions.exec", arguments: "{\"input\":\"await tools.exec_command({cmd: \\\"ls\\\"});\"}" } }] }, finish_reason: null }] },
+      { id: "chatcmpl-ns", choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] },
+    ];
 
-    expect(events.find((event) => event.event === "response.output_item.added").data.item.type).toBe("function_call");
-    expect(events.find((event) => event.event === "response.output_item.done").data.item).toMatchObject({
-      type: "function_call",
-      name: "search",
-      arguments: "{\"q\":\"x\"}",
+    const events = chunks.flatMap((chunk) => openaiToOpenAIResponsesResponse(chunk, state));
+    const added = events.find((event) => event.event === "response.output_item.added");
+    const done = events.find((event) => event.event === "response.output_item.done");
+
+    expect(added.data.item).toMatchObject({
+      type: "custom_tool_call",
+      call_id: "call_ns",
+      name: "exec",
+    });
+    expect(done.data.item).toMatchObject({
+      type: "custom_tool_call",
+      call_id: "call_ns",
+      name: "exec",
+      input: 'await tools.exec_command({cmd: "ls"});',
     });
   });
 });
