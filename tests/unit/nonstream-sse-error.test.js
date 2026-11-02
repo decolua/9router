@@ -14,10 +14,10 @@ beforeEach(() => vi.clearAllMocks());
 
 const sse = (chunks) => chunks.map((chunk) => `data: ${JSON.stringify(chunk)}\n\n`).join("") + "data: [DONE]\n\n";
 
-function context(raw, sourceFormat = FORMATS.CLAUDE, contentType = "text/event-stream") {
+function context(raw, sourceFormat = FORMATS.CLAUDE, contentType = "text/event-stream", targetFormat = FORMATS.OPENAI) {
   return {
     providerResponse: new Response(raw, { headers: { "content-type": contentType } }),
-    provider: "kiro", model: "test-model", sourceFormat, targetFormat: FORMATS.OPENAI,
+    provider: "kiro", model: "test-model", sourceFormat, targetFormat,
     body: { model: "test-model", stream: false, messages: [] }, stream: false,
     requestStartTime: Date.now(), connectionId: "test-connection",
     clientRawRequest: { endpoint: sourceFormat === FORMATS.CLAUDE ? "/v1/messages" : "/v1/chat/completions" },
@@ -100,6 +100,39 @@ describe("non-streaming SSE errors", () => {
     expect(ctx.appendLog).toHaveBeenCalledWith(expect.objectContaining({ status: "200 OK" }));
     expect(saveRequestDetail).toHaveBeenCalledOnce();
     expect(saveRequestUsage).toHaveBeenCalledOnce();
+  });
+
+  it("converts SSE stream to Claude format when targetFormat is CLAUDE and sourceFormat is CLAUDE", async () => {
+    const ctx = context(sse([
+      { id: "chatcmpl-test", choices: [{ delta: { content: "hello from claude stream" }, finish_reason: null }] },
+      { choices: [{ delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 12, completion_tokens: 3, total_tokens: 15 } },
+    ]), FORMATS.CLAUDE, "text/event-stream", FORMATS.CLAUDE);
+    const result = await handleNonStreamingResponse(ctx);
+    const json = await result.response.json();
+
+    expect(result.success).toBe(true);
+    expect(result.response.status).toBe(200);
+    expect(json.type).toBe("message");
+    expect(json.content[0].text).toBe("hello from claude stream");
+  });
+
+  it("converts non-streaming Gemini/Antigravity JSON to Claude format for Claude client", async () => {
+    const geminiBody = JSON.stringify({
+      responseId: "gemini-123",
+      candidates: [{
+        content: { parts: [{ text: "hello from gemini" }] },
+        finishReason: "STOP",
+      }],
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 },
+    });
+    const ctx = context(geminiBody, FORMATS.CLAUDE, "application/json", FORMATS.ANTIGRAVITY);
+    const result = await handleNonStreamingResponse(ctx);
+    const json = await result.response.json();
+
+    expect(result.success).toBe(true);
+    expect(result.response.status).toBe(200);
+    expect(json.type).toBe("message");
+    expect(json.content[0].text).toBe("hello from gemini");
   });
 
   it("retains the existing error for an unparseable SSE body", async () => {
