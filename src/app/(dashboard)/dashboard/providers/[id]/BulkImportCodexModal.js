@@ -37,7 +37,6 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
   const [importProgress, setImportProgress] = useState(null); // { done, total }
 
   const handleClose = () => {
-    if (submitting) return;
     setJsonText("");
     setParseError("");
     setResult(null);
@@ -75,6 +74,9 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
       progress: 0,
       href: typeof window !== "undefined" ? window.location.pathname : null,
     });
+    // Close modal immediately so the user can navigate or do other work
+    // while the task progresses in the background (visible in notification bell).
+    onClose();
     try {
       let success = 0;
       let failed = 0;
@@ -173,7 +175,7 @@ export default function BulkImportCodexModal({ isOpen, onClose, onSuccess }) {
           >
             {translate("Import All")}
           </Button>
-          <Button onClick={handleClose} variant="ghost" fullWidth disabled={submitting}>
+          <Button onClick={handleClose} variant="ghost" fullWidth>
             {translate("Close")}
           </Button>
         </div>

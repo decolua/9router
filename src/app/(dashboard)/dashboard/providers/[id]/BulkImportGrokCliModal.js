@@ -70,7 +70,6 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
   const fileInputRef = useRef(null);
 
   const handleClose = () => {
-    if (submitting) return;
     setJsonText("");
     setParseError("");
     setResult(null);
@@ -168,6 +167,8 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
       progress: 0,
       href: typeof window !== "undefined" ? window.location.pathname : null,
     });
+    // Close modal immediately so user can navigate or switch tabs
+    onClose();
     try {
       let success = 0;
       let failed = 0;
@@ -314,7 +315,7 @@ export default function BulkImportGrokCliModal({ isOpen, onClose, onSuccess }) {
           >
             {submitting ? translate("Importing...") : translate("Import All")}
           </Button>
-          <Button onClick={handleClose} variant="ghost" fullWidth disabled={submitting}>
+          <Button onClick={handleClose} variant="ghost" fullWidth>
             {translate("Close")}
           </Button>
         </div>

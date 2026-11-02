@@ -194,9 +194,11 @@ export default function CompatibleModelsSection({ providerStorageAlias, provider
           progress: Math.round(((index + 1) / models.length) * 100),
         });
       }
-      if (importedCount === 0) {
-        alert("No new models were added.");
-      }
+      useTaskStore.getState().update(taskId, {
+        message: importedCount > 0 ? `Imported ${importedCount} models` : "No new models added",
+        progress: 100,
+        state: "done",
+      });
     } catch (error) {
       console.log("Error importing models:", error);
     } finally {

@@ -1,3 +1,19 @@
+# v0.5.362 (2026-11-02) · 1 commit
+
+## Features & Improvements
+- **Remove Unused Quota Check**:
+  - Removed the unused `Quota check` toggle and `/credits` quota path input from both `AddCompatibleModal` and `EditCompatibleNodeModal`.
+- **Fix Custom Provider "Import from /models"**:
+  - Automatically resolve base URL from the provider node when connection-specific base URL is empty.
+  - Added support for proxy routing (`resolveConnectionProxyConfig` + `proxyAwareFetch`) when importing models for custom OpenAI and Anthropic compatible providers.
+  - Normalized diverse response structures (`data`, `models`, or bare array) so models are correctly parsed and imported into the custom catalog.
+- **Background Task Non-Blocking Navigation**:
+  - Modals for bulk operations (`BulkImportCodexModal`, `BulkImportGrokCliModal`, `AddApiKeyModal`) now dismiss upon kickoff, allowing seamless tab navigation while tracking progress in the notification bell (`useTaskStore`).
+  - Swapped intrusive blocking browser `alert()` popups during model imports for silent task store progress and completion updates in the notification bell.
+- **Bulk Proxy Import Performance & Immediate Feedback**:
+  - Chunked proxy pool bulk insertions into batches of 50 via `createProxyPools` in a transaction.
+  - Scheduled frequent intermediate progress updates and yielded to the event loop so the notification bell reflects import progress instantly without delay or frozen sockets.
+
 # v0.5.361 (2026-11-02) · 1 commit
 
 ## Documentation & Maintenance

@@ -92,7 +92,7 @@ async function drainQueue() {
   touch(next);
 
   try {
-    const { createProxyPool, getProxyPools } = await import("@/models");
+    const { createProxyPools, getProxyPools } = await import("@/models");
 
     const total = Array.isArray(next.entries) ? next.entries.length : 0;
     let created = 0;
@@ -133,9 +133,24 @@ async function drainQueue() {
     };
 
     let skipped = 0;
+    const CHUNK_SIZE = 50;
+    let pendingBatch = [];
+
+    const flushBatch = async () => {
+      if (pendingBatch.length === 0) return;
+      try {
+        await createProxyPools(pendingBatch);
+        created += pendingBatch.length;
+      } catch (err) {
+        failed += pendingBatch.length;
+        if (failed === pendingBatch.length) next.error = err?.message || "Failed to create a proxy pool";
+      }
+      pendingBatch = [];
+    };
 
     for (const entry of next.entries || []) {
       if (next.cancelRequested) {
+        await flushBatch();
         next.status = "cancelled";
         next.message = `Stopped after ${processed}/${total}`;
         next.counts = { created, skipped, failed, processed, total };
@@ -148,28 +163,35 @@ async function drainQueue() {
       if (key && existingUrls.has(key)) {
         skipped += 1;
       } else {
-        try {
-          await createProxyPool({
-            name: uniqueName(entry.name),
-            proxyUrl: entry.proxyUrl,
-            noProxy: "",
-            type: "http",
-            isActive: true,
-          });
-          if (key) existingUrls.add(key);
-          created += 1;
-        } catch (err) {
-          failed += 1;
-          if (failed === 1) next.error = err?.message || "Failed to create a proxy pool";
-        }
+        pendingBatch.push({
+          name: uniqueName(entry.name),
+          proxyUrl: entry.proxyUrl,
+          noProxy: "",
+          type: "http",
+          isActive: true,
+        });
+        if (key) existingUrls.add(key);
       }
 
       processed += 1;
-      next.progress = total > 0 ? Math.round((processed / total) * 100) : 100;
-      next.message = `${processed}/${total} proxies`;
-      next.counts = { created, skipped, failed, processed, total };
-      touch(next);
+
+      if (pendingBatch.length >= CHUNK_SIZE) {
+        await flushBatch();
+        next.progress = total > 0 ? Math.round((processed / total) * 100) : 100;
+        next.message = `${processed}/${total} proxies`;
+        next.counts = { created, skipped, failed, processed, total };
+        touch(next);
+        // Yield to event loop so status polls and other requests are serviced immediately
+        await new Promise((resolve) => setImmediate(resolve));
+      } else if (processed % 20 === 0 || processed === total) {
+        next.progress = total > 0 ? Math.round((processed / total) * 100) : 100;
+        next.message = `${processed}/${total} proxies`;
+        next.counts = { created, skipped, failed, processed, total };
+        touch(next);
+      }
     }
+
+    await flushBatch();
 
     next.progress = 100;
     next.status = "done";

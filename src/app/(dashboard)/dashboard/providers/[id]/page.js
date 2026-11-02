@@ -832,15 +832,12 @@ export default function ProviderDetailPage() {
       
       if (importedCount === 0) {
         finishImportTask(taskId, "All models already exist");
-        alert(translate("All models already exist, no new models added"));
       } else {
         finishImportTask(taskId, `Added ${importedCount} models`);
-        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
       }
     } catch (error) {
       console.log("Error importing Qoder models:", error);
       finishImportTask(taskId, "Fetch failed");
-      alert(translate("Error fetching models") + ": " + error.message);
     } finally {
       setImportingQoderModels(false);
     }
@@ -891,15 +888,12 @@ export default function ProviderDetailPage() {
       }
       if (importedCount === 0) {
         finishImportTask(taskId, "All models already exist");
-        alert(translate("All models already exist, no new models added"));
       } else {
         finishImportTask(taskId, `Added ${importedCount} models`);
-        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
       }
     } catch (error) {
       console.log("Error importing Cline models:", error);
       finishImportTask(taskId, "Fetch failed");
-      alert(translate("Error fetching models") + ": " + error.message);
     } finally {
       setImportingClineModels(false);
     }

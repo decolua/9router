@@ -13,6 +13,7 @@ export {
   getProxyPools,
   getProxyPoolById,
   createProxyPool,
+  createProxyPools,
   updateProxyPool,
   deleteProxyPool,
   deleteProxyPools,

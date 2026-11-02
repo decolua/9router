@@ -77,6 +77,35 @@ export async function createProxyPool(data) {
   return pool;
 }
 
+export async function createProxyPools(items = []) {
+  const list = Array.isArray(items) ? items : [];
+  if (list.length === 0) return [];
+  const db = await getAdapter();
+  const now = new Date().toISOString();
+  const created = [];
+  db.transaction(() => {
+    for (const data of list) {
+      const pool = {
+        id: data.id || uuidv4(),
+        name: data.name,
+        proxyUrl: data.proxyUrl,
+        noProxy: data.noProxy || "",
+        type: data.type || "http",
+        isActive: data.isActive !== undefined ? data.isActive : true,
+        strictProxy: data.strictProxy === true,
+        testStatus: data.testStatus || "unknown",
+        lastTestedAt: data.lastTestedAt || null,
+        lastError: data.lastError || null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      upsert(db, pool);
+      created.push(pool);
+    }
+  });
+  return created;
+}
+
 export async function updateProxyPool(id, data) {
   const db = await getAdapter();
   let result = null;

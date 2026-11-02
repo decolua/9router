@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getProviderConnectionById } from "@/models";
+import { getProviderConnectionById, getProviderNodeById } from "@/models";
 
 export const dynamic = "force-dynamic";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider } from "@/shared/constants/providers";
@@ -12,6 +12,7 @@ import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
 import { resolveQoderModels } from "open-sse/services/qoderModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
@@ -568,20 +569,27 @@ export async function GET(request, { params }) {
     }
 
     if (isOpenAICompatibleProvider(connection.provider)) {
-      const baseUrl = connection.providerSpecificData?.baseUrl;
+      let baseUrl = connection.providerSpecificData?.baseUrl;
+      if (!baseUrl) {
+        const node = await getProviderNodeById(connection.provider);
+        baseUrl = node?.baseUrl;
+      }
       if (!baseUrl) {
         return NextResponse.json({ error: "No base URL configured for OpenAI compatible provider" }, { status: 400 });
       }
       const url = `${baseUrl.replace(/\/$/, "")}/models`;
-      const response = await fetch(
+      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+      const response = await proxyAwareFetch(
         url,
         withModelTimeout({
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${connection.apiKey}`,
+            "User-Agent": "9router/0.5 (models-discovery)",
+            ...(connection.apiKey ? { "Authorization": `Bearer ${connection.apiKey}` } : {}),
           },
-        })
+        }),
+        proxy
       );
 
       if (!response.ok) {
@@ -594,7 +602,12 @@ export async function GET(request, { params }) {
       }
 
       const data = await response.json();
-      const models = data.data || data.models || [];
+      const rawList = Array.isArray(data) ? data : (data.data || data.models || data.results || []);
+      const models = rawList.map((m) => {
+        if (typeof m === "string") return { id: m, name: m };
+        const id = m?.id || m?.name || m?.model;
+        return { id, name: m?.display_name || m?.displayName || m?.name || id };
+      }).filter((m) => Boolean(m.id));
 
       return NextResponse.json({
         provider: connection.provider,
@@ -606,6 +619,10 @@ export async function GET(request, { params }) {
     if (isAnthropicCompatibleProvider(connection.provider)) {
       let baseUrl = connection.providerSpecificData?.baseUrl;
       if (!baseUrl) {
+        const node = await getProviderNodeById(connection.provider);
+        baseUrl = node?.baseUrl;
+      }
+      if (!baseUrl) {
         return NextResponse.json({ error: "No base URL configured for Anthropic compatible provider" }, { status: 400 });
       }
 
@@ -615,17 +632,22 @@ export async function GET(request, { params }) {
       }
 
       const url = `${baseUrl}/models`;
-      const response = await fetch(
+      const proxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+      const response = await proxyAwareFetch(
         url,
         withModelTimeout({
           method: "GET",
           headers: {
             "Content-Type": "application/json",
-            "x-api-key": connection.apiKey,
+            "User-Agent": "9router/0.5 (models-discovery)",
             "anthropic-version": "2023-06-01",
-            "Authorization": `Bearer ${connection.apiKey}`
+            ...(connection.apiKey ? {
+              "x-api-key": connection.apiKey,
+              "Authorization": `Bearer ${connection.apiKey}`,
+            } : {}),
           },
-        })
+        }),
+        proxy
       );
 
       if (!response.ok) {
@@ -638,7 +660,12 @@ export async function GET(request, { params }) {
       }
 
       const data = await response.json();
-      const models = data.data || data.models || [];
+      const rawList = Array.isArray(data) ? data : (data.data || data.models || data.results || []);
+      const models = rawList.map((m) => {
+        if (typeof m === "string") return { id: m, name: m };
+        const id = m?.id || m?.name || m?.model;
+        return { id, name: m?.display_name || m?.displayName || m?.name || id };
+      }).filter((m) => Boolean(m.id));
 
       return NextResponse.json({
         provider: connection.provider,
