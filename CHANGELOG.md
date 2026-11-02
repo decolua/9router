@@ -1,3 +1,10 @@
+# v0.5.360 (2026-11-02) · 1 commit
+
+## UI & Visual Design
+- **Redesign Z.ai / ZCode Brand Icon**:
+  - Replaced the dull, shrunken asset with an official high-contrast Z.ai royal cobalt-blue squircle badge (`glm.png`, `glm-cn.png`, `zcode.png`).
+  - Balanced glyph proportions, increased scale, and applied smooth rounded squircle geometry so the icon matches other premier provider logos.
+
 # v0.5.359 (2026-11-02) · 1 commit
 
 ## Documentation & Maintenance
