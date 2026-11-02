@@ -22,19 +22,17 @@ One gateway, one API key, any model: an OpenAI-compatible endpoint that routes t
 
 </div>
 
-## What it routes
+## Routing & Capabilities
 
-The gateway accepts a request in OpenAI, Claude or Gemini shape, translates it to whatever the target provider speaks, and streams the answer back. Providers are grouped by how you sign in:
+9Router accepts requests in standard client formats (OpenAI Chat Completions, Anthropic Messages, or Gemini generateContent), translates them on-the-fly, and routes them to upstream providers through multiple connection tiers:
 
-| Sign-in | Providers |
-| --- | --- |
-| OAuth | Claude, OpenAI Codex, Gemini CLI, Antigravity, Kiro, Kimi (Moonshot), Grok CLI, xAI, Cursor, GitHub Copilot, GitLab, Windsurf, Trae, Zed, iFlow, Qoder, Cline, KiloCode, CodeBuddy, Xiaomi MIMO, ZCode |
-| API key | OpenAI, Anthropic, DeepSeek, GLM (Z.ai / Zhipu), MiniMax, Mistral, Perplexity, Groq, Together, Fireworks, Cerebras, SambaNova, SiliconFlow, Nebius, Hugging Face, Venice, Voyage, and dozens more |
-| Free tier | OpenRouter, OpenCode, Kiro, Gemini, Cloudflare AI, NVIDIA, Morph, Poolside, Kimchi, LLM7, api-airforce |
-| Web cookie | DeepSeek Web, Gemini Web |
-| Local | Ollama, LM Studio style self-hosted nodes, self-hosted TTS/STT/embeddings |
+- **OAuth & Device Auth** - Connect official account sessions with automatic token refresh.
+- **Direct API Keys** - Standard API key integration for enterprise and public AI cloud providers.
+- **Free Tier Relay** - Zero-configuration routing for free developer and community AI gateways.
+- **Web Cookie Sessions** - Reverse-engineered browser session adapters for direct consumer web platforms.
+- **Local & Self-Hosted** - Connect local engines (Ollama, vLLM, LM Studio) and self-hosted instances.
 
-It is not only chat. The same gateway also serves text to image, image to text, video generation, text to speech, speech to text, embeddings, web search and web fetch, each with its own `/v1`-style endpoint.
+Beyond text chat, the router natively exposes specialized endpoints for multimodal tasks: Text-to-Image, Image-to-Text, Video Generation, Text-to-Speech (TTS), Speech-to-Text (STT), Embeddings, and Web Search/Fetch.
 
 ## Architecture & Core Design
 

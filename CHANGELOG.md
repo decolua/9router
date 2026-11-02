@@ -1,3 +1,10 @@
+# v0.5.361 (2026-11-02) · 1 commit
+
+## Documentation & Maintenance
+- **Evergreen Routing Overview in README**:
+  - Replaced hardcoded provider table lists with high-level conceptual connection tiers (OAuth & Device Auth, Direct API Keys, Free Tier Relays, Web Cookie Sessions, and Local/Self-Hosted).
+  - Completely removed volatile lists of individual provider brand names from `README.md` so the documentation stays permanently fresh without needing manual updates when providers are added or removed.
+
 # v0.5.360 (2026-11-02) · 1 commit
 
 ## UI & Visual Design
