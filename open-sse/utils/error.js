@@ -25,6 +25,7 @@ export function buildErrorBody(statusCode, message) {
  * Create error Response object (for non-streaming)
  * @param {number} statusCode - HTTP status code
  * @param {string} message - Error message
+ * @param {object} [extraHeaders] - Extra response headers (e.g. Retry-After)
  * @returns {Response} HTTP Response object
  */
 export function errorResponse(statusCode, message, extraHeaders = null) {
@@ -51,6 +52,39 @@ export async function writeStreamError(writer, statusCode, message) {
 }
 
 /**
+ * Read an upstream cooldown hint into an absolute epoch-ms deadline.
+ * Handles both Retry-After forms (delta-seconds and HTTP-date) plus the
+ * `retry_after` / `retryDelay` body fields providers use instead.
+ * @param {Response} response - Fetch response from provider
+ * @param {string} bodyText - Raw response body (already consumed)
+ * @returns {number|undefined} epoch ms when the caller may retry
+ */
+function parseUpstreamCooldown(response, bodyText) {
+  const now = Date.now();
+
+  const toMs = (raw) => {
+    if (raw === null || raw === undefined) return undefined;
+    // "30" / 30 / "30s" -> delta seconds
+    const secs = typeof raw === "number" ? raw : Number(String(raw).trim().replace(/s$/i, ""));
+    if (Number.isFinite(secs)) return secs > 0 ? now + secs * 1000 : undefined;
+    // HTTP-date -> absolute
+    const at = Date.parse(String(raw));
+    return Number.isFinite(at) && at > now ? at : undefined;
+  };
+
+  const header = toMs(response?.headers?.get?.("retry-after"));
+  if (header) return header;
+
+  try {
+    const json = JSON.parse(bodyText);
+    const err = json?.error && typeof json.error === "object" ? json.error : json;
+    return toMs(err?.retry_after ?? err?.retryAfter ?? err?.retryDelay);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
@@ -70,7 +104,12 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return {
+          statusCode: parsed.status || response.status,
+          message: msg,
+          // Executor-parsed cooldown wins; fall back to the generic header/body hint.
+          resetsAtMs: parsed.resetsAtMs ?? parseUpstreamCooldown(response, bodyText),
+        };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -86,7 +125,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, resetsAtMs: parseUpstreamCooldown(response, bodyText) };
 }
 
 /**
@@ -97,12 +136,20 @@ export async function parseUpstreamError(response, executor = null) {
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
 export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null) {
+  // Pass the upstream cooldown through to the client. Without this an OpenAI-
+  // compatible caller sees a bare 429 and falls back to its own short generic
+  // backoff. Upstream's own Retry-After header (in extraHeaders) wins.
+  const headers = { ...extraHeaders };
+  const hasRetryAfter = Object.keys(headers).some((k) => k.toLowerCase() === "retry-after");
+  if (!hasRetryAfter && Number.isFinite(resetsAtMs)) {
+    headers["retry-after"] = String(Math.max(Math.ceil((resetsAtMs - Date.now()) / 1000), 1));
+  }
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message, extraHeaders)
+    response: errorResponse(statusCode, message, headers)
   };
 }
 

@@ -18,13 +18,15 @@ export function getQuotaCooldown(backoffLevel = 0) {
  * @param {number} status - HTTP status code
  * @param {string} errorText - Error message text
  * @param {number} backoffLevel - Current backoff level for exponential backoff
- * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number, requestScoped?: boolean }}
+ * @returns {{ shouldFallback: boolean, cooldownMs: number, newBackoffLevel?: number, requestScoped?: boolean, terminal?: boolean }}
  *
  * `shouldFallback` answers "is the CREDENTIAL at fault?" (account rotation).
  * `requestScoped` answers "is the REQUEST itself what this member rejected?"
  * (combo rotation). They are different questions: a context overflow or a
  * validation 400 means the credential is healthy but this member cannot serve
  * this request, so combo rotation must still try the next member.
+ * `terminal` marks a state retrying cannot fix (billing/credit exhausted), so
+ * callers surface it instead of advertising a retry.
  */
 export function checkFallbackError(status, errorText, backoffLevel = 0, provider = null) {
   const lowerError = errorText
@@ -39,7 +41,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, terminal: rule.terminal };
     }
 
     // Status-based rule: match HTTP status code
@@ -48,7 +50,7 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
         const newLevel = Math.min(backoffLevel + 1, BACKOFF_CONFIG.maxLevel);
         return { shouldFallback: true, cooldownMs: getQuotaCooldown(newLevel), newBackoffLevel: newLevel };
       }
-      return { shouldFallback: true, cooldownMs: rule.cooldownMs };
+      return { shouldFallback: true, cooldownMs: rule.cooldownMs, terminal: rule.terminal };
     }
   }
 
