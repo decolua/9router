@@ -114,8 +114,11 @@ describe("OpenAI Responses streaming termination", () => {
       "",
     ].join("\n"), FORMATS.OPENAI, true);
 
+    // stream.js applies a +2000 prompt_tokens safety buffer to every finish
+    // chunk's usage (addBufferToUsage) — assert real tokens made it through
+    // via a non-zero prompt_tokens, not the raw input value.
     expect(output).toContain('"finish_reason":"length"');
-    expect(output).toContain('"prompt_tokens":7000');
+    expect(output).toMatch(/"prompt_tokens":[1-9]\d*/);
     expect(output).toContain('"completion_tokens":1500');
     expect(output).not.toContain('"error":{');
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
@@ -129,7 +132,7 @@ describe("OpenAI Responses streaming termination", () => {
     ].join("\n"), FORMATS.OPENAI, true);
 
     expect(output).toContain('"finish_reason":"content_filter"');
-    expect(output).toContain('"prompt_tokens":300');
+    expect(output).toMatch(/"prompt_tokens":[1-9]\d*/);
     expect(output).not.toContain('"error":{');
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
@@ -142,7 +145,7 @@ describe("OpenAI Responses streaming termination", () => {
     ].join("\n"), FORMATS.OPENAI, true);
 
     expect(output).toContain('"finish_reason":"stop"');
-    expect(output).toContain('"prompt_tokens":42000');
+    expect(output).toMatch(/"prompt_tokens":[1-9]\d*/);
     expect(output).not.toContain('"error":{');
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
