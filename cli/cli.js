@@ -66,6 +66,7 @@ const pkg = require("./package.json");
 const { ensureSqliteRuntime, buildEnvWithRuntime } = require("./hooks/sqliteRuntime");
 const { ensureTrayRuntime } = require("./hooks/trayRuntime");
 const args = process.argv.slice(2);
+const foregroundMode = args.includes("--foreground");
 
 // Subcommands (`9router xai video …`) run against an already-running gateway
 // and bypass the launcher flow (no runtime self-heal, no server spawn).
@@ -100,7 +101,9 @@ if (args[0] === "connect" || args[0] === "show") {
 try { ensureSqliteRuntime({ silent: true }); } catch {}
 
 // Self-heal tray runtime (systray for macOS/Linux only). Windows skipped.
-try { ensureTrayRuntime({ silent: true }); } catch {}
+if (!foregroundMode) {
+  try { ensureTrayRuntime({ silent: true }); } catch {}
+}
 
 // Configuration constants
 const APP_NAME = pkg.name; // Use from package.json
@@ -163,6 +166,7 @@ Options:
   -n, --no-browser    Don't open browser automatically
   -l, --log           Show server logs (default: hidden)
   -t, --tray          Run in system tray mode (background)
+  --foreground       Run without tray or menus, for process supervisors
   --skip-update       Skip auto-update check
   -h, --help          Show this help message
   -v, --version       Show version
@@ -183,8 +187,14 @@ Commands:
   }
 }
 
+if (foregroundMode && trayMode) {
+  console.error("--foreground cannot be combined with --tray.");
+  process.exit(1);
+  return;
+}
+
 // Auto-relaunch after update: detached process has no TTY → fallback to tray
-if (skipUpdate && !trayMode && !process.stdin.isTTY) {
+if (skipUpdate && !foregroundMode && !trayMode && !process.stdin.isTTY) {
   trayMode = true;
   process.env.TRAY_MODE = "1";
 }
@@ -632,8 +642,8 @@ function startServer(updatePromise) {
     crashLog = [];
     const child = spawn(RUNTIME, ["--dns-result-order=ipv4first", "--max-old-space-size=6144", serverPath], {
       cwd: standaloneDir,
-      stdio: showLog ? "inherit" : ["ignore", "ignore", "pipe"],
-      detached: true,
+      stdio: foregroundMode ? ["ignore", "inherit", "inherit"] : showLog ? "inherit" : ["ignore", "ignore", "pipe"],
+      detached: !foregroundMode,
       windowsHide: true,
       env: {
         ...buildEnvWithRuntime(process.env),
@@ -660,10 +670,12 @@ function startServer(updatePromise) {
     isCleaningUp = true;
     try {
       // Kill tray if running
-      try {
-        const { killTray } = require("./src/cli/tray/tray");
-        killTray();
-      } catch (e) { }
+      if (!foregroundMode) {
+        try {
+          const { killTray } = require("./src/cli/tray/tray");
+          killTray();
+        } catch (e) { }
+      }
       // Kill MIT server (privileged process) via PID file
       killProxyByPidFile();
       // Kill cloudflared/tailscale via PID file (only this app's tunnel)
@@ -673,7 +685,7 @@ function startServer(updatePromise) {
         process.kill(server.pid, "SIGKILL");
       }
       // Also try to kill process group
-      process.kill(-server.pid, "SIGKILL");
+      if (!foregroundMode) process.kill(-server.pid, "SIGKILL");
     } catch (e) { }
   }
 
@@ -723,6 +735,14 @@ function startServer(updatePromise) {
       // Tray not available - continue without it
     }
   };
+
+  // Let the external supervisor own restarts; keep this process and child attached.
+  if (foregroundMode) {
+    console.log(`\n${pkg.name} v${pkg.version} (foreground)`);
+    console.log(`Server: http://${displayHost}:${port}`);
+    attachServerEvents();
+    return;
+  }
 
   // Tray-only mode: no TUI, just tray icon
   if (trayMode) {
@@ -835,13 +855,13 @@ function startServer(updatePromise) {
   function attachServerEvents() {
     server.on("error", (err) => {
       console.error("Failed to start server:", err.message);
-      if (!isShuttingDown) tryRestart();
+      if (!foregroundMode && !isShuttingDown) tryRestart();
       else { cleanup(); process.exit(1); }
     });
 
     server.on("close", (code) => {
-      if (isShuttingDown || code === 0) {
-        process.exit(code || 0);
+      if (foregroundMode || isShuttingDown || code === 0) {
+        process.exit(foregroundMode && isShuttingDown ? 0 : code ?? (foregroundMode ? 1 : 0));
         return;
       }
       tryRestart(code);

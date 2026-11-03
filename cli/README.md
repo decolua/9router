@@ -83,8 +83,22 @@ That's it! Start coding with FREE AI models.
 9router --port 8080        # Custom port
 9router --no-browser       # Don't open browser
 9router --skip-update      # Skip auto-update check
+9router --foreground       # No tray or menu; keep server attached for supervision
 9router --help             # Show all options
 ```
+
+For systemd, pm2, containers or another process supervisor:
+
+```bash
+9router --foreground --skip-update --host 127.0.0.1 --port 20128
+```
+
+Foreground mode forwards server logs, stays attached to the server child, and
+passes its exit status to the supervisor instead of restarting it internally.
+The supervisor owns restart policy. An unexpected signal termination of the
+server exits the launcher with status 1; stopping the launcher normally exits
+with status 0. Use `--skip-update` to suppress the version check;
+`--foreground` cannot be combined with `--tray`.
 
 **Dashboard**: `http://localhost:20128/dashboard`
 
