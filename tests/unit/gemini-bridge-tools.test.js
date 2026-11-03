@@ -102,3 +102,11 @@ describe("v1beta Gemini bridge: tools", () => {
     expect(JSON.parse(t2.trim().slice(5)).error.code).toBe(429);
   });
 });
+
+describe("v1beta keepalive: hung upstream", () => {
+  it("closes with a 504 error when upstream stays silent past idleMs", async () => {
+    const res = keepAliveGeminiSSE(new Promise(() => {}), "m", 20, 80);
+    const text = await res.text();
+    expect(text).toContain('"code":504');
+  });
+});

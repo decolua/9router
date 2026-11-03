@@ -253,19 +253,32 @@ export async function convertOpenAIResponseToGemini(response, model) {
  * @param {string} model
  * @param {number} intervalMs
  */
-export function keepAliveGeminiSSE(upstreamPromise, model, intervalMs = 10000) {
+// idleMs: an upstream that sends nothing for this long (before or between chunks) is treated as hung;
+// the client gets a 504 error event instead of pings forever, so it can retry.
+export function keepAliveGeminiSSE(upstreamPromise, model, intervalMs = 10000, idleMs = 240000) {
   const encoder = new TextEncoder();
   const ping = encoder.encode(
     "data: " + JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "" }] }, index: 0 }] }) + "\r\n\r\n"
   );
   let timer = null;
+  const HUNG = Symbol("hung");
+  const withIdle = (p) => {
+    let t;
+    return Promise.race([p, new Promise((r) => { t = setTimeout(() => r(HUNG), idleMs); })]).finally(() => clearTimeout(t));
+  };
+  const hung = (controller) => {
+    clearInterval(timer);
+    controller.enqueue(encoder.encode("data: " + JSON.stringify({ error: { code: 504, message: `upstream sent nothing for ${idleMs / 1000} s` } }) + "\r\n\r\n"));
+    controller.close();
+  };
   const body = new ReadableStream({
     async start(controller) {
       timer = setInterval(() => {
         try { controller.enqueue(ping); } catch { clearInterval(timer); }
       }, intervalMs);
       try {
-        const upstream = await upstreamPromise;
+        const upstream = await withIdle(upstreamPromise);
+        if (upstream === HUNG) return hung(controller);
         const converted = transformOpenAISSEToGeminiSSE(upstream, model);
         if (!converted.ok || !converted.body) {
           clearInterval(timer);
@@ -278,7 +291,9 @@ export function keepAliveGeminiSSE(upstreamPromise, model, intervalMs = 10000) {
         const reader = converted.body.getReader();
         let first = true;
         for (;;) {
-          const { done, value } = await reader.read();
+          const r = await withIdle(reader.read());
+          if (r === HUNG) { reader.cancel().catch(() => {}); return hung(controller); }
+          const { done, value } = r;
           if (done) break;
           if (first) { clearInterval(timer); first = false; }
           controller.enqueue(value);
