@@ -48,9 +48,14 @@ export function ensureToolCallIds(body) {
     }
 
     // Validate tool_call_id in tool messages (role: "tool")
-    if (msg.role === "tool" && msg.tool_call_id && !TOOL_ID_PATTERN.test(msg.tool_call_id)) {
-      const sanitized = sanitizeToolId(msg.tool_call_id);
-      msg.tool_call_id = sanitized || generateToolCallId(i, 0);
+    // Repair missing/undefined tool_call_id that makes strict upstreams reject the whole request (#4091)
+    if (msg.role === "tool") {
+      if (!msg.tool_call_id || typeof msg.tool_call_id !== "string" || msg.tool_call_id.trim() === "") {
+        msg.tool_call_id = generateToolCallId(i, 0);
+      } else if (!TOOL_ID_PATTERN.test(msg.tool_call_id)) {
+        const sanitized = sanitizeToolId(msg.tool_call_id);
+        msg.tool_call_id = sanitized || generateToolCallId(i, 0);
+      }
     }
 
     // Also validate tool_use blocks in content (Claude format)
