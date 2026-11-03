@@ -61,6 +61,11 @@ export default {
     { id: "muse-spark-1.2-contributor", name: "Muse Spark 1.2 Contributor", targetFormat: "openai-responses", supportedFormats: ["openai-responses"] },
   ],
   passthroughModels: true,
+  // Usage is summarised from the local request log (Meta has no quota API).
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
   oauth: {
     clientId: "1031625952748946",
     deviceCodeUrl: "https://auth.meta.com/oidc/device/authorization/",

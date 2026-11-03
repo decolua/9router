@@ -15,6 +15,8 @@ import { getCodeBuddyCnUsage, getCodeBuddyIntlUsage } from "./usage/codebuddy-cn
 import { getGrokCliUsage } from "./usage/grok-cli.js";
 import { getKimiUsage } from "./usage/kimi.js";
 import { getDeepseekUsage } from "./usage/deepseek.js";
+import { getOpenRouterUsage } from "./usage/openrouter.js";
+import { getMuseUsage } from "./usage/muse.js";
 import { getOpenCodeGoUsage } from "./usage/opencode-go.js";
 import { getOpenCodeZenUsage } from "./usage/opencode-zen.js";
 import { getGroqUsage } from "./usage/groq.js";
@@ -64,6 +66,8 @@ const USAGE_HANDLERS = {
   "opencode-go": (c) => getOpenCodeGoUsage(c.apiKey, c.proxyOptions),
   "opencode-zen": (c) => getOpenCodeZenUsage(c.apiKey, c.proxyOptions),
   deepseek: (c) => getDeepseekUsage(c.apiKey, c.proxyOptions),
+  openrouter: (c) => getOpenRouterUsage(c.apiKey, c.proxyOptions),
+  muse: (c) => getMuseUsage(c.connectionId, c.providerSpecificData),
   groq: (c) => getGroqUsage(c.apiKey, c.proxyOptions),
   zed: (c) => getZedUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
@@ -80,7 +84,7 @@ async function getQoderUsageFor(c) {
 }
 
 export async function getUsageForProvider(connection, proxyOptions = null, options = {}) {
-  const { provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
+  const { id: connectionId, provider, accessToken, apiKey, providerSpecificData, projectId } = connection;
   const providerDataWithProjectId = {
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
@@ -89,6 +93,7 @@ export async function getUsageForProvider(connection, proxyOptions = null, optio
   const handler = USAGE_HANDLERS[provider];
   if (!handler) return { message: `Usage API not implemented for ${provider}` };
   return await handler({
+    connectionId,
     provider,
     accessToken,
     apiKey,
