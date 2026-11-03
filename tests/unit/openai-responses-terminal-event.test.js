@@ -107,26 +107,42 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
 
-  it("maps incomplete Responses limits to a Chat Completions length finish", async () => {
+  it("maps incomplete Responses limits to a Chat Completions length finish with usage", async () => {
     const output = await runTransform([
       `event: response.incomplete`,
-      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } })}`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 7000, output_tokens: 1500 } } })}`,
       "",
     ].join("\n"), FORMATS.OPENAI, true);
 
     expect(output).toContain('"finish_reason":"length"');
+    expect(output).toContain('"prompt_tokens":7000');
+    expect(output).toContain('"completion_tokens":1500');
     expect(output).not.toContain('"error":{');
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
 
-  it("maps incomplete Responses filters to a Chat Completions content filter finish", async () => {
+  it("maps incomplete Responses filters to a Chat Completions content filter finish with usage", async () => {
     const output = await runTransform([
       `event: response.incomplete`,
-      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "content_filter" } } })}`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "content_filter" }, usage: { input_tokens: 300, output_tokens: 0 } } })}`,
       "",
     ].join("\n"), FORMATS.OPENAI, true);
 
     expect(output).toContain('"finish_reason":"content_filter"');
+    expect(output).toContain('"prompt_tokens":300');
+    expect(output).not.toContain('"error":{');
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("closes a tool-only turn ending in an unrecognized incomplete reason with a stop finish and usage, instead of leaving the client with no response", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_messages" }, usage: { input_tokens: 42000, output_tokens: 0 } } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"finish_reason":"stop"');
+    expect(output).toContain('"prompt_tokens":42000');
     expect(output).not.toContain('"error":{');
     expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
   });
