@@ -336,12 +336,12 @@ function flattenTypeArrays(obj) {
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const [key, v] of Object.entries(obj)) {
-    if (!v || typeof v !== "object") continue;
-    if (key === "properties" && !Array.isArray(v)) {
-      for (const sub of Object.values(v)) ensureObjectType(sub);
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object") continue;
+    if (key === "properties" && !Array.isArray(value)) {
+      for (const property of Object.values(value)) ensureObjectType(property);
     } else {
-      ensureObjectType(v);
+      ensureObjectType(value);
     }
   }
 }
@@ -586,5 +586,3 @@ export function normalizeGeminiContents(contents, model = null) {
   }
   return out;
 }
-
-

@@ -5,8 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 
-// saveRequestUsage drops an identical entry saved in the same millisecond as a
-// duplicate write (0d216689). Parallel *distinct* requests get distinct timestamps.
+// saveRequestUsage dedupes only by requestId (b106f32a); requestId-less entries
+// are never collapsed, even when every other field is identical.
 const BASE_TS = Date.now();
 const tsFor = (i) => new Date(BASE_TS - i).toISOString();
 
@@ -177,14 +177,25 @@ describe("DB Concurrency — atomic safety", () => {
     expect(g.completionTokens).toBe(N * 50);
   });
 
-  it("records an identical write saved twice in parallel only once", async () => {
+  it("keeps parallel identical requestId-less writes as distinct rows (only requestId dedupes)", async () => {
     const entry = () => ({
-      timestamp: tsFor(3000), provider: "mistral", model: "dup-model", connectionId: "cD",
+      timestamp: tsFor(3000), provider: "mistral", model: "dup-model", connectionId: "cD", apiKey: "dup-key",
       tokens: { prompt_tokens: 7, completion_tokens: 3 }, status: "ok",
     });
     await Promise.all([db.saveRequestUsage(entry()), db.saveRequestUsage(entry())]);
 
-    const stats = await db.getUsageStats("24h");
-    expect(stats.byProvider.mistral.requests).toBe(1);
+    const history = await db.getUsageHistory({ provider: "mistral" });
+    expect(history).toHaveLength(2);
+  });
+
+  it("keeps identical writes with distinct requestIds", async () => {
+    const entry = (requestId) => ({
+      requestId, timestamp: tsFor(3001), provider: "mistral-keyed", model: "dup-model", connectionId: "cD", apiKey: "dup-key",
+      tokens: { prompt_tokens: 7, completion_tokens: 3 }, status: "ok",
+    });
+    await Promise.all([db.saveRequestUsage(entry("request-a")), db.saveRequestUsage(entry("request-b"))]);
+
+    const history = await db.getUsageHistory({ provider: "mistral-keyed" });
+    expect(history).toHaveLength(2);
   });
 });

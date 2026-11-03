@@ -452,7 +452,9 @@ describe("App-layer custom transport resolution (stt.js)", () => {
       const fd = mkFormData();
       fd.set("model", "gemini/probe-sttjs-1");
 
-      const pending = handleStt({ formData: async () => fd });
+      // Real Request objects always carry .url (handleStt's success path
+      // reads it for usage-recording); this fake must too.
+      const pending = handleStt({ url: "http://router.test/v1/audio/transcriptions", formData: async () => fd });
       await vi.waitFor(() => expect(FakeWS.instances.length).toBe(1));
       const ws = FakeWS.instances[0];
       await vi.waitFor(() => expect(ws.sent.length).toBeGreaterThanOrEqual(1)); // setup first

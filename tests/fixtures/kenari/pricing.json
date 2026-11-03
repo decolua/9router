@@ -1,0 +1,3269 @@
+{
+  "free_tier": {
+    "daily": 50,
+    "next": {
+      "daily": 1000,
+      "rpm": 10
+    },
+    "plan": {
+      "daily": 0,
+      "rpm": 15
+    },
+    "referral_cashback_pct": 0.1,
+    "rpm": 5,
+    "threshold_idr": 10000
+  },
+  "items": [
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "agnes-2-0-flash:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": null,
+      "price_out_micro_idr_per_1m": null,
+      "pricing_lines": [],
+      "provider": "agnes",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "agnes-2-5-flash:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": null,
+      "price_out_micro_idr_per_1m": null,
+      "pricing_lines": [],
+      "provider": "agnes",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "claude-fable-5",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 260000000000,
+      "price_cached_micro_idr_per_1m": 21000000000,
+      "price_in_micro_idr_per_1m": 210000000000,
+      "price_out_micro_idr_per_1m": 1000000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 210000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 1000000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 260000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "anthropic",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "claude-opus-4-7",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 130000000000,
+      "price_cached_micro_idr_per_1m": 10000000000,
+      "price_in_micro_idr_per_1m": 100000000000,
+      "price_out_micro_idr_per_1m": 520000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 520000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 130000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "anthropic",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "claude-opus-4-8",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 130000000000,
+      "price_cached_micro_idr_per_1m": 10000000000,
+      "price_in_micro_idr_per_1m": 100000000000,
+      "price_out_micro_idr_per_1m": 520000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 520000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 130000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "anthropic",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "claude-opus-5",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 100000000000,
+      "price_cached_micro_idr_per_1m": 40000000000,
+      "price_in_micro_idr_per_1m": 100000000000,
+      "price_out_micro_idr_per_1m": 500000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 500000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "anthropic",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "claude-sonnet-4-6",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 78000000000,
+      "price_cached_micro_idr_per_1m": 6300000000,
+      "price_in_micro_idr_per_1m": 63000000000,
+      "price_out_micro_idr_per_1m": 310000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 63000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 310000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 6300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 78000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "anthropic",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 35000000000,
+      "market_out_micro_idr_per_1m": 170000000000,
+      "model": "claude-sonnet-5",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 25000000000,
+      "price_cached_micro_idr_per_1m": 2000000000,
+      "price_in_micro_idr_per_1m": 20000000000,
+      "price_out_micro_idr_per_1m": 100000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 25000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "anthropic",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "deepseek-v4-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 60000000,
+      "price_in_micro_idr_per_1m": 2750000000,
+      "price_out_micro_idr_per_1m": 5500000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 60000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2750000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 5500000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "deepseek",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": 16000000000,
+      "market_out_micro_idr_per_1m": 33000000000,
+      "model": "deepseek-v4-pro",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 100000000,
+      "price_in_micro_idr_per_1m": 10000000000,
+      "price_out_micro_idr_per_1m": 20000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "deepseek",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 5200000000,
+      "market_out_micro_idr_per_1m": 43000000000,
+      "model": "gemini-2-5-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 500000000,
+      "price_cached_micro_idr_per_1m": 200000000,
+      "price_in_micro_idr_per_1m": 2000000000,
+      "price_out_micro_idr_per_1m": 15000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 200000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 15000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "audio",
+        "video",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 1700000000,
+      "market_out_micro_idr_per_1m": 7000000000,
+      "model": "gemini-2-5-flash-lite",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 350000000,
+      "price_cached_micro_idr_per_1m": 40000000,
+      "price_in_micro_idr_per_1m": 400000000,
+      "price_out_micro_idr_per_1m": 1700000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 400000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 1700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 350000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 4300000000,
+      "market_out_micro_idr_per_1m": 26000000000,
+      "model": "gemini-3-1-flash-lite",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 350000000,
+      "price_cached_micro_idr_per_1m": 100000000,
+      "price_in_micro_idr_per_1m": 1000000000,
+      "price_out_micro_idr_per_1m": 6000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 350000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 1000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gemini-3-1-flash-tts",
+      "output_modalities": [
+        "audio"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 250000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 35000000000,
+      "market_out_micro_idr_per_1m": 210000000000,
+      "model": "gemini-3-1-pro",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 3900000000,
+      "price_cached_micro_idr_per_1m": 2100000000,
+      "price_in_micro_idr_per_1m": 21000000000,
+      "price_out_micro_idr_per_1m": 125000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 125000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 3900000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 13000000000,
+      "market_out_micro_idr_per_1m": 65000000000,
+      "model": "gemini-3-6-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 300000000,
+      "price_cached_micro_idr_per_1m": 600000000,
+      "price_in_micro_idr_per_1m": 6000000000,
+      "price_out_micro_idr_per_1m": 30000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 600000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 13000000000,
+      "market_out_micro_idr_per_1m": 65000000000,
+      "model": "gemini-3-7-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 300000000,
+      "price_cached_micro_idr_per_1m": 600000000,
+      "price_in_micro_idr_per_1m": 6000000000,
+      "price_out_micro_idr_per_1m": 30000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 600000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "audio",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 13000000000,
+      "market_out_micro_idr_per_1m": 65000000000,
+      "model": "gemini-3-8-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 300000000,
+      "price_cached_micro_idr_per_1m": 600000000,
+      "price_in_micro_idr_per_1m": 6000000000,
+      "price_out_micro_idr_per_1m": 30000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 600000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "videos"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gemini-omni-flash",
+      "output_modalities": [
+        "video"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_video",
+          "endpoint": "videos",
+          "micro_idr": 350000000,
+          "unit": "second",
+          "variant": "360p"
+        },
+        {
+          "billable": "output_video",
+          "endpoint": "videos",
+          "micro_idr": 750000000,
+          "unit": "second",
+          "variant": "720p"
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "image",
+        "text",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gemma-4-31b-it",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 720000000,
+      "price_in_micro_idr_per_1m": 1800000000,
+      "price_out_micro_idr_per_1m": 7100000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 1800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 7100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 720000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "glm-4-7-flash:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 190000000,
+      "price_in_micro_idr_per_1m": 1100000000,
+      "price_out_micro_idr_per_1m": 7700000000,
+      "pricing_lines": [],
+      "provider": "z-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": 16000000000,
+      "market_out_micro_idr_per_1m": null,
+      "model": "glm-5-2",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 4000000000,
+      "price_in_micro_idr_per_1m": 10000000000,
+      "price_out_micro_idr_per_1m": 66000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 66000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "z-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": 24000000000,
+      "market_out_micro_idr_per_1m": 77000000000,
+      "model": "glm-5-3",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 4000000000,
+      "price_in_micro_idr_per_1m": 10000000000,
+      "price_out_micro_idr_per_1m": 66000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 66000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "z-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": 1300000000,
+      "market_out_micro_idr_per_1m": 4300000000,
+      "model": "glm-5-3-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 2500000,
+      "price_in_micro_idr_per_1m": 15000000,
+      "price_out_micro_idr_per_1m": 50000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2500000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 15000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 50000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "z-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-5-4",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 5200000000,
+      "price_in_micro_idr_per_1m": 52000000000,
+      "price_out_micro_idr_per_1m": 310000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 310000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 5200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "pdf",
+        "image",
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-5-4-mini",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 1500000000,
+      "price_in_micro_idr_per_1m": 15000000000,
+      "price_out_micro_idr_per_1m": 94000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 15000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 94000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-5-5",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 10000000000,
+      "price_in_micro_idr_per_1m": 100000000000,
+      "price_out_micro_idr_per_1m": 630000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 100000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 630000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": 21000000000,
+      "model": "gpt-5-6-luna",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 4500000000,
+      "price_cached_micro_idr_per_1m": 350000000,
+      "price_in_micro_idr_per_1m": 3500000000,
+      "price_out_micro_idr_per_1m": 20000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 350000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 4500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 3500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-5-6-sol",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 65000000000,
+      "price_cached_micro_idr_per_1m": 20800000000,
+      "price_in_micro_idr_per_1m": 52000000000,
+      "price_out_micro_idr_per_1m": 310000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 20800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 65000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 310000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-5-6-terra",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 52000000000,
+      "price_cached_micro_idr_per_1m": 16800000000,
+      "price_in_micro_idr_per_1m": 42000000000,
+      "price_out_micro_idr_per_1m": 250000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 16800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 42000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 250000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-6-astra",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 200000000000,
+      "price_cached_micro_idr_per_1m": 20000000000,
+      "price_in_micro_idr_per_1m": 200000000000,
+      "price_out_micro_idr_per_1m": 1000000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 200000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 1000000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 20000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 200000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 175000000,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-image-2",
+      "output_modalities": [
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 175000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": 640000000,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-oss-120b",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 63000000,
+      "price_in_micro_idr_per_1m": 630000000,
+      "price_out_micro_idr_per_1m": 3500000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 630000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 3500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 63000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "gpt-oss-20b",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 65000000,
+      "price_in_micro_idr_per_1m": 630000000,
+      "price_out_micro_idr_per_1m": 2700000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 630000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 2700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 65000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 35000000000,
+      "market_out_micro_idr_per_1m": 100000000000,
+      "model": "grok-4-5",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 3250000000,
+      "price_in_micro_idr_per_1m": 21000000000,
+      "price_out_micro_idr_per_1m": 60000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 60000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 3250000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "x-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": 35000000000,
+      "market_out_micro_idr_per_1m": 100000000000,
+      "model": "grok-4-6",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 3250000000,
+      "price_in_micro_idr_per_1m": 21000000000,
+      "price_out_micro_idr_per_1m": 60000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 21000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 60000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 3250000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "x-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 300000000,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "grok-imagine-image",
+      "output_modalities": [
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 300000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "x-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 900000000,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "grok-imagine-image-2-0",
+      "output_modalities": [
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 900000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "x-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 750000000,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "grok-imagine-image-quality",
+      "output_modalities": [
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 750000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "x-ai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "hy3",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 270000000,
+      "price_in_micro_idr_per_1m": 2700000000,
+      "price_out_micro_idr_per_1m": 11000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 11000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 270000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "tencent",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "hy3:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 2700000000,
+      "price_in_micro_idr_per_1m": 2700000000,
+      "price_out_micro_idr_per_1m": 11000000000,
+      "pricing_lines": [],
+      "provider": "tencent",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": 14000000000,
+      "market_out_micro_idr_per_1m": 43000000000,
+      "model": "hy4-preview",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 10000000,
+      "price_in_micro_idr_per_1m": 500000000,
+      "price_out_micro_idr_per_1m": 2000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 10000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "tencent",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "market_in_micro_idr_per_1m": 16000000000,
+      "market_out_micro_idr_per_1m": 70000000000,
+      "model": "kimi-k2-6",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 5000000000,
+      "price_in_micro_idr_per_1m": 10000000000,
+      "price_out_micro_idr_per_1m": 50000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 5000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 50000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "moonshotai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "market_in_micro_idr_per_1m": 12000000000,
+      "market_out_micro_idr_per_1m": 61000000000,
+      "model": "kimi-k2-7-code",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 2000000000,
+      "price_in_micro_idr_per_1m": 10000000000,
+      "price_out_micro_idr_per_1m": 50000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 50000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "moonshotai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": 52000000000,
+      "market_out_micro_idr_per_1m": 260000000000,
+      "model": "kimi-k3",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 3000000000,
+      "price_in_micro_idr_per_1m": 30000000000,
+      "price_out_micro_idr_per_1m": 150000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 3000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 30000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 150000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "moonshotai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "kokoro-tts",
+      "output_modalities": [
+        "audio"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 75000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "provider": "kokoro",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "laguna-s-2-1:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 190000000,
+      "price_in_micro_idr_per_1m": 1900000000,
+      "price_out_micro_idr_per_1m": 3800000000,
+      "pricing_lines": [],
+      "provider": "poolside",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "laguna-xs-2-1:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 1200000000,
+      "price_in_micro_idr_per_1m": 1200000000,
+      "price_out_micro_idr_per_1m": 2500000000,
+      "pricing_lines": [],
+      "provider": "poolside",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "mimo-v2-5",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 60000000,
+      "price_in_micro_idr_per_1m": 2900000000,
+      "price_out_micro_idr_per_1m": 5800000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2900000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 5800000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 60000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "xiaomi",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "mimo-v2-5-pro",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 75000000,
+      "price_in_micro_idr_per_1m": 9100000000,
+      "price_out_micro_idr_per_1m": 18000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 9100000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 18000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 75000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "xiaomi",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "mimo-v2-5-tts",
+      "output_modalities": [
+        "audio"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 250000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "provider": "xiaomi",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "audio",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": 2400000000,
+      "market_out_micro_idr_per_1m": null,
+      "model": "mimo-v2-5:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 530000000,
+      "price_in_micro_idr_per_1m": 2000000000,
+      "price_out_micro_idr_per_1m": 5300000000,
+      "pricing_lines": [],
+      "provider": "xiaomi",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "minimax-m2-7",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 1200000000,
+      "price_in_micro_idr_per_1m": 6300000000,
+      "price_out_micro_idr_per_1m": 25000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 25000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "minimax",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "minimax-m2-7-highspeed",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 2000000000,
+      "price_in_micro_idr_per_1m": 10400000000,
+      "price_out_micro_idr_per_1m": 42000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 10400000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 42000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "minimax",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "minimax-m3",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 1200000000,
+      "price_in_micro_idr_per_1m": 6300000000,
+      "price_out_micro_idr_per_1m": 25000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 25000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "minimax",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "minimax-speech-2-8-hd",
+      "output_modalities": [
+        "audio"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 1500000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "provider": "minimax",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_speech"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "minimax-speech-2-8-turbo",
+      "output_modalities": [
+        "audio"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_audio",
+          "endpoint": "audio_speech",
+          "micro_idr": 750000000,
+          "unit": "1k_chars",
+          "variant": null
+        }
+      ],
+      "provider": "minimax",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "pdf"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "mistral-medium-3-5:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 31000000000,
+      "price_in_micro_idr_per_1m": 31000000000,
+      "price_out_micro_idr_per_1m": 150000000000,
+      "pricing_lines": [],
+      "provider": "mistralai",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "muse-spark-1-2-contributor",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 40000000,
+      "price_in_micro_idr_per_1m": 2000000000,
+      "price_out_micro_idr_per_1m": 4000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "meta",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "muse-spark-1-2-contributor:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 2600000000,
+      "price_in_micro_idr_per_1m": 26000000000,
+      "price_out_micro_idr_per_1m": 89000000000,
+      "pricing_lines": [],
+      "provider": "meta",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "muse-spark-1-3-contributor",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 40000000,
+      "price_in_micro_idr_per_1m": 2000000000,
+      "price_out_micro_idr_per_1m": 4000000000,
+      "pricing_lines": [
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 40000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 2000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 4000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "meta",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video",
+        "pdf",
+        "audio"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "muse-spark-1-3-contributor:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 2100000000,
+      "price_in_micro_idr_per_1m": 2100000000,
+      "price_out_micro_idr_per_1m": 4200000000,
+      "pricing_lines": [],
+      "provider": "meta",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 250000000,
+      "input_modalities": [
+        "image",
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nano-banana-2",
+      "output_modalities": [
+        "text",
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 250000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 150000000,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nano-banana-2-lite",
+      "output_modalities": [
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 150000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "images"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": 350000000,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nano-banana-pro",
+      "output_modalities": [
+        "image"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_image",
+          "endpoint": "images",
+          "micro_idr": 350000000,
+          "unit": "image",
+          "variant": null
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nemotron-3-super-120b-a12b",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 170000000,
+      "price_in_micro_idr_per_1m": 1700000000,
+      "price_out_micro_idr_per_1m": 8400000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 1700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 8400000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 170000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "nvidia",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nemotron-3-super-120b-a12b:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 1600000000,
+      "price_out_micro_idr_per_1m": 7700000000,
+      "pricing_lines": [],
+      "provider": "nvidia",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nemotron-3-ultra-550b-a55b",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 1200000000,
+      "price_in_micro_idr_per_1m": 12000000000,
+      "price_out_micro_idr_per_1m": 75000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 12000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 75000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1200000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "nvidia",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "nemotron-3-ultra-550b-a55b:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 4200000000,
+      "price_in_micro_idr_per_1m": 12000000000,
+      "price_out_micro_idr_per_1m": 75000000000,
+      "pricing_lines": [],
+      "provider": "nvidia",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "qwen3-7-plus",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 8400000000,
+      "price_cached_micro_idr_per_1m": 1300000000,
+      "price_in_micro_idr_per_1m": 6700000000,
+      "price_out_micro_idr_per_1m": 26000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 6700000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 26000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 1300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 8400000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "qwen",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": 8200000000,
+      "model": "qwen3-8-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 750000000,
+      "price_cached_micro_idr_per_1m": 300000000,
+      "price_in_micro_idr_per_1m": 3000000000,
+      "price_out_micro_idr_per_1m": 7500000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 3000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 7500000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 300000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 750000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "qwen",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "qwen3-8-max",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": 52000000000,
+      "price_cached_micro_idr_per_1m": 5200000000,
+      "price_in_micro_idr_per_1m": 42000000000,
+      "price_out_micro_idr_per_1m": 120000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 42000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 120000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 5200000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_write",
+          "endpoint": "chat",
+          "micro_idr": 52000000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "qwen",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "step-3-7-flash",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 840000000,
+      "price_in_micro_idr_per_1m": 4200000000,
+      "price_out_micro_idr_per_1m": 24000000000,
+      "pricing_lines": [
+        {
+          "billable": "input",
+          "endpoint": "chat",
+          "micro_idr": 4200000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "output",
+          "endpoint": "chat",
+          "micro_idr": 24000000000,
+          "unit": "token_1m",
+          "variant": null
+        },
+        {
+          "billable": "cache_read",
+          "endpoint": "chat",
+          "micro_idr": 840000000,
+          "unit": "token_1m",
+          "variant": null
+        }
+      ],
+      "provider": "stepfun",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "chat"
+      ],
+      "free": true,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text",
+        "image",
+        "video"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "step-3-7-flash:free",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": 840000000,
+      "price_in_micro_idr_per_1m": 4200000000,
+      "price_out_micro_idr_per_1m": 24000000000,
+      "pricing_lines": [],
+      "provider": "stepfun",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "videos"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "text"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "veo-3.1-lite",
+      "output_modalities": [
+        "video"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "output_video",
+          "endpoint": "videos",
+          "micro_idr": 500000000,
+          "unit": "second",
+          "variant": "720p"
+        }
+      ],
+      "provider": "google",
+      "subscriber_only": false,
+      "sunset_at": null
+    },
+    {
+      "endpoints": [
+        "audio_transcription"
+      ],
+      "free": false,
+      "image_micro_idr_per_image": null,
+      "input_modalities": [
+        "audio"
+      ],
+      "market_in_micro_idr_per_1m": null,
+      "market_out_micro_idr_per_1m": null,
+      "model": "whisper-large-v3-turbo",
+      "output_modalities": [
+        "text"
+      ],
+      "price_cache_write_micro_idr_per_1m": null,
+      "price_cached_micro_idr_per_1m": null,
+      "price_in_micro_idr_per_1m": 0,
+      "price_out_micro_idr_per_1m": 0,
+      "pricing_lines": [
+        {
+          "billable": "input_audio",
+          "endpoint": "audio_transcription",
+          "micro_idr": 175000,
+          "unit": "second",
+          "variant": null
+        }
+      ],
+      "provider": "openai",
+      "subscriber_only": false,
+      "sunset_at": null
+    }
+  ],
+  "usd_idr_rate": 17500
+}

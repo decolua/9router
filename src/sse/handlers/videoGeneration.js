@@ -5,9 +5,10 @@ import {
   extractApiKey,
   isValidApiKey,
 } from "../services/auth.js";
-import { getSettings, getProviderConnectionById } from "@/lib/localDb";
+import { getSettings } from "@/lib/localDb";
+import { getProviderConnectionProviderById } from "@/lib/db/repos/connectionsRepo.js";
 import { getModelInfo } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyPolicy, enforceKeyAccessProvider, evaluateKeyPolicy, recordKeyedUsage } from "../services/keyAccess.js";
 import { handleVideoProxyCore, getVideoConfig, sanitizeSecrets } from "open-sse/handlers/videoCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -27,8 +28,8 @@ const DEFAULT_VIDEO_PROVIDER = "xai";
  */
 async function resolveGetProvider(request, connectionId) {
   if (connectionId) {
-    const conn = await getProviderConnectionById(connectionId).catch(() => null);
-    if (conn?.provider && getVideoConfig(conn.provider)) return conn.provider;
+    const provider = await getProviderConnectionProviderById(connectionId).catch(() => null);
+    if (provider && getVideoConfig(provider)) return provider;
   }
   const queried = new URL(request.url).searchParams.get("provider");
   if (queried && getVideoConfig(queried)) return queried;
@@ -119,13 +120,10 @@ export async function handleVideoCreate(request, action) {
   const resolved = await resolveVideoProvider(bodyInfo.parsed);
   if (resolved.error) return resolved.error;
   const { provider, model } = resolved;
-
-  // Per-key access control: the routed provider/model must be listed. A body
-  // we cannot read a model from (multipart) is denied for restricted keys.
-  const keyAccessDenied = await enforceKeyAccessResolved(
-    await getKeyAccessContext(request), bodyInfo.parsed?.model ? String(bodyInfo.parsed.model) : "", provider, model
-  );
-  if (keyAccessDenied) return keyAccessDenied;
+  const keyAccess = await getKeyAccessContext(request);
+  const policyError = await evaluateKeyPolicy(keyAccess,
+    bodyInfo.parsed?.model ? String(bodyInfo.parsed.model) : "", { kind: "resolved", provider, model });
+  if (policyError) return policyError;
 
   // Strip the provider prefix (e.g. "xai/grok-imagine-video") before forwarding;
   // otherwise forward the original bytes untouched.
@@ -197,6 +195,8 @@ export async function handleVideoCreate(request, action) {
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, model);
+      const usageError = await recordKeyedUsage(request, keyAccess, { provider, model: model || "video", connectionId: credentials.connectionId, endpoint: new URL(request.url).pathname, tokens: {} });
+      if (usageError) return usageError;
       log.info("VIDEO", `${provider.toUpperCase()} | ${action} accepted (connection ${credentials.connectionId})`);
       return withConnectionHeader(result.response, credentials.connectionId);
     }
@@ -225,11 +225,17 @@ export async function handleVideoCreate(request, action) {
 export async function handleVideoGet(request, requestId) {
   const authError = await requireValidApiKey(request);
   if (authError) return authError;
+  const keyAccess = await getKeyAccessContext(request);
+  const policyError = await enforceKeyPolicy(keyAccess);
+  if (policyError) return policyError;
 
   if (!requestId) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing video request id");
 
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const provider = await resolveGetProvider(request, preferredConnectionId);
+  // Poll requests carry no trustworthy job model; only provider-wide access can authorize an unknown target.
+  const accessError = await enforceKeyAccessProvider(keyAccess, provider, null);
+  if (accessError) return accessError;
 
   const credentials = await getProviderCredentials(provider, null, null, { preferredConnectionId });
   if (!credentials || credentials.allRateLimited) {
@@ -256,6 +262,8 @@ export async function handleVideoGet(request, requestId) {
 
   if (result.success) {
     await clearAccountError(credentials.connectionId, credentials, null);
+    const usageError = await recordKeyedUsage(request, keyAccess, { provider, model: "video", connectionId: credentials.connectionId, endpoint: new URL(request.url).pathname, tokens: {} });
+    if (usageError) return usageError;
     return withConnectionHeader(result.response, credentials.connectionId);
   }
 

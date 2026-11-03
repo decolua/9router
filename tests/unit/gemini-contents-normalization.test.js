@@ -36,8 +36,8 @@ describe("normalizeGeminiContents terminal turn guards", () => {
           }
         }
       ]
-    });
   });
+});
 
   it("handles multiple functionCalls in terminal model turn", () => {
     const contents = [
@@ -193,4 +193,3 @@ describe("functionResponse `$ref` sanitization", () => {
     expect(frs[0].functionResponse.response.result._ref).toBe("#/$defs/Config");
   });
 });
-

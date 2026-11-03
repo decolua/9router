@@ -8,7 +8,7 @@ import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
-import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK, RESPONSES_INCOMPLETE_REASON } from "../schema/index.js";
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -667,6 +667,44 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       return finalChunk;
     }
     return null;
+  }
+
+  if (eventType === "response.incomplete") {
+    if (state.finishReasonSent) return null;
+
+    // Mirror response.completed: extract usage before finalizing so a tool-heavy
+    // turn that ends via incomplete (e.g. max_output_tokens hit before any
+    // visible output) still reports real token counts instead of IN 0 · OUT 0.
+    const responseUsage = data.response?.usage;
+    if (responseUsage && typeof responseUsage === "object") {
+      const inputTokens = responseUsage.input_tokens || responseUsage.prompt_tokens || 0;
+      const outputTokens = responseUsage.output_tokens || responseUsage.completion_tokens || 0;
+      const cacheReadTokens = responseUsage.input_tokens_details?.cached_tokens || responseUsage.cache_read_input_tokens || 0;
+      state.usage = buildUsage({ promptTokens: inputTokens, completionTokens: outputTokens, totalTokens: inputTokens + outputTokens, cachedTokens: cacheReadTokens });
+    }
+
+    const reason = data.response?.incomplete_details?.reason;
+    // Unknown/undocumented incomplete reasons still must close the client's
+    // turn — returning null here left the stream with no finish_reason at all,
+    // so strict clients saw the connection drop with no visible response.
+    const finishReason = reason === RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS
+      ? OPENAI_FINISH.LENGTH
+      : reason === RESPONSES_INCOMPLETE_REASON.CONTENT_FILTER
+        ? OPENAI_FINISH.CONTENT_FILTER
+        : OPENAI_FINISH.STOP;
+
+    state.finishReasonSent = true;
+    state.finishReason = finishReason;
+
+    const finalChunk = buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      {},
+      finishReason
+    );
+    if (state.usage && typeof state.usage === "object") {
+      finalChunk.usage = state.usage;
+    }
+    return finalChunk;
   }
 
   // Error events from Responses API (e.g. model_not_found)

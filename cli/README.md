@@ -2,7 +2,7 @@
 
 **Never stop coding. Save 20-40% tokens with RTK + auto-fallback to FREE & cheap AI models.**
 
-**Connect All AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, Gemini, OpenCode, Cline, OpenClaw...) to 40+ AI Providers & 100+ Models.**
+**Connect AI Code Tools (Claude Code, Cursor, Antigravity, Copilot, Codex, OpenCode, Cline, OpenClaw...) to 80+ AI Providers & 100+ Models.**
 
 [![npm](https://img.shields.io/npm/v/9router.svg)](https://www.npmjs.com/package/9router)
 [![Downloads](https://img.shields.io/npm/dm/9router.svg)](https://www.npmjs.com/package/9router)
@@ -59,9 +59,9 @@ Published images: [Docker Hub](https://hub.docker.com/r/decolua/9router) • [GH
 
 🎉 Dashboard opens at `http://localhost:20128`
 
-**2. Connect a FREE provider (no signup needed):**
+**2. Connect a free-tier provider:**
 
-Dashboard → Providers → Connect **Kiro AI** (free Claude unlimited) or **OpenCode Free** (no auth) → Done!
+Dashboard → Providers → Connect **Kiro AI** (sign in, then use its capped free tier) or **OpenCode Free** (no auth) → Done!
 
 **3. Use in your CLI tool:**
 
@@ -182,9 +182,9 @@ See `9router connect --help` for the full list.
 
 ## 🛠️ Supported CLI Tools
 
-Claude-Code • OpenClaw • Codex • OpenCode • Cursor • Antigravity • Cline • Continue • Droid • Roo • Copilot • Kilo Code • Gemini CLI • Qwen Code • iFlow • Crush • Crusher • Aider
+Claude-Code • OpenClaw • Codex • OpenCode • Cursor • Antigravity • Cline • Continue • Droid • Roo • Copilot • Kilo Code • Qwen Code • Kiro • Claude Cowork • Hermes Agent • Amp CLI • Pi • Oh My Pi • Crush • ForgeCode • Smelt • CodeWhale
 
-Any tool supporting OpenAI/Claude-compatible API works.
+This list is not exhaustive. Any tool supporting an OpenAI/Claude-compatible API works, even if it is not listed above.
 
 ---
 

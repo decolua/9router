@@ -35,7 +35,7 @@ describe("Schema migrations", () => {
     const tables = db.all(`SELECT name FROM sqlite_master WHERE type='table'`).map(t => t.name);
     expect(tables).toEqual(expect.arrayContaining([
       "_meta", "settings", "providerConnections", "providerNodes",
-      "proxyPools", "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
+      "proxyPools", "proxyPoolFitness", "apiKeys", "combos", "kv", "usageHistory", "usageDaily", "requestDetails",
     ]));
   });
 

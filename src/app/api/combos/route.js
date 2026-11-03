@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCombos, createCombo, getComboByName } from "@/lib/localDb";
+import { sanitizeComboModels } from "@/shared/utils/comboModels";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Combo name already exists" }, { status: 400 });
     }
 
-    const combo = await createCombo({ name, models: models || [], kind: kind || null });
+    const combo = await createCombo({ name, models: sanitizeComboModels(models), kind: kind || null });
 
     return NextResponse.json(combo, { status: 201 });
   } catch (error) {

@@ -4,7 +4,7 @@ import {
 } from "../services/auth.js";
 import { getSettings } from "@/lib/localDb";
 import { getModelInfo, getComboModels } from "../services/model.js";
-import { getKeyAccessContext, enforceKeyAccess } from "../services/keyAccess.js";
+import { getKeyAccessContext, evaluateKeyPolicy, recordKeyedUsage } from "../services/keyAccess.js";
 import { handleTtsCore } from "open-sse/handlers/ttsCore.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
@@ -45,9 +45,9 @@ export async function handleTts(request) {
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.input) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
 
-  // Per-key access control: requested target, before combo expansion.
-  const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
-  if (keyAccessDenied) return keyAccessDenied;
+  const keyAccess = await getKeyAccessContext(request);
+  const policyError = await evaluateKeyPolicy(keyAccess, modelStr);
+  if (policyError) return policyError;
 
   // Combo expansion: model may be a combo name → run fallback/round-robin across models
   const comboModels = await getComboModels(modelStr);
@@ -59,7 +59,7 @@ export async function handleTts(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleModelTts(b, m, responseFormat, language, style),
+      handleSingleModel: (b, m, modelEntry) => handleSingleModelTts(b, m, responseFormat, language, style, { preferredConnectionId: modelEntry?.connectionId, keyAccess, endpoint: url.pathname, request }),
       log,
       comboName: modelStr,
       comboStrategy,
@@ -67,10 +67,10 @@ export async function handleTts(request) {
     });
   }
 
-  return handleSingleModelTts(body, modelStr, responseFormat, language, style);
+  return handleSingleModelTts(body, modelStr, responseFormat, language, style, { keyAccess, endpoint: url.pathname, request });
 }
 
-async function handleSingleModelTts(body, modelStr, responseFormat, language, style) {
+async function handleSingleModelTts(body, modelStr, responseFormat, language, style, options = {}) {
   const modelInfo = await getModelInfo(modelStr);
   if (!modelInfo.provider) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Invalid model format");
 
@@ -80,7 +80,11 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   // noAuth providers — no credential needed
   if (!CREDENTIALED_PROVIDERS.has(provider)) {
     const result = await handleTtsCore({ provider, model, input: body.input, responseFormat, language, style });
-    if (result.success) return result.response;
+    if (result.success) {
+      const usageError = await recordKeyedUsage(options.request, options.keyAccess, { provider, model, endpoint: options.endpoint, tokens: {} });
+      if (usageError) return usageError;
+      return result.response;
+    }
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "TTS failed");
   }
 
@@ -90,7 +94,9 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, {
+      preferredConnectionId: options.preferredConnectionId,
+    });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -113,7 +119,11 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
 
     const result = await handleTtsCore({ provider, model, input: body.input, credentials, responseFormat, language, style });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const usageError = await recordKeyedUsage(options.request, options.keyAccess, { provider, model, connectionId: credentials.connectionId, endpoint: options.endpoint, tokens: {} });
+      if (usageError) return usageError;
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, provider, model);
     if (shouldFallback) {

@@ -13,7 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
-import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
+import { getKeyAccessContext, evaluateKeyPolicy, recordKeyedUsage } from "../services/keyAccess.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -64,6 +64,8 @@ export async function handleSearch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
 
+  const keyAccess = await getKeyAccessContext(request);
+
   if (!query || typeof query !== "string" || !query.trim()) {
     log.warn("SEARCH", "Missing query");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: query");
@@ -75,8 +77,8 @@ export async function handleSearch(request) {
 
   // Per-key access control: the provider IS the model here, so a
   // restricted key needs the provider id (or the combo) on its list.
-  const keyAccessDenied = await enforceKeyAccessProvider(await getKeyAccessContext(request), providerInput, comboModels);
-  if (keyAccessDenied) return keyAccessDenied;
+  const policyError = await evaluateKeyPolicy(keyAccess, providerInput, { kind: "provider", comboModels });
+  if (policyError) return policyError;
   if (comboModels) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
@@ -85,7 +87,7 @@ export async function handleSearch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m, modelEntry) => handleSingleProviderSearch(b, m, request, apiKey, settings, { preferredConnectionId: modelEntry?.connectionId }),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -96,7 +98,7 @@ export async function handleSearch(request) {
   return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings, options = {}) {
   const query = body.query;
   const providerId = resolveProviderId(providerInput);
   const resolvedProvider = AI_PROVIDERS[providerId];
@@ -145,7 +147,11 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       credentials: null,
       log
     });
-    if (result.success) return result.response;
+    if (result.success) {
+      const usageError = await recordKeyedUsage(request, await getKeyAccessContext(request), { provider: providerId, model: "search", endpoint: new URL(request.url).pathname, tokens: {} });
+      if (usageError) return usageError;
+      return result.response;
+    }
     return result.response;
   }
 
@@ -170,7 +176,9 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     // Provider that actually owns the connection in use — differs from
     // providerId once we fall back, and error locks must be attributed to it.
     let credentialProviderId = providerId;
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
+    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey, {
+      preferredConnectionId: options.preferredConnectionId,
+    });
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).
@@ -220,7 +228,11 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
       }
     });
 
-    if (result.success) return result.response;
+    if (result.success) {
+      const usageError = await recordKeyedUsage(request, await getKeyAccessContext(request), { provider: providerId, model: "search", connectionId: credentials.connectionId, endpoint: new URL(request.url).pathname, tokens: {} });
+      if (usageError) return usageError;
+      return result.response;
+    }
 
     const { shouldFallback } = await markAccountUnavailable(credentials.connectionId, result.status, result.error, credentialProviderId, searchLockKey);
 

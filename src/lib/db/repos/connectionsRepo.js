@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 
+export { extendConnectionModelLock, clearConnectionModelLockIfObserved, getObservedConnectionModelLock } from "./adaptiveQuotaLocksRepo.js";
+
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
   "accessToken", "refreshToken", "expiresAt", "tokenType",
@@ -100,6 +102,11 @@ export async function getProviderConnections(filter = {}) {
   const list = rows.map(rowToConn);
   list.sort((a, b) => (a.priority || 999) - (b.priority || 999));
   return list;
+}
+
+export async function getProviderConnectionProviderById(id) {
+  const db = await getAdapter();
+  return db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id])?.provider || null;
 }
 
 export async function getProviderConnectionById(id) {

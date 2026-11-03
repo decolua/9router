@@ -62,7 +62,7 @@ export async function GET() {
     } catch { }
 
     // Hide sensitive fields, enrich name for compatible providers
-    const safeConnections = connections.map(c => {
+    const safeConnections = await Promise.all(connections.map(async (c) => {
       const isCompatible = isOpenAICompatibleProvider(c.provider) || isAnthropicCompatibleProvider(c.provider);
       const name = isCompatible
         ? (c.name || nodeNameMap[c.provider] || c.providerSpecificData?.nodeName || c.provider)
@@ -70,8 +70,12 @@ export async function GET() {
       return {
         ...toProviderConnectionResponse(c),
         name,
+        apiKey: undefined,
+        accessToken: undefined,
+        refreshToken: undefined,
+        idToken: undefined,
       };
-    });
+    }));
 
     return NextResponse.json({ connections: safeConnections });
   } catch (error) {

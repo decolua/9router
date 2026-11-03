@@ -13,7 +13,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
-import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
+import { getKeyAccessContext, evaluateKeyPolicy, recordKeyedUsage } from "../services/keyAccess.js";
 import { assertPublicUrlResolved } from "@/shared/utils/ssrfGuard.js";
 
 /**
@@ -67,6 +67,8 @@ export async function handleFetch(request) {
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: provider (or model)");
   }
 
+  const keyAccess = await getKeyAccessContext(request);
+
   if (!targetUrl || typeof targetUrl !== "string") {
     log.warn("FETCH", "Missing url");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: url");
@@ -95,8 +97,8 @@ export async function handleFetch(request) {
 
   // Per-key access control: the provider IS the model here, so a
   // restricted key needs the provider id (or the combo) on its list.
-  const keyAccessDenied = await enforceKeyAccessProvider(await getKeyAccessContext(request), providerInput, comboModels);
-  if (keyAccessDenied) return keyAccessDenied;
+  const policyError = await evaluateKeyPolicy(keyAccess, providerInput, { kind: "provider", comboModels });
+  if (policyError) return policyError;
   if (comboModels) {
     const comboStrategies = settings.comboStrategies || {};
     const comboStrategy = comboStrategies[providerInput]?.fallbackStrategy || settings.comboStrategy || "fallback";
@@ -105,7 +107,7 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m, modelEntry) => handleSingleProviderFetch(b, m, request, apiKey, settings, { preferredConnectionId: modelEntry?.connectionId }),
       log,
       comboName: providerInput,
       comboStrategy,
@@ -116,7 +118,7 @@ export async function handleFetch(request) {
   return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings, options = {}) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
@@ -153,6 +155,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
       log
     });
     if (result.success) {
+      const usageError = await recordKeyedUsage(request, await getKeyAccessContext(request), { provider: providerId, model: "fetch", endpoint: new URL(request.url).pathname, tokens: {} });
+      if (usageError) return usageError;
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });
@@ -171,7 +175,9 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const fetchLockKey = `webfetch:${providerId}`;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey);
+    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey, {
+      preferredConnectionId: options.preferredConnectionId,
+    });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
@@ -212,6 +218,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, fetchLockKey);
+      const usageError = await recordKeyedUsage(request, await getKeyAccessContext(request), { provider: providerId, model: "fetch", connectionId: credentials.connectionId, endpoint: new URL(request.url).pathname, tokens: {} });
+      if (usageError) return usageError;
       return new Response(JSON.stringify(result.data), {
         headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
       });

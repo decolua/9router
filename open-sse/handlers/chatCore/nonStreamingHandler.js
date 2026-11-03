@@ -3,7 +3,7 @@ import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
-import { createErrorResult } from "../../utils/error.js";
+import { createErrorResult, createGuardErrorResult } from "../../utils/error.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
@@ -12,7 +12,15 @@ import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, sav
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
+import { createOpenCodeToolResponseGuard } from "../../utils/opencodeToolResponseGuard.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+
+function validateToolResponse(responseBody, metadata) {
+  if (!metadata?.injectedNames) return;
+  const guard = createOpenCodeToolResponseGuard(metadata);
+  guard.consume({ payload: responseBody });
+  guard.finish();
+}
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -241,7 +249,15 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
 
   if (contentType.includes("text/event-stream")) {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    let parsed;
+    try {
+      parsed = parseSSEToOpenAIResponse(sseText, model, toolNameMap);
+    } catch (error) {
+      if (String(error?.code || "").startsWith("upstream_")) {
+        return createGuardErrorResult(error.code);
+      }
+      throw error;
+    }
     if (!parsed) {
       appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
       return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
@@ -252,7 +268,9 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         ? upstreamStatus
         : HTTP_STATUS.BAD_GATEWAY;
       appendLog({ status: `FAILED ${status}` });
-      return createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
+      const result = createErrorResult(status, parsed.error.message || "Upstream SSE stream failed");
+      result.origin = Number.isInteger(upstreamStatus) && upstreamStatus >= 400 && upstreamStatus <= 599 ? "upstream_http" : "processing";
+      return result;
     }
     responseBody = parsed;
   } else {
@@ -269,6 +287,16 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // bare OpenAI body and usage tracking sees data.usage. No-op unless the
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
+  try {
+    validateToolResponse(responseBody, toolNameMap);
+    responseBody = restoreToolNames(responseBody, toolNameMap);
+  } catch (error) {
+    if (String(error?.code || "").startsWith("upstream_")) {
+      appendLog({ status: `FAILED ${HTTP_STATUS.BAD_GATEWAY}` });
+      return createGuardErrorResult(error.code);
+    }
+    throw error;
+  }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
@@ -278,13 +306,20 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
         console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
       });
   }
-
+  const renameMap = toolNameMap?.renameMap || toolNameMap;
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
-  responseBody = decloakToolNames(responseBody, toolNameMap);
+  responseBody = decloakToolNames(responseBody, renameMap);
 
   const usage = extractUsageFromResponse(responseBody);
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  try {
+    await saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestId: clientRawRequest?.usageRequestId, silent: true });
+  } catch (error) {
+    console.error(`[Usage] Non-streaming usage write failed: ${error.message}`);
+    const result = createErrorResult(HTTP_STATUS.SERVICE_UNAVAILABLE, "Unable to record API key usage");
+    result.origin = "usage_storage";
+    return result;
+  }
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)

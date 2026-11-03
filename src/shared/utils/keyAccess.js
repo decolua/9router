@@ -10,6 +10,13 @@ import {
  * Normalize an allow list: keep strings only, trim, drop empties, de-duplicate
  * case-insensitively (the first spelling wins). Order is preserved.
  */
+export function validateLegacyAllowedModels(input) {
+  if (!Array.isArray(input) || input.some((entry) => typeof entry !== "string")) {
+    return { ok: false, error: "allowedModels must be an array of strings" };
+  }
+  return { ok: true };
+}
+
 export function normalizeAllowList(list) {
   if (!Array.isArray(list)) return [];
   const seen = new Set();

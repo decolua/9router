@@ -2,9 +2,25 @@
 import { STREAM_STALL_TIMEOUT_MS } from "../config/runtimeConfig.js";
 import { dbg, isDebugEnabled } from "./debugLog.js";
 
+export const STREAM_STALL_TIMEOUT = "stream_stall_timeout";
+
 // Get HH:MM:SS timestamp
 function getTimeString() {
   return new Date().toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function readableProvider(provider) {
+  const id = typeof provider === "string" ? provider.trim() : "";
+  if (!id) return "Provider";
+  return id.charAt(0).toUpperCase() + id.slice(1);
+}
+
+function formatStallDuration(ms) {
+  const raw = Number(ms);
+  const seconds = Number.isFinite(raw) && raw > 0 ? Math.max(1, Math.round(raw / 1000)) : 60;
+  if (seconds < 60) return `${seconds} second${seconds === 1 ? "" : "s"}`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
 /**
@@ -79,7 +95,13 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
         return;
       }
 
-      logStream("✗", `ERROR: ${error.message}${error.stack ? `\n    ${error.stack}` : ""}`, true);
+      if (error.code === STREAM_STALL_TIMEOUT) {
+        const stall = `${readableProvider(provider)} stopped sending a response for ${formatStallDuration(error.stallTimeoutMs)}. The request was ended so it would not stay stuck.`;
+        logStream("✗", stall, true);
+      } else {
+        logStream("✗", `ERROR: ${error.message}`, true);
+      }
+      if (error.stack) dbg("CTRL", `${provider}/${model} | ${error.message} | ${error.stack}`);
       onError?.(error);
     },
 
@@ -99,10 +121,28 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  * @param {function} [onAbortTerminal] - Receives a human-readable abort
  * message and returns terminal SSE bytes to emit downstream.
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
-  const reader = transformStream.readable.getReader();
-  const writer = transformStream.writable.getWriter();
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, onCleanup = null) {
+  let reader;
+  let writer;
+  try {
+    reader = transformStream.readable.getReader();
+    writer = transformStream.writable.getWriter();
+  } catch (error) {
+    onCleanup?.(error);
+    throw error;
+  }
   let terminalEmitted = false;
+  let cleanupPromise = null;
+  const cleanup = (reason) => {
+    if (cleanupPromise) return cleanupPromise;
+    const cancel = reader.cancel(reason).catch(error => console.warn(`[STREAM] reader cancellation failed: ${error?.message || "unknown error"}`));
+    const abort = writer.abort(reason).catch(error => console.warn(`[STREAM] writer abort failed: ${error?.message || "unknown error"}`));
+    try { reader.releaseLock?.(); } catch (error) { console.warn(`[STREAM] reader lock release failed: ${error?.message || "unknown error"}`); }
+    try { writer.releaseLock?.(); } catch (error) { console.warn(`[STREAM] writer lock release failed: ${error?.message || "unknown error"}`); }
+    const upstream = Promise.resolve(onCleanup?.(reason)).catch(error => console.warn(`[STREAM] upstream cleanup failed: ${error?.message || "unknown error"}`));
+    cleanupPromise = Promise.all([cancel, abort, upstream]);
+    return cleanupPromise;
+  };
 
   // Emit a synthesized terminal payload (e.g. Responses response.failed + [DONE]) once
   const emitTerminal = (controller) => {
@@ -114,9 +154,10 @@ export function createDisconnectAwareStream(transformStream, streamController, o
     } catch { /* best-effort terminal */ }
   };
 
-  return new ReadableStream({
+  const output = new ReadableStream({
     async pull(controller) {
       if (!streamController.isConnected()) {
+        await cleanup("disconnected");
         emitTerminal(controller);
         controller.close();
         return;
@@ -127,6 +168,8 @@ export function createDisconnectAwareStream(transformStream, streamController, o
 
         if (done) {
           streamController.handleComplete();
+          try { reader.releaseLock?.(); } catch (error) { console.warn(`[STREAM] reader lock release failed: ${error?.message || "unknown error"}`); }
+          try { writer.releaseLock?.(); } catch (error) { console.warn(`[STREAM] writer lock release failed: ${error?.message || "unknown error"}`); }
           controller.close();
           return;
         }
@@ -137,8 +180,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
         const msg0 = error?.message || "";
         const isControllerClosed = msg0.includes("already closed") || msg0.includes("Invalid state");
         if (!isControllerClosed) streamController.handleError(error);
-        reader.cancel().catch(() => {});
-        writer.abort().catch(() => {});
+        await cleanup(error);
 
         // Treat network resets / socket hang up / abort as graceful close
         const msg = error?.message || "";
@@ -168,12 +210,13 @@ export function createDisconnectAwareStream(transformStream, streamController, o
       }
     },
 
-    cancel(reason) {
+    async cancel(reason) {
       streamController.handleDisconnect(reason || "cancelled");
-      reader.cancel();
-      writer.abort();
+      await cleanup(reason);
     }
   });
+  output.cleanup = cleanup;
+  return output;
 }
 
 /**
@@ -192,7 +235,7 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, lifecycle = {}) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -209,8 +252,7 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
       stallTimer = null;
       abortMessage = "stream stall timeout";
       dbg(tag, `STALL TIMEOUT ${stallTimeoutMs}ms | chunks=${chunkCount} | bytes=${totalBytes} | sinceLast=${Date.now() - lastChunkAt}ms`);
-      streamController.handleError?.(new Error("stream stall timeout"));
-      streamController.abort?.();
+      failWatchdog();
     }, stallTimeoutMs);
   };
 
@@ -221,10 +263,19 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     signal: streamController.signal,
     startTime: streamController.startTime,
     isConnected: () => streamController.isConnected(),
-    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleComplete(); },
-    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleError(e); },
-    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); streamController.handleDisconnect(r); },
+    handleComplete: () => { dbg(tag, `complete | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); lifecycle.onComplete?.(); streamController.handleComplete(); },
+    handleError: (e) => { dbg(tag, `error: ${e?.message} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); lifecycle.onError?.(e); streamController.handleError(e); },
+    handleDisconnect: (r) => { dbg(tag, `disconnect: ${r} | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); lifecycle.onDisconnect?.(r); streamController.handleDisconnect(r); },
     abort: () => { clearStall(); streamController.abort(); }
+  };
+  let cleanupOwned = null;
+  const failWatchdog = () => {
+    const error = new Error("stream stall timeout");
+    error.code = STREAM_STALL_TIMEOUT;
+    error.stallTimeoutMs = stallTimeoutMs;
+    wrappedController.handleError(error);
+    wrappedController.abort();
+    cleanupOwned?.(error).catch(error => console.warn(`[STREAM] watchdog cleanup failed: ${error?.message || "unknown error"}`));
   };
 
   armStall();
@@ -247,14 +298,49 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
     flush() { dbg(tag, `upstream EOF | chunks=${chunkCount} | bytes=${totalBytes} | dur=${Date.now() - t0}ms`); clearStall(); }
   });
 
-  const transformedBody = providerResponse.body
-    .pipeThrough(upstreamTap)
-    .pipeThrough(transformStream);
+  let upstreamReader;
+  let upstreamCleanupPromise = null;
+  const cleanupOwnedReadable = (reason) => {
+    if (upstreamCleanupPromise) return upstreamCleanupPromise;
+    clearStall();
+    const cancel = upstreamReader?.cancel(reason).catch(error => console.warn(`[STREAM] upstream cancellation failed: ${error?.message || "unknown error"}`));
+    try { upstreamReader?.releaseLock(); } catch {}
+    upstreamCleanupPromise = Promise.resolve(cancel);
+    return upstreamCleanupPromise;
+  };
+  cleanupOwned = cleanupOwnedReadable;
 
-  return createDisconnectAwareStream(
-    { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
-    wrappedController,
-    onAbortTerminal ? () => onAbortTerminal(abortMessage) : null
-  );
+  try {
+    upstreamReader = providerResponse.body.getReader();
+    const ownedReadable = new ReadableStream({
+      async pull(controller) {
+        try {
+          const { done, value } = await upstreamReader.read();
+          if (done) {
+            try { upstreamReader.releaseLock(); } catch (error) { console.warn(`[STREAM] upstream reader lock release failed: ${error?.message || "unknown error"}`); }
+            controller.close();
+          } else controller.enqueue(value);
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+      cancel(reason) {
+        return cleanupOwnedReadable(reason);
+      },
+    });
+    const transformedBody = ownedReadable
+      .pipeThrough(upstreamTap)
+      .pipeThrough(transformStream);
+    return createDisconnectAwareStream(
+      { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
+      wrappedController,
+      onAbortTerminal ? () => onAbortTerminal(abortMessage) : null,
+      cleanupOwnedReadable
+    );
+  } catch (error) {
+    cleanupOwnedReadable(error).catch(error => console.warn(`[STREAM] construction cleanup failed: ${error?.message || "unknown error"}`));
+    wrappedController.handleError(error);
+    throw error;
+  }
 }
 

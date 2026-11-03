@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { deleteApiKey, getApiKeyById, updateApiKey } from "@/lib/localDb";
-import { validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
+import { validateKeyAccessInput, validateLegacyAllowedModels } from "@/shared/utils/keyAccess.js";
 
 // GET /api/keys/[id] - Get single key
 export async function GET(request, { params }) {
@@ -22,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, access } = body;
+    const { isActive, access, ...extra } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -31,10 +31,30 @@ export async function PUT(request, { params }) {
 
     const updateData = {};
     if (isActive !== undefined) updateData.isActive = isActive;
+    if (extra.allowedModels !== undefined) {
+      const checkedLegacy = validateLegacyAllowedModels(extra.allowedModels);
+      if (!checkedLegacy.ok) return NextResponse.json({ error: checkedLegacy.error }, { status: 400 });
+    }
     if (access !== undefined) {
       const checked = validateKeyAccessInput(access);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
       updateData.access = checked.value;
+    }
+
+    const POLICY_FIELDS = [
+      "allowedModels", "blockedModels", "allowedCombos", "scopes",
+      "expiresAt", "maxRequestsPerDay", "maxSpendUsdPerDay",
+    ];
+    for (const field of POLICY_FIELDS) {
+      if (extra[field] !== undefined) updateData[field] = extra[field];
+    }
+
+    // Enforce mutual exclusivity: only one daily limit type allowed
+    if (updateData.maxRequestsPerDay != null && updateData.maxSpendUsdPerDay != null) {
+      return NextResponse.json(
+        { error: "API key cannot have both request limit and spend limit. Choose one." },
+        { status: 400 }
+      );
     }
 
     const updated = await updateApiKey(id, updateData);

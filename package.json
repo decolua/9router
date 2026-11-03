@@ -13,6 +13,7 @@
     "dev:bun": "bun --bun next dev --webpack --port 20127",
     "build:bun": "bun --bun next build --webpack",
     "start:bun": "bun ./.next/standalone/custom-server.js",
+    "test:ui": "vitest run --config vitest.ui.config.mjs",
     "cli:pack": "npm --prefix cli run pack:cli",
     "cli:publish": "npm --prefix cli run publish:cli"
   },
@@ -59,15 +60,19 @@
   "comment_playwright_core": "devDependency only (keeps end-user installs small); open-sse/services/lazyRuntime.js downloads it + wreq-js on first use into <DATA_DIR>/runtime. playwright-core ships no browser binaries (run `npx playwright-core install chromium` or point OBSCURA_CDP_ENDPOINT/cloakbrowser at a stealth engine)",
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.18",
+    "@testing-library/react": "^16.3.3",
     "eslint": "^9",
     "eslint-config-next": "16.4.2",
+    "jsdom": "^27.4.0",
     "playwright-core": "^1.62.1",
     "postcss": "^8.5.6",
     "tailwindcss": "^4",
+    "vitest": "^4.1.11",
     "wreq-js": "^3.2.0"
   },
   "overrides": {
     "dompurify": "^3.4.17",
     "ip-address": "^10.7.4"
+
   }
 }

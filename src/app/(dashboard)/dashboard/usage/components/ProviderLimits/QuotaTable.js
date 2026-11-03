@@ -130,8 +130,6 @@ export default function QuotaTable({
 
   const cellPad = compact ? "py-1 px-1.5" : "py-2 px-3";
   const nameText = compact ? "text-[11px]" : "text-sm";
-  const resetPrimary = compact ? "text-[11px]" : "text-sm";
-  const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
   const sortLabel = "Sorted by account remaining";
   const hasHideAction = typeof onHideQuota === "function";
 
@@ -241,40 +239,25 @@ export default function QuotaTable({
                           quota.unit ? ` ${quota.unit}` : ""
                         }`}
                   </span>
-                  <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text} shrink-0`}>
-                    {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
+{/* Percentage + reset countdown live together on the right, inside this same
+                      flex-1 container as the bar above. Keeping them together prevents
+                      variable countdown widths from changing the bar track per row. */}
+                  <span className="flex items-center gap-1 min-w-0 shrink-0">
+                    {!isUnlimited && !isCreditBalance && (countdown !== "-" || resetDisplay) && (
+                      <span
+                        className="text-text-muted truncate"
+                        title={resetDisplay || ""}
+                      >
+                        {countdown !== "-" ? countdownLabel : resetDisplay} ·
+                      </span>
+                    )}
+                    <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text}`}>
+                      {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
+                    </span>
                   </span>
                 </div>
               </div>
 
-              {/* Reset time */}
-              <div className="min-w-0 shrink">
-                {countdown !== "-" || resetDisplay ? (
-                  compact ? (
-                    <div
-                      className={`${resetPrimary} text-text-primary font-medium truncate`}
-                      title={resetSecondaryText || ""}
-                    >
-                      {countdown !== "-" ? countdownLabel : renderResetCell(resetPrimary)}
-                    </div>
-                  ) : (
-                    <div className="min-w-0 space-y-0.5">
-                      {countdown !== "-" && (
-                        <div className={`${resetPrimary} text-text-primary font-medium truncate`}>
-                          {countdownLabel}
-                        </div>
-                      )}
-                      {resetDisplay && (
-                        <div className={`${resetSecondary} text-text-muted truncate`}>
-                          {renderResetCell(resetSecondary)}
-                        </div>
-                      )}
-                    </div>
-                  )
-                ) : (
-                  <div className={`${resetPrimary} text-text-muted italic`}>N/A</div>
-                )}
-              </div>
 
               {/* Hide action */}
               {hasHideAction && (

@@ -115,7 +115,7 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
+export async function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, requestId, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -136,13 +136,14 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     completion_tokens: tokens.completion_tokens ?? tokens.output_tokens ?? 0
   };
 
-  saveRequestUsage({
+  await saveRequestUsage({
     provider: provider || "unknown",
     model: model || "unknown",
     tokens: normalized,
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
+    requestId,
     endpoint: endpoint || null
-  }).catch(() => {});
+  });
 }

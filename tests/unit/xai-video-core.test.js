@@ -142,8 +142,32 @@ describe("handleVideoProxyCore", () => {
       credentials: { accessToken: "tok" },
     });
 
-    expect(result.success).toBe(true);
-    expect(await result.response.json()).toEqual(payload);
+    expect(result.success).toBe(false);
+    expect(result.response.status).toBe(502);
+    expect((await result.response.json()).error.message).toBe("render crashed");
+  });
+
+  it.each([
+    ["create error", { action: "generations" }, { error: { message: "quota exceeded" } }],
+    ["poll error", { requestId: "req-123" }, { error: { message: "job unavailable" } }],
+    ["poll missing status", { requestId: "req-123" }, { id: "req-123" }],
+  ])("does not classify HTTP-200 %s as successful", async (_label, args, payload) => {
+    global.fetch.mockResolvedValueOnce(jsonResponse(payload));
+    const result = await handleVideoProxyCore({ provider: "xai", credentials: { apiKey: "k" }, ...args });
+    expect(result.success).toBe(false);
+    expect(result.response.status).toBe(502);
+    expect((await result.response.json()).error.message).toBe(payload.error?.message || "[xai] Invalid or failed video response");
+  });
+
+  it.each([{ action: "generations" }, { requestId: "req-123" }])("rejects malformed and unreadable success bodies for %o", async (args) => {
+    global.fetch.mockResolvedValueOnce(new Response("not-json", { status: 200 }));
+    const malformed = await handleVideoProxyCore({ provider: "xai", credentials: { apiKey: "k" }, ...args });
+    expect(malformed.success).toBe(false);
+    expect(malformed.response.status).toBe(502);
+    global.fetch.mockResolvedValueOnce({ ok: true, status: 200, text: async () => { throw new Error("read failed"); } });
+    const unreadable = await handleVideoProxyCore({ provider: "xai", credentials: { apiKey: "k" }, ...args });
+    expect(unreadable.success).toBe(false);
+    expect(unreadable.response.status).toBe(502);
   });
 
   it("url-encodes the request id when polling", async () => {

@@ -6,10 +6,11 @@ import {
   markAccountUnavailable,
 } from "@/sse/services/auth.js";
 import { getSettings } from "@/lib/localDb";
+import { saveRequestUsage } from "@/lib/usageDb.js";
 import { PROVIDER_MODELS } from "@/shared/constants/models";
 import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfig.js";
 import { initTranslators } from "open-sse/translator/index.js";
-import { getKeyAccessContext, enforceKeyAccessResolved } from "@/sse/services/keyAccess.js";
+import { extractClientApiKey, getKeyAccessContext, evaluateKeyPolicy, getUsageRequestId } from "@/sse/services/keyAccess.js";
 
 let initialized = false;
 const GEMINI_NATIVE_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -124,17 +125,6 @@ export async function POST(request, { params }) {
   }
 }
 
-function extractGeminiClientApiKey(request) {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
-
-  const googleApiKey = request.headers.get("x-goog-api-key");
-  if (googleApiKey) return googleApiKey;
-
-  const url = new URL(request.url);
-  return url.searchParams.get("key");
-}
-
 function normalizeGeminiNativeModel(model) {
   return String(model || "")
     .replace(/^models\//, "")
@@ -182,7 +172,7 @@ async function validateGeminiNativeClientKey(request) {
   const settings = await getSettings();
   if (!settings.requireApiKey) return null;
 
-  const apiKey = extractGeminiClientApiKey(request);
+  const apiKey = extractClientApiKey(request);
   if (!apiKey) {
     return Response.json({ error: { message: "Missing API key" } }, { status: 401 });
   }
@@ -236,6 +226,115 @@ function getSafeGeminiNativeErrorText(error) {
   return `${message} (${code})`;
 }
 
+function geminiUsageTokens(metadata) {
+  const prompt = metadata?.promptTokenCount;
+  const completion = metadata?.candidatesTokenCount;
+  const valid = (value) => Number.isSafeInteger(value) && value >= 0;
+  const promptTokens = valid(prompt) ? prompt : 0;
+  const completionTokens = valid(completion) ? completion : 0;
+  return {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: valid(metadata?.totalTokenCount) ? metadata.totalTokenCount : promptTokens + completionTokens,
+  };
+}
+
+function isGeminiErrorPayload(payload) {
+  return payload && typeof payload === "object" && !Array.isArray(payload)
+    && Object.hasOwn(payload, "error")
+    && (typeof payload.error === "string"
+      || (payload.error && typeof payload.error === "object" && !Array.isArray(payload.error)));
+}
+
+function isGeminiSuccessPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload) || Object.hasOwn(payload, "error")) return false;
+  if (Object.hasOwn(payload, "candidates")) {
+    if (!Array.isArray(payload.candidates) || !payload.candidates.every((candidate) =>
+      candidate && typeof candidate === "object" && !Array.isArray(candidate)
+      && (candidate.content === undefined
+        ? typeof candidate.finishReason === "string"
+        : candidate.content && typeof candidate.content === "object" && !Array.isArray(candidate.content)
+          && Array.isArray(candidate.content.parts) && candidate.content.parts.every((part) =>
+            part && typeof part === "object" && !Array.isArray(part))))) return false;
+    return true;
+  }
+  const usage = payload.usageMetadata;
+  return usage && typeof usage === "object" && !Array.isArray(usage)
+    && [usage.promptTokenCount, usage.candidatesTokenCount, usage.totalTokenCount]
+      .some((value) => Number.isSafeInteger(value) && value >= 0);
+}
+
+function geminiStreamUsage(body, record) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let dataLines = [];
+  let metadata = null;
+  let successful = false;
+  let invalid = false;
+  let cancelled = false;
+  let completed = false;
+  const inspectEvent = () => {
+    if (!dataLines.length) return;
+    const data = dataLines.join("\n");
+    dataLines = [];
+    try {
+      const payload = JSON.parse(data);
+      if (isGeminiErrorPayload(payload) || !isGeminiSuccessPayload(payload)) invalid = true;
+      else {
+        successful = true;
+        metadata = payload.usageMetadata || metadata;
+      }
+    } catch { invalid = true; }
+  };
+  const inspectLines = (final = false) => {
+    let offset = 0;
+    for (const match of pending.matchAll(/\r\n|\r|\n/g)) {
+      if (!final && match[0] === "\r" && match.index + 1 === pending.length) break;
+      const line = pending.slice(offset, match.index);
+      offset = match.index + match[0].length;
+      if (!line) inspectEvent();
+      else if (line.startsWith("data:")) {
+        const data = line.slice(5);
+        dataLines.push(data.startsWith(" ") ? data.slice(1) : data);
+      }
+    }
+    pending = pending.slice(offset);
+  };
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const { done, value } = await reader.read();
+        if (cancelled || completed) return;
+        if (done) {
+          pending += decoder.decode();
+          inspectLines(true);
+          completed = true;
+          if (successful && !invalid && !cancelled && !pending && !dataLines.length) {
+            try {
+              await record(metadata);
+            } catch (error) {
+              console.error(`[GEMINI_NATIVE] streaming usage write failed after response commitment: ${error.message}`);
+            }
+          }
+          if (!cancelled) controller.close();
+          return;
+        }
+        pending += decoder.decode(value, { stream: true });
+        inspectLines();
+        if (!cancelled) controller.enqueue(value);
+      } catch (error) {
+        completed = true;
+        if (!cancelled) controller.error(error);
+      }
+    },
+    cancel(reason) {
+      cancelled = true;
+      return reader.cancel(reason);
+    },
+  });
+}
+
 async function forwardGeminiNativeRequest(request, body, model, action) {
   const authError = await validateGeminiNativeClientKey(request);
   if (authError) return authError;
@@ -247,8 +346,9 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
   // Per-key access control: this path calls Gemini directly (not via handleChat),
   // so restricted keys are checked here, before any credential lookup.
-  const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), model, "gemini", modelId);
-  if (keyAccessDenied) return keyAccessDenied;
+  const keyAccess = await getKeyAccessContext(request);
+  const policyError = await evaluateKeyPolicy(keyAccess, model, { kind: "resolved", provider: "gemini", model: modelId });
+  if (policyError) return policyError;
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
   let lastError = null;
@@ -339,6 +439,37 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
 
     if (upstreamResponse.ok) {
       await clearAccountError(credentials.connectionId, credentials, modelId);
+      const recordUsage = async (metadata) => {
+        if (!keyAccess?.apiKey) return;
+        await saveRequestUsage({
+          provider: "gemini",
+          model: modelId,
+          connectionId: credentials.connectionId,
+          apiKey: keyAccess.apiKey,
+          requestId: getUsageRequestId(request),
+          endpoint: new URL(request.url).pathname,
+          tokens: geminiUsageTokens(metadata),
+          status: "success",
+        });
+      };
+      const contentType = upstreamResponse.headers.get("content-type") || "";
+      if (contentType.toLowerCase().includes("text/event-stream") && upstreamResponse.body) {
+        return new Response(geminiStreamUsage(upstreamResponse.body, recordUsage), {
+          status: upstreamResponse.status,
+          statusText: upstreamResponse.statusText,
+          headers: corsHeadersFrom(upstreamResponse),
+        });
+      }
+      let payload = null;
+      try { payload = await upstreamResponse.clone().json(); } catch {}
+      if (isGeminiSuccessPayload(payload)) {
+        try {
+          await recordUsage(payload.usageMetadata);
+        } catch (error) {
+          console.error(`[GEMINI_NATIVE] usage write failed: ${error.message}`);
+          return Response.json({ error: { message: "Unable to record API key usage" } }, { status: 503 });
+        }
+      }
       return new Response(upstreamResponse.body, {
         status: upstreamResponse.status,
         statusText: upstreamResponse.statusText,

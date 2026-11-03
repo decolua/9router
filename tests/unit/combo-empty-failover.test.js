@@ -9,6 +9,7 @@ import {
   reconstructStream,
 } from "../../open-sse/services/emptyFailover.js";
 import { NO_RETRY_EMPTY_FINISH } from "../../open-sse/translator/schema/finishReasons.js";
+import { isOpenAIResponsesTerminalEvent } from "../../open-sse/utils/responsesStreamHelpers.js";
 
 // The combo cases below build real streaming responses; keep request-detail writes off disk.
 vi.mock("@/lib/usageDb.js", () => ({
@@ -81,6 +82,9 @@ describe("scanSSEBuffer latches", () => {
 });
 
 describe("isNoRetryFinish", () => {
+  it("treats incomplete response status as terminal when event metadata is absent", () => {
+    expect(isOpenAIResponsesTerminalEvent(null, { response: { status: "incomplete" } })).toBe(true);
+  });
   it("content_filter → no retry", () => expect(isNoRetryFinish("content_filter")).toBe(true));
   it("stop → retry (false)", () => expect(isNoRetryFinish("stop")).toBe(false));
   it("null → false", () => expect(isNoRetryFinish(null)).toBe(false));
@@ -108,6 +112,13 @@ describe("peekStreamForContent", () => {
     const p = await peekStreamForContent(sseStream([ROLE, FILTER_STOP, DONE]));
     expect(p.outcome).toBe("empty");
     expect(isNoRetryFinish(p.finishReason)).toBe(true);
+  });
+
+  it("Responses event framing carries content_filter to the peek decision", async () => {
+    const frame = `event: response.incomplete\ndata: ${JSON.stringify({ response: { status: "incomplete", incomplete_details: { reason: "content_filter" } } })}\n\n`;
+    const p = await peekStreamForContent(sseStream([frame, DONE]));
+    expect(p.outcome).toBe("empty");
+    expect(p.finishReason).toBe("content_filter");
   });
 
   it("deadline fail-open: slow first content → committed as content", async () => {
@@ -264,6 +275,8 @@ describe("inspectSSELine — OpenAI Responses client format", () => {
     const filtered = inspectSSELine(ev({ type: "response.incomplete", response: { status: "incomplete", incomplete_details: { reason: "content_filter" } } }));
     expect(filtered).toMatchObject({ content: false, finishReason: "content_filter" });
     expect(isNoRetryFinish(filtered.finishReason)).toBe(true);
+    const forwarded = inspectSSELine(ev({ response: { status: "incomplete", incomplete_details: { reason: "content_filter" } } }));
+    expect(forwarded).toMatchObject({ content: false, finishReason: "content_filter" });
     const truncated = inspectSSELine(ev({ type: "response.incomplete", response: { status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } }));
     expect(truncated.finishReason).toBe("length");
   });
@@ -392,6 +405,12 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       const { out, tried } = await combo([[CREATED, FILTERED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP);
       expect(tried).toEqual(["openai/m0"]);
       expect(out).toContain('"reason":"content_filter"');
+    });
+    it("response.incomplete (max_output_tokens) remains eligible for empty failover", async () => {
+      const truncated = rev({ type: "response.incomplete", response: { id: "resp_1", status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } });
+      const { out, tried } = await combo([[CREATED, truncated], [CREATED, TEXT("from-m1"), COMPLETED]], RESP);
+      expect(tried).toEqual(["openai/m0", "openai/m1"]);
+      expect(out).toContain("from-m1");
     });
   });
 });

@@ -5,17 +5,24 @@ import Modal from "./Modal";
 import Input from "./Input";
 import Button from "./Button";
 import ModelSelectModal from "./ModelSelectModal";
+import { getComboModelValue, setComboModelValue } from "@/shared/utils/comboModels";
 
 const VALID_NAME_REGEX = /^[a-zA-Z0-9_.\-]+$/;
 
+export function removeComboModels(models, values) {
+  return models.filter((entry) => !values.has(getComboModelValue(entry)));
+}
+
 // Inline editable model item
 function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+  const modelValue = getComboModelValue(model);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(model);
+  const [draft, setDraft] = useState(modelValue);
+
   const commit = () => {
     const trimmed = draft.trim();
-    if (trimmed && trimmed !== model) onEdit(trimmed);
-    else setDraft(model);
+    if (trimmed && trimmed !== modelValue) onEdit(trimmed);
+    else setDraft(modelValue);
     setEditing(false);
   };
   const handleKeyDown = (e) => {
@@ -30,7 +37,7 @@ function ModelItem({ index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown
           className="min-w-0 flex-1 rounded border border-primary/40 bg-white px-1.5 py-0.5 font-mono text-xs text-text-main outline-none dark:bg-black/20" />
       ) : (
         <div className="min-w-0 flex-1 cursor-text truncate rounded px-1.5 py-0.5 font-mono text-xs text-text-main hover:bg-black/5 dark:hover:bg-white/5"
-          onClick={() => setEditing(true)} title="Click to edit">{model}</div>
+          onClick={() => setEditing(true)} title="Click to edit">{modelValue}</div>
       )}
       <div className="flex shrink-0 items-center gap-0.5">
         <button onClick={onMoveUp} disabled={isFirst}
@@ -84,10 +91,10 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
   };
 
   const handleAddModel = (model) => {
-    if (!models.includes(model.value)) setModels([...models, model.value]);
+    if (!models.some((entry) => getComboModelValue(entry) === model.value)) setModels([...models, model.value]);
   };
   const handleDeselectModel = (model) => {
-    setModels(models.filter((m) => m !== model.value));
+    setModels(models.filter((entry) => getComboModelValue(entry) !== model.value));
   };
   const handleRemoveModel = (i) => setModels(models.filter((_, idx) => idx !== i));
   const handleMoveUp = (i) => {
@@ -143,7 +150,7 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
                 {models.map((model, index) => (
                   <ModelItem key={index} index={index} model={model}
                     isFirst={index === 0} isLast={index === models.length - 1}
-                    onEdit={(v) => { const a = [...models]; a[index] = v; setModels(a); }}
+                    onEdit={(v) => { const a = [...models]; a[index] = setComboModelValue(a[index], v); setModels(a); }}
                     onMoveUp={() => handleMoveUp(index)}
                     onMoveDown={() => handleMoveDown(index)}
                     onRemove={() => handleRemoveModel(index)} />
@@ -175,11 +182,11 @@ export default function ComboFormModal({ isOpen, combo, onClose, onSave, activeP
           }}
           onDeselectBatch={(items) => {
             const vals = new Set(items.map((m) => m?.value || m?.name || m).filter(Boolean));
-            setModels((prev) => prev.filter((m) => !vals.has(m)));
+            setModels((prev) => removeComboModels(prev, vals));
           }}
           activeProviders={activeProviders} modelAliases={modelAliases}
           title="Add Model to Combo" kindFilter={kindFilter}
-          addedModelValues={models} closeOnSelect={false} />
+          addedModelValues={models.map(getComboModelValue)} closeOnSelect={false} />
       )}
     </>
   );

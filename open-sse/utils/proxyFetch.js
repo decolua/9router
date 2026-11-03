@@ -173,6 +173,7 @@ function shouldBypassByNoProxy(targetUrl, noProxyValue) {
 
   return patterns.some((pattern) => {
     if (pattern === "*") return true;
+    if (pattern.startsWith("*.")) return hostname.endsWith(pattern.slice(1));
     if (pattern.startsWith(".")) return hostname.endsWith(pattern) || hostname === pattern.slice(1);
     return hostname === pattern || hostname.endsWith(`.${pattern}`);
   });
@@ -351,6 +352,21 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   }
 
   const connectionProxyUrl = resolveConnectionProxyUrl(targetUrl, proxyOptions);
+
+  // Gate strict refusal on a proxy being *intended*: callers like the Qoder
+  // executor set strictProxy to mean "do not replay this request directly if
+  // the proxy fails" (a replayed COSY signature returns 403), not "a proxy is
+  // required". With nothing configured they must keep working. When a proxy IS
+  // intended (a pool id, an enabled flag, or a url) but none resolved — e.g. a
+  // connectionNoProxy wildcard bypassed it — refuse before the env-proxy and
+  // direct paths below can be reached (Freebuff egress guarantee, #4333).
+  const proxyIntended = proxyOptions?.proxyPoolId
+    || proxyOptions?.enabled === true
+    || proxyOptions?.connectionProxyEnabled === true
+    || !!normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
+  if (proxyOptions?.strictProxy === true && proxyIntended && !connectionProxyUrl) {
+    throw new Error("[ProxyFetch] Proxy required but unavailable (strictProxy=true)");
+  }
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
 
@@ -364,6 +380,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         if (proxyOptions?.strictProxy === true) {
           throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
         }
+        if (proxyOptions?.noReplay === true) throw proxyError;
         console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
       }
     }
@@ -373,6 +390,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       const realIP = await resolveRealIP(parsedUrl.hostname);
       if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
     } catch (error) {
+      if (proxyOptions?.noReplay === true) throw error;
       console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
     }
   }
@@ -385,6 +403,7 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
       if (proxyOptions?.strictProxy === true) {
         throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${proxyError.message}`);
       }
+      if (proxyOptions?.noReplay === true) throw proxyError;
       console.warn(`[ProxyFetch] Proxy failed, falling back to direct: ${proxyError.message}`);
       return fetchWithTlsFallback(url, options, null);
     }
@@ -394,16 +413,8 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   // proxy configured but unresolved is exactly that case — an inactive or
   // empty pool, or every proxy removed — so refuse instead of silently
   // exposing the real address (#4333). The catch blocks above only cover a
-  // proxy that was actually tried.
-  //
-  // Gate on a proxy being *intended*: callers like the Qoder executor set
-  // strictProxy to mean "do not replay this request directly if the proxy
-  // fails" (a replayed COSY signature returns 403), not "a proxy is required".
-  // With nothing configured they must keep working.
-  const proxyIntended = proxyOptions?.proxyPoolId
-    || proxyOptions?.enabled === true
-    || proxyOptions?.connectionProxyEnabled === true
-    || !!normalizeString(proxyOptions?.url ?? proxyOptions?.connectionProxyUrl);
+  // proxy that was actually tried. `proxyIntended` is computed above, where the
+  // same gate protects the early strict check.
   if (proxyOptions?.strictProxy === true && proxyIntended) {
     throw new Error("[ProxyFetch] Proxy required but none resolved (strictProxy=true)");
   }

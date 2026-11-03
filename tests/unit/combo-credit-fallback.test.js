@@ -5,10 +5,13 @@ describe("combo credit fallback", () => {
   it.each([
     ["You have insufficient credits to make this request.", true],
     ["Your credit balance is too low to access the Anthropic API. Please go to Plans & Billing to upgrade or purchase credits.", true],
-    ["Bad request", false],
+    ["Bad request", true],
   ])("routes a 400 response correctly: %s", async (message, shouldContinue) => {
     const body = { messages: [{ role: "user", content: "Hello" }] };
-    const models = ["cmc/deepseek/deepseek-v4-pro", "mistral/mistral-medium-latest"];
+    const models = [
+      { model: "cmc/deepseek/deepseek-v4-pro", connectionId: "credit-primary" },
+      { model: "mistral/mistral-medium-latest", connectionId: "credit-fallback" },
+    ];
     const failure = Response.json({ error: { message } }, { status: 400 });
     const success = Response.json({ choices: [{ message: { content: "Hello" } }] });
     const handleSingleModel = vi.fn()
@@ -23,7 +26,7 @@ describe("combo credit fallback", () => {
 
     expect(response).toBe(shouldContinue ? success : failure);
     expect(handleSingleModel.mock.calls).toEqual(
-      (shouldContinue ? models : models.slice(0, 1)).map((model) => [body, model])
+      (shouldContinue ? models : models.slice(0, 1)).map((entry) => [body, entry.model, entry])
     );
   });
 });

@@ -7,7 +7,8 @@ import { HTTP_STATUS, STREAM_STALL_TIMEOUT_MS } from "../../config/runtimeConfig
 import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamHelpers.js";
 import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
-import { saveRequestDetail } from "@/lib/usageDb.js";
+import { canonicalizeUsage, hasValidUsage } from "../../utils/usageTracking.js";
+import { saveRequestDetail, saveRequestUsage } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 
@@ -24,7 +25,7 @@ const CODEX_SOURCE_TO_TARGET = {
 /**
  * Determine which SSE transform stream to use based on provider/format.
  */
-function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials }) {
+function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, onStreamFailure, onGuardFailure, apiKey, ensureOpenAIDone, credentials }) {
   const isDroidCLI = userAgent?.toLowerCase().includes("droid") || userAgent?.toLowerCase().includes("codex-cli");
   // Responses-API providers (e.g. codex) emit Responses SSE → translate into client format
   const isResponsesProvider = PROVIDERS[provider]?.format === FORMATS.OPENAI_RESPONSES;
@@ -32,31 +33,22 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 
   if (needsCodexTranslation) {
     const codexTarget = CODEX_SOURCE_TO_TARGET[sourceFormat] || FORMATS.OPENAI;
-    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
+    return createSSETransformStreamWithLogger(FORMATS.OPENAI_RESPONSES, codexTarget, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, onStreamFailure, apiKey, customToolNames, ensureOpenAIDone, credentials, onGuardFailure);
   }
 
   if (needsTranslation(targetFormat, sourceFormat)) {
-    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, apiKey, customToolNames, credentials);
+    return createSSETransformStreamWithLogger(targetFormat, sourceFormat, provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, onStreamFailure, apiKey, customToolNames, ensureOpenAIDone, credentials, onGuardFailure);
   }
 
   // The passthrough path has no format translation, so the fingerprint's tool
-  // rename map (read -> read_client) has to be handed over explicitly —
-  // otherwise the client receives a call to a tool it never declared (#4986).
-  return createPassthroughStreamWithLogger(provider, reqLogger, model, connectionId, body, onStreamComplete, apiKey, toolNameMap);
+  // rename map must be handed over explicitly to restore caller tool names.
+  return createPassthroughStreamWithLogger(provider, reqLogger, toolNameMap, model, connectionId, body, onStreamComplete, onStreamFailure, apiKey, targetFormat, sourceFormat, onGuardFailure);
 }
 
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, credentials }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, ensureOpenAIDone, credentials }) {
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -84,45 +76,98 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });
-
-  // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
-  // client sees a real error instead of a silently truncated stream.
-  // Responses passthrough keeps its own response.failed shape; every other client
-  // format gets the OpenAI error frame + [DONE], or `event: error` for Claude.
-  const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
-  const onAbortTerminal = isResponsesPassthrough
-    ? buildAbortedResponsesTerminalBytes
-    : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
-  const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
-
-  saveRequestDetail(buildRequestDetail({
-    provider, model, connectionId,
-    latency: { ttft: 0, total: Date.now() - requestStartTime },
-    tokens: { prompt_tokens: 0, completion_tokens: 0 },
-    request: extractRequestConfig(body, stream),
-    providerRequest: finalBody || translatedBody || null,
-    providerResponse: "[Streaming - raw response not captured]",
-    response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
-    pxpipe,
-    status: "success"
-  }, { id: streamDetailId })).catch(err => {
-    console.error("[RequestDetail] Failed to save streaming request:", err.message);
-  });
-
-  return {
-    success: true,
-    response: new Response(transformedBody, { headers: { ...SSE_HEADERS, ...upstreamResponseHeaders(providerResponse.headers) } })
+  let terminalEvent = null;
+  const settleTerminal = (event, details) => {
+    if (terminalEvent) return false;
+    terminalEvent = event;
+    return true;
   };
+  let transformedBody = null;
+  let pendingCompletion = null;
+  let guardTerminalEmitted = false;
+  const recordFailure = (failure) => {
+    const status = failure.status || providerResponse.status || 502;
+    if (!settleTerminal("STREAM_FAILED", { provider, model, connectionId, status, origin: failure.origin || "processing" })) return;
+    const tokens = canonicalizeUsage(failure.usage);
+    saveRequestDetail(buildRequestDetail({ provider, model, connectionId, latency: { ttft: 0, total: Date.now() - requestStartTime }, tokens: tokens || undefined, request: extractRequestConfig(body, stream), providerRequest: finalBody || translatedBody || null, providerResponse: "[Streaming failure]", response: { error: failure.message, status, thinking: null }, pxpipe, status: "error" }, { id: streamDetailId })).catch(error => {
+      console.warn(`[RequestDetail] Failed to persist streaming failure for ${provider || "unknown"}/${model || "unknown"}: ${error?.message || "unknown error"}`);
+    });
+    if (hasValidUsage(tokens)) {
+      saveRequestUsage({ provider, model, tokens, timestamp: new Date().toISOString(), connectionId: connectionId || undefined, apiKey: apiKey || undefined, endpoint: clientRawRequest?.endpoint || null, status: "error" }).catch(error => {
+        console.warn(`[Usage] Failed to persist streaming failure usage for ${provider || "unknown"}/${model || "unknown"}: ${error?.message || "unknown error"}`);
+      });
+    }
+  };
+  const failBeforeHandoff = async (error) => {
+    settleTerminal("STREAM_FAILED", { provider, model, connectionId, status: HTTP_STATUS.BAD_GATEWAY, origin: "processing" });
+    const cleanup = transformedBody?.cleanup || transformedBody?.cancel || providerResponse.body?.cancel;
+    await cleanup?.call(transformedBody || providerResponse.body, error).catch(() => {});
+    streamController?.abort?.();
+    streamController?.handleError?.(error);
+    return { success: false, response: new Response(JSON.stringify({ error: { message: error?.message || "Failed to start stream" } }), { status: HTTP_STATUS.BAD_GATEWAY, headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
+  };
+  let transformStream;
+  try {
+    transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: (...args) => {
+      pendingCompletion = args;
+    }, onStreamFailure: recordFailure, onGuardFailure: (failure) => {
+      guardTerminalEmitted = true;
+      recordFailure(failure);
+      streamController?.abort?.();
+    }, apiKey, ensureOpenAIDone, credentials });
+  } catch (error) {
+    return failBeforeHandoff(error);
+  }
+
+  try {
+    const onAbortTerminal = (message) => {
+      if (guardTerminalEmitted) return null;
+      return sourceFormat === FORMATS.OPENAI_RESPONSES
+        ? buildAbortedResponsesTerminalBytes()
+        : buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
+    };
+    const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
+    transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs, {
+      onComplete: () => {
+        if (settleTerminal("STREAM_COMPLETED", { provider, model, connectionId }) && terminalEvent === "STREAM_COMPLETED") {
+          if (pendingCompletion) onStreamComplete?.(...pendingCompletion);
+          Promise.resolve().then(() => onRequestSuccess?.()).catch(error => {
+            log?.warn?.("AUTH", `onRequestSuccess failed: ${error?.message || error}`);
+          });
+        }
+      },
+      onError: (error) => recordFailure({ status: Number(error?.status) || providerResponse.status || 502, origin: error?.streamOrigin || "upstream_http", message: error?.message || "upstream stream failed" }),
+      onDisconnect: () => settleTerminal("CLIENT_ABORTED", { provider, model, connectionId }),
+    });
+
+    saveRequestDetail(buildRequestDetail({
+      provider, model, connectionId,
+      latency: { ttft: 0, total: Date.now() - requestStartTime },
+      tokens: { prompt_tokens: 0, completion_tokens: 0 },
+      request: extractRequestConfig(body, stream),
+      providerRequest: finalBody || translatedBody || null,
+      providerResponse: "[Streaming - raw response not captured]",
+      response: { content: "[Streaming in progress...]", thinking: null, type: "streaming" },
+      pxpipe,
+      status: "success"
+    }, { id: streamDetailId })).catch(err => {
+      console.error("[RequestDetail] Failed to save streaming request:", err.message);
+    });
+
+    return {
+      success: true,
+      response: new Response(transformedBody, { headers: { ...SSE_HEADERS, ...upstreamResponseHeaders(providerResponse.headers) } })
+    };
+  } catch (error) {
+    return failBeforeHandoff(error);
+  }
 }
 
 /**
  * Build onStreamComplete callback for streaming usage tracking.
  */
-export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log }) {
+export function buildOnStreamComplete({ provider, model, connectionId, apiKey, requestStartTime, body, stream, finalBody, translatedBody, clientRawRequest, pxpipe, reqTag, log, onRequestSuccess }) {
   const streamDetailId = `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
-
   const onStreamComplete = (contentObj, usage, ttftAt) => {
     const latency = {
       ttft: ttftAt ? ttftAt - requestStartTime : Date.now() - requestStartTime,
@@ -131,7 +176,7 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     const safeContent = contentObj?.content || "[Empty streaming response]";
     const safeThinking = contentObj?.thinking || null;
 
-    saveRequestDetail(buildRequestDetail({
+  saveRequestDetail(buildRequestDetail({
       provider, model, connectionId,
       latency,
       tokens: usage || { prompt_tokens: 0, completion_tokens: 0 },
@@ -146,7 +191,9 @@ export function buildOnStreamComplete({ provider, model, connectionId, apiKey, r
     });
 
     // Persist stream usage to DB (no console line; the "📊 done" line below is authoritative)
-    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, label: "STREAM USAGE", silent: true });
+    saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, requestId: clientRawRequest?.usageRequestId, label: "STREAM USAGE", silent: true }).catch(error => {
+      console.error(`[Usage] Streaming usage write failed after response commitment: ${error.message}`);
+    });
     if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency }));
   };
 

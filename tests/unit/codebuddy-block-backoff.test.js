@@ -82,6 +82,22 @@ describe("CodeBuddy Intl block backoff (#5024)", () => {
     ]);
   });
 
+  it("advances a combo on a malformed CodeBuddy request without locking the account", async () => {
+    const error = Response.json({ error: { message: "first message is not system prompt" } }, { status: 400 });
+    const backup = Response.json({ choices: [{ message: { content: "backup response" } }] });
+    const dispatch = vi.fn().mockResolvedValueOnce(error).mockResolvedValueOnce(backup);
+    const result = await handleComboChat({
+      body: { messages: [] }, models: ["cbai/test-model", "openai/backup-model"],
+      handleSingleModel: dispatch, log: { info: vi.fn(), warn: vi.fn() },
+      comboName: "malformed-combo", comboStrategy: "fallback",
+    });
+    expect(result).toBe(backup);
+    expect(dispatch.mock.calls.map(([, model]) => model)).toEqual([
+      "cbai/test-model", "openai/backup-model",
+    ]);
+    expect(db.updateProviderConnection).not.toHaveBeenCalled();
+  });
+
   it("advances past a malformed CodeBuddy request without cooling the account", async () => {
     const error = Response.json({ error: { message: "first message is not system prompt" } }, { status: 400 });
     const dispatch = vi.fn().mockResolvedValue(error);
