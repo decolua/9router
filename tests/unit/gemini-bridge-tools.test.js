@@ -3,6 +3,7 @@ import {
   convertGeminiToInternal,
   transformOpenAISSEToGeminiSSE,
   convertOpenAIResponseToGemini,
+  keepAliveGeminiSSE,
 } from "@/lib/geminiBridge.js";
 
 const tool = {
@@ -71,5 +72,24 @@ describe("v1beta Gemini bridge: tools", () => {
     const upstream = Response.json({ model: "m", choices: [{ index: 0, finish_reason: "stop", message: { role: "assistant", content: "pong" } }] });
     const body = await (await convertOpenAIResponseToGemini(upstream, "m")).json();
     expect(body.candidates[0].content.parts).toEqual([{ text: "pong" }]);
+  });
+
+  it("keepalive: pings while the upstream is slow, then the real chunks", async () => {
+    const sse = "data: " + JSON.stringify({ choices: [{ index: 0, delta: { content: "pong" }, finish_reason: "stop" }] }) + "\n\ndata: [DONE]\n\n";
+    const slow = new Promise((r) => setTimeout(() => r(new Response(sse, { status: 200 })), 260));
+    const text = await keepAliveGeminiSSE(slow, "m", 50).text();
+    const chunks = text.split("\r\n\r\n").filter(Boolean).map((l) => JSON.parse(l.slice(5)));
+    const pings = chunks.filter((c) => c.candidates?.[0]?.content?.parts?.[0]?.text === "" && !c.candidates[0].finishReason);
+    expect(pings.length).toBeGreaterThanOrEqual(3);
+    expect(chunks.at(-1).candidates[0].content.parts[0].text).toBe("pong");
+  });
+
+  it("keepalive: a fast upstream gets no pings; an upstream error becomes an error chunk", async () => {
+    const fast = Promise.resolve(new Response("data: " + JSON.stringify({ choices: [{ index: 0, delta: { content: "hi" }, finish_reason: "stop" }] }) + "\n\n", { status: 200 }));
+    const t1 = await keepAliveGeminiSSE(fast, "m", 1000).text();
+    expect(t1.split("\r\n\r\n").filter(Boolean)).toHaveLength(1);
+    const bad = Promise.resolve(new Response("rate limited", { status: 429 }));
+    const t2 = await keepAliveGeminiSSE(bad, "m", 1000).text();
+    expect(JSON.parse(t2.trim().slice(5)).error.code).toBe(429);
   });
 });

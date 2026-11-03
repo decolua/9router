@@ -11,7 +11,7 @@ import { GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS } from "open-sse/config/runtimeConfi
 import { initTranslators } from "open-sse/translator/index.js";
 import {
   convertGeminiToInternal,
-  transformOpenAISSEToGeminiSSE,
+  keepAliveGeminiSSE,
   convertOpenAIResponseToGemini,
 } from "@/lib/geminiBridge.js";
 import { getKeyAccessContext, enforceKeyAccessResolved } from "@/sse/services/keyAccess.js";
@@ -109,14 +109,15 @@ export async function POST(request, { params }) {
       body: JSON.stringify(convertedBody),
     });
 
-    const response = await handleChat(newRequest);
-
     if (stream) {
-      // Transform OpenAI SSE => Gemini SSE on the fly.
-      // The @google/genai SDK always uses :streamGenerateContent?alt=sse and
-      // expects Gemini SSE chunks (no [DONE] sentinel — stream just closes).
-      return transformOpenAISSEToGeminiSSE(response, model);
-    } else {
+      // Answer at once and keep the connection alive while the model thinks (proxies cut a silent
+      // request at 100 s), then transform OpenAI SSE => Gemini SSE on the fly. The @google/genai SDK
+      // always uses :streamGenerateContent?alt=sse and expects Gemini SSE chunks (no [DONE] sentinel).
+      return keepAliveGeminiSSE(handleChat(newRequest), model);
+    }
+
+    const response = await handleChat(newRequest);
+    {
       // Convert OpenAI JSON response => Gemini GenerateContentResponse
       return await convertOpenAIResponseToGemini(response, model);
     }

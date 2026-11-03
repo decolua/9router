@@ -242,3 +242,61 @@ export async function convertOpenAIResponseToGemini(response, model) {
     headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" }
   });
 }
+
+/**
+ * Answer a streaming Gemini request at once and keep the connection alive while the upstream model
+ * thinks. Proxies such as Cloudflare drop a request that sends nothing for 100 s (error 524); a model
+ * with a long first-token delay hit that. Until the first real chunk, an empty Gemini chunk goes out
+ * every `intervalMs`; then the converted upstream stream is piped through unchanged.
+ *
+ * @param {Promise<Response>} upstreamPromise - handleChat(...) for the converted OpenAI request
+ * @param {string} model
+ * @param {number} intervalMs
+ */
+export function keepAliveGeminiSSE(upstreamPromise, model, intervalMs = 10000) {
+  const encoder = new TextEncoder();
+  const ping = encoder.encode(
+    "data: " + JSON.stringify({ candidates: [{ content: { role: "model", parts: [{ text: "" }] }, index: 0 }] }) + "\r\n\r\n"
+  );
+  let timer = null;
+  const body = new ReadableStream({
+    async start(controller) {
+      timer = setInterval(() => {
+        try { controller.enqueue(ping); } catch { clearInterval(timer); }
+      }, intervalMs);
+      try {
+        const upstream = await upstreamPromise;
+        const converted = transformOpenAISSEToGeminiSSE(upstream, model);
+        if (!converted.ok || !converted.body) {
+          clearInterval(timer);
+          let message = `upstream ${converted.status}`;
+          try { message = (await converted.text()) || message; } catch {}
+          controller.enqueue(encoder.encode("data: " + JSON.stringify({ error: { code: converted.status || 500, message } }) + "\r\n\r\n"));
+          controller.close();
+          return;
+        }
+        const reader = converted.body.getReader();
+        let first = true;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (first) { clearInterval(timer); first = false; }
+          controller.enqueue(value);
+        }
+        clearInterval(timer);
+        controller.close();
+      } catch (e) {
+        clearInterval(timer);
+        controller.enqueue(encoder.encode("data: " + JSON.stringify({ error: { code: 500, message: String(e?.message || e) } }) + "\r\n\r\n"));
+        controller.close();
+      }
+    },
+    cancel() {
+      clearInterval(timer);
+    },
+  });
+  return new Response(body, {
+    status: 200,
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Access-Control-Allow-Origin": "*" },
+  });
+}
