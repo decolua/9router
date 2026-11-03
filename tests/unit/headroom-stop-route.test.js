@@ -17,7 +17,31 @@ vi.mock("@/lib/headroom/process.js", () => ({
   stopHeadroomProxy: mocks.stopHeadroomProxy,
 }));
 
+vi.mock("@/lib/headroom/process", () => ({
+  stopHeadroomProxy: mocks.stopHeadroomProxy,
+}));
+
 vi.mock("@/lib/headroom/detect.js", () => ({
+  DEFAULT_HEADROOM_URL: "http://localhost:8787",
+  isLoopbackHeadroomUrl: vi.fn((url) => {
+    try {
+      const u = new URL(url);
+      return ["localhost", "127.0.0.1", "::1"].includes(u.hostname);
+    } catch {
+      return false;
+    }
+  }),
+  parsePortFromUrl: vi.fn((url) => {
+    try {
+      const u = new URL(url);
+      return u.port ? parseInt(u.port, 10) : 8787;
+    } catch {
+      return 8787;
+    }
+  }),
+}));
+
+vi.mock("@/lib/headroom/detect", () => ({
   DEFAULT_HEADROOM_URL: "http://localhost:8787",
   isLoopbackHeadroomUrl: vi.fn((url) => {
     try {

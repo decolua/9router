@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb.js";
-import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl, parsePortFromUrl } from "@/lib/headroom/detect.js";
-import { startHeadroomProxy } from "@/lib/headroom/process.js";
+import { getSettings } from "@/lib/localDb";
+import { DEFAULT_HEADROOM_URL } from "@/lib/headroom/detect";
 
 export const dynamic = "force-dynamic";
 
@@ -78,39 +77,14 @@ async function proxy(request, { params }) {
         redirect: "manual",
       });
     } catch (fetchError) {
-      const settings = await getSettings();
-      const url = settings.headroomUrl || DEFAULT_HEADROOM_URL;
-      if (isLoopbackHeadroomUrl(url) && method === "GET") {
-        try {
-          const port = parsePortFromUrl(url);
-          await startHeadroomProxy({
-            port,
-            codeAware: settings.headroomCodeAware === true,
-            kompress: settings.headroomKompress !== false,
-          });
-          for (let i = 0; i < 6; i++) {
-            await new Promise((r) => setTimeout(r, 500));
-            try {
-              response = await fetch(target, {
-                method,
-                headers: forwardedHeaders(request, target),
-                redirect: "manual",
-              });
-              if (response) break;
-            } catch {}
-          }
-        } catch {}
+      const accept = request.headers.get("accept") || "";
+      if (accept.includes("text/html")) {
+        return new NextResponse(
+          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Headroom Offline</title><style>body{background:#111;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center;padding:2rem;background:#1e1e1e;border-radius:8px;border:1px solid #333}a{color:#22d3ee;text-decoration:none}a:hover{text-decoration:underline}</style></head><body><div><h2>Headroom proxy is not running</h2><p>Please start the proxy from <a href="/dashboard/token-saver">Token Saver settings</a>.</p><p style="margin-top:1rem"><button onclick="location.reload()" style="background:#22d3ee;color:#000;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold">Retry</button></p></div></body></html>`,
+          { status: 503, headers: { "content-type": "text/html; charset=utf-8" } }
+        );
       }
-      if (!response) {
-        const accept = request.headers.get("accept") || "";
-        if (accept.includes("text/html")) {
-          return new NextResponse(
-            `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Headroom Offline</title><style>body{background:#111;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center;padding:2rem;background:#1e1e1e;border-radius:8px;border:1px solid #333}a{color:#22d3ee;text-decoration:none}a:hover{text-decoration:underline}</style></head><body><div><h2>Headroom proxy is not running</h2><p>Please start the proxy from <a href="/dashboard/token-saver">Token Saver settings</a>.</p><p style="margin-top:1rem"><button onclick="location.reload()" style="background:#22d3ee;color:#000;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold">Retry</button></p></div></body></html>`,
-            { status: 503, headers: { "content-type": "text/html; charset=utf-8" } }
-          );
-        }
-        return NextResponse.json({ error: "Headroom proxy is not running: " + fetchError.message }, { status: 502 });
-      }
+      return NextResponse.json({ error: "Headroom proxy is not running: " + fetchError.message }, { status: 502 });
     }
 
     const headers = new Headers(response.headers);

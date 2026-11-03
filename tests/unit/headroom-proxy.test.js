@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/localDb.js", () => ({
+const mocks = vi.hoisted(() => ({
   getSettings: vi.fn(async () => ({ headroomUrl: "http://localhost:8787" })),
+}));
+
+vi.mock("@/lib/localDb.js", () => ({
+  getSettings: mocks.getSettings,
+}));
+
+vi.mock("@/lib/localDb", () => ({
+  getSettings: mocks.getSettings,
 }));
 
 vi.mock("@/lib/headroom/detect.js", () => ({
   DEFAULT_HEADROOM_URL: "http://localhost:8787",
-  isLoopbackHeadroomUrl: vi.fn(() => true),
-  parsePortFromUrl: vi.fn(() => 8787),
 }));
 
-vi.mock("@/lib/headroom/process.js", () => ({
-  startHeadroomProxy: vi.fn(),
+vi.mock("@/lib/headroom/detect", () => ({
+  DEFAULT_HEADROOM_URL: "http://localhost:8787",
 }));
 
 import { GET } from "../../src/app/api/headroom/proxy/[...path]/route.js";

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSettings } from "@/lib/localDb.js";
-import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl, parsePortFromUrl } from "@/lib/headroom/detect.js";
-import { stopHeadroomProxy } from "@/lib/headroom/process.js";
+import { getSettings } from "@/lib/localDb";
+import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl, parsePortFromUrl } from "@/lib/headroom/detect";
+import { stopHeadroomProxy } from "@/lib/headroom/process";
 
 export const dynamic = "force-dynamic";
 
