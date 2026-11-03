@@ -3,7 +3,7 @@ import { mkdtemp, readFile, rm, stat, utimes, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const modulePath = "/home/chetan/Projects/pii-guard/src/index.js";
+const modulePath = "/home/chetan/Projects/pii-guard/dist/index.js";
 const value = "synthetic-own-value-739201";
 let dir, events, known, observeRequest;
 const body = text => ({ model: "test", messages: [{ role: "user", content: [{ type: "tool_result", content: text }] }] });

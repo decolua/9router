@@ -100,6 +100,6 @@ export async function observeRequest(body, meta = {}) {
       seen.add(key);
       if (seen.size > 50_000) seen.delete(seen.values().next().value);
     }
-    append({ ts: new Date().toISOString(), endpoint: meta.endpoint, model: meta.model, ua: (meta.userAgent || "").split(" ")[0], chars: result.chars, images: result.images, imageBytes: result.imageBytes, scanMs, counts, new: fresh });
+    append({ ts: new Date().toISOString(), endpoint: meta.endpoint, model: meta.model, ua: (meta.userAgent || "").split(" ")[0], chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh });
   } catch { warn(); }
 }
