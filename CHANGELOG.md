@@ -1,3 +1,16 @@
+# v0.5.364 (2026-11-03) · 1 commit
+
+## Upstream Port Completion (decolua/9router v0.5.112)
+- **System One URL Normalization**:
+  - Added `buildSystemoneUrl()`: a saved host override is now joined with the registry `path` without doubling an existing `/v1` or `/v1/systemone` segment.
+  - Restricted the `x-opencode-session` header to the OpenCode lanes (`opencode`, `opencode-zen`) — other System One providers no longer receive a foreign client session id.
+- **Lazy Runtime (published-build fix, upstream `e70ea24d`)**:
+  - Resolves `createRequire` through a runtime `import()` with `webpackIgnore`, anchors npm to a generated manifest inside the runtime dir, and turns a partially-extracted install into an actionable error instead of a silent failure.
+- **Codex GPT-6.1 Terra pricing corrected** to the published official rate (input 1.00 / output 5.00 / cached 0.05).
+- **Test coverage restored for the port**:
+  - Added the upstream suites for GitHub Copilot Claude 5.5 thinking rules and CodeBuddy channel headers; added the GPT-6.1 Terra cases to the Codex Lite suite.
+  - CodeBuddy pairing assertion now follows the fork's desktop-client capture (X-Request-ID pairs with X-Conversation-Message-ID), and the Codex header-version assertion reads the live `CODEX_CLI_VERSION` instead of a stale literal.
+
 # v0.5.363 (2026-11-02) · 1 commit
 
 ## Upstream Feature Port (decolua/9router v0.5.112)
