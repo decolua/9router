@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **PII guard**: add an opt-in, observe-only scanner for client requests.
+
 # v0.5.112 (2026-10-28)
 
 ## Features
