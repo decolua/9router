@@ -10,6 +10,7 @@ import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLin
 import { saveRequestDetail } from "@/lib/usageDb.js";
 import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
+import { wrapStreamForResponseCache } from "../../rtk/fsCache.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -48,7 +49,7 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
 /**
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
-export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, credentials }) {
+export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, credentials, responseCacheContext = null }) {
   if (onRequestSuccess) {
     Promise.resolve()
       .then(onRequestSuccess)
@@ -57,13 +58,6 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
       });
   }
 
-  // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
-  // page), piping it through the SSE transform stream causes Next.js
-  // "failed to pipe response" and crashes the chat router. Read the body,
-  // pull a short human-readable message from the <title>, sanitize it, and
-  // return a clean JSON error instead. The message is stripped of HTML tags
-  // and clamped so untrusted upstream text never reaches the client verbatim
-  // (the UI may render error.message as HTML).
   const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
   if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
     const bodyText = await providerResponse.text().catch(() => '');
@@ -84,18 +78,30 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
     };
   }
 
-  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });
+  let capturedStreamUsage = null;
+  const wrappedOnStreamComplete = (contentObj, usage, ttftAt) => {
+    capturedStreamUsage = usage || null;
+    if (onStreamComplete) onStreamComplete(contentObj, usage, ttftAt);
+  };
 
-  // Terminal bytes when the stream aborts after HTTP 200 was already sent, so the
-  // client sees a real error instead of a silently truncated stream.
-  // Responses passthrough keeps its own response.failed shape; every other client
-  // format gets the OpenAI error frame + [DONE], or `event: error` for Claude.
+  const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete: wrappedOnStreamComplete, apiKey, credentials });
+
   const isResponsesPassthrough = sourceFormat === FORMATS.OPENAI_RESPONSES && targetFormat === FORMATS.OPENAI_RESPONSES;
   const onAbortTerminal = isResponsesPassthrough
     ? buildAbortedResponsesTerminalBytes
     : (message) => buildStreamErrorBytes(HTTP_STATUS.GATEWAY_TIMEOUT, message, sourceFormat);
   const stallTimeoutMs = PROVIDERS[provider]?.stallTimeoutMs || STREAM_STALL_TIMEOUT_MS;
-  const transformedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const pipedBody = pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal, stallTimeoutMs);
+  const transformedBody = responseCacheContext?.key
+    ? wrapStreamForResponseCache(pipedBody, {
+        cacheKey: responseCacheContext.key,
+        provider,
+        model,
+        sourceFormat,
+        getUsage: () => capturedStreamUsage,
+        maxSizeBytes: responseCacheContext.maxSizeBytes,
+      })
+    : pipedBody;
 
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,

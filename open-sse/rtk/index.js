@@ -3,15 +3,17 @@
 import { RAW_CAP, MIN_COMPRESS_SIZE } from "./constants.js";
 import { autoDetectFilter } from "./autodetect.js";
 import { safeApply } from "./applyFilter.js";
+import { getBlockCacheSync, setBlockCacheSync } from "./fsCache.js";
 
 // Compress tool_result content in-place. Returns stats or null if disabled/failed.
-export function compressMessages(body, enabled) {
-  if (!enabled) return null;
+export function compressMessages(body, enabled, cacheOpts = null) {
+  const blockCacheOnly = !enabled && cacheOpts?.blockCacheEnabled === true;
+  if (!enabled && !blockCacheOnly) return null;
   if (!body) return null;
 
   // Kiro format: conversationState.history + conversationState.currentMessage
   if (body.conversationState) {
-    return compressKiroFormat(body, enabled);
+    return compressKiroFormat(body, enabled, cacheOpts);
   }
 
   // Support both OpenAI/Claude "messages" and OpenAI Responses "input"
@@ -20,7 +22,7 @@ export function compressMessages(body, enabled) {
     : null;
   if (!items) return null;
 
-  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+  const stats = { bytesBefore: 0, bytesAfter: 0, cacheHits: 0, hits: [] };
   try {
     for (let i = 0; i < items.length; i++) {
       const msg = items[i];
@@ -29,12 +31,12 @@ export function compressMessages(body, enabled) {
       // Shape 4: OpenAI Responses — top-level { type:"function_call_output", output: string | [{type:"input_text", text}] }
       if (msg.type === "function_call_output") {
         if (typeof msg.output === "string") {
-          msg.output = compressText(msg.output, stats, "openai-responses-string");
+          msg.output = compressText(msg.output, stats, "openai-responses-string", enabled, cacheOpts);
         } else if (Array.isArray(msg.output)) {
           for (let k = 0; k < msg.output.length; k++) {
             const part = msg.output[k];
             if (part && part.type === "input_text" && typeof part.text === "string") {
-              part.text = compressText(part.text, stats, "openai-responses-array");
+              part.text = compressText(part.text, stats, "openai-responses-array", enabled, cacheOpts);
             }
           }
         }
@@ -43,7 +45,7 @@ export function compressMessages(body, enabled) {
 
       // Shape 1: OpenAI tool message — { role:"tool", content: "string" }
       if (msg.role === "tool" && typeof msg.content === "string") {
-        msg.content = compressText(msg.content, stats, "openai-tool");
+        msg.content = compressText(msg.content, stats, "openai-tool", enabled, cacheOpts);
         continue;
       }
 
@@ -54,7 +56,7 @@ export function compressMessages(body, enabled) {
         for (let k = 0; k < msg.content.length; k++) {
           const part = msg.content[k];
           if (part && part.type === "text" && typeof part.text === "string") {
-            part.text = compressText(part.text, stats, "openai-tool-array");
+            part.text = compressText(part.text, stats, "openai-tool-array", enabled, cacheOpts);
           }
         }
         continue;
@@ -68,13 +70,13 @@ export function compressMessages(body, enabled) {
 
         if (typeof block.content === "string") {
           // Shape 2: claude string form
-          block.content = compressText(block.content, stats, "claude-string");
+          block.content = compressText(block.content, stats, "claude-string", enabled, cacheOpts);
         } else if (Array.isArray(block.content)) {
           // Shape 3: claude array form — compress each text part
           for (let k = 0; k < block.content.length; k++) {
             const part = block.content[k];
             if (part && part.type === "text" && typeof part.text === "string") {
-              part.text = compressText(part.text, stats, "claude-array");
+              part.text = compressText(part.text, stats, "claude-array", enabled, cacheOpts);
             }
           }
         }
@@ -88,8 +90,8 @@ export function compressMessages(body, enabled) {
 }
 
 // Compress Kiro format: conversationState.history[].userInputMessage.userInputMessageContext.toolResults[].content[].text
-function compressKiroFormat(body, enabled) {
-  const stats = { bytesBefore: 0, bytesAfter: 0, hits: [] };
+function compressKiroFormat(body, enabled, cacheOpts = null) {
+  const stats = { bytesBefore: 0, bytesAfter: 0, cacheHits: 0, hits: [] };
   try {
     const state = body.conversationState;
     const allMessages = [...(Array.isArray(state?.history) ? state.history : [])];
@@ -105,7 +107,7 @@ function compressKiroFormat(body, enabled) {
 
         for (const part of tr.content) {
           if (part && typeof part.text === "string") {
-            part.text = compressText(part.text, stats, "kiro-tool-result");
+            part.text = compressText(part.text, stats, "kiro-tool-result", enabled, cacheOpts);
           }
         }
       }
@@ -117,11 +119,32 @@ function compressKiroFormat(body, enabled) {
   return stats;
 }
 
-function compressText(text, stats, shape) {
+function compressText(text, stats, shape, rtkEnabled = true, cacheOpts = null) {
   const bytesIn = text.length;
   stats.bytesBefore += bytesIn;
 
   if (bytesIn < MIN_COMPRESS_SIZE || bytesIn > RAW_CAP) {
+    stats.bytesAfter += bytesIn;
+    return text;
+  }
+
+  // Raw Filesystem Block Cache lookup first (deterministic prefix preservation + instant hit)
+  if (cacheOpts?.blockCacheEnabled) {
+    const cached = getBlockCacheSync("rtk", text, { ttlMs: cacheOpts.ttlMs });
+    if (cached && cached.content && cached.content.length < bytesIn) {
+      stats.bytesAfter += cached.content.length;
+      stats.cacheHits = (stats.cacheHits || 0) + 1;
+      stats.hits.push({
+        shape,
+        filter: cached.meta?.filter || "fsBlockCache",
+        saved: bytesIn - cached.content.length,
+        cached: true,
+      });
+      return cached.content;
+    }
+  }
+
+  if (!rtkEnabled) {
     stats.bytesAfter += bytesIn;
     return text;
   }
@@ -140,8 +163,16 @@ function compressText(text, stats, shape) {
     return text;
   }
 
+  const filterName = fn.filterName || fn.name;
+  if (cacheOpts?.blockCacheEnabled) {
+    setBlockCacheSync("rtk", text, out, {
+      meta: { filter: filterName, shape },
+      maxSizeBytes: cacheOpts.maxSizeBytes,
+    });
+  }
+
   stats.bytesAfter += out.length;
-  stats.hits.push({ shape, filter: fn.filterName || fn.name, saved: bytesIn - out.length });
+  stats.hits.push({ shape, filter: filterName, saved: bytesIn - out.length });
   return out;
 }
 
@@ -151,5 +182,6 @@ export function formatRtkLog(stats) {
   const saved = stats.bytesBefore - stats.bytesAfter;
   const pct = stats.bytesBefore > 0 ? ((saved / stats.bytesBefore) * 100).toFixed(1) : "0";
   const filters = Array.from(new Set(stats.hits.map(h => h.filter))).join(",");
-  return `[RTK] saved ${saved}B / ${stats.bytesBefore}B (${pct}%) via [${filters}] hits=${stats.hits.length}`;
+  const cacheStr = stats.cacheHits > 0 ? ` cacheHits=${stats.cacheHits}` : "";
+  return `[RTK] saved ${saved}B / ${stats.bytesBefore}B (${pct}%) via [${filters}] hits=${stats.hits.length}${cacheStr}`;
 }

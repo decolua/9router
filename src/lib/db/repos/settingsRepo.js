@@ -65,6 +65,11 @@ const DEFAULT_SETTINGS = {
   pxpipeAutoInstall: true,
   pxpipeMinChars: 25000,
   pxpipeTimeoutMs: 15000,
+  // Raw filesystem token caches (opt-in from Token Saver page)
+  blockCacheEnabled: false,
+  responseCacheEnabled: false,
+  fsCacheTtlHours: 24,
+  fsCacheMaxSizeMb: 500,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
 };
