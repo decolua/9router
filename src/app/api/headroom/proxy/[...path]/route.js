@@ -51,9 +51,9 @@ function forwardedHeaders(request, target) {
 
 function rewriteDashboardHtml(html) {
   return html
-    .replace(/(src|href)=(["'])\/dashboard\//g, `$1=$2${DASHBOARD_PREFIX}/dashboard/`)
+    .replace(/(src|href)=(["'])\/dashboard(?=[\/"'\s]|$)/g, `$1=$2${DASHBOARD_PREFIX}/dashboard`)
     .replace(
-      /(fetch\(|fetchJson\()(["'])(?=\/(?:stats|stats-history|health|transformations))/g,
+      /(fetch\(|fetchJson\()(["'])(?=\/(?:stats|health|transformations|settings))/g,
       `$1$2${DASHBOARD_PREFIX}`,
     );
 }

@@ -52,6 +52,43 @@ describe("headroom dashboard proxy route", () => {
     expect(text).toContain("fetch('/api/headroom/proxy/health')");
   });
 
+  it("rewrites settings page links and settings API fetch calls", async () => {
+    const rawSettingsHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <script src="/dashboard/static/tailwind.min.js"></script>
+        </head>
+        <body>
+          <a href="/dashboard" class="text-sm">&larr; Dashboard</a>
+          <script>
+            const s = await fetch('/settings/schema');
+            const save = await fetch('/settings', { method: 'POST' });
+            const apply = await fetch('/settings/apply', { method: 'POST' });
+            const h = await fetch('/health');
+          </script>
+        </body>
+      </html>
+    `;
+
+    global.fetch = vi.fn(async () => new Response(rawSettingsHtml, {
+      status: 200,
+      headers: { "content-type": "text/html; charset=utf-8" },
+    }));
+
+    const req = new Request("http://localhost:20128/api/headroom/proxy/dashboard/settings");
+    const res = await GET(req, { params: Promise.resolve({ path: ["dashboard", "settings"] }) });
+
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toContain('src="/api/headroom/proxy/dashboard/static/tailwind.min.js"');
+    expect(text).toContain('href="/api/headroom/proxy/dashboard"');
+    expect(text).toContain("fetch('/api/headroom/proxy/settings/schema')");
+    expect(text).toContain("fetch('/api/headroom/proxy/settings',");
+    expect(text).toContain("fetch('/api/headroom/proxy/settings/apply',");
+    expect(text).toContain("fetch('/api/headroom/proxy/health')");
+  });
+
   it("passes through non-html responses directly without body rewriting", async () => {
     const jsonBody = JSON.stringify({ ok: true });
     global.fetch = vi.fn(async () => new Response(jsonBody, {
