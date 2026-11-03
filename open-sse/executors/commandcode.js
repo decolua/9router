@@ -36,7 +36,6 @@ export class CommandCodeExecutor extends BaseExecutor {
       accept: stream ? "text/event-stream" : null,
     });
   }
-  }
 
   async execute(opts) {
     const maxRetries = 2;
