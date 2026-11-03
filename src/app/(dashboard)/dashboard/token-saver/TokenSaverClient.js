@@ -117,9 +117,6 @@ export default function TokenSaverClient() {
     setHeadroomUrl(nextUrl);
     setHeadroomEnabled(value);
     patchSetting({ headroomEnabled: value, headroomUrl: nextUrl });
-    if (value && headroomStatus.installed && !headroomStatus.running) {
-      handleHeadroomStart();
-    }
   };
 
   const handleHeadroomUrlBlur = async () => {
@@ -262,14 +259,6 @@ export default function TokenSaverClient() {
         version: data.version ?? s.version,
         extras: data.extras || s.extras,
       }));
-      if (pendingExtras.includes("code")) {
-        setCodeAware(true);
-        await patchSetting({ headroomCodeAware: true });
-        if (headroomStatus.running) {
-          await fetch("/api/headroom/restart", { method: "POST" }).catch(() => {});
-          await refreshHeadroomStatus();
-        }
-      }
       setPendingExtras([]);
     } catch (e) {
       setExtrasActionError(e.message);
@@ -277,7 +266,7 @@ export default function TokenSaverClient() {
       stopLogPolling();
       setExtrasActionLoading(false);
     }
-  }, [pendingExtras, startLogPolling, stopLogPolling, headroomStatus.running, refreshHeadroomStatus]);
+  }, [pendingExtras, startLogPolling, stopLogPolling]);
 
   const removeExtraConfirmed = useCallback(async (extra) => {
     setRemovingExtra(extra);
@@ -296,21 +285,13 @@ export default function TokenSaverClient() {
         version: data.version ?? s.version,
         extras: data.extras || s.extras,
       }));
-      if (extra === "code") {
-        setCodeAware(false);
-        await patchSetting({ headroomCodeAware: false });
-        if (headroomStatus.running) {
-          await fetch("/api/headroom/restart", { method: "POST" }).catch(() => {});
-          await refreshHeadroomStatus();
-        }
-      }
     } catch (e) {
       setExtrasActionError(e.message);
     } finally {
       stopLogPolling();
       setRemovingExtra(null);
     }
-  }, [startLogPolling, stopLogPolling, headroomStatus.running, refreshHeadroomStatus]);
+  }, [startLogPolling, stopLogPolling]);
 
   const handleInstallExtras = useCallback(() => {
     if (pendingExtras.length === 0) return;

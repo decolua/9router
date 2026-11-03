@@ -67,25 +67,13 @@ async function proxy(request, { params }) {
     const method = request.method;
     const hasBody = !["GET", "HEAD"].includes(method);
 
-    let response;
-    try {
-      response = await fetch(target, {
-        method,
-        headers: forwardedHeaders(request, target),
-        body: hasBody ? request.body : undefined,
-        duplex: hasBody ? "half" : undefined,
-        redirect: "manual",
-      });
-    } catch (fetchError) {
-      const accept = request.headers.get("accept") || "";
-      if (accept.includes("text/html")) {
-        return new NextResponse(
-          `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Headroom Offline</title><style>body{background:#111;color:#eee;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}div{text-align:center;padding:2rem;background:#1e1e1e;border-radius:8px;border:1px solid #333}a{color:#22d3ee;text-decoration:none}a:hover{text-decoration:underline}</style></head><body><div><h2>Headroom proxy is not running</h2><p>Please start the proxy from <a href="/dashboard/token-saver">Token Saver settings</a>.</p><p style="margin-top:1rem"><button onclick="location.reload()" style="background:#22d3ee;color:#000;border:none;padding:8px 16px;border-radius:4px;cursor:pointer;font-weight:bold">Retry</button></p></div></body></html>`,
-          { status: 503, headers: { "content-type": "text/html; charset=utf-8" } }
-        );
-      }
-      return NextResponse.json({ error: "Headroom proxy is not running: " + fetchError.message }, { status: 502 });
-    }
+    const response = await fetch(target, {
+      method,
+      headers: forwardedHeaders(request, target),
+      body: hasBody ? request.body : undefined,
+      duplex: hasBody ? "half" : undefined,
+      redirect: "manual",
+    });
 
     const headers = new Headers(response.headers);
     for (const header of headers.keys()) {
@@ -103,7 +91,13 @@ async function proxy(request, { params }) {
 
     return new NextResponse(response.body, { status: response.status, headers });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (request.headers.get("accept")?.includes("text/html")) {
+      return new NextResponse(
+        "<!DOCTYPE html><html><body><h2>Headroom proxy is not running</h2><p>Please start it from <a href=\"/dashboard/token-saver\">Token Saver</a>.</p></body></html>",
+        { status: 503, headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    }
+    return NextResponse.json({ error: `Headroom proxy is not running: ${error.message}` }, { status: 502 });
   }
 }
 
