@@ -70,6 +70,7 @@
   "overrides": {
     "dompurify": "^3.4.17",
     "ip-address": "^10.7.4",
-    "minimatch": "^11.0.4"
+    "minimatch": "^11.0.4",
+    "deepmerge": "^4.3.1"
   }
 }
