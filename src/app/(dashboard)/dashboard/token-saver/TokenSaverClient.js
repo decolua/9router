@@ -849,7 +849,7 @@ export default function TokenSaverClient() {
           </div>
           {headroomRunning && (
             <a
-              href="/api/headroom/proxy/dashboard"
+              href={headroomLocalUrl ? `${headroomUrl.replace(/\/$/, "")}/dashboard` : "/api/headroom/proxy/dashboard"}
               target="_blank"
               rel="noreferrer"
               className="w-full rounded border border-border px-4 py-2 text-center text-sm hover:bg-surface-2"

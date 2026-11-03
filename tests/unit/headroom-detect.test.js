@@ -1,3 +1,4 @@
+import fs from "fs";
 import { describe, it, expect, vi, afterEach } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -15,7 +16,7 @@ vi.mock("child_process", () => ({
   execFileSync: mocks.execFileSync,
 }));
 
-import { findPython310, getHeadroomStatus, getInstalledHeadroomExtras, isLoopbackHeadroomUrl } from "../../src/lib/headroom/detect.js";
+import { findPython310, getHeadroomStatus, getInstalledHeadroomExtras, isLoopbackHeadroomUrl, parsePortFromUrl } from "../../src/lib/headroom/detect.js";
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -54,6 +55,31 @@ describe("headroom detect", () => {
     });
 
     expect(findPython310()).toBe(binPython);
+  });
+
+  it("resolves symlinked headroom binary to find python in venv", () => {
+    const venvPython = "/home/user/venv/bin/python3";
+    mocks.execSync.mockImplementation((cmd) => {
+      if (String(cmd).includes("where") || String(cmd).includes("which")) return Buffer.from("/home/user/.local/bin/headroom\n");
+      if (String(cmd).includes("--version")) return Buffer.from("Python 3.14.0\n");
+      throw new Error("unexpected execSync");
+    });
+    mocks.execFileSync.mockImplementation((py, args) => {
+      if (args.join(" ") === "-m pip show headroom-ai") {
+        if (py === venvPython) return Buffer.from("Name: headroom-ai\nVersion: 0.42.0\n");
+        throw new Error(`not installed in ${py}`);
+      }
+      throw new Error(`unexpected execFileSync: ${py} ${args.join(" ")}`);
+    });
+
+    // Mock fs.realpathSync to resolve symlink
+    const realpathSpy = vi.spyOn(fs, "realpathSync").mockImplementation((p) => {
+      if (p === "/home/user/.local/bin/headroom") return "/home/user/venv/bin/headroom";
+      return p;
+    });
+
+    expect(findPython310()).toBe(venvPython);
+    realpathSpy.mockRestore();
   });
 
   it("keeps top-level installed flag true when extras are readable", async () => {
@@ -103,5 +129,17 @@ describe("headroom detect", () => {
     expect(isLoopbackHeadroomUrl("http://127.0.0.1:8787")).toBe(true);
     expect(isLoopbackHeadroomUrl("http://headroom:8787")).toBe(false);
     expect(isLoopbackHeadroomUrl("not-a-url")).toBe(false);
+  });
+
+  it("parses valid port numbers from url with fallback", () => {
+    expect(parsePortFromUrl("http://localhost:8787")).toBe(8787);
+    expect(parsePortFromUrl("http://localhost:9000")).toBe(9000);
+    expect(parsePortFromUrl("http://localhost:80")).toBe(80);
+    expect(parsePortFromUrl("https://localhost:443")).toBe(443);
+    expect(parsePortFromUrl("http://localhost")).toBe(80);
+    expect(parsePortFromUrl("https://localhost")).toBe(443);
+    expect(parsePortFromUrl("ftp://localhost", 8787)).toBe(8787);
+    expect(parsePortFromUrl("invalid", 1234)).toBe(1234);
+    expect(parsePortFromUrl("http://localhost:999999", 8787)).toBe(8787);
   });
 });
