@@ -117,11 +117,28 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
         }
       }
 
+      // Preserve internal metadata attached by source->openai translator (_customToolNames, _toolNameMap, etc.)
+      // across the second hop to downstream providers (Gemini, Claude, etc.)
+      const intermediateMeta = {};
+      if (result && typeof result === "object") {
+        for (const key of Object.keys(result)) {
+          if (key.startsWith("_")) intermediateMeta[key] = result[key];
+        }
+      }
+
       // Step 2: openai -> target (if target is not openai)
       if (targetFormat !== FORMATS.OPENAI) {
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
           result = fromOpenAI(model, result, stream, credentials);
+        }
+      }
+
+      if (result && typeof result === "object") {
+        for (const [key, val] of Object.entries(intermediateMeta)) {
+          if (result[key] === undefined) {
+            result[key] = val;
+          }
         }
       }
     }

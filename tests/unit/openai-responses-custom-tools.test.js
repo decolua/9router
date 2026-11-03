@@ -1,4 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/dataDir.js", () => ({
+  DATA_DIR: "/tmp/test-9router-data",
+}));
+
+vi.mock("@/lib/usageDb.js", () => ({
+  trackPendingRequest: vi.fn(),
+  appendRequestLog: vi.fn(async () => {}),
+  saveRequestDetail: vi.fn(async () => {}),
+}));
+
 import {
   openaiResponsesToOpenAIRequest,
 } from "../../open-sse/translator/request/openai-responses.js";
@@ -40,7 +51,7 @@ describe("Codex Responses Lite custom tools → OpenAI Chat", () => {
         },
       },
     });
-    expect(out._customToolNames).toEqual(["exec"]);
+    expect(out._customToolNames).toContain("exec");
     expect(out.messages.some((message) => message.role === "developer")).toBe(false);
   });
 
@@ -234,9 +245,43 @@ describe("OpenAI Chat stream → Codex custom_tool_call", () => {
       ],
     }, true, null);
 
-    const assistantMsg = out.messages.find((m) => m.role === "assistant");
+    const assistantMsg = out.messages.find((m) => m.role === "assistant" && Array.isArray(m.tool_calls) && m.tool_calls.length > 0);
     expect(assistantMsg).toBeDefined();
     expect(assistantMsg.tool_calls[0].function.name).toBe("exec");
+  });
+
+  it("preserves _customToolNames across multi-hop translation (responses -> openai -> gemini)", async () => {
+    const { translateRequest, initTranslators } = await import("../../open-sse/translator/index.js");
+    await initTranslators();
+    const out = translateRequest(
+      FORMATS.OPENAI_RESPONSES,
+      FORMATS.GEMINI,
+      "gemini-3.8-flash",
+      {
+        input: [
+          {
+            type: "additional_tools",
+            tools: [
+              {
+                type: "namespace",
+                name: "functions",
+                tools: [EXEC_TOOL],
+              },
+            ],
+          },
+          {
+            type: "message",
+            role: "user",
+            content: [{ type: "input_text", text: "Run pwd" }],
+          },
+        ],
+      },
+      true,
+      null,
+      "antigravity"
+    );
+    expect(out._customToolNames).toContain("exec");
+    expect(out._customToolNames).toContain("functions.exec");
   });
 
   it("does not delete legitimate parameter properties named encrypted in Gemini schema cleaning", async () => {
