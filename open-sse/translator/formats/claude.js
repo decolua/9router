@@ -508,6 +508,23 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
     delete body.context_management;
   }
 
+  // Console API keys answer a "You are Claude Code" system block with a
+  // misleading "credit balance is too low" 400 (subscription-only identity).
+  // The OpenAI->Claude translator injects it for every Claude-format target.
+  if (provider === "anthropic" && body.system) {
+    // Anthropic only checks the leading block; these three trip it.
+    const isIdentity = (t) => typeof t === "string"
+      && /^(You are Claude Code|You are a Claude agent, built on Anthropic's Claude Agent SDK|x-anthropic-billing-header:)/.test(t.trim());
+    if (typeof body.system === "string") {
+      // Claude Code sends the identity as the first line(s) of a string system prompt.
+      const rest = body.system.split("\n").filter((line) => !isIdentity(line)).join("\n").trim();
+      if (rest) body.system = rest; else delete body.system;
+    } else if (Array.isArray(body.system)) {
+      body.system = body.system.filter((b) => !isIdentity(b?.text));
+      if (body.system.length === 0) delete body.system;
+    }
+  }
+
   // Models whose API rejects thinking "disabled" and forced tool use with a 400
   // (Sonnet 5.5). Runs on every Claude-bound body, so OpenAI clients, native
   // passthrough and the provider-level "off" override are all covered.
