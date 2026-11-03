@@ -180,7 +180,12 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
     stdio: ["ignore", outFd, outFd],
     detached: true,
     windowsHide: true,
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      DO_NOT_TRACK: "1",
+      HEADROOM_TELEMETRY: "off",
+      HEADROOM_BEACON: "off",
+    },
   });
 
   if (!child.pid) {

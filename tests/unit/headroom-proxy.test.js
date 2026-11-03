@@ -1,11 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/localDb", () => ({
+vi.mock("@/lib/localDb.js", () => ({
   getSettings: vi.fn(async () => ({ headroomUrl: "http://localhost:8787" })),
 }));
 
-vi.mock("@/lib/headroom/detect", () => ({
+vi.mock("@/lib/headroom/detect.js", () => ({
   DEFAULT_HEADROOM_URL: "http://localhost:8787",
+  isLoopbackHeadroomUrl: vi.fn(() => true),
+  parsePortFromUrl: vi.fn(() => 8787),
+}));
+
+vi.mock("@/lib/headroom/process.js", () => ({
+  startHeadroomProxy: vi.fn(),
 }));
 
 import { GET } from "../../src/app/api/headroom/proxy/[...path]/route.js";
@@ -101,5 +107,35 @@ describe("headroom dashboard proxy route", () => {
 
     expect(res.status).toBe(200);
     expect(await res.text()).toBe(jsonBody);
+  });
+
+  it("returns offline html page when proxy is unreachable and accept header includes text/html", async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:8787");
+    });
+
+    const req = new Request("http://localhost:20128/api/headroom/proxy/dashboard", {
+      headers: { accept: "text/html" },
+    });
+    const res = await GET(req, { params: Promise.resolve({ path: ["dashboard"] }) });
+
+    expect(res.status).toBe(503);
+    const text = await res.text();
+    expect(text).toContain("Headroom proxy is not running");
+  });
+
+  it("returns 502 json when proxy is unreachable for json request", async () => {
+    global.fetch = vi.fn(async () => {
+      throw new Error("connect ECONNREFUSED 127.0.0.1:8787");
+    });
+
+    const req = new Request("http://localhost:20128/api/headroom/proxy/stats", {
+      headers: { accept: "application/json" },
+    });
+    const res = await GET(req, { params: Promise.resolve({ path: ["stats"] }) });
+
+    expect(res.status).toBe(502);
+    const json = await res.json();
+    expect(json.error).toContain("Headroom proxy is not running");
   });
 });
