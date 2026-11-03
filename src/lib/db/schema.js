@@ -96,10 +96,14 @@ export const TABLES = {
       name: "TEXT UNIQUE NOT NULL",
       kind: "TEXT",
       models: "TEXT NOT NULL",
+      mirrorGroup: "TEXT",
       createdAt: "TEXT NOT NULL",
       updatedAt: "TEXT NOT NULL",
     },
-    indexes: ["CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)"],
+    indexes: [
+      "CREATE INDEX IF NOT EXISTS idx_combo_name ON combos(name)",
+      "CREATE INDEX IF NOT EXISTS idx_combo_mirror ON combos(mirrorGroup)",
+    ],
   },
   kv: {
     columns: {

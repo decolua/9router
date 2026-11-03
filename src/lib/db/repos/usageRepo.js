@@ -280,13 +280,19 @@ export async function saveRequestUsage(entry) {
         return;
       }
 
+      const meta = {
+        ...(typeof entry.meta === "object" && entry.meta ? entry.meta : {}),
+        ...(entry.requestedModel ? { requestedModel: entry.requestedModel } : {}),
+        ...(entry.comboChain ? { comboChain: entry.comboChain } : {}),
+      };
+
       db.run(
         `INSERT INTO usageHistory(timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, status, tokens, meta) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens), stringifyJson(meta),
         ]
       );
 

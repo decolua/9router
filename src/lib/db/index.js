@@ -36,7 +36,7 @@ export {
 
 // Combos
 export {
-  getCombos, getComboById, getComboByName,
+  getCombos, getComboById, getComboByName, getCombosByMirrorGroup,
   createCombo, updateCombo, deleteCombo,
 } from "./repos/combosRepo.js";
 

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getComboById, updateCombo, deleteCombo, getComboByName } from "@/lib/localDb";
+import { getComboById, updateCombo, deleteCombo, getComboByName, getCombosByMirrorGroup } from "@/lib/localDb";
 import { resetComboRotation } from "open-sse/services/combo.js";
 
 // Validate combo name: only a-z, A-Z, 0-9, -, _
@@ -52,6 +52,16 @@ export async function PUT(request, { params }) {
     // Invalidate rotation state (models/strategy/name may have changed)
     if (prev?.name) resetComboRotation(prev.name);
     if (combo.name && combo.name !== prev?.name) resetComboRotation(combo.name);
+
+    // Invalidate rotation state for all peers in mirrorGroup
+    if (combo.mirrorGroup) {
+      try {
+        const peers = await getCombosByMirrorGroup(combo.mirrorGroup);
+        for (const peer of peers) {
+          if (peer.name) resetComboRotation(peer.name);
+        }
+      } catch {}
+    }
 
     return NextResponse.json(combo);
   } catch (error) {
