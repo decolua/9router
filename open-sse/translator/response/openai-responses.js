@@ -8,7 +8,7 @@ import { buildChunk } from "../concerns/chunk.js";
 import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
-import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK, RESPONSES_INCOMPLETE_REASON } from "../schema/index.js";
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -667,6 +667,24 @@ export function openaiResponsesToOpenAIResponse(chunk, state) {
       return finalChunk;
     }
     return null;
+  }
+
+  if (eventType === "response.incomplete") {
+    const reason = data.response?.incomplete_details?.reason;
+    const finishReason = reason === RESPONSES_INCOMPLETE_REASON.MAX_OUTPUT_TOKENS
+      ? OPENAI_FINISH.LENGTH
+      : reason === RESPONSES_INCOMPLETE_REASON.CONTENT_FILTER
+        ? OPENAI_FINISH.CONTENT_FILTER
+        : null;
+    if (!finishReason || state.finishReasonSent) return null;
+
+    state.finishReasonSent = true;
+    state.finishReason = finishReason;
+    return buildChunk(
+      { id: state.chatId, created: state.created, model: state.model || MODEL_FALLBACK },
+      {},
+      finishReason
+    );
   }
 
   // Error events from Responses API (e.g. model_not_found)

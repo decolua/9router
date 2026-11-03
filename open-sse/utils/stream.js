@@ -185,10 +185,16 @@ export function createSSEStream(options = {}) {
   };
   const emitIncompleteResponsesFailure = (controller) => {
     synthesizeSemanticFailure();
-    const failedOutput = formatIncompleteOpenAIResponsesStreamFailure();
+    const message = semanticFailure.message;
+    const isResponsesClient = sourceFormat === FORMATS.OPENAI_RESPONSES;
+    const failedOutput = isResponsesClient
+      ? formatIncompleteOpenAIResponsesStreamFailure()
+      : new TextDecoder().decode(buildStreamErrorBytes(502, message, sourceFormat, "stream_disconnected"));
     reqLogger?.appendConvertedChunk?.(failedOutput);
     controller.enqueue(sharedEncoder.encode(failedOutput));
     openAIResponsesTerminalSeen = true;
+    if (!isResponsesClient) markDoneSent();
+    reportSemanticFailure();
   };
   const emitGuardFailure = (controller, error) => {
     if (guardFailed) return;

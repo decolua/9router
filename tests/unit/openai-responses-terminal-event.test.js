@@ -94,6 +94,43 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("data: null");
   });
 
+  it("emits a Chat Completions error when a translated Responses stream closes early", async () => {
+    const output = await runTransform([
+      `event: response.created`,
+      `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"error":{');
+    expect(output).toContain('"code":"stream_disconnected"');
+    expect(output).not.toContain("event: response.failed");
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("maps incomplete Responses limits to a Chat Completions length finish", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_output_tokens" } } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"finish_reason":"length"');
+    expect(output).not.toContain('"error":{');
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("maps incomplete Responses filters to a Chat Completions content filter finish", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "content_filter" } } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"finish_reason":"content_filter"');
+    expect(output).not.toContain('"error":{');
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
   it("preserves a public OpenAI translated stream without an injected sentinel", async () => {
     const output = await runTransform([
       `event: response.created`,
