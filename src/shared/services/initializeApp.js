@@ -118,6 +118,11 @@ async function runHeavyStartup() {
   import("@/sse/services/backgroundTokenRefresh.js")
     .then(({ startBackgroundTokenRefresh }) => startBackgroundTokenRefresh())
     .catch((e) => console.log("[BackgroundTokenRefresh] scheduler start failed:", e.message));
+
+  // Background Session Cookie Manager for web providers (issue #3355).
+  import("@/sse/services/backgroundCookieManager.js")
+    .then(({ startBackgroundCookieManager }) => startBackgroundCookieManager())
+    .catch((e) => console.log("[BackgroundCookieManager] scheduler start failed:", e.message));
 }
 
 // Cheap local check: keeps the scheduler module (and its provider graph) unloaded
