@@ -6,12 +6,18 @@ export const dynamic = "force-dynamic";
 
 // Whitelist capability keys to boolean values — ignore anything else
 function sanitizeCaps(caps) {
-  if (!caps || typeof caps !== "object") return null;
+  if (!caps || typeof caps !== "object" || Array.isArray(caps)) return { caps: null };
   const clean = {};
   for (const key of Object.keys(CAPACITY_META)) {
     if (typeof caps[key] === "boolean") clean[key] = caps[key];
   }
-  return Object.keys(clean).length ? clean : null;
+  if (Object.prototype.hasOwnProperty.call(caps, "contextWindow")) {
+    if (caps.contextWindow !== null && (!Number.isSafeInteger(caps.contextWindow) || caps.contextWindow <= 0)) {
+      return { error: "Context window must be a positive integer or null" };
+    }
+    clean.contextWindow = caps.contextWindow;
+  }
+  return { caps: Object.keys(clean).length ? clean : null };
 }
 
 // Accepted STT transport markers live in the shared whitelist
@@ -42,7 +48,8 @@ export async function POST(request) {
     if (!providerAlias || !id) {
       return NextResponse.json({ error: "providerAlias and id required" }, { status: 400 });
     }
-    const cleanCaps = sanitizeCaps(caps);
+    const { caps: cleanCaps, error } = sanitizeCaps(caps);
+    if (error) return NextResponse.json({ error }, { status: 400 });
     const cleanTransport = sanitizeTransport(transport, type || "llm");
     const added = await addCustomModel({ providerAlias, id, type: type || "llm", name, ...(cleanCaps ? { caps: cleanCaps } : {}), ...(cleanTransport ? { transport: cleanTransport } : {}) });
     return NextResponse.json({ success: true, added });

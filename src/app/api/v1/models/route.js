@@ -58,6 +58,7 @@ function comboSeatCapabilities(seat) {
   const alias = seat.slice(0, slash);
   return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
 }
+import { COMBO_INPUT_CAPABILITIES, createComboCapsResolver, getComboCapsLimit } from "@/lib/comboCaps";
 
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
@@ -385,6 +386,7 @@ export async function buildModelsList(kindFilter, options = {}) {
 
   // Lookup map so aggregateComboCapabilities can recursively resolve nested combos
   const comboByName = Object.fromEntries(combos.map((c) => [c.name, c.models]));
+  const resolveComboCaps = createComboCapsResolver(customModels, connections, modelAliases);
 
   // Combos first (filtered by kind). Web combos expose `kind` so AI knows search vs fetch.
   for (const combo of combos) {
@@ -406,6 +408,22 @@ export async function buildModelsList(kindFilter, options = {}) {
       const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName);
       if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
       if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
+    }
+    if (combo.caps && Object.keys(combo.caps).length > 0) {
+      const capabilities = { ...combo.caps };
+      const limit = getComboCapsLimit(combo.models, resolveComboCaps);
+      if (limit) {
+        if (Number.isSafeInteger(capabilities.contextWindow) && capabilities.contextWindow > 0) {
+          capabilities.contextWindow = Math.min(capabilities.contextWindow, limit.contextWindow);
+        }
+        for (const key of COMBO_INPUT_CAPABILITIES) {
+          if (capabilities[key] === true && !limit[key]) capabilities[key] = false;
+        }
+      }
+      entry.capabilities = capabilities;
+      if (Number.isSafeInteger(capabilities.contextWindow) && capabilities.contextWindow > 0) {
+        entry.context_length = capabilities.contextWindow;
+      }
     }
     models.push(entry);
   }
