@@ -150,7 +150,7 @@ function removeUnsupportedKeywords(obj, keywords, inPropertiesMap = false) {
 
   if (Array.isArray(obj)) {
     for (const item of obj) {
-      removeUnsupportedKeywords(item, keywords, false);
+      removeUnsupportedKeywords(item, keywords);
     }
     return;
   }

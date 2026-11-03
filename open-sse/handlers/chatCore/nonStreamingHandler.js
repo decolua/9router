@@ -59,14 +59,13 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
   // tool_calls → function_call/custom_tool_call items (Responses-native tool shape).
   for (const tc of message.tool_calls || []) {
     const fn = tc.function || {};
-    const rawName = fn.name || "";
-    const cleanName = rawName.replace(/^functions\./, "");
-    const custom = Boolean(customToolNames?.has(rawName) || customToolNames?.has(cleanName));
+    const name = (fn.name || "").replace(/^functions\./, "");
+    const custom = Boolean(customToolNames?.has(name) || customToolNames?.has(fn.name));
     output.push({
       type: custom ? RESPONSES_ITEM.CUSTOM_TOOL_CALL : RESPONSES_ITEM.FUNCTION_CALL,
       id: `${custom ? "ctc" : "fc"}_${tc.id || ""}`,
       call_id: tc.id || "",
-      name: cleanName,
+      name,
       ...(custom
         ? { input: extractCustomToolInput(fn.arguments) }
         : { arguments: typeof fn.arguments === "string" ? fn.arguments : JSON.stringify(fn.arguments || {}) }),
