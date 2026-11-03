@@ -1,5 +1,5 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getModelAliases, getComboByName, getProviderNodes, getProviderConnections } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
@@ -87,8 +87,23 @@ export async function getComboModels(modelStr) {
   if (modelStr.includes("/")) return null;
 
   const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  if (!combo || !combo.models || combo.models.length === 0) {
+    return null;
   }
-  return null;
+
+  // Filter out models whose provider has no active connections
+  const connections = await getProviderConnections({ isActive: true });
+  const providersWithActiveConnections = new Set(connections.map((c) => c.provider));
+
+  const filteredModels = combo.models.filter((modelStr) => {
+    const slash = modelStr.indexOf("/");
+    if (slash <= 0) return true; // Keep non-provider/model format (nested combos, etc.)
+    const provider = modelStr.slice(0, slash);
+    return providersWithActiveConnections.has(provider);
+  });
+
+  if (filteredModels.length === 0) {
+    return null; // No models with active connections
+  }
+  return filteredModels;
 }
