@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { getProviderConnections } from "@/lib/localDb";
 import { backfillCodexEmails } from "@/lib/oauth/providers";
+import { getRequestCountsByConnection } from "@/lib/db/index.js";
+import { sortConnections } from "./sortConnections.js";
 import { USAGE_APIKEY_PROVIDERS, USAGE_SUPPORTED_PROVIDERS } from "@/shared/constants/providers";
 
 const SAFE_FIELDS = [
@@ -54,25 +56,7 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function sortConnections(connections, sort) {
-  const list = [...connections];
-
-  if (sort === "provider") {
-    return list.sort((a, b) => {
-      const orderA = USAGE_SUPPORTED_PROVIDERS.indexOf(a.provider);
-      const orderB = USAGE_SUPPORTED_PROVIDERS.indexOf(b.provider);
-      if (orderA !== orderB) return orderA - orderB;
-      return a.provider.localeCompare(b.provider);
-    });
-  }
-
-  return list.sort((a, b) => {
-    const priorityA = a.priority ?? Number.MAX_SAFE_INTEGER;
-    const priorityB = b.priority ?? Number.MAX_SAFE_INTEGER;
-    if (priorityA !== priorityB) return priorityA - priorityB;
-    return (a.provider || "").localeCompare(b.provider || "");
-  });
-}
+const USAGE_WINDOW_MS = 7 * 24 * 3600e3;
 
 export async function GET(request) {
   try {
@@ -99,7 +83,10 @@ export async function GET(request) {
       return true;
     });
 
-    const sortedConnections = sortConnections(accountFilteredConnections, sort);
+    const usageCounts = sort === "usage"
+      ? await getRequestCountsByConnection(new Date(Date.now() - USAGE_WINDOW_MS).toISOString()).catch(() => ({}))
+      : {};
+    const sortedConnections = sortConnections(accountFilteredConnections, sort, usageCounts);
     const total = sortedConnections.length;
     const totalPages = Math.max(1, Math.ceil(total / pageSize));
     const currentPage = Math.min(page, totalPages);

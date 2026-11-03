@@ -315,6 +315,13 @@ export async function saveRequestUsage(entry) {
   }
 }
 
+// Request count per connection since `sinceIso` (drives "most used first" on the quota page).
+export async function getRequestCountsByConnection(sinceIso) {
+  const db = await getAdapter();
+  const rows = db.all(`SELECT connectionId, COUNT(*) AS n FROM usageHistory WHERE timestamp >= ? AND connectionId IS NOT NULL GROUP BY connectionId`, [sinceIso]);
+  return Object.fromEntries(rows.map((r) => [r.connectionId, Number(r.n) || 0]));
+}
+
 export async function getUsageHistory(filter = {}) {
   const db = await getAdapter();
   const conds = [];

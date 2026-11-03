@@ -154,7 +154,10 @@ export default function QuotaTable({
           const isCreditBalance = quota.isCreditBalance === true;
           const colors = isCreditBalance
             ? { text: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500", bgLight: "bg-blue-500/10", emoji: "💰" }
-            : getColorClasses(quota.colorPercentage ?? quota.remaining);
+            : isUnlimited
+              // Counter rows (no cap) have no remaining %; don't paint them red.
+              ? { text: "text-text-muted", bg: "bg-gray-400", bgLight: "bg-gray-400/10", emoji: "📊" }
+              : getColorClasses(quota.colorPercentage ?? quota.remaining);
           // Qoder flags open-ended plans with `neverExpires` (its API reports a
           // year-9999 sentinel). Return "-"/"Never expires" rather than an empty
           // countdown: the render below branches on `countdown !== "-"`, so an

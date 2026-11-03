@@ -6,6 +6,7 @@ import { proxyAwareFetch } from "../../open-sse/utils/proxyFetch.js";
 import { getOpenRouterUsage } from "../../open-sse/services/usage/openrouter.js";
 import { summarizeLocalUsage } from "../../open-sse/services/usage/muse.js";
 import { USAGE_SUPPORTED_PROVIDERS, USAGE_APIKEY_PROVIDERS } from "../../src/shared/constants/providers.js";
+import { sortConnections } from "../../src/app/api/providers/client/sortConnections.js";
 import { parseQuotaData } from "../../src/app/(dashboard)/dashboard/usage/components/ProviderLimits/utils.js";
 
 const json = (data, status = 200) => new Response(JSON.stringify({ data }), { status, headers: { "Content-Type": "application/json" } });
@@ -54,5 +55,16 @@ describe("openrouter + muse usage", () => {
     expect(q["Last 24h errors"].used).toBe(1);
     expect(q["Last 7d requests"].used).toBe(3);
     expect(q["Last 5h errors"]).toBeUndefined();
+  });
+
+  it("sorts quota cards by 7d request count, priority breaks ties", () => {
+    const conns = [
+      { id: "a", provider: "antigravity", priority: 1 },
+      { id: "c", provider: "claude", priority: 1 },
+      { id: "o", provider: "openrouter", priority: 2 },
+      { id: "m", provider: "muse", priority: 1 },
+    ];
+    const order = sortConnections(conns, "usage", { c: 15000, o: 800, a: 2000 }).map((x) => x.id);
+    expect(order).toEqual(["c", "a", "o", "m"]);
   });
 });

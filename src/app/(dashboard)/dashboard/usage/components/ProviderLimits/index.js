@@ -232,7 +232,7 @@ export default function ProviderLimits() {
           page: String(targetPage),
           pageSize: String(pageSize),
           accountStatus: accountFilter,
-          sort: "priority",
+          sort: "usage",
         });
 
         if (providerFilter !== "all") {
@@ -1161,6 +1161,9 @@ export default function ProviderLimits() {
                         <p className="text-xs text-text-muted truncate">
                           {getConnectionLabel(conn)}
                         </p>
+                      ) : null}
+                      {quota?.plan ? (
+                        <p className="text-[11px] text-text-muted/80 truncate">{quota.plan}</p>
                       ) : null}
                       {getConnectionSecondaryLabel(conn) ? (
                         <p className="text-[11px] text-text-muted/80 truncate">
