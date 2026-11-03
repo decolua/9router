@@ -14,6 +14,15 @@ const tool = {
 };
 
 describe("v1beta Gemini bridge: tools", () => {
+  it("keeps parametersJsonSchema (what Gemini CLI sends)", () => {
+    const schema = { type: "object", properties: { file_path: { type: "string" } }, required: ["file_path"] };
+    const out = convertGeminiToInternal({
+      contents: [{ role: "user", parts: [{ text: "read a.txt" }] }],
+      tools: [{ functionDeclarations: [{ name: "read_file", description: "Read", parametersJsonSchema: schema }] }],
+    }, "ag/gemini-3.8-flash-high", true);
+    expect(out.tools[0].function.parameters.required).toEqual(["file_path"]);
+  });
+
   it("request keeps tools, functionCall and functionResponse", () => {
     const out = convertGeminiToInternal({
       contents: [
