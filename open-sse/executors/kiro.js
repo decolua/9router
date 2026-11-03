@@ -713,7 +713,6 @@ export class KiroExecutor extends BaseExecutor {
       assertToolBufferBound();
     };
     const parsedToolInput = (tool) => {
-      console.log("Tool base:" + JSON.stringify(tool));
       if (!tool.inputKind) throw new Error("Kiro tool call is missing input");
       let input;
       if (tool.inputKind === "object") {
