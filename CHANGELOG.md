@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Streaming**: stop payload-less SSE frames from aborting OpenAI-SDK clients mid-turn — AMD's upstream tags every chunk with an `id:` line and closes the stream with a bare `id:` frame after the terminal usage chunk, and the passthrough transform forwarded those verbatim. Per the SSE spec such frames are keepalive no-ops, but the OpenAI Python SDK flushes an event on ANY buffered field and then `json.loads("")`s the missing data, which kills a streaming tool call partway through (vLLM/SGLang frontends emit the same shapes). The transform now holds `id:`/`retry:`/`event:` field lines until the frame proves it carries a `data:` payload, drops the frame and its blank terminator when it never does, and drops a dangling framing line left unterminated at upstream close. OpenAI's own SSE shape carries no `id:` lines, so no conformant client misses them
+
 # v0.5.112 (2026-10-28)
 
 ## Features

@@ -99,6 +99,12 @@ export function createSSEStream(options = {}) {
   let finalized = false;
   let completionFlushTimer = null;
 
+  // Passthrough framing hold: field lines (id:/retry:/event:) of the SSE frame
+  // currently being read. Emitted with the frame's data line, or dropped with
+  // the frame if it never carries data. See the passthrough branch below.
+  const pendingFraming = [];
+  let frameHasData = false;
+
   // Lane quirk: upstream streams thinking under the OpenRouter aliases
   // (`reasoning` / `reasoning_details[]`) instead of reasoning_content — OpenCode
   // Free's MiMo route does. Lift it on every passthrough delta so OpenAI-shaped
@@ -178,6 +184,37 @@ export function createSSEStream(options = {}) {
           let output;
           let injectedUsage = false;
           let responsesTerminal = false;
+
+          // SSE framing fields (id:, retry:, event:) carry no payload. A frame
+          // closed by a blank line without a data: line is a spec-legal keepalive
+          // no-op, but the OpenAI Python SDK flushes an event on ANY buffered
+          // field and then json.loads("") the empty data, which aborts a
+          // streaming turn mid tool-call. AMD's upstream tags every chunk with
+          // `id: N` and ends the stream with a bare `id:` frame after the
+          // terminal usage chunk; vLLM/SGLang frontends emit similar
+          // payload-less frames. Hold framing fields until the frame proves it
+          // has a data payload; if it never does, drop the whole frame along
+          // with its blank terminator. OpenAI's own SSE shape carries no id:
+          // lines, so well-behaved clients never miss them.
+          // `frameHasData` distinguishes the two blank-line cases: AMD writes
+          // the `id:` AFTER the data line, so a blank closing a frame whose data
+          // was already forwarded must still pass through (dropping it would
+          // merge adjacent data lines into one malformed event).
+          if (trimmed === "") {
+            if (pendingFraming.length) {
+              // Framing left at frame end never preceded a forwarded data line.
+              // Payload-less frame → drop the held fields AND the blank line.
+              // Trailing id of an already-forwarded frame → drop the id, keep
+              // the blank terminator so the forwarded data stays a closed event.
+              pendingFraming.length = 0;
+              if (!frameHasData) continue;
+            }
+            frameHasData = false;
+            // fall through: forward the blank line closing the data frame
+          } else if (!trimmed.startsWith("data:") && !trimmed.startsWith(":")) {
+            pendingFraming.push(line + "\n");
+            continue;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -304,6 +341,21 @@ export function createSSEStream(options = {}) {
               output = "data: " + line.slice(5) + "\n";
             } else {
               output = line + "\n";
+            }
+          }
+
+          // A forwarded data line makes this frame real: its blank terminator
+          // must survive even when a trailing id gets dropped.
+          if (trimmed.startsWith("data:")) {
+            frameHasData = true;
+            // The frame proved it has a payload: re-emit the held framing in
+            // original order before the data line. Comment lines never flush —
+            // flushing an `id:` before a `: keepalive` would materialize the
+            // very payload-less frame this guard exists to suppress.
+            while (pendingFraming.length) {
+              const framing = pendingFraming.shift();
+              reqLogger?.appendConvertedChunk?.(framing);
+              controller.enqueue(sharedEncoder.encode(framing));
             }
           }
 
@@ -477,7 +529,13 @@ export function createSSEStream(options = {}) {
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
-          if (buffer) {
+          // A framing field left without terminator (upstream closed right after
+          // `id: N`) would reach the client as a payload-less frame — the same
+          // OpenAI-SDK crash the transform guards against. Drop only framing
+          // fields; any residual data line (or NDJSON tail, e.g. Ollama) still
+          // has to go through like before.
+          const leftover = buffer.trim();
+          if (leftover && !/^(id|retry|event)\s*:/.test(leftover)) {
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
