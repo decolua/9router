@@ -1,3 +1,24 @@
+# v0.5.363 (2026-11-02) · 1 commit
+
+## Upstream Feature Port (decolua/9router v0.5.112)
+- **MiniMax Code (Desktop Lease Mode)**:
+  - Added lease auth mode that connects to the official desktop app sign-in via Unix domain socket / named pipe broker.
+  - Added MinimaxLeaseButton to the dashboard provider connection controls and automated usage tracking.
+- **Nace Drex Provider**:
+  - Registered `nace` provider in System One lane with models `drex`, `drex-v2.0`, and `drex-max`.
+- **Codex GPT-6.1 Terra**:
+  - Added `gpt-6.1-terra` to Codex responses-lite catalog with GPT-6-Lite thinking levels and 500k context window.
+- **CommandCode CLI 1.88.0 Sync**:
+  - Unified request headers (`User-Agent: cli`, version `1.88.0`, `x-cli-environment: production`, `x-project-slug`) and conversation-stable thread session UUID mapping.
+- **Upstream Fixes & Enhancements**:
+  - **Noble-Hashes Keccak PoW**: Replaced vendored DeepSeek PoW hash with lightweight, optimized noble-hashes keccak port.
+  - **GitHub Copilot Claude 5.5**: Applied Claude 5.5 adaptive thinking rules to Copilot's dotted model IDs (`claude-opus-5.5*`, `claude-sonnet-5.5`, `claude-haiku-5.5`).
+  - **CodeBuddy Channel Verification**: Injected official plugin `X-Request-ID` and `X-Conversation-ID` headers to prevent HTTP 400 illegal request errors.
+  - **NVIDIA NIM Reasoning**: Normalized `reasoning` parameter aliases to `reasoning_content` before forwarding.
+  - **Gemini Protobuf Schema Predicates**: Enforced type predicates on array items and properties in schema conversions.
+  - **Non-Streaming SSE Errors**: Transparently surface upstream HTTP errors (4xx/5xx) from SSE error frames instead of converting to generic 502.
+  - **Muse Multi-Pipe Key Preservation**: Keep `LLM|id|secret` key format opaque during bulk-add.
+
 # v0.5.362 (2026-11-02) · 1 commit
 
 ## Features & Improvements
