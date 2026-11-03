@@ -1,3 +1,9 @@
+# v0.5.112.1 (2026-11-03)
+
+## Fixes
+- **Codex / OpenCode**: normalize Codex Responses API terminal stream events for OpenCode-style Chat Completions clients — a Responses-format stream that closed before `response.completed` previously leaked a raw, unparseable `response.failed` SSE frame to non-Responses clients; it now emits a format-valid in-band error with a single `[DONE]` sentinel instead (#52)
+- **Codex / OpenCode**: extract token usage from `response.incomplete` the same way `response.completed` already does, so a tool-heavy turn that ends via the output-token ceiling before producing visible text reports real token counts instead of `0/0`; an unrecognized `incomplete_details.reason` now closes the client's turn with `finish_reason: "stop"` instead of silently dropping the event (#52)
+
 # v0.5.112 (2026-10-28)
 
 ## Features
