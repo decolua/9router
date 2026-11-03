@@ -33,6 +33,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // Group items by conversation turn
   let currentAssistantMsg = null;
   let pendingToolResults = [];
+  let pendingToolCalls = [];  // track call_ids awaiting their output
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
   const additionalTools = [];
@@ -71,6 +72,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
+        // Clear pending calls since this turn is done
+        pendingToolCalls = [];
       }
       // Flush pending tool results
       if (pendingToolResults.length > 0) {
@@ -117,20 +120,27 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
+      // Use provided call_id or generate deterministic one for missing
+      const callId = item.call_id && typeof item.call_id === "string" && item.call_id.trim() !== ""
+        ? item.call_id
+        : `call_${currentAssistantMsg.tool_calls.length}_${Date.now()}`;
       currentAssistantMsg.tool_calls.push({
-        id: item.call_id,
+        id: callId,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
           name: item.name,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
+      // Track pending call ID for pairing with output
+      pendingToolCalls.push(callId);
     }
     else if (itemType === RESPONSES_ITEM.FUNCTION_CALL_OUTPUT || itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL_OUTPUT) {
       // Flush assistant message first if exists
       if (currentAssistantMsg) {
         result.messages.push(currentAssistantMsg);
         currentAssistantMsg = null;
+        pendingToolCalls = [];
       }
       // Flush any pending tool results first
       if (pendingToolResults.length > 0) {
@@ -139,10 +149,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         }
         pendingToolResults = [];
       }
-      // Add tool result immediately
+      // Pair with oldest pending call, or generate deterministic id if none
+      let callId = item.call_id;
+      if (!callId || typeof callId !== "string" || callId.trim() === "") {
+        callId = pendingToolCalls.length > 0 ? pendingToolCalls.shift() : `call_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      }
+      // Add tool result with paired/generated call_id
       result.messages.push({
         role: ROLE.TOOL,
-        tool_call_id: item.call_id,
+        tool_call_id: callId,
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
@@ -166,6 +181,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // Flush remaining
   if (currentAssistantMsg) {
     result.messages.push(currentAssistantMsg);
+    pendingToolCalls = [];
   }
   if (pendingToolResults.length > 0) {
     for (const tr of pendingToolResults) {
