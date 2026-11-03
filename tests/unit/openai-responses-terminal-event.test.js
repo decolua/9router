@@ -94,6 +94,62 @@ describe("OpenAI Responses streaming termination", () => {
     expect(output).not.toContain("data: null");
   });
 
+  it("emits a Chat Completions error when a translated Responses stream closes early", async () => {
+    const output = await runTransform([
+      `event: response.created`,
+      `data: ${JSON.stringify({ type: "response.created", response: { id: "resp_test", status: "in_progress" } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"error":{');
+    expect(output).toContain('"code":"stream_disconnected"');
+    expect(output).not.toContain("event: response.failed");
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("maps incomplete Responses limits to a Chat Completions length finish with usage", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_output_tokens" }, usage: { input_tokens: 7000, output_tokens: 1500 } } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    // stream.js applies a +2000 prompt_tokens safety buffer to every finish
+    // chunk's usage (addBufferToUsage) — assert real tokens made it through
+    // via a non-zero prompt_tokens, not the raw input value.
+    expect(output).toContain('"finish_reason":"length"');
+    expect(output).toMatch(/"prompt_tokens":[1-9]\d*/);
+    expect(output).toContain('"completion_tokens":1500');
+    expect(output).not.toContain('"error":{');
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("maps incomplete Responses filters to a Chat Completions content filter finish with usage", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "content_filter" }, usage: { input_tokens: 300, output_tokens: 0 } } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"finish_reason":"content_filter"');
+    expect(output).toMatch(/"prompt_tokens":[1-9]\d*/);
+    expect(output).not.toContain('"error":{');
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
+  it("closes a tool-only turn ending in an unrecognized incomplete reason with a stop finish and usage, instead of leaving the client with no response", async () => {
+    const output = await runTransform([
+      `event: response.incomplete`,
+      `data: ${JSON.stringify({ type: "response.incomplete", response: { id: "resp_test", status: "incomplete", incomplete_details: { reason: "max_messages" }, usage: { input_tokens: 42000, output_tokens: 0 } } })}`,
+      "",
+    ].join("\n"), FORMATS.OPENAI, true);
+
+    expect(output).toContain('"finish_reason":"stop"');
+    expect(output).toMatch(/"prompt_tokens":[1-9]\d*/);
+    expect(output).not.toContain('"error":{');
+    expect(output.match(/data: \[DONE\]/g)).toHaveLength(1);
+  });
+
   it("preserves a public OpenAI translated stream without an injected sentinel", async () => {
     const output = await runTransform([
       `event: response.created`,
