@@ -253,6 +253,18 @@ describe("PII guard test preview", () => {
     const event = JSON.parse((await lines(3)).trim().split("\n")[2]);
     expect(event.hits[0]).toMatchObject({ action: "leaked", where: "assistant/thinking" });
   });
+  it("keeps thinking of every assistant message in the open tool loop", async () => {
+    const b = thinking(true);
+    b.messages.push({ role: "assistant", content: [{ type: "thinking", thinking: "more", signature: "s2" }, { type: "tool_use", id: "t2", name: "x", input: {} }] }, { role: "user", content: [{ type: "tool_result", tool_use_id: "t2", content: "ok" }] });
+    expect(await observeRequest(b, meta, { mode: "block" })).toMatchObject({ stuck: true });
+    expect(await observeRequest(b, meta, { mode: "block" })).toMatchObject({ stuck: true });
+    expect(b.messages[1].content[0].type).toBe("thinking");
+  });
+  it("ignores unknown preview locations", async () => {
+    const { testText } = await import("../../src/lib/piiGuard/observe.js");
+    expect((await testText(`x ${value}`, { mode: "redact" }, "__proto__")).redacted).not.toContain(value);
+    expect((await testText(`x ${value}`, { mode: "redact" }, "constructor")).redacted).not.toContain(value);
+  });
   it("previews where a value sits", async () => {
     const { testText } = await import("../../src/lib/piiGuard/observe.js");
     const r = await testText(`x ${value}`, { mode: "redact" }, "thinking");

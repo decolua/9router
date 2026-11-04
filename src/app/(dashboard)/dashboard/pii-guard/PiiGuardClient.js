@@ -16,10 +16,11 @@ const MODE_HELP = {
   off: "No scan. Requests pass unchanged.",
   observe: "Scan and log findings. Requests pass unchanged.",
   redact: "Rewrites every editable field (user, assistant history, tool calls/results, system) with placeholders such as {{pii:pan#ab12cd}}.",
-  block: "Rejects a request the first time a new value appears (HTTP 400). Retries redact it. A value inside signed thinking of an active tool loop cannot be redacted: use /rewind.",
+  block: "Rejects a request the first time a new value appears (HTTP 400). Retries redact it.",
 };
 
 const OVERRIDE_VERB = { off: "is off", observe: "observes", redact: "redacts", block: "blocks" };
+const OVERRIDE_PLURAL = { off: "are off", observe: "observe", redact: "redact", block: "block" };
 
 const ACTION_BADGE_VARIANT = {
   block: "error",
@@ -138,7 +139,7 @@ export default function PiiGuardClient() {
     return () => clearInterval(t);
   }, [load]);
 
-  const save = patch => call(patch).then(s => { setState(s); setError(""); }).catch(e => setError(e.message));
+  const save = patch => call(patch).then(s => { setState(s); setError(""); return true; }).catch(e => { setError(e.message); return false; });
   const confirmBlock = mode => mode !== "block" || window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?");
   const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
   const runTest = () => call({ test: text, testMode, testWhere }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
@@ -231,16 +232,19 @@ export default function PiiGuardClient() {
   const displayedGroups = showAllRows ? filteredGroups : filteredGroups.slice(0, 100);
 
   const overrideCounts = {};
-  Object.entries(config.rules || {}).forEach(([rule, action]) => {
+  Object.values(config.rules || {}).forEach(action => {
     if (action && action !== "default" && action !== config.mode) {
       overrideCounts[action] = (overrideCounts[action] || 0) + 1;
     }
   });
   const overrideParts = Object.entries(overrideCounts).map(([action, n]) =>
-    n > 1 ? `${n} rules ${action}` : `1 rule ${OVERRIDE_VERB[action] || action}`
+    `${n} ${n > 1 ? "rules" : "rule"} ${n > 1 ? (OVERRIDE_PLURAL[action] || action) : (OVERRIDE_VERB[action] || action)}`
   );
   const anyBlock = config.mode === "block" || overrideCounts.block > 0;
 
+  // Selection outside the current filter is dropped, so bulk actions never touch hidden rows.
+  const visibleHashes = new Set(filteredGroups.map(g => g.hash));
+  const selectedVisible = [...selected].filter(h => visibleHashes.has(h));
   const allSelected = filteredGroups.length > 0 && filteredGroups.every(g => selected.has(g.hash));
   const toggleAll = () => {
     setSelected(prev => {
@@ -261,18 +265,19 @@ export default function PiiGuardClient() {
     });
   };
   // ponytail: API caps ignoreMany at 1000 hashes per call; disable instead of silently truncating
-  const bulkDisabled = selected.size === 0 || selected.size > 1000;
-  const anySelectedVisible = Array.from(selected).some(hash => !ignoredByHash.get(hash));
+  const bulkDisabled = selectedVisible.length === 0 || selectedVisible.length > 1000;
+  const anySelectedVisible = selectedVisible.some(hash => !ignoredByHash.get(hash));
   const bulkIgnore = () => {
-    save({ ignoreMany: Array.from(selected), on: anySelectedVisible })
-      .then(() => setSelected(new Set()));
+    save({ ignoreMany: selectedVisible, on: anySelectedVisible })
+      .then(ok => ok && setSelected(new Set()));
   };
+  // Ignores what the filtered table shows for this rule, not hidden rows.
+  const ruleHashes = filteredGroups.filter(g => !g.ignored).map(g => g.hash);
   const ignoreThisRule = () => {
-    const hashes = (summary.groups || []).filter(g => g.rule === ruleFilter && !g.ignored).map(g => g.hash);
-    if (hashes.length) save({ ignoreMany: hashes, on: true }).then(() => setSelected(new Set()));
+    if (ruleHashes.length) save({ ignoreMany: ruleHashes, on: true }).then(ok => ok && setSelected(new Set()));
   };
   const ignoreRecent = () => {
-    save({ ignoreRecent: Number(recentMinutes), on: true }).then(() => setSelected(new Set()));
+    save({ ignoreRecent: Number(recentMinutes), on: true }).then(ok => ok && setSelected(new Set()));
   };
 
   return (
@@ -714,21 +719,21 @@ export default function PiiGuardClient() {
               />
               Select all{filteredGroups.length > displayedGroups.length ? ` (${count(filteredGroups.length)} filtered)` : ""}
             </label>
-            {selected.size > 0 && (
-              <span className="text-xs text-text-muted font-medium">{count(selected.size)} selected</span>
+            {selectedVisible.length > 0 && (
+              <span className="text-xs text-text-muted font-medium">{count(selectedVisible.length)} selected</span>
             )}
             <Button
               size="sm"
               variant="secondary"
               disabled={bulkDisabled}
-              title={selected.size > 1000 ? "Max 1000 values per request" : undefined}
+              title={selectedVisible.length > 1000 ? "Max 1000 values per request" : undefined}
               onClick={bulkIgnore}
             >
               {anySelectedVisible ? "Ignore selected" : "Unignore selected"}
             </Button>
             {ruleFilter !== "all" && (
-              <Button size="sm" variant="secondary" onClick={ignoreThisRule}>
-                Ignore all from this rule
+              <Button size="sm" variant="secondary" onClick={ignoreThisRule} disabled={!ruleHashes.length || ruleHashes.length > 1000} title={ruleHashes.length > 1000 ? "Max 1000 values per request" : undefined}>
+                Ignore all shown for this rule
               </Button>
             )}
             <div className="flex items-center gap-2 ml-auto">
@@ -782,6 +787,7 @@ export default function PiiGuardClient() {
                       </td>
                       <td className="py-2.5 pr-3" title={`${group.rule} · ${group.hash}`}>
                         <span className="font-medium text-text-main">{group.name || "—"}</span>
+                        <span className="text-[11px] text-text-muted block">{group.rule}</span>
                         <span className="font-mono text-[10px] text-text-muted block truncate max-w-[140px] opacity-75">{group.hash}</span>
                       </td>
                       <td className="py-2.5 pr-3 text-text-muted">

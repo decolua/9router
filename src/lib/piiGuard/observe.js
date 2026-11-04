@@ -102,7 +102,7 @@ const ACTIONS = ["off", "observe", "redact", "block"];
 const RANK = { leaked: 0, block: 1, redact: 2, observe: 3, ignored: 4 };
 export function blockMessage(names, chat = true, stuck = false) {
   // A value in signed thinking of the active tool loop cannot be rewritten, so a retry would be blocked again.
-  if (stuck) return `pii-guard blocked ${names.join(", ")} inside signed thinking, which cannot be redacted. Retrying will not help: run /rewind to drop that turn. Change rules in Dashboard > PII Guard.`;
+  if (stuck && chat) return `pii-guard blocked: ${names.join(", ")}. At least one value sits inside signed thinking, which cannot be redacted, so retrying will not help: run /rewind to drop that turn. Change rules in Dashboard > PII Guard.`;
   return `pii-guard blocked a new value: ${names.join(", ")}. It is now remembered; retry and it will be redacted${chat ? ", or run /rewind to drop that turn" : ""}. Change rules in Dashboard > PII Guard.`;
 }
 // Where a readonly value sits, for the dashboard.
@@ -120,9 +120,10 @@ function thinkingBlock(body, f) {
   if (!m || !Array.isArray(messages) || !/\/thinking$/.test(f.source)) return;
   const i = +m[1], j = +m[2], block = messages[i]?.content?.[j];
   if (messages[i]?.role !== "assistant" || block?.type !== "thinking") return;
-  const last = messages.at(-1), loop = Array.isArray(last?.content) && last.content.some(c => c?.type === "tool_result");
-  const lastAssistant = messages.findLastIndex(x => x?.role === "assistant");
-  return loop && i === lastAssistant ? undefined : { i, j };
+  // The open turn starts after the last user message that is not only tool results; its thinking must stay.
+  const toolOnly = x => Array.isArray(x?.content) && x.content.length && x.content.every(c => c?.type === "tool_result");
+  const lastUser = messages.findLastIndex(x => x?.role === "user" && !toolOnly(x));
+  return i > lastUser ? undefined : { i, j };
 }
 export async function ready() {
   if (!process.env.PII_GUARD_MODULE) return false;
@@ -238,7 +239,7 @@ const WHERE = {
 const READ = { user: b => b.messages[0].content, system: b => b.system, assistant: b => b.messages[0].content[0].text, tool_result: b => b.messages[0].content[0].content, thinking: b => b.messages[0].content[0].thinking };
 export async function testText(text, config, at = "user") {
   if (!await ready()) return null;
-  if (!WHERE[at]) at = "user";
+  if (!Object.hasOwn(WHERE, at)) at = "user";
   const act = actionFor(config), body = WHERE[at](text), redacted = Object.create(null);
   const ignore = new Set(Array.isArray(config.ignore) ? config.ignore.filter(h => typeof h === "string" && /^[0-9a-f]{12}$/i.test(h)) : []);
   const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule);
