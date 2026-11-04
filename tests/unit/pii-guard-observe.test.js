@@ -36,6 +36,15 @@ describe("PII observation", () => {
     await observeRequest(body(value), meta);
     await expect(stat(events)).rejects.toMatchObject({ code: "ENOENT" });
   });
+  it("logs names to the console, never values", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    await observeRequest(body(value), meta);
+    await observeRequest(body(value), meta);
+    expect(warn).toHaveBeenCalledWith("[pii-guard] test /v1/messages: own-test=1 (new: own-test)");
+    expect(info).toHaveBeenCalledWith("[pii-guard] test /v1/messages: own-test=1");
+    expect(JSON.stringify([warn.mock.calls, info.mock.calls])).not.toContain(value);
+  });
   it("writes only metadata and deduplicates findings", async () => {
     await observeRequest(body(value), meta);
     let text = await lines(1);

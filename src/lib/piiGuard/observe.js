@@ -101,5 +101,10 @@ export async function observeRequest(body, meta = {}) {
       if (seen.size > 50_000) seen.delete(seen.values().next().value);
     }
     append({ ts: new Date().toISOString(), endpoint: meta.endpoint, model: meta.model, ua: (meta.userAgent || "").split(" ")[0], chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh });
+    // Names and counts only; never log matched values.
+    const summary = Object.entries(counts).map(([k, n]) => `${k}=${n}`).join(", ");
+    const line = `[pii-guard] ${meta.model || "-"} ${meta.endpoint || "-"}: ${summary}`;
+    if (fresh.length) console.warn(`${line} (new: ${[...new Set(fresh.map(f => f.name || f.rule))].join(", ")})`);
+    else console.info(line);
   } catch { warn(); }
 }
