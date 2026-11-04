@@ -1,6 +1,7 @@
 # v0.5.112 (2026-10-28)
 
 ## Features
+- **Combos**: per-model weights for round-robin, so a combo can send a set share of requests to each model instead of an even split. Seats follow a smooth weighted cycle, a weight of 0 keeps a model as last-resort fallback, and the editor shows each model's share of 100.
 - **MiniMax Code**: add lease auth mode that rides the desktop app's sign-in through a named-pipe/unix-socket broker (length-prefixed JSON protocol, broker-owned token refresh — no refresh token held locally since MiniMax tokens are single-use), with a dashboard lease button and usage attribution
 - **Nace Drex**: add the `nace` provider to the System One lane with `drex`, `drex-v2.0` and `drex-max`
 - **CommandCode**: align request headers with the official CLI 1.88.0 through a shared `commandCodeHeaders` service
