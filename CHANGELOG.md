@@ -1,3 +1,20 @@
+# v0.5.366 (2026-11-03) · 1 commit
+
+## Changelog UI: composite category headings now render in colour
+The changelog modal painted every unrecognised category heading grey with a
+"help" icon instead of the usual coloured "WHAT'S …?" pill. Headings the fork
+writes like `Providers & Usage Fixes`, `Providers & UI`, `UI & Theme System`,
+`Documentation & Maintenance`, `Features & Cleanup` and the `Upstream … Port`
+release-section titles fell through to the unknown-category fallback.
+- Added the missing composite aliases to `CATEGORY_ALIAS` so they collapse to a
+  coloured category: `Providers & Usage Fixes` → Fixes, `Providers & UI` /
+  `UI & Theme System` / `UI & Visual Design` → UI, `Documentation & Maintenance`
+  → Docs, `Providers & Features` / `Features & Cleanup` / `Features & Improvements`
+  → Features, `Providers & Web Cookie` → Features, `Testing` / `Upstream … Port`
+  / `OpenCode Free lane divergence clean-up` → Internal.
+- Verified with the shipped guard: the category-style suite confirms **no
+  heading in CHANGELOG.md renders with the grey unknown fallback**.
+
 # v0.5.365 (2026-11-03) · 1 commit
 
 ## OpenCode Free lane divergence clean-up (post-v0.5.112 port)
