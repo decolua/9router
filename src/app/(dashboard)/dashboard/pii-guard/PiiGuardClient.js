@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { Card, Button, SegmentedControl } from "@/shared/components";
+import { Card, Button, SegmentedControl, Select } from "@/shared/components";
 
 const MODES = [
   { value: "off", label: "Off" },
@@ -33,12 +33,13 @@ export default function PiiGuardClient() {
   const [error, setError] = useState("");
   const [text, setText] = useState("My mobile number is 9876543210 and PAN is ABCPE1234F.");
   const [result, setResult] = useState(null);
+  const [testMode, setTestMode] = useState("current");
 
   const load = useCallback(() => call().then(setState).catch(e => setError(e.message)), []);
   useEffect(() => { load(); const t = setInterval(load, 10_000); return () => clearInterval(t); }, [load]);
 
   const save = patch => call(patch).then(s => { setState(s); setError(""); }).catch(e => setError(e.message));
-  const runTest = () => call({ test: text }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
+  const runTest = () => call({ test: text, testMode }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
 
   if (!state) return <div className="p-6 text-text-muted">{error || "Loading..."}</div>;
   const { config, rules, events, enabled, available } = state;
@@ -69,7 +70,7 @@ export default function PiiGuardClient() {
 
       <Card>
         <h3 className="font-semibold mb-1">Test</h3>
-        <p className="text-sm text-text-muted mb-3">Scan a text with the current settings. The text is not sent to any provider.</p>
+        <p className="text-sm text-text-muted mb-3">Scan a text to preview a mode before you save it. The text is not sent to any provider.</p>
         <textarea
           value={text}
           onChange={e => setText(e.target.value)}
@@ -77,7 +78,16 @@ export default function PiiGuardClient() {
           aria-label="Text to scan"
           className="w-full rounded-lg border border-border bg-surface-2 p-3 text-sm font-mono"
         />
-        <Button className="mt-2" onClick={runTest}>Scan</Button>
+        <div className="mt-2 flex items-end gap-2 flex-wrap">
+          <Select
+            label="Test with"
+            className="w-56"
+            value={testMode}
+            onChange={e => { setTestMode(e.target.value); setResult(null); }}
+            options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]}
+          />
+          <Button variant="secondary" onClick={runTest}>Scan</Button>
+        </div>
         {result && (
           <div className="mt-4 space-y-2 text-sm">
             {result.findings.length === 0 ? <p className="text-text-muted">No findings.</p> : (

@@ -113,3 +113,13 @@ describe("PII guard block scope", () => {
     expect(await observeRequest(req, meta, { mode: "block" })).toEqual({ blocked: ["in_phone"] });
   });
 });
+describe("PII guard test preview", () => {
+  it("previews redact and block without request side effects", async () => {
+    const { testText } = await import("../../src/lib/piiGuard/observe.js");
+    const r = await testText("mobile 9876543210", { mode: "redact" });
+    expect(r.findings[0]).toMatchObject({ rule: "in_phone", action: "redact" });
+    expect(r.redacted).toMatch(/^mobile \{\{pii:in_phone#/);
+    expect((await testText("mobile 9876543210", { mode: "block" })).blocked).toEqual(["in_phone"]);
+    await expect(stat(events)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+});

@@ -24,13 +24,15 @@ export async function GET() {
   return NextResponse.json(await state());
 }
 
-// Body: { mode?, rules? } saves config. { test: "text" } scans text without saving.
+// Body: { mode?, rules? } saves config. { test, testMode? } scans text without saving.
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   const current = (await getSettings()).piiGuard;
   if (typeof body.test === "string") {
     if (body.test.length > 100_000) return NextResponse.json({ error: "Text too long" }, { status: 400 });
-    const result = await testText(body.test, current);
+    // testMode previews one mode for every rule without saving it.
+    const config = MODES.includes(body.testMode) ? { mode: body.testMode, rules: {} } : current;
+    const result = await testText(body.test, config);
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Scanner unavailable" }, { status: 503 });
   }
   const next = { mode: current.mode, rules: { ...current.rules } };
