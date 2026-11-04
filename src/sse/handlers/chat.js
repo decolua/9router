@@ -287,12 +287,19 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
-      if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+      // No credentials for this specific model
+      // If we're in a fallback loop (excludeConnectionIds has items), throw so combo can try next model
+      // Otherwise (first try, single model request), return a proper error response
+      if (excludeConnectionIds.size > 0) {
+        const noCredsError = new Error(`No active credentials for provider: ${provider}`);
+        noCredsError.code = "NO_CREDENTIALS";
+        noCredsError.status = HTTP_STATUS.NOT_FOUND;
+        throw noCredsError;
       }
-      log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
+      // First attempt, no credentials — return 404 for single model requests
+      const errorMsg = `No active credentials for provider: ${provider}`;
+      log.warn("CHAT", `[${provider}/${model}] ${errorMsg}`);
+      return errorResponse(HTTP_STATUS.NOT_FOUND, errorMsg);
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
