@@ -96,7 +96,15 @@ async function defaultUpdateConnection(id, data) {
 
 async function defaultProbe(connection) {
   const { fetchWebIdentity } = await import("open-sse/services/webIdentity.js");
-  return fetchWebIdentity(connection.provider, connection.apiKey || "");
+  const proxyOptions = {
+    connectionProxyEnabled: connection.providerSpecificData?.connectionProxyEnabled === true,
+    connectionProxyUrl: connection.providerSpecificData?.connectionProxyUrl || "",
+    connectionNoProxy: connection.providerSpecificData?.connectionNoProxy || "",
+    vercelRelayUrl: connection.providerSpecificData?.vercelRelayUrl || "",
+    strictProxy: connection.providerSpecificData?.strictProxy === true,
+    connectionProxyPoolId: connection.providerSpecificData?.connectionProxyPoolId || null,
+  };
+  return fetchWebIdentity(connection.provider, connection.apiKey || "", proxyOptions);
 }
 
 /**
@@ -130,11 +138,15 @@ export async function validateAndRefreshWebConnection(connection, deps = {}) {
 
     if (identity.status === "invalid") {
       const errorMsg = identity.error || "Web session is invalid or expired";
+      // Set modelLock for all models on this connection so failover skips it (real fix for #3355)
+      const { buildModelLockUpdate } = await import("open-sse/services/accountFallback.js");
+      const lockUpdate = buildModelLockUpdate(null, 5 * 60 * 1000); // 5 min lock, modelLock___all
       await updateConnection(connection.id, {
         testStatus: "unavailable",
         lastError: errorMsg,
         lastErrorAt: now,
         providerSpecificData: updatedPsd,
+        ...lockUpdate,
       });
       return { valid: false, error: errorMsg };
     }

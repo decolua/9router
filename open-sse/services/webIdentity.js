@@ -9,6 +9,7 @@ import https from "node:https";
 import { extractCookieValue, normalizeSessionCookieHeader } from "../utils/webCookieAuth.js";
 import { normalizeGeminiValidationCookie } from "../utils/geminiCookies.js";
 import { grokTlsFetch, GROK_TLS_USER_AGENT } from "./grokTlsClient.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36";
@@ -40,14 +41,14 @@ function decodeJwtPayload(token) {
 }
 
 
-async function request(url, { method = "GET", headers = {}, body } = {}) {
+async function request(url, { method = "GET", headers = {}, body } = {}, proxyOptions = null) {
   try {
-    const res = await fetch(url, {
+    const res = await proxyAwareFetch(url, {
       method,
       headers: { "User-Agent": UA, ...headers },
       body,
       signal: AbortSignal.timeout(TIMEOUT_MS),
-    });
+    }, proxyOptions);
     const text = await res.text().catch(() => "");
     return { status: res.status, ok: res.ok, text };
   } catch (error) {
@@ -56,7 +57,8 @@ async function request(url, { method = "GET", headers = {}, body } = {}) {
 }
 
 /** Gemini sends response headers too large for undici's default cap. */
-function geminiHttpsGet(url, headers) {
+function geminiHttpsGet(url, headers, proxyOptions = null) {
+  // For now, gemini uses direct https - can be upgraded later if needed
   return new Promise((resolve) => {
     const req = https.request(
       { host: "gemini.google.com", path: url, method: "GET", maxHeaderSize: 2 * 1024 * 1024, headers: { "User-Agent": UA, ...headers } },
@@ -74,7 +76,7 @@ function geminiHttpsGet(url, headers) {
 }
 
 const PROBES = {
-  async "deepseek-web"(credential) {
+  async "deepseek-web"(credential, proxyOptions = null) {
     let token = String(credential || "").trim();
     try {
       const parsed = JSON.parse(token);
@@ -92,7 +94,7 @@ const PROBES = {
         "X-Client-Platform": "web",
         "X-Client-Version": "2.0.0",
       },
-    });
+    }, proxyOptions);
     if (!res.status) return UNKNOWN(res.error);
     if (res.status === 401 || res.status === 403) return REJECTED("userToken is invalid or expired");
     if (!res.ok) return UNKNOWN(`DeepSeek returned HTTP ${res.status}`);
@@ -106,12 +108,12 @@ const PROBES = {
     return OK(biz.email || "");
   },
 
-  async "chatgpt-web"(credential) {
+  async "chatgpt-web"(credential, proxyOptions = null) {
     const cookie = normalizeSessionCookieHeader(credential, "__Secure-next-auth.session-token");
     if (!cookie) return REJECTED("Missing session cookie");
     const res = await request("https://chatgpt.com/api/auth/session", {
       headers: { Cookie: cookie, Accept: "application/json" },
-    });
+    }, proxyOptions);
     if (!res.status) return UNKNOWN(res.error);
     if (res.status === 401 || res.status === 403) return REJECTED("Session cookie is invalid or expired");
     if (!res.ok) return UNKNOWN(`ChatGPT returned HTTP ${res.status}`);
@@ -122,7 +124,7 @@ const PROBES = {
     return OK(email);
   },
 
-  async "grok-web"(credential) {
+  async "grok-web"(credential, proxyOptions = null) {
     const cookie = [extractCookieValue(credential, "sso") ? `sso=${extractCookieValue(credential, "sso")}` : ""]
       .filter(Boolean).join("; ");
     if (!cookie) return REJECTED("Missing sso cookie");
@@ -132,7 +134,7 @@ const PROBES = {
       const tls = await grokTlsFetch("https://grok.com/api/auth/session", { method: "GET", headers, timeoutMs: TIMEOUT_MS });
       res = { status: tls.status, ok: tls.ok, text: await tls.text().catch(() => "") };
     } catch {
-      res = await request("https://grok.com/api/auth/session", { headers });
+      res = await request("https://grok.com/api/auth/session", { headers }, proxyOptions);
     }
     if (!res.status) return UNKNOWN(res.error);
     if (res.status === 401 || res.status === 403) return REJECTED("sso cookie is invalid or expired");
@@ -144,10 +146,10 @@ const PROBES = {
   },
 
 
-  async "gemini-web"(credential) {
+  async "gemini-web"(credential, proxyOptions = null) {
     const cookie = normalizeGeminiValidationCookie(String(credential || ""));
     if (!cookie) return REJECTED("Missing __Secure-1PSID cookie");
-    const res = await geminiHttpsGet("/app", { Cookie: cookie, Accept: "text/html,application/xhtml+xml" });
+    const res = await geminiHttpsGet("/app", { Cookie: cookie, Accept: "text/html,application/xhtml+xml" }, proxyOptions);
     if (!res.status) return UNKNOWN(res.error);
     if (res.status === 401 || res.status === 403) return REJECTED("__Secure-1PSID cookie is invalid or expired");
     if (!res.ok) return UNKNOWN(`Gemini returned HTTP ${res.status}`);
@@ -156,11 +158,11 @@ const PROBES = {
     return OK("");
   },
 
-  async "muse-web"(credential) {
+  async "muse-web"(credential, proxyOptions = null) {
     if (!cookieJar(credential).get("hatch_sess")) return REJECTED("Missing hatch_sess cookie");
     const res = await request("https://muse.ai/api/session", {
       headers: { Cookie: credential, Accept: "application/json", Origin: "https://muse.ai", Referer: "https://muse.ai/thread/new" },
-    });
+    }, proxyOptions);
     if (!res.status) return UNKNOWN(res.error);
     if (res.status === 401 || res.status === 403) return REJECTED("muse.ai session cookie is invalid or expired");
     if (!res.ok) return UNKNOWN(`muse.ai returned HTTP ${res.status}`);
@@ -170,7 +172,7 @@ const PROBES = {
 
   // The identity lives inside the Supabase SSR auth cookie — no network needed.
 
-  async "uc-web"(credential) {
+  async "uc-web"(credential, proxyOptions = null) {
     const jar = cookieJar(credential);
     const client = jar.get("__client");
     if (!client) return REJECTED("Missing __client cookie");
@@ -181,7 +183,7 @@ const PROBES = {
     if (typeof sid !== "string" || !sid) {
       const list = await request("https://clerk.uncensored.com/v1/client?_clerk_js_version=5.127.1", {
         headers: { Cookie: `__client=${client}`, Accept: "application/json", Origin: clerkOrigin, Referer: `${clerkOrigin}/` },
-      });
+      }, proxyOptions);
       if (!list.status) return UNKNOWN(list.error);
       if (list.status === 401 || list.status === 403) return REJECTED("Clerk session is invalid or expired");
       if (!list.ok) return UNKNOWN(`Clerk returned HTTP ${list.status}`);
@@ -195,7 +197,8 @@ const PROBES = {
     }
     const res = await request(
       `https://clerk.uncensored.com/v1/client/sessions/${encodeURIComponent(sid)}/tokens?_clerk_js_version=5.127.1`,
-      { method: "POST", headers: { Cookie: `__client=${client}`, "Content-Type": "application/x-www-form-urlencoded", Origin: clerkOrigin }, body: "" }
+      { method: "POST", headers: { Cookie: `__client=${client}`, "Content-Type": "application/x-www-form-urlencoded", Origin: clerkOrigin }, body: "" },
+      proxyOptions
     );
     if (!res.status) return UNKNOWN(res.error);
     if (res.status === 401 || res.status === 403) return REJECTED("Clerk session is invalid or expired");
@@ -219,11 +222,11 @@ export function hasWebIdentityProbe(providerId) {
  * Probe a web-cookie credential.
  * @returns {Promise<{ok: boolean, status: "valid"|"invalid"|"unknown", email?: string, error?: string}>}
  */
-export async function fetchWebIdentity(providerId, credential) {
+export async function fetchWebIdentity(providerId, credential, proxyOptions = null) {
   const probe = PROBES[providerId];
   if (!probe) return UNKNOWN("No identity probe for this provider");
   try {
-    const result = await probe(credential);
+    const result = await probe(credential, proxyOptions);
     return { email: "", ...result };
   } catch (error) {
     return UNKNOWN(error?.message || String(error));
