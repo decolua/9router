@@ -181,6 +181,8 @@ export async function observeRequest(body, meta = {}, config = {}) {
     const result = library.scanBody(body, detector, undefined, hasRedact ? (text, fs) => replace(text, fs, decide, redacted) : undefined);
     const findings = result.findings;
     // Readonly thinking outside the active tool loop becomes removable, so it is treated like editable text.
+    // Inside the active loop it stays: it is the provider's own signed output, so replaying it discloses nothing new.
+    // Redact reports it as leaked; only Block stops it (with a /rewind hint).
     const drop = new Map();
     for (const f of findings) if (f.readonly) { const at = thinkingBlock(body, f); if (at) { delete f.readonly; drop.set(f, at); } }
     // meta.model is a pre-scan copy; log the body value, which redaction may have rewritten, and drop it if it held a finding.
