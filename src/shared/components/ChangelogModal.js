@@ -228,6 +228,8 @@ const CATEGORY_ALIAS = {
   "changelog ui: composite category headings now render in colour": "UI",
   "background loading-in-the-bell": "Features",
   "background loading-in-the-bell: all surfaces verified, stale tests fixed": "Features",
+  "codebuddy intl oauth login fix": "Fixes",
+  "codebuddy intl oauth login fix, 4 upstream prs ported, kimi code cli setup": "Features",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",

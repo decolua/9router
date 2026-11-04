@@ -362,6 +362,49 @@ amp --model "{{model}}"
 }`,
     },
   },
+  "kimi-code": {
+    id: "kimi-code",
+    name: "Kimi Code",
+    image: "/providers/kimi-coding.png",
+    color: "#1E3A8A",
+    description: "Moonshot Kimi Code CLI — next-gen coding agent (Node.js TUI)",
+    docsUrl: "https://www.kimi.com/code/en",
+    configType: "guide",
+    defaultCommand: "kimi",
+    notes: [
+      { type: "info", text: "Kimi Code reads its OpenAI-compatible providers from ~/.kimi-code/config.toml. 9Router is registered as an openai provider with your baseUrl, apiKey and model." },
+      { type: "warning", text: "Config path: ~/.kimi-code/config.toml (override with KIMI_CODE_HOME). Run `kimi` after writing the config — the CLI does not read shell env vars for keys." },
+    ],
+    guideSteps: [
+      { step: 1, title: "Install Kimi Code", desc: "curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash  (or npm install -g @moonshot-ai/kimi-code)" },
+      { step: 2, title: "API Key", type: "apiKeySelector" },
+      { step: 3, title: "Base URL", value: "{{baseUrl}}", copyable: true },
+      { step: 4, title: "Select Model", type: "modelSelector" },
+      { step: 5, title: "Save Config", desc: "Write the TOML below to ~/.kimi-code/config.toml, then run `kimi` in your project." },
+    ],
+    codeBlock: {
+      language: "toml",
+      code: `default_model = "kimi-k3"
+default_permission_mode = "manual"
+
+[providers.9router]
+type = "openai"
+base_url = "{{baseUrl}}"
+api_key = "{{apiKey}}"
+
+[models."kimi-k3"]
+provider = "9router"
+model = "kimi-k3"
+max_context_size = 262144
+capabilities = [ "thinking", "tool_use" ]
+
+[models."kimi-for-coding"]
+provider = "9router"
+model = "kimi-for-coding"
+max_context_size = 262144
+capabilities = [ "thinking", "tool_use" ]`,
+    },
+  },
   "deepseek-tui": {
     id: "deepseek-tui",
     name: "DeepSeek TUI",

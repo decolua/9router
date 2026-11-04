@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { spawn } from "child_process";
+import { spawn, execSync } from "child_process";
 import { DATA_DIR } from "@/lib/dataDir.js";
 import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras } from "./detect.js";
 
@@ -37,9 +37,116 @@ export function isPidAlive(pid) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 
-export function getManagedPid() {
+function parseCmdlineArgs(cmdline) {
+  if (!cmdline || typeof cmdline !== "string") return [];
+  if (cmdline.includes("\0")) return cmdline.split("\0").filter(Boolean);
+  const args = [];
+  const regex = /"([^"]*)"|'([^']*)'|(\S+)/g;
+  let match;
+  while ((match = regex.exec(cmdline)) !== null) {
+    args.push(match[1] ?? match[2] ?? match[3]);
+  }
+  return args;
+}
+
+function isHeadroomCmdline(cmdline, port) {
+  const args = parseCmdlineArgs(cmdline);
+  if (!args.length) return false;
+
+  let proxyIndex = -1;
+  const first = path.basename(args[0].replace(/\\/g, "/")).toLowerCase();
+  if (first === "headroom" || first === "headroom.exe" || first === "headroom-ai") {
+    if (args[1]?.toLowerCase() === "proxy") proxyIndex = 1;
+  } else if (/^python(?:\d+(?:\.\d+)?)?(?:\.exe)?$/i.test(first)) {
+    const second = path.basename((args[1] || "").replace(/\\/g, "/")).toLowerCase();
+    if (second === "headroom" || second === "headroom.exe" || second === "headroom-ai") {
+      if (args[2]?.toLowerCase() === "proxy") proxyIndex = 2;
+    } else if (args[1] === "-m" && (args[2]?.toLowerCase() === "headroom" || args[2]?.toLowerCase() === "headroom-ai")) {
+      if (args[3]?.toLowerCase() === "proxy") proxyIndex = 3;
+    }
+  }
+
+  if (proxyIndex === -1) return false;
+
+  if (port != null) {
+    let cmdPort = DEFAULT_PORT;
+    for (let i = proxyIndex; i < args.length; i++) {
+      const eqMatch = args[i].match(/^(?:--port|-p)=(\d+)$/i);
+      if (eqMatch) {
+        cmdPort = parseInt(eqMatch[1], 10);
+        break;
+      }
+      if ((args[i] === "--port" || args[i] === "-p") && args[i + 1]) {
+        cmdPort = parseInt(args[i + 1], 10);
+        break;
+      }
+    }
+    return cmdPort === Number(port);
+  }
+  return true;
+}
+
+export function isHeadroomProcess(pid, port) {
+  if (!isPidAlive(pid)) return false;
+  try {
+    if (process.platform === "linux" && fs.existsSync(`/proc/${pid}/cmdline`)) {
+      const cmdline = fs.readFileSync(`/proc/${pid}/cmdline`, "utf8");
+      return isHeadroomCmdline(cmdline, port);
+    }
+    if (process.platform === "win32") {
+      try {
+        const out = execSync(`wmic process where processid=${pid} get commandline`, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).toString();
+        const lines = out.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        const cmdline = lines.find((l) => !/^commandline$/i.test(l)) || "";
+        if (isHeadroomCmdline(cmdline, port)) return true;
+      } catch { /* try PowerShell fallback */ }
+      try {
+        const out = execSync(`powershell -NoProfile -Command "(Get-CimInstance Win32_Process -Filter \\"ProcessId = ${pid}\\").CommandLine"`, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).toString().trim();
+        if (isHeadroomCmdline(out, port)) return true;
+      } catch { /* ignore */ }
+      return false;
+    }
+    const out = execSync(`ps -p ${pid} -o command=`, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).toString();
+    return isHeadroomCmdline(out, port);
+  } catch {
+    return false;
+  }
+}
+
+function findPidOnPort(port) {
+  const safePort = Number(port);
+  if (!Number.isInteger(safePort) || safePort <= 0 || safePort >= 65536) return null;
+  try {
+    let pid = null;
+    if (process.platform === "win32") {
+      const out = execSync(`netstat -ano -p tcp | findstr :${safePort}`, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).toString();
+      for (const line of out.split(/\r?\n/)) {
+        const parts = line.trim().split(/\s+/);
+        if (parts.length >= 5 && parts[1].endsWith(`:${safePort}`) && parts[3] === "LISTENING") {
+          const parsed = parseInt(parts[4], 10);
+          if (Number.isFinite(parsed) && parsed > 0) { pid = parsed; break; }
+        }
+      }
+    } else {
+      const out = execSync(`lsof -ti tcp:${safePort} -sTCP:LISTEN`, { stdio: ["ignore", "pipe", "ignore"], windowsHide: true }).toString().trim();
+      const parsed = parseInt(out.split(/\s+/)[0], 10);
+      if (Number.isFinite(parsed) && parsed > 0) pid = parsed;
+    }
+    if (pid && isHeadroomProcess(pid, safePort)) return pid;
+  } catch { /* ignore */ }
+  return null;
+}
+
+export function getManagedPid(port = DEFAULT_PORT) {
+  const safePort = Number(port);
+  if (!Number.isInteger(safePort) || safePort <= 0 || safePort >= 65536) return null;
+  const portPid = findPidOnPort(safePort);
+  if (portPid) return portPid;
   const pid = readPid();
-  return pid && isPidAlive(pid) ? pid : null;
+  if (pid && isPidAlive(pid) && isHeadroomProcess(pid, safePort)) {
+    return pid;
+  }
+  return null;
 }
 
 // Build proxy CLI flags for the active compression extras. `[code]` (AST
@@ -61,7 +168,7 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
     throw err;
   }
 
-  const existing = getManagedPid();
+  const existing = getManagedPid(safePort);
   if (existing) return { pid: existing, alreadyRunning: true };
 
   ensureDir();
@@ -73,7 +180,12 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
     stdio: ["ignore", outFd, outFd],
     detached: true,
     windowsHide: true,
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      DO_NOT_TRACK: "1",
+      HEADROOM_TELEMETRY: "off",
+      HEADROOM_BEACON: "off",
+    },
   });
 
   if (!child.pid) {
@@ -109,8 +221,9 @@ export async function startHeadroomProxy({ port = DEFAULT_PORT, codeAware = fals
   return { pid: child.pid, alreadyRunning: false };
 }
 
-export function stopHeadroomProxy() {
-  const pid = getManagedPid();
+export function stopHeadroomProxy({ port = DEFAULT_PORT } = {}) {
+  const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
+  const pid = getManagedPid(safePort);
   if (!pid) return { stopped: false, reason: "not_running" };
   try {
     process.kill(pid, "SIGTERM");
@@ -132,8 +245,9 @@ export function stopHeadroomProxy() {
 
 // Stop the managed proxy (if any), wait for the pid to die, then start again
 // with the given flags. Used when toggling active extras that require a restart.
-export async function restartHeadroomProxy(opts = {}) {
-  const pid = getManagedPid();
+export async function restartHeadroomProxy({ port = DEFAULT_PORT, ...opts } = {}) {
+  const safePort = Number(port) > 0 && Number(port) < 65536 ? Number(port) : DEFAULT_PORT;
+  const pid = getManagedPid(safePort);
   if (pid) {
     try { process.kill(pid, "SIGTERM"); } catch { /* already gone */ }
     // Wait up to ~3s for graceful exit, force-kill if still alive.
@@ -146,7 +260,7 @@ export async function restartHeadroomProxy(opts = {}) {
     }
     clearPid();
   }
-  return startHeadroomProxy(opts);
+  return startHeadroomProxy({ port: safePort, ...opts });
 }
 
 export function getHeadroomLogTail(maxLines = 200) {

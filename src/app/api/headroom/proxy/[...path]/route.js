@@ -50,10 +50,12 @@ function forwardedHeaders(request, target) {
 }
 
 function rewriteDashboardHtml(html) {
-  return html.replace(
-    /fetch\('(?=\/(?:stats|health|stats-history|transformations\/feed))/g,
-    `fetch('${DASHBOARD_PREFIX}`,
-  );
+  return html
+    .replace(/(src|href)=(["'])\/dashboard(?=[\/"'\s]|$)/g, `$1=$2${DASHBOARD_PREFIX}/dashboard`)
+    .replace(
+      /(fetch\(|fetchJson\()(["'])(?=\/(?:stats|health|transformations|settings))/g,
+      `$1$2${DASHBOARD_PREFIX}`,
+    );
 }
 
 async function proxy(request, { params }) {
@@ -78,20 +80,24 @@ async function proxy(request, { params }) {
       if (HOP_BY_HOP_HEADERS.has(header.toLowerCase())) headers.delete(header);
     }
 
-    if (path.join("/") === "dashboard") {
-      const contentType = response.headers.get("content-type") || "";
-      if (contentType.includes("text/html")) {
-        headers.delete("content-length");
-        return new NextResponse(rewriteDashboardHtml(await response.text()), {
-          status: response.status,
-          headers,
-        });
-      }
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("text/html")) {
+      headers.delete("content-length");
+      return new NextResponse(rewriteDashboardHtml(await response.text()), {
+        status: response.status,
+        headers,
+      });
     }
 
     return new NextResponse(response.body, { status: response.status, headers });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    if (request.headers.get("accept")?.includes("text/html")) {
+      return new NextResponse(
+        "<!DOCTYPE html><html><body><h2>Headroom proxy is not running</h2><p>Please start it from <a href=\"/dashboard/token-saver\">Token Saver</a>.</p></body></html>",
+        { status: 503, headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    }
+    return NextResponse.json({ error: `Headroom proxy is not running: ${error.message}` }, { status: 502 });
   }
 }
 

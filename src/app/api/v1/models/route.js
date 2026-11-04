@@ -51,6 +51,17 @@ async function resolveQoderLiveModels(conn, provider) {
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
 const LIVE_MODEL_RESOLVERS = {
+  anthropic: async (conn) => {
+    if (!conn.apiKey) return null;
+    const res = await fetch("https://api.anthropic.com/v1/models?limit=1000", {
+      headers: { "x-api-key": conn.apiKey, "anthropic-version": "2023-06-01" },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) throw new Error(`anthropic /v1/models ${res.status}`);
+    const data = await res.json();
+    const models = (data.data || []).filter((m) => m?.id).map((m) => ({ id: m.id, name: m.display_name || m.id }));
+    return models.length ? { models } : null;
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -274,6 +285,27 @@ function readCallerApiKey(request) {
  const auth = String(request?.headers?.get("authorization") || "");
  const bearer = auth.match(/^Bearer\s+(.+)$/i);
  return (bearer?.[1] || request?.headers?.get("x-api-key") || "").trim() || null;
+}
+
+// Drop a routing prefix (`alias/upstream-id` stored in enabledModels or aliases)
+// so the published id is `alias/upstream-id` once. LLMTR's own catalog ids are
+// `llmtr/<name>` (one segment after the vendor). That first `llmtr/` is the
+// upstream id, not a route prefix — unwrapping it would publish `llmtr/qwen3-8-27b`
+// and the chat parser would send `qwen3-8-27b`. Unwrap only a second copy
+// (`llmtr/llmtr/<name>`) or a prefix in front of a namespaced id (`llmtr/qwen/...`).
+function unwrapListedModelId(modelId, outputAlias, staticAlias, providerId) {
+  if (typeof modelId !== "string") return modelId;
+  const prefixes = [outputAlias, staticAlias, providerId];
+  for (const prefix of prefixes) {
+    if (!prefix || !modelId.startsWith(`${prefix}/`)) continue;
+    const rest = modelId.slice(prefix.length + 1);
+    if (providerId === "llmtr" && prefix === "llmtr") {
+      if (rest.startsWith("llmtr/")) return rest;
+      if (!rest.includes("/")) return modelId;
+    }
+    return rest;
+  }
+  return modelId;
 }
 
 /**
@@ -525,18 +557,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
 
       const modelIds = rawModelIds
-        .map((modelId) => {
-          if (modelId.startsWith(`${outputAlias}/`)) {
-            return modelId.slice(outputAlias.length + 1);
-          }
-          if (modelId.startsWith(`${staticAlias}/`)) {
-            return modelId.slice(staticAlias.length + 1);
-          }
-          if (modelId.startsWith(`${providerId}/`)) {
-            return modelId.slice(providerId.length + 1);
-          }
-          return modelId;
-        })
+        .map((modelId) => unwrapListedModelId(modelId, outputAlias, staticAlias, providerId))
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const customModelKindById = new Map();
@@ -570,18 +591,7 @@ export async function buildModelsList(kindFilter, options = {}) {
             fullModel.startsWith(`${providerId}/`)
           );
         })
-        .map((fullModel) => {
-          if (fullModel.startsWith(`${outputAlias}/`)) {
-            return fullModel.slice(outputAlias.length + 1);
-          }
-          if (fullModel.startsWith(`${staticAlias}/`)) {
-            return fullModel.slice(staticAlias.length + 1);
-          }
-          if (fullModel.startsWith(`${providerId}/`)) {
-            return fullModel.slice(providerId.length + 1);
-          }
-          return fullModel;
-        })
+        .map((fullModel) => unwrapListedModelId(fullModel, outputAlias, staticAlias, providerId))
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       // The same filter produced customModelIds; remember which of them carry an

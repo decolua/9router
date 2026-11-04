@@ -1,3 +1,4 @@
+import fs from "fs";
 import { execFileSync, execSync } from "child_process";
 import path from "path";
 
@@ -22,15 +23,18 @@ const WHICH_CMD = IS_WIN ? "where" : "which";
 // Extra bin dirs often missing from a packaged/launchd PATH (Python installs headroom here).
 const EXTRA_BINS = IS_WIN
   ? [
+      `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python314\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python313\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python312\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python311\\Scripts`,
       `${process.env.LOCALAPPDATA || ""}\\Programs\\Python\\Python310\\Scripts`,
+      `${process.env.APPDATA || ""}\\Python\\Python314\\Scripts`,
       `${process.env.APPDATA || ""}\\Python\\Python313\\Scripts`,
     ]
   : [
       "/usr/local/bin",
       "/opt/homebrew/bin",
+      "/Library/Frameworks/Python.framework/Versions/3.14/bin",
       "/Library/Frameworks/Python.framework/Versions/3.13/bin",
       "/Library/Frameworks/Python.framework/Versions/3.12/bin",
       "/Library/Frameworks/Python.framework/Versions/3.11/bin",
@@ -41,7 +45,7 @@ const EXTRA_BINS = IS_WIN
     ];
 
 const EXTENDED_PATH = [...EXTRA_BINS, process.env.PATH || ""].filter(Boolean).join(path.delimiter);
-const PYTHON_CANDIDATES = ["python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
+const PYTHON_CANDIDATES = ["python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3", "python"];
 const MIN_VERSION = [3, 10];
 const HEADROOM_HEALTH_TIMEOUT_MS = 1500;
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]", "0.0.0.0"]);
@@ -76,9 +80,17 @@ function pythonCandidates() {
   const list = [];
   const bin = findHeadroomBinary();
   if (bin) {
-    const dir = path.dirname(bin);
-    const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.13", "python"];
+    let dir = path.dirname(bin);
+    try {
+      dir = path.dirname(fs.realpathSync(bin));
+    } catch {
+      // Keep original dir on failure
+    }
+    const names = IS_WIN ? ["python.exe", "python3.exe"] : ["python3", "python3.14", "python3.13", "python"];
     for (const n of names) list.push(path.join(dir, n));
+    if (dir !== path.dirname(bin)) {
+      for (const n of names) list.push(path.join(path.dirname(bin), n));
+    }
   }
   for (const dir of EXTRA_BINS) {
     if (!dir) continue;
@@ -139,6 +151,19 @@ export function isLoopbackHeadroomUrl(url) {
   } catch {
     return false;
   }
+}
+
+export function parsePortFromUrl(url, fallback = 8787) {
+  try {
+    const u = new URL(url);
+    if (u.port) {
+      const p = parseInt(u.port, 10);
+      if (p > 0 && p < 65536) return p;
+    }
+    if (u.protocol === "http:") return 80;
+    if (u.protocol === "https:") return 443;
+  } catch { /* ignore */ }
+  return fallback;
 }
 
 // Aggregate status for the dashboard: installed, running, python interpreter.

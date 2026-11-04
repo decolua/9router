@@ -24,7 +24,7 @@ function uuid7() {
 }
 
 /**
- * CodeBuddyIntlExecutor — talks to https://www.codebuddy.ai/v2/chat/completions
+ * CodeBuddyIntlExecutor — talks to https://www.workbuddy.ai/v2/chat/completions
  *
  * Same OpenAI-compatible-but-stream-only gateway behavior as codebuddy-cn:
  * non-stream requests are rejected, and reasoning is surfaced only when the

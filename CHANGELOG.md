@@ -1,4 +1,40 @@
-# v0.5.367 (2026-11-03) · 1 commit
+# v0.5.368 (2026-11-04) · 1 commit
+
+## CodeBuddy Intl OAuth login fix, 4 upstream PRs ported, Kimi Code CLI setup
+- **Fix CodeBuddy Intl OAuth login**: the intl OAuth endpoints pointed at
+  `www.codebuddy.ai`, which is blackholed (DNS → 0.0.0.1) — login failed at the
+  device-code step. Repointed the OAuth state/token/refresh URLs and the
+  `X-Domain` identity header to the live `www.workbuddy.ai` endpoint set
+  (verified: POST /v2/plugin/auth/state returns 200). Applies to the registry,
+  the OAuth provider flow, the token-refresh service, and the intl executor
+  comment. CN (`copilot.tencent.com`) was already healthy and is untouched.
+- **Port upstream PR #5431 — Anthropic API-key system identity drop**: on the
+  `anthropic` provider, any leading "You are Claude Code" / Claude Agent SDK /
+  `x-anthropic-billing-header` identity block now trips a misleading "credit
+  balance is too low" 400. `prepareClaudeRequest()` strips the leading identity
+  text/block for the API-key `anthropic` provider only (OAuth `claude` and
+  `anthropic-compatible-*` nodes untouched).
+- **Port upstream PR #5432 — Anthropic live model catalog**: registered
+  `anthropic` in `LIVE_MODEL_RESOLVERS`; `/v1/models` now fetches the key's
+  live catalog from `api.anthropic.com/v1/models?limit=1000` (falls back to the
+  static list on failure or when an explicit `enabledModels` list exists).
+- **Port upstream PR #5458 — LLMTR provider**: new `llmtr` OpenAI-compatible
+  gateway provider (alias `lt`), API-key validation via one-token chat probe,
+  live model catalog resolution, and reasoning-as-boolean coercion. Resolved the
+  registry-index, paramSupport, baseline and golden-snapshot conflicts against
+  the fork's custom provider set.
+- **Port upstream PR #5423 — Headroom reliability**: resolve symlinked venvs for
+  Python 3.14 detection, reclaim listening ports on restart, strict process
+  identity verification, reject external proxy URLs, and rewrite dashboard proxy
+  assets/API endpoints (fetchJson, /stats, /health, /settings) with a styled 503
+  fallback.
+- **Kimi Code setup in CLI Tools**: added a `kimi-code` guide card to the CLI
+  Tools dashboard — install (`curl -fsSL https://code.kimi.com/kimi-code/install.sh | bash`
+  or `npm install -g @moonshot-ai/kimi-code`), 9Router base URL + API key, model
+  picker, and a ready-to-paste `~/.kimi-code/config.toml` provider+models block
+  (OpenAI-compatible type).
+
+# v0.5.367 (2026-11-04) · 1 commit
 
 ## Background loading-in-the-bell: all surfaces verified, stale tests fixed
 The bell now carries every long operation — batch testing, backup/import, bulk
@@ -23,7 +59,7 @@ repo root, and a couple asserted removed patterns.
   176 → 168 failures, all remaining being pre-existing network / macOS /
   integration-environment tests unrelated to the bell.
 
-# v0.5.366 (2026-11-03) · 1 commit
+# v0.5.366 (2026-11-04) · 1 commit
 
 ## Changelog UI: composite category headings now render in colour
 The changelog modal painted every unrecognised category heading grey with a
@@ -40,7 +76,7 @@ release-section titles fell through to the unknown-category fallback.
 - Verified with the shipped guard: the category-style suite confirms **no
   heading in CHANGELOG.md renders with the grey unknown fallback**.
 
-# v0.5.365 (2026-11-03) · 1 commit
+# v0.5.365 (2026-11-04) · 1 commit
 
 ## OpenCode Free lane divergence clean-up (post-v0.5.112 port)
 The fork's "OpenCode Free" card is a two-lane toggle behind `OpenCodeLaneExecutor`
@@ -75,7 +111,7 @@ executor era's contract, so they failed against the current split.
   - Added the upstream suites for GitHub Copilot Claude 5.5 thinking rules and CodeBuddy channel headers; added the GPT-6.1 Terra cases to the Codex Lite suite.
   - CodeBuddy pairing assertion now follows the fork's desktop-client capture (X-Request-ID pairs with X-Conversation-Message-ID), and the Codex header-version assertion reads the live `CODEX_CLI_VERSION` instead of a stale literal.
 
-# v0.5.363 (2026-11-02) · 1 commit
+# v0.5.363 (2026-11-03) · 1 commit
 
 ## Upstream Feature Port (decolua/9router v0.5.112)
 - **MiniMax Code (Desktop Lease Mode)**:

@@ -43,6 +43,11 @@ const STRIP_RULES = [
   // against /zen/go/v1/chat/completions with one key: 12/12 structured calls 400,
   // 4/4 identical calls without the field 200.
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
+  // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
+  // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
+  { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
+  // LLMTR chat accepts `reasoning` only as a boolean. An object 400s.
+  { provider: "llmtr", coerceReasoningBoolean: true },
 ];
 
 // Test a rule's match (regex or predicate) against the model id.
@@ -92,6 +97,11 @@ export function stripUnsupportedParams(provider, model, body) {
             .join("");
         }
       }
+    }
+    if (rule.coerceReasoningBoolean && body.reasoning != null && typeof body.reasoning !== "boolean") {
+      const value = body.reasoning;
+      const off = value?.enabled === false || value?.effort === "none" || value?.effort === "off";
+      body.reasoning = !off;
     }
     if (rule.clampToModelMaxOutput || Number.isFinite(rule.maxOutputCap)) {
       const modelCeiling = getCapabilitiesForModel(provider, model).maxOutput;

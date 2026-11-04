@@ -574,7 +574,7 @@ export async function refreshCodebuddyIntlToken(refreshToken, log) {
         Accept: "application/json",
         "User-Agent": oauth.userAgent,
         "X-Requested-With": "XMLHttpRequest",
-        "X-Domain": "www.codebuddy.ai",
+        "X-Domain": "www.workbuddy.ai",
         "X-Refresh-Token": refreshToken,
         "X-Auth-Refresh-Source": "plugin",
         "X-Product": "SaaS",
