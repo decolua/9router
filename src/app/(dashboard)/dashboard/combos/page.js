@@ -55,9 +55,6 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-// Drop default-valued keys one at a time so setting a combo back to the default
-// strategy does not erase its weights, judge, or fusion tuning. The entry goes
-// only when nothing non-default survives.
 const isEmptyStrategyValue = (value) => {
   if (value == null) return true;
   if (typeof value === "string") return value.trim() === "";
@@ -66,6 +63,9 @@ const isEmptyStrategyValue = (value) => {
   return false;
 };
 
+// Drops default-valued keys one at a time so setting a combo back to the default
+// strategy keeps its weights, judge, and fusion tuning. The entry goes only when
+// nothing non-default survives.
 function pruneStrategyEntry(entry) {
   const next = { ...entry };
   if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
@@ -702,8 +702,7 @@ function getRouterModelStatus(routerModel, activeProviders) {
 
   return { ready: false, label: "Not configured", providerId };
 }
-// Weighted models lead, so the three chips shown are the three a reader would
-// ask about. Ties keep their combo order.
+// Weighted models lead, so the three chips shown are the ones carrying a weight.
 function ModelChips({ models, weights, comboByName, getCaps }) {
   if (models.length === 0) {
     return <span className="text-xs text-text-muted italic">No models</span>;
@@ -991,11 +990,10 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
 
 const MAX_WEIGHT = 1000;
 
-// Same coercion the server applies, so the preview never disagrees with what
-// gets stored: Number() then floor and clamp to 0..1000, non-numeric falls back
-// to 1. A parsed value would read "1e3" as 1 while the server stores 1000.
-// Blank is the one deliberate difference: clearing the field means "unchanged",
-// not "exclude this model from rotation".
+// Matches the server's coercion: Number(), then floor and clamp to 0..1000, with
+// anything non-numeric falling back to 1. parseInt would read "1e3" as 1 and
+// preview a share the gateway would not honour. A blank field means weight 1 here
+// and 0 on the server, so `onBlur` normalises it to "1" before it can be saved.
 function parseWeight(raw) {
   const text = String(raw ?? "").trim();
   if (text === "") return 1;
@@ -1003,11 +1001,8 @@ function parseWeight(raw) {
   return Number.isFinite(parsed) ? Math.min(MAX_WEIGHT, Math.max(0, Math.floor(parsed))) : 1;
 }
 
-// Largest-remainder rounding: independent Math.round per row can total 99 or
-// 101 (5/3/2/1 renders as 45/27/18/9), which makes the share column look wrong
-// exactly where it is meant to be the guarantee. Floor first, then hand the
-// leftover points to the rows with the largest remainders, so the column sums
-// to 100 whenever any weight is positive.
+// Largest-remainder rounding. Independent Math.round per row can total 99 or 101,
+// which makes the share column look wrong exactly where it is the guarantee.
 function sharesFor(weights) {
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   if (total <= 0) return weights.map(() => 0);

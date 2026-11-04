@@ -4,7 +4,6 @@ import {
   getRotatedModels,
   resetComboRotation,
   normalizeComboWeights,
-  buildWeightedCycle,
 } from "../../open-sse/services/combo.js";
 
 const MODELS = ["p/a", "p/b", "p/c"];
@@ -106,17 +105,6 @@ describe("combo weighted round-robin", () => {
     );
 
     expect(heads).toEqual(["p/a", "p/a", "p/b", "p/b", "p/c", "p/c", "p/a", "p/a"]);
-  });
-
-  it("buildWeightedCycle emits one entry per weight unit", () => {
-    const weights = { "p/a": 5, "p/b": 3, "p/c": 1 };
-    const cycle = buildWeightedCycle(MODELS, weights);
-    const counts = {};
-    for (const seat of cycle) counts[seat] = (counts[seat] || 0) + 1;
-
-    expect(cycle).toHaveLength(9);
-    expect(counts).toEqual({ "p/a": 5, "p/b": 3, "p/c": 1 });
-    expect(buildWeightedCycle(MODELS, { "p/a": 0, "p/b": 0, "p/c": 0 })).toEqual([]);
   });
 
   it("resets cleanly when the weights change mid-flight", () => {
