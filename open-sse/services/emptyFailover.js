@@ -145,11 +145,13 @@ export function isNoRetryFinish(finishReason) {
 }
 
 // Peek a streaming Response body: read frames until the first content frame (→ "content"),
-// the stream ends (→ "empty"), or the deadline elapses (→ "content", fail-open: never hold a
-// possibly-valid slow stream). Returns the decision, the buffered head bytes, the live reader,
-// and — if the deadline fired mid-read — the still-pending read() (`pendingRead`) so the caller
-// can resume from it WITHOUT abandoning the chunk it will deliver.
-export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADLINE_MS } = {}) {
+// the stream ends (→ "empty"), or the deadline elapses. In failover mode (combo first-token
+// timeout), deadline returns "empty" so the combo can fall through to the next seat.
+// In legacy mode (default), deadline is fail-open → "content" (preserve slow but valid stream).
+// Returns the decision, the buffered head bytes, the live reader, and — if the deadline fired
+// mid-read — the still-pending read() (`pendingRead`) so the caller can resume from it
+// WITHOUT abandoning the chunk it will deliver.
+export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADLINE_MS, failover = false } = {}) {
   const reader = body.getReader();
   const decoder = new TextDecoder();
   const headChunks = [];
@@ -176,8 +178,12 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
       return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason, error: err });
     }
     if (res === "__deadline__") {
-      // Fail-open: commit whatever we have. Hand the STILL-PENDING read to the caller so its
-      // chunk is replayed, not dropped (fixes the content-dropping deadline race).
+      // Failover mode: first-token timeout → return empty so combo falls through to next seat.
+      // Legacy mode: fail-open → commit whatever we have (content or empty).
+      if (failover) {
+        return settle({ outcome: "empty", timedOut: true, head: headChunks, reader, pendingRead, finishReason: state.finishReason });
+      }
+      // Fail-open: hand the STILL-PENDING read to the caller so its chunk is replayed, not dropped.
       return settle({ outcome: "content", timedOut: true, head: headChunks, reader, pendingRead, finishReason: state.finishReason });
     }
     const { done, value } = res;
