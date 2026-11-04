@@ -3,6 +3,7 @@ export { cn } from "./cn";
 export * as api from "./api";
 export { getProviderIconSrc, markProviderIconMissing, resolveProviderIconId } from "./providerIcon";
 export { parseSearchQuery, matchesSearch, filterModelsByQuery } from "./modelSearchFilter";
+export { isFreeModel } from "./isFreeModel";
 
 import { v4 as uuidv4 } from "uuid";
 

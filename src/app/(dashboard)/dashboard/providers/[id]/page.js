@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -14,6 +14,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { translate } from "@/i18n/runtime";
 import { fetchSuggestedModels } from "@/shared/utils/providerModelsFetcher";
 import { getProviderCustomModelRows } from "@/shared/utils/providerCustomModels";
+import { isFreeModel } from "@/shared/utils/isFreeModel";
 import ModelRow from "./ModelRow";
 import PassthroughModelsSection from "./PassthroughModelsSection";
 import CompatibleModelsSection from "./CompatibleModelsSection";
@@ -213,15 +214,58 @@ export default function ProviderDetailPage() {
     ? (providerNode?.prefix || providerId)
     : providerAlias;
 
+  const customModelRows = useMemo(() => {
+    return getProviderCustomModelRows({
+      customModels,
+      modelAliases,
+      providerAlias: providerStorageAlias,
+      builtInModels: models,
+      type: "llm",
+    });
+  }, [customModels, modelAliases, providerStorageAlias, models]);
+
+  const allAvailableModels = useMemo(() => {
+    const builtIn = [
+      ...models,
+      ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
+    ].filter((m) => {
+      const k = getModelKind(m);
+      return !k || k === "llm";
+    });
+    const builtInIdSet = new Set(builtIn.map((m) => m.id));
+    const extraCustom = customModelRows.filter((cm) => !builtInIdSet.has(cm.id));
+    return [...builtIn, ...extraCustom];
+  }, [models, kiloFreeModels, customModelRows]);
+
+  const disabledSet = useMemo(() => new Set(disabledModelIds), [disabledModelIds]);
+
+  const activeModels = useMemo(() => {
+    return allAvailableModels.filter((m) => !disabledSet.has(m.id));
+  }, [allAvailableModels, disabledSet]);
+
+  const activeIds = useMemo(() => {
+    return activeModels.map((m) => m.id);
+  }, [activeModels]);
+
   const fetchDisabledModels = useCallback(async () => {
     try {
       const res = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}`, { cache: "no-store" });
       const data = await res.json();
-      if (res.ok) setDisabledModelIds(data.ids || []);
+      let ids = res.ok ? (data.ids || []) : [];
+      if (providerId && providerId !== providerStorageAlias) {
+        try {
+          const res2 = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerId)}`, { cache: "no-store" });
+          const data2 = await res2.json();
+          if (res2.ok && Array.isArray(data2.ids) && data2.ids.length > 0) {
+            ids = [...new Set([...ids, ...data2.ids])];
+          }
+        } catch {}
+      }
+      setDisabledModelIds(ids);
     } catch (error) {
       console.log("Error fetching disabled models:", error);
     }
-  }, [providerStorageAlias]);
+  }, [providerStorageAlias, providerId]);
 
   const handleDisableModel = async (modelId) => {
     try {
@@ -239,6 +283,9 @@ export default function ProviderDetailPage() {
   const handleEnableModel = async (modelId) => {
     try {
       const res = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}&id=${encodeURIComponent(modelId)}`, { method: "DELETE" });
+      if (providerId && providerId !== providerStorageAlias) {
+        await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerId)}&id=${encodeURIComponent(modelId)}`, { method: "DELETE" });
+      }
       if (res.ok) await fetchDisabledModels();
     } catch (error) {
       console.log("Error enabling model:", error);
@@ -267,12 +314,72 @@ export default function ProviderDetailPage() {
   };
 
   const handleEnableAll = async () => {
-    try {
-      const res = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}`, { method: "DELETE" });
-      if (res.ok) await fetchDisabledModels();
-    } catch (error) {
-      console.log("Error enabling all models:", error);
+    if (!disabledModelIds.length) return;
+    setConfirmState({
+      title: "Active All Models",
+      message: `Active all ${disabledModelIds.length} disabled model(s)?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          const res = await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}`, { method: "DELETE" });
+          if (providerId && providerId !== providerStorageAlias) {
+            await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerId)}`, { method: "DELETE" });
+          }
+          if (res.ok) await fetchDisabledModels();
+        } catch (error) {
+          console.log("Error enabling all models:", error);
+        }
+      }
+    });
+  };
+
+  const handleFreeOnly = () => {
+    const freeModels = allAvailableModels.filter((m) => isFreeModel(m));
+    if (freeModels.length === 0) {
+      alert("No free models found for this provider (no models with 'free' in name/id).");
+      return;
     }
+
+    const nonFreeActiveIds = activeModels.filter((m) => !isFreeModel(m)).map((m) => m.id);
+    const disabledFreeIds = disabledModelIds.filter((id) => {
+      const found = allAvailableModels.find((m) => m.id === id);
+      return found ? isFreeModel(found) : isFreeModel({ id });
+    });
+
+    if (nonFreeActiveIds.length === 0 && disabledFreeIds.length === 0) {
+      alert("Only free models are currently active.");
+      return;
+    }
+
+    setConfirmState({
+      title: "Free Only",
+      message: `Disable ${nonFreeActiveIds.length} non-free model(s)${disabledFreeIds.length > 0 ? ` and restore ${disabledFreeIds.length} free model(s)` : ""}?`,
+      onConfirm: async () => {
+        setConfirmState(null);
+        try {
+          if (nonFreeActiveIds.length > 0) {
+            await fetch("/api/models/disabled", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ providerAlias: providerStorageAlias, ids: nonFreeActiveIds }),
+            });
+          }
+          if (disabledFreeIds.length > 0) {
+            await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerStorageAlias)}&ids=${encodeURIComponent(disabledFreeIds.join(","))}`, {
+              method: "DELETE",
+            });
+            if (providerId && providerId !== providerStorageAlias) {
+              await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerId)}&ids=${encodeURIComponent(disabledFreeIds.join(","))}`, {
+                method: "DELETE",
+              });
+            }
+          }
+          await fetchDisabledModels();
+        } catch (error) {
+          console.log("Error filtering free models:", error);
+        }
+      },
+    });
   };
 
   // Define callbacks BEFORE the useEffect that uses them
@@ -591,6 +698,13 @@ export default function ProviderDetailPage() {
       const res = await fetch(`/api/models/custom?${params}`, { method: "DELETE" });
       if (res.ok) {
         await fetchCustomModels();
+        if (disabledModelIds.includes(modelId)) {
+          await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerAliasOverride)}&id=${encodeURIComponent(modelId)}`, { method: "DELETE" });
+          if (providerId && providerId !== providerAliasOverride) {
+            await fetch(`/api/models/disabled?providerAlias=${encodeURIComponent(providerId)}&id=${encodeURIComponent(modelId)}`, { method: "DELETE" });
+          }
+          await fetchDisabledModels();
+        }
         if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("customModelChanged"));
       }
     } catch (error) {
@@ -1187,21 +1301,13 @@ export default function ProviderDetailPage() {
       ...models,
       ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
     ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; });
-    const disabledSet = new Set(disabledModelIds);
     const displayModels = allModels.filter((m) => !disabledSet.has(m.id));
-    const disabledDisplayModels = allModels.filter((m) => disabledSet.has(m.id));
-    const customModelRows = getProviderCustomModelRows({
-      customModels,
-      modelAliases,
-      providerAlias: providerStorageAlias,
-      builtInModels: models,
-      type: "llm",
-    });
+    const activeCustomModelRows = customModelRows.filter((m) => !disabledSet.has(m.id));
 
     return (
       <div className="flex flex-wrap gap-3">
         {/* Custom models first */}
-        {customModelRows.map((model) => (
+        {activeCustomModelRows.map((model) => (
           <ModelRow
             key={`${model.source}-${model.fullModel}`}
             model={{ id: model.id, name: model.name }}
@@ -1217,11 +1323,12 @@ export default function ProviderDetailPage() {
                 handleDeleteAlias(model.alias);
               }
             }}
+            onDisable={() => handleDisableModel(model.id)}
             testStatus={modelTestResults[model.id]}
             onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
             isTesting={testingModelIds.has(model.id)}
             isCustom
-            isFree={false}
+            isFree={isFreeModel(model)}
             caps={getCaps(`${providerId}/${model.id}`)}
             thinkingSuffix={resolveThinkingSuffix(model.id)}
           />
@@ -1246,7 +1353,7 @@ export default function ProviderDetailPage() {
               testStatus={modelTestResults[model.id]}
               onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
               isTesting={testingModelIds.has(model.id)}
-              isFree={model.isFree}
+              isFree={model.isFree || isFreeModel(model)}
               onDisable={() => handleDisableModel(model.id)}
               caps={getCaps(`${providerId}/${model.id}`)}
               thinkingSuffix={resolveThinkingSuffix(model.id)}
@@ -1325,21 +1432,24 @@ export default function ProviderDetailPage() {
         })()}
 
         {/* Disabled models — restorable */}
-        {disabledDisplayModels.length > 0 && (
+        {disabledModelIds.length > 0 && (
           <div className="w-full mt-2">
-            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledDisplayModels.length}):</p>
+            <p className="text-xs text-text-muted mb-2">Disabled models ({disabledModelIds.length}):</p>
             <div className="flex flex-wrap gap-2">
-              {disabledDisplayModels.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => handleEnableModel(m.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                  title="Restore model"
-                >
-                  <span className="material-symbols-outlined text-[13px]">add</span>
-                  {m.id}
-                </button>
-              ))}
+              {disabledModelIds.map((id) => {
+                const found = allAvailableModels.find((m) => m.id === id);
+                return (
+                  <button
+                    key={id}
+                    onClick={() => handleEnableModel(id)}
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-dashed border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                    title="Restore model"
+                  >
+                    <span className="material-symbols-outlined text-[13px]">add</span>
+                    {found?.name && found.name !== id ? `${id} (${found.name})` : id}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}
@@ -1794,13 +1904,19 @@ export default function ProviderDetailPage() {
             )}
           </div>
           {!isCompatible && (() => {
-            const allIds = [
-              ...models,
-              ...kiloFreeModels.filter((fm) => !models.some((m) => m.id === fm.id)),
-            ].filter((m) => { const k = getModelKind(m); return !k || k === "llm"; }).map((m) => m.id);
-            const activeIds = allIds.filter((id) => !disabledModelIds.includes(id));
+            const hasFreeDisabled = disabledModelIds.some((id) => {
+              const found = allAvailableModels.find((m) => m.id === id);
+              return found ? isFreeModel(found) : isFreeModel({ id });
+            });
+            const showFreeOnly = activeIds.length > 0 || hasFreeDisabled;
+
             return (
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {showFreeOnly && (
+                  <Button size="sm" variant="secondary" icon="redeem" onClick={handleFreeOnly} title="Disable all models without 'free' in their name">
+                    Free Only
+                  </Button>
+                )}
                 {disabledModelIds.length > 0 && (
                   <Button size="sm" variant="secondary" icon="restart_alt" onClick={handleEnableAll}>
                     Active All
