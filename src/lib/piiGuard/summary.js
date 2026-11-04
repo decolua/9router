@@ -10,7 +10,7 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
   for (const event of Array.isArray(events) ? events : []) {
     const ts = Date.parse(event?.ts);
     if (!Number.isFinite(ts) || ts < since || ts > now) continue;
-    if (event.type === "error") { errors24h++; continue; }
+    if (event.type === "error") { errors24h += Number.isInteger(event.count) && event.count > 0 ? event.count : 1; continue; }
     if (event.type === "stats") continue;
     const raw = Array.isArray(event.hits) ? event.hits : Array.isArray(event.new) ? event.new : [];
     const distinct = new Set();

@@ -215,4 +215,9 @@ describe("PII guard test preview", () => {
     await observeRequest(body(key), meta);
     expect(JSON.parse((await lines(2)).trim().split("\n")[1]).hits[0].hash).toBe(first);
   });
+  it("skips events when every finding is off", async () => {
+    await observeRequest(body(value), meta, { mode: "observe", rules: { known: "off" } });
+    await new Promise(resolve => setTimeout(resolve, 50));
+    await expect(stat(events)).rejects.toMatchObject({ code: "ENOENT" });
+  });
 });

@@ -47,10 +47,8 @@ export default function PiiGuardClient() {
   useEffect(() => { load(); const t = setInterval(load, 10_000); return () => clearInterval(t); }, [load]);
 
   const save = patch => call(patch).then(s => { setState(s); setError(""); }).catch(e => setError(e.message));
-  const chooseMode = (mode, patch = {}) => {
-    if (mode === "block" && !window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?")) return;
-    save({ ...patch, mode });
-  };
+  const confirmBlock = mode => mode !== "block" || window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?");
+  const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
   const runTest = () => call({ test: text, testMode }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
 
   if (!state) return <div className="p-6 text-text-muted">{error || "Loading..."}</div>;
@@ -83,10 +81,10 @@ export default function PiiGuardClient() {
       </Card>
 
       <Card>
-        <h3 className="font-semibold mb-3">Last 24 hours</h3>
+        <h3 className="font-semibold mb-3">Last 24 hours{summary.truncated && <span className="ml-2 text-xs text-yellow-600">(partial: log too large, oldest events not read)</span>}</h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
           <div><strong className="block text-xl">{count(summary.unique24h)}</strong><span className="text-text-muted">Unique values</span></div>
-          <div><strong className={`block text-xl ${summary.leaked24h ? "text-red-500" : ""}`}>{count(summary.leaked24h)} leaked through</strong><span className="text-text-muted">Unique leaked values</span></div>
+          <div><strong className={`block text-xl ${summary.leaked24h ? "text-red-500" : ""}`}>{count(summary.leaked24h)}</strong><span className="text-text-muted">Leaked through</span></div>
           <div><strong className="block text-xl">{count(summary.blocked24h)}</strong><span className="text-text-muted">Blocked values</span></div>
           <div><strong className="block text-xl">{count(summary.errors24h)}</strong><span className="text-text-muted">Scanner errors</span></div>
         </div>
@@ -164,10 +162,7 @@ export default function PiiGuardClient() {
                 size="sm"
                 options={[{ value: "default", label: "Default" }, ...MODES]}
                 value={config.rules?.[r.id] || "default"}
-                onChange={mode => {
-                  if (mode === "block" && !window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?")) return;
-                  save({ rules: { [r.id]: mode } });
-                }}
+                onChange={mode => { if (confirmBlock(mode)) save({ rules: { [r.id]: mode } }); }}
               />
             </div>;
           })}

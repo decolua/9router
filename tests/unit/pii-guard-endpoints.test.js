@@ -7,7 +7,7 @@ const mocks = vi.hoisted(() => ({
   getModelInfo: vi.fn(async () => ({ provider: "openai", model: "test-model" })),
 }));
 
-vi.mock("@/lib/piiGuard/observe.js", () => ({ observeRequest: mocks.observeRequest }));
+vi.mock("@/lib/piiGuard/observe.js", () => ({ observeRequest: mocks.observeRequest, blockMessage: (names, chat = true) => `pii-guard blocked a new value: ${names.join(", ")}.${chat ? " /rewind" : ""}` }));
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({ requireApiKey: false, piiGuard: { mode: "redact" } }) }));
 vi.mock("../../src/sse/services/auth.js", () => ({
   getProviderCredentials: async () => ({ connectionId: "connection-a", connectionName: "Provider A" }),
@@ -53,7 +53,9 @@ describe("PII guard endpoint hooks", () => {
     mocks.observeRequest.mockResolvedValue({ blocked: ["Secret"] });
     const response = await handler(new Request("http://localhost/v1/test", { method: "POST", body: JSON.stringify(body) }));
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toContain("pii-guard blocked a new value: Secret.");
+    const { error } = await response.json();
+    expect(error).toContain("pii-guard blocked a new value: Secret.");
+    expect(error).not.toContain("/rewind");
     expect(upstream).not.toHaveBeenCalled();
   });
 

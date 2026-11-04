@@ -7,29 +7,32 @@ import { summarize } from "@/lib/piiGuard/summary.js";
 export const dynamic = "force-dynamic";
 const MODES = ["off", "observe", "redact", "block"];
 
-async function recentEvents(limit = 20) {
+// Reads the newest 8 MiB; `truncated` is true when that does not reach back 24 hours.
+async function recentEvents() {
   let handle;
   try {
     handle = await open(eventsFile(), "r");
     const { size } = await handle.stat();
     const length = Math.min(size, 8 * 1024 * 1024);
     const buffer = Buffer.alloc(length);
-    await handle.read(buffer, 0, length, size - length);
-    let text = buffer.toString("utf8");
+    const { bytesRead } = await handle.read(buffer, 0, length, size - length);
+    let text = buffer.toString("utf8", 0, bytesRead);
     if (size > length) text = text.slice(text.indexOf("\n") + 1);
-    return text.split("\n").filter(Boolean).slice(-5000).map(line => {
+    const events = text.split("\n").filter(Boolean).map(line => {
       try { return JSON.parse(line); } catch { return null; }
     }).filter(Boolean).reverse();
-  } catch { return []; }
+    const oldest = Date.parse(events.at(-1)?.ts);
+    return { events, truncated: size > length && oldest > Date.now() - 24 * 60 * 60 * 1000 };
+  } catch { return { events: [], truncated: false }; }
   finally { await handle?.close().catch(() => {}); }
 }
 
 async function state() {
   const settings = await getSettings();
   const available = await ready();
-  const events = await recentEvents();
+  const { events, truncated } = await recentEvents();
   const config = { ...settings.piiGuard, ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
-  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], health: typeof health === "function" ? health() : null, summary: summarize(events, { ignore: config.ignore }), recent: events.slice(0, 20) };
+  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], health: health(), summary: { ...summarize(events, { ignore: config.ignore }), truncated }, recent: events.slice(0, 20) };
 }
 
 export async function GET() {
@@ -51,7 +54,7 @@ export async function POST(request) {
   const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [] };
   if (body.ignore !== undefined) {
     if (typeof body.ignore !== "string" || !/^[0-9a-f]{12}$/.test(body.ignore) || typeof body.on !== "boolean") return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
-    next.ignore = body.on ? [...new Set([...next.ignore, body.ignore])] : next.ignore.filter(hash => hash !== body.ignore);
+    next.ignore = body.on ? [...new Set([...next.ignore, body.ignore])].slice(-1000) : next.ignore.filter(hash => hash !== body.ignore);
   }
   if (body.mode !== undefined) {
     if (!MODES.includes(body.mode)) return NextResponse.json({ error: "Invalid mode" }, { status: 400 });

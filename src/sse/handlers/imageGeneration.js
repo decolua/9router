@@ -16,7 +16,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
-import { observeRequest } from "@/lib/piiGuard/observe.js";
+import { observeRequest, blockMessage } from "@/lib/piiGuard/observe.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
@@ -72,7 +72,7 @@ export async function handleImageGeneration(request) {
 
   if (process.env.PII_GUARD_MODULE) {
     const guard = await observeRequest(body, { endpoint: url.pathname, userAgent: request.headers.get("user-agent"), model: body?.model }, settings.piiGuard);
-    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, `pii-guard blocked a new value: ${guard.blocked.join(", ")}. It is now remembered; retry and it will be redacted, or run /rewind to drop that turn. Change rules in Dashboard > PII Guard.`);
+    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, blockMessage(guard.blocked, false));
     modelStr = body.model; // redaction may have rewritten it
   }
 

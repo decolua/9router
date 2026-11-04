@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { appendFile, chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { appendFile, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -10,7 +10,7 @@ const since = new Date().toISOString();
 let loading, library, detector, knownMtime, lastCheck = -Infinity, warnedAt = -Infinity;
 let requests = 0, withFindings = 0, totalRequests = 0, totalWithFindings = 0, samples = [], healthSamples = [], maxScanMs = 0, healthMaxScanMs = 0, errors = 0, lastError = null;
 let knownUpdated = null, seenLoading, seenStore, seenTimer, unscanned = { images: 0, files: 0, opaque: 0 };
-const errorAppend = new Map();
+const errorAppend = new Map(), errorSuppressed = new Map();
 const roles = new Set(["-", "system", "developer", "user", "assistant", "tool", "function", "model"]);
 const types = new Set(["-", "text", "input_text", "output_text", "tool_result", "tool_use", "function_call", "function_call_output", "reasoning", "image", "input_image", "image_url"]);
 function safeSource(source) {
@@ -28,7 +28,9 @@ function failure(stage) {
   errors++;
   const ts = new Date().toISOString(); lastError = { ts, stage }; warn();
   const now = Date.now();
-  if (now - (errorAppend.get(stage) || 0) >= 60_000) { errorAppend.set(stage, now); void append({ ts, type: "error", stage }).catch(() => {}); }
+  // One event per stage per minute; `count` carries the failures folded into it.
+  errorSuppressed.set(stage, (errorSuppressed.get(stage) || 0) + 1);
+  if (now - (errorAppend.get(stage) || 0) >= 60_000) { errorAppend.set(stage, now); const count = errorSuppressed.get(stage); errorSuppressed.set(stage, 0); void append({ ts, type: "error", stage, count }).catch(() => {}); }
 }
 function seenFile() { return join(dirname(eventsFile()), "seen.json"); }
 async function loadSeen() {
@@ -45,14 +47,15 @@ async function loadSeen() {
 function scheduleSeenWrite() {
   if (seenTimer) return;
   seenTimer = setTimeout(async () => {
-    seenTimer = null;
     try {
       const entries = [...seenStore.entries()].slice(-50_000);
-      const file = seenFile();
+      const file = seenFile(), tmp = `${file}.${process.pid}.tmp`;
       await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-      await writeFile(file, `${JSON.stringify({ version: 1, hashes: Object.fromEntries(entries) })}\n`, { mode: 0o600 });
-      await chmod(file, 0o600);
+      await writeFile(tmp, `${JSON.stringify({ version: 1, hashes: Object.fromEntries(entries) })}\n`, { mode: 0o600 });
+      await chmod(tmp, 0o600);
+      await rename(tmp, file); // atomic: a crash never leaves a truncated store
     } catch { failure("write"); }
+    seenTimer = null; // cleared after the write so writes never overlap
   }, 5000);
   seenTimer.unref();
 }
@@ -76,7 +79,7 @@ function reload() {
     // Stable salt so seen and ignored hashes survive restarts without a known list.
     const saltFile = join(dirname(eventsFile()), "salt");
     let salt;
-    try { salt = readFileSync(saltFile, "utf8").trim(); } catch { salt = randomBytes(16).toString("hex"); mkdirSync(dirname(saltFile), { recursive: true, mode: 0o700 }); writeFileSync(saltFile, salt, { mode: 0o600 }); }
+    try { salt = readFileSync(saltFile, "utf8").trim(); } catch (error) { if (error.code !== "ENOENT") throw error; salt = randomBytes(16).toString("hex"); mkdirSync(dirname(saltFile), { recursive: true, mode: 0o700 }); writeFileSync(saltFile, salt, { mode: 0o600 }); }
     detector = library.createDetector({ salt }); knownUpdated = null;
     console.info("[pii-guard] Known list missing; scanning patterns only.");
   } else {
@@ -95,6 +98,11 @@ function stats() {
   requests = withFindings = maxScanMs = 0; samples = [];
 }
 const ACTIONS = ["off", "observe", "redact", "block"];
+// Keep the rows that matter most when an event's hit list is capped.
+const RANK = { leaked: 0, block: 1, redact: 2, observe: 3, ignored: 4 };
+export function blockMessage(names, chat = true) {
+  return `pii-guard blocked a new value: ${names.join(", ")}. It is now remembered; retry and it will be redacted${chat ? ", or run /rewind to drop that turn" : ""}. Change rules in Dashboard > PII Guard.`;
+}
 export async function ready() {
   if (!process.env.PII_GUARD_MODULE) return false;
   if (!loading) loading = (async () => {
@@ -158,7 +166,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     const scanMs = performance.now() - start;
     requests++; totalRequests++; if (samples.length === 10_000) samples.shift(); samples.push(scanMs); if (healthSamples.length === 10_000) healthSamples.shift(); healthSamples.push(scanMs); maxScanMs = Math.max(maxScanMs, scanMs); healthMaxScanMs = Math.max(healthMaxScanMs, scanMs);
     for (const k of Object.keys(unscanned)) unscanned[k] += result.unscanned[k] || 0;
-    if (!findings.length) return;
+    if (!findings.some(f => foundActions.get(f) !== "off")) return;
     const counts = Object.create(null), fresh = [], hitRows = new Map(), newHashes = [];
     for (const f of findings) {
       const action = foundActions.get(f);
@@ -171,16 +179,17 @@ export async function observeRequest(body, meta = {}, config = {}) {
       const hitAction = action === "block" ? "block" : action === "ignored" ? "ignored" : f.readonly && action === "redact" ? "leaked" : action;
       if (!hitRows.has(key)) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction });
     }
-    const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].slice(0, 200);
+    const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
     withFindings++; totalWithFindings++;
     const ua0 = (meta.userAgent || "").split(" ")[0], ua = detector.scan(ua0).length ? "[redacted]" : ua0;
-    const event = { ts: new Date().toISOString(), endpoint: meta.endpoint, model: model, ua, chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh, hits, ...(blocked.length && { blocked }), ...(Object.keys(redacted).length && { redacted }), ...(Object.keys(leaked).length && { leaked }), ignored: findings.filter(f => foundActions.get(f) === "ignored").length };
+    const event = { ts: new Date().toISOString(), endpoint: meta.endpoint, model: model, ua, chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh, hits, ...(hitRows.size > hits.length && { hitsDropped: hitRows.size - hits.length }), ...(blocked.length && { blocked }), ...(Object.keys(redacted).length && { redacted }), ...(Object.keys(leaked).length && { leaked }), ignored: findings.filter(f => foundActions.get(f) === "ignored").length };
     markSeen(newHashes);
     void append(event).catch(() => failure("write"));
     const summary = Object.entries(counts).map(([k, n]) => `${k}=${n}`).join(", ");
     const line = `[pii-guard] ${model || "-"} ${meta.endpoint || "-"}: ${summary}`;
     if (blocked.length) console.error(`${line} BLOCKED: ${blocked.join(", ")}`);
-    else if (Object.keys(redacted).length || Object.keys(leaked).length) console.warn(`${line} redacted: ${Object.entries(redacted).map(([k,n]) => `${k}=${n}`).join(", ")}`);
+    else if (Object.keys(leaked).length) console.error(`${line} LEAKED (not rewritable): ${Object.entries(leaked).map(([k, n]) => `${k}=${n}`).join(", ")}`);
+    else if (Object.keys(redacted).length) console.warn(`${line} redacted: ${Object.entries(redacted).map(([k, n]) => `${k}=${n}`).join(", ")}`);
     else if (fresh.length) console.warn(`${line} (new: ${[...new Set(fresh.map(label))].join(", ")})`);
     else console.info(line);
     if (blocked.length) return { blocked };
@@ -190,7 +199,7 @@ export async function testText(text, config) {
   if (!await ready()) return null;
   const act = actionFor(config), body = { messages: [{ role: "user", content: text }] }, redacted = Object.create(null);
   const ignore = new Set(Array.isArray(config.ignore) ? config.ignore.filter(h => typeof h === "string" && /^[0-9a-f]{12}$/i.test(h)) : []);
-  const result = library.scanBody(body, detector, undefined, (s, fs) => replace(s, fs, f => ignore.has(f.hash) ? "ignored" : act(f.rule) === "block" ? "block" : act(f.rule), redacted));
+  const result = library.scanBody(body, detector, undefined, (s, fs) => replace(s, fs, f => ignore.has(f.hash) ? "ignored" : act(f.rule), redacted));
   const findings = result.findings.map(f => ({ rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, hash: f.hash, action: ignore.has(f.hash) ? "ignored" : act(f.rule), match: text.slice(f.start, f.end) }));
   return { findings, redacted: body.messages[0].content, blocked: findings.filter(f => f.action === "block").map(f => f.name || f.rule) };
 }
