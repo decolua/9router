@@ -224,6 +224,7 @@ describe("PII guard test preview", () => {
     const b = () => ({ messages: [{ role: "user", content: "hi" }], metadata: { [value]: 1 } });
     expect(await observeRequest(b(), meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"] });
     expect(await observeRequest(b(), meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"] });
+    expect((await observeRequest(b(), meta, { mode: "block" })).stuck).toBeUndefined();
   });
   const thinking = (loop) => ({ messages: [
     { role: "user", content: "hi" },

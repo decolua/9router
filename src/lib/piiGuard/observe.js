@@ -189,7 +189,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     const strip = new Map();
     for (const [f, at] of drop) if (foundActions.get(f) === "redact") { strip.set(`${at.i}:${at.j}`, at); redacted[label(f)] = (redacted[label(f)] || 0) + 1; }
     for (const { i, j } of [...strip.values()].sort((a, b) => b.i - a.i || b.j - a.j)) { const c = body.messages[i].content; c.splice(j, 1); if (!c.length) c.push({ type: "text", text: "[thinking removed by pii-guard]" }); }
-    const stuck = findings.some(f => f.readonly && foundActions.get(f) === "block");
+    const stuck = findings.some(f => f.readonly && foundActions.get(f) === "block" && where(f) === "assistant/thinking");
     const preliminaryBlocked = new Set(findings.filter(f => foundActions.get(f) === "block").map(label));
     for (const f of findings) if (f.readonly && foundActions.get(f) === "redact") leaked[label(f)] = (leaked[label(f)] || 0) + 1;
     const scanMs = performance.now() - start;
