@@ -1,33 +1,46 @@
 import { NextResponse } from "next/server";
-import { readFile } from "node:fs/promises";
+import { open } from "node:fs/promises";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { ready, rules, testText, eventsFile } from "@/lib/piiGuard/observe.js";
+import { ready, rules, testText, eventsFile, health } from "@/lib/piiGuard/observe.js";
+import { summarize } from "@/lib/piiGuard/summary.js";
 
 export const dynamic = "force-dynamic";
 const MODES = ["off", "observe", "redact", "block"];
 
-async function recentEvents(limit = 50) {
+async function recentEvents(limit = 20) {
+  let handle;
   try {
-    const lines = (await readFile(eventsFile(), "utf8")).trim().split("\n");
-    return lines.slice(-limit * 2).map(l => { try { return JSON.parse(l); } catch { return null; } })
-      .filter(e => e && e.type !== "stats").slice(-limit).reverse();
+    handle = await open(eventsFile(), "r");
+    const { size } = await handle.stat();
+    const length = Math.min(size, 8 * 1024 * 1024);
+    const buffer = Buffer.alloc(length);
+    await handle.read(buffer, 0, length, size - length);
+    let text = buffer.toString("utf8");
+    if (size > length) text = text.slice(text.indexOf("\n") + 1);
+    return text.split("\n").filter(Boolean).slice(-5000).map(line => {
+      try { return JSON.parse(line); } catch { return null; }
+    }).filter(Boolean).reverse();
   } catch { return []; }
+  finally { await handle?.close().catch(() => {}); }
 }
 
 async function state() {
   const settings = await getSettings();
   const available = await ready();
-  return { enabled: !!process.env.PII_GUARD_MODULE, available, config: settings.piiGuard, rules: available ? rules() : [], events: await recentEvents() };
+  const events = await recentEvents();
+  const config = { ...settings.piiGuard, ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
+  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], health: typeof health === "function" ? health() : null, summary: summarize(events, { ignore: config.ignore }), recent: events.slice(0, 20) };
 }
 
 export async function GET() {
   return NextResponse.json(await state());
 }
 
-// Body: { mode?, rules? } saves config. { test, testMode? } scans text without saving.
+// Body: { mode?, rules?, ignore?, on? } saves config. { test, testMode? } scans text without saving.
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
-  const current = (await getSettings()).piiGuard;
+  if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+  const current = (await getSettings()).piiGuard || { mode: "observe", rules: {}, ignore: [] };
   if (typeof body.test === "string") {
     if (body.test.length > 100_000) return NextResponse.json({ error: "Text too long" }, { status: 400 });
     // testMode previews one mode for every rule without saving it.
@@ -35,7 +48,11 @@ export async function POST(request) {
     const result = await testText(body.test, config);
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Scanner unavailable" }, { status: 503 });
   }
-  const next = { mode: current.mode, rules: { ...current.rules } };
+  const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [] };
+  if (body.ignore !== undefined) {
+    if (typeof body.ignore !== "string" || !/^[0-9a-f]{12}$/.test(body.ignore) || typeof body.on !== "boolean") return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
+    next.ignore = body.on ? [...new Set([...next.ignore, body.ignore])] : next.ignore.filter(hash => hash !== body.ignore);
+  }
   if (body.mode !== undefined) {
     if (!MODES.includes(body.mode)) return NextResponse.json({ error: "Invalid mode" }, { status: 400 });
     next.mode = body.mode;

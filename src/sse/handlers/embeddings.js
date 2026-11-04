@@ -14,6 +14,7 @@ import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { observeRequest } from "@/lib/piiGuard/observe.js";
 
 function exactEmbeddingUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || raw.estimated === true) return null;
@@ -40,7 +41,7 @@ export async function handleEmbeddings(request) {
   }
 
   const url = new URL(request.url);
-  const modelStr = body.model;
+  let modelStr = body.model;
 
   log.request("POST", `${url.pathname} | ${modelStr}`);
 
@@ -74,6 +75,12 @@ export async function handleEmbeddings(request) {
   if (!body.input) {
     log.warn("EMBEDDINGS", "Missing input");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: input");
+  }
+
+  if (process.env.PII_GUARD_MODULE) {
+    const guard = await observeRequest(body, { endpoint: url.pathname, userAgent: request.headers.get("user-agent"), model: body?.model }, settings.piiGuard);
+    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, `pii-guard blocked a new value: ${guard.blocked.join(", ")}. It is now remembered; retry and it will be redacted, or run /rewind to drop that turn. Change rules in Dashboard > PII Guard.`);
+    modelStr = body.model; // redaction may have rewritten it
   }
 
   const modelInfo = await getModelInfo(modelStr);

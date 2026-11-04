@@ -16,6 +16,7 @@ import { updateProviderCredentials, checkAndRefreshToken } from "../services/tok
 import { handleComboChat } from "open-sse/services/combo.js";
 import * as log from "../utils/logger.js";
 import { saveRequestUsage } from "@/lib/usageDb.js";
+import { observeRequest } from "@/lib/piiGuard/observe.js";
 
 // Providers that don't require credentials (noAuth)
 const NO_AUTH_PROVIDERS = new Set(["sdwebui", "comfyui", "veoaifree-web"]);
@@ -56,7 +57,7 @@ export async function handleImageGeneration(request) {
   const preferredConnectionId = request.headers.get("x-connection-id") || null;
   const wantsStream = (request.headers.get("accept") || "").includes("text/event-stream");
   const binaryOutput = url.searchParams.get("response_format") === "binary";
-  const modelStr = body.model;
+  let modelStr = body.model;
 
   const apiKey = extractApiKey(request);
   const settings = await getSettings();
@@ -68,6 +69,12 @@ export async function handleImageGeneration(request) {
 
   if (!modelStr) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing model");
   if (!body.prompt) return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: prompt");
+
+  if (process.env.PII_GUARD_MODULE) {
+    const guard = await observeRequest(body, { endpoint: url.pathname, userAgent: request.headers.get("user-agent"), model: body?.model }, settings.piiGuard);
+    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, `pii-guard blocked a new value: ${guard.blocked.join(", ")}. It is now remembered; retry and it will be redacted, or run /rewind to drop that turn. Change rules in Dashboard > PII Guard.`);
+    modelStr = body.model; // redaction may have rewritten it
+  }
 
   // Per-key access control: requested target, before combo expansion.
   const keyAccessDenied = await enforceKeyAccess(await getKeyAccessContext(request), modelStr);
