@@ -6,6 +6,7 @@ import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, v
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal } from "@/shared/components";
+import ComboRankingBar from "@/shared/components/ComboRankingBar";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
@@ -1343,6 +1344,10 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>
+
+            {models.length > 1 && (
+              <ComboRankingBar models={models} onReorder={setModels} />
+            )}
           </div>
 
           {/* Actions */}

@@ -57,6 +57,12 @@ export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
 
+// Ranking bindings (remembered model -> leaderboard slug)
+export {
+  getRankingBindings, setRankingBinding, setRankingBindings,
+  deleteRankingBinding, clearRankingBindings,
+} from "./repos/rankingBindingsRepo.js";
+
 // Usage
 export {
   statsEmitter, trackPendingRequest, getActiveRequests,
