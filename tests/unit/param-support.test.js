@@ -4,6 +4,24 @@ import { stripUnsupportedParams } from "../../open-sse/translator/concerns/param
 import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
 describe("stripUnsupportedParams", () => {
+  it("downgrades json_schema to json_object for DeepSeek", () => {
+    const schemaRf = { type: "json_schema", json_schema: { name: "x", schema: { type: "object" } } };
+    const body = { response_format: schemaRf };
+    stripUnsupportedParams("deepseek", "deepseek-v4-flash", body);
+    expect(body.response_format).toEqual({ type: "json_object" });
+  });
+
+  it("keeps json_object and leaves other providers' json_schema alone", () => {
+    const jo = { response_format: { type: "json_object" } };
+    stripUnsupportedParams("deepseek", "deepseek-v4-flash", jo);
+    expect(jo.response_format).toEqual({ type: "json_object" });
+
+    const schemaRf = { type: "json_schema", json_schema: { name: "x", schema: {} } };
+    const other = { response_format: schemaRf };
+    stripUnsupportedParams("openai", "gpt-5", other);
+    expect(other.response_format).toEqual(schemaRf);
+  });
+
   it("flattens Cloudflare AI OpenAI content-part arrays", () => {
     const body = {
       messages: [
@@ -151,7 +169,6 @@ describe("stripUnsupportedParams", () => {
     const response_format = { type: "json_schema", json_schema: { name: "t", schema: { type: "object" } } };
 
     for (const [provider, model] of [
-      ["deepseek", "deepseek-reasoner"],
       ["opencode-zen", "deepseek-v4.1-flash"],
       ["openrouter", "deepseek/deepseek-v3.2"],
     ]) {
