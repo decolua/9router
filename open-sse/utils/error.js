@@ -6,7 +6,7 @@ import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../config/errorConfig.js";
  * @param {string} message - Error message
  * @returns {object} Error response object
  */
-export function buildErrorBody(statusCode, message) {
+export function buildErrorBody(statusCode, message, code = null) {
   const errorInfo = ERROR_TYPES[statusCode] || 
     (statusCode >= 500 
       ? { type: "server_error", code: "internal_server_error" }
@@ -16,9 +16,36 @@ export function buildErrorBody(statusCode, message) {
     error: {
       message: message || DEFAULT_ERROR_MESSAGES[statusCode] || "An error occurred",
       type: errorInfo.type,
-      code: errorInfo.code
+      code: code || errorInfo.code
     }
   };
+}
+
+export const CONTEXT_LENGTH_EXCEEDED = "context_length_exceeded";
+
+// Upstreams word context overflow differently (GitHub Copilot sends it as
+// code "invalid_request_body"), so the wording is matched, not the code alone.
+const CONTEXT_OVERFLOW_TEXT = /exceeds the context window|maximum context length|prompt is too long|context_length_exceeded/i;
+
+/**
+ * True when an upstream 400/413 says the input does not fit the model's context window.
+ * Clients such as Codex only recover (compact and retry) when they see the
+ * standard `context_length_exceeded` code, so this must not be flattened to bad_request.
+ */
+export function isContextOverflowError(statusCode, code, message) {
+  if (statusCode !== 400 && statusCode !== 413) return false;
+  if (code === CONTEXT_LENGTH_EXCEEDED) return true;
+  return typeof message === "string" && CONTEXT_OVERFLOW_TEXT.test(message);
+}
+
+function extractErrorCode(bodyText) {
+  try {
+    const json = JSON.parse(bodyText);
+    const code = json?.error?.code ?? json?.code;
+    return typeof code === "string" && code ? code : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -27,8 +54,8 @@ export function buildErrorBody(statusCode, message) {
  * @param {string} message - Error message
  * @returns {Response} HTTP Response object
  */
-export function errorResponse(statusCode, message, extraHeaders = null) {
-  return new Response(JSON.stringify(buildErrorBody(statusCode, message)), {
+export function errorResponse(statusCode, message, extraHeaders = null, code = null) {
+  return new Response(JSON.stringify(buildErrorBody(statusCode, message, code)), {
     status: statusCode,
     headers: {
       "Content-Type": "application/json",
@@ -54,7 +81,7 @@ export async function writeStreamError(writer, statusCode, message) {
  * Parse upstream provider error response
  * @param {Response} response - Fetch response from provider
  * @param {object} [executor] - Optional executor with parseError() override for provider-specific parsing
- * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
+ * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number, code?: string|null}>}
  */
 export async function parseUpstreamError(response, executor = null) {
   let bodyText = "";
@@ -63,6 +90,7 @@ export async function parseUpstreamError(response, executor = null) {
   } catch {
     bodyText = "";
   }
+  const code = extractErrorCode(bodyText);
 
   // Let executor-specific parser extract provider-specific fields (e.g. codex resetsAtMs)
   if (executor && typeof executor.parseError === "function") {
@@ -70,7 +98,7 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs, code };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -86,7 +114,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, code };
 }
 
 /**
@@ -96,13 +124,13 @@ export async function parseUpstreamError(response, executor = null) {
  * @param {number} [resetsAtMs] - Optional precise cooldown expiry (ms epoch) for provider-specific quota errors
  * @returns {{ success: false, status: number, error: string, response: Response, resetsAtMs?: number }}
  */
-export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null) {
+export function createErrorResult(statusCode, message, resetsAtMs, extraHeaders = null, code = null) {
   return {
     success: false,
     status: statusCode,
     error: message,
     resetsAtMs,
-    response: errorResponse(statusCode, message, extraHeaders)
+    response: errorResponse(statusCode, message, extraHeaders, code)
   };
 }
 

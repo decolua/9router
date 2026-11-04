@@ -1,5 +1,6 @@
 import { handleChat } from "@/sse/handlers/chat.js";
 import { initTranslators } from "open-sse/translator/index.js";
+import { contextOverflowAsResponsesFailure } from "open-sse/utils/responsesStreamHelpers.js";
 
 let initialized = false;
 
@@ -26,5 +27,8 @@ export async function OPTIONS() {
  */
 export async function POST(request) {
   await ensureInitialized();
-  return await handleChat(request);
+  let stream = false;
+  try { stream = (await request.clone().json())?.stream === true; } catch { /* handleChat reports the bad body */ }
+  const response = await handleChat(request);
+  return stream ? contextOverflowAsResponsesFailure(response) : response;
 }
