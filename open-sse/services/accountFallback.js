@@ -70,6 +70,107 @@ export function checkFallbackError(status, errorText, backoffLevel = 0, provider
   return { shouldFallback: true, cooldownMs: TRANSIENT_COOLDOWN_MS };
 }
 
+const QUOTA_EXHAUSTION_PHRASES = [
+  "free usage limit reached",
+  "daily free quota exceeded",
+  "free quota has been exhausted",
+  "free quota exhausted",
+  "quota has been exhausted",
+  "quota exhausted",
+  "quota exceeded",
+  "quota is exhausted",
+  "quota is exceeded",
+  "quota limit exceeded",
+  "usage limit reached",
+  "usage limit exceeded",
+];
+
+/**
+ * Issue #5359: free-tier quota exhaustion. HTTP 200 bodies and SSE error
+ * envelopes can carry these messages, so detection is text-driven and the
+ * status only gates plain 4xx (403/429 need quota wording, not any error).
+ */
+export function detectQuotaExhaustion(status, errorText, nowMs = Date.now()) {
+  const text = errorText ? (typeof errorText === "string" ? errorText : safeStringify(errorText)) : "";
+  const lower = text.toLowerCase();
+  const exhausted = QUOTA_EXHAUSTION_PHRASES.some((phrase) => lower.includes(phrase))
+    || /quota\s+resets?\s+at/.test(lower);
+  if (!exhausted) return { exhausted: false, resetAtMs: null };
+
+  let resetAtMs = null;
+  if (errorText && typeof errorText === "string") {
+    try {
+      const parsed = JSON.parse(errorText);
+      resetAtMs = findNestedResetMs(parsed) || null;
+    } catch { /* plain text — scan below */ }
+  }
+  if (!resetAtMs) {
+    const iso = text.match(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(\.\d+)?(Z|[+-]\d{2}:?\d{2})?/g) || [];
+    for (const candidate of iso) {
+      const ms = Date.parse(candidate);
+      if (Number.isFinite(ms) && ms > nowMs) { resetAtMs = ms; break; }
+    }
+  }
+  return { exhausted: true, resetAtMs: resetAtMs && resetAtMs > nowMs ? resetAtMs : null };
+}
+
+function safeStringify(value) {
+  try { return JSON.stringify(value) || ""; } catch { return String(value); }
+}
+
+function findNestedResetMs(value, depth = 0) {
+  if (!value || typeof value !== "object" || depth > 6) return null;
+  if (Array.isArray(value)) {
+    for (const item of value) { const ms = findNestedResetMs(item, depth + 1); if (ms) return ms; }
+    return null;
+  }
+  for (const key of ["resetsAtMs", "resetAt", "reset_at", "resets_at", "resetTime", "reset_time"]) {
+    if (value[key] === undefined || value[key] === null) continue;
+    const ms = typeof value[key] === "number"
+      ? value[key]
+      : Date.parse(String(value[key]));
+    if (Number.isFinite(ms)) return ms;
+  }
+  for (const item of Object.values(value)) {
+    const ms = findNestedResetMs(item, depth + 1);
+    if (ms) return ms;
+  }
+  return null;
+}
+
+/**
+ * Quota lockout is account-wide and persisted on the connection record,
+ * separate from isActive: an auto timer must never re-enable an account the
+ * user disabled, and manual lockouts survive restarts.
+ */
+export function isQuotaLockoutActive(connection, nowMs = Date.now()) {
+  const lockout = connection?.quotaLockout;
+  if (!lockout?.status) return false;
+  if (lockout.reactivateAt === null) return true;
+  const ms = Date.parse(lockout.reactivateAt);
+  return !Number.isFinite(ms) || ms > nowMs;
+}
+
+export function buildQuotaLockoutUpdate({ status, message, resetAtMs = null, source = "auto", reactivateAt } = {}) {
+  const resolvedReactivateAt = reactivateAt !== undefined
+    ? reactivateAt
+    : (resetAtMs ? new Date(resetAtMs).toISOString() : null);
+  return {
+    quotaLockout: {
+      status: "quota_exhausted",
+      httpStatus: status ?? null,
+      message: (typeof message === "string" ? message : safeStringify(message)).slice(0, 500),
+      source,
+      detectedAt: new Date().toISOString(),
+      reactivateAt: resolvedReactivateAt,
+    },
+  };
+}
+
+export function clearQuotaLockoutUpdate() {
+  return { quotaLockout: null };
+}
+
 /**
  * Check if account is currently unavailable (cooldown not expired)
  */
@@ -188,6 +289,7 @@ export function filterAvailableAccounts(accounts, excludeId = null) {
   const now = Date.now();
   return accounts.filter(acc => {
     if (excludeId && acc.id === excludeId) return false;
+    if (isQuotaLockoutActive(acc)) return false;
     if (acc.rateLimitedUntil) {
       const until = new Date(acc.rateLimitedUntil).getTime();
       if (until > now) return false;

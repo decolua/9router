@@ -1052,6 +1052,17 @@ export default function ProviderDetailPage() {
                 onMoveUp={() => handleSwapPriority(index, index - 1)}
                 onMoveDown={() => handleSwapPriority(index, index + 1)}
                 onToggleActive={(isActive) => handleUpdateConnectionStatus(conn.id, isActive)}
+                onUpdateQuotaLockout={async (quotaLockout) => {
+                  const res = await fetch(`/api/providers/${conn.id}`, {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ quotaLockout }),
+                  });
+                  if (res.ok) {
+                    const data = await res.json();
+                    setConnections(prev => prev.map(c => c.id === conn.id ? data.connection : c));
+                  }
+                }}
                 autoPing={AUTO_PING_SETTINGS_KEYS[providerId] && conn.authType === "oauth" ? {
                   isActive: autoPing.connections[conn.id] === true || autoPing.schedules?.[conn.id]?.enabled === true,
                   reactiveOn: autoPing.connections[conn.id] === true,
