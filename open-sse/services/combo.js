@@ -282,15 +282,55 @@ export function resetComboRotation(comboName) {
 export function getComboModelsFromData(modelStr, combosData) {
   // Don't check if it's in provider/model format
   if (modelStr.includes("/")) return null;
-  
+
   // Handle both array and object formats
   const combos = Array.isArray(combosData) ? combosData : (combosData?.combos || []);
-  
+
   const combo = combos.find(c => c.name === modelStr);
   if (combo && combo.models && combo.models.length > 0) {
     return combo.models;
   }
   return null;
+}
+
+export const MAX_COMBO_DEPTH = 5;
+
+/**
+ * Resolve combo models recursively with cycle detection and depth guards.
+ * @param {string} modelStr
+ * @param {Array|Object} combosData
+ * @param {Set<string>} [visited]
+ * @param {number} [depth]
+ * @returns {string[]|null}
+ */
+export function resolveComboModelsWithGuard(modelStr, combosData, visited = new Set(), depth = 0) {
+  if (!modelStr || typeof modelStr !== "string" || modelStr.includes("/")) return null;
+  if (visited.has(modelStr)) {
+    throw new Error(`Combo recursion cycle detected: ${Array.from(visited).join(" -> ")} -> ${modelStr}`);
+  }
+  if (depth > MAX_COMBO_DEPTH) {
+    throw new Error(`Combo maximum nesting depth exceeded (${MAX_COMBO_DEPTH}) at ${modelStr}`);
+  }
+
+  const currentVisited = new Set(visited);
+  currentVisited.add(modelStr);
+
+  const rawModels = getComboModelsFromData(modelStr, combosData);
+  if (!rawModels || rawModels.length === 0) return null;
+
+  const resolved = [];
+  for (const item of rawModels) {
+    if (typeof item === "string" && !item.includes("/")) {
+      const nested = resolveComboModelsWithGuard(item, combosData, currentVisited, depth + 1);
+      if (nested && nested.length > 0) {
+        resolved.push(...nested);
+        continue;
+      }
+    }
+    resolved.push(item);
+  }
+
+  return resolved;
 }
 
 /**
