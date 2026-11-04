@@ -14,7 +14,12 @@ if (!resultsPath) { console.error("Missing results.json path"); process.exit(2);
 const r = JSON.parse(readFileSync(resultsPath, "utf8"));
 const nowFails = r.testResults.flatMap(f =>
   f.assertionResults.filter(a => a.status === "failed")
-    .map(a => f.name.split("/app/")[1] + " :: " + a.fullName)
+    .map(a => {
+      const filePath = f.name.split("/tests/")[1] || f.name;
+      // Ensure consistent format with known-fails.txt: tests/unit/...
+      const normalized = filePath.startsWith("tests/") ? filePath : "tests/" + filePath;
+      return normalized + " :: " + a.fullName;
+    })
 );
 
 // Regression = fail bây giờ NHƯNG không có trong baseline known-fails

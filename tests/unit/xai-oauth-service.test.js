@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+// Must mock open-sse/index.js (which patches global fetch via proxyFetch.js) BEFORE importing xai service
+vi.mock("../../open-sse/index.js", () => ({}));
+
 describe("xai/oauth service", () => {
   beforeEach(() => {
     vi.resetModules();
