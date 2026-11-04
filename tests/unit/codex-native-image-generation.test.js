@@ -112,6 +112,27 @@ describe("native Codex OAuth image generation", () => {
 
 describe("legacy Codex image Responses compatibility", () => {
   it.each([
+    { n: 2 },
+    { size: "1024x1024" },
+    { output_format: "webp" },
+    { output_format: "jpeg" },
+    { output_compression: 80 },
+    { background: "transparent" },
+    { quality: "xhigh" },
+    { quality: "max" },
+  ])("keeps requests outside the verified native output scope on Responses: %o", async (controls) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(
+      sse("response.output_item.done", { item: { type: "image_generation_call", result: "aW1hZ2U=" } }),
+      { headers: { "content-type": "text/event-stream" } },
+    ));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await handleImageGenerationCore(request({ body: { prompt: "cat", ...controls } }));
+    expect(result.success).toBe(true);
+    expect(fetchMock.mock.calls[0][0]).toBe("https://chatgpt.com/backend-api/codex/responses");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toHaveProperty("tools");
+  });
+
+  it.each([
     { image: "data:image/png;base64,cmVm" },
     { images: ["data:image/png;base64,cmVm"] },
   ])("keeps reference-image requests on Responses", async (references) => {

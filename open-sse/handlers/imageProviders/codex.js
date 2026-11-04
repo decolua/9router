@@ -7,9 +7,9 @@ import { CODEX_CLI_VERSION } from "../../config/appConstants.js";
 
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 // Codex OAuth image generation uses the native Images endpoint. The Responses
-// image_generation tool currently injects unsupported `complexity=medium` for
-// GPT Image models; keep Responses for reference-image edits and older virtual
-// image models.
+// image_generation path has returned unsupported `complexity=medium` errors for
+// GPT Image models. Native has ignored explicit n/size/format controls,
+// so preserve Responses for those requests, edits, and older virtual models.
 const CODEX_IMAGES_GENERATIONS_URL = PROVIDER_MEDIA.codex.imageConfig.baseUrl;
 const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
 const CODEX_ORIGINATOR = "codex_cli_rs";
@@ -65,20 +65,29 @@ function hasImageRefs(body) {
   return Boolean(body?.image || (Array.isArray(body?.images) && body.images.length > 0));
 }
 
-function shouldUseNativeGeneration(model, body) {
-  return CODEX_TOOL_IMAGE_MODELS.has(model) && !hasImageRefs(body);
+function shouldUseNativeGeneration(model, body = {}) {
+  // Native Codex has been observed returning one auto-sized PNG even when n,
+  // size, or output_format requests something else. Do not silently reroute
+  // those requests to a transport that cannot honor their output controls.
+  return CODEX_TOOL_IMAGE_MODELS.has(model)
+    && !hasImageRefs(body)
+    && (body.n == null || body.n === 1)
+    && (!body.size || body.size === "auto")
+    && (!body.output_format || body.output_format.toLowerCase() === "png")
+    && (!body.background || ["auto", "opaque"].includes(body.background))
+    && (!body.quality || ["auto", "low", "medium", "high"].includes(body.quality))
+    && body.output_compression == null;
 }
 
 function buildNativeGenerationBody(model, body) {
   return {
     model,
     prompt: body.prompt,
-    n: body.n ?? 1,
-    size: body.size || "auto",
+    n: 1,
+    size: "auto",
     quality: body.quality || "auto",
     background: body.background || "auto",
-    output_format: (body.output_format || "png").toLowerCase(),
-    ...(body.output_compression != null ? { output_compression: body.output_compression } : {}),
+    output_format: "png",
   };
 }
 

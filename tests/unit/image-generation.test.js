@@ -388,7 +388,7 @@ describe("handleImageGenerationCore", () => {
     const result = await handleImageGenerationCore({
       body: {
         prompt: "A futuristic city",
-        size: "1024x1024",
+        size: "auto",
         output_format: "png",
       },
       modelInfo: { provider: "codex", model: "gpt-image-2.5" },
