@@ -248,6 +248,25 @@ export function qoderChatModelConfig(modelConfig) {
   return rest;
 }
 
+/**
+ * Model-server gRPC hosts, one per deployment.
+ *
+ * The gRPC surface (`model.chat.ChatService/ChatCompletionStream`) is a separate
+ * transport from the COSY HTTP surface. It does not fix a hard body cap so much
+ * as remove the slowdown: measured against a live account with the same model, a
+ * 280K-character request answered in 5.1s over gRPC against 73s over COSY, and a
+ * 1.2M-character request answered in 16.3s where COSY had not answered after
+ * 300s. That is what makes the roster's 1M-token windows usable. Free-tier rows
+ * are refused here with `116 quota exceeded`, so they stay on COSY.
+ */
+export const QODER_GRPC_HOSTS = Object.freeze({
+  [QODER_REGION_INTL]: "api2-v2.qoder.sh",
+  [QODER_REGION_CN]: "gateway.qoder.com.cn",
+});
+
+/** gRPC service path on the model-server host. */
+export const QODER_GRPC_SERVICE_PATH = "/model.chat.ChatService/ChatCompletionStream";
+
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
 // Matches the CLIProxyAPIPlus branch and live qodercli traffic.
 export const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----

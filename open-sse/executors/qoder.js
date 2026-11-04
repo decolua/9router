@@ -49,6 +49,7 @@ import {
   qoderQueueStatusUrl,
 } from "../shared/qoder/queue.js";
 import { createQoderSseCoalescer } from "../shared/qoder/sse.js";
+import { dispatchQoderGrpc, qoderBodyBytes, qoderTransportOverride, resolveQoderTransport } from "./qoder-grpc.js";
 import { rewriteQoderMessageAttachments } from "../shared/qoder/attachments.js";
 import { resolveQoderContextTier, applyQoderContextTier } from "../shared/qoder/contextTier.js";
 
@@ -238,35 +239,42 @@ function truncate(s, n) {
 }
 
 /**
- * Map the OpenAI-style request body into the exact shape Qoder expects.
+ * Resolves the live catalog entry for one model key, with the static roster as
+ * the last resort. Shared by the transport decision and the request builder so
+ * one dispatch never resolves the same key twice.
  */
-async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl" }) {
+async function resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region = "intl" }) {
+  const modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
+  if (modelConfig) return modelConfig;
+
+  // Try a forced refresh once before giving up — the cache may simply not be
+  // populated yet on first ever call for this credential.
+  const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
+  const retried = refreshed?.rawConfigs.get(qoderKey);
+  if (retried) return { ...retried, key: qoderKey };
+
+  // Last resort: a static block for models the per-account catalog omits.
+  // Sonus (smodel) / Cantus (cmodel) are the known cases — the chat endpoint
+  // accepts them even when /model/list never mentions them, so refusing here
+  // would make an available model look broken.
+  const staticConfig = getQoderStaticModelConfig(qoderKey);
+  if (!staticConfig) {
+    throw new Error(
+      `qoder: model_config for "${qoderKey}" not yet known (run a model list fetch or check upstream connectivity)`,
+    );
+  }
+  log?.info?.("QODER", `using static model_config for "${qoderKey}" (absent from the account catalog)`);
+  return staticConfig;
+}
+
+async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl", modelConfig: preResolvedConfig = null }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
 
-  // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
-  // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
-  if (!modelConfig) {
-    // Try a forced refresh once before giving up — the cache may simply
-    // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
-    const retried = refreshed?.rawConfigs.get(qoderKey);
-    if (retried) {
-      modelConfig = { ...retried, key: qoderKey };
-    } else {
-      // Last resort: a static block for models the per-account catalog omits.
-      // Sonus (smodel) / Cantus (cmodel) are the known cases — the chat
-      // endpoint accepts them even when /model/list never mentions them, so
-      // refusing here would make an available model look broken.
-      modelConfig = getQoderStaticModelConfig(qoderKey);
-      if (!modelConfig) {
-        throw new Error(
-          `qoder: model_config for "${qoderKey}" not yet known (run a model list fetch or check upstream connectivity)`,
-        );
-      }
-      log?.info?.("QODER", `using static model_config for "${qoderKey}" (absent from the account catalog)`);
-    }
-  }
+  // The catalog entry carries the wire config the request must echo (window,
+  // reasoning flag, tier list). It is resolved here unless the caller already
+  // did so for the transport decision.
+  const modelConfig = preResolvedConfig
+    || await resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region });
 
   const incoming = Array.isArray(body.messages)
     ? body.messages.map((m) => {
@@ -703,10 +711,58 @@ export class QoderExecutor extends BaseExecutor {
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
 
-    let qoderKey;
+    // Transport selection. COSY is the default; a body above 200 KiB is upgraded
+    // to gRPC, which answers large requests in seconds where COSY takes minutes
+    // or never answers (measured: 280K chars 73s → 5.1s, 1.2M chars >300s →
+    // 16.3s). Free-tier rows stay on COSY (gRPC refuses them with 116), and any
+    // gRPC failure falls through to the COSY path below, so a request that works
+    // today cannot start failing.
+    const qoderKey = String(model || "").replace(/^qoder\//, "");
+    let modelConfig = null;
+    try {
+      modelConfig = await resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region: this.region });
+    } catch (err) {
+      const fakeResp = new Response(
+        JSON.stringify({ error: { message: err.message } }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+      return { response: fakeResp, url, headers: {}, transformedBody: body };
+    }
+
+    const bodyBytes = qoderBodyBytes(body);
+    const transport = resolveQoderTransport(qoderTransportOverride(), modelConfig, bodyBytes);
+    if (transport === "grpc") {
+      log?.info?.("QODER", `dispatching ${qoderKey} over gRPC (body ${Math.round(bodyBytes / 1024)} KiB exceeds the HTTP cap)`);
+      try {
+        return await dispatchQoderGrpc({
+          modelId: qoderKey,
+          body,
+          credentials,
+          region: this.region,
+          signal,
+          log,
+          userId: psd.userId,
+          machineId: psd.machineId || deriveMachineId(psd.userId),
+        });
+      } catch (err) {
+        // Missing @grpc/* (optional deps) or a client that cannot be built:
+        // the COSY path below still serves anything under its own cap.
+        log?.warn?.("QODER", `gRPC transport unavailable (${err.message}); falling back to COSY`);
+      }
+    }
+
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region }));
+      ({ payload } = await buildQoderRequestBody({
+        model,
+        body,
+        credentials,
+        log,
+        proxyOptions,
+        signal,
+        region: this.region,
+        modelConfig,
+      }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
