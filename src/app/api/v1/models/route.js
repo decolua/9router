@@ -278,7 +278,77 @@ function comboMatchesKinds(combo, kindFilter) {
 // treated as a literal model and publishes the 200k floor. Expand nested
 // names (cycle-guarded) so the published window is the true min across the
 // whole chain.
-function comboSeatLimits(combo, combosByName, visiting = new Set()) {
+//
+// Only "routable" seats are counted — seats that have an active connection
+// available. Free fallback seats (no-auth providers without credentials) are
+// excluded from the published limits because they are never the primary target;
+// they only serve as capacity-adapter fallbacks at call time via
+// stripHistoryForContext. This fixes #4682 where a premium+free combo published
+// the free model's tiny window instead of the premium seat's window.
+function comboSeatLimits(combo, combosByName, activeConnectionByProvider, visiting = new Set()) {
+  const name = typeof combo?.name === "string" ? combo.name : null;
+  if (name) {
+    if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
+    visiting.add(name);
+  }
+
+  let contextWindow = Infinity;
+  let maxOutput = Infinity;
+  let hasRoutableSeat = false;
+  try {
+    for (const seat of Array.isArray(combo?.models) ? combo.models : []) {
+      if (typeof seat !== "string") continue;
+      const slash = seat.indexOf("/");
+      if (slash <= 0) {
+        const nested = combosByName.get(seat);
+        if (nested) {
+          const nestedLimits = comboSeatLimits(nested, combosByName, activeConnectionByProvider, visiting);
+          if (Number.isFinite(nestedLimits.contextWindow)) {
+            contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
+            hasRoutableSeat = true;
+          }
+          if (Number.isFinite(nestedLimits.maxOutput)) {
+            maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
+            hasRoutableSeat = true;
+          }
+          continue;
+        }
+      }
+      // Check if this seat is routable (has a REAL active connection, not synthetic no-auth)
+      const providerAlias = slash > 0 ? seat.slice(0, slash) : "";
+      const providerId = ALIAS_TO_PROVIDER_ID[providerAlias] || providerAlias;
+      const conn = activeConnectionByProvider.get(providerId);
+      // Synthetic "noauth" connections (id === "noauth") are not real user connections
+      // They exist only to expose free models in /v1/models, not for routing
+      const hasRealConnection = conn && conn.id !== "noauth" && conn.apiKey;
+      if (!hasRealConnection) {
+        // Seat not routable — skip for published limits; will be handled at call time
+        // via capacity adapter + stripHistoryForContext
+        continue;
+      }
+      hasRoutableSeat = true;
+      const caps = comboSeatCapabilities(seat) || getCapabilitiesForModel(null, seat);
+      if (Number.isFinite(caps?.contextWindow)) contextWindow = Math.min(contextWindow, caps.contextWindow);
+      if (Number.isFinite(caps?.maxOutput)) maxOutput = Math.min(maxOutput, caps.maxOutput);
+    }
+  } finally {
+    if (name) visiting.delete(name);
+  }
+
+  // If no routable seats found (all free fallbacks), fall back to all seats
+  // so the combo still publishes some limits
+  if (!hasRoutableSeat) {
+    return computeAllSeatsLimits(combo, combosByName, visiting);
+  }
+
+  return {
+    contextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
+    maxOutput: Number.isFinite(maxOutput) ? maxOutput : undefined,
+  };
+}
+
+// Fallback: compute limits across ALL seats (used when no routable seats exist)
+function computeAllSeatsLimits(combo, combosByName, visiting = new Set()) {
   const name = typeof combo?.name === "string" ? combo.name : null;
   if (name) {
     if (visiting.has(name)) return { contextWindow: undefined, maxOutput: undefined };
@@ -294,7 +364,7 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
       if (slash <= 0) {
         const nested = combosByName.get(seat);
         if (nested) {
-          const nestedLimits = comboSeatLimits(nested, combosByName, visiting);
+          const nestedLimits = computeAllSeatsLimits(nested, combosByName, visiting);
           if (Number.isFinite(nestedLimits.contextWindow)) contextWindow = Math.min(contextWindow, nestedLimits.contextWindow);
           if (Number.isFinite(nestedLimits.maxOutput)) maxOutput = Math.min(maxOutput, nestedLimits.maxOutput);
           continue;
@@ -328,7 +398,7 @@ export async function buildModelsList(kindFilter, options = {}) {
     connections = await getProviderConnections();
     connections = connections.filter(c => c.isActive !== false);
   } catch (e) {
-    console.log("Could not fetch providers, returning all models");
+    console.log("Could not fetch providers, returning all models", e);
   }
 
   let combos = [];
@@ -400,10 +470,10 @@ export async function buildModelsList(kindFilter, options = {}) {
       const comboCaps = aggregateComboCapabilities(combo.models, comboByName, comboSeatCapabilities);
       if (comboCaps) entry.capabilities = comboCaps;
       // Any seat can serve the request, so the only window a combo can promise is
-      // its smallest. Combo entries were the only models on this endpoint that
-      // published no limits at all, which leaves a client to guess from the name —
-      // and it guesses high (see the snake_case note on the per-provider path).
-      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName);
+      // its smallest *routable* seat. Free fallback seats are excluded from published
+      // limits (they serve as capacity-adapter fallbacks at call time with
+      // stripHistoryForContext). This fixes #4682.
+      const { contextWindow, maxOutput } = comboSeatLimits(combo, combosByName, activeConnectionByProvider);
       if (Number.isFinite(contextWindow)) entry.context_length = contextWindow;
       if (Number.isFinite(maxOutput)) entry.max_completion_tokens = maxOutput;
     }
