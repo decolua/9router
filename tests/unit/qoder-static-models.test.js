@@ -13,6 +13,7 @@ import {
   QODER_MODEL_MAP,
   QODER_STATIC_MODEL_CONFIGS,
   getQoderStaticModelConfig,
+  isQoderFreeTier,
 } from "../../open-sse/shared/qoder/constants.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import qoderRegistry from "../../open-sse/providers/registry/qoder.js";
@@ -99,5 +100,29 @@ describe("Qoder registry", () => {
     const byId = Object.fromEntries((qoderRegistry.models || []).map((m) => [m.id, m.name]));
     expect(byId.smodel).toBe("Sonus");
     expect(byId.cmodel).toBe("Cantus");
+  });
+});
+
+describe("Qoder static roster: context tiers and free tier", () => {
+  it("declares the selectable context tiers the lite plan advertises", () => {
+    // contextTier.js picks the smallest tier that fits, so a static row without
+    // context_config would pin the conversation to the ~180K default.
+    for (const key of Object.keys(QODER_STATIC_MODEL_CONFIGS)) {
+      expect(QODER_STATIC_MODEL_CONFIGS[key].context_config).toEqual(["200K", "400K", "1M"]);
+    }
+  });
+
+  it("marks every static row as billed", () => {
+    for (const key of Object.keys(QODER_STATIC_MODEL_CONFIGS)) {
+      expect(QODER_STATIC_MODEL_CONFIGS[key].is_free).toBe(false);
+    }
+  });
+
+  it("recognises the free tier by key, which the live catalog does not state", () => {
+    expect(isQoderFreeTier({ key: "lite" })).toBe(true);
+    expect(isQoderFreeTier({ key: "lite" }, "lite")).toBe(true);
+    expect(isQoderFreeTier({ key: "dfmodel", is_free: true })).toBe(true);
+    expect(isQoderFreeTier({ key: "dmodel" }, "dmodel")).toBe(false);
+    expect(isQoderFreeTier(null, "qfmodel")).toBe(false);
   });
 });

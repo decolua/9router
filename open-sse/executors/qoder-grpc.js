@@ -30,6 +30,7 @@ import {
   QODER_GRPC_HOSTS,
   QODER_GRPC_SERVICE_PATH,
   QODER_REGION_INTL,
+  isQoderFreeTier,
 } from "../shared/qoder/constants.js";
 import { CHAT_PROTO_SOURCE } from "../shared/qoder/chat-proto.js";
 
@@ -76,10 +77,10 @@ let chatServiceCache = null;
  * `116 quota exceeded`. `QODER_TRANSPORT=grpc|cosy` forces either surface, for
  * probing and for callers who know their upstream behaviour.
  */
-export function resolveQoderTransport(envOverride, modelConfig, bodyBytes = 0) {
+export function resolveQoderTransport(envOverride, modelConfig, bodyBytes = 0, modelKey = "") {
   const forced = typeof envOverride === "string" ? envOverride.trim().toLowerCase() : "";
   if (forced === "cosy") return "cosy";
-  if (modelConfig?.is_free === true) return "cosy";
+  if (isQoderFreeTier(modelConfig, modelKey)) return "cosy";
   if (forced === "grpc") return "grpc";
   return bodyBytes > QODER_HTTP_BODY_LIMIT_BYTES ? "grpc" : "cosy";
 }

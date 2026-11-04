@@ -198,6 +198,14 @@ const QODER_STATIC_MODEL_CONFIG_BASE = Object.freeze({
   format: "openai",
   source: "system",
   url: "",
+  // The lite-plan roster states three selectable windows per slot; contextTier.js
+  // picks the smallest one that fits the prompt, so declaring them here lets an
+  // account without a live catalog still reach the widest window instead of
+  // being pinned to the ~180K default.
+  context_config: Object.freeze(["200K", "400K", "1M"]),
+  // Every static row is billed except `lite`, which the free tier serves on the
+  // COSY surface only — gRPC refuses it with `116 quota exceeded`.
+  is_free: false,
 });
 
 export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
@@ -246,6 +254,23 @@ export function qoderChatModelConfig(modelConfig) {
   if (!("source" in modelConfig)) return modelConfig;
   const { source: _source, ...rest } = modelConfig;
   return rest;
+}
+
+/**
+ * Model keys the free tier serves.
+ *
+ * The roster marks one slot as free (`lite`); everything else is billed. The
+ * live catalog does not state it, so the rule is kept here rather than inferred
+ * per request: gRPC refuses free-tier rows with `116 quota exceeded`, which
+ * makes getting this wrong a hard failure rather than a slow one.
+ */
+export const QODER_FREE_TIER_KEYS = Object.freeze(["lite"]);
+
+/** True when a model key or its catalog entry belongs to the free tier. */
+export function isQoderFreeTier(modelConfig, modelKey = "") {
+  if (modelConfig?.is_free === true) return true;
+  const key = String(modelKey || modelConfig?.key || "").trim();
+  return QODER_FREE_TIER_KEYS.includes(key);
 }
 
 /**

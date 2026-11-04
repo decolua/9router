@@ -43,6 +43,13 @@ describe("resolveQoderTransport", () => {
     expect(resolveQoderTransport("grpc", FREE, LARGE)).toBe("cosy");
   });
 
+  it("recognises the free tier by model key when the catalog does not say", () => {
+    // The live catalog does not mark `lite` as free, so the key alone has to
+    // keep it off gRPC — where it would be refused with 116.
+    expect(resolveQoderTransport("grpc", { key: "lite" }, LARGE, "lite")).toBe("cosy");
+    expect(resolveQoderTransport(undefined, { key: "dmodel" }, LARGE, "dmodel")).toBe("grpc");
+  });
+
   it("honours an explicit override in both directions", () => {
     expect(resolveQoderTransport("cosy", BILLED, LARGE)).toBe("cosy");
     expect(resolveQoderTransport("grpc", BILLED, SMALL)).toBe("grpc");
