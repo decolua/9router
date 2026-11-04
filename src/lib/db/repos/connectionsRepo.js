@@ -209,12 +209,16 @@ export async function createProviderConnection(data) {
         err.existingName = existing.name;
         throw err;
       }
-      // A fresh OAuth grant for a quarantined profile is the repair action:
-      // re-enable the row so it can be selected again. Reset the stale error
-      // fields/locks through the normal activation path.
+      // Fresh credentials for a quarantined row are the repair action: re-enable
+      // it so it can be selected again. OAuth logins are explicit; API-key
+      // imports only reactivate after the caller validated the key.
+      const freshCredentials = !!(data.apiKey || data.accessToken || data.refreshToken);
+      const claimsActive = data.testStatus === "active"
+        || data.authType === "oauth"
+        || data.authType === "access_token";
       const reauthorized = existing.testStatus === "reauth_required"
-        && data.authType === "oauth"
-        && (data.accessToken || data.refreshToken)
+        && freshCredentials
+        && claimsActive
         ? { ...data, isActive: true, testStatus: "active" }
         : data;
       const normalized = resetHealthStateOnActivation(existing, reauthorized);
@@ -275,7 +279,16 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const normalized = resetHealthStateOnActivation(existing, data);
+    // The edit dialog validates the replacement key/token and only then sends
+    // testStatus "active". Use that as the repair signal; a proxy/name edit
+    // must not silently put a quarantined row back into rotation.
+    const freshCredentials = !!(data.apiKey || data.accessToken || data.refreshToken);
+    const reauthorized = existing.testStatus === "reauth_required"
+      && data.testStatus === "active"
+      && freshCredentials
+      ? { ...data, isActive: true }
+      : data;
+    const normalized = resetHealthStateOnActivation(existing, reauthorized);
     const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);

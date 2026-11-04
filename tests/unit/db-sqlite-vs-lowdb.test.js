@@ -212,6 +212,42 @@ describe("DB SQLite layer — public API parity", () => {
     });
   });
 
+  it("providerConnections: updating a quarantined API-key profile reactivates it", async () => {
+    const existing = await sqliteDb.createProviderConnection({
+      provider: "openai-compatible-reauth-test",
+      authType: "apikey",
+      name: "key-reauth",
+      apiKey: "old-key",
+    });
+    await sqliteDb.updateProviderConnection(existing.id, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: "Incorrect API key provided",
+      errorCode: 401,
+      backoffLevel: 2,
+      modelLock_modelA: "2099-01-01T00:00:00.000Z",
+    });
+
+    const repaired = await sqliteDb.updateProviderConnection(existing.id, {
+      apiKey: "new-key",
+      testStatus: "active",
+      lastError: null,
+      lastErrorAt: null,
+    });
+
+    expect(repaired.isActive).toBe(true);
+    const back = await sqliteDb.getProviderConnectionById(existing.id);
+    expect(back).toMatchObject({
+      apiKey: "new-key",
+      isActive: true,
+      testStatus: "active",
+      lastError: null,
+      errorCode: null,
+      backoffLevel: 0,
+      modelLock_modelA: null,
+    });
+  });
+
   it("providerConnections: active soft warnings survive the health reset", async () => {
     const c = await sqliteDb.createProviderConnection({
       provider: "health-reset-warning",

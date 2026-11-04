@@ -168,6 +168,10 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
     : connection.isActive === false
       ? "disabled"
       : (effectiveStatus || "Unknown");
+  const showCredentialEdit = isReauthRequired
+    && !isOAuthConnection
+    && (rowAuthType === "apikey" || rowAuthType === "api_key" || rowAuthType === "access_token");
+  const credentialEditLabel = rowAuthType === "access_token" ? "Update token" : "Update key";
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
@@ -324,9 +328,20 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </button>
             </Tooltip>
           )}
-          <button onClick={onEdit} className="flex flex-col items-center rounded px-2 py-1 text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5">
-            <span className="material-symbols-outlined text-[18px]">edit</span>
-            <span className="text-[10px] leading-tight">Edit</span>
+          <button
+            onClick={onEdit}
+            className={`flex flex-col items-center rounded px-2 py-1 transition-colors ${
+              showCredentialEdit
+                ? "text-amber-600 hover:bg-amber-500/10"
+                : "text-text-muted hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[18px]">
+              {showCredentialEdit ? "key" : "edit"}
+            </span>
+            <span className="text-[10px] leading-tight">
+              {showCredentialEdit ? credentialEditLabel : "Edit"}
+            </span>
           </button>
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
             <span className="material-symbols-outlined text-[18px]">delete</span>
