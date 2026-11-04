@@ -55,7 +55,7 @@ export async function handleChat(request, clientRawRequest = null) {
   }
   if (process.env.PII_GUARD_MODULE) {
     const guard = await observeRequest(body, { endpoint: clientRawRequest.endpoint, userAgent: clientRawRequest.headers?.["user-agent"], model: body?.model }, (await getSettings()).piiGuard);
-    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, blockMessage(guard.blocked));
+    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, blockMessage(guard.blocked, true, guard.stuck));
   }
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.

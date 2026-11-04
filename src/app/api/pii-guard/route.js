@@ -6,6 +6,9 @@ import { summarize } from "@/lib/piiGuard/summary.js";
 
 export const dynamic = "force-dynamic";
 const MODES = ["off", "observe", "redact", "block"];
+const WHERES = ["user", "system", "assistant", "tool_result", "thinking"];
+const HASH = /^[0-9a-f]{12}$/;
+const MAX_IGNORE = 1000;
 
 // Reads the newest 8 MiB; `truncated` is true when that does not reach back 24 hours.
 async function recentEvents() {
@@ -39,7 +42,7 @@ export async function GET() {
   return NextResponse.json(await state());
 }
 
-// Body: { mode?, rules?, ignore?, on? } saves config. { test, testMode? } scans text without saving.
+// Body: { mode?, rules?, ignore? | ignoreMany? | ignoreRecent? (minutes), on? } saves config. { test, testMode? } scans text without saving.
 export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
@@ -48,13 +51,34 @@ export async function POST(request) {
     if (body.test.length > 100_000) return NextResponse.json({ error: "Text too long" }, { status: 400 });
     // testMode previews one mode for every rule without saving it.
     const config = MODES.includes(body.testMode) ? { mode: body.testMode, rules: {} } : current;
-    const result = await testText(body.test, config);
+    const result = await testText(body.test, config, WHERES.includes(body.testWhere) ? body.testWhere : "user");
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Scanner unavailable" }, { status: 503 });
   }
   const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [] };
   if (body.ignore !== undefined) {
     if (typeof body.ignore !== "string" || !/^[0-9a-f]{12}$/.test(body.ignore) || typeof body.on !== "boolean") return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
     next.ignore = body.on ? [...new Set([...next.ignore, body.ignore])].slice(-1000) : next.ignore.filter(hash => hash !== body.ignore);
+  }
+  if (body.ignoreMany !== undefined || body.ignoreRecent !== undefined) {
+    if (typeof body.on !== "boolean") return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
+    let hashes;
+    if (body.ignoreMany !== undefined) {
+      if (!Array.isArray(body.ignoreMany) || body.ignoreMany.length > MAX_IGNORE || body.ignoreMany.some(h => typeof h !== "string" || !HASH.test(h))) return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
+      hashes = body.ignoreMany;
+    } else {
+      if (!Number.isInteger(body.ignoreRecent) || body.ignoreRecent < 1 || body.ignoreRecent > 1440) return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
+      const cutoff = Date.now() - body.ignoreRecent * 60_000;
+      const { events, truncated } = await recentEvents();
+      // The log window must reach past the cutoff, or old values would look new.
+      if (truncated && !(Date.parse(events.at(-1)?.ts) <= cutoff)) return NextResponse.json({ error: "Event log window too short to tell which values are new" }, { status: 409 });
+      hashes = summarize(events).groups.filter(g => Date.parse(g.firstSeen) >= cutoff).map(g => g.hash);
+    }
+    const drop = new Set(hashes);
+    if (body.on) {
+      const merged = [...new Set([...next.ignore, ...hashes])];
+      if (merged.length > MAX_IGNORE) return NextResponse.json({ error: `Ignore list is limited to ${MAX_IGNORE} values` }, { status: 400 });
+      next.ignore = merged;
+    } else next.ignore = next.ignore.filter(hash => !drop.has(hash));
   }
   if (body.mode !== undefined) {
     if (!MODES.includes(body.mode)) return NextResponse.json({ error: "Invalid mode" }, { status: 400 });

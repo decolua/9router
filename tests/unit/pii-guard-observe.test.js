@@ -224,6 +224,54 @@ describe("PII guard test preview", () => {
     const b = () => ({ messages: [{ role: "user", content: "hi" }], metadata: { [value]: 1 } });
     expect(await observeRequest(b(), meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"] });
     expect(await observeRequest(b(), meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"] });
+    expect((await observeRequest(b(), meta, { mode: "block" })).stuck).toBeUndefined();
+  });
+  const thinking = (loop) => ({ messages: [
+    { role: "user", content: "hi" },
+    { role: "assistant", content: [{ type: "thinking", thinking: `note ${value}`, signature: "sig" }, { type: "tool_use", id: "t1", name: "x", input: {} }] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }] },
+    ...(loop ? [] : [{ role: "assistant", content: [{ type: "text", text: "done" }] }, { role: "user", content: "next" }]),
+  ] });
+  it("drops signed thinking with a value from earlier turns instead of leaking it", async () => {
+    const first = await observeRequest(thinking(false), meta, { mode: "block" });
+    expect(first).toMatchObject({ blocked: ["own-test"] });
+    expect(first.stuck).toBeUndefined();
+    const b = thinking(false);
+    expect(await observeRequest(b, meta, { mode: "block" })).toBeUndefined();
+    expect(b.messages[1].content.map(c => c.type)).toEqual(["tool_use"]);
+    expect(JSON.stringify(b)).not.toContain(value);
+  });
+  it("blocks signed thinking in the active tool loop with a /rewind hint", async () => {
+    const b = thinking(true);
+    expect(await observeRequest(b, meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"], stuck: true });
+    expect(await observeRequest(thinking(true), meta, { mode: "block" })).toMatchObject({ stuck: true });
+    expect(b.messages[1].content[0].thinking).toContain(value);
+    const { blockMessage } = await import("../../src/lib/piiGuard/observe.js");
+    expect(blockMessage(["own-test"], true, true)).toContain("/rewind");
+    expect(blockMessage(["own-test"], true, true)).not.toContain("retry and it will be redacted");
+    await observeRequest(thinking(true), meta, { mode: "redact" });
+    const event = JSON.parse((await lines(3)).trim().split("\n")[2]);
+    expect(event.hits[0]).toMatchObject({ action: "leaked", where: "assistant/thinking" });
+  });
+  it("keeps thinking of every assistant message in the open tool loop", async () => {
+    const b = thinking(true);
+    b.messages.push({ role: "assistant", content: [{ type: "thinking", thinking: "more", signature: "s2" }, { type: "tool_use", id: "t2", name: "x", input: {} }] }, { role: "user", content: [{ type: "tool_result", tool_use_id: "t2", content: "ok" }] });
+    expect(await observeRequest(b, meta, { mode: "block" })).toMatchObject({ stuck: true });
+    expect(await observeRequest(b, meta, { mode: "block" })).toMatchObject({ stuck: true });
+    expect(b.messages[1].content[0].type).toBe("thinking");
+  });
+  it("ignores unknown preview locations", async () => {
+    const { testText } = await import("../../src/lib/piiGuard/observe.js");
+    expect((await testText(`x ${value}`, { mode: "redact" }, "__proto__")).redacted).not.toContain(value);
+    expect((await testText(`x ${value}`, { mode: "redact" }, "constructor")).redacted).not.toContain(value);
+  });
+  it("previews where a value sits", async () => {
+    const { testText } = await import("../../src/lib/piiGuard/observe.js");
+    const r = await testText(`x ${value}`, { mode: "redact" }, "thinking");
+    expect(r.findings[0].action).toBe("leaked");
+    expect(r.before).toBe(`x ${value}`);
+    const s = await testText(`x ${value}`, { mode: "redact" }, "system");
+    expect(s.redacted).not.toContain(value);
   });
   it("reports leaked over redacted for the same value and source", async () => {
     const b = { messages: [{ role: "user", content: [{ type: "text", text: value }, { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA", note: value } }] }] };

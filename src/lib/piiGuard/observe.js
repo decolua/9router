@@ -100,8 +100,30 @@ function stats() {
 const ACTIONS = ["off", "observe", "redact", "block"];
 // Keep the rows that matter most when an event's hit list is capped.
 const RANK = { leaked: 0, block: 1, redact: 2, observe: 3, ignored: 4 };
-export function blockMessage(names, chat = true) {
+export function blockMessage(names, chat = true, stuck = false) {
+  // A value in signed thinking of the active tool loop cannot be rewritten, so a retry would be blocked again.
+  if (stuck && chat) return `pii-guard blocked: ${names.join(", ")}. At least one value sits inside signed thinking, which cannot be redacted, so retrying will not help: run /rewind to drop that turn. Change rules in Dashboard > PII Guard.`;
   return `pii-guard blocked a new value: ${names.join(", ")}. It is now remembered; retry and it will be redacted${chat ? ", or run /rewind to drop that turn" : ""}. Change rules in Dashboard > PII Guard.`;
+}
+// Where a readonly value sits, for the dashboard.
+function where(f) {
+  if (/\[key:\d+\]$/.test(f.path)) return "key";
+  if (f.path === "") return "body";
+  if (/\/(?:redacted_)?thinking$/.test(f.source)) return "assistant/thinking";
+  return "number";
+}
+// Signed thinking can be dropped from earlier assistant turns, but the provider requires it
+// on the last assistant turn while a tool loop is running (last message carries a tool_result).
+function thinkingBlock(body, f) {
+  const m = /^messages\[(\d+)\]\.content\[(\d+)\]/.exec(f.path);
+  const messages = body?.messages;
+  if (!m || !Array.isArray(messages) || !/\/thinking$/.test(f.source)) return;
+  const i = +m[1], j = +m[2], block = messages[i]?.content?.[j];
+  if (messages[i]?.role !== "assistant" || block?.type !== "thinking") return;
+  // The open turn starts after the last user message that is not only tool results; its thinking must stay.
+  const toolOnly = x => Array.isArray(x?.content) && x.content.length && x.content.every(c => c?.type === "tool_result");
+  const lastUser = messages.findLastIndex(x => x?.role === "user" && !toolOnly(x));
+  return i > lastUser ? undefined : { i, j };
 }
 export async function ready() {
   if (!process.env.PII_GUARD_MODULE) return false;
@@ -159,9 +181,18 @@ export async function observeRequest(body, meta = {}, config = {}) {
     const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule) === "block" ? (seen.has(f.hash) && !f.readonly ? "redact" : "block") : act(f.rule);
     const result = library.scanBody(body, detector, undefined, hasRedact ? (text, fs) => replace(text, fs, decide, redacted) : undefined);
     const findings = result.findings;
+    // Readonly thinking outside the active tool loop becomes removable, so it is treated like editable text.
+    // Inside the active loop it stays: it is the provider's own signed output, so replaying it discloses nothing new.
+    // Redact reports it as leaked; only Block stops it (with a /rewind hint).
+    const drop = new Map();
+    for (const f of findings) if (f.readonly) { const at = thinkingBlock(body, f); if (at) { delete f.readonly; drop.set(f, at); } }
     // meta.model is a pre-scan copy; log the body value, which redaction may have rewritten, and drop it if it held a finding.
     const model = findings.some(f => /^\.?model$/.test(f.path)) ? "[redacted]" : body?.model ?? meta.model;
     for (const f of findings) foundActions.set(f, decide(f));
+    const strip = new Map();
+    for (const [f, at] of drop) if (foundActions.get(f) === "redact") { strip.set(`${at.i}:${at.j}`, at); redacted[label(f)] = (redacted[label(f)] || 0) + 1; }
+    for (const { i, j } of [...strip.values()].sort((a, b) => b.i - a.i || b.j - a.j)) { const c = body.messages[i].content; c.splice(j, 1); if (!c.length) c.push({ type: "text", text: "[thinking removed by pii-guard]" }); }
+    const stuck = findings.some(f => f.readonly && foundActions.get(f) === "block" && where(f) === "assistant/thinking");
     const preliminaryBlocked = new Set(findings.filter(f => foundActions.get(f) === "block").map(label));
     for (const f of findings) if (f.readonly && foundActions.get(f) === "redact") leaked[label(f)] = (leaked[label(f)] || 0) + 1;
     const scanMs = performance.now() - start;
@@ -179,7 +210,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
       }
       const hitAction = action === "block" ? "block" : action === "ignored" ? "ignored" : f.readonly && action === "redact" ? "leaked" : action;
       // A leaked or block occurrence must win over a redacted one for the same value and source.
-      if (!hitRows.has(key) || RANK[hitAction] < RANK[hitRows.get(key).action]) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction });
+      if (!hitRows.has(key) || RANK[hitAction] < RANK[hitRows.get(key).action]) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction, ...(f.readonly && { where: where(f) }) });
     }
     const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
     withFindings++; totalWithFindings++;
@@ -194,16 +225,30 @@ export async function observeRequest(body, meta = {}, config = {}) {
     else if (Object.keys(redacted).length) console.warn(`${line} redacted: ${Object.entries(redacted).map(([k, n]) => `${k}=${n}`).join(", ")}`);
     else if (fresh.length) console.warn(`${line} (new: ${[...new Set(fresh.map(label))].join(", ")})`);
     else console.info(line);
-    if (blocked.length) return { blocked };
+    if (blocked.length) return { blocked, ...(stuck && { stuck }) };
   } catch { failure(stage); }
 }
-export async function testText(text, config) {
+const WHERE = {
+  user: text => ({ messages: [{ role: "user", content: text }] }),
+  system: text => ({ system: text, messages: [] }),
+  assistant: text => ({ messages: [{ role: "assistant", content: [{ type: "text", text }] }] }),
+  tool_result: text => ({ messages: [{ role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: text }] }] }),
+  // Active tool loop: the signed thinking must be replayed unchanged.
+  thinking: text => ({ messages: [{ role: "assistant", content: [{ type: "thinking", thinking: text, signature: "preview" }, { type: "tool_use", id: "t", name: "x", input: {} }] }, { role: "user", content: [{ type: "tool_result", tool_use_id: "t", content: "" }] }] }),
+};
+const READ = { user: b => b.messages[0].content, system: b => b.system, assistant: b => b.messages[0].content[0].text, tool_result: b => b.messages[0].content[0].content, thinking: b => b.messages[0].content[0].thinking };
+export async function testText(text, config, at = "user") {
   if (!await ready()) return null;
-  const act = actionFor(config), body = { messages: [{ role: "user", content: text }] }, redacted = Object.create(null);
+  if (!Object.hasOwn(WHERE, at)) at = "user";
+  const act = actionFor(config), body = WHERE[at](text), redacted = Object.create(null);
   const ignore = new Set(Array.isArray(config.ignore) ? config.ignore.filter(h => typeof h === "string" && /^[0-9a-f]{12}$/i.test(h)) : []);
-  const result = library.scanBody(body, detector, undefined, (s, fs) => replace(s, fs, f => ignore.has(f.hash) ? "ignored" : act(f.rule), redacted));
-  const findings = result.findings.map(f => ({ rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, hash: f.hash, action: ignore.has(f.hash) ? "ignored" : act(f.rule), match: text.slice(f.start, f.end) }));
-  return { findings, redacted: body.messages[0].content, blocked: findings.filter(f => f.action === "block").map(f => f.name || f.rule) };
+  const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule);
+  const result = library.scanBody(body, detector, undefined, (s, fs) => replace(s, fs, decide, redacted));
+  const findings = result.findings.filter(f => !/\[key:\d+\]$/.test(f.path)).map(f => {
+    const action = decide(f);
+    return { rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, hash: f.hash, action: f.readonly && action === "redact" ? "leaked" : action, match: text.slice(f.start, f.end) };
+  });
+  return { findings, before: text, redacted: READ[at](body), blocked: findings.filter(f => f.action === "block").map(f => f.name || f.rule) };
 }
 export function health() {
   const sorted = healthSamples.slice().sort((a, b) => a - b);

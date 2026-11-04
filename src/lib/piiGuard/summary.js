@@ -1,9 +1,10 @@
 const DAY = 24 * 60 * 60 * 1000;
+const RANK = { leaked: 0, block: 1, redact: 2, observe: 3, ignored: 4 };
 
 export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
   const since = now - DAY;
   const groups = new Map();
-  const ruleHits = Object.create(null), ruleHashes = Object.create(null), ruleSources = Object.create(null), bySource = Object.create(null);
+  const ruleHits = Object.create(null), ruleStuck = Object.create(null), ruleHashes = Object.create(null), ruleSources = Object.create(null), bySource = Object.create(null);
   const leaked = new Set(), blocked = new Set(), unique = new Set();
   let errors24h = 0;
 
@@ -22,8 +23,12 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
       const action = typeof hit.action === "string" ? hit.action : "observe";
       ruleHits[hit.rule] = (ruleHits[hit.rule] || 0) + 1;
       bySource[source] = (bySource[source] || 0) + 1;
-      ruleSources[hit.rule] ||= Object.create(null);
-      ruleSources[hit.rule][source] = (ruleSources[hit.rule][source] || 0) + 1;
+      // Warnings count only places Redact cannot rewrite (hit.where is set for those).
+      if (typeof hit.where === "string") {
+        ruleStuck[hit.rule] = (ruleStuck[hit.rule] || 0) + 1;
+        ruleSources[hit.rule] ||= Object.create(null);
+        ruleSources[hit.rule][hit.where] = (ruleSources[hit.rule][hit.where] || 0) + 1;
+      }
       const newTurn = !distinct.has(key);
       if (newTurn) {
         (ruleHashes[hit.rule] ||= new Set()).add(key);
@@ -31,13 +36,15 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
       }
       let group = groups.get(key);
       if (!group) {
-        group = { hash: hit.hash, rule: hit.rule, name: hit.name, kind: hit.kind, sources: [], actions: [], firstSeen: event.ts, lastSeen: event.ts, turns: new Set(), ignored: false };
+        group = { hash: hit.hash, rule: hit.rule, name: hit.name, kind: hit.kind, sources: [], actions: [], action, actionTs: ts, leakedWhere: [], firstSeen: event.ts, lastSeen: event.ts, turns: new Set(), ignored: false };
         groups.set(key, group);
       }
       if (!group.name && hit.name) group.name = hit.name;
       if (!group.kind && hit.kind) group.kind = hit.kind;
       if (!group.sources.includes(source)) group.sources.push(source);
       if (!group.actions.includes(action)) group.actions.push(action);
+      if (ts > group.actionTs || (ts === group.actionTs && RANK[action] < RANK[group.action])) { group.action = action; group.actionTs = ts; }
+      if (action === "leaked" && typeof hit.where === "string" && !group.leakedWhere.includes(hit.where)) group.leakedWhere.push(hit.where);
       if (ts < Date.parse(group.firstSeen)) group.firstSeen = event.ts;
       if (ts > Date.parse(group.lastSeen)) group.lastSeen = event.ts;
       group.turns.add(event.ts);
@@ -47,7 +54,7 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
   }
 
   const ignored = new Set(Array.isArray(ignore) ? ignore : []);
-  const outputGroups = [...groups.values()].map(group => ({
+  const outputGroups = [...groups.values()].map(({ actionTs, ...group }) => ({
     ...group,
     turns: group.turns.size,
     ignored: ignored.has(group.hash),
@@ -56,13 +63,10 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
   })).sort((a, b) => Date.parse(b.lastSeen) - Date.parse(a.lastSeen));
   const ruleWarnings = Object.create(null);
   for (const [rule, hits] of Object.entries(ruleHits)) {
-    const sources = Object.entries(ruleSources[rule] || {});
-    const out = sources.filter(([source]) => /^(assistant|system)\//.test(source));
-    const count = out.reduce((sum, [, n]) => sum + n, 0);
-    const share = hits ? count / hits : 0;
+    const share = hits ? (ruleStuck[rule] || 0) / hits : 0;
     if (share >= 0.5) {
-      out.sort((a, b) => b[1] - a[1]);
-      ruleWarnings[rule] = { topSource: out[0]?.[0] || "assistant/-", share };
+      const out = Object.entries(ruleSources[rule]).sort((a, b) => b[1] - a[1]);
+      ruleWarnings[rule] = { topSource: out[0][0], share };
     }
   }
 
