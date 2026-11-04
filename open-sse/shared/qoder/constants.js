@@ -229,6 +229,25 @@ export function getQoderStaticModelConfig(key) {
   return cfg ? { ...cfg, key } : null;
 }
 
+/**
+ * Copies a `model_config` for the chat body, minus its `source` field.
+ *
+ * Qoder routes the chat by that field: the catalog's `source:"system"` puts the
+ * request in the managed lane, which answers `10605 / queueType=p3` while that
+ * lane is busy, whereas the identical payload with the field omitted is served
+ * immediately (measured against a live account). `source` selects a lane, not a
+ * model — `model_config.key` already identifies the model — so dropping it
+ * changes nothing else: `max_input_tokens`, `is_reasoning` and `context_config`
+ * keep steering the request exactly as the IDE steers it. The X-Model-Source
+ * header keeps reporting the catalog's value.
+ */
+export function qoderChatModelConfig(modelConfig) {
+  if (modelConfig == null || typeof modelConfig !== "object") return modelConfig;
+  if (!("source" in modelConfig)) return modelConfig;
+  const { source: _source, ...rest } = modelConfig;
+  return rest;
+}
+
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
 // Matches the CLIProxyAPIPlus branch and live qodercli traffic.
 export const QODER_RSA_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----

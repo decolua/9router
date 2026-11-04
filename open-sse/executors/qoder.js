@@ -33,6 +33,7 @@ import {
   QODER_CHAT_SIG_PATH,
   QODER_CONTEXT_TIER_ENV,
   getQoderStaticModelConfig,
+  qoderChatModelConfig,
   qoderInferenceBase,
 } from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
@@ -358,7 +359,10 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
         features: [],
         text: lastUser,
       },
-      model_config: modelConfig,
+      // Echoed without `source`: that field selects Qoder's managed lane, which
+      // parks the request with 10605/queueType=p3 while it is busy. The
+      // X-Model-Source header below still reports the catalog value.
+      model_config: qoderChatModelConfig(modelConfig),
       business: {
         product: "cli",
         version: "1.0.0",
