@@ -580,7 +580,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
   // header. An inconclusive probe keeps the connection active so a network
   // hiccup cannot mark a healthy session as broken.
   if (hasWebIdentityProbe(connection.provider)) {
-    const identity = await fetchWebIdentity(connection.provider, connection.apiKey || "");
+    const identity = await fetchWebIdentity(connection.provider, connection.apiKey || "", effectiveProxy);
     if (identity.status === "valid") return { valid: true, error: null };
     if (identity.status === "invalid") return { valid: false, error: identity.error };
     return { valid: true, error: `Could not verify the session: ${identity.error}` };
