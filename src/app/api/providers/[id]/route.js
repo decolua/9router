@@ -4,6 +4,7 @@ import {
   getProxyPoolById,
   updateProviderConnection,
   deleteProviderConnection,
+  getCombos,
 } from "@/models";
 import { toProviderConnectionResponse, usesAwsCredentialForm } from "@/lib/providerConnectionResponse";
 
@@ -172,6 +173,36 @@ export async function PUT(request, { params }) {
 export async function DELETE(request, { params }) {
   try {
     const { id } = await params;
+
+    // Check if this connection is referenced by any combos
+    const combos = await getCombos();
+    const dependentCombos = [];
+    for (const combo of combos) {
+      if (combo.models && combo.models.length > 0) {
+        for (const modelStr of combo.models) {
+          // Parse model string to check if it uses this provider
+          // Format is "provider/model"
+          const slashIndex = modelStr.indexOf("/");
+          if (slashIndex > 0) {
+            const provider = modelStr.slice(0, slashIndex);
+            // We need to check if this connection belongs to this provider
+            const connection = await getProviderConnectionById(id);
+            if (connection && connection.provider === provider) {
+              dependentCombos.push(combo.name);
+              break;
+            }
+          }
+        }
+      }
+    }
+
+    if (dependentCombos.length > 0) {
+      return NextResponse.json({
+        error: "Connection is referenced by active combos",
+        combos: dependentCombos,
+        message: "Delete the combos first or remove the provider/model from them before deleting this connection"
+      }, { status: 409 });
+    }
 
     const deleted = await deleteProviderConnection(id);
     if (!deleted) {
