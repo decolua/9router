@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import Modal from "./Modal";
 import ProviderIcon from "./ProviderIcon";
 import CapacityBadges from "./CapacityBadges";
+import ProbeBadge from "./ProbeBadge";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
+import { useModelProbes } from "@/shared/hooks/useModelProbes";
+import { PROBE_FILTERS, matchesProbeFilters } from "@/lib/probe/filters";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS, FREE_PROVIDERS, FREE_TIER_PROVIDERS, AI_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, getProviderAlias } from "@/shared/constants/providers";
 import { parseSearchQuery, matchesSearch } from "@/shared/utils/modelSearchFilter";
@@ -130,6 +133,14 @@ export default function ModelSelectModal({
   }, [effectiveConnections]);
 
   const { getCaps } = useModelCaps();
+  // Probing is useful whenever the picker is open — a combo pool picks models
+  // one at a time and benefits from measured filters just as much as a bulk
+  // fill does, so this is deliberately not gated on batch mode.
+  const { probes, progress: probeProgress, probeAll, cancel: cancelProbe } = useModelProbes({ enabled: isOpen });
+  const [capFilters, setCapFilters] = useState(() => new Set());
+  // Default the audio probe on when the caller is specifically filling an
+  // audio-capable pool — that is exactly the capability they need measured.
+  const [probeAudio, setProbeAudio] = useState(capFilter === "audioInput");
   const [searchQuery, setSearchQuery] = useState("");
   const [combos, setCombos] = useState([]);
   const [providerNodes, setProviderNodes] = useState([]);
@@ -519,6 +530,14 @@ export default function ModelSelectModal({
     return [...added, ...rest];
   };
 
+  // Capability filters. Filtering is answered from real probe results only:
+  // a model with no probe data fails every probe filter — the question is
+  // "did it actually do this", and an unprobed model has no evidence either way.
+  const matchesCapFilters = useCallback((model) => {
+    if (capFilters.size === 0) return true;
+    return matchesProbeFilters(probes[model.value], capFilters);
+  }, [capFilters, probes]);
+
   // Filter models by search query (supports substring, regex, and negation !token / -token)
   const filteredGroups = useMemo(() => {
     const filtered = {};
@@ -551,6 +570,8 @@ export default function ModelSelectModal({
 
         if (models.length === 0) return;
       }
+      models = models.filter(matchesCapFilters);
+      if (models.length === 0) return;
       filtered[providerId] = {
         ...group,
         models: sortModels(models),
@@ -558,7 +579,7 @@ export default function ModelSelectModal({
     });
 
     return filtered;
-  }, [groupedModels, parsedQuery, addedModelValues, allowProviderWildcard]);
+  }, [groupedModels, parsedQuery, addedModelValues, allowProviderWildcard, matchesCapFilters]);
 
   // Visible models available for batch actions (excluding placeholders)
   const visibleModels = useMemo(() => {
@@ -580,6 +601,25 @@ export default function ModelSelectModal({
   const visibleAdded = useMemo(() => {
     return visibleModels.filter((m) => addedModelValues.includes(m.value));
   }, [visibleModels, addedModelValues]);
+
+  // Values of every currently visible, selectable model — what Detect sweeps.
+  const visibleValues = useMemo(() => visibleModels.map((m) => m.value), [visibleModels]);
+
+  /**
+   * How many models have stored probe results. Counted across the whole store,
+   * not just what's visible: the probe chips stay usable after the user narrows
+   * the search, and a stale count would disable them for no reason.
+   */
+  const probedCount = useMemo(() => Object.keys(probes).length, [probes]);
+
+  const toggleCapFilter = (filter) => {
+    setCapFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(filter)) next.delete(filter);
+      else next.add(filter);
+      return next;
+    });
+  };
 
   const handleSelectAllVisible = () => {
     if (visibleUnadded.length === 0) return;
@@ -712,6 +752,95 @@ export default function ModelSelectModal({
         )}
       </div>
 
+      {/* Measured-capability filters + Detect sweep */}
+      <div className="mb-3 flex flex-wrap items-center gap-1">
+        <span
+          className="text-[10px] text-text-muted/70 mr-0.5"
+          title="These filter on real requests we sent to each model, not on declared capabilities"
+        >
+          Measured:
+        </span>
+        {PROBE_FILTERS.map((filter) => (
+          <button
+            key={filter.key}
+            onClick={() => toggleCapFilter(filter.key)}
+            disabled={probedCount === 0}
+            title={probedCount === 0 ? "Run Detect first — nothing has been measured yet" : filter.hint}
+            className={`px-2 py-0.5 rounded-full text-[10px] font-medium border transition-colors flex items-center gap-1
+              disabled:opacity-40 disabled:cursor-not-allowed
+              ${capFilters.has(filter.key)
+                ? "bg-emerald-600 border-emerald-600 text-white"
+                : "bg-surface border-border text-text-muted hover:border-emerald-500/50 hover:cursor-pointer"}`}
+          >
+            <span className="material-symbols-outlined leading-none" style={{ fontSize: "11px" }}>{filter.icon}</span>
+            {filter.label}
+          </button>
+        ))}
+        {probeProgress ? (
+          <>
+            <span className="text-[10px] text-text-muted ml-1">
+              Detecting {probeProgress.done}/{probeProgress.total}
+              {probeProgress.rate ? ` · ${probeProgress.rate.toFixed(1)}/s` : ""}
+              {probeProgress.etaSec != null
+                ? ` · ~${probeProgress.etaSec > 90 ? `${Math.ceil(probeProgress.etaSec / 60)}m` : `${probeProgress.etaSec}s`} left`
+                : ""}
+            </span>
+            <button
+              onClick={cancelProbe}
+              className="px-1.5 py-0.5 rounded border border-border text-[10px] hover:border-red-500/50 hover:text-red-500 hover:cursor-pointer"
+            >
+              Stop
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => probeAll(visibleValues, { probeAudio })}
+              disabled={visibleValues.length === 0}
+              title={`Send one real minimal request per shown model to measure what it actually does. Models that already answered, and models confirmed unusable, are skipped — only rate-limited and newly added models are probed.${probeAudio ? " Audio adds one more call per model." : ""}`}
+              className="ml-1 px-2 py-0.5 rounded-full border border-emerald-600/60 text-emerald-600 text-[10px] font-medium
+                hover:bg-emerald-600 hover:text-white disabled:opacity-40 disabled:cursor-not-allowed hover:cursor-pointer flex items-center gap-1"
+            >
+              <span className="material-symbols-outlined leading-none" style={{ fontSize: "11px" }}>bolt</span>
+              Detect {visibleValues.length} shown
+            </button>
+            <label
+              className="flex items-center gap-1 text-[10px] text-text-muted hover:cursor-pointer"
+              title="Also send a tiny audio clip to each model. Costs one extra upstream call per model, so it is off by default."
+            >
+              <input
+                type="checkbox"
+                checked={probeAudio}
+                onChange={(e) => setProbeAudio(e.target.checked)}
+                className="accent-emerald-600 hover:cursor-pointer"
+              />
+              audio
+            </label>
+            <button
+              onClick={() => probeAll(visibleValues, { probeAudio, skipMeasured: false })}
+              disabled={visibleValues.length === 0 || probedCount === 0}
+              title="Re-measure everything shown, including models already measured"
+              className="px-1.5 py-0.5 rounded border border-border text-[10px] text-text-muted hover:border-primary/50 hover:text-primary disabled:opacity-40 disabled:cursor-not-allowed hover:cursor-pointer"
+            >
+              Re-test
+            </button>
+          </>
+        )}
+        {capFilters.size > 0 && (
+          <button
+            onClick={() => setCapFilters(new Set())}
+            className="px-1.5 py-0.5 text-[10px] text-text-muted hover:text-primary hover:cursor-pointer"
+          >
+            Clear filters
+          </button>
+        )}
+        {probedCount > 0 && !probeProgress && (
+          <span className="text-[10px] text-text-muted/70" title="Models with stored probe results">
+            {probedCount} measured
+          </span>
+        )}
+      </div>
+
       {/* Models grouped by provider - compact */}
       <div className="max-h-[400px] overflow-y-auto space-y-3">
         {/* Combos section - always first */}
@@ -830,11 +959,13 @@ export default function ModelSelectModal({
                           {model.name}
                           <span className="text-[9px] opacity-60 font-normal">custom</span>
                           <CapacityBadges caps={getCaps(model.value)} />
+                          <ProbeBadge probe={probes[model.value]} />
                         </>
                       ) : (
                         <>
                           {model.name}
                           <CapacityBadges caps={getCaps(model.value)} />
+                          <ProbeBadge probe={probes[model.value]} />
                         </>
                       )}
                     </span>
