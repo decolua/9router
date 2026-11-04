@@ -155,7 +155,8 @@ export async function observeRequest(body, meta = {}, config = {}) {
     // scanBody mutates incrementally; a thrown scan may leave partial redaction, which is safer than retaining exposed values.
     const hasRedact = config.mode === "redact" || config.mode === "block" || Object.values(config.rules || {}).some(a => a === "redact" || a === "block");
     // Block stops only a value never seen before; once remembered it is redacted so the session can continue.
-    const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule) === "block" ? (seen.has(f.hash) ? "redact" : "block") : act(f.rule);
+    // A readonly value cannot be redacted, so a block rule keeps blocking it.
+    const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule) === "block" ? (seen.has(f.hash) && !f.readonly ? "redact" : "block") : act(f.rule);
     const result = library.scanBody(body, detector, undefined, hasRedact ? (text, fs) => replace(text, fs, decide, redacted) : undefined);
     const findings = result.findings;
     // meta.model is a pre-scan copy; log the body value, which redaction may have rewritten, and drop it if it held a finding.
@@ -177,7 +178,8 @@ export async function observeRequest(body, meta = {}, config = {}) {
         if (!seen.has(f.hash) && !newHashes.includes(f.hash)) { newHashes.push(f.hash); fresh.push({ rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, hash: f.hash, source, action }); }
       }
       const hitAction = action === "block" ? "block" : action === "ignored" ? "ignored" : f.readonly && action === "redact" ? "leaked" : action;
-      if (!hitRows.has(key)) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction });
+      // A leaked or block occurrence must win over a redacted one for the same value and source.
+      if (!hitRows.has(key) || RANK[hitAction] < RANK[hitRows.get(key).action]) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction });
     }
     const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
     withFindings++; totalWithFindings++;

@@ -220,4 +220,16 @@ describe("PII guard test preview", () => {
     await new Promise(resolve => setTimeout(resolve, 50));
     await expect(stat(events)).rejects.toMatchObject({ code: "ENOENT" });
   });
+  it("keeps blocking a seen value that cannot be redacted", async () => {
+    const b = () => ({ messages: [{ role: "user", content: "hi" }], metadata: { [value]: 1 } });
+    expect(await observeRequest(b(), meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"] });
+    expect(await observeRequest(b(), meta, { mode: "block" })).toMatchObject({ blocked: ["own-test"] });
+  });
+  it("reports leaked over redacted for the same value and source", async () => {
+    const b = { messages: [{ role: "user", content: [{ type: "text", text: value }, { type: "image", source: { type: "base64", media_type: "image/png", data: "AAAA", note: value } }] }] };
+    await observeRequest(b, meta, { mode: "redact" });
+    const event = JSON.parse((await lines(1)).trim());
+    expect(event.leaked).toBeTruthy();
+    expect(event.hits.some(h => h.action === "leaked")).toBe(true);
+  });
 });
