@@ -156,10 +156,20 @@ export async function createProviderConnection(data) {
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
+      const incomingEmail = String(data.email).trim().toLowerCase();
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
-        if (c.authType !== "oauth" || c.email !== data.email) return false;
+        if (c.authType !== "oauth") return false;
+
+        const existingEmail = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
+        // Older builds stored the OAuth email in `name` and left `email` empty.
+        // Match those rows so a re-login repairs the original connection instead
+        // of spawning a new "Account N" row on every attempt.
+        const legacyName = !existingEmail && typeof c.name === "string" ? c.name.trim().toLowerCase() : "";
+        const sameIdentity = existingEmail === incomingEmail
+          || (legacyName === incomingEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(incomingEmail));
+        if (!sameIdentity) return false;
 
         // Codex/OpenAI can issue multiple OAuth grants for the same email.
         // Refresh tokens are rotated single-use; collapsing a new login onto an
@@ -169,6 +179,15 @@ export async function createProviderConnection(data) {
         if (data.provider === "codex") {
           const existingWs = c.providerSpecificData?.chatgptAccountId;
           return !!incomingWs && !!existingWs && incomingWs === existingWs;
+        }
+
+        // Claude tokens carry the account UUID. When both sides have it, it is
+        // the strongest identity and must agree (one email can hold several
+        // Claude accounts).
+        const incomingClaudeAccountId = data.providerSpecificData?.claudeAccountId;
+        const existingClaudeAccountId = c.providerSpecificData?.claudeAccountId;
+        if (incomingClaudeAccountId && existingClaudeAccountId) {
+          return incomingClaudeAccountId === existingClaudeAccountId;
         }
 
         // Workspace providers use workspace ID when both sides have it

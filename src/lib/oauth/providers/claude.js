@@ -49,12 +49,22 @@ const claude = {
 
     return await response.json();
   },
-  mapTokens: (tokens) => ({
-    accessToken: tokens.access_token,
-    refreshToken: tokens.refresh_token,
-    expiresIn: tokens.expires_in,
-    scope: tokens.scope,
-  }),
+  mapTokens: (tokens) => {
+    const account = tokens.account || null;
+    const organization = tokens.organization || null;
+    const providerSpecificData = {};
+    if (account?.uuid) providerSpecificData.claudeAccountId = account.uuid;
+    if (organization?.uuid) providerSpecificData.organizationUuid = organization.uuid;
+
+    return {
+      accessToken: tokens.access_token,
+      refreshToken: tokens.refresh_token,
+      expiresIn: tokens.expires_in,
+      scope: tokens.scope,
+      email: account?.email_address || account?.email,
+      ...(Object.keys(providerSpecificData).length ? { providerSpecificData } : {}),
+    };
+  },
 };
 
 export default claude;

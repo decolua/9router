@@ -248,6 +248,48 @@ describe("DB SQLite layer — public API parity", () => {
     });
   });
 
+  it("providerConnections: OAuth re-login matches a legacy row whose name is the email", async () => {
+    const existing = await sqliteDb.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      name: "legacy@example.com",
+      accessToken: "old-access",
+      refreshToken: "old-refresh",
+    });
+    await sqliteDb.updateProviderConnection(existing.id, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: "OAuth access token has expired",
+      errorCode: 401,
+      backoffLevel: 2,
+      modelLock_modelA: "2099-01-01T00:00:00.000Z",
+    });
+
+    const repaired = await sqliteDb.createProviderConnection({
+      provider: "claude",
+      authType: "oauth",
+      email: "legacy@example.com",
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      testStatus: "active",
+    });
+
+    expect(repaired.id).toBe(existing.id);
+    expect(repaired.isActive).toBe(true);
+    expect(repaired.email).toBe("legacy@example.com");
+    const back = await sqliteDb.getProviderConnectionById(existing.id);
+    expect(back).toMatchObject({
+      accessToken: "new-access",
+      refreshToken: "new-refresh",
+      email: "legacy@example.com",
+      testStatus: "active",
+      lastError: null,
+      errorCode: null,
+      backoffLevel: 0,
+      modelLock_modelA: null,
+    });
+  });
+
   it("providerConnections: active soft warnings survive the health reset", async () => {
     const c = await sqliteDb.createProviderConnection({
       provider: "health-reset-warning",
