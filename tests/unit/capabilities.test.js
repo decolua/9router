@@ -234,6 +234,24 @@ describe("getCapabilitiesForModel — Qwen max/plus vision", () => {
     expect(caps.maxOutput).toBe(131072);
   });
 
+  it("qwen3.8-flash-next resolves above *qwen3.8* (262144 window, not the 1M API line)", () => {
+    // The open-weight preview is NOT on the API line's 1M window — every
+    // models.dev listing (amd, requesty + @eu, tensorx, vultr) caps it at
+    // 262144. The reported case: a custom "amd" gateway (not in the static
+    // registry, so no synced-catalog overlay) resolves purely through the
+    // pattern table and published context_length 1000000 for it.
+    for (const [provider, id] of [["amd", "Qwen3.8-Flash-Next"], [null, "qwen3.8-flash-next"], ["vultr", "qwen3.8-flash-next@eu"]]) {
+      const caps = getCapabilitiesForModel(provider, id);
+      expect(caps.vision).toBe(true);
+      expect(caps.reasoning).toBe(true);
+      expect(caps.thinkingFormat).toBe("qwen-effort");
+      expect(caps.contextWindow).toBe(262144);
+      expect(caps.maxOutput).toBe(131072);
+    }
+    // The 1M API line is untouched: plain flash/flash-next-adjacent ids keep it.
+    expect(getCapabilitiesForModel(null, "qwen3.8-flash").contextWindow).toBe(1000000);
+  });
+
   it("qwen3.8-2.4t-a95b stays text-only at its 262144 window (no vision on any listing)", () => {
     const caps = getCapabilitiesForModel(null, "qwen3.8-2.4t-a95b");
     expect(caps.vision).toBe(false);

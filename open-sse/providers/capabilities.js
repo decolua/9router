@@ -584,10 +584,16 @@ export const PATTERN_CAPABILITIES = [
   // the full window, not the 65536 the older 3.5/3.6-27b vendor entries carry.
   // Image input only (video on some hosts, so not advertised).
   // 2.4T-A95B: text-only on every listing — deliberately kept off vision.
-  // API line (flash/flash-next/max/others): 1M window, image + video, 131072 out
+  // API line (flash/max/others): 1M window, image + video, 131072 out
   // (qwen3.8-max per the alibaba vendor listing: image/video/pdf at 1M/131072).
+  // flash-next is the open-weight preview, NOT on that 1M window: every
+  // models.dev listing (amd, requesty + @eu, tensorx, vultr) caps it at 262144
+  // context. Output 131072 per the canonical page and the amd/vultr lanes
+  // (requesty allows the full window, tensorx 64000 — the generic 131072 sits
+  // between them and matches the AMD hardware lane this weight targets).
   { pattern: "*qwen3.8*27b*",   caps: { vision: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 262144 } },
   { pattern: "*qwen3.8*2.4t*",  caps: { reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 65536 } },
+  { pattern: "*qwen3.8*flash*next*", caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 131072 } },
   { pattern: "*qwen3.8*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 1000000, maxOutput: 131072 } },
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
