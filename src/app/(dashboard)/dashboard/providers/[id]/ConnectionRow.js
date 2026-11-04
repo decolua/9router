@@ -170,8 +170,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
       : (effectiveStatus || "Unknown");
   const showCredentialEdit = isReauthRequired
     && !isOAuthConnection
-    && (rowAuthType === "apikey" || rowAuthType === "api_key" || rowAuthType === "access_token");
-  const credentialEditLabel = rowAuthType === "access_token" ? "Update token" : "Update key";
+    && (rowAuthType === "apikey" || rowAuthType === "api_key");
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
@@ -340,7 +339,7 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               {showCredentialEdit ? "key" : "edit"}
             </span>
             <span className="text-[10px] leading-tight">
-              {showCredentialEdit ? credentialEditLabel : "Edit"}
+              {showCredentialEdit ? "Update key" : "Edit"}
             </span>
           </button>
           <button onClick={onDelete} className="flex flex-col items-center rounded px-2 py-1 text-red-500 hover:bg-red-500/10">
