@@ -10,12 +10,16 @@ const MODES = [
   { value: "block", label: "Block" },
 ];
 
+const MODE_LABEL = Object.fromEntries(MODES.map(m => [m.value, m.label]));
+
 const MODE_HELP = {
   off: "No scan. Requests pass unchanged.",
   observe: "Scan and log findings. Requests pass unchanged.",
   redact: "Rewrites every editable field (user, assistant history, tool calls/results, system) with placeholders such as {{pii:pan#ab12cd}}.",
-  block: "Rejects a request the first time a new value appears (HTTP 400). Retries redact it.",
+  block: "Rejects a request the first time a new value appears (HTTP 400). Retries redact it. A value inside signed thinking of an active tool loop cannot be redacted: use /rewind.",
 };
+
+const OVERRIDE_VERB = { off: "is off", observe: "observes", redact: "redacts", block: "blocks" };
 
 const ACTION_BADGE_VARIANT = {
   block: "error",
@@ -31,6 +35,27 @@ const KIND_CONFIG = {
   known: { bar: "bg-emerald-500", badge: "success" },
 };
 
+const WHERE_LABEL = {
+  "assistant/thinking": "Signed thinking",
+  key: "Object key",
+  number: "Number",
+  body: "Whole-string body",
+};
+
+const TEST_WHERES = [
+  { value: "user", label: "User" },
+  { value: "system", label: "System" },
+  { value: "assistant", label: "Assistant" },
+  { value: "tool_result", label: "Tool result" },
+  { value: "thinking", label: "Signed thinking" },
+];
+
+const RECENT_MINUTES = [
+  { value: "15", label: "15 min" },
+  { value: "60", label: "60 min" },
+  { value: "240", label: "240 min" },
+];
+
 const count = value => Number(value || 0).toLocaleString();
 
 const age = value => {
@@ -43,6 +68,16 @@ const age = value => {
   return `${Math.floor(ms / 86_400_000)}d ago`;
 };
 
+const uptime = value => {
+  if (!value) return "active";
+  const s = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
+  if (!Number.isFinite(s) || s < 0) return "active";
+  if (s < 60) return `Up ${s}s`;
+  if (s < 3_600) return `Up ${Math.floor(s / 60)} min`;
+  if (s < 86_400) return `Up ${Math.floor(s / 3_600)} h`;
+  return `Up ${Math.floor(s / 86_400)} d`;
+};
+
 function humanizeSource(source) {
   if (!source || source === "-") return "other";
   const parts = source.split("/");
@@ -52,6 +87,21 @@ function humanizeSource(source) {
     return `${role} · ${type}`;
   }
   return source.replace(/_/g, " ");
+}
+
+const humanizeWhere = where => WHERE_LABEL[where] || humanizeSource(where);
+
+function PlaceholderText({ text }) {
+  const parts = String(text ?? "").split(/(\{\{pii:[^}]+\}\})/g);
+  return (
+    <>
+      {parts.map((part, i) => (
+        /^\{\{pii:/.test(part)
+          ? <mark key={i} className="rounded bg-yellow-500/20 px-0.5 text-inherit">{part}</mark>
+          : part
+      ))}
+    </>
+  );
 }
 
 async function call(body) {
@@ -71,9 +121,13 @@ export default function PiiGuardClient() {
   const [text, setText] = useState("My mobile number is {{pii:in_phone#da6f85}} and PAN is ABCPE1234F.");
   const [result, setResult] = useState(null);
   const [testMode, setTestMode] = useState("current");
+  const [testWhere, setTestWhere] = useState("user");
   const [showIgnored, setShowIgnored] = useState(false);
   const [ruleFilter, setRuleFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [leakedOnly, setLeakedOnly] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [recentMinutes, setRecentMinutes] = useState("15");
   // ponytail: max 100 findings and client-side bar scaling; paginate when findings exceed 1000
   const [showAllRows, setShowAllRows] = useState(false);
 
@@ -87,7 +141,7 @@ export default function PiiGuardClient() {
   const save = patch => call(patch).then(s => { setState(s); setError(""); }).catch(e => setError(e.message));
   const confirmBlock = mode => mode !== "block" || window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?");
   const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
-  const runTest = () => call({ test: text, testMode }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
+  const runTest = () => call({ test: text, testMode, testWhere }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
 
   const rulesMap = useMemo(() => {
     const map = new Map();
@@ -104,11 +158,11 @@ export default function PiiGuardClient() {
         hits: val?.hits || 0,
         kind: rulesMap.get(rule)?.kind || "pii",
       }))
-      .sort((a, b) => b.hits - a.hits || b.unique - a.unique);
+      .sort((a, b) => b.unique - a.unique || b.hits - a.hits);
   }, [state?.summary?.byRule, rulesMap]);
 
-  const maxRuleHits = useMemo(() => {
-    return Math.max(...sortedRules.map(r => r.hits), 1);
+  const maxRuleUnique = useMemo(() => {
+    return Math.max(...sortedRules.map(r => r.unique), 1);
   }, [sortedRules]);
 
   const sortedSources = useMemo(() => {
@@ -143,6 +197,7 @@ export default function PiiGuardClient() {
     const list = (state?.summary?.groups || []).filter(group => showIgnored || !group.ignored);
     const q = searchQuery.trim().toLowerCase();
     return list.filter(g => {
+      if (leakedOnly && !(g.actions || []).includes("leaked")) return false;
       if (ruleFilter !== "all" && g.rule !== ruleFilter) return false;
       if (q) {
         const matchRule = (g.rule || "").toLowerCase().includes(q);
@@ -152,7 +207,13 @@ export default function PiiGuardClient() {
       }
       return true;
     });
-  }, [state?.summary?.groups, showIgnored, ruleFilter, searchQuery]);
+  }, [state?.summary?.groups, showIgnored, leakedOnly, ruleFilter, searchQuery]);
+
+  const ignoredByHash = useMemo(() => {
+    const map = new Map();
+    (state?.summary?.groups || []).forEach(g => map.set(g.hash, !!g.ignored));
+    return map;
+  }, [state?.summary?.groups]);
 
   if (!state) return <div className="p-6 text-text-muted">{error || "Loading..."}</div>;
 
@@ -168,6 +229,51 @@ export default function PiiGuardClient() {
 
   const knownUpdated = health?.knownUpdated;
   const displayedGroups = showAllRows ? filteredGroups : filteredGroups.slice(0, 100);
+
+  const overrideCounts = {};
+  Object.entries(config.rules || {}).forEach(([rule, action]) => {
+    if (action && action !== "default" && action !== config.mode) {
+      overrideCounts[action] = (overrideCounts[action] || 0) + 1;
+    }
+  });
+  const overrideParts = Object.entries(overrideCounts).map(([action, n]) =>
+    n > 1 ? `${n} rules ${action}` : `1 rule ${OVERRIDE_VERB[action] || action}`
+  );
+  const anyBlock = config.mode === "block" || overrideCounts.block > 0;
+
+  const allSelected = filteredGroups.length > 0 && filteredGroups.every(g => selected.has(g.hash));
+  const toggleAll = () => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      filteredGroups.forEach(g => {
+        if (allSelected) next.delete(g.hash);
+        else next.add(g.hash);
+      });
+      return next;
+    });
+  };
+  const toggleRow = hash => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(hash)) next.delete(hash);
+      else next.add(hash);
+      return next;
+    });
+  };
+  // ponytail: API caps ignoreMany at 1000 hashes per call; disable instead of silently truncating
+  const bulkDisabled = selected.size === 0 || selected.size > 1000;
+  const anySelectedVisible = Array.from(selected).some(hash => !ignoredByHash.get(hash));
+  const bulkIgnore = () => {
+    save({ ignoreMany: Array.from(selected), on: anySelectedVisible })
+      .then(() => setSelected(new Set()));
+  };
+  const ignoreThisRule = () => {
+    const hashes = (summary.groups || []).filter(g => g.rule === ruleFilter && !g.ignored).map(g => g.hash);
+    if (hashes.length) save({ ignoreMany: hashes, on: true }).then(() => setSelected(new Set()));
+  };
+  const ignoreRecent = () => {
+    save({ ignoreRecent: Number(recentMinutes), on: true }).then(() => setSelected(new Set()));
+  };
 
   return (
     <div className="space-y-6 p-6">
@@ -191,13 +297,24 @@ export default function PiiGuardClient() {
               <span className="material-symbols-outlined text-primary">shield_person</span>
               PII Guard
             </h2>
-            <p className="text-xs text-text-muted mt-1">{MODE_HELP[config.mode]}</p>
+            <p className="text-xs text-text-muted mt-1">
+              {MODE_LABEL[config.mode]}
+              {overrideParts.length > 0 && <span className="font-medium text-text-main"> · {overrideParts.join(", ")}</span>}
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">{MODE_HELP[config.mode]}</p>
           </div>
           <SegmentedControl options={MODES} value={config.mode} onChange={mode => chooseMode(mode)} />
         </div>
-        <p className="text-xs text-text-muted mt-3 pt-3 border-t border-border-subtle">
-          Values the scanner cannot rewrite (signed thinking, object keys, numbers) are reported as leaked. A scanner error never blocks a request.
-        </p>
+        {anyBlock && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-3 pt-3 border-t border-border-subtle">
+            Block stops a new value once; a retry redacts it. A value inside signed thinking of an active tool loop cannot be redacted: use /rewind.
+          </p>
+        )}
+        {!anyBlock && (
+          <p className="text-xs text-text-muted mt-3 pt-3 border-t border-border-subtle">
+            Values the scanner cannot rewrite (signed thinking, object keys, numbers) are reported as leaked. A scanner error never blocks a request.
+          </p>
+        )}
       </Card>
 
       {/* KPI Tiles Row */}
@@ -217,21 +334,30 @@ export default function PiiGuardClient() {
           </div>
         </Card>
 
-        <Card className="flex flex-col justify-between p-4">
-          <div className="flex items-center justify-between text-text-muted">
-            <span className="text-xs font-semibold uppercase tracking-wider">Leaked through</span>
-            <span className={`material-symbols-outlined text-[20px] ${summary.leaked24h ? "text-red-500" : ""}`}>
-              warning
-            </span>
-          </div>
-          <div className="mt-3">
-            <span className={`text-2xl font-bold tracking-tight ${summary.leaked24h ? "text-red-500 dark:text-red-400" : "text-text-muted"}`}>
-              {count(summary.leaked24h)}
-            </span>
-            <p className="mt-1 text-[11px] leading-tight text-text-muted">
-              Seen but could not be rewritten (signed thinking, object keys, numbers). Set the rule to Block to stop these.
-            </p>
-          </div>
+        <Card className={`p-4 ${leakedOnly ? "border-red-500/40" : ""}`}>
+          <button
+            type="button"
+            onClick={() => setLeakedOnly(v => !v)}
+            aria-pressed={leakedOnly}
+            className="w-full text-left cursor-pointer"
+          >
+            <div className="flex flex-col justify-between">
+              <div className="flex items-center justify-between text-text-muted">
+                <span className="text-xs font-semibold uppercase tracking-wider">Leaked through</span>
+                <span className={`material-symbols-outlined text-[20px] ${summary.leaked24h ? "text-red-500" : ""}`}>
+                  warning
+                </span>
+              </div>
+              <div className="mt-3">
+                <span className={`text-2xl font-bold tracking-tight ${summary.leaked24h ? "text-red-500 dark:text-red-400" : "text-text-muted"}`}>
+                  {count(summary.leaked24h)}
+                </span>
+                <p className="mt-1 text-[11px] leading-tight text-text-muted">
+                  Seen but could not be rewritten (signed thinking, object keys, numbers). Click to filter the table.
+                </p>
+              </div>
+            </div>
+          </button>
         </Card>
 
         <Card className="flex flex-col justify-between p-4">
@@ -285,7 +411,7 @@ export default function PiiGuardClient() {
             <div className="space-y-3">
               {sortedRules.map(item => {
                 const cfg = KIND_CONFIG[item.kind] || KIND_CONFIG.pii;
-                const pct = Math.max(2, Math.round((item.hits / maxRuleHits) * 100));
+                const pct = Math.max(2, Math.round((item.unique / maxRuleUnique) * 100));
                 return (
                   <div key={item.rule} className="space-y-1">
                     <div className="flex items-center justify-between text-xs gap-2">
@@ -296,17 +422,17 @@ export default function PiiGuardClient() {
                         </Badge>
                       </div>
                       <div className="text-text-muted shrink-0 text-right font-mono">
-                        <span>{count(item.unique)} unique</span>
-                        <span className="mx-1">/</span>
-                        <span className="font-semibold text-text-main">{count(item.hits)} hits</span>
+                        <span className="font-semibold text-text-main">{count(item.unique)} unique</span>
+                        <span className="mx-1">·</span>
+                        <span>{count(item.hits)} hits</span>
                       </div>
                     </div>
                     <div
                       role="progressbar"
                       aria-label={`${item.rule}: ${count(item.unique)} unique, ${count(item.hits)} hits`}
-                      aria-valuenow={item.hits}
+                      aria-valuenow={item.unique}
                       aria-valuemin={0}
-                      aria-valuemax={maxRuleHits}
+                      aria-valuemax={maxRuleUnique}
                       className="h-2 w-full overflow-hidden rounded-full bg-surface-2"
                     >
                       <div
@@ -422,21 +548,26 @@ export default function PiiGuardClient() {
           </div>
 
           <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Unscanned images</span>
+            <span className="text-xs text-text-muted block font-medium">Images not scanned (no OCR)</span>
             <strong className="block text-base font-semibold text-text-main mt-0.5">
               {count(health?.unscanned?.images)}
             </strong>
           </div>
 
           <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Unscanned files</span>
+            <span className="text-xs text-text-muted block font-medium">Files not scanned</span>
             <strong className="block text-base font-semibold text-text-main mt-0.5">
               {count(health?.unscanned?.files)}
             </strong>
           </div>
 
           <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Unscanned opaque</span>
+            <span
+              className="text-xs text-text-muted block font-medium cursor-help"
+              title="Signed thinking signatures and encrypted reasoning cannot be read; they are skipped."
+            >
+              Encrypted reasoning skipped
+            </span>
             <strong className="block text-base font-semibold text-text-main mt-0.5">
               {count(health?.unscanned?.opaque)}
             </strong>
@@ -445,7 +576,7 @@ export default function PiiGuardClient() {
           <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
             <span className="text-xs text-text-muted block font-medium">Scanner uptime</span>
             <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {health?.since ? age(health.since) : "active"}
+              {uptime(health?.since)}
             </strong>
             <span className="text-[11px] text-text-muted block mt-0.5">
               {count(health?.seen)} total seen
@@ -468,7 +599,7 @@ export default function PiiGuardClient() {
         <div className="divide-y divide-border border-t border-border">
           {rules.map(r => {
             const warning = summary.ruleWarnings?.[r.id];
-            const hits24h = summary.byRule?.[r.id]?.hits || 0;
+            const byRule = summary.byRule?.[r.id] || {};
             return (
               <div key={r.id} className="flex items-center justify-between gap-4 py-2.5 flex-wrap">
                 <div className="min-w-0 space-y-1">
@@ -481,14 +612,19 @@ export default function PiiGuardClient() {
                       <span className="text-xs text-text-muted">({count(r.count)} values)</span>
                     )}
                     <span className="text-xs text-text-muted font-mono">
-                      · {count(hits24h)} hits / 24h
+                      · {count(byRule.unique)} unique / {count(byRule.hits)} hits / 24h
                     </span>
                   </div>
                   {warning && (
                     <div>
-                      <Badge variant="warning" size="sm" icon="warning">
-                        {Math.round(warning.share * 100)}% in {humanizeSource(warning.topSource)}
-                      </Badge>
+                      <span
+                        className="inline-block cursor-help"
+                        title={`${Math.round(warning.share * 100)}% in ${humanizeSource(warning.topSource)}`}
+                      >
+                        <Badge variant="warning" size="sm" icon="warning">
+                          Mostly in {humanizeSource(warning.topSource)}; Redact cannot rewrite it there
+                        </Badge>
+                      </span>
                     </div>
                   )}
                 </div>
@@ -553,7 +689,62 @@ export default function PiiGuardClient() {
               className="w-full py-2.5 pl-9 pr-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40"
             />
           </div>
+          {leakedOnly && (
+            <button
+              type="button"
+              onClick={() => setLeakedOnly(false)}
+              aria-pressed="true"
+              className="inline-flex items-center gap-1 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 px-2.5 py-1.5 text-xs font-semibold hover:bg-red-500/20 transition-colors cursor-pointer"
+            >
+              Leaked only
+              <span className="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          )}
         </div>
+
+        {filteredGroups.length > 0 && (
+          <div className="flex items-center gap-3 mb-3 flex-wrap text-sm">
+            <label className="flex items-center gap-2 text-xs text-text-muted cursor-pointer">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label={`Select all ${filteredGroups.length} filtered rows`}
+                className="size-4 accent-brand-500 cursor-pointer"
+              />
+              Select all{filteredGroups.length > displayedGroups.length ? ` (${count(filteredGroups.length)} filtered)` : ""}
+            </label>
+            {selected.size > 0 && (
+              <span className="text-xs text-text-muted font-medium">{count(selected.size)} selected</span>
+            )}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={bulkDisabled}
+              title={selected.size > 1000 ? "Max 1000 values per request" : undefined}
+              onClick={bulkIgnore}
+            >
+              {anySelectedVisible ? "Ignore selected" : "Unignore selected"}
+            </Button>
+            {ruleFilter !== "all" && (
+              <Button size="sm" variant="secondary" onClick={ignoreThisRule}>
+                Ignore all from this rule
+              </Button>
+            )}
+            <div className="flex items-center gap-2 ml-auto">
+              <Select
+                aria-label="Ignore values first seen in the last"
+                className="w-32"
+                value={recentMinutes}
+                onChange={e => setRecentMinutes(e.target.value)}
+                options={RECENT_MINUTES}
+              />
+              <Button size="sm" variant="secondary" onClick={ignoreRecent}>
+                Ignore recent
+              </Button>
+            </div>
+          </div>
+        )}
 
         {filteredGroups.length === 0 ? (
           <div className="py-8 text-center text-sm text-text-muted">No findings matched filter.</div>
@@ -562,7 +753,10 @@ export default function PiiGuardClient() {
             <table className="w-full text-sm">
               <thead className="text-left text-xs uppercase text-text-muted border-b border-border">
                 <tr>
-                  <th className="py-2.5 pr-3 font-semibold">Rule / name</th>
+                  <th className="py-2.5 pr-3 font-semibold w-8">
+                    <span className="sr-only">Select</span>
+                  </th>
+                  <th className="py-2.5 pr-3 font-semibold">Name</th>
                   <th className="py-2.5 pr-3 font-semibold">Where</th>
                   <th className="py-2.5 pr-3 font-semibold">What happened</th>
                   <th className="py-2.5 pr-3 font-semibold">First seen</th>
@@ -572,49 +766,63 @@ export default function PiiGuardClient() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {displayedGroups.map(group => (
-                  <tr key={`${group.rule}:${group.hash}`} className="align-middle hover:bg-surface-2/40 transition-colors">
-                    <td className="py-2.5 pr-3">
-                      <span className="font-medium text-text-main">{group.name || group.rule}</span>
-                      <span className="block font-mono text-xs text-text-muted">{group.rule}</span>
-                      <span className="font-mono text-[10px] text-text-muted block truncate max-w-[140px] opacity-75">{group.hash}</span>
-                    </td>
-                    <td className="py-2.5 pr-3 text-text-muted">
-                      {group.sources.map(humanizeSource).join(", ")}
-                    </td>
-                    <td className="py-2.5 pr-3">
-                      <div className="flex flex-wrap gap-1">
-                        {group.actions.map(action => (
-                          <Badge
-                            key={action}
-                            size="sm"
-                            variant={ACTION_BADGE_VARIANT[action] || "default"}
-                          >
-                            {action}
+                {displayedGroups.map(group => {
+                  const actions = group.actions || [];
+                  const latest = group.action || actions[actions.length - 1];
+                  return (
+                    <tr key={`${group.rule}:${group.hash}`} className="align-middle hover:bg-surface-2/40 transition-colors">
+                      <td className="py-2.5 pr-3">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(group.hash)}
+                          onChange={() => toggleRow(group.hash)}
+                          aria-label={`Select ${group.name || group.rule}`}
+                          className="size-4 accent-brand-500 cursor-pointer"
+                        />
+                      </td>
+                      <td className="py-2.5 pr-3" title={`${group.rule} · ${group.hash}`}>
+                        <span className="font-medium text-text-main">{group.name || "—"}</span>
+                        <span className="font-mono text-[10px] text-text-muted block truncate max-w-[140px] opacity-75">{group.hash}</span>
+                      </td>
+                      <td className="py-2.5 pr-3 text-text-muted">
+                        {leakedOnly && group.leakedWhere?.length ? (
+                          <span title={group.sources.map(humanizeSource).join(", ")}>
+                            {group.leakedWhere.map(humanizeWhere).join(", ")}
+                          </span>
+                        ) : (
+                          group.sources.map(humanizeSource).join(", ")
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-3" title={actions.length > 0 ? `History: ${actions.join(", ")}` : undefined}>
+                        {latest ? (
+                          <Badge size="sm" variant={ACTION_BADGE_VARIANT[latest] || "default"}>
+                            {latest}
                           </Badge>
-                        ))}
-                      </div>
-                    </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap text-text-muted" title={new Date(group.firstSeen).toLocaleString()}>
-                      {age(group.firstSeen)}
-                    </td>
-                    <td className="py-2.5 pr-3 whitespace-nowrap font-medium text-text-main" title={new Date(group.lastSeen).toLocaleString()}>
-                      {age(group.lastSeen)}
-                    </td>
-                    <td className="py-2.5 pr-3 font-mono text-text-muted">
-                      {count(group.turns)}
-                    </td>
-                    <td className="py-2.5 text-right">
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => save({ ignore: group.hash, on: !group.ignored })}
-                      >
-                        {group.ignored ? "Unignore" : "Ignore"}
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                        ) : (
+                          <span className="text-text-muted">—</span>
+                        )}
+                      </td>
+                      <td className="py-2.5 pr-3 whitespace-nowrap text-text-muted" title={new Date(group.firstSeen).toLocaleString()}>
+                        {age(group.firstSeen)}
+                      </td>
+                      <td className="py-2.5 pr-3 whitespace-nowrap font-medium text-text-main" title={new Date(group.lastSeen).toLocaleString()}>
+                        {age(group.lastSeen)}
+                      </td>
+                      <td className="py-2.5 pr-3 font-mono text-text-muted">
+                        {count(group.turns)}
+                      </td>
+                      <td className="py-2.5 text-right">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => save({ ignore: group.hash, on: !group.ignored })}
+                        >
+                          {group.ignored ? "Unignore" : "Ignore"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -672,6 +880,13 @@ export default function PiiGuardClient() {
             onChange={e => { setTestMode(e.target.value); setResult(null); }}
             options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]}
           />
+          <Select
+            label="Where"
+            className="w-44"
+            value={testWhere}
+            onChange={e => { setTestWhere(e.target.value); setResult(null); }}
+            options={TEST_WHERES}
+          />
           <Button variant="secondary" onClick={runTest}>Scan</Button>
         </div>
         {result && (
@@ -696,9 +911,21 @@ export default function PiiGuardClient() {
                 A real request would be blocked: {result.blocked.join(", ")}
               </p>
             )}
-            <div>
-              <p className="text-xs text-text-muted mb-1 font-medium">Text sent upstream:</p>
-              <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle">{result.redacted}</pre>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {result.before !== undefined && (
+                <div>
+                  <p className="text-xs text-text-muted mb-1 font-medium">Before</p>
+                  <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-muted border border-border-subtle">
+                    {result.before}
+                  </pre>
+                </div>
+              )}
+              <div>
+                <p className="text-xs text-text-muted mb-1 font-medium">Sent upstream</p>
+                <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle">
+                  <PlaceholderText text={result.redacted} />
+                </pre>
+              </div>
             </div>
           </div>
         )}
