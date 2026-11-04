@@ -90,6 +90,7 @@ export async function handleImageGeneration(request) {
       comboStrategy,
       comboStickyLimit,
       comboWeights,
+      comboModels
     });
   }
 

@@ -66,6 +66,7 @@ export async function handleTts(request) {
       comboStrategy,
       comboStickyLimit,
       comboWeights,
+      comboModels
     });
   }
 

@@ -91,7 +91,8 @@ export async function handleSearch(request) {
       comboName: providerInput,
       comboStrategy,
       comboStickyLimit,
-      comboWeights
+      comboWeights,
+      comboModels,
     });
   }
 

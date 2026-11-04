@@ -111,7 +111,8 @@ export async function handleFetch(request) {
       comboName: providerInput,
       comboStrategy,
       comboStickyLimit,
-      comboWeights
+      comboWeights,
+      comboModels,
     });
   }
 

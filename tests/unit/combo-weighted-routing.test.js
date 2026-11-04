@@ -141,13 +141,20 @@ describe("combo weighted round-robin", () => {
     const weights = { "p/a": 5, "p/b": 3, "p/c": 2 };
     const withAdapter = ["p/vision", ...MODELS];
     const heads = Array.from({ length: 20 }, (_, i) =>
-      getRotatedModels(i % 2 ? MODELS : withAdapter, "adapted", "round-robin", 1, weights)[0]
+      getRotatedModels(i % 2 ? MODELS : withAdapter, "adapted", "round-robin", 1, weights, MODELS)[0]
     );
     const counts = {};
     for (const head of heads) counts[head] = (counts[head] || 0) + 1;
 
     expect(counts).toEqual({ "p/a": 10, "p/b": 6, "p/c": 4 });
     expect(heads.slice(0, 3)).toEqual(["p/a", "p/b", "p/c"]);
+  });
+
+  it("treats a model with no entry in the weight map as weight 1", () => {
+    const pair = ["p/cheap", "p/expensive"];
+    const counts = tallyFirst(pair, "partial", { "p/expensive": 2 }, 1, 12);
+
+    expect(counts).toEqual({ "p/expensive": 8, "p/cheap": 4 });
   });
 
   it("rotates after a weighted cycle ends without an explicit reset", () => {
