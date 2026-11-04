@@ -60,6 +60,12 @@ export const STREAM_FIRST_CHUNK_TIMEOUT_MS = envMs("STREAM_FIRST_CHUNK_TIMEOUT_M
 // Env: EMPTY_PEEK_DEADLINE_MS.
 export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000);
 
+// Combo first-token timeout: how long to wait for the first content frame from a combo seat
+// before falling through to the next seat. 0 disables (legacy behavior: no first-token failover).
+// In failover mode, the peek returns "empty" on timeout so handleComboChat advances.
+// Env: COMBO_FIRST_TOKEN_TIMEOUT_MS.
+export const COMBO_FIRST_TOKEN_TIMEOUT_MS = envMs("COMBO_FIRST_TOKEN_TIMEOUT_MS", 0);
+
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
