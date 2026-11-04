@@ -1,5 +1,5 @@
 // Re-export from open-sse with localDb integration
-import { getModelAliases, getComboByName, getProviderNodes } from "@/lib/localDb";
+import { getModelAliases, getComboByName, getProviderNodes, getProviderConnections } from "@/lib/localDb";
 import { parseModel as parseModelCore, resolveModelAliasFromMap, getModelInfoCore } from "open-sse/services/model.js";
 import REGISTRY from "open-sse/providers/registry/index.js";
 
@@ -14,6 +14,32 @@ for (const entry of REGISTRY) {
   RESERVED_PROVIDER_PREFIXES.add(entry.id);
   if (entry.alias) RESERVED_PROVIDER_PREFIXES.add(entry.alias);
   for (const alias of entry.aliases || []) RESERVED_PROVIDER_PREFIXES.add(alias);
+}
+
+/**
+ * Resolve a provider prefix (id, alias, or aliases) to the canonical provider id
+ * Returns the provider id if found in REGISTRY, otherwise returns the prefix as-is
+ * (for provider-node custom prefixes that aren't in the built-in registry)
+ */
+function resolveProviderPrefixToId(prefix) {
+  for (const entry of REGISTRY) {
+    if (entry.id === prefix || entry.alias === prefix || (entry.aliases || []).includes(prefix)) {
+      return entry.id;
+    }
+  }
+  return prefix; // Not a known registry prefix (e.g., custom provider-node)
+}
+
+/**
+ * Check if a provider (by id) has noAuth flag in registry
+ */
+function isProviderNoAuth(providerId) {
+  for (const entry of REGISTRY) {
+    if (entry.id === providerId) {
+      return entry.noAuth === true;
+    }
+  }
+  return false;
 }
 
 export function parseModel(modelStr) {
@@ -87,8 +113,37 @@ export async function getComboModels(modelStr) {
   if (modelStr.includes("/")) return null;
 
   const combo = await getComboByName(modelStr);
-  if (combo && combo.models && combo.models.length > 0) {
-    return combo.models;
+  if (!combo || !combo.models || combo.models.length === 0) {
+    return null;
   }
-  return null;
+
+  // Filter out models whose provider has no active connections
+  const connections = await getProviderConnections({ isActive: true });
+  const providersWithActiveConnections = new Set(connections.map((c) => c.provider));
+
+  const filteredModels = combo.models.filter((modelStr) => {
+    const slash = modelStr.indexOf("/");
+    if (slash <= 0) return true; // Keep non-provider/model format (nested combos, etc.)
+    const providerPrefix = modelStr.slice(0, slash);
+
+    // Resolve prefix to canonical provider id (handles aliases like "oc" -> "opencode", "cc" -> "claude")
+    const providerId = resolveProviderPrefixToId(providerPrefix);
+
+    // Keep if provider is noAuth (e.g., opencode, devin-cli, etc.)
+    if (isProviderNoAuth(providerId)) return true;
+
+    // Keep if provider has active connection (match by canonical id)
+    if (providersWithActiveConnections.has(providerId)) return true;
+
+    // Provider not in registry (custom provider-node) -> keep (no way to verify connection)
+    const isKnownRegistry = REGISTRY.some((e) => e.id === providerId);
+    if (!isKnownRegistry) return true;
+
+    return false; // Known provider, not noAuth, no active connection
+  });
+
+  if (filteredModels.length === 0) {
+    return null; // No models with active connections
+  }
+  return filteredModels;
 }
