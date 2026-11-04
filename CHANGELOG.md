@@ -1,7 +1,12 @@
 # Unreleased
 
 ## Features
-- **PII guard**: add an opt-in, observe-only scanner for client requests.
+- **PII guard**: add an opt-in scanner for client requests with observe, redact and block modes.
+  - Redact rewrites every scanned field (system, assistant history, tool calls, tool descriptions, Gemini and Responses instructions); values that cannot be rewritten are reported as leaked.
+  - Block stops a value the first time it appears, then redacts it, so agent sessions can continue.
+  - Ignore list by value hash, persistent seen hashes, and scanner error counts.
+  - Chat, embeddings and image generation are scanned.
+  - Dashboard: summary and health cards, per-rule hits and warnings, findings grouped by value.
 
 # v0.5.112 (2026-10-28)
 
