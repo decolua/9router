@@ -30,6 +30,14 @@ export function copyStandaloneAssets({ projectRoot = process.cwd(), distDir = pr
     console.log(`[standalone-assets] Copied public assets to ${publicDestination}`);
   }
 
+  // Copy open-sse/lib (DeepSeek PoW worker + hash) — not traced by Next.js
+  const openSseLibSource = resolve(projectRoot, "open-sse", "lib");
+  const openSseLibDestination = resolve(standaloneDir, "open-sse", "lib");
+  if (existsSync(openSseLibSource)) {
+    cpSync(openSseLibSource, openSseLibDestination, { recursive: true, force: true });
+    console.log(`[standalone-assets] Copied open-sse/lib to ${openSseLibDestination}`);
+  }
+
   // Without it beside server.js the standalone build serves requests unsanitized.
   const serverWrapperSource = resolve(projectRoot, "custom-server.js");
   const serverWrapperDestination = resolve(standaloneDir, "custom-server.js");

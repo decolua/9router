@@ -321,6 +321,17 @@ function buildCliPackage() {
     console.log("⏭️  No updater files found\n");
   }
 
+  // Step 7c: Copy open-sse/lib (DeepSeek PoW worker + hash, not traced by Next.js)
+  console.log("7️⃣ c Copying open-sse/lib...");
+  const openSseLibSrc = path.join(appDir, "open-sse", "lib");
+  const openSseLibDest = path.join(cliAppDir, "open-sse", "lib");
+  if (fs.existsSync(openSseLibSrc)) {
+    copyRecursive(openSseLibSrc, openSseLibDest);
+    console.log("✅ Copied open-sse/lib\n");
+  } else {
+    console.log("⏭️  No open-sse/lib found\n");
+  }
+
   // Step 8: Build MITM server (config driven - see app/cli/scripts/buildMitm.js)
   console.log("8️⃣  Building MITM server...");
   try {
