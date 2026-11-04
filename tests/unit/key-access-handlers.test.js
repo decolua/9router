@@ -20,7 +20,7 @@ vi.mock("@/lib/localDb", () => ({
   getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
   getProviderNodes: async () => [],
   getCombos: async () => fx.combos,
-  getProviderConnections: async () => [],
+  getProviderConnections: async () => [{ provider: "openai", isActive: true }],
   getProviderConnectionById: async () => null,
   getCustomModels: async () => [],
 }));
