@@ -8,7 +8,7 @@ import path from "node:path";
  * behaviour each one protects is the *rule* (admin-only, secrets excluded,
  * ranking by median) rather than a rendered pixel.
  */
-const ROOT = path.resolve(process.cwd());
+const ROOT = path.resolve(__dirname, "../..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 const FILES = {
@@ -25,9 +25,6 @@ const FILES = {
   bulkRoute: "src/app/api/keys/bulk/route.js",
   bulkModal: "src/app/(dashboard)/dashboard/endpoint/components/BulkEditKeys.js",
   endpointPage: "src/app/(dashboard)/dashboard/endpoint/EndpointPageClient.js",
-  benchRoute: "src/app/api/models/benchmark/route.js",
-  benchRepo: "src/lib/db/repos/benchmarkRepo.js",
-  benchPage: "src/app/(dashboard)/dashboard/benchmark/BenchmarkPage.js",
   requestDetailsTab: "src/app/(dashboard)/dashboard/usage/components/RequestDetailsTab.js",
   guard: "src/dashboardGuard.js",
   sidebar: "src/shared/components/Sidebar.js",
@@ -180,39 +177,16 @@ describe("bulk key edit", () => {
   });
 });
 
-describe("model benchmark", () => {
-  const route = read(FILES.benchRoute);
-  const repo = read(FILES.benchRepo);
-  const page = read(FILES.benchPage);
-  const sidebar = read(FILES.sidebar);
-
-  it("is admin-only on both the page and the route", () => {
-    // The route gates through requireAdmin, which excludes key sessions.
-    expect(route).toMatch(/requireAdmin|role !== "admin"|role === "apikey"/);
-    expect(sidebar).toMatch(/benchmark"\) return false/);
-  });
-
-  it("bounds a run and caps the number of models", () => {
-    expect(route).toMatch(/MAX_MODELS\s*=\s*\d+/);
-    expect(route).toMatch(/slice\(0,\s*MAX_MODELS\)/);
-  });
-
-  it("gives each model its own deadline so a hang cannot block the rest", () => {
-    expect(route).toMatch(/withTimeout/);
-    expect(route).toMatch(/MODEL_TIMEOUT_MS/);
-  });
-
-  it("ranks by median latency and leaves failures unranked", () => {
-    expect(repo).toMatch(/median/);
-    expect(repo).toMatch(/medianLatencyMs/);
-    expect(repo).toMatch(/r\.ok \? i \+ 1 : null/);
-  });
-
-  it("keeps the table bounded", () => {
-    expect(repo).toMatch(/LIMIT 1000/);
-  });
-
-  it("shows the empty state rather than a blank table", () => {
-    expect(page).toMatch(/No runs yet/);
+describe("six-dashboard leftovers are gone", () => {
+  it("the model benchmark feature was removed and no longer ships", () => {
+    // benchmark route/repo/page were cut with the Custom Plugins removal; a
+    // stale test must not keep demanding files that were deliberately deleted.
+    for (const rel of [
+      "src/app/api/models/benchmark/route.js",
+      "src/lib/db/repos/benchmarkRepo.js",
+      "src/app/(dashboard)/dashboard/benchmark/BenchmarkPage.js",
+    ]) {
+      expect(fs.existsSync(path.join(ROOT, rel))).toBe(false);
+    }
   });
 });

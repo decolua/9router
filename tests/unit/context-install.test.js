@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-const ROOT = process.cwd();
+const ROOT = path.resolve(__dirname, "../..");
 const card = fs.readFileSync(
   path.join(ROOT, "src/app/(dashboard)/dashboard/usage/components/AvailableModelsCard.js"),
   "utf8"

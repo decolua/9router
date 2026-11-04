@@ -226,6 +226,8 @@ const CATEGORY_ALIAS = {
   "ui & visual design": "UI",
   "changelog ui": "UI",
   "changelog ui: composite category headings now render in colour": "UI",
+  "background loading-in-the-bell": "Features",
+  "background loading-in-the-bell: all surfaces verified, stale tests fixed": "Features",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",

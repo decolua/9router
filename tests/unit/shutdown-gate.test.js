@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
 
-const ROOT = process.cwd();
+const ROOT = path.resolve(__dirname, "../..");
 const read = (rel) => fs.readFileSync(path.join(ROOT, rel), "utf8");
 
 const shutdownRoute = read("src/app/api/version/shutdown/route.js");
@@ -38,8 +38,9 @@ describe("shutdown and update are administrator actions", () => {
   it("the header menu hides shutdown from a key session", () => {
     expect(headerMenu).toMatch(/const canShutdown = role !== "apikey"/);
     expect(headerMenu).toMatch(/\{canShutdown && \(\s*<MenuItem/);
-    // the theme row uses the same rule; shutdown must not be the odd one out
-    expect(headerMenu).toContain('canChangeTheme && (');
+    // The shutdown row is the only admin-gated row now the theme switcher is
+    // gone (glass-only theme), so no sibling must reference a removed rule.
+    expect(headerMenu).not.toContain("canChangeTheme");
   });
 
   it("the profile page gates the red button on the role, not the route", () => {

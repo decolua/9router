@@ -1,3 +1,28 @@
+# v0.5.367 (2026-11-03) · 1 commit
+
+## Background loading-in-the-bell: all surfaces verified, stale tests fixed
+The bell now carries every long operation — batch testing, backup/import, bulk
+key imports, Codex/Grok accounts import, Qoder/Cline model imports and proxy
+import — while the operator clicks around and switches menus. The feature was
+already wired across all six surfaces; several tests that guard it could not
+run because they read files from `process.cwd()` (the tests dir) instead of the
+repo root, and a couple asserted removed patterns.
+- **Test paths anchored to the repo root** (`resolve(__dirname, "../..")`) in
+  `bell-all-loading`, `bell-done`, `notification-links`, `model-import`,
+  `dashboard-six`, `shutdown-gate`, `context-install` and `update-banner-anim`
+  — previously all failed at collection with `ENOENT`.
+- **`studio-banner-update`**: the proxy import now cancels via a server-side
+  dashboard job (`cancelProxyImportJob`) rather than a client `AbortController`;
+  the assertion now checks the job-cancel contract.
+- **`shutdown-gate`**: dropped the stale `canChangeTheme` sibling check (the
+  theme switcher was removed with the glass-only theme lock) and asserts no
+  removed rule is referenced.
+- **`dashboard-six`**: replaced the model-benchmark block (feature removed with
+  Custom Plugins) with a guard that the benchmark files no longer ship.
+- Suite result: 8 previously-broken suites now green; full unit run fell
+  176 → 168 failures, all remaining being pre-existing network / macOS /
+  integration-environment tests unrelated to the bell.
+
 # v0.5.366 (2026-11-03) · 1 commit
 
 ## Changelog UI: composite category headings now render in colour

@@ -1,6 +1,12 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import fs from "fs";
+import { resolve } from "node:path";
 import { useTaskStore, DONE_TTL_MS } from "@/store/taskStore";
+
+// vitest's cwd is the tests dir; read against the repo root so the file paths
+// here resolve (src/app/(dashboard)/...) the same way the runner runs them.
+const root = resolve(__dirname, "../..");
+const read = (rel) => fs.readFileSync(resolve(root, rel), "utf-8");
 
 describe("bell all loading tasks integration", () => {
   beforeEach(() => {
@@ -9,7 +15,7 @@ describe("bell all loading tasks integration", () => {
   });
 
   it("providers/page.js registers useTaskStore for batch testing", () => {
-    const file = fs.readFileSync("src/app/(dashboard)/dashboard/providers/page.js", "utf-8");
+    const file = read("src/app/(dashboard)/dashboard/providers/page.js", "utf-8");
     expect(file).toContain('import { useTaskStore } from "@/store/taskStore";');
     expect(file).toContain('id: taskId');
     expect(file).toContain('provider-batch-test');
@@ -18,7 +24,7 @@ describe("bell all loading tasks integration", () => {
   });
 
   it("profile/page.js registers useTaskStore for backup and import operations", () => {
-    const file = fs.readFileSync("src/app/(dashboard)/dashboard/profile/page.js", "utf-8");
+    const file = read("src/app/(dashboard)/dashboard/profile/page.js", "utf-8");
     expect(file).toContain('import { useTaskStore } from "@/store/taskStore";');
     expect(file).toContain('profile-backup-task');
     expect(file).toContain('useTaskStore.getState().start');
@@ -26,7 +32,7 @@ describe("bell all loading tasks integration", () => {
   });
 
   it("AddApiKeyModal.js registers useTaskStore for bulk key imports", () => {
-    const file = fs.readFileSync("src/app/(dashboard)/dashboard/providers/[id]/AddApiKeyModal.js", "utf-8");
+    const file = read("src/app/(dashboard)/dashboard/providers/[id]/AddApiKeyModal.js", "utf-8");
     expect(file).toContain('import { useTaskStore } from "@/store/taskStore";');
     expect(file).toContain('add-apikeys-');
     expect(file).toContain('useTaskStore.getState().start');
@@ -35,7 +41,7 @@ describe("bell all loading tasks integration", () => {
   });
 
   it("BulkImportCodexModal.js registers useTaskStore for accounts import", () => {
-    const file = fs.readFileSync("src/app/(dashboard)/dashboard/providers/[id]/BulkImportCodexModal.js", "utf-8");
+    const file = read("src/app/(dashboard)/dashboard/providers/[id]/BulkImportCodexModal.js", "utf-8");
     expect(file).toContain('import { useTaskStore } from "@/store/taskStore";');
     expect(file).toContain('bulk-import-codex');
     expect(file).toContain('useTaskStore.getState().start');
@@ -43,7 +49,7 @@ describe("bell all loading tasks integration", () => {
   });
 
   it("BulkImportGrokCliModal.js registers useTaskStore for grok accounts import", () => {
-    const file = fs.readFileSync("src/app/(dashboard)/dashboard/providers/[id]/BulkImportGrokCliModal.js", "utf-8");
+    const file = read("src/app/(dashboard)/dashboard/providers/[id]/BulkImportGrokCliModal.js", "utf-8");
     expect(file).toContain('import { useTaskStore } from "@/store/taskStore";');
     expect(file).toContain('bulk-import-grok');
     expect(file).toContain('useTaskStore.getState().start');
@@ -51,7 +57,7 @@ describe("bell all loading tasks integration", () => {
   });
 
   it("providers/[id]/page.js registers useTaskStore for Qoder and Cline model imports", () => {
-    const file = fs.readFileSync("src/app/(dashboard)/dashboard/providers/[id]/page.js", "utf-8");
+    const file = read("src/app/(dashboard)/dashboard/providers/[id]/page.js", "utf-8");
     expect(file).toContain('import { useTaskStore } from "@/store/taskStore";');
     expect(file).toContain("import-qoder-models-");
     expect(file).toContain("import-cline-models-");

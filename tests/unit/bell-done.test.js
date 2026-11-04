@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { resolve } from "node:path";
 
-const ROOT = process.cwd();
+const ROOT = resolve(__dirname, "../..");
 const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
 
 const store = read("src/store/taskStore.js");

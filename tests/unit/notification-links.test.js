@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import fs from "node:fs";
 import path from "node:path";
+import { resolve } from "node:path";
 
 /**
  * A notification whose link 404s is worse than no link: the bell promises
@@ -8,7 +9,7 @@ import path from "node:path";
  * Every link emitted by the scan must resolve to a page that exists.
  */
 
-const ROOT = process.cwd();
+const ROOT = resolve(__dirname, "../..");
 const scan = fs.readFileSync(
   path.join(ROOT, "src/app/api/notifications/scan/route.js"),
   "utf8"

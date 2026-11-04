@@ -75,11 +75,12 @@ describe("banner: cancel, background, and shared look", () => {
     expect(store).toMatch(/cancel\(id\)/);
   });
 
-  it("the proxy import runs store-driven under an abort controller", () => {
+  it("the proxy import runs store-driven under a server cancellable job", () => {
     expect(pools).toContain("PROXY_IMPORT_TASK");
-    expect(pools).toContain("AbortController");
-    expect(pools).toContain("signal: abort.signal");
-    expect(pools).toContain('"AbortError"');
+    // Cancellation is a server-side dashboard job (cancelProxyImportJob), not a
+    // client AbortController: the run keeps going in the background after the
+    // operator navigates, and cancel aborts the job from anywhere.
+    expect(pools).toContain("onCancel: () => cancelProxyImportJob");
     expect(pools).not.toContain("importProgress");
   });
 });

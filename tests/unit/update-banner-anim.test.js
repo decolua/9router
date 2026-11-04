@@ -9,7 +9,7 @@ import path from "node:path";
  * motions.
  */
 const src = fs.readFileSync(
-  path.resolve(process.cwd(), "src/shared/components/UpdateBanner.js"),
+  path.resolve(__dirname, "../..", "src/shared/components/UpdateBanner.js"),
   "utf8"
 );
 
