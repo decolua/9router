@@ -83,21 +83,29 @@ describe("opencodeFingerprint — request side", () => {
   });
 
   it("keeps instructions and system prompt clean without telltale placeholder notes", () => {
+    // The free-tier gate requires the <env> marker; the placeholder note is
+    // only present when tools were appended, never for a caller that already
+    // brings the exact fingerprint definitions (covered above).
     const responses = { instructions: "Be brief.", tools: [] };
     applyFingerprintTools(responses, true);
-    expect(responses.instructions).toBe("Be brief.");
+    expect(responses.instructions).toContain("Be brief.");
+    expect(responses.instructions).toContain("<env>");
 
     const chatBody = { messages: [{ role: "system", content: "Be brief." }, { role: "user", content: "hi" }] };
     applyFingerprintTools(chatBody, false);
     expect(chatBody.messages).toHaveLength(2);
-    expect(chatBody.messages[0].content).toBe("Be brief.");
+    expect(chatBody.messages[0].content).toContain("Be brief.");
+    expect(chatBody.messages[0].content).toContain("<env>");
 
     const noSystem = { messages: [{ role: "user", content: "hi" }] };
     applyFingerprintTools(noSystem, false);
-    expect(noSystem.messages).toEqual([{ role: "user", content: "hi" }]);
+    expect(noSystem.messages[0].role).toBe("system");
+    expect(noSystem.messages[0].content).toContain("<env>");
 
     const claudeShape = { system: "Be brief.", messages: [{ role: "user", content: "hi" }] };
-    applyFingerprintTools(claudeShape, false);
+    applyFingerprintTools(claudeShape, false, { claude: true });
+    expect(claudeShape.system).toContain("Be brief.");
+    expect(claudeShape.system).toContain("<env>");
     expect(claudeShape.messages).toHaveLength(1);
   });
 

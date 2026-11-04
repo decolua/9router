@@ -52,6 +52,18 @@ export class OpenCodeLaneExecutor extends BaseExecutor {
     return (active === "cli" ? cliLane : directLane).refreshCredentials(...args);
   }
 
+  // Sync callers (chatCore's translate/send routes, the dashboard's model test
+  // button) call these on the executor `getExecutor()` handed them, so the lane
+  // shell has to expose them. They follow the same default as `execute` — the
+  // direct lane — because `currentLane()` is async and these are not.
+  prepareRequestCredentials(...args) {
+    return directLane.prepareRequestCredentials(...args);
+  }
+
+  transformRequest(...args) {
+    return directLane.transformRequest(...args);
+  }
+
   buildUrl(...args) {
     return directLane.buildUrl(...args);
   }

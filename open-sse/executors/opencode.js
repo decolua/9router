@@ -118,18 +118,22 @@ export function translateSessionId(sessionId, clientTool = "", egressId = "", ep
   if (typeof sessionId === "string" && OPENCODE_SESSION_RE.test(sessionId.trim())) {
     return sessionId.trim();
   }
-  const digest = crypto
-    .createHash("sha256")
-    .update(`opencode\0${clientTool || "generic"}\0${egressId || "-"}\0${epoch}\0${sessionId || ""}`)
-    .digest();
-  // Deterministic time field from the digest, counter pinned to 1 (what the CLI sends).
-  const time = BigInt(`0x${digest.subarray(0, 5).toString("hex")}`) & SESSION_TIME_MASK;
-  const timeHex = descendingTimeHex(time, 1);
-  let randomPart = "";
-  for (let i = 6; i < 20; i++) {
-    randomPart += BASE62_CHARS[digest[i] % 62];
+  // Memoised per (tool, egress, epoch, conversation): upstream's free-tier gate
+  // decodes the prefix timestamp and refuses a session minted outside its
+  // window, so the time field must be the real mint time (`Date.now()`), and the
+  // per-conversation reuse has to come from this map rather than a digest.
+  const key = `${clientTool || "generic"}\0${egressId || "-"}\0${epoch}\0${sessionId || ""}`;
+  const existing = translatedOpencodeSessions.get(key);
+  if (existing) {
+    existing.lastUsed = Date.now();
+    return existing.sessionId;
   }
-  return `ses_${timeHex}${randomPart}`;
+  const translated = `ses_${descendingTimeHex(Date.now(), 1)}${unstableRandom()}`;
+  if (translatedOpencodeSessions.size >= MAX_TRANSLATED_SESSIONS) {
+    translatedOpencodeSessions.delete(translatedOpencodeSessions.keys().next().value);
+  }
+  translatedOpencodeSessions.set(key, { sessionId: translated, lastUsed: Date.now() });
+  return translated;
 }
 
 function normalizeSession(value) {
@@ -494,10 +498,11 @@ export class OpenCodeExecutor extends BaseExecutor {
 
   async _tryCliExecute(args, log) {
     const { model, body, proxyOptions, signal } = args;
-    const opencodeBin = findOpencodeBinary();
-    const promptText = opencodeBin ? formatOpencodeCliPrompt(body) : "";
-    if (!opencodeBin || !promptText) return null;
     try {
+      const opencodeBin = findOpencodeBinary();
+      if (!opencodeBin) return null;
+      const promptText = formatOpencodeCliPrompt(body);
+      if (!promptText) return null;
       const rawModel = baseModelId(model || body?.model);
       const targetModel = `opencode/${rawModel}`;
       return await executeOpencodeCli({

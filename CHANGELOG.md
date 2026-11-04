@@ -1,3 +1,25 @@
+# v0.5.365 (2026-11-03) · 1 commit
+
+## OpenCode Free lane divergence clean-up (post-v0.5.112 port)
+The fork's "OpenCode Free" card is a two-lane toggle behind `OpenCodeLaneExecutor`
+(V1 CLI lane / V2 direct TLS lane). The ported tests still asserted the single-
+executor era's contract, so they failed against the current split.
+- **`_tryCliExecute` no longer crashes on a Responses-shaped body**: the CLI
+  prompt formatter call moved inside the try/catch, so a body it can't format
+  falls through to the fetch path instead of throwing a `TypeError` on
+  `dialogMsgs[0].text`. This is a real runtime bug — a request with an `input[]`
+  body used to crash when a host `opencode` binary was present.
+- **Session/UA wire tests point at the CLI executor explicitly** (`OpenCodeExecutor`),
+  since the lane shell's sync delegates default to the V2/direct lane. The
+  sidecar-spawning `execute` assertion was rewritten as a request-preparation
+  check (session + bearer auth minted, source credentials unmutated).
+- **Fingerprint tests updated to the current gate contract**: the free tier
+  requires the `<env>` marker, so `instructions`/first `messages`/`system`
+  carry it; the "placeholder note" is only suppressed when the caller already
+  brings the exact fingerprint definitions.
+- Unit result: the 5 opencode suites (92 tests) are green; full suite fell
+  178 → 176 pre-existing failures (none from this change).
+
 # v0.5.364 (2026-11-03) · 1 commit
 
 ## Upstream Port Completion (decolua/9router v0.5.112)
