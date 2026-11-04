@@ -19,6 +19,12 @@ const MODE_HELP = {
   block: "Rejects a request the first time a new value appears (HTTP 400). Retries redact it.",
 };
 
+// Shown instead of MODE_HELP when some rules override a non-rewriting mode.
+const MODE_HELP_OVERRIDDEN = {
+  off: "Other rules are not scanned.",
+  observe: "Other rules only log findings.",
+};
+
 const OVERRIDE_VERB = { off: "is off", observe: "observes", redact: "redacts", block: "blocks" };
 const OVERRIDE_PLURAL = { off: "are off", observe: "observe", redact: "redact", block: "block" };
 
@@ -306,7 +312,7 @@ export default function PiiGuardClient() {
               {MODE_LABEL[config.mode]}
               {overrideParts.length > 0 && <span className="font-medium text-text-main"> · {overrideParts.join(", ")}</span>}
             </p>
-            <p className="text-xs text-text-muted mt-0.5">{MODE_HELP[config.mode]}</p>
+            <p className="text-xs text-text-muted mt-0.5">{(overrideParts.length > 0 && MODE_HELP_OVERRIDDEN[config.mode]) || MODE_HELP[config.mode]}</p>
           </div>
           <SegmentedControl options={MODES} value={config.mode} onChange={mode => chooseMode(mode)} />
         </div>
@@ -773,7 +779,9 @@ export default function PiiGuardClient() {
               <tbody className="divide-y divide-border">
                 {displayedGroups.map(group => {
                   const actions = group.actions || [];
-                  const latest = group.action || actions[actions.length - 1];
+                  const last = group.action || actions[actions.length - 1];
+                  // In leaked view the badge must match the filter, not the newest action.
+                  const latest = leakedOnly ? (last === "leaked" ? "leaked" : "leaked earlier") : last;
                   return (
                     <tr key={`${group.rule}:${group.hash}`} className="align-middle hover:bg-surface-2/40 transition-colors">
                       <td className="py-2.5 pr-3">
@@ -801,7 +809,7 @@ export default function PiiGuardClient() {
                       </td>
                       <td className="py-2.5 pr-3" title={actions.length > 0 ? `History: ${actions.join(", ")}` : undefined}>
                         {latest ? (
-                          <Badge size="sm" variant={ACTION_BADGE_VARIANT[latest] || "default"}>
+                          <Badge size="sm" variant={ACTION_BADGE_VARIANT[latest] || (leakedOnly ? "error" : "default")}>
                             {latest}
                           </Badge>
                         ) : (
