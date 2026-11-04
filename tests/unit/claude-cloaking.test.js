@@ -73,6 +73,21 @@ describe("cloakClaudeTools", () => {
     expect(block.name).toBe(`todo_write${CLAUDE_TOOL_SUFFIX}`);
   });
 
+  // History echoed back by the client already carries the suffix from the
+  // previous turn; suffixing again yields "tool_ide_ide", which the client
+  // cannot resolve (GH decolua/9router#5170).
+  it("does not double-suffix a tool_use name that is already cloaked", () => {
+    const already = `todo_write${CLAUDE_TOOL_SUFFIX}`;
+    const { body, toolNameMap } = cloakClaudeTools({
+      ...baseBody,
+      messages: [
+        { role: "assistant", content: [{ type: "tool_use", id: "t1", name: already, input: {} }] }
+      ]
+    });
+    expect(body.messages[0].content[0].name).toBe(already);
+    expect(toolNameMap.get(already)).toBe("todo_write");
+  });
+
   it("returns the body unchanged when there are no tools", () => {
     const input = { messages: [{ role: "user", content: "hi" }], tool_choice: { type: "tool", name: "x" } };
     const { body, toolNameMap } = cloakClaudeTools(input);
