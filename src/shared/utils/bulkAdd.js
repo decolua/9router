@@ -18,13 +18,37 @@
 // "skip-if-exists" flag on POST /api/providers if single-add ever needs it.
 
 /**
+ * Splits raw bulk input into individual line tokens.
+ * Handles newlines as well as comma-separated keys when no pipes are present.
+ * @param {string} rawText
+ * @returns {string[]}
+ */
+export function splitBulkLines(rawText) {
+  if (!rawText || typeof rawText !== "string") return [];
+  const lines = rawText.split(/\r?\n/);
+  const result = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.includes(",") && !trimmed.includes("|")) {
+      const parts = trimmed.split(",").map((p) => p.trim()).filter(Boolean);
+      result.push(...parts);
+    } else {
+      result.push(trimmed);
+    }
+  }
+  return result;
+}
+
+/**
  * Parse one pipe-separated bulk line into { baseName, apiKey, providerSpecificData? }.
  * @param {string} line
- * @param {{isCloudflareAi?: boolean}} [opts]
+ * @param {{isCloudflareAi?: boolean, defaultBaseName?: string}} [opts]
  * @returns {{baseName: string, apiKey: string, providerSpecificData?: object}|null}
  */
 function parseLine(line, opts = {}) {
-  const { isCloudflareAi = false } = opts;
+  const { isCloudflareAi = false, defaultBaseName = "Key" } = opts;
+  const fallbackBase = defaultBaseName?.trim() || "Key";
   if (!isCloudflareAi && /^LLM\|/i.test(line.trim())) {
     return { baseName: 'LLM', apiKey: line.trim() };
   }
@@ -36,7 +60,7 @@ function parseLine(line, opts = {}) {
     const apiKey = parts.slice(1, -1).join("|").trim();
     const accountId = parts[parts.length - 1].trim();
     return {
-      baseName: baseName || "Key",
+      baseName: baseName || fallbackBase,
       apiKey,
       providerSpecificData: { accountId },
     };
@@ -46,12 +70,12 @@ function parseLine(line, opts = {}) {
     // name|apiKey  (apiKey may itself contain pipes)
     const baseName = parts[0].trim();
     const apiKey = parts.slice(1).join("|").trim();
-    return { baseName: baseName || "Key", apiKey };
+    return { baseName: baseName || fallbackBase, apiKey };
   }
 
-  // apiKey only — auto-named "Key N"
+  // apiKey only — auto-named "<fallbackBase> N"
   const apiKey = parts[0].trim();
-  return { baseName: "Key", apiKey };
+  return { baseName: fallbackBase, apiKey };
 }
 
 /**
@@ -59,11 +83,11 @@ function parseLine(line, opts = {}) {
  *
  * @param {string[]} lines raw paste lines
  * @param {string[]|null|undefined} existingNames connection names already saved
- * @param {{isCloudflareAi?: boolean}} [opts]
- * @returns {{name: string, apiKey: string, skipped: boolean, providerSpecificData?: object}[]}
+ * @param {{isCloudflareAi?: boolean, defaultBaseName?: string, defaultModel?: string}} [opts]
+ * @returns {{name: string, apiKey: string, skipped: boolean, defaultModel?: string, providerSpecificData?: object}[]}
  */
 export function planBulkAdd(lines, existingNames, opts = {}) {
-  const { isCloudflareAi = false } = opts;
+  const { isCloudflareAi = false, defaultBaseName = "Key", defaultModel } = opts;
 
   const safeExisting = Array.isArray(existingNames) ? existingNames : [];
   const used = new Set(safeExisting.map((n) => (typeof n === "string" ? n.toLowerCase() : "")));
@@ -73,7 +97,7 @@ export function planBulkAdd(lines, existingNames, opts = {}) {
     const line = typeof raw === "string" ? raw.trim() : "";
     if (!line) continue;
 
-    const parsed = parseLine(line, { isCloudflareAi });
+    const parsed = parseLine(line, { isCloudflareAi, defaultBaseName });
     if (!parsed || !parsed.apiKey) continue;
 
     const base = parsed.baseName;
@@ -90,6 +114,9 @@ export function planBulkAdd(lines, existingNames, opts = {}) {
     used.add(name.toLowerCase());
 
     const entry = { name, apiKey: parsed.apiKey, skipped: false };
+    if (defaultModel && typeof defaultModel === "string" && defaultModel.trim()) {
+      entry.defaultModel = defaultModel.trim();
+    }
     if (parsed.providerSpecificData) entry.providerSpecificData = parsed.providerSpecificData;
     out.push(entry);
   }

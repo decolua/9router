@@ -4,7 +4,7 @@ import { useState } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
 import { AI_PROVIDERS } from "@/shared/constants/providers";
-import { planBulkAdd } from "@/shared/utils/bulkAdd";
+import { planBulkAdd, splitBulkLines } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
@@ -168,12 +168,12 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
   };
 
   const handleBulkSubmit = async () => {
-    const lines = bulkText.split("\n");
+    const lines = splitBulkLines(bulkText);
     if (!lines.length) return;
     // Plan collision-free names against existing connections so a generated
     // "Key N" never matches a saved name (which the backend would upsert /
     // overwrite instead of inserting). See bulkAdd.js for the full rationale.
-    const plan = planBulkAdd(lines, existingNames, { isCloudflareAi });
+    const plan = planBulkAdd(lines, existingNames, { isCloudflareAi, defaultBaseName: providerName || "Key", defaultModel: isCompatible ? formData.defaultModel.trim() : undefined });
     if (!plan.length) return;
     setSaving(true);
     setBulkResult(null);
@@ -204,6 +204,8 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
             apiKey: entry.apiKey,
             name: entry.name,
             priority: 1,
+            defaultModel: isCompatible ? (entry.defaultModel || formData.defaultModel.trim() || undefined) : undefined,
+            proxyPoolId: formData.proxyPoolId === NONE_PROXY_POOL_VALUE ? null : formData.proxyPoolId,
             testStatus: isValid ? "active" : "unknown",
             ...(entry.providerSpecificData ? { providerSpecificData: entry.providerSpecificData } : {}),
           }),
