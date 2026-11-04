@@ -314,6 +314,27 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
   };
 }
 
+// Drop a routing prefix (`alias/upstream-id` stored in enabledModels or aliases)
+// so the published id is `alias/upstream-id` once. LLMTR's own catalog ids are
+// `llmtr/<name>` (one segment after the vendor). That first `llmtr/` is the
+// upstream id, not a route prefix — unwrapping it would publish `llmtr/qwen3-8-27b`
+// and the chat parser would send `qwen3-8-27b`. Unwrap only a second copy
+// (`llmtr/llmtr/<name>`) or a prefix in front of a namespaced id (`llmtr/qwen/...`).
+function unwrapListedModelId(modelId, outputAlias, staticAlias, providerId) {
+  if (typeof modelId !== "string") return modelId;
+  const prefixes = [outputAlias, staticAlias, providerId];
+  for (const prefix of prefixes) {
+    if (!prefix || !modelId.startsWith(`${prefix}/`)) continue;
+    const rest = modelId.slice(prefix.length + 1);
+    if (providerId === "llmtr" && prefix === "llmtr") {
+      if (rest.startsWith("llmtr/")) return rest;
+      if (!rest.includes("/")) return modelId;
+    }
+    return rest;
+  }
+  return modelId;
+}
+
 /**
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
@@ -507,18 +528,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       }
 
       const modelIds = rawModelIds
-        .map((modelId) => {
-          if (modelId.startsWith(`${outputAlias}/`)) {
-            return modelId.slice(outputAlias.length + 1);
-          }
-          if (modelId.startsWith(`${staticAlias}/`)) {
-            return modelId.slice(staticAlias.length + 1);
-          }
-          if (modelId.startsWith(`${providerId}/`)) {
-            return modelId.slice(providerId.length + 1);
-          }
-          return modelId;
-        })
+        .map((modelId) => unwrapListedModelId(modelId, outputAlias, staticAlias, providerId))
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const customModelKindById = new Map();
@@ -548,18 +558,7 @@ export async function buildModelsList(kindFilter, options = {}) {
             fullModel.startsWith(`${providerId}/`)
           );
         })
-        .map((fullModel) => {
-          if (fullModel.startsWith(`${outputAlias}/`)) {
-            return fullModel.slice(outputAlias.length + 1);
-          }
-          if (fullModel.startsWith(`${staticAlias}/`)) {
-            return fullModel.slice(staticAlias.length + 1);
-          }
-          if (fullModel.startsWith(`${providerId}/`)) {
-            return fullModel.slice(providerId.length + 1);
-          }
-          return fullModel;
-        })
+        .map((fullModel) => unwrapListedModelId(fullModel, outputAlias, staticAlias, providerId))
         .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "");
 
       const mergedModelIds = Array.from(new Set([...modelIds, ...customModelIds, ...aliasModelIds]));

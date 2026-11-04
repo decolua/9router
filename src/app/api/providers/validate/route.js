@@ -382,6 +382,26 @@ export async function POST(request) {
           break;
         }
 
+        case "llmtr": {
+          // GET /v1/models is public (200 with or without a key), so it cannot
+          // tell a bad key from a good one. Chat returns 401 for a bad key.
+          const res = await fetch("https://llmtr.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "qwen/qwen3.8-27b-free",
+              messages: [{ role: "user", content: "ping" }],
+              max_tokens: 1,
+            }),
+            signal: AbortSignal.timeout(8000),
+          });
+          isValid = res.status !== 401 && res.status !== 403;
+          break;
+        }
+
         case "deepseek":
         case "groq":
         case "xai":

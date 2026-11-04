@@ -404,6 +404,13 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "")
       };
       break;
     }
+    case "llmtr": {
+      // Chat Completions takes `reasoning` as a boolean. A Responses-style
+      // object ({effort,summary}) is rejected. Effort levels collapse to on/off.
+      if (none && canDisable) { body.reasoning = false; break; }
+      body.reasoning = true;
+      break;
+    }
     case "tokenrouter": {
       // TokenRouter's reasoning_effort enum is low/medium/high/xhigh/max — it rejects
       // "none"/"auto" with a 400 and supports "max" natively (no clamp like openai).
