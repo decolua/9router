@@ -54,6 +54,28 @@ export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
   await customKv.remove(customKey(providerAlias, id, type));
 }
 
+/**
+ * Prune custom models: deletes all custom models except those whose keys are in keysToKeep.
+ * Atomic transaction for high efficiency when batch-cleaning thousands of models.
+ * @param {string[]|Set<string>} keysToKeep
+ * @returns {Promise<number>} count of deleted records
+ */
+export async function pruneCustomModels(keysToKeep = []) {
+  const db = await getAdapter();
+  const keepSet = keysToKeep instanceof Set ? keysToKeep : new Set(keysToKeep || []);
+  let deleted = 0;
+  db.transaction(() => {
+    const rows = db.all(`SELECT key FROM kv WHERE scope = 'customModels'`);
+    for (const r of rows) {
+      if (!keepSet.has(r.key)) {
+        db.run(`DELETE FROM kv WHERE scope = 'customModels' AND key = ?`, [r.key]);
+        deleted++;
+      }
+    }
+  });
+  return deleted;
+}
+
 // mitmAlias: key=toolName, value=mappings object
 export async function getMitmAlias(toolName) {
   if (toolName) {

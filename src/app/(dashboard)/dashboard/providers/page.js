@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import PropTypes from "prop-types";
 import {
   Card,
@@ -25,6 +25,8 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
+import SyncModelsModal from "./components/SyncModelsModal";
+import CleanModelsModal from "./components/CleanModelsModal";
 import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
 
 function getStatusDisplay(connected, error, errorCode) {
@@ -102,6 +104,8 @@ export default function ProvidersPage() {
   const [loading, setLoading] = useState(true);
   const [showAllApikey, setShowAllApikey] = useState(false);
   const [showAddCompatibleModal, setShowAddCompatibleModal] = useState(false);
+  const [showSyncModelsModal, setShowSyncModelsModal] = useState(false);
+  const [showCleanModelsModal, setShowCleanModelsModal] = useState(false);
   const [showAddAnthropicCompatibleModal, setShowAddAnthropicCompatibleModal] =
     useState(false);
   const [testingMode, setTestingMode] = useState(null);
@@ -149,26 +153,27 @@ export default function ProvidersPage() {
       return (a.name || "").localeCompare(b.name || "");
     });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [connectionsRes, nodesRes] = await Promise.all([
-          fetch("/api/providers"),
-          fetch("/api/provider-nodes"),
-        ]);
-        const connectionsData = await connectionsRes.json();
-        const nodesData = await nodesRes.json();
-        if (connectionsRes.ok)
-          setConnections(connectionsData.connections || []);
-        if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
-      } catch (error) {
-        console.log("Error fetching data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+  const fetchData = useCallback(async () => {
+    try {
+      const [connectionsRes, nodesRes] = await Promise.all([
+        fetch("/api/providers"),
+        fetch("/api/provider-nodes"),
+      ]);
+      const connectionsData = await connectionsRes.json();
+      const nodesData = await nodesRes.json();
+      if (connectionsRes.ok)
+        setConnections(connectionsData.connections || []);
+      if (nodesRes.ok) setProviderNodes(nodesData.nodes || []);
+    } catch (error) {
+      console.log("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const getProviderStats = (providerId, authType) => {
     const authTypes = Array.isArray(authType) ? authType : [authType];
@@ -404,7 +409,8 @@ export default function ProvidersPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
-      <div className="flex items-center justify-end">
+      {/* Status filter (upstream) + bulk model-list refresh (local) */}
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <select
           value={statusFilter}
           onChange={(e) => setStatusFilter(e.target.value)}
@@ -417,6 +423,24 @@ export default function ProvidersPage() {
             </option>
           ))}
         </select>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="sync"
+          onClick={() => setShowSyncModelsModal(true)}
+          title="Pick providers and pull their latest model lists in one go"
+        >
+          Update model lists
+        </Button>
+        <Button
+          size="sm"
+          variant="secondary"
+          icon="delete_sweep"
+          onClick={() => setShowCleanModelsModal(true)}
+          title="Clean up models from the total library that are not on the aihot.news leaderboard"
+        >
+          Clean non-leaderboard
+        </Button>
       </div>
 
       {!hasAnyResult && (
@@ -667,6 +691,16 @@ export default function ProvidersPage() {
           setProviderNodes((prev) => [...prev, node]);
           setShowAddAnthropicCompatibleModal(false);
         }}
+      />
+      <SyncModelsModal
+        isOpen={showSyncModelsModal}
+        onClose={() => setShowSyncModelsModal(false)}
+        onSynced={fetchData}
+      />
+      <CleanModelsModal
+        isOpen={showCleanModelsModal}
+        onClose={() => setShowCleanModelsModal(false)}
+        onCleaned={fetchData}
       />
 
       {/* Test Results Modal */}
