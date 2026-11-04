@@ -287,12 +287,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
-      if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
-      }
-      log.warn("CHAT", "No more accounts available", { provider });
-      return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);
+      // No credentials for this specific model — if called from a combo, throw so combo can try next model
+      const noCredsError = new Error(`No active credentials for provider: ${provider}`);
+      noCredsError.code = "NO_CREDENTIALS";
+      noCredsError.status = HTTP_STATUS.NOT_FOUND;
+      throw noCredsError;
     }
 
     // Account selection shown in the unified "▶" line (acc:...)
