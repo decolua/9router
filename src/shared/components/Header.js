@@ -113,6 +113,13 @@ const getPageInfo = (pathname) => {
       icon: "security",
       breadcrumbs: [],
     };
+  if (pathname.includes("/pii-guard"))
+    return {
+      title: "PII Guard",
+      description: "Find, redact, or block secrets and personal data in requests",
+      icon: "shield_person",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/token-saver"))
     return {
       title: "Token Saver",

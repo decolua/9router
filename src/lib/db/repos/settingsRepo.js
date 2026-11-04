@@ -67,6 +67,8 @@ const DEFAULT_SETTINGS = {
   pxpipeTimeoutMs: 15000,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
+  // pii-guard: mode is off|observe|redact|block; rules maps a rule id to a mode override.
+  piiGuard: { mode: "observe", rules: {} },
 };
 
 async function readRaw() {

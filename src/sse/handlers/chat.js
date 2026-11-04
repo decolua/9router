@@ -53,7 +53,10 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
-  if (process.env.PII_GUARD_MODULE) await observeRequest(body, { endpoint: clientRawRequest.endpoint, userAgent: clientRawRequest.headers?.["user-agent"], model: body?.model });
+  if (process.env.PII_GUARD_MODULE) {
+    const guard = await observeRequest(body, { endpoint: clientRawRequest.endpoint, userAgent: clientRawRequest.headers?.["user-agent"], model: body?.model }, (await getSettings()).piiGuard);
+    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, `pii-guard blocked this request: ${guard.blocked.join(", ")}. Remove the value or change the rule in Dashboard > PII Guard.`);
+  }
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
   // no combo, alias or provider/model pair, so it must not reach resolution.
   // The capability travels in the anthropic-beta header, forwarded as-is.

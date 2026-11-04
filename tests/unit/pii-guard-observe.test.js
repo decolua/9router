@@ -73,3 +73,43 @@ describe("PII observation", () => {
     expect(JSON.parse((await lines(2)).trim().split("\n")[1]).counts).toEqual({ "next-test": 1 });
   });
 });
+describe("PII guard modes", () => {
+  const pii = "call me on mobile 9876543210";
+  it("skips scanning when off", async () => {
+    await observeRequest(body(pii), meta, { mode: "off" });
+    await expect(stat(events)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+  it("redacts user text and leaves the system prompt alone", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const req = { system: pii, messages: [{ role: "user", content: pii }, { role: "assistant", content: pii }] };
+    expect(await observeRequest(req, meta, { mode: "redact" })).toBeUndefined();
+    expect(req.messages[0].content).toMatch(/^call me on mobile \{\{pii:in_phone#[0-9a-f]{6}\}\}$/);
+    expect(req.messages[1].content).toBe(pii);
+    expect(req.system).toBe(pii);
+    expect(JSON.parse(await lines(1)).redacted).toEqual({ in_phone: 1 });
+  });
+  it("redacts tool results inside user blocks", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const req = body(pii);
+    await observeRequest(req, meta, { mode: "redact" });
+    expect(req.messages[0].content[0].content).not.toContain("9876543210");
+  });
+  it("blocks by rule override and logs an error", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    expect(await observeRequest(body(pii), meta, { mode: "observe", rules: { in_phone: "block" } })).toEqual({ blocked: ["in_phone"] });
+    expect(error.mock.calls[0][0]).toContain("BLOCKED: in_phone");
+    expect(error.mock.calls[0][0]).not.toContain("9876543210");
+  });
+  it("lets a rule override turn one rule off", async () => {
+    const req = body(pii);
+    expect(await observeRequest(req, meta, { mode: "block", rules: { in_phone: "off" } })).toBeUndefined();
+    expect(req.messages[0].content[0].content).toBe(pii);
+  });
+});
+describe("PII guard block scope", () => {
+  it("blocks a match in the system prompt too", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const req = { system: "mobile 9876543210", messages: [{ role: "user", content: "hi" }] };
+    expect(await observeRequest(req, meta, { mode: "block" })).toEqual({ blocked: ["in_phone"] });
+  });
+});
