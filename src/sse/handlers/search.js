@@ -14,6 +14,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleComboChat, getComboModelsFromData } from "open-sse/services/combo.js";
 import { getKeyAccessContext, enforceKeyAccessProvider } from "../services/keyAccess.js";
+import { observeRequest, blockMessage } from "@/lib/piiGuard/observe.js";
 
 /**
  * Handle web search request for the SSE/Next.js server.
@@ -32,8 +33,8 @@ export async function handleSearch(request) {
 
   const url = new URL(request.url);
   // Accept either `provider` or `model` (UI sends `model` since provider IS the model for webSearch)
-  const providerInput = body.provider || body.model;
-  const query = body.query;
+  let providerInput = body.provider || body.model;
+  let query = body.query;
 
   log.request("POST", `${url.pathname} | ${providerInput}`);
 
@@ -67,6 +68,13 @@ export async function handleSearch(request) {
   if (!query || typeof query !== "string" || !query.trim()) {
     log.warn("SEARCH", "Missing query");
     return errorResponse(HTTP_STATUS.BAD_REQUEST, "Missing required field: query");
+  }
+
+  if (process.env.PII_GUARD_MODULE) {
+    const guard = await observeRequest(body, { endpoint: url.pathname, userAgent: request.headers.get("user-agent"), model: providerInput }, settings.piiGuard);
+    if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, blockMessage(guard.blocked, false));
+    providerInput = body.provider || body.model; // redaction may have rewritten it
+    query = body.query;
   }
 
   // Combo expansion: providerInput may be a combo name → run fallback/round-robin across providers

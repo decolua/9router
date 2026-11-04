@@ -12,7 +12,7 @@ let requests = 0, withFindings = 0, totalRequests = 0, totalWithFindings = 0, sa
 let knownUpdated = null, seenLoading, seenStore, seenTimer, unscanned = { images: 0, files: 0, opaque: 0 };
 const errorAppend = new Map(), errorSuppressed = new Map();
 const roles = new Set(["-", "system", "developer", "user", "assistant", "tool", "function", "model"]);
-const types = new Set(["-", "text", "input_text", "output_text", "tool_result", "tool_use", "function_call", "function_call_output", "reasoning", "image", "input_image", "image_url"]);
+const types = new Set(["-", "text", "input_text", "output_text", "tool_result", "tool_use", "function_call", "function_call_output", "thinking", "redacted_thinking", "reasoning", "image", "input_image", "image_url"]);
 function safeSource(source) {
   const [role, type] = typeof source === "string" ? source.split("/") : [];
   return `${roles.has(role) ? role : "-"}/${types.has(type) ? type : "-"}`;
