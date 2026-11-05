@@ -800,6 +800,16 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               selectClassName="py-1.5 text-xs"
             />
           </div>
+          {current === "round-robin" && (
+            <Toggle
+              checked={strategy.sessionSticky !== false}
+              onChange={(sessionSticky) => onSetStrategy({ sessionSticky })}
+              label="Sticky session"
+              aria-label="Sticky session"
+              title="Keep each client session on the model it first drew (keeps prompt cache). Off = rotate every request."
+              size="sm"
+            />
+          )}
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
