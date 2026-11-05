@@ -4,6 +4,20 @@
  * Used when client requests non-streaming but provider forces streaming (e.g., Codex)
  */
 
+function mergeTerminalResponse(response, state, status) {
+  state.status = response?.status || status;
+  for (const [index, item] of (response?.output || []).entries()) {
+    state.items.set(index, item);
+  }
+  state.error = response?.error;
+  state.incompleteDetails = response?.incomplete_details;
+  if (response?.usage) {
+    state.usage.input_tokens = response.usage.input_tokens || 0;
+    state.usage.output_tokens = response.usage.output_tokens || 0;
+    state.usage.total_tokens = response.usage.total_tokens || 0;
+  }
+}
+
 /**
  * Process a single SSE message and update state accordingly.
  */
@@ -28,14 +42,9 @@ function processSSEMessage(msg, state) {
   } else if (eventType === "response.output_item.done") {
     state.items.set(parsed.output_index ?? 0, parsed.item);
   } else if (eventType === "response.completed" || eventType === "response.done") {
-    state.status = "completed";
-    if (parsed.response?.usage) {
-      state.usage.input_tokens = parsed.response.usage.input_tokens || 0;
-      state.usage.output_tokens = parsed.response.usage.output_tokens || 0;
-      state.usage.total_tokens = parsed.response.usage.total_tokens || 0;
-    }
-  } else if (eventType === "response.failed") {
-    state.status = "failed";
+    mergeTerminalResponse(parsed.response, state, "completed");
+  } else if (eventType === "response.failed" || eventType === "response.incomplete") {
+    mergeTerminalResponse(parsed.response, state, eventType.slice("response.".length));
   }
 }
 
@@ -98,6 +107,8 @@ export async function convertResponsesStreamToJson(stream) {
     created_at: state.created,
     status: state.status || "completed",
     output,
+    error: state.error,
+    incomplete_details: state.incompleteDetails,
     usage: state.usage
   };
 }

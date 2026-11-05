@@ -38,6 +38,10 @@ Check that the environment variables are set correctly:
 echo $ANTHROPIC_BASE_URL
 ```
 
+## Web search compatibility
+
+Claude Code WebSearch supports Codex (`cx/`) routes without a separate search provider. Domain and location filters are unsupported, and the Codex backend does not enforce `max_uses`. Start a new conversation before switching search history from Codex to a native Anthropic route.
+
 ## Model Aliases
 
 Claude Code supports the following model aliases that map to 9Router models:

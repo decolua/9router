@@ -2,6 +2,7 @@ import { detectFormat, getTargetFormat, resolveTransport } from "../services/pro
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
+import { validateForcedFunction, validateSearchRoute } from "../translator/concerns/searchRouting.js";
 import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
@@ -111,6 +112,12 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
+
+  // Validate search execution and replay before translation can discard unsupported data.
+  const searchError = validateSearchRoute(body, sourceFormat, targetFormat, provider, model, log);
+  if (searchError) {
+    return createErrorResult(HTTP_STATUS.BAD_REQUEST, searchError);
+  }
 
   // Inject provider-level thinking config override (only if client hasn't set)
   // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
@@ -225,6 +232,13 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     delete translatedBody._customToolNames;
     translatedBody.model = stripThinkingSuffix(upstreamModel);
     stripContinuityFields(translatedBody);
+  }
+
+  if (targetFormat === FORMATS.OPENAI_RESPONSES) {
+    const forcedToolError = validateForcedFunction(translatedBody);
+    if (forcedToolError) {
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, forcedToolError);
+    }
   }
 
   // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name

@@ -75,6 +75,7 @@ export function filterUsageForFormat(usage, targetFormat) {
     [FORMATS.CLAUDE]: [
       'input_tokens', 'output_tokens', 
       'cache_read_input_tokens', 'cache_creation_input_tokens',
+      'server_tool_use',
       'estimated'
     ],
     [FORMATS.GEMINI]: [

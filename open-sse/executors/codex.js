@@ -527,7 +527,9 @@ export class CodexExecutor extends BaseExecutor {
 
     // Include reasoning encrypted content (required by Codex backend for reasoning models)
     if (body.reasoning && body.reasoning.effort && body.reasoning.effort !== 'none') {
-      body.include = ["reasoning.encrypted_content"];
+      // Add the reasoning payload without replacing include entries such as
+      // web_search_call.action.sources, which supplies the search result URLs.
+      body.include = [...new Set([...(body.include || []), "reasoning.encrypted_content"])];
     }
 
     // Remove unsupported parameters for Codex API
