@@ -100,8 +100,8 @@ export class DefaultExecutor extends BaseExecutor {
 
     if (transformed && typeof transformed === "object") {
       // OpenAI-compatible upstreams (e.g. NVIDIA NIM, DeepSeek) reject `stream_options`
-      // when `stream` is false with 400 "Stream options can only be defined when stream=True".
-      if (stream === false && transformed.stream_options !== undefined) {
+      // on non-streaming requests with 400 "Stream options can only be defined when stream=True".
+      if ((stream === false || (stream === undefined && transformed.stream !== true)) && transformed.stream_options !== undefined) {
         if (transformed === body) transformed = { ...transformed };
         delete transformed.stream_options;
       }

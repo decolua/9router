@@ -162,7 +162,7 @@ export class BaseExecutor {
         dbg("FETCH", `${this.provider.toUpperCase()} ← ${response.status} | ttft=${Date.now() - fetchT0}ms | ct=${ct} | cl=${cl}`);
 
         if (await tryRetry(urlIndex, response.status, `status ${response.status}`, response)) {
-          if (response.status === HTTP_STATUS.BAD_GATEWAY || response.status === HTTP_STATUS.GATEWAY_TIMEOUT) {
+          if (response.status === HTTP_STATUS.BAD_GATEWAY) {
             forceFreshSocketByUrl[urlIndex] = true;
           }
           urlIndex--;

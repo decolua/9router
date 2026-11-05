@@ -63,18 +63,40 @@ export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000)
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
-// Pooled keep-alive socket TTLs: cap idle socket lifetime below upstream/edge idle
-// windows (Cloudflare, AWS Global Accelerator / NVIDIA NIM) so dead sockets are closed
-// client-side before reuse. Clamps keepAliveMaxTimeout to keepAliveTimeout by default
-// so an upstream `Keep-Alive: timeout=600` header cannot extend pooled lifetime back to 10m.
-export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs(
-  "FETCH_KEEPALIVE_TIMEOUT_MS",
-  envMs("FETCH_KEEP_ALIVE_TIMEOUT_MS", 30 * 1000)
-);
-export const FETCH_KEEPALIVE_MAX_TIMEOUT_MS = envMs(
-  "FETCH_KEEPALIVE_MAX_TIMEOUT_MS",
-  envMs("FETCH_KEEP_ALIVE_MAX_TIMEOUT_MS", FETCH_KEEPALIVE_TIMEOUT_MS)
-);
+// Pooled keep-alive socket TTLs and undici agent parameters: cap idle socket lifetime
+// below upstream/edge idle windows (Cloudflare, AWS Global Accelerator / NVIDIA NIM)
+// and clamp keepAliveMaxTimeout so an upstream `Keep-Alive` header cannot extend it.
+export const DEFAULT_KEEPALIVE_TIMEOUT_MS = 30 * 1000;
+export const FRESH_RETRY_KEEPALIVE_TIMEOUT_MS = 1;
+export const DIRECT_AGENT_PIPELINING = 0;
+export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", DEFAULT_KEEPALIVE_TIMEOUT_MS);
+
+export function resolveKeepAliveTimeouts() {
+  const timeout = envMs("FETCH_KEEPALIVE_TIMEOUT_MS", FETCH_KEEPALIVE_TIMEOUT_MS);
+  return { keepAliveTimeout: timeout, keepAliveMaxTimeout: timeout };
+}
+
+export const STALE_SOCKET_ERROR_CODES = new Set([
+  "UND_ERR_SOCKET",
+  "ECONNRESET",
+  "EPIPE",
+  "UND_ERR_HEADERS_TIMEOUT",
+]);
+
+export const NON_STALE_SOCKET_ERROR_CODES = new Set([
+  "ENOTFOUND",
+  "EAI_AGAIN",
+  "ECONNREFUSED",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "UND_ERR_CONNECT_TIMEOUT",
+]);
+
+export const STALE_SOCKET_ERROR_SUBSTRINGS = [
+  "other side closed",
+  "socket hang up",
+  "fetch failed",
+];
 
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);

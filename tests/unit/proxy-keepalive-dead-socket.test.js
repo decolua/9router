@@ -7,9 +7,6 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     vi.resetModules();
     process.env = { ...savedEnv };
     delete process.env.FETCH_KEEPALIVE_TIMEOUT_MS;
-    delete process.env.FETCH_KEEP_ALIVE_TIMEOUT_MS;
-    delete process.env.FETCH_KEEPALIVE_MAX_TIMEOUT_MS;
-    delete process.env.FETCH_KEEP_ALIVE_MAX_TIMEOUT_MS;
     delete process.env.HTTPS_PROXY;
     delete process.env.https_proxy;
     delete process.env.HTTP_PROXY;
@@ -23,7 +20,8 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
   });
 
   it("caps default keep-alive TTL to 30s and clamps keepAliveMaxTimeout when FETCH_KEEPALIVE_TIMEOUT_MS is set", async () => {
-    const { resolveKeepAliveTimeouts, resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
+    const { resolveKeepAliveTimeouts } = await import("../../open-sse/config/runtimeConfig.js");
+    const { resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
     resetDirectDispatchersForTests();
 
     expect(resolveKeepAliveTimeouts()).toEqual({
@@ -35,12 +33,6 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(resolveKeepAliveTimeouts()).toEqual({
       keepAliveTimeout: 1,
       keepAliveMaxTimeout: 1,
-    });
-
-    process.env.FETCH_KEEPALIVE_MAX_TIMEOUT_MS = "5000";
-    expect(resolveKeepAliveTimeouts()).toEqual({
-      keepAliveTimeout: 1,
-      keepAliveMaxTimeout: 5000,
     });
   });
 
@@ -64,7 +56,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(fresh1).not.toBe(direct1);
   });
 
-  it("classifies dead-socket errors accurately and excludes aborts/DNS failures", async () => {
+  it("classifies dead-socket errors (including bare fetch failed) and excludes aborts/DNS/TLS failures", async () => {
     const { isStaleSocketError } = await import("../../open-sse/utils/proxyFetch.js");
 
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }))).toBe(true);
@@ -72,14 +64,16 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "EPIPE" } }))).toBe(true);
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_HEADERS_TIMEOUT" } }))).toBe(true);
     expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: new Error("other side closed") }))).toBe(true);
+    expect(isStaleSocketError(new TypeError("fetch failed"))).toBe(true);
     expect(isStaleSocketError(new Error("socket hang up"))).toBe(true);
 
     expect(isStaleSocketError(Object.assign(new Error("aborted"), { name: "AbortError", cause: { code: "UND_ERR_SOCKET" } }))).toBe(false);
-    expect(isStaleSocketError(Object.assign(new Error("dns"), { cause: { code: "ENOTFOUND" } }))).toBe(false);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "ENOTFOUND" } }))).toBe(false);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } }))).toBe(false);
     expect(isStaleSocketError(null)).toBe(false);
   });
 
-  it("retries once on the fresh-socket dispatcher with Connection: close when a pooled socket dies", async () => {
+  it("retries once on the fresh-socket dispatcher when a pooled socket dies", async () => {
     const mockFetch = vi.fn()
       .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }))
       .mockResolvedValueOnce({ status: 200, ok: true });
@@ -112,7 +106,6 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       expect(mockFetch.mock.calls[1][1].dispatcher).toBe(freshDispatcher);
       expect(mockFetch.mock.calls[1][1].headers).toEqual({
         Authorization: "Bearer nvapi-test",
-        Connection: "close",
       });
     } finally {
       globalThis.fetch = origFetch;
@@ -141,7 +134,6 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       const freshDispatcher = await getFreshRetryDispatcher(false);
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(mockFetch.mock.calls[0][1].dispatcher).toBe(freshDispatcher);
-      expect(mockFetch.mock.calls[0][1].headers.Connection).toBe("close");
     } finally {
       globalThis.fetch = origFetch;
     }
@@ -183,7 +175,7 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     expect(fetchMock.mock.calls[1][2]).toEqual({ forceFreshSocket: true });
   });
 
-  it("DefaultExecutor.transformRequest strips stream_options when stream=false without mutating input body", async () => {
+  it("DefaultExecutor.transformRequest strips stream_options on non-streaming calls without mutating input body", async () => {
     const { DefaultExecutor } = await import("../../open-sse/executors/default.js");
     const ex = new DefaultExecutor("nvidia");
     const input = {
@@ -195,6 +187,9 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     const nonStreamBody = ex.transformRequest("deepseek-ai/deepseek-v4-flash", input, false, { apiKey: "nvapi-x" });
     expect(nonStreamBody.stream_options).toBeUndefined();
     expect(input.stream_options).toEqual({ include_usage: true });
+
+    const omittedStreamArgBody = ex.transformRequest("deepseek-ai/deepseek-v4-flash", input);
+    expect(omittedStreamArgBody.stream_options).toBeUndefined();
 
     const streamBody = ex.transformRequest("deepseek-ai/deepseek-v4-flash", input, true, { apiKey: "nvapi-x" });
     expect(streamBody.stream_options).toEqual({ include_usage: true });
