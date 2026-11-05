@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { Card, Button, SegmentedControl, Select, Badge } from "@/shared/components";
 import RangePicker from "./RangePicker";
-import { PRESETS, computeRange, endsAtNow, rangeLabel, isValidPreset } from "./ranges";
+import { computeRange, endsAtNow, rangeLabel, isValidPreset } from "./ranges";
 
 const MODES = [
   { value: "off", label: "Off" },
@@ -54,12 +54,6 @@ const KIND_CONFIG = {
   known: { badge: "success" },
 };
 
-const WHERE_LABEL = {
-  "assistant/thinking": "Signed thinking",
-  key: "Object key",
-  number: "Number",
-  body: "Whole-string body",
-};
 
 const TEST_WHERES = [
   { value: "user", label: "User" },
@@ -77,14 +71,16 @@ const RECENT_MINUTES = [
 
 const SOURCE_BUCKETS = ["User", "Assistant", "Tool result", "System", "Thinking"];
 
+// Raw sources are "role/type" (e.g. "user/tool_result", "-/input_text"). Bucket by role, then by type.
 function sourceBucket(source) {
-  const s = String(source || "").trim().toLowerCase();
-  if (!s || s === "-" || s === "-/-" || s === "other" || s === "unknown") return "Other";
-  if (s.includes("thinking") || s.includes("reasoning")) return "Thinking";
-  if (s.startsWith("user") || s.startsWith("input") || s.includes("user ·") || s.includes("input text") || s.includes("input image")) return "User";
-  if (s.startsWith("assistant") || s.startsWith("model") || s.startsWith("output") || s.includes("assistant ·") || s.includes("output text")) return "Assistant";
-  if (s.startsWith("tool") || s.startsWith("function") || s.includes("tool") || s.includes("function")) return "Tool result";
-  if (s.startsWith("system") || s.startsWith("developer") || s.includes("system ·") || s.includes("dev")) return "System";
+  const [role = "", type = ""] = String(source || "").toLowerCase().split("/");
+  if (type.includes("thinking") || type.includes("reasoning")) return "Thinking";
+  if (type === "tool_result" || type === "function_call_output") return "Tool result";
+  if (role === "user") return "User";
+  if (role === "assistant" || role === "model") return "Assistant";
+  if (role === "system" || role === "developer") return "System";
+  if (role === "tool") return "Tool result";
+  if (type === "input_text") return "User";
   return "Other";
 }
 
@@ -126,7 +122,6 @@ function humanizeSource(source) {
   return clean === "-" ? "Unknown" : clean;
 }
 
-const humanizeWhere = where => WHERE_LABEL[where] || humanizeSource(where);
 
 function shortSource(s) {
   if (!s || s === "-" || s === "-/-") return "Unknown";
@@ -182,11 +177,11 @@ function readUrl() {
   if (typeof window === "undefined") return null;
   const p = new URLSearchParams(window.location.search);
   let range = p.get("range") || "24h";
-  if (range === "6h") range = "3h";
+  if (range === "6h") range = "24h"; // 6h is gone; widen rather than hide findings
   if (range === "custom") {
     const from = p.get("from") ? Number(p.get("from")) : null;
     const to = p.get("to") ? Number(p.get("to")) : null;
-    if (!from || !to || !Number.isFinite(from) || !Number.isFinite(to) || from >= to) {
+    if (!from || !to || !Number.isFinite(from) || !Number.isFinite(to) || from >= to || to - from > 90 * 86400000) {
       range = "24h";
     }
   } else if (!isValidPreset(range)) {
@@ -594,6 +589,7 @@ export default function PiiGuardClient() {
     return () => { eventsId.current++; };
   }, [view, rangePreset, customFromMs, customToMs, loadEventsPage]);
 
+  const hasState = !!state;
   // sentinel observer for events pagination inside scroll block
   useEffect(() => {
     const el = eventsSentinelRef.current;
@@ -606,7 +602,7 @@ export default function PiiGuardClient() {
     }, { root });
     io.observe(el);
     return () => io.disconnect();
-  }, [view, nextBefore, eventsLoading, loadEventsPage]);
+  }, [view, nextBefore, eventsLoading, loadEventsPage, hasState]); // the scroll block mounts once the summary loads
 
   const handleRangeChange = useCallback(({ preset, from, to }) => {
     setRangePreset(preset);
@@ -640,7 +636,7 @@ export default function PiiGuardClient() {
 
   const visibleHashes = new Set(filteredRows.map(g => g.hash));
   const selectedVisible = [...selected].filter(h => visibleHashes.has(h));
-  const allSelected = filteredRows.length > 0 && selectedVisible.length === filteredRows.length;
+  const allSelected = visibleHashes.size > 0 && selectedVisible.length === visibleHashes.size; // a hash can appear under two rules
   const toggleAll = () => {
     if (allSelected) {
       setSelected(new Set());
@@ -700,6 +696,7 @@ export default function PiiGuardClient() {
   return (
     <div className="space-y-6">
       {/* Sticky page-level toolbar directly under header */}
+      {/* Offsets cancel DashboardLayout's p-6 lg:p-10 so the bar sits flush under the header. */}
       <div className="sticky -top-6 lg:-top-10 z-20 bg-bg border-b border-border -mt-6 lg:-mt-10 -mx-6 lg:-mx-10 px-6 lg:px-10 py-2.5">
         <div className="flex items-center justify-end gap-2">
           <span className="text-xs text-text-muted">Data for</span>
@@ -1035,7 +1032,7 @@ export default function PiiGuardClient() {
           </h3>
         </div>
         {sortedSources.length === 0 ? (
-          <p className="text-xs text-text-muted">No source activity in the {activeRangeLabel}.</p>
+          <p className="text-xs text-text-muted">No source activity for {activeRangeLabel}.</p>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">
             {sortedSources.map(item => {

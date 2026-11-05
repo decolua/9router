@@ -2,6 +2,8 @@
 
 import { cn } from "@/shared/utils/cn";
 
+const SIZES = { sm: "h-9 py-1", md: "py-2.5", lg: "py-3" };
+
 export default function Select({
   label,
   options = [],
@@ -17,12 +19,6 @@ export default function Select({
   size = "md",
   ...props
 }) {
-  const sizes = {
-    sm: "h-9 py-1 text-sm",
-    md: "py-2.5 text-sm",
-    lg: "py-3 text-base",
-  };
-
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
@@ -38,7 +34,7 @@ export default function Select({
           disabled={disabled}
           className={cn(
             "w-full px-3 pr-10 text-text-main",
-            sizes[size] || sizes.md,
+            SIZES[size] || SIZES.md,
             "bg-surface-2 border border-transparent rounded-[10px] appearance-none",
             "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
             "transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed",

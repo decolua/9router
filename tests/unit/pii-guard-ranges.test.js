@@ -197,7 +197,7 @@ describe("pii-guard ranges", () => {
     });
 
     it("returns static badges for completed and rolling presets", () => {
-      expect(getPresetBadge("yesterday", fixedNow)).toBe("1d");
+      expect(getPresetBadge("yesterday", fixedNow)).toBe("24h");
       expect(getPresetBadge("prevWeek", fixedNow)).toBe("7d");
       expect(getPresetBadge("prevMonth", fixedNow)).toBe("31d");
       expect(getPresetBadge("24h", fixedNow)).toBe("1d");

@@ -160,7 +160,7 @@ export function getPresetBadge(id, now = Date.now()) {
     return `${d.getDate()}d`;
   }
   if (id === "yesterday") {
-    return "1d";
+    return "24h"; // calendar presets show their span, as OpenRouter does; rolling "Past 24 Hours" shows "1d"
   }
   if (id === "prevWeek") {
     return "7d";

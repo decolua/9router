@@ -212,7 +212,7 @@ export default function RangePicker({
       const fDate = new Date(customRange.from);
       fDate.setHours(sh, sm, 0, 0);
       const tDate = new Date(customRange.to);
-      tDate.setHours(eh, em, 59, 999);
+      tDate.setHours(eh, em, 0, 0);
 
       computedFromMs = fDate.getTime();
       computedToMs = tDate.getTime();
@@ -249,8 +249,8 @@ export default function RangePicker({
     { after: new Date() },
     ...(customRange?.from && !customRange?.to
       ? [
-          { after: new Date(customRange.from.getTime() + 90 * 86400000) },
-          { before: new Date(customRange.from.getTime() - 90 * 86400000) },
+          { after: new Date(customRange.from.getTime() + 89 * 86400000) },
+          { before: new Date(customRange.from.getTime() - 89 * 86400000) },
         ]
       : []),
   ];
@@ -494,7 +494,7 @@ export default function RangePicker({
                   defaultMonth={new Date(new Date().getFullYear(), new Date().getMonth() - 1, 1)}
                   endMonth={new Date()}
                   disabled={disabledDays}
-                  max={90}
+                  max={89}
                 />
               </div>
 
