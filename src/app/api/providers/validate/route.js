@@ -100,7 +100,8 @@ export async function POST(request) {
     // that replaces the API key (Bedrock's `profile`), so validating that setup must not 400.
     const apiKeySubstitute = AI_PROVIDERS[provider]?.apiKeyOptionalWith;
     const hasApiKeySubstitute = !!(apiKeySubstitute && providerSpecificData?.[apiKeySubstitute]);
-    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth && !hasApiKeySubstitute)) {
+    const isExplicitlyKeyless = apiKey === "" && (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider));
+    if (!provider || (!apiKey && provider !== "ollama-local" && !isNoAuth && !hasApiKeySubstitute && !isExplicitlyKeyless)) {
       return NextResponse.json({ error: "Provider and API key required" }, { status: 400 });
     }
 
@@ -116,7 +117,7 @@ export async function POST(request) {
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers: apiKey ? { "Authorization": `Bearer ${apiKey}` } : {},
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -173,10 +174,9 @@ export async function POST(request) {
         const res = await fetch(messagesUrl, {
           method: "POST",
           headers: {
-            "x-api-key": apiKey,
+            ...(apiKey ? { "x-api-key": apiKey, "Authorization": `Bearer ${apiKey}` } : {}),
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
           },
           body: JSON.stringify({
             model,

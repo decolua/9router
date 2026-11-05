@@ -118,7 +118,8 @@ export async function POST(request) {
     // key to paste. Without this, following such a provider's own setup notice returns 400.
     const apiKeySubstitute = AI_PROVIDERS[provider]?.apiKeyOptionalWith;
     const hasApiKeySubstitute = !!(apiKeySubstitute && body.providerSpecificData?.[apiKeySubstitute]);
-    if (!apiKey && provider !== "ollama-local" && !hasApiKeySubstitute) {
+    const isExplicitlyKeyless = apiKey === "" && (isOpenAICompatibleProvider(provider) || isAnthropicCompatibleProvider(provider));
+    if (!apiKey && provider !== "ollama-local" && !hasApiKeySubstitute && !isExplicitlyKeyless) {
       return NextResponse.json({ error: `${isWebCookieProvider ? "Cookie value" : "API Key"} is required` }, { status: 400 });
     }
     const connectionName = name || displayName || AI_PROVIDERS[provider]?.name;
