@@ -10,6 +10,8 @@ export default function Toggle({
   disabled = false,
   size = "md",
   className,
+  title,
+  "aria-label": ariaLabel,
 }) {
   const sizes = {
     sm: { track: "w-8 h-4", thumb: "size-3", translate: "translate-x-4" },
@@ -33,7 +35,9 @@ export default function Toggle({
         type="button"
         role="switch"
         aria-checked={checked}
+        aria-label={ariaLabel}
         disabled={disabled}
+        title={title}
         onClick={handleClick}
         className={cn(
           "relative inline-flex shrink-0 cursor-pointer rounded-full",
