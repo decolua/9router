@@ -1,4 +1,5 @@
 import { DefaultExecutor } from "./default.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 
 export class AzureExecutor extends DefaultExecutor {
   constructor() {
@@ -53,5 +54,23 @@ export class AzureExecutor extends DefaultExecutor {
 
   transformRequest(model, body, stream, credentials) {
     return body;
+  }
+
+  async execute(options) {
+    const result = await super.execute(options);
+    if (result.response.status !== HTTP_STATUS.BAD_REQUEST || options.body?.max_tokens === undefined
+      || options.signal?.aborted) return result;
+
+    let error;
+    try { error = (await result.response.clone().json())?.error; } catch { return result; }
+    if (error?.code !== "unsupported_parameter" || error?.param !== "max_tokens") return result;
+    if (options.signal?.aborted) return result;
+
+    // Deployment names do not identify the underlying model. Negotiate only
+    // after rejection, preserving legacy deployments that still need max_tokens.
+    const body = { ...options.body };
+    if (body.max_completion_tokens === undefined) body.max_completion_tokens = body.max_tokens;
+    delete body.max_tokens;
+    return super.execute({ ...options, body });
   }
 }
