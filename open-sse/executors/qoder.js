@@ -732,7 +732,7 @@ export class QoderExecutor extends BaseExecutor {
     const bodyBytes = qoderBodyBytes(body);
     const transport = resolveQoderTransport(qoderTransportOverride(), modelConfig, bodyBytes, qoderKey);
     if (transport === "grpc") {
-      log?.info?.("QODER", `dispatching ${qoderKey} over gRPC (body ${Math.round(bodyBytes / 1024)} KiB exceeds the HTTP cap)`);
+      log?.info?.("QODER", `dispatching ${qoderKey} over gRPC (body ${Math.round(bodyBytes / 1024)} KiB is past the 200 KiB HTTP threshold)`);
       try {
         return await dispatchQoderGrpc({
           modelId: qoderKey,
