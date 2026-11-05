@@ -414,10 +414,40 @@ describe("handleImageGenerationCore", () => {
       { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
     ]);
     expect(requestBody.tool_choice).toEqual({ type: "image_generation" });
-    expect(requestBody.reasoning).toEqual({ effort: "medium", summary: "auto" });
+    expect(requestBody.reasoning).toBeNull();
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
+  });
+
+  it("surfaces Codex image tool failures from response.failed", async () => {
+    global.fetch.mockResolvedValueOnce(
+      new Response(
+        [
+          "event: response.image_generation_call.generating",
+          'data: {"item":{"type":"image_generation_call","status":"in_progress"}}',
+          "",
+          "event: response.failed",
+          'data: {"response":{"status":"failed","error":{"message":"Complexity \'medium\' is not supported for this image model."}}}',
+          "",
+          "",
+        ].join("\n"),
+        { status: 200, headers: { "Content-Type": "text/event-stream" } }
+      )
+    );
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "A red apple" },
+      modelInfo: { provider: "codex", model: "gpt-image-2.5" },
+      credentials: { accessToken: "codex-token", providerSpecificData: {} },
+      streamToClient: true,
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const responseText = await result.response.text();
+    expect(responseText).toContain("Complexity 'medium' is not supported for this image model.");
+    expect(responseText).not.toContain("Account may not be entitled");
   });
 
   it("generates image with Cloudflare Workers AI JSON response", async () => {

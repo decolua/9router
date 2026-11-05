@@ -72,6 +72,18 @@ function buildContent(prompt, refs, detail = CODEX_REF_DETAIL) {
   return content;
 }
 
+function extractStreamError(data) {
+  if (!data) return null;
+  if (typeof data === "string") return data;
+  if (data.error?.message) return data.error.message;
+  if (data.response?.error?.message) return data.response.error.message;
+  if (data.item?.error?.message) return data.item.error.message;
+  if (data.response?.status_details?.error?.message) return data.response.status_details.error.message;
+  if (typeof data.error === "string") return data.error;
+  if (typeof data.message === "string") return data.message;
+  return null;
+}
+
 function normalizeResponsesUsage(raw) {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
   const input = raw.input_tokens ?? raw.prompt_tokens;
@@ -96,6 +108,8 @@ async function parseStream(response, log, callbacks = {}) {
   const decoder = new TextDecoder();
   let buffer = "";
   let imageB64 = null;
+  let upstreamError = null;
+  let assistantText = "";
   let lastEvent = null;
   let bytesReceived = 0;
   let lastProgressLogMs = 0;
@@ -140,12 +154,33 @@ async function parseStream(response, log, callbacks = {}) {
         } catch {}
       }
 
+      if ((eventName === "error" || eventName === "response.failed") && dataStr) {
+        try {
+          upstreamError = extractStreamError(JSON.parse(dataStr)) || upstreamError;
+        } catch {
+          upstreamError = dataStr;
+        }
+        if (upstreamError) log?.warn?.("IMAGE", `codex stream error: ${upstreamError}`);
+      }
+
+      if (eventName === "response.output_text.delta" && dataStr) {
+        try {
+          assistantText += JSON.parse(dataStr)?.delta || "";
+        } catch {}
+      }
+
       if (eventName === "response.output_item.done" && dataStr) {
         try {
           const data = JSON.parse(dataStr);
           const item = data?.item;
-          if (item?.type === "image_generation_call" && item.result) {
-            imageB64 = item.result;
+          if (item?.type === "image_generation_call") {
+            if (item.result) imageB64 = item.result;
+            else upstreamError = extractStreamError(item) || upstreamError;
+          } else if (item?.type === "message") {
+            assistantText = item.content
+              ?.map((part) => (typeof part === "string" ? part : part?.text || part?.output_text))
+              .filter(Boolean)
+              .join(" ") || assistantText;
           }
         } catch {}
       }
@@ -158,7 +193,10 @@ async function parseStream(response, log, callbacks = {}) {
       }
     }
   }
-  return { imageB64, usage };
+  if (!imageB64 && !upstreamError && assistantText) {
+    upstreamError = `Codex returned text instead of an image: "${assistantText.trim().slice(0, 300)}"`;
+  }
+  return { imageB64, usage, error: upstreamError };
 }
 
 // SSE Response that pipes codex progress + partial + done events to client
@@ -170,12 +208,12 @@ function buildSseResponse(providerResponse, log, onSuccess, onUsage) {
         controller.enqueue(enc.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
       try {
-        const { imageB64: b64, usage } = await parseStream(providerResponse, log, {
+        const { imageB64: b64, usage, error: upstreamError } = await parseStream(providerResponse, log, {
           onProgress: (info) => send("progress", info),
           onPartialImage: (info) => send("partial_image", info),
         });
         if (!b64) {
-          send("error", { message: "Codex did not return an image. Account may not be entitled (paid ChatGPT plan required)." });
+          send("error", { message: upstreamError || "Codex did not return an image. Account may not be entitled (paid ChatGPT plan required) or request was rejected." });
         } else {
           if (usage && onUsage) await onUsage(usage);
           if (onSuccess) await onSuccess();
@@ -245,7 +283,7 @@ export default {
       prompt_cache_key: randomUUID(),
       stream: true,
       store: false,
-      reasoning: toolModel ? { effort: "medium", summary: "auto" } : null,
+      reasoning: null,
     };
   },
   // Custom: codex parses SSE → either pipe to client or collect b64
@@ -253,9 +291,9 @@ export default {
     if (streamToClient) {
       return { sseResponse: buildSseResponse(response, log, onRequestSuccess, onUsage) };
     }
-    const { imageB64: b64, usage } = await parseStream(response, log);
+    const { imageB64: b64, usage, error: upstreamError } = await parseStream(response, log);
     if (!b64) {
-      throw new Error("Codex did not return an image. Account may not be entitled (paid ChatGPT plan required).");
+      throw new Error(upstreamError || "Codex did not return an image. Account may not be entitled (paid ChatGPT plan required) or request was rejected.");
     }
     if (usage && onUsage) await onUsage(usage);
     return { created: nowSec(), data: [{ b64_json: b64 }] };
