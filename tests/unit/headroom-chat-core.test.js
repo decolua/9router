@@ -252,6 +252,45 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(log.info).toHaveBeenCalledWith("HEADROOM", expect.stringContaining("reported token delta=990"));
   });
 
+  it.each(["anthropic", "claude"])("preserves Claude PDFs and tool results through Headroom to the %s executor", async (provider) => {
+    const model = "claude-sonnet-4-5";
+    const document = { type: "document", source: { type: "base64", media_type: "application/pdf", data: "JVBERi0xLjQK" }, title: "report.pdf" };
+    const toolUse = { type: "tool_use", id: "toolu_pdf", name: "read_pdf", input: { path: "report.pdf" } };
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "Summarize the attached PDF document" }, document] },
+      { role: "assistant", content: [toolUse] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_pdf", content: [
+        { type: "text", text: "Long extracted PDF contents" }, document,
+      ] }] },
+    ];
+    const expected = structuredClone(messages);
+    expected[0].content[0].text = "short";
+    expected[2].content[0].content[0].text = "short";
+    expected[1].content[0].cache_control = { type: "ephemeral" };
+    expected[2].content[0].cache_control = { type: "ephemeral" };
+    global.fetch = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(init.body);
+      return Response.json({
+        messages: payload.messages.map((message) => ({ ...message, content: message.content ? "short" : "" })),
+        tokens_before: 100, tokens_after: 10, tokens_saved: 90,
+      });
+    });
+
+    await handleChatCore({
+      body: { model, stream: false, max_tokens: 2048, messages, tools: [{ name: "read_pdf", input_schema: { type: "object" } }] },
+      modelInfo: { provider, model }, sourceFormatOverride: "claude",
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, connectionId: "test-conn",
+      headroomEnabled: true, headroomUrl: "http://localhost:8787", headroomCompressUserMessages: true,
+      rtkEnabled: false, cavemanEnabled: false, ponytailEnabled: false,
+      clientRawRequest: { endpoint: "/v1/messages", body: {}, headers: {} },
+    });
+
+    expect(global.fetch).toHaveBeenCalledOnce();
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0][0].body.messages).toEqual(expected);
+  });
+
   it("does not warn about healthy message compression when tools dominate the body", async () => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const original = "x".repeat(1000);
