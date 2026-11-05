@@ -283,7 +283,12 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {
         const errorMsg = lastError || credentials.lastError || "Unavailable";
-        const status = HTTP_STATUS.SERVICE_UNAVAILABLE;
+        // Prefer this request's error over a persisted cooldown from an earlier
+        // request. Unknown or malformed codes still represent unavailability.
+        const status = [lastStatus, credentials.lastErrorCode]
+          .map((code) => typeof code === "number" || typeof code === "string" ? Number(code) : null)
+          .find((code) => Number.isInteger(code) && code >= 400 && code <= 599)
+          ?? HTTP_STATUS.SERVICE_UNAVAILABLE;
         log.warn("CHAT", `[${provider}/${model}] ${errorMsg} (${credentials.retryAfterHuman})`);
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
