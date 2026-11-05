@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { open } from "node:fs/promises";
-import { stat } from "node:fs/promises";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { ready, rules, groups, testText, eventsFile, health } from "@/lib/piiGuard/observe.js";
 import { summarize } from "@/lib/piiGuard/summary.js";
@@ -11,171 +10,59 @@ const WHERES = ["user", "system", "assistant", "tool_result", "thinking"];
 const HASH = /^[0-9a-f]{12}$/;
 const MAX_IGNORE = 1000;
 
-const CHUNK = 1 * 1024 * 1024;
+const CHUNK = 1024 * 1024;
+// ponytail: reads at most 64 MiB back (~12 days at 5 MB/day). Upgrade path: rotate events.jsonl or keep a daily index.
 const CAP = 64 * 1024 * 1024;
 
-// ponytail: 64 MiB backward-read cap. Upgrade path: event rotation or an index.
-// Module-level cache of parsed events keyed by file path, size, inode, mtime.
-// On each request we read only bytes appended since the last offset; full reload
-// when the file shrinks or its inode changes. Backward extension only when a
-// request asks for an older `from` than the cache covers.
-const cache = new Map();
+// Parsed events, oldest first, for one file. `start` is the byte offset of the oldest parsed line,
+// `end` the offset after the newest complete line. Polls read only bytes appended after `end`;
+// an older `from` reads backward from `start`. A new inode or a shrunk file resets the cache.
+let cache = null;
 
-async function statFile(file) {
-  return stat(file);
+async function readRange(handle, start, end) {
+  const buffer = Buffer.alloc(end - start);
+  const { bytesRead } = await handle.read(buffer, 0, end - start, start);
+  return buffer.subarray(0, bytesRead);
 }
 
-async function readBytes(file, start, end) {
-  const handle = await open(file, "r");
-  try {
-    const length = end - start;
-    const buffer = Buffer.alloc(length);
-    const { bytesRead } = await handle.read(buffer, 0, length, start);
-    return buffer.toString("utf8", 0, bytesRead);
-  } finally {
-    await handle.close().catch(() => {});
+function parseLines(buf) {
+  const out = [];
+  for (const line of buf.toString("utf8").split("\n")) {
+    if (!line) continue;
+    try { out.push(JSON.parse(line)); } catch {}
   }
+  return out;
 }
 
-function parseLines(text) {
-  return text.split("\n").filter(Boolean).map(line => {
-    try { return JSON.parse(line); } catch { return null; }
-  }).filter(Boolean);
-}
-
+// Returns { events (newest first), truncated }. truncated: the cap stopped the read before `fromMs`.
 export async function loadEvents(fromMs) {
   const file = eventsFile();
-  let st;
-  try { st = await statFile(file); } catch { return { events: [], truncated: false }; }
-  const inode = st.ino;
-  const size = st.size;
-  const mtime = st.mtimeMs;
-  const key = file;
-  const c = cache.get(key);
-
-  // Full reload if no cache, inode change, or file shrink.
-  let events = [];
-  let truncated = false;
-  let offset = 0; // bytes already covered from the start? we keep full parsed array
-  let coveredFrom = Infinity; // oldest ts covered
-  let bytesReadTotal = 0;
-
-  if (!c || c.inode !== inode || size < c.size) {
-    // Full backward read up to CAP or until older than fromMs
-    events = [];
-    let pos = size;
-    let buf = "";
-    let total = 0;
-    let hitCap = false;
-    while (pos > 0 && total < CAP) {
-      const chunkSize = Math.min(CHUNK, pos, CAP - total);
-      const start = pos - chunkSize;
-      const text = await readBytes(file, start, pos);
-      buf = text + buf;
-      total += chunkSize;
-      pos = start;
-      // check oldest
-      // parse progressively
-      const lines = buf.split("\n");
-      // keep first partial
-      // We'll just parse at end
-      if (total >= CAP) { hitCap = pos > 0; break; }
-      // stop if oldest parsed event older than fromMs
-      // parse tail
-      const parsed = parseLines(buf);
-      const oldest = parsed.length ? Date.parse(parsed[0]?.ts) : NaN;
-      if (Number.isFinite(oldest) && oldest < fromMs) break;
+  let handle;
+  try {
+    handle = await open(file, "r");
+    const { ino, birthtimeMs, size } = await handle.stat();
+    if (!cache || cache.file !== file || cache.ino !== ino || cache.born !== birthtimeMs || size < cache.end) cache = { file, ino, born: birthtimeMs, start: size, end: size, events: [] };
+    if (size > cache.end) {
+      const buf = await readRange(handle, cache.end, size);
+      const cut = buf.lastIndexOf(0x0a) + 1; // a half-written last line waits for the next poll
+      cache.events.push(...parseLines(buf.subarray(0, cut)));
+      cache.end += cut;
     }
-    // parse final
-    let text = buf;
-    if (size > total) text = text.slice(text.indexOf("\n") + 1);
-    events = parseLines(text).reverse();
-    // Actually we want newest-first? original recentEvents returned reversed (newest first)
-    // Let's check: original: events = parsed.reverse(); oldest = events.at(-1)
-    // So events newest first. parseLines returns file order (oldest first). reverse -> newest first.
-    // We did parseLines(buf) where buf is file slice oldest->newest, so reverse -> newest first. Good.
-    const oldestTs = events.length ? Date.parse(events[events.length-1]?.ts) : NaN;
-    const readAll = total >= size;
-    truncated = !readAll && Number.isFinite(oldestTs) && oldestTs > fromMs;
-    coveredFrom = events.length ? Date.parse(events[events.length-1]?.ts) : fromMs;
-    cache.set(key, { inode, size, mtime, events, coveredFrom, truncated, lastOffset: size, coveredStartOffset: pos, totalRead: total });
-    return { events, truncated };
-  }
-
-  // Incremental append
-  if (size > c.size) {
-    const text = await readBytes(file, c.size, size);
-    const appended = parseLines(text);
-    // append in file order (oldest first) then reverse to newest-first merge
-    // c.events is newest-first. New appended are newer than all existing.
-    const newEvents = appended.reverse();
-    events = [...newEvents, ...c.events];
-    coveredFrom = c.coveredFrom;
-    truncated = c.truncated;
-    // If fromMs older than coveredFrom, extend backward
-    if (fromMs < coveredFrom) {
-      // extend
-      const ext = await extendBackward(file, coveredFrom, fromMs, c);
-      // merge
-      // ext.events are older, prepend? events newest-first, older go to end
-      events = events.concat(ext.events.filter(e => !events.includes(e)));
-      coveredFrom = ext.coveredFrom;
-      truncated = truncated || ext.truncated;
+    const oldest = () => Date.parse(cache.events[0]?.ts);
+    let back = CHUNK;
+    while (cache.start > 0 && cache.end - cache.start < CAP && !(oldest() < fromMs)) {
+      const from = Math.max(0, cache.start - back);
+      const buf = await readRange(handle, from, cache.start);
+      const cut = from === 0 ? 0 : buf.indexOf(0x0a) + 1; // the first line may be partial; the next round reads it whole
+      if (from > 0 && cut === 0) { back *= 2; if (back > CAP) break; continue; }
+      cache.events.unshift(...parseLines(buf.subarray(cut)));
+      cache.start = from + cut;
+      back = CHUNK;
     }
-    const _cs = (typeof ext !== 'undefined' && ext) ? ext.coveredStartOffset : c.coveredStartOffset;
-    const _tr = (typeof ext !== 'undefined' && ext) ? ext.coveredStartOffset : c.coveredStartOffset;
-    cache.set(key, { inode, size, mtime, events, coveredFrom, truncated, lastOffset: size, coveredStartOffset: _cs, totalRead: (c.totalRead||0)+ (size-c.size) });
-    return { events, truncated };
-  }
-
-  // size same or smaller handled; if same, maybe mtime changed? use cache but check fromMs
-  if (fromMs < c.coveredFrom) {
-    const ext = await extendBackward(file, c.coveredFrom, fromMs, c);
-    events = c.events.concat(ext.events);
-    coveredFrom = ext.coveredFrom;
-    truncated = c.truncated || ext.truncated;
-    cache.set(key, { inode: c.inode, size: c.size, mtime, events, coveredFrom, truncated, lastOffset: c.size, coveredStartOffset: c.coveredStartOffset, totalRead: c.totalRead });
-    return { events, truncated };
-  }
-
-  return { events: c.events, truncated: c.truncated };
+    return { events: cache.events.slice().reverse(), truncated: cache.start > 0 && !(oldest() <= fromMs) };
+  } catch { return { events: [], truncated: false }; }
+  finally { await handle?.close().catch(() => {}); }
 }
-
-async function extendBackward(file, currentOldestTs, targetFromMs, c) {
-  // Read backward from currentOldest offset? We don't track offset by ts. Simpler: re-read from (currentOldest position) backward.
-  // We need position of oldest covered event. Track in cache: coveredStartOffset.
-  // For simplicity, track coveredStartOffset in cache.
-  let startOffset = c.coveredStartOffset ?? 0;
-  // if not tracked, default 0
-  let pos = startOffset;
-  let total = 0; // already? we extend up to CAP total additional? Keep global cap 64MiB: track totalBytesRead in cache.
-  const alreadyRead = c.totalRead ?? (c.size - 0);
-  let buf = "";
-  let hitCap = false;
-  const globalCap = CAP;
-  while (pos > 0 && (alreadyRead + total) < globalCap && targetFromMs < currentOldestTs) {
-    const chunkSize = Math.min(CHUNK, pos, globalCap - alreadyRead - total);
-    if (chunkSize <= 0) break;
-    const start = pos - chunkSize;
-    const text = await readBytes(file, start, pos);
-    buf = text + buf;
-    total += chunkSize;
-    pos = start;
-    const parsed = parseLines(buf);
-    const oldest = parsed.length ? Date.parse(parsed[0]?.ts) : NaN;
-    if (Number.isFinite(oldest) && oldest <= targetFromMs) break;
-    if ((alreadyRead + total) >= globalCap) { hitCap = pos > 0; break; }
-  }
-  // merge: parse buf, take events older than currentOldestTs
-  const parsed = parseLines(buf).reverse(); // newest first
-  // filter to those not already in cache (older than currentOldest)
-  const currentOldestMs = currentOldestTs;
-  const older = parsed.filter(e => Date.parse(e?.ts) < currentOldestMs);
-  const oldestTs = older.length ? Date.parse(older[older.length-1]?.ts) : currentOldestTs;
-  const newTruncated = hitCap && oldestTs > targetFromMs;
-  return { events: older, coveredFrom: Math.min(oldestTs, currentOldestTs), coveredStartOffset: pos, totalRead: alreadyRead + total, truncated: newTruncated };
-}
-
 
 function validateRange(from, to) {
   if (from === undefined && to === undefined) return null;
@@ -200,8 +87,7 @@ async function state(fromMs, toMs) {
   const { events, truncated } = await loadEvents(from);
   const config = { ...settings.piiGuard, ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
   const summary = { ...summarize(events, { since: from, until: to, ignore: config.ignore }), truncated };
-  // recent kept at most 20 for compat
-  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(), summary, recent: events.slice(0, 20) };
+  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(), summary };
 }
 
 export async function GET(request) {

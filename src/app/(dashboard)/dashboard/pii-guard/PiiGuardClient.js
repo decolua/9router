@@ -335,11 +335,12 @@ export default function PiiGuardClient() {
   const load = useCallback(() => {
     if (typeof document !== "undefined" && document.hidden) return;
     const r = computeRange(rangePreset, customFromMs, customToMs);
-    call().catch(() => {}).then(() => {}); // placeholder no-op
     fetch(`/api/pii-guard?from=${r.from}&to=${r.to}`)
-      .then(res => res.json())
-      .then(data => {
-        const fp = `${data?.summary?.groups?.length ?? 0}:${data?.summary?.groups?.[0]?.lastSeen ?? ""}`;
+      .then(async res => {
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+        // Skip the re-render when a poll brings nothing new (range and health move every call).
+        const fp = JSON.stringify([data.config, data.summary?.groups, data.summary?.byRule, data.summary?.errors24h, data.summary?.truncated]);
         if (fp === fingerprintRef.current) return;
         fingerprintRef.current = fp;
         setState(data);
@@ -363,7 +364,7 @@ export default function PiiGuardClient() {
     return () => document.removeEventListener("visibilitychange", onVis);
   }, [load]);
 
-  const save = patch => call(patch).then(s => { setState(s); setError(""); fingerprintRef.current = `${s?.summary?.groups?.length ?? 0}:${s?.summary?.groups?.[0]?.lastSeen ?? ""}`; return true; }).catch(e => { setError(e.message); return false; });
+  const save = patch => call(patch).then(() => { setError(""); fingerprintRef.current = ""; load(); return true; }).catch(e => { setError(e.message); return false; });
 
   const confirmBlock = mode => mode !== "block" || window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?");
   const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
@@ -502,6 +503,41 @@ export default function PiiGuardClient() {
     return map;
   }, [state?.summary?.groups]);
 
+  // events pagination
+  const loadEventsPage = useCallback(async (before) => {
+    setEventsLoading(true);
+    try {
+      const r = computeRange(rangePreset, customFromMs, customToMs);
+      const url = `/api/pii-guard?events=1&limit=50&from=${r.from}&to=${r.to}` + (before ? `&before=${before}` : "");
+      const res = await fetch(url);
+      const data = await res.json();
+      if (before) setEventsList(prev => [...prev, ...(data.events || [])]);
+      else setEventsList(data.events || []);
+      setNextBefore(data.nextBefore);
+    } catch (e) { setError(e.message); }
+    finally { setEventsLoading(false); }
+  }, [rangePreset, customFromMs, customToMs]);
+
+  useEffect(() => {
+    if (!detailsOpen) return;
+    setEventsList([]);
+    setNextBefore(null);
+    loadEventsPage(null);
+  }, [detailsOpen, rangePreset, customFromMs, customToMs, loadEventsPage]);
+
+  const eventsSentinelRef = useRef(null);
+  useEffect(() => {
+    const el = eventsSentinelRef.current;
+    if (!el || !detailsOpen) return;
+    const io = new IntersectionObserver(entries => {
+      if (entries[0].isIntersecting && nextBefore && !eventsLoading) {
+        loadEventsPage(nextBefore);
+      }
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [detailsOpen, nextBefore, eventsLoading, loadEventsPage]);
+
   if (!state) return <div className="p-6 text-text-muted">{error || "Loading..."}</div>;
 
   const {
@@ -565,41 +601,6 @@ export default function PiiGuardClient() {
   const ignoreRecent = () => {
     save({ ignoreRecent: Number(recentMinutes), on: true }).then(ok => ok && setSelected(new Set()));
   };
-
-  // events pagination
-  const loadEventsPage = useCallback(async (before) => {
-    setEventsLoading(true);
-    try {
-      const r = computeRange(rangePreset, customFromMs, customToMs);
-      const url = `/api/pii-guard?events=1&limit=50&from=${r.from}&to=${r.to}` + (before ? `&before=${before}` : "");
-      const res = await fetch(url);
-      const data = await res.json();
-      if (before) setEventsList(prev => [...prev, ...(data.events || [])]);
-      else setEventsList(data.events || []);
-      setNextBefore(data.nextBefore);
-    } catch (e) { setError(e.message); }
-    finally { setEventsLoading(false); }
-  }, [rangePreset, customFromMs, customToMs]);
-
-  useEffect(() => {
-    if (!detailsOpen) return;
-    setEventsList([]);
-    setNextBefore(null);
-    loadEventsPage(null);
-  }, [detailsOpen, rangePreset, customFromMs, customToMs, loadEventsPage]);
-
-  const eventsSentinelRef = useRef(null);
-  useEffect(() => {
-    const el = eventsSentinelRef.current;
-    if (!el || !detailsOpen) return;
-    const io = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && nextBefore && !eventsLoading) {
-        loadEventsPage(nextBefore);
-      }
-    });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [detailsOpen, nextBefore, eventsLoading, loadEventsPage]);
 
   const handleSort = (key) => {
     if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
