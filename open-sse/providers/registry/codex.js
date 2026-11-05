@@ -54,6 +54,7 @@ export default {
   },
   models: [
     { id: "gpt-6.1-sol", name: "GPT 6.1 Sol", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
+    { id: "gpt-6.1-terra", name: "GPT 6.1 Terra", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
     { id: "gpt-6-astra", name: "GPT 6.0 Astra" },
     { id: "gpt-6-astra[1m]", name: "GPT 6.0 Astra (extended context)", upstreamModelId: "gpt-6-astra" },
     { id: "gpt-6-sol", name: "GPT 6.0 Sol", responsesLite: true, thinkingLevels: GPT_6_LITE_THINKING_LEVELS },
@@ -82,11 +83,10 @@ export default {
     { id: "gpt-image-2.5-sunburst", name: "GPT Image 2.5 Sunburst", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-image-2", name: "GPT Image 2", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "gpt-image-1.5", name: "GPT Image 1.5", capabilities: ["text2img","edit","multiImage"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
-    { id: "gpt-5.6-sol-image", name: "GPT 5.6 Sol Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
-    { id: "gpt-5.6-terra-image", name: "GPT 5.6 Terra Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
-    { id: "gpt-5.6-luna-image", name: "GPT 5.6 Luna Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
+    { id: "gpt-6-sol-image", name: "GPT 6.0 Sol Image", capabilities: ["text2img","edit"], params: ["size","quality","background","image_detail","output_format"], kind: "image" },
     { id: "transcribe", name: "Codex Transcription", kind: "stt", params: ["response_format"], responseFormats: ["json", "text"] },
     // gpt-5.5-image / gpt-5.4-image / gpt-5.3-image removed alongside base models.
+    // gpt-5.6-{sol,terra,luna}-image removed: superseded by gpt-6-sol-image.
   ],
   serviceKinds: ["llm","image","stt"],
   sttConfig: {

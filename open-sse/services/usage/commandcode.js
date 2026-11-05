@@ -5,6 +5,7 @@
 
 import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 import { parseResetTime, toFiniteNumber } from "./shared.js";
+import { buildCommandCodeHeaders } from "../../shared/commandCodeHeaders.js";
 
 const BASE = (process.env.COMMAND_CODE_API_BASE_URL || "https://api.commandcode.ai").replace(/\/$/, "");
 
@@ -82,10 +83,7 @@ export async function getCommandCodeUsage(apiKey, proxyOptions = null) {
     return { message: "Command Code API key not available. Add a key to view usage." };
   }
 
-  const headers = {
-    Authorization: `Bearer ${apiKey.trim()}`,
-    Accept: "application/json",
-  };
+  const headers = buildCommandCodeHeaders({ apiKey: apiKey.trim(), accept: "application/json" });
 
   const get = async (route) => {
     const response = await proxyAwareFetch(
