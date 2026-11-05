@@ -1,6 +1,7 @@
 // Claude helper functions for translator
 import { DEFAULT_THINKING_CLAUDE_SIGNATURE } from "../../config/defaultThinkingSignature.js";
 import { ROLE, CLAUDE_BLOCK } from "../schema/index.js";
+import { isAnthropicSearch, supportsAnthropicSearch } from "../concerns/searchRouting.js";
 import { adjustMaxTokens } from "./maxTokens.js";
 import { applyCloaking } from "../../utils/claudeCloaking.js";
 import { resolveSessionId } from "../../utils/sessionManager.js";
@@ -685,6 +686,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
         .filter(tool => {
           const t = tool?.type;
           if (!t || t === "function") return true;
+          if (isAnthropicSearch(tool) && supportsAnthropicSearch(provider, t)) return true;
           if (hasWhitelist) return supportedTypes.includes(t);
           return false;
         })
@@ -702,7 +704,7 @@ export function prepareClaudeRequest(body, provider = null, apiKey = null, conne
           // route built-ins like web_search_* correctly. Without a
           // whitelist, preserve prior behaviour and strip `type` so the
           // tool is normalized to plain Anthropic shape.
-          if (hasWhitelist) return tool;
+          if (hasWhitelist || isAnthropicSearch(tool)) return tool;
           const { type, ...rest } = tool;
           return rest;
         });

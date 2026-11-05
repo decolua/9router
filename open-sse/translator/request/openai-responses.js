@@ -444,6 +444,16 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     }).filter(Boolean);
   }
 
+  // Ask Responses to include the source URL list for each search. The response
+  // translator needs that list to build Claude Code's web_search_tool_result blocks.
+  if (body.tools?.some(tool => tool.type === OPENAI_BLOCK.WEB_SEARCH)) {
+    result.include = ["web_search_call.action.sources"];
+  }
+  // Preserve string and hosted-tool choices.
+  if (body.tool_choice !== undefined) {
+    result.tool_choice = normalizeResponsesChoice(body.tool_choice);
+  }
+
   // Pass through other relevant fields
   if (body.temperature !== undefined) result.temperature = body.temperature;
   if (body.max_output_tokens !== undefined) {
@@ -460,6 +470,19 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   if (body.prompt_cache_key !== undefined) result.prompt_cache_key = body.prompt_cache_key;
 
   return result;
+}
+
+// Name normalization to forced choices
+function normalizeResponsesChoice(choice) {
+  if (choice?.type !== OPENAI_BLOCK.FUNCTION) {
+    return choice;
+  }
+  const rawName = choice.function?.name ?? choice.name;
+  let name = "";
+  if (typeof rawName === "string") {
+    name = rawName.trim().slice(0, MAX_TOOL_NAME_LEN);
+  }
+  return { type: OPENAI_BLOCK.FUNCTION, name };
 }
 
 // Register both directions

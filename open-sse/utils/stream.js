@@ -1,4 +1,5 @@
 import { translateResponse, initState } from "../translator/index.js";
+import { hasHostedSearch } from "../translator/concerns/searchRouting.js";
 import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
 import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
@@ -80,7 +81,7 @@ export function createSSEStream(options = {}) {
         // hop of a pivot, and on the terminal null chunk the pivot drops it — so a
         // translator that defers closing events until flush needs to know which case
         // it is in. Absent/undefined means "unknown", i.e. do not defer.
-        targetFormat }
+        targetFormat, searchEnabled: hasHostedSearch(body?.tools) }
     : null;
 
   let totalContentLength = 0;

@@ -3,6 +3,7 @@ import { FORMATS } from "../formats.js";
 import { adjustMaxTokens } from "../formats/maxTokens.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK } from "../schema/index.js";
+import { ANTHROPIC_SEARCH_TYPE } from "../concerns/searchRouting.js";
 import { collapseTextParts } from "../concerns/message.js";
 
 function stripAnthropicBillingHeader(text) {
@@ -65,19 +66,40 @@ export function claudeToOpenAIRequest(model, body, stream) {
 
   // Tools
   if (body.tools && Array.isArray(body.tools)) {
-    result.tools = body.tools.map(tool => ({
-      type: OPENAI_BLOCK.FUNCTION,
-      function: {
-        name: tool.name,
-        description: String(tool.description || ""),
-        parameters: tool.input_schema || { type: "object", properties: {} }
+    result.tools = body.tools.map(tool => {
+      // Translate Anthropic's server-search declaration to OpenAI's hosted search tool.
+      // Do not generate a function schema: the provider executes this tool, not the client.
+      if (tool.type === ANTHROPIC_SEARCH_TYPE) {
+        return { type: OPENAI_BLOCK.WEB_SEARCH };
       }
-    }));
+      return {
+        type: OPENAI_BLOCK.FUNCTION,
+        function: {
+          name: tool.name,
+          description: String(tool.description || ""),
+          parameters: tool.input_schema || { type: "object", properties: {} }
+        }
+      };
+    });
   }
 
   // Tool choice
   if (body.tool_choice) {
-    result.tool_choice = convertToolChoice(body.tool_choice);
+    // A forced server search must not become a forced function call with the same name.
+    const selectedToolName = body.tool_choice.name;
+    const forcesNamedTool = body.tool_choice.type === "tool";
+    const selectsServerSearch = body.tools?.some(tool => {
+      const matchesSelectedName = tool.name === selectedToolName;
+      const isServerSearch = tool.type === ANTHROPIC_SEARCH_TYPE;
+
+      return matchesSelectedName && isServerSearch;
+    });
+
+    if (forcesNamedTool && selectsServerSearch) {
+      result.tool_choice = { type: OPENAI_BLOCK.WEB_SEARCH };
+    } else {
+      result.tool_choice = convertToolChoice(body.tool_choice);
+    }
   }
 
   if (body.reasoning_effort !== undefined) {
@@ -141,6 +163,26 @@ function systemReminderText(content) {
 }
 
 // Convert single Claude message - returns single message or array of messages
+// Keep source metadata for follow-up questions. Preserve error objects as errors;
+// encrypted native search payloads have no usable representation on this route.
+function searchHistoryEvidence(content) {
+  if (!Array.isArray(content)) {
+    return content;
+  }
+
+  const sources = [];
+  for (const result of content) {
+    if (!result || typeof result !== "object") {
+      continue;
+    }
+    sources.push({
+      title: result.title,
+      url: result.url
+    });
+  }
+  return sources;
+}
+
 function convertClaudeMessage(msg) {
   // Some clients send content as a single block object; normalize to the
   // one-element array every branch below (the system-reminder fold included)
@@ -173,6 +215,26 @@ function convertClaudeMessage(msg) {
         case CLAUDE_BLOCK.TEXT:
           parts.push({ type: OPENAI_BLOCK.TEXT, text: block.text });
           break;
+
+        // Convert prior server-search queries and results into message text so follow-up
+        // requests retain their evidence without asking the client to execute those searches again.
+        case CLAUDE_BLOCK.SERVER_TOOL_USE:
+          if (block.name === OPENAI_BLOCK.WEB_SEARCH) {
+            parts.push({
+              type: OPENAI_BLOCK.TEXT,
+              text: `Web search query: ${JSON.stringify(block.input || {})}`
+            });
+          }
+          break;
+
+        case CLAUDE_BLOCK.WEB_SEARCH_TOOL_RESULT: {
+          const evidence = searchHistoryEvidence(block.content);
+          parts.push({
+            type: OPENAI_BLOCK.TEXT,
+            text: `Web search evidence: ${JSON.stringify(evidence)}`
+          });
+          break;
+        }
 
         case CLAUDE_BLOCK.IMAGE:
           if (block.source?.type === "base64") {
@@ -275,6 +337,7 @@ function convertToolChoice(choice) {
   if (typeof choice === "string") return choice;
   
   switch (choice.type) {
+    case "none": return "none";
     case "auto": return "auto";
     case "any": return "required";
     case "tool": return { type: OPENAI_BLOCK.FUNCTION, function: { name: choice.name } };

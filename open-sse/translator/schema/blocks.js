@@ -9,6 +9,7 @@ export const OPENAI_BLOCK = {
   AUDIO_URL: "audio_url",
   FILE: "file",
   FUNCTION: "function",
+  WEB_SEARCH: "web_search",
 };
 
 // CommandCode native content blocks.
@@ -29,11 +30,14 @@ export const CLAUDE_BLOCK = {
   REDACTED_THINKING: "redacted_thinking",
   SERVER_TOOL_USE: "server_tool_use",
   WEB_SEARCH_TOOL_RESULT: "web_search_tool_result",
+  WEB_SEARCH_RESULT: "web_search_result",
+  WEB_SEARCH_ERROR: "web_search_tool_result_error",
 };
 
 // OpenAI Responses API item types.
 export const RESPONSES_ITEM = {
   MESSAGE: "message",
+  WEB_SEARCH_CALL: "web_search_call",
   FUNCTION_CALL: "function_call",
   FUNCTION_CALL_OUTPUT: "function_call_output",
   CUSTOM_TOOL_CALL: "custom_tool_call",

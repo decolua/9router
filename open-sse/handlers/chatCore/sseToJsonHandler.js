@@ -4,6 +4,8 @@ import { createErrorResult } from "../../utils/error.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { FORMATS } from "../../translator/formats.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
+import { ANTHROPIC_SEARCH_TYPE, hasHostedSearch } from "../../translator/concerns/searchRouting.js";
+import { responsesSearchToClaudeMessage } from "../../translator/response/responses-to-claude.js";
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
@@ -207,6 +209,11 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   if (isCodexResponsesApi) {
     try {
       const jsonResponse = await convertResponsesStreamToJson(providerResponse.body);
+      // Partial source data does not make a failed or interrupted search a completed answer.
+      if (sourceFormat === FORMATS.CLAUDE && body.tools?.some(tool => tool.type === ANTHROPIC_SEARCH_TYPE) &&
+          jsonResponse.status !== "completed") {
+        return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Upstream native search did not complete");
+      }
       if (onRequestSuccess) await onRequestSuccess();
 
       const usage = jsonResponse.usage || {};
@@ -289,7 +296,10 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
       }
 
       if (sourceFormat === FORMATS.CLAUDE) {
-        finalResp = openAICompletionToClaudeMessage(finalResp);
+        // Convert answer text and client tool calls with the existing completion helper,
+        // then add the search queries and source blocks from the Responses output.
+        const claudeMessage = openAICompletionToClaudeMessage(finalResp);
+        finalResp = responsesSearchToClaudeMessage(jsonResponse, claudeMessage, hasHostedSearch(body.tools));
       }
 
       return { success: true, response: new Response(JSON.stringify(restoreToolNames(finalResp, toolNameMap)), { headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*" } }) };
