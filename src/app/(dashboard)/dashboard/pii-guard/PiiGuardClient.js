@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
 import { Card, Button, SegmentedControl, Select, Badge } from "@/shared/components";
 import RangePicker from "./RangePicker";
+import InfoTip from "./InfoTip";
 import { computeRange, endsAtNow, rangeLabel, isValidPreset } from "./ranges";
 
 const MODES = [
@@ -791,6 +792,11 @@ export default function PiiGuardClient() {
             <h2 className="text-lg font-semibold flex items-center gap-2 text-text-main">
               <span className="material-symbols-outlined text-primary">shield_person</span>
               PII Guard
+              <InfoTip title="How PII Guard works">
+                <p>Every request is scanned on its way to the model. Rules find secrets and personal data; vault values catch your own known strings.</p>
+                <p>Observe only logs. Redact swaps a value for a placeholder like {"{{pii:pan#ab12cd}}"}. Block stops the first request with a new value, and later requests redact it.</p>
+                <p>Some places cannot be rewritten, such as signed thinking, object keys and numbers. A value there is reported as leaked. A scanner error never blocks a request.</p>
+              </InfoTip>
             </h2>
             <p className="text-xs text-text-muted mt-1">
               {MODE_LABEL[config.mode]}
@@ -805,19 +811,29 @@ export default function PiiGuardClient() {
             Block stops a new value once; a retry redacts it. A value inside signed thinking of an active tool loop cannot be redacted: use /rewind.
           </p>
         )}
-        {!anyBlock && (
-          <p className="text-xs text-text-muted mt-3 pt-3 border-t border-border-subtle">
-            Values the scanner cannot rewrite (signed thinking, object keys, numbers) are reported as leaked. A scanner error never blocks a request.
-          </p>
-        )}
         <div className="mt-3 pt-3 border-t border-border flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-          <span className="text-xs font-medium text-text-main">Image OCR</span>
+          <span className="text-xs font-medium text-text-main inline-flex items-center gap-1">Image OCR
+            <InfoTip title="What happens to images">
+              <p>The image is never edited. The model always gets the original picture.</p>
+              <p>A copy is read with Tesseract on this machine. The text it reads is checked with the same rules, ignore list and vault values as text, and the result is logged as hashes only. The text itself is thrown away.</p>
+              <p>This runs after the request is sent, so it cannot slow a request down. It also means images can be observed, but not redacted or blocked.</p>
+            </InfoTip>
+          </span>
           <span role="group" aria-label="Image OCR mode" aria-disabled={!ocrHealth?.available} inert={!ocrHealth?.available ? "" : undefined} className={!ocrHealth?.available ? "pointer-events-none opacity-50" : ""}><SegmentedControl size="sm" aria-label="Image OCR mode" options={[{ value: "off", label: "Off" }, { value: "observe", label: "Observe" }]} value={config.ocr?.mode || "observe"} onChange={mode => save({ ocr: { mode } })} /></span>
-          <span className="text-xs font-medium text-text-main sm:ml-2">OCR quality</span>
+          <span className="text-xs font-medium text-text-main sm:ml-2 inline-flex items-center gap-1">OCR quality
+            <InfoTip title="Enhanced or Basic">
+              <p>Enhanced cleans the image first (grayscale, 2× upscale) and repairs common OCR slips, like O read for 0 or a dash split across a key. On the test images it found 40 of 42 values, against 26 for Basic.</p>
+              <p>It costs about 60–110 ms more per new image. Repeated screenshots come from the cache either way.</p>
+            </InfoTip>
+          </span>
           <span role="group" aria-label="OCR quality" aria-disabled={!ocrHealth?.available} inert={!ocrHealth?.available ? "" : undefined} className={!ocrHealth?.available ? "pointer-events-none opacity-50" : ""}><SegmentedControl size="sm" aria-label="OCR quality" options={[{ value: "enhanced", label: "Enhanced" }, { value: "basic", label: "Basic" }]} value={config.ocr?.quality || "enhanced"} onChange={quality => save({ ocr: { quality } })} /></span>
-          <span className="text-xs text-text-muted">Keep images: {ocrHealth?.capture ? "on" : "off"} (env)</span>
+          <span className="text-xs text-text-muted inline-flex items-center gap-1">Keep images: {ocrHealth?.capture ? "on" : "off"}
+            <InfoTip title="Keep images">
+              <p>When on, images with findings are saved under ~/.9router/pii-guard/images so you can check what was caught. They expire on their own.</p>
+              <p>It is set in the service config (PII_GUARD_CAPTURE_IMAGES), not here, because it stores real screenshots on disk.</p>
+            </InfoTip>
+          </span>
           {!ocrHealth?.available && <span className="text-xs text-amber-600 dark:text-amber-400">Set PII_GUARD_OCR=1 to enable image OCR.</span>}
-          <p className="basis-full text-xs text-text-muted">Images are read with Tesseract and checked with the same rules, ignore list and vault values. OCR runs after the request is sent, so images are only observed, never redacted or blocked.</p>
         </div>
       </Card>
 
@@ -883,6 +899,10 @@ export default function PiiGuardClient() {
           <h3 className="font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-text-muted">monitor_heart</span>
             Scanner health
+            <InfoTip title="Scanner health">
+              <p>Shows whether the scanner is loaded, how many vault values it knows, and how long a scan takes. Scans run inline, so this is time added to each request.</p>
+              <p>“Not scanned” counts parts it cannot read: images when OCR is off, files and PDFs, and encrypted reasoning.</p>
+            </InfoTip>
           </h3>
           <div className="flex items-center gap-1.5">
             <span className={`inline-block size-2.5 rounded-full ${health?.loaded ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-red-500"}`} aria-hidden="true" />
@@ -941,6 +961,10 @@ export default function PiiGuardClient() {
             <h3 className="font-semibold text-text-main flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-text-muted">image_search</span>
               Images (OCR)
+              <InfoTip title="Images (OCR)">
+                <p>Each image in a request is read in the background after the request goes out. What you see here is what that reading found.</p>
+                <p>Hits also show in Values seen with the source “image / ocr”, so you can tell them from text hits.</p>
+              </InfoTip>
             </h3>
             <div className="flex items-center gap-2 flex-wrap">
               {ocrHealth?.queue !== undefined && (
@@ -961,7 +985,6 @@ export default function PiiGuardClient() {
               </div>
             </div>
           </div>
-          <p className="text-xs text-text-muted mb-3">Images are scanned after the request is sent; they are observed only and never redacted or blocked.</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
               <span className="text-xs text-text-muted block font-medium">Images scanned</span>
@@ -971,14 +994,24 @@ export default function PiiGuardClient() {
               </span>
             </div>
             <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted block font-medium">Status</span>
+              <span className="text-xs text-text-muted font-medium inline-flex items-center gap-1">Status
+                <InfoTip title="Status">
+                  <p><b>Scanned</b>: read cleanly. <b>Partial</b>: read, but Tesseract was unsure (confidence under 60), so a value may be missed.</p>
+                  <p><b>Empty</b>: no text in the image. <b>Skipped</b>: not read, for example when the queue was full. <b>Failed</b>: the OCR engine errored.</p>
+                </InfoTip>
+              </span>
               <strong className="block text-base font-semibold text-text-main mt-0.5">{count(ocrSummary?.status?.scanned)} ok</strong>
               <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={`scanned: ${ocrSummary?.status?.scanned || 0}, partial: ${ocrSummary?.status?.partial || 0}, empty: ${ocrSummary?.status?.empty || 0}, failed: ${ocrSummary?.status?.failed || 0}, skipped: ${ocrSummary?.status?.skipped || 0}`}>
                 {ocrSummary?.status?.partial ? `${count(ocrSummary.status.partial)} partial · ` : ""}{count(ocrSummary?.status?.empty)} empty{ocrSummary?.status?.skipped ? ` · ${count(ocrSummary.status.skipped)} skipped` : ""}{ocrSummary?.status?.failed ? ` · ${count(ocrSummary.status.failed)} failed` : ""}
               </span>
             </div>
             <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted block font-medium">Cache hit rate</span>
+              <span className="text-xs text-text-muted font-medium inline-flex items-center gap-1">Cache hit rate
+                <InfoTip title="Cache">
+                  <p>Agents resend the same screenshot on every turn. Each image is fingerprinted, and a repeat within 24 hours reuses the earlier result instead of being read again.</p>
+                  <p>Coalesced means the same image arrived twice at once and was read only once.</p>
+                </InfoTip>
+              </span>
               <strong className="block text-base font-semibold text-text-main mt-0.5">
                 {Math.round((ocrSummary?.cacheHitRate || 0) * 100)}%
               </strong>
@@ -987,7 +1020,12 @@ export default function PiiGuardClient() {
               </span>
             </div>
             <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted block font-medium">OCR latency</span>
+              <span className="text-xs text-text-muted font-medium inline-flex items-center gap-1">OCR latency
+                <InfoTip title="OCR latency">
+                  <p>Time to read one new image, at the 95th percentile. Cache hits are left out because they take no time.</p>
+                  <p>Requests never wait for this.</p>
+                </InfoTip>
+              </span>
               <strong className="block text-base font-semibold text-text-main mt-0.5 font-mono">
                 p95 {count(ocrSummary?.p95OcrMs)} ms
               </strong>
@@ -1019,10 +1057,12 @@ export default function PiiGuardClient() {
           <h3 className="font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-text-muted">tune</span>
             Rule groups
+            <InfoTip title="Rule groups">
+              <p>Each rule can follow the main mode (Default) or have its own. For example, you can redact API keys and only observe emails.</p>
+              <p>Vault values are your own strings from ~/.config/pii-guard/known.json. They are matched exactly, wherever they appear.</p>
+              <p>The same settings apply to image hits, but images stay observe-only.</p>
+            </InfoTip>
           </h3>
-          <p className="text-xs text-text-muted mt-0.5">
-            Default follows the default mode. The known group matches values from ~/.config/pii-guard/known.json.
-          </p>
         </div>
         <div className="divide-y divide-border border-t border-border">
           {groupsList.map(group => {
@@ -1118,8 +1158,13 @@ export default function PiiGuardClient() {
       {/* 5. Scanner Test Card */}
       <Card>
         <div className="mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2"><span className="material-symbols-outlined text-[18px] text-text-muted">science</span>Scanner test</h3>
-          <p className="text-xs text-text-muted mt-0.5">Preview scanner results. Test input is not sent to any provider.</p>
+          <h3 className="font-semibold text-text-main flex items-center gap-2"><span className="material-symbols-outlined text-[18px] text-text-muted">science</span>Scanner test
+            <InfoTip title="Scanner test">
+              <p>Try the scanner on anything. Nothing here is sent to a model.</p>
+              <p>Text shows what a real request would look like after your settings. Image shows the text OCR read and what it caught, so you can see how well it reads.</p>
+              <p>Each test is logged as a Test event with hashes only. Tests are not counted in the stats, and Events hides them unless you turn on Show tests.</p>
+            </InfoTip>
+          </h3>
         </div>
         <SegmentedControl aria-label="Scanner test type" options={[{ value: "text", label: "Text" }, { value: "image", label: "Image" }]} value={scannerTab} onChange={tab => { setScannerTab(tab); setResult(null); setImageResult(null); }} />
         {scannerTab === "text" ? <div className="mt-3">
@@ -1145,11 +1190,14 @@ export default function PiiGuardClient() {
           {samples.length > 0 && <div className="flex gap-3 overflow-x-auto pb-1">{samples.map(sample => <button type="button" key={sample.id} onClick={() => { setSelectedSample(sample.id); setImageData(null); setImageName(sample.label); setImagePreview(`/pii-guard-samples/${sample.file}`); setImageResult(null); }} aria-pressed={selectedSample === sample.id} className={`shrink-0 w-28 text-left text-xs ${selectedSample === sample.id ? "ring-2 ring-brand-500" : ""}`}><img src={`/pii-guard-samples/${sample.file}`} alt={sample.label} className="h-20 w-28 rounded-[10px] object-cover border border-border" /><span className="mt-1 block text-text-main">{sample.label}</span></button>)}</div>}
           {imagePreview && <img src={imagePreview} alt="Selected image preview" className="max-h-56 max-w-full rounded-[10px] border border-border object-contain" />}
           <div className="flex items-end gap-2 flex-wrap"><Select label="Quality" className="w-48" value={testQuality} onChange={e => { setTestQuality(e.target.value); setImageResult(null); }} options={[{ value: "enhanced", label: "Enhanced" }, { value: "basic", label: "Basic" }, { value: "compare", label: "Compare both" }]} /><Select label="Test with" className="w-56" value={testMode} onChange={e => { setTestMode(e.target.value); setImageResult(null); }} options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]} /><Button type="button" variant="secondary" disabled={testBusy || (!imageData && !selectedSample)} onClick={runImageTest}>{testBusy ? "Scanning…" : "Scan image"}</Button></div>
-          <p className="text-xs text-text-muted">Images are observed only; a real request is not changed.</p>
-          {imageResult && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{imageResult.results.map((item, idx) => <section key={`${item.mode}:${idx}`} className="min-w-0 rounded-[10px] border border-border p-3 space-y-2"><h4 className="font-semibold text-text-main">{item.mode}</h4><div className="flex flex-wrap items-center gap-2 text-xs"><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge><span className="text-text-muted">{count(item.ocrMs)} ms · mean confidence {item.meanConfidence ?? "—"} · {count(item.chars)} chars</span></div><ul className="space-y-1">{item.findings.map((f, i) => <li key={`${f.rule}:${i}`} className="flex flex-wrap items-center gap-1.5 text-xs"><Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge><span className="font-medium text-text-main">{f.name || f.rule}</span><span className="text-text-muted">{f.match || "(repaired read)"}</span></li>)}</ul>{item.text && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main">{highlightMatches(item.text, item.findings)}</pre>}</section>)}</div>}
+          <p className="text-xs text-text-muted inline-flex items-center gap-1">Images are observed only.
+            <InfoTip title="Why only observed">
+              <p>OCR text is shown here only because you asked to test this image. In live traffic, the text is never kept: only the rule names and hashes are logged.</p>
+              <p>The image itself is never changed. Rewriting pixels is not possible the way text is rewritten, so a real request with this image goes out as is.</p>
+            </InfoTip>
+          </p>          {imageResult && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{imageResult.results.map((item, idx) => <section key={`${item.mode}:${idx}`} className="min-w-0 rounded-[10px] border border-border p-3 space-y-2"><h4 className="font-semibold text-text-main">{item.mode}</h4><div className="flex flex-wrap items-center gap-2 text-xs"><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge><span className="text-text-muted">{count(item.ocrMs)} ms · mean confidence {item.meanConfidence ?? "—"} · {count(item.chars)} chars</span></div><ul className="space-y-1">{item.findings.map((f, i) => <li key={`${f.rule}:${i}`} className="flex flex-wrap items-center gap-1.5 text-xs"><Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge><span className="font-medium text-text-main">{f.name || f.rule}</span><span className="text-text-muted">{f.match || <span className="inline-flex items-center gap-1">(repaired read)<InfoTip title="Repaired read"><p>OCR misread this value, for example O for 0 or a space inside a key. Enhanced mode fixed the slip and then matched it, so the value is not highlighted in the raw text.</p></InfoTip></span>}</span></li>)}</ul>{item.text && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main">{highlightMatches(item.text, item.findings)}</pre>}</section>)}</div>}
           {imageResult?.expect && <p className="text-xs text-text-muted">Expected: {imageResult.expect.join(", ")} · {imageResult.expect.map(rule => <span key={rule} className="mr-2">{imageResult.results.some(r => r.findings.some(f => f.rule === rule)) ? "✓" : "✗"} {rule}</span>)}</p>}
         </div>}
-        <p className="mt-3 pt-3 border-t border-border text-xs text-text-muted">Tests are logged as Test events with hashes only. They are not counted in the stats.</p>
       </Card>
 
       {/* 6. Where values appeared Card */}
@@ -1158,6 +1206,10 @@ export default function PiiGuardClient() {
           <h3 className="font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-text-muted">location_on</span>
             Where values appeared
+            <InfoTip title="Where values appeared">
+              <p>Which part of the conversation each hit came from: your messages, the model’s replies, tool results, system prompt, thinking, or images.</p>
+              <p>Tool results are often the biggest source, because they carry file contents and command output.</p>
+            </InfoTip>
           </h3>
         </div>
         {sortedSources.length === 0 ? (
@@ -1195,6 +1247,10 @@ export default function PiiGuardClient() {
             <h3 className="font-semibold text-text-main flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-text-muted">search_check</span>
               Values seen
+              <InfoTip title="Values seen">
+                <p>One row per unique value, not per request. Turns counts the requests that contained it.</p>
+                <p>Values are stored only as hashes, never as text. Ignore a value if it is safe, such as a test key, and it stops being reported.</p>
+              </InfoTip>
             </h3>
             <span className="text-xs text-text-muted">({activeRangeLabel})</span>
             {view === "values" && (
@@ -1236,9 +1292,6 @@ export default function PiiGuardClient() {
         {view === "values" && (
           <div>
             {/* One-line explanation in smaller muted text */}
-            <p className="text-xs text-text-muted mb-3">
-              Each row is one unique value (by hash), not one request. Turns = requests that contained it.
-            </p>
 
             {/* Single toolbar: search + 5 compact selects + secondary ignore-recent control */}
             <div className="flex items-center gap-2.5 mb-3 flex-wrap">
