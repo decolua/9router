@@ -8,12 +8,39 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
   const ruleHits = Object.create(null), ruleStuck = Object.create(null), ruleHashes = Object.create(null), ruleSources = Object.create(null), bySource = Object.create(null);
   const leaked = new Set(), blocked = new Set(), unique = new Set();
   let errors24h = 0;
+  let requests = 0;
+
+  const ocrStatus = { scanned: 0, partial: 0, empty: 0, failed: 0, skipped: 0 };
+  let cacheHit = 0, cacheMiss = 0, cacheCoalesced = 0, cacheNone = 0;
+  const missOcrMs = [];
+  let imagesWithHits = 0;
+  let totalOcrEvents = 0;
 
   for (const event of Array.isArray(events) ? events : []) {
     const ts = Date.parse(event?.ts);
     if (!Number.isFinite(ts) || ts < sinceMs || ts > untilMs) continue;
     if (event.type === "error") { errors24h += Number.isInteger(event.count) && event.count > 0 ? event.count : 1; continue; }
     if (event.type === "stats") continue;
+
+    if (event.type === "ocr") {
+      totalOcrEvents++;
+      if (Object.hasOwn(ocrStatus, event.status)) {
+        ocrStatus[event.status]++;
+      }
+      if (event.cache === "hit") cacheHit++;
+      else if (event.cache === "miss") {
+        cacheMiss++;
+        if (typeof event.ocrMs === "number") missOcrMs.push(event.ocrMs);
+      } else if (event.cache === "coalesced") cacheCoalesced++;
+      else if (event.cache === "none") cacheNone++;
+
+      if (Array.isArray(event.hits) && event.hits.length > 0) {
+        imagesWithHits++;
+      }
+    } else {
+      requests++;
+    }
+
     const raw = Array.isArray(event.hits) ? event.hits : Array.isArray(event.new) ? event.new : [];
     const distinct = new Set();
     for (const hit of raw) {
@@ -48,7 +75,12 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
       if (action === "leaked" && typeof hit.where === "string" && !group.leakedWhere.includes(hit.where)) group.leakedWhere.push(hit.where);
       if (ts < Date.parse(group.firstSeen)) group.firstSeen = event.ts;
       if (ts > Date.parse(group.lastSeen)) group.lastSeen = event.ts;
-      group.turns.add(event.ts);
+      const turnKey = event.requestId || (event.type === "ocr" ? null : event.ts);
+      if (turnKey) {
+        group.turns.add(turnKey);
+      } else if (group.turns.size === 0) {
+        group.turns.add(event.ts);
+      }
       if (action === "leaked") leaked.add(hit.hash);
       if ((action === "block" || (Array.isArray(event.blocked) && (event.blocked.includes(hit.name) || event.blocked.includes(hit.rule))))) blocked.add(hit.hash);
     }
@@ -71,11 +103,34 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
     }
   }
 
+  const cacheTotal = cacheHit + cacheMiss;
+  const cacheHitRate = cacheTotal > 0 ? cacheHit / cacheTotal : 0;
+  missOcrMs.sort((a, b) => a - b);
+  const p95OcrMs = missOcrMs.length ? missOcrMs[Math.ceil(missOcrMs.length * 0.95) - 1] : 0;
+
+  const ocr = {
+    status: ocrStatus,
+    cache: {
+      hit: cacheHit,
+      miss: cacheMiss,
+      coalesced: cacheCoalesced,
+      none: cacheNone,
+      rate: cacheHitRate,
+    },
+    cacheHitRate,
+    coalesced: cacheCoalesced,
+    p95OcrMs,
+    imagesWithHits,
+    totalImages: totalOcrEvents,
+  };
+
   return {
+    requests,
     unique24h: unique.size,
     byRule: Object.fromEntries(Object.entries(ruleHits).map(([rule, hits]) => [rule, { unique: ruleHashes[rule]?.size || 0, hits }])),
     bySource, leaked24h: leaked.size, blocked24h: blocked.size, errors24h,
     groups: outputGroups, ruleWarnings,
     range: { from: sinceMs, to: untilMs },
+    ocr,
   };
 }

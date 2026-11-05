@@ -1,5 +1,5 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { appendFile, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
@@ -10,12 +10,14 @@ const since = new Date().toISOString();
 let loading, library, detector, knownMtime, lastCheck = -Infinity, warnedAt = -Infinity;
 let requests = 0, withFindings = 0, totalRequests = 0, totalWithFindings = 0, samples = [], healthSamples = [], maxScanMs = 0, healthMaxScanMs = 0, errors = 0, lastError = null;
 let knownUpdated = null, seenLoading, seenStore, seenTimer, unscanned = { images: 0, files: 0, opaque: 0 };
+let ocrWorker = null, captureStore = null, sweeperStarted = false, detectorOptions = null;
 const errorAppend = new Map(), errorSuppressed = new Map();
 const roles = new Set(["-", "system", "developer", "user", "assistant", "tool", "function", "model"]);
 const types = new Set(["-", "text", "input_text", "output_text", "tool_result", "tool_use", "function_call", "function_call_output", "thinking", "redacted_thinking", "reasoning", "image", "input_image", "image_url"]);
-function safeSource(source) {
-  const [role, type] = typeof source === "string" ? source.split("/") : [];
-  return `${roles.has(role) ? role : "-"}/${types.has(type) ? type : "-"}`;
+export function safeSource(source) {
+  const [role, type, ocr] = typeof source === "string" ? source.split("/") : [];
+  const base = `${roles.has(role) ? role : "-"}/${types.has(type) ? type : "-"}`;
+  return ocr === "ocr" ? `${base}/ocr` : base;
 }
 function warn() {
   if (Date.now() - warnedAt >= 60_000) { warnedAt = Date.now(); console.warn("[pii-guard] Observation failed; requests continue normally."); }
@@ -81,14 +83,96 @@ function reload() {
     let salt;
     try { salt = readFileSync(saltFile, "utf8").trim(); } catch (error) { if (error.code !== "ENOENT") throw error; salt = randomBytes(16).toString("hex"); mkdirSync(dirname(saltFile), { recursive: true, mode: 0o700 }); writeFileSync(saltFile, salt, { mode: 0o600 }); }
     detector = library.createDetector({ salt }); knownUpdated = null;
+    detectorOptions = { salt };
     console.info("[pii-guard] Known list missing; scanning patterns only.");
   } else {
     const known = JSON.parse(readFileSync(file, "utf8"));
     if (known.version !== 1 || !Array.isArray(known.items) || typeof known.salt !== "string" || !/^(?:[0-9a-f]{2})+$/i.test(known.salt) || known.items.some(item => !item || typeof item.name !== "string" || typeof item.value !== "string")) throw new Error("Invalid known list");
     detector = library.createDetector({ known: known.items, salt: known.salt });
     knownUpdated = new Date(mtime).toISOString();
+    detectorOptions = { known: known.items, salt: known.salt };
   }
   knownMtime = mtime;
+  if (ocrWorker) {
+    const old = ocrWorker;
+    ocrWorker = null;
+    try { void Promise.resolve(old.close()).catch(() => {}); } catch {}
+  }
+}
+function isOcrEnabled() {
+  if (process.env.PII_GUARD_OCR !== "1") return false;
+  if (!library) return true;
+  return typeof library.createOcrWorker === "function";
+}
+function isCaptureEnabled() {
+  return isOcrEnabled() && process.env.PII_GUARD_CAPTURE_IMAGES === "1";
+}
+function getCaptureConfig() {
+  const dir = join(dirname(eventsFile()), "images");
+  const rawBytes = Number(process.env.PII_GUARD_CAPTURE_MAX_BYTES);
+  const maxBytes = Number.isFinite(rawBytes) && rawBytes > 0 ? rawBytes : 2 * 1024 * 1024 * 1024;
+  const rawDays = Number(process.env.PII_GUARD_CAPTURE_TTL_DAYS);
+  const ttlDays = Number.isFinite(rawDays) && rawDays > 0 ? rawDays : 14;
+  const ttlMs = ttlDays * 24 * 60 * 60 * 1000;
+  return { dir, maxBytes, ttlMs };
+}
+function initCaptureStore() {
+  if (captureStore || !isCaptureEnabled()) return captureStore;
+  if (typeof library?.createCaptureStore !== "function") return null;
+  try {
+    const config = getCaptureConfig();
+    captureStore = library.createCaptureStore({
+      ...config,
+      onError() { failure("capture"); },
+    });
+    if (typeof captureStore.sweep === "function") {
+      void Promise.resolve(captureStore.sweep()).catch(() => {});
+    }
+    if (!sweeperStarted) {
+      sweeperStarted = true;
+      if (typeof library.startSweeper === "function") {
+        library.startSweeper(captureStore, 3_600_000);
+      } else {
+        const timer = setInterval(() => { void Promise.resolve(captureStore.sweep()).catch(() => {}); }, 3_600_000);
+        timer.unref();
+      }
+    }
+  } catch {
+    failure("capture");
+  }
+  return captureStore;
+}
+function getOcrWorker() {
+  if (!isOcrEnabled()) return null;
+  if (ocrWorker) return ocrWorker;
+  if (!detectorOptions) return null;
+  try {
+    const captureConfig = isCaptureEnabled() ? getCaptureConfig() : undefined;
+    const store = initCaptureStore();
+    const options = {
+      detector: detectorOptions,
+      ...(captureConfig ? { capture: captureConfig } : {}),
+    };
+    const deps = store ? { captureStore: store } : undefined;
+    ocrWorker = library.createOcrWorker(options, deps);
+    return ocrWorker;
+  } catch {
+    failure("ocr");
+    return null;
+  }
+}
+function getWorkerQueue() {
+  if (!ocrWorker) return undefined;
+  if (typeof ocrWorker.getQueueState === "function") return ocrWorker.getQueueState();
+  if (typeof ocrWorker.queueState === "function") return ocrWorker.queueState();
+  if (ocrWorker.queueState && typeof ocrWorker.queueState === "object") return ocrWorker.queueState;
+  if (typeof ocrWorker.pendingImages === "number" || typeof ocrWorker.pending === "number") {
+    return {
+      pending: ocrWorker.pendingImages ?? ocrWorker.pending,
+      queued: ocrWorker.queued ?? (Array.isArray(ocrWorker.queue) ? ocrWorker.queue.length : ocrWorker.queue),
+    };
+  }
+  return undefined;
 }
 function stats() {
   if (!requests) return;
@@ -192,6 +276,69 @@ function replace(text, findings, action, redacted) {
   }
   return out + text.slice(at);
 }
+function handleOcrResult(result, requestId, imageIndex, meta, body, config, model, ua) {
+  try {
+    const act = actionFor(config);
+    const ignore = new Set(Array.isArray(config?.ignore) ? config.ignore.filter(h => typeof h === "string" && /^[0-9a-f]{12}$/i.test(h)) : []);
+    const counts = {};
+    const hitRows = new Map();
+    const findings = Array.isArray(result?.findings) ? result.findings : [];
+
+    for (const f of findings) {
+      if (!f || typeof f.rule !== "string" || typeof f.hash !== "string") continue;
+      const ruleAct = act(f.rule);
+      if (ruleAct === "off") continue;
+
+      const isIgnored = ignore.has(f.hash);
+      const action = isIgnored ? "ignored" : "observe";
+      const lbl = f.name || f.rule;
+      if (!isIgnored) counts[lbl] = (counts[lbl] || 0) + 1;
+
+      const source = safeSource(f.source || result?.source || "-/-/ocr");
+      const key = `${f.hash}|${source}`;
+      if (!hitRows.has(key) || RANK[action] < RANK[hitRows.get(key).action]) {
+        hitRows.set(key, {
+          hash: f.hash,
+          rule: f.rule,
+          ...(f.name && { name: f.name }),
+          kind: f.kind,
+          source,
+          action,
+        });
+      }
+    }
+
+    const hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
+    const hitsDropped = hitRows.size > hits.length ? hitRows.size - hits.length : undefined;
+    const sha256Prefix = typeof result?.sha256 === "string" && result.sha256.length >= 12
+      ? result.sha256.slice(0, 12)
+      : (typeof result?.sha256 === "string" ? result.sha256 : undefined);
+
+    const event = {
+      ts: new Date().toISOString(),
+      type: "ocr",
+      requestId,
+      imageIndex,
+      endpoint: meta?.endpoint,
+      model: model || (body?.model ?? meta?.model),
+      ua,
+      status: result?.status || "empty",
+      reason: result?.reason,
+      cache: result?.cache || "none",
+      ocrMs: typeof result?.ocrMs === "number" ? result.ocrMs : 0,
+      queueMs: typeof result?.queueMs === "number" ? result.queueMs : 0,
+      sha256Prefix,
+      counts,
+      hits,
+      hitsDropped,
+    };
+
+    void append(event).catch(() => failure("write"));
+  } catch {
+    failure("ocr");
+  }
+}
+
 export async function observeRequest(body, meta = {}, config = {}) {
   if (!process.env.PII_GUARD_MODULE || config.mode === "off") return;
   let stage = "load";
@@ -207,7 +354,40 @@ export async function observeRequest(body, meta = {}, config = {}) {
     // Block stops only a value never seen before; once remembered it is redacted so the session can continue.
     // A readonly value cannot be redacted, so a block rule keeps blocking it.
     const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule) === "block" ? (seen.has(f.hash) && !f.readonly ? "redact" : "block") : act(f.rule);
-    const result = library.scanBody(body, detector, undefined, hasRedact ? (text, fs) => replace(text, fs, decide, redacted) : undefined);
+
+    const requestId = randomUUID();
+    const ua0 = (meta.userAgent || "").split(" ")[0];
+    const ua = detector.scan(ua0).length ? "[redacted]" : ua0;
+    let model = body?.model ?? meta.model;
+
+    let imageIndex = 0;
+    const worker = getOcrWorker();
+    const onImage = worker ? (image) => {
+      const idx = imageIndex++;
+      try {
+        const enqueued = worker.enqueue(image, (result) => {
+          try {
+            handleOcrResult(result, requestId, idx, meta, body, config, model, ua);
+          } catch {
+            failure("ocr");
+          }
+        });
+        if (!enqueued) {
+          handleOcrResult({
+            status: "skipped",
+            reason: "queue_full",
+            findings: [],
+            cache: "none",
+            ocrMs: 0,
+            queueMs: 0,
+          }, requestId, idx, meta, body, config, model, ua);
+        }
+      } catch {
+        failure("ocr");
+      }
+    } : undefined;
+
+    const result = library.scanBody(body, detector, onImage, hasRedact ? (text, fs) => replace(text, fs, decide, redacted) : undefined);
     const findings = result.findings;
     // Readonly thinking outside the active tool loop becomes removable, so it is treated like editable text.
     // Inside the active loop it stays: it is the provider's own signed output, so replaying it discloses nothing new.
@@ -215,7 +395,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     const drop = new Map();
     for (const f of findings) if (f.readonly) { const at = thinkingBlock(body, f); if (at) { delete f.readonly; drop.set(f, at); } }
     // meta.model is a pre-scan copy; log the body value, which redaction may have rewritten, and drop it if it held a finding.
-    const model = findings.some(f => /^\.?model$/.test(f.path)) ? "[redacted]" : body?.model ?? meta.model;
+    model = findings.some(f => /^\.?model$/.test(f.path)) ? "[redacted]" : body?.model ?? meta.model;
     for (const f of findings) foundActions.set(f, decide(f));
     const strip = new Map();
     for (const [f, at] of drop) if (foundActions.get(f) === "redact") { strip.set(`${at.i}:${at.j}`, at); redacted[label(f)] = (redacted[label(f)] || 0) + 1; }
@@ -242,8 +422,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     }
     const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
     withFindings++; totalWithFindings++;
-    const ua0 = (meta.userAgent || "").split(" ")[0], ua = detector.scan(ua0).length ? "[redacted]" : ua0;
-    const event = { ts: new Date().toISOString(), endpoint: meta.endpoint, model: model, ua, chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh, hits, ...(hitRows.size > hits.length && { hitsDropped: hitRows.size - hits.length }), ...(blocked.length && { blocked }), ...(Object.keys(redacted).length && { redacted }), ...(Object.keys(leaked).length && { leaked }), ignored: findings.filter(f => foundActions.get(f) === "ignored").length };
+    const event = { ts: new Date().toISOString(), requestId, endpoint: meta.endpoint, model: model, ua, chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh, hits, ...(hitRows.size > hits.length && { hitsDropped: hitRows.size - hits.length }), ...(blocked.length && { blocked }), ...(Object.keys(redacted).length && { redacted }), ...(Object.keys(leaked).length && { leaked }), ignored: findings.filter(f => foundActions.get(f) === "ignored").length };
     markSeen(newHashes);
     void append(event).catch(() => failure("write"));
     const summary = Object.entries(counts).map(([k, n]) => `${k}=${n}`).join(", ");
@@ -280,6 +459,12 @@ export async function testText(text, config, at = "user") {
 }
 export function health() {
   const sorted = healthSamples.slice().sort((a, b) => a - b);
-  return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0 };
+  const q = getWorkerQueue();
+  const ocr = {
+    enabled: isOcrEnabled(),
+    capture: isCaptureEnabled(),
+    ...(q !== undefined && { queue: q }),
+  };
+  return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr };
 }
 export function eventsFile() { return process.env.PII_GUARD_EVENTS || join(homedir(), ".9router/pii-guard/events.jsonl"); }

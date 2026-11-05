@@ -69,13 +69,14 @@ const RECENT_MINUTES = [
   { value: "240", label: "240 min" },
 ];
 
-const SOURCE_BUCKETS = ["User", "Assistant", "Tool result", "System", "Thinking"];
+const SOURCE_BUCKETS = ["User", "Assistant", "Tool result", "System", "Thinking", "Image"];
 
 // Raw sources are "role/type" (e.g. "user/tool_result", "-/input_text"). Bucket by role, then by type.
 function sourceBucket(source) {
   const [role = "", type = ""] = String(source || "").toLowerCase().split("/");
   if (type.includes("thinking") || type.includes("reasoning")) return "Thinking";
   if (type === "tool_result" || type === "function_call_output") return "Tool result";
+  if (type.includes("image")) return "Image";
   if (role === "user") return "User";
   if (role === "assistant" || role === "model") return "Assistant";
   if (role === "system" || role === "developer") return "System";
@@ -109,37 +110,36 @@ const uptime = value => {
 function humanizeSource(source) {
   if (!source || source === "-" || source === "-/-") return "Unknown";
   const parts = source.includes(" · ") ? source.split(" · ") : (source.includes("/") ? source.split("/") : null);
-  if (parts && parts.length === 2) {
+  if (parts && (parts.length === 2 || (parts.length === 3 && parts[2] === "ocr"))) {
     const roleDash = parts[0] === "-" || !parts[0] || parts[0].toLowerCase() === "unknown";
     const typeDash = parts[1] === "-" || !parts[1];
-    if (roleDash && typeDash) return "Unknown";
-    if (typeDash) return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    if (roleDash && typeDash) return parts[2] ? `Unknown / ${parts[2]}` : "Unknown";
     const role = roleDash ? "Unknown" : parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    const type = parts[1].replace(/_/g, " ");
-    return `${role} · ${type}`;
+    const type = typeDash ? "" : parts[1].replace(/_/g, " ");
+    const ocrSuffix = parts[2] ? ` / ${parts[2]}` : "";
+    return type ? `${role} · ${type}${ocrSuffix}` : `${role}${ocrSuffix}`;
   }
   const clean = source.replace(/_/g, " ");
   return clean === "-" ? "Unknown" : clean;
 }
 
-
 function shortSource(s) {
   if (!s || s === "-" || s === "-/-") return "Unknown";
   const parts = s.includes(" · ") ? s.split(" · ") : (s.includes("/") ? s.split("/") : null);
-  if (parts && parts.length === 2) {
+  if (parts && (parts.length === 2 || (parts.length === 3 && parts[2] === "ocr"))) {
     const roleDash = parts[0] === "-" || !parts[0] || parts[0].toLowerCase() === "unknown";
     const typeDash = parts[1] === "-" || !parts[1];
-    if (roleDash && typeDash) return "Unknown";
+    if (roleDash && typeDash) return parts[2] ? `?·${parts[2]}` : "Unknown";
     const r = roleDash ? "Unknown" : parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    if (typeDash) return r;
-    let t = parts[1];
+    let t = parts[1] || "";
     if (t.startsWith("tool")) t = "tool";
     else if (t.startsWith("function") || t.startsWith("func")) t = "func";
     else if (t.includes("think") || t.includes("reason")) t = "thinking";
     else if (t.includes("image")) t = "image";
     else if (t.includes("text")) t = "text";
     else t = t.replace(/_/g, " ");
-    return `${r}·${t}`;
+    const ocrSuffix = parts[2] ? `/ocr` : "";
+    return t ? `${r}·${t}${ocrSuffix}` : `${r}${ocrSuffix}`;
   }
   const str = s.replace(/_/g, " ");
   if (str === "-" || str === "other") return "Unknown";
@@ -620,6 +620,10 @@ export default function PiiGuardClient() {
     available,
   } = state;
 
+  const ocrHealth = health?.ocr;
+  const ocrSummary = summary?.ocr;
+  const showOcr = !!ocrHealth?.enabled || (ocrSummary?.totalImages || 0) > 0;
+
   const knownUpdated = health?.knownUpdated;
   const activeRangeLabel = rangeLabel(rangePreset, customFromMs, customToMs);
 
@@ -861,6 +865,65 @@ export default function PiiGuardClient() {
           </div>
         </div>
       </Card>
+
+      {/* Images (OCR) Card */}
+      {showOcr && (
+        <Card>
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h3 className="font-semibold text-text-main flex items-center gap-2">
+              <span className="material-symbols-outlined text-[18px] text-text-muted">image_search</span>
+              Images (OCR)
+            </h3>
+            <div className="flex items-center gap-2 flex-wrap">
+              {ocrHealth?.queue !== undefined && (
+                <span className="text-xs text-text-muted font-medium">Queue: {count(ocrHealth.queue)}</span>
+              )}
+              {ocrHealth?.capture && (
+                <Badge size="sm" variant="info">Capture on</Badge>
+              )}
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block size-2.5 rounded-full ${ocrHealth?.enabled ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-neutral-400"}`}
+                  aria-hidden="true"
+                />
+                <span className="text-xs font-medium text-text-main">{ocrHealth?.enabled ? "Enabled" : "Disabled"}</span>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+              <span className="text-xs text-text-muted block font-medium">Images scanned</span>
+              <strong className="block text-base font-semibold text-text-main mt-0.5">{count(ocrSummary?.totalImages)}</strong>
+              <span className="text-[11px] text-text-muted block mt-0.5">
+                {count(ocrSummary?.imagesWithHits)} with hits
+              </span>
+            </div>
+            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+              <span className="text-xs text-text-muted block font-medium">Status</span>
+              <strong className="block text-base font-semibold text-text-main mt-0.5">{count(ocrSummary?.status?.scanned)} ok</strong>
+              <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={`scanned: ${ocrSummary?.status?.scanned || 0}, partial: ${ocrSummary?.status?.partial || 0}, empty: ${ocrSummary?.status?.empty || 0}, failed: ${ocrSummary?.status?.failed || 0}, skipped: ${ocrSummary?.status?.skipped || 0}`}>
+                {ocrSummary?.status?.partial ? `${count(ocrSummary.status.partial)} partial · ` : ""}{count(ocrSummary?.status?.empty)} empty{ocrSummary?.status?.skipped ? ` · ${count(ocrSummary.status.skipped)} skipped` : ""}{ocrSummary?.status?.failed ? ` · ${count(ocrSummary.status.failed)} failed` : ""}
+              </span>
+            </div>
+            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+              <span className="text-xs text-text-muted block font-medium">Cache hit rate</span>
+              <strong className="block text-base font-semibold text-text-main mt-0.5">
+                {Math.round((ocrSummary?.cacheHitRate || 0) * 100)}%
+              </strong>
+              <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={`hit: ${ocrSummary?.cache?.hit || 0}, miss: ${ocrSummary?.cache?.miss || 0}, coalesced: ${ocrSummary?.coalesced || 0}`}>
+                {count(ocrSummary?.cache?.hit)} hit · {count(ocrSummary?.cache?.miss)} miss · {count(ocrSummary?.coalesced)} coalesced
+              </span>
+            </div>
+            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+              <span className="text-xs text-text-muted block font-medium">OCR latency</span>
+              <strong className="block text-base font-semibold text-text-main mt-0.5 font-mono">
+                p95 {count(ocrSummary?.p95OcrMs)} ms
+              </strong>
+              <span className="text-[11px] text-text-muted block mt-0.5">over cache misses</span>
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* 4. Rule Groups Card */}
       <Card>
