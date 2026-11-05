@@ -379,23 +379,16 @@ describe("handleImageGenerationCore", () => {
     });
   });
 
-  it("generates image with Codex gpt-image-2.5 tool model", async () => {
-    global.fetch.mockResolvedValueOnce(
-      new Response(
-        [
-          "event: response.output_item.done",
-          'data: {"item":{"type":"image_generation_call","result":"base64codeximage"}}',
-          "",
-          "",
-        ].join("\n"),
-        { status: 200, headers: { "Content-Type": "text/event-stream" } }
-      )
-    );
+  it("generates image with Codex gpt-image-2.5 native OAuth endpoint", async () => {
+    global.fetch.mockResolvedValueOnce(Response.json({
+      created: 123,
+      data: [{ b64_json: "base64codeximage" }],
+    }));
 
     const result = await handleImageGenerationCore({
       body: {
         prompt: "A futuristic city",
-        size: "1024x1024",
+        size: "auto",
         output_format: "png",
       },
       modelInfo: { provider: "codex", model: "gpt-image-2.5" },
@@ -409,12 +402,11 @@ describe("handleImageGenerationCore", () => {
     expect(result.success).toBe(true);
     const fetchCall = global.fetch.mock.calls[0];
     const requestBody = JSON.parse(fetchCall[1].body);
-    expect(requestBody.model).toBe("gpt-6-sol");
-    expect(requestBody.tools).toEqual([
-      { type: "image_generation", output_format: "png", size: "1024x1024", action: "generate", model: "gpt-image-2.5" },
-    ]);
-    expect(requestBody.tool_choice).toEqual({ type: "image_generation" });
-    expect(requestBody.reasoning).toEqual({ effort: "medium", summary: "auto" });
+    expect(fetchCall[0]).toBe("https://chatgpt.com/backend-api/codex/images/generations");
+    expect(requestBody.model).toBe("gpt-image-2.5");
+    expect(requestBody.prompt).toBe("A futuristic city");
+    expect(requestBody.tools).toBeUndefined();
+    expect(requestBody.reasoning).toBeUndefined();
 
     const responseBody = await result.response.json();
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
