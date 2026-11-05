@@ -842,7 +842,8 @@ export default function ProfilePage() {
         </Card>
 
         {/* Language */}
-        <Card>
+        {/* fork: language card hidden */}
+        {false && (<Card>
           <div className="flex items-center gap-3 mb-4">
             <div className="size-10 rounded-lg bg-blue-500/10 text-blue-500 flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-[20px]">language</span>
@@ -857,7 +858,7 @@ export default function ProfilePage() {
             <span className="text-sm text-text-muted">Display language</span>
             <span className="text-2xl">{LOCALE_FLAGS[locale] || "🌐"}</span>
           </button>
-        </Card>
+        </Card>)}
 
         {/* Security */}
         <Card>
@@ -942,7 +943,8 @@ export default function ProfilePage() {
         </Card>
 
         {/* Single Sign-On (SSO) */}
-        <Card>
+        {/* fork: SSO card hidden (single user on Tailscale; password login only) */}
+        {false && (<Card>
           <button
             type="button"
             onClick={() => setOidcExpanded((v) => !v)}
@@ -1433,7 +1435,7 @@ export default function ProfilePage() {
               )}
             </div>
           )}
-        </Card>
+        </Card>)}
 
         {/* Routing Preferences */}
         <Card>

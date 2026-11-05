@@ -294,6 +294,8 @@ export default function Sidebar({ onClose }) {
             })}
 
             {/* Remote */}
+            {/* fork: 9Remote and 9English promo links hidden */}
+            {false && (<>
             <a
               href="https://9remote.cc"
               target="_blank"
@@ -329,6 +331,7 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">9English</span>
             </a>
+            </>)}
 
             {/* Settings */}
             <Link
