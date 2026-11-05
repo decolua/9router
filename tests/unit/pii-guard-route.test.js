@@ -16,7 +16,18 @@ describe("route range", () => {
     const res = await GET(req);
     expect(res.status).toBe(400);
   });
-  it("events pagination returns nextBefore and skips stats", async () => {
+  it("events pagination keeps events that share a timestamp across pages", async () => {
+    const ts = new Date(Date.now() - 5000).toISOString();
+    const lines = [1, 2, 3].map(i => ({ ts, hits: [{ hash: `h${i}`, rule: "r", action: "observe" }] }));
+    await writeFile("/tmp/ev.jsonl", lines.map(l => JSON.stringify(l)).join("\n") + "\n");
+    const first = await (await GET(new Request("http://localhost/api/pii-guard?events=1&limit=2"))).json();
+    expect(first.events).toHaveLength(2);
+    const { before, skip } = first.next;
+    const second = await (await GET(new Request(`http://localhost/api/pii-guard?events=1&limit=2&before=${before}&skip=${skip}`))).json();
+    expect(second.events).toHaveLength(1);
+    expect(new Set([...first.events, ...second.events].map(e => e.hits[0].hash)).size).toBe(3);
+  });
+  it("events pagination returns a cursor and skips stats", async () => {
     const now = Date.now();
     const lines = [
       { ts: new Date(now - 1000).toISOString(), type: "stats", counts: { a: 1 } },
@@ -29,6 +40,6 @@ describe("route range", () => {
     const body = await res.json();
     expect(body.events).toHaveLength(1);
     expect(body.events[0].type).not.toBe("stats");
-    expect(body.nextBefore).not.toBeNull();
+    expect(body.next).not.toBeNull();
   });
 });

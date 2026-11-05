@@ -10,6 +10,8 @@ const WHERES = ["user", "system", "assistant", "tool_result", "thinking"];
 const HASH = /^[0-9a-f]{12}$/;
 const MAX_IGNORE = 1000;
 
+const DAY = 24 * 60 * 60 * 1000;
+const MAX_DAYS = 90;
 const CHUNK = 1024 * 1024;
 // ponytail: reads at most 64 MiB back (~12 days at 5 MB/day). Upgrade path: rotate events.jsonl or keep a daily index.
 const CAP = 64 * 1024 * 1024;
@@ -34,17 +36,30 @@ function parseLines(buf) {
   return out;
 }
 
-// Returns { events (newest first), truncated }. truncated: the cap stopped the read before `fromMs`.
-export async function loadEvents(fromMs) {
+// Returns { events (newest first, ts >= fromMs), truncated }. truncated: the cap stopped the read before `fromMs`.
+// Calls run one at a time: polls, the events pager and two tabs share one cache.
+let queue = Promise.resolve();
+export function loadEvents(fromMs) {
+  const run = queue.then(() => readEvents(fromMs));
+  queue = run.catch(() => {});
+  return run;
+}
+
+async function readEvents(fromMs) {
   const file = eventsFile();
   let handle;
   try {
     handle = await open(file, "r");
     const { ino, birthtimeMs, size } = await handle.stat();
-    if (!cache || cache.file !== file || cache.ino !== ino || cache.born !== birthtimeMs || size < cache.end) cache = { file, ino, born: birthtimeMs, start: size, end: size, events: [] };
+    if (!cache || cache.file !== file || cache.ino !== ino || cache.born !== birthtimeMs || size < cache.end) {
+      // Start at the last complete line; a half-written tail is read on the next call.
+      const tail = await readRange(handle, Math.max(0, size - CHUNK), size);
+      const end = size - (tail.length - (tail.lastIndexOf(0x0a) + 1));
+      cache = { file, ino, born: birthtimeMs, start: end, end, events: [] };
+    }
     if (size > cache.end) {
       const buf = await readRange(handle, cache.end, size);
-      const cut = buf.lastIndexOf(0x0a) + 1; // a half-written last line waits for the next poll
+      const cut = buf.lastIndexOf(0x0a) + 1;
       cache.events.push(...parseLines(buf.subarray(0, cut)));
       cache.end += cut;
     }
@@ -59,7 +74,16 @@ export async function loadEvents(fromMs) {
       cache.start = from + cut;
       back = CHUNK;
     }
-    return { events: cache.events.slice().reverse(), truncated: cache.start > 0 && !(oldest() <= fromMs) };
+    const truncated = cache.start > 0 && !(oldest() <= fromMs);
+    const out = [];
+    for (let i = cache.events.length - 1; i >= 0; i--) {
+      const ts = Date.parse(cache.events[i].ts);
+      if (ts < fromMs) break;
+      out.push(cache.events[i]);
+    }
+    // Appends grow the cache past CAP over a long uptime; rebuild it on the next call.
+    if (cache.end - cache.start > CAP * 1.5) cache = null;
+    return { events: out, truncated };
   } catch { return { events: [], truncated: false }; }
   finally { await handle?.close().catch(() => {}); }
 }
@@ -71,10 +95,10 @@ function validateRange(from, to) {
   if (from !== undefined && (!Number.isInteger(f) || String(from).trim() === "")) return "bad";
   if (to !== undefined && (!Number.isInteger(t) || String(to).trim() === "")) return "bad";
   const now = Date.now();
-  const fMs = from === undefined ? now - 24*60*60*1000 : f;
+  const fMs = from === undefined ? now - DAY : f;
   const tMs = to === undefined ? now : t;
   if (!(fMs < tMs)) return "bad";
-  if (tMs - fMs > 90*24*60*60*1000) return "bad";
+  if (tMs - fMs > MAX_DAYS * DAY) return "bad";
   return { from: fMs, to: tMs };
 }
 
@@ -82,7 +106,7 @@ async function state(fromMs, toMs) {
   const settings = await getSettings();
   const available = await ready();
   const now = Date.now();
-  const from = Number.isFinite(fromMs) ? fromMs : now - 24*60*60*1000;
+  const from = Number.isFinite(fromMs) ? fromMs : now - DAY;
   const to = Number.isFinite(toMs) ? toMs : now;
   const { events, truncated } = await loadEvents(from);
   const config = { ...settings.piiGuard, ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
@@ -92,37 +116,35 @@ async function state(fromMs, toMs) {
 
 export async function GET(request) {
   const url = new URL(request.url);
-  // events pagination mode
+  // Events pager: newest first, stats skipped. Cursor `before` (ms) + `skip` (events at exactly that ms already sent),
+  // so events sharing a timestamp across a page boundary are not lost.
   if (url.searchParams.get("events") === "1") {
-    const beforeRaw = url.searchParams.get("before");
-    const limitRaw = url.searchParams.get("limit");
-    let before = beforeRaw === null ? Infinity : Number(beforeRaw);
-    let limit = limitRaw === null ? 50 : Number(limitRaw);
-    if (beforeRaw !== null && (!Number.isInteger(before))) {
-      return NextResponse.json({ error: "Bad before" }, { status: 400 });
-    }
+    const num = (k, d) => { const v = url.searchParams.get(k); return v === null ? d : Number(v); };
+    const before = num("before", Infinity), skip = num("skip", 0);
+    if ((before !== Infinity && !Number.isInteger(before)) || !Number.isInteger(skip) || skip < 0) return NextResponse.json({ error: "Invalid cursor" }, { status: 400 });
+    let limit = num("limit", 50);
     if (!Number.isInteger(limit) || limit < 1) limit = 50;
     limit = Math.min(limit, 200);
-    // range from query? use from/to if provided
-    const fromMs = url.searchParams.get("from") !== null ? Number(url.searchParams.get("from")) : undefined;
-    const toMs = url.searchParams.get("to") !== null ? Number(url.searchParams.get("to")) : undefined;
-    const vr = validateRange(fromMs === undefined ? undefined : url.searchParams.get("from"), toMs === undefined ? undefined : url.searchParams.get("to"));
-    // if from/to invalid, default last 24h
-    const range = vr && vr !== "bad" ? vr : { from: Date.now() - 24*60*60*1000, to: Date.now() };
+    const vr = validateRange(url.searchParams.get("from") ?? undefined, url.searchParams.get("to") ?? undefined);
+    if (vr === "bad") return NextResponse.json({ error: "Invalid range" }, { status: 400 });
+    const range = vr || { from: Date.now() - DAY, to: Date.now() };
     const { events } = await loadEvents(range.from);
-    // newest first already
-    const filtered = events.filter(e => {
+    const page = [];
+    let skipped = 0;
+    for (const e of events) {
       const ts = Date.parse(e?.ts);
-      return Number.isFinite(ts) && ts >= range.from && ts <= range.to && e.type !== "stats";
-    });
-    let page = filtered;
-    if (Number.isFinite(before) && before !== Infinity) {
-      page = page.filter(e => Date.parse(e?.ts) < before);
+      if (!(ts <= range.to) || e.type === "stats" || ts > before) continue;
+      if (ts === before && skipped < skip) { skipped++; continue; }
+      page.push(e);
+      if (page.length === limit) break;
     }
-    const slice = page.slice(0, limit);
-    const last = slice[slice.length - 1];
-    const nextBefore = slice.length === limit && last ? Date.parse(last.ts) : null;
-    return NextResponse.json({ events: slice, nextBefore });
+    const last = page.at(-1);
+    let next = null;
+    if (page.length === limit) {
+      const ts = Date.parse(last.ts);
+      next = { before: ts, skip: page.filter(e => Date.parse(e.ts) === ts).length + (ts === before ? skip : 0) };
+    }
+    return NextResponse.json({ events: page, next });
   }
 
   const fromRaw = url.searchParams.get("from");
@@ -143,7 +165,7 @@ export async function POST(request) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   const current = (await getSettings()).piiGuard || { mode: "observe", rules: {}, ignore: [] };
   if (typeof body.test === "string") {
-    if (body.test.length > 100_000) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    if (body.test.length > 100_000) return NextResponse.json({ error: "Text too long" }, { status: 400 });
     const config = MODES.includes(body.testMode) ? { mode: body.testMode, rules: {} } : current;
     const result = await testText(body.test, config, WHERES.includes(body.testWhere) ? body.testWhere : "user");
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Scanner unavailable" }, { status: 503 });
@@ -162,14 +184,16 @@ export async function POST(request) {
     } else {
       if (!Number.isInteger(body.ignoreRecent) || body.ignoreRecent < 1 || body.ignoreRecent > 1440) return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
       const cutoff = Date.now() - body.ignoreRecent * 60_000;
-      const { events, truncated } = await loadEvents(cutoff);
-      if (truncated && !(Date.parse(events.at(-1)?.ts) <= cutoff)) return NextResponse.json({ error: "Event log window too short to tell which values are new" }, { status: 409 });
-      hashes = summarize(events, { since: cutoff, until: Date.now() }).groups.filter(g => Date.parse(g.firstSeen) >= cutoff).map(g => g.hash);
+      // Look back a full day so a value first seen before the cutoff does not count as new.
+      const since = Date.now() - DAY;
+      const { events, truncated } = await loadEvents(since);
+      if (truncated) return NextResponse.json({ error: "Event log window too short to tell which values are new" }, { status: 409 });
+      hashes = summarize(events, { since, until: Date.now() }).groups.filter(g => Date.parse(g.firstSeen) >= cutoff).map(g => g.hash);
     }
     const drop = new Set(hashes);
     if (body.on) {
       const merged = [...new Set([...next.ignore, ...hashes])];
-      if (merged.length > MAX_IGNORE) return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
+      if (merged.length > MAX_IGNORE) return NextResponse.json({ error: `Ignore list is limited to ${MAX_IGNORE} values` }, { status: 400 });
       next.ignore = merged;
     } else next.ignore = next.ignore.filter(hash => !drop.has(hash));
   }

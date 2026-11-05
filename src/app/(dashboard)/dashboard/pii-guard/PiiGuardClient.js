@@ -183,7 +183,7 @@ function readUrl() {
   if (typeof window === "undefined") return null;
   const p = new URLSearchParams(window.location.search);
   return {
-    range: p.get("range") || "24h",
+    range: PRESETS.some(x => x.id === p.get("range")) && (p.get("range") !== "custom" || (p.get("from") && p.get("to"))) ? p.get("range") : "24h",
     from: p.get("from") ? Number(p.get("from")) : null,
     to: p.get("to") ? Number(p.get("to")) : null,
     group: p.get("group") || "all",
@@ -300,9 +300,10 @@ export default function PiiGuardClient() {
   const tableRef = useRef(null);
   const sentinelRef = useRef(null);
   const fingerprintRef = useRef("");
+  const loadIdRef = useRef(0);
+  const eventsIdRef = useRef(0);
   const debounceRef = useRef(null);
 
-  const range = computeRange(rangePreset, customFromMs, customToMs);
   const endsAtNow = ENDS_AT_NOW.has(rangePreset);
 
   // debounce search
@@ -335,18 +336,21 @@ export default function PiiGuardClient() {
   const load = useCallback(() => {
     if (typeof document !== "undefined" && document.hidden) return;
     const r = computeRange(rangePreset, customFromMs, customToMs);
+    const id = ++loadIdRef.current;
     fetch(`/api/pii-guard?from=${r.from}&to=${r.to}`)
       .then(async res => {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        // Skip the re-render when a poll brings nothing new (range and health move every call).
-        const fp = JSON.stringify([data.config, data.summary?.groups, data.summary?.byRule, data.summary?.errors24h, data.summary?.truncated]);
+        if (id !== loadIdRef.current) return; // a newer request (range change) owns the state
+        // Skip the re-render when a poll brings nothing new. summary.range moves every call, so leave it out.
+        const { range: _range, ...summary } = data.summary || {};
+        const fp = JSON.stringify([data.config, data.health, data.rules, summary]);
         if (fp === fingerprintRef.current) return;
         fingerprintRef.current = fp;
         setState(data);
         setError("");
       })
-      .catch(e => setError(e.message));
+      .catch(e => { if (id === loadIdRef.current) setError(e.message); });
   }, [rangePreset, customFromMs, customToMs]);
 
   // initial + polling
@@ -445,9 +449,8 @@ export default function PiiGuardClient() {
       if (groupFilter !== "all" && gGroup !== groupFilter) return false;
       if (ruleFilter !== "all" && group.rule !== ruleFilter) return false;
       if (actionFilter !== "all") {
-        const a = group.action;
-        const want = actionFilter === "blocked" ? "block" : actionFilter;
-        if (a !== want) return false;
+        if (actionFilter === "leaked") { if (!(group.actions || []).includes("leaked")) return false; }
+        else if (group.action !== (actionFilter === "blocked" ? "block" : actionFilter)) return false;
       }
       if (whereFilter !== "all") {
         const buckets = (group.sources || []).map(sourceBucket);
@@ -504,18 +507,21 @@ export default function PiiGuardClient() {
   }, [state?.summary?.groups]);
 
   // events pagination
-  const loadEventsPage = useCallback(async (before) => {
+  const loadEventsPage = useCallback(async (cursor) => {
+    const id = ++eventsIdRef.current;
     setEventsLoading(true);
     try {
       const r = computeRange(rangePreset, customFromMs, customToMs);
-      const url = `/api/pii-guard?events=1&limit=50&from=${r.from}&to=${r.to}` + (before ? `&before=${before}` : "");
+      const url = `/api/pii-guard?events=1&limit=50&from=${r.from}&to=${r.to}` + (cursor ? `&before=${cursor.before}&skip=${cursor.skip}` : "");
       const res = await fetch(url);
       const data = await res.json();
-      if (before) setEventsList(prev => [...prev, ...(data.events || [])]);
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (id !== eventsIdRef.current) return; // range changed while this page loaded
+      if (cursor) setEventsList(prev => [...prev, ...(data.events || [])]);
       else setEventsList(data.events || []);
-      setNextBefore(data.nextBefore);
-    } catch (e) { setError(e.message); }
-    finally { setEventsLoading(false); }
+      setNextBefore(data.next);
+    } catch (e) { if (id === eventsIdRef.current) setError(e.message); }
+    finally { if (id === eventsIdRef.current) setEventsLoading(false); }
   }, [rangePreset, customFromMs, customToMs]);
 
   useEffect(() => {
@@ -667,7 +673,10 @@ export default function PiiGuardClient() {
             <input type="datetime-local" value={customToInput} onChange={e => setCustomToInput(e.target.value)} className="py-2 px-3 text-sm bg-surface-2 rounded-[10px] border border-transparent" />
             <Button size="sm" variant="secondary" onClick={() => {
               const f = inputToMs(customFromInput); const t = inputToMs(customToInput);
-              if (f && t && f < t) { setCustomFromMs(f); setCustomToMs(t); }
+              if (!f || !t) setError("Pick both a start and an end.");
+              else if (f >= t) setError("The start must be before the end.");
+              else if (t - f > 90 * 86400000) setError("A range can be at most 90 days.");
+              else { setError(""); setCustomFromMs(f); setCustomToMs(t); }
             }}>Apply</Button>
           </div>
         )}
@@ -699,7 +708,7 @@ export default function PiiGuardClient() {
         <Card className={`p-4 ${actionFilter === "leaked" ? "border-red-500/40" : ""}`}>
           <button
             type="button"
-            onClick={() => setActionFilter("leaked")}
+            onClick={() => setActionFilter(a => a === "leaked" ? "all" : "leaked")}
             aria-pressed={actionFilter === "leaked"}
             className="w-full text-left cursor-pointer"
           >
@@ -957,19 +966,27 @@ export default function PiiGuardClient() {
               <thead className="text-left text-xs uppercase text-text-muted border-b border-border">
                 <tr>
                   <th className="py-2.5 pr-3 font-semibold w-8"><span className="sr-only">Select</span></th>
-                  <th className="py-2.5 pr-3 font-semibold cursor-pointer" onClick={() => handleSort("name")} aria-sort={ariaSort("name")}>
-                    Name {sortKey === "name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  <th className="py-2.5 pr-3 font-semibold" aria-sort={ariaSort("name")}>
+                    <button type="button" className="uppercase font-semibold hover:text-text-main" onClick={() => handleSort("name")}>
+                      Name {sortKey === "name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                    </button>
                   </th>
                   <th className="py-2.5 pr-3 font-semibold">Where</th>
                   <th className="py-2.5 pr-3 font-semibold">What happened</th>
-                  <th className="py-2.5 pr-3 font-semibold cursor-pointer" onClick={() => handleSort("firstSeen")} aria-sort={ariaSort("firstSeen")}>
-                    First seen {sortKey === "firstSeen" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  <th className="py-2.5 pr-3 font-semibold" aria-sort={ariaSort("firstSeen")}>
+                    <button type="button" className="uppercase font-semibold hover:text-text-main" onClick={() => handleSort("firstSeen")}>
+                      First seen {sortKey === "firstSeen" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                    </button>
                   </th>
-                  <th className="py-2.5 pr-3 font-semibold cursor-pointer" onClick={() => handleSort("lastSeen")} aria-sort={ariaSort("lastSeen")}>
-                    Last seen {sortKey === "lastSeen" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  <th className="py-2.5 pr-3 font-semibold" aria-sort={ariaSort("lastSeen")}>
+                    <button type="button" className="uppercase font-semibold hover:text-text-main" onClick={() => handleSort("lastSeen")}>
+                      Last seen {sortKey === "lastSeen" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                    </button>
                   </th>
-                  <th className="py-2.5 pr-3 font-semibold cursor-pointer" onClick={() => handleSort("turns")} aria-sort={ariaSort("turns")}>
-                    Turns {sortKey === "turns" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                  <th className="py-2.5 pr-3 font-semibold" aria-sort={ariaSort("turns")}>
+                    <button type="button" className="uppercase font-semibold hover:text-text-main" onClick={() => handleSort("turns")}>
+                      Turns {sortKey === "turns" ? (sortDir === "asc" ? "▲" : "▼") : ""}
+                    </button>
                   </th>
                   <th className="py-2.5 text-right font-semibold">Action</th>
                 </tr>
