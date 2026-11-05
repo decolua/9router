@@ -15,8 +15,10 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
   const missOcrMs = [];
   let imagesWithHits = 0;
   let totalOcrEvents = 0;
+  const recentOcr = [], reasons = Object.create(null);
 
   for (const event of Array.isArray(events) ? events : []) {
+    if (event?.type === "test" || event?.test === true) continue;
     const ts = Date.parse(event?.ts);
     if (!Number.isFinite(ts) || ts < sinceMs || ts > untilMs) continue;
     if (event.type === "error") { errors24h += Number.isInteger(event.count) && event.count > 0 ? event.count : 1; continue; }
@@ -24,6 +26,8 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
 
     if (event.type === "ocr") {
       totalOcrEvents++;
+      if (event.reason) reasons[event.reason] = (reasons[event.reason] || 0) + 1;
+      recentOcr.push({ ts: event.ts, requestId: event.requestId, model: event.model, endpoint: event.endpoint, imageIndex: event.imageIndex, status: event.status, ...(event.reason && { reason: event.reason }), cache: event.cache, ocrMs: event.ocrMs, mode: event.mode, rules: [...new Set((Array.isArray(event.hits) ? event.hits : []).filter(hit => hit && hit.action !== "ignored").map(hit => hit.name || hit.rule).filter(Boolean))] });
       if (Object.hasOwn(ocrStatus, event.status)) {
         ocrStatus[event.status]++;
       }
@@ -122,6 +126,8 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
     p95OcrMs,
     imagesWithHits,
     totalImages: totalOcrEvents,
+    recent: recentOcr.sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)).slice(0, 20),
+    reasons,
   };
 
   return {

@@ -149,6 +149,24 @@ function shortSource(s) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
+function highlightMatches(text, findings) {
+  const source = String(text || "");
+  const ranges = [];
+  let from = 0;
+  (findings || []).forEach(f => {
+    if (!f.match) return;
+    const start = source.indexOf(f.match, from);
+    if (start < 0) return;
+    ranges.push([start, start + f.match.length]);
+    from = start + f.match.length;
+  });
+  const parts = [];
+  let at = 0;
+  ranges.forEach(([start, end], i) => { if (start > at) parts.push(source.slice(at, start)); parts.push(<mark key={i} className="rounded bg-yellow-500/20 px-0.5 text-inherit">{source.slice(start, end)}</mark>); at = end; });
+  parts.push(source.slice(at));
+  return parts;
+}
+
 function PlaceholderText({ text }) {
   const parts = String(text ?? "").split(/(\{\{pii:[^}]+\}\})/g);
   return (
@@ -311,7 +329,17 @@ export default function PiiGuardClient() {
   const [error, setError] = useState("");
   const [text, setText] = useState("My mobile number is {{pii:in_phone#da6f85}} and PAN is ABCPE1234F.");
   const [result, setResult] = useState(null);
+  const [scannerTab, setScannerTab] = useState("text");
+  const [imageData, setImageData] = useState(null);
+  const [imagePreview, setImagePreview] = useState("");
+  const [imageName, setImageName] = useState("");
+  const [samples, setSamples] = useState([]);
+  const [selectedSample, setSelectedSample] = useState("");
+  const [testQuality, setTestQuality] = useState("enhanced");
+  const [imageResult, setImageResult] = useState(null);
+  const [testBusy, setTestBusy] = useState(false);
   const [testMode, setTestMode] = useState("current");
+  const fileInputRef = useRef(null);
   const [testWhere, setTestWhere] = useState("user");
   const [selected, setSelected] = useState(() => new Set());
   const [recentMinutes, setRecentMinutes] = useState("15");
@@ -400,7 +428,38 @@ export default function PiiGuardClient() {
   const confirmBlock = mode => mode !== "block" || window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?");
   const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
   const runTest = () => call({ test: text, testMode, testWhere }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
-
+  const [showTests, setShowTests] = useState(false);
+  const acceptImage = file => {
+    if (!file) return;
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 10 * 1024 * 1024) {
+      setError("Choose a PNG, JPEG or WebP image up to 10 MiB.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const value = String(reader.result || "");
+      const data = value.slice(value.indexOf(",") + 1);
+      if (!data) { setError("Could not read image."); return; }
+      setImageData(data);
+      setImagePreview(value);
+      setImageName(file.name);
+      setSelectedSample("");
+      setImageResult(null);
+      setError("");
+    };
+    reader.onerror = () => setError("Could not read image.");
+    reader.readAsDataURL(file);
+  };
+  useEffect(() => {
+    fetch("/api/pii-guard?samples=1").then(r => r.ok ? r.json() : []).then(data => setSamples(Array.isArray(data) ? data : data.samples || [])).catch(() => setSamples([]));
+  }, []);
+  const runImageTest = () => {
+    if (!imageData && !selectedSample) return;
+    const testImage = imageData ? { data: imageData } : { sample: selectedSample };
+    setTestBusy(true);
+    call({ testImage, testQuality, testMode }).then(r => { setImageResult(r); setError(""); }).catch(e => setError(e.message)).finally(() => setTestBusy(false));
+  };
+  const statusVariant = status => status === "scanned" ? "success" : status === "partial" ? "warning" : status === "failed" ? "error" : "default";
   const sortedSources = useMemo(() => {
     const entries = Object.entries(state?.summary?.bySource || {});
     return entries
@@ -622,7 +681,7 @@ export default function PiiGuardClient() {
 
   const ocrHealth = health?.ocr;
   const ocrSummary = summary?.ocr;
-  const showOcr = !!ocrHealth?.enabled || (ocrSummary?.totalImages || 0) > 0;
+  const showOcr = !!ocrHealth?.available;
 
   const knownUpdated = health?.knownUpdated;
   const activeRangeLabel = rangeLabel(rangePreset, customFromMs, customToMs);
@@ -751,6 +810,15 @@ export default function PiiGuardClient() {
             Values the scanner cannot rewrite (signed thinking, object keys, numbers) are reported as leaked. A scanner error never blocks a request.
           </p>
         )}
+        <div className="mt-3 pt-3 border-t border-border flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
+          <span className="text-xs font-medium text-text-main">Image OCR</span>
+          <span role="group" aria-label="Image OCR mode" aria-disabled={!ocrHealth?.available} inert={!ocrHealth?.available ? "" : undefined} className={!ocrHealth?.available ? "pointer-events-none opacity-50" : ""}><SegmentedControl size="sm" aria-label="Image OCR mode" options={[{ value: "off", label: "Off" }, { value: "observe", label: "Observe" }]} value={config.ocr?.mode || "observe"} onChange={mode => save({ ocr: { mode } })} /></span>
+          <span className="text-xs font-medium text-text-main sm:ml-2">OCR quality</span>
+          <span role="group" aria-label="OCR quality" aria-disabled={!ocrHealth?.available} inert={!ocrHealth?.available ? "" : undefined} className={!ocrHealth?.available ? "pointer-events-none opacity-50" : ""}><SegmentedControl size="sm" aria-label="OCR quality" options={[{ value: "enhanced", label: "Enhanced" }, { value: "basic", label: "Basic" }]} value={config.ocr?.quality || "enhanced"} onChange={quality => save({ ocr: { quality } })} /></span>
+          <span className="text-xs text-text-muted">Keep images: {ocrHealth?.capture ? "on" : "off"} (env)</span>
+          {!ocrHealth?.available && <span className="text-xs text-amber-600 dark:text-amber-400">Set PII_GUARD_OCR=1 to enable image OCR.</span>}
+          <p className="basis-full text-xs text-text-muted">Images are read with Tesseract and checked with the same rules, ignore list and vault values. OCR runs after the request is sent, so images are only observed, never redacted or blocked.</p>
+        </div>
       </Card>
 
       {/* 2. Stat cards row - equal height */}
@@ -893,6 +961,7 @@ export default function PiiGuardClient() {
               </div>
             </div>
           </div>
+          <p className="text-xs text-text-muted mb-3">Images are scanned after the request is sent; they are observed only and never redacted or blocked.</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
               <span className="text-xs text-text-muted block font-medium">Images scanned</span>
@@ -924,6 +993,22 @@ export default function PiiGuardClient() {
               </strong>
               <span className="text-[11px] text-text-muted block mt-0.5">over cache misses</span>
             </div>
+          </div>
+          <div className="mt-4 space-y-2">
+            <h4 className="text-xs font-semibold text-text-main">Recent images</h4>
+            {(ocrSummary?.recent || []).length === 0 ? <p className="text-xs text-text-muted">No images yet. Try a sample in Scanner test.</p> : (
+              <ul className="divide-y divide-border border-y border-border">
+                {ocrSummary.recent.map((item, i) => (
+                  <li key={`${item.ts}:${i}`} className="py-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="text-text-muted">{age(item.ts)}</span><span className="font-medium text-text-main">{item.model || item.endpoint || "request"}</span>
+                    <span className="text-text-muted">image {item.imageIndex}</span><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge>
+                    {(item.rules || []).length ? item.rules.map(rule => <Badge key={rule} size="sm" variant="default">{rule}</Badge>) : <span className="text-text-muted">no hits</span>}
+                    <span className="text-text-muted">{count(item.ocrMs)} ms · cache {item.cache || "miss"} · {item.mode || "observe"}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {Object.keys(ocrSummary?.reasons || {}).length > 0 && <p className="text-xs text-text-muted">Not scanned: {Object.entries(ocrSummary.reasons).map(([reason, n]) => `${({ queue_full: "queue full", timeout: "timeout", too_large: "too large", unsupported: "unsupported", low_confidence: "low confidence", engine_error: "engine error" })[reason] || reason} ${count(n)}`).join(" · ")}</p>}
           </div>
         </Card>
       )}
@@ -1033,60 +1118,38 @@ export default function PiiGuardClient() {
       {/* 5. Scanner Test Card */}
       <Card>
         <div className="mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-text-muted">science</span>
-            Scanner test
-          </h3>
-          <p className="text-xs text-text-muted mt-0.5">
-            Scan a text to preview a mode before you save it. The text is not sent to any provider.
-          </p>
+          <h3 className="font-semibold text-text-main flex items-center gap-2"><span className="material-symbols-outlined text-[18px] text-text-muted">science</span>Scanner test</h3>
+          <p className="text-xs text-text-muted mt-0.5">Preview scanner results. Test input is not sent to any provider.</p>
         </div>
-        <textarea
-          value={text}
-          onChange={e => setText(e.target.value)}
-          rows={3}
-          aria-label="Text to scan"
-          className="w-full rounded-[10px] border border-border bg-surface-2 p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-        />
-        <div className="mt-3 flex items-end gap-2 flex-wrap">
-          <Select label="Test with" className="w-56" value={testMode} onChange={e => { setTestMode(e.target.value); setResult(null); }} options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]} />
-          <Select label="Where" className="w-44" value={testWhere} onChange={e => { setTestWhere(e.target.value); setResult(null); }} options={TEST_WHERES} />
-          <Button variant="secondary" onClick={runTest}>Scan</Button>
-        </div>
-        {result && (
-          <div className="mt-4 space-y-3 pt-3 border-t border-border text-sm">
-            {result.findings.length === 0 ? (
-              <p className="text-text-muted text-xs">No findings detected.</p>
-            ) : (
-              <ul className="space-y-1.5">
-                {result.findings.map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 font-mono text-xs flex-wrap">
-                    <Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge>
-                    <span className="font-semibold text-text-main">{f.name || f.rule}:</span>
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-text-muted">{f.match}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {result.blocked.length > 0 && (
-              <p className="text-xs text-red-500 font-medium">A real request would be blocked: {result.blocked.join(", ")}</p>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {result.before !== undefined && (
-                <div>
-                  <p className="text-xs text-text-muted mb-1 font-medium">Before</p>
-                  <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-muted border border-border-subtle">{result.before}</pre>
-                </div>
-              )}
-              <div>
-                <p className="text-xs text-text-muted mb-1 font-medium">Sent upstream</p>
-                <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle">
-                  <PlaceholderText text={result.redacted} />
-                </pre>
-              </div>
-            </div>
+        <SegmentedControl aria-label="Scanner test type" options={[{ value: "text", label: "Text" }, { value: "image", label: "Image" }]} value={scannerTab} onChange={tab => { setScannerTab(tab); setResult(null); setImageResult(null); }} />
+        {scannerTab === "text" ? <div className="mt-3">
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={8} aria-label="Text to scan" placeholder="Example: Contact me at person@example.test with PAN ABCDE1234F" className="w-full rounded-[10px] border border-border bg-surface-2 p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/30" />
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className="text-text-muted">Try an example:</span>{[
+            ["API key", "API key: sk-ant-api03-" + "A".repeat(80)],
+            ["Card + email", "Card: 4111 1111 1111 1111, email: person@example.test"],
+            ["PAN + phone", "PAN: ABCDE1234F, phone: +91 98765 43210"],
+          ].map(([label, sample]) => <button type="button" key={label} onClick={() => { setText(sample); setResult(null); }} className="rounded-full bg-surface-2 px-2.5 py-1 text-text-main hover:bg-surface-2/70">{label}</button>)}</div>
+          <div className="mt-3 flex items-end gap-2 flex-wrap">
+            <Select label="Test with" className="w-56" value={testMode} onChange={e => { setTestMode(e.target.value); setResult(null); }} options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]} />
+            <Select label="Where" className="w-44" value={testWhere} onChange={e => { setTestWhere(e.target.value); setResult(null); }} options={TEST_WHERES} />
+            <Button type="button" variant="secondary" onClick={runTest}>Scan</Button>
           </div>
-        )}
+          {result && <div className="mt-4 space-y-3 pt-3 border-t border-border text-sm">
+            <p className="font-medium text-text-main">{count(result.findings.length)} findings · would {result.blocked.length ? "block" : result.redacted !== result.before ? "redact" : "observe"}</p>
+            {result.findings.length === 0 ? <p className="text-text-muted text-xs">No findings detected.</p> : <ul className="space-y-1.5">{result.findings.map((f, i) => <li key={i} className="flex items-center gap-2 font-mono text-xs flex-wrap"><Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge><span className="font-semibold text-text-main">{f.name || f.rule}:</span><span className="rounded bg-surface-2 px-1.5 py-0.5 text-text-muted">{f.match}</span></li>)}</ul>}
+            {result.blocked.length > 0 && <p className="text-xs text-red-500 font-medium">A real request would be blocked: {result.blocked.join(", ")}</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{result.before !== undefined && <div><p className="text-xs text-text-muted mb-1 font-medium">Before</p><pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-muted border border-border-subtle">{result.before}</pre></div>}<div><p className="text-xs text-text-muted mb-1 font-medium">Sent upstream</p><pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle"><PlaceholderText text={result.redacted} /></pre></div></div>
+          </div>}
+        </div> : <div className="mt-3 space-y-3">
+          <div onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); acceptImage(e.dataTransfer.files?.[0]); }} onPaste={e => { const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith("image/")); if (item) { e.preventDefault(); acceptImage(item.getAsFile()); } }} tabIndex={0} aria-label="Image upload drop zone. Paste, drop, or choose a PNG, JPEG, or WebP up to 10 MiB." onClick={() => fileInputRef.current?.click()} className="rounded-[10px] border border-dashed border-border bg-surface-2 p-5 text-center text-sm text-text-muted cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500/30">{imageName || "Drop, paste, or choose an image (PNG, JPEG, WebP · max 10 MiB)"}<input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose image" className="sr-only" onClick={e => e.stopPropagation()} onChange={e => acceptImage(e.target.files?.[0])} /></div>
+          {samples.length > 0 && <div className="flex gap-3 overflow-x-auto pb-1">{samples.map(sample => <button type="button" key={sample.id} onClick={() => { setSelectedSample(sample.id); setImageData(null); setImageName(sample.label); setImagePreview(`/pii-guard-samples/${sample.file}`); setImageResult(null); }} aria-pressed={selectedSample === sample.id} className={`shrink-0 w-28 text-left text-xs ${selectedSample === sample.id ? "ring-2 ring-brand-500" : ""}`}><img src={`/pii-guard-samples/${sample.file}`} alt={sample.label} className="h-20 w-28 rounded-[10px] object-cover border border-border" /><span className="mt-1 block text-text-main">{sample.label}</span></button>)}</div>}
+          {imagePreview && <img src={imagePreview} alt="Selected image preview" className="max-h-56 max-w-full rounded-[10px] border border-border object-contain" />}
+          <div className="flex items-end gap-2 flex-wrap"><Select label="Quality" className="w-48" value={testQuality} onChange={e => { setTestQuality(e.target.value); setImageResult(null); }} options={[{ value: "enhanced", label: "Enhanced" }, { value: "basic", label: "Basic" }, { value: "compare", label: "Compare both" }]} /><Select label="Test with" className="w-56" value={testMode} onChange={e => { setTestMode(e.target.value); setImageResult(null); }} options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]} /><Button type="button" variant="secondary" disabled={testBusy || (!imageData && !selectedSample)} onClick={runImageTest}>{testBusy ? "Scanning…" : "Scan image"}</Button></div>
+          <p className="text-xs text-text-muted">Images are observed only; a real request is not changed.</p>
+          {imageResult && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{imageResult.results.map((item, idx) => <section key={`${item.mode}:${idx}`} className="min-w-0 rounded-[10px] border border-border p-3 space-y-2"><h4 className="font-semibold text-text-main">{item.mode}</h4><div className="flex flex-wrap items-center gap-2 text-xs"><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge><span className="text-text-muted">{count(item.ocrMs)} ms · mean confidence {item.meanConfidence ?? "—"} · {count(item.chars)} chars</span></div><ul className="space-y-1">{item.findings.map((f, i) => <li key={`${f.rule}:${i}`} className="flex flex-wrap items-center gap-1.5 text-xs"><Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge><span className="font-medium text-text-main">{f.name || f.rule}</span><span className="text-text-muted">{f.match || "(repaired read)"}</span></li>)}</ul>{item.text && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main">{highlightMatches(item.text, item.findings)}</pre>}</section>)}</div>}
+          {imageResult?.expect && <p className="text-xs text-text-muted">Expected: {imageResult.expect.join(", ")} · {imageResult.expect.map(rule => <span key={rule} className="mr-2">{imageResult.results.some(r => r.findings.some(f => f.rule === rule)) ? "✓" : "✗"} {rule}</span>)}</p>}
+        </div>}
+        <p className="mt-3 pt-3 border-t border-border text-xs text-text-muted">Tests are logged as Test events with hashes only. They are not counted in the stats.</p>
       </Card>
 
       {/* 6. Where values appeared Card */}
@@ -1339,14 +1402,15 @@ export default function PiiGuardClient() {
 
         {view === "events" && (
           <div>
-            <p className="text-xs text-text-muted mb-3">
-              Raw scanner events recorded for this range.
-            </p>
-            {eventsList.length === 0 && !eventsLoading ? (
+            <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-xs text-text-muted">Raw scanner events recorded for this range.</p>
+              <label className="inline-flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={showTests} onChange={e => setShowTests(e.target.checked)} aria-label="Show tests" className="size-4 accent-brand-500" />Show tests</label>
+            </div>
+            {(eventsList.filter(event => showTests || event.type !== "test").length === 0) && !eventsLoading ? (
               <div className="py-8 text-center text-sm text-text-muted">No events recorded in this range.</div>
             ) : (
               <div ref={scrollContainerRef} className="max-h-[60vh] overflow-y-auto divide-y divide-border border border-border rounded-lg bg-surface">
-                {eventsList.map((event, i) => {
+                {eventsList.filter(event => showTests || event.type !== "test").map((event, i) => {
                   const actions = [...new Set([
                     ...(event.hits || event.new || []).map(hit => hit.action).filter(Boolean),
                     ...(event.blocked ? ["block"] : []),
@@ -1355,7 +1419,7 @@ export default function PiiGuardClient() {
                   const countsEntries = Object.entries(event.counts || {});
                   const countsStr = countsEntries.length > 0
                     ? countsEntries.map(([rule, n]) => `${ruleLabelMap.get(rule)?.label || rule}: ${count(n)}`).join(" · ")
-                    : "";
+                    : (event.hits || event.new || []).map(hit => ruleLabelMap.get(hit.rule)?.label || hit.rule).filter(Boolean).join(" · ");
                   return (
                     <div
                       key={`${event.ts}:${i}`}
@@ -1366,8 +1430,9 @@ export default function PiiGuardClient() {
                         {age(event.ts)}
                       </span>
                       <span className="shrink-0 font-medium text-text-main truncate max-w-[180px]">
-                        {event.model || event.endpoint || event.stage || "request"}
+                        {event.type === "ocr" ? `Image ${event.imageIndex} · OCR` : event.model || event.endpoint || event.stage || (event.type === "test" ? `${event.input || "test"}${event.sample ? ` · ${event.sample}` : ""}` : event.input) || "request"}
                       </span>
+                      {event.type === "test" && <Badge size="sm" variant="info">Test</Badge>}
                       <div className="shrink-0 flex items-center gap-1">
                         {actions.map(a => (
                           <Badge key={a} size="sm" variant={ACTION_BADGE_VARIANT[a] || "default"}>

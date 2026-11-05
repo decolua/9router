@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { open } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { ready, rules, groups, testText, eventsFile, health } from "@/lib/piiGuard/observe.js";
+import { ready, rules, groups, testText, testImage, eventsFile, health } from "@/lib/piiGuard/observe.js";
 import { summarize } from "@/lib/piiGuard/summary.js";
 
 export const dynamic = "force-dynamic";
@@ -9,6 +10,27 @@ const MODES = ["off", "observe", "redact", "block"];
 const WHERES = ["user", "system", "assistant", "tool_result", "thinking"];
 const HASH = /^[0-9a-f]{12}$/;
 const MAX_IGNORE = 1000;
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const OCR_MODES = ["off", "observe"];
+const OCR_QUALITIES = ["basic", "enhanced"];
+// The Next server runs from the app dir (dev: repo root; release: standalone dir), which holds public/.
+const SAMPLE_DIR = join(process.cwd(), "public/pii-guard-samples");
+
+function normalizeOcr(ocr = {}, current = {}) {
+  const envQuality = process.env.PII_GUARD_OCR_MODE === "basic" ? "basic" : "enhanced";
+  return {
+    mode: OCR_MODES.includes(ocr.mode) ? ocr.mode : OCR_MODES.includes(current.mode) ? current.mode : "observe",
+    quality: OCR_QUALITIES.includes(ocr.quality) ? ocr.quality : OCR_QUALITIES.includes(current.quality) ? current.quality : envQuality,
+  };
+}
+async function sampleList() {
+  try { return JSON.parse(await readFile(join(SAMPLE_DIR, "samples.json"), "utf8")); } catch { return []; }
+}
+function decodeImage(data) {
+  if (typeof data !== "string" || !data || data.length > Math.ceil(MAX_IMAGE_BYTES / 3) * 4 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(data)) return null;
+  const buffer = Buffer.from(data, "base64");
+  return buffer.length && buffer.length <= MAX_IMAGE_BYTES && buffer.toString("base64") === data ? buffer : null;
+}
 
 const DAY = 24 * 60 * 60 * 1000;
 const MAX_DAYS = 90;
@@ -109,13 +131,14 @@ async function state(fromMs, toMs) {
   const from = Number.isFinite(fromMs) ? fromMs : now - DAY;
   const to = Number.isFinite(toMs) ? toMs : now;
   const { events, truncated } = await loadEvents(from);
-  const config = { ...settings.piiGuard, ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
+  const config = { ...settings.piiGuard, ocr: normalizeOcr(settings.piiGuard?.ocr), ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
   const summary = { ...summarize(events, { since: from, until: to, ignore: config.ignore }), truncated };
-  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(), summary };
+  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(config), summary };
 }
 
 export async function GET(request) {
   const url = new URL(request.url);
+  if (url.searchParams.get("samples") === "1") return NextResponse.json(await sampleList());
   // Events pager: newest first, stats skipped. Cursor `before` (ms) + `skip` (events at exactly that ms already sent),
   // so events sharing a timestamp across a page boundary are not lost.
   if (url.searchParams.get("events") === "1") {
@@ -164,13 +187,44 @@ export async function POST(request) {
   const body = await request.json().catch(() => ({}));
   if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   const current = (await getSettings()).piiGuard || { mode: "observe", rules: {}, ignore: [] };
+  if (body.testImage !== undefined) {
+    if (!body.testImage || typeof body.testImage !== "object" || Array.isArray(body.testImage)) return NextResponse.json({ error: "Invalid image test" }, { status: 400 });
+    const samples = await sampleList();
+    let buffer, sample;
+    if (typeof body.testImage.sample === "string") {
+      sample = samples.find(item => item?.id === body.testImage.sample);
+      if (!sample || typeof sample.file !== "string" || !/^[a-z0-9_-]+\.png$/i.test(sample.file)) return NextResponse.json({ error: "Invalid sample" }, { status: 400 });
+      try { buffer = await readFile(join(SAMPLE_DIR, sample.file)); } catch { return NextResponse.json({ error: "Invalid sample" }, { status: 400 }); }
+      if (buffer.length > MAX_IMAGE_BYTES) return NextResponse.json({ error: "Image too large" }, { status: 400 });
+    } else {
+      buffer = decodeImage(body.testImage.data);
+      if (!buffer) return NextResponse.json({ error: "Invalid image data" }, { status: 400 });
+    }
+    if (body.testQuality !== undefined && ![...OCR_QUALITIES, "compare"].includes(body.testQuality)) return NextResponse.json({ error: "Invalid test quality" }, { status: 400 });
+    if (body.testMode !== undefined && !["current", ...MODES].includes(body.testMode)) return NextResponse.json({ error: "Invalid test mode" }, { status: 400 });
+    const config = body.testMode && body.testMode !== "current" ? { ...current, mode: body.testMode } : current;
+    const qualities = body.testQuality === "compare" ? ["basic", "enhanced"] : [body.testQuality || normalizeOcr(current.ocr).quality];
+    try {
+      const results = [];
+      for (const quality of qualities) {
+        const result = await testImage(buffer, config, quality, { sample: sample?.id });
+        if (!result) return NextResponse.json({ error: "Image OCR unavailable" }, { status: 503 });
+        results.push({ mode: result.mode, status: result.status, text: result.text, chars: result.chars, meanConfidence: result.meanConfidence, ocrMs: result.ocrMs, findings: result.findings });
+      }
+      return NextResponse.json({ results, ...(sample && { expect: sample.expect }), note: "Images are observed only; a real request is not changed." });
+    } catch { return NextResponse.json({ error: "Image OCR unavailable" }, { status: 503 }); }
+  }
   if (typeof body.test === "string") {
     if (body.test.length > 100_000) return NextResponse.json({ error: "Text too long" }, { status: 400 });
     const config = MODES.includes(body.testMode) ? { mode: body.testMode, rules: {} } : current;
     const result = await testText(body.test, config, WHERES.includes(body.testWhere) ? body.testWhere : "user");
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Scanner unavailable" }, { status: 503 });
   }
-  const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [] };
+  const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [], ocr: normalizeOcr(current.ocr) };
+  if (body.ocr !== undefined) {
+    if (!body.ocr || typeof body.ocr !== "object" || Array.isArray(body.ocr) || Object.keys(body.ocr).some(key => !["mode", "quality"].includes(key)) || (body.ocr.mode !== undefined && !OCR_MODES.includes(body.ocr.mode)) || (body.ocr.quality !== undefined && !OCR_QUALITIES.includes(body.ocr.quality))) return NextResponse.json({ error: "Invalid OCR setting" }, { status: 400 });
+    next.ocr = normalizeOcr(body.ocr, current.ocr);
+  }
   if (body.ignore !== undefined) {
     if (typeof body.ignore !== "string" || !/^[0-9a-f]{12}$/.test(body.ignore) || typeof body.on !== "boolean") return NextResponse.json({ error: "Invalid ignore setting" }, { status: 400 });
     next.ignore = body.on ? [...new Set([...next.ignore, body.ignore])].slice(-1000) : next.ignore.filter(hash => hash !== body.ignore);

@@ -1,0 +1,58 @@
+[
+  {
+    "id": "h01",
+    "file": "h01.png",
+    "label": "Terminal with API keys and bearer token",
+    "expect": [
+      "openai_key",
+      "slack_token",
+      "jwt"
+    ]
+  },
+  {
+    "id": "h02",
+    "file": "h02.png",
+    "label": "Database URL and provider API keys",
+    "expect": [
+      "connection_string",
+      "openrouter_key",
+      "anthropic_key"
+    ]
+  },
+  {
+    "id": "h05",
+    "file": "h05.png",
+    "label": "Slack token, bearer token, and card number",
+    "expect": [
+      "slack_token",
+      "jwt",
+      "credit_card"
+    ]
+  },
+  {
+    "id": "h10",
+    "file": "h10.png",
+    "label": "Card, PAN, and mobile number",
+    "expect": [
+      "credit_card",
+      "pan",
+      "in_phone"
+    ]
+  },
+  {
+    "id": "h11",
+    "file": "h11.png",
+    "label": "GitHub token, PAN, and database URL",
+    "expect": [
+      "github_token",
+      "pan",
+      "connection_string"
+    ]
+  },
+  {
+    "id": "c01",
+    "file": "c01.png",
+    "label": "Dashboard revenue and order totals",
+    "expect": []
+  }
+]

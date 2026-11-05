@@ -35,6 +35,26 @@ it("does not warn for places Redact can rewrite", () => {
   expect(r.ruleWarnings).toEqual({});
 });
 
+describe("OCR test events", () => {
+  it("excludes test hits and returns newest OCR rows and reason counts", () => {
+    const now = Date.parse("2026-01-02T12:00:00.000Z");
+    const events = [
+      { ts: "2026-01-02T10:00:00.000Z", type: "test", test: true, hits: [{ hash: "testhash0000", rule: "pan", source: "test/text", action: "observe" }] },
+      { ts: "2026-01-02T10:01:00.000Z", type: "ocr", requestId: "one", model: "m", endpoint: "/v1/chat", imageIndex: 0, status: "skipped", reason: "queue_full", cache: "none", ocrMs: 0, mode: "basic", hits: [{ hash: "hash00000001", rule: "pan", name: "PAN", action: "observe" }, { hash: "hash00000002", rule: "email", action: "ignored" }] },
+      { ts: "2026-01-02T10:02:00.000Z", type: "ocr", requestId: "two", status: "failed", reason: "queue_full", hits: [] },
+    ];
+    const result = summarize(events, { now });
+    expect(result.requests).toBe(0);
+    expect(result.unique24h).toBe(2);
+    expect(result.byRule.pan.hits).toBe(1);
+    expect(result.byRule.email.hits).toBe(1);
+    expect(result.ocr.totalImages).toBe(2);
+    expect(result.ocr.reasons).toEqual({ queue_full: 2 });
+    expect(result.ocr.recent[0].requestId).toBe("two");
+    expect(result.ocr.recent[1].rules).toEqual(["PAN"]);
+  });
+});
+
 describe("summarize range", () => {
   it("honours since/until", () => {
     const now = Date.parse("2026-01-02T00:00:00.000Z");

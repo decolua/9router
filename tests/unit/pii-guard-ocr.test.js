@@ -2,8 +2,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { safeSource } from "../../src/lib/piiGuard/observe.js";
 import { summarize } from "../../src/lib/piiGuard/summary.js";
+
+describe("real OCR image test", () => {
+  it.skipIf(!awaitableTesseract())("scans a fixture with the real library", async () => {
+    const { readFile: read, mkdtemp: temp, rm: remove } = await import("node:fs/promises");
+    const { tmpdir: tmp } = await import("node:os");
+    const { join: pathJoin } = await import("node:path");
+    const directory = await temp(pathJoin(tmp(), "pii-real-ocr-"));
+    const previous = { module: process.env.PII_GUARD_MODULE, events: process.env.PII_GUARD_EVENTS, known: process.env.PII_GUARD_KNOWN };
+    try {
+      process.env.PII_GUARD_MODULE = "/home/chetan/Projects/pii-guard/dist/index.js";
+      process.env.PII_GUARD_EVENTS = pathJoin(directory, "events.jsonl");
+      delete process.env.PII_GUARD_KNOWN;
+      vi.resetModules();
+      const { testImage } = await import("../../src/lib/piiGuard/observe.js");
+      const image = await read("/home/chetan/Projects/9router/public/pii-guard-samples/h02.png");
+      const result = await testImage(image, { mode: "observe", ocr: { mode: "observe" } }, "basic", { sample: "h02" });
+      expect(result).toMatchObject({ status: expect.any(String), mode: "basic", findings: expect.any(Array) });
+      const audit = await read(process.env.PII_GUARD_EVENTS, "utf8");
+      expect(audit).toContain('"type":"test"');
+      expect(audit).not.toContain(result.text);
+    } finally {
+      process.env.PII_GUARD_MODULE = previous.module;
+      if (previous.events === undefined) delete process.env.PII_GUARD_EVENTS; else process.env.PII_GUARD_EVENTS = previous.events;
+      if (previous.known === undefined) delete process.env.PII_GUARD_KNOWN; else process.env.PII_GUARD_KNOWN = previous.known;
+      await remove(directory, { recursive: true, force: true });
+      vi.resetModules();
+    }
+  });
+});
+
+function awaitableTesseract() {
+  return spawnSync("tesseract", ["--version"], { stdio: "ignore" }).status === 0;
+}
 
 describe("safeSource", () => {
   it("keeps /ocr suffix while sanitizing role and type", () => {
@@ -344,11 +378,12 @@ describe("observeRequest with OCR", () => {
     await writeFile(mockModuleFile, mockCode);
 
     ({ observeRequest, health } = await import("../../src/lib/piiGuard/observe.js"));
-    const h = health();
+    await (await import("../../src/lib/piiGuard/observe.js")).ready();
+    const h = health({ ocr: { mode: "observe" } });
     expect(h.ocr.enabled).toBe(true);
     expect(h.ocr.capture).toBe(true);
 
-    await observeRequest({ messages: [{ role: "user", content: "test" }] }, { endpoint: "/v1/chat" });
+    await observeRequest({ messages: [{ role: "user", content: "test" }] }, { endpoint: "/v1/chat" }, { mode: "observe", ocr: { mode: "observe" } });
 
     const mockMod = await import(mockModuleFile);
     expect(mockMod.capturedOptions.capture).toMatchObject({

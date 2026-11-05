@@ -94,9 +94,7 @@ function reload() {
   }
   knownMtime = mtime;
   if (ocrWorker) {
-    const old = ocrWorker;
-    ocrWorker = null;
-    try { void Promise.resolve(old.close()).catch(() => {}); } catch {}
+    closeOcrWorker();
   }
 }
 function isOcrEnabled() {
@@ -105,10 +103,41 @@ function isOcrEnabled() {
   return typeof library.createOcrWorker === "function";
 }
 // "enhanced" (library default): ffmpeg cleanup and OCR text repair. "basic": raw Tesseract, for comparison.
-function ocrMode() {
-  const m = process.env.PII_GUARD_OCR_MODE;
-  return m === "basic" || m === "enhanced" ? m : "enhanced";
+function ocrMode(config = {}) {
+  const m = config?.ocr?.quality;
+  if (m === "basic" || m === "enhanced") return m;
+  const envMode = process.env.PII_GUARD_OCR_MODE;
+  return envMode === "basic" || envMode === "enhanced" ? envMode : "enhanced";
 }
+function ocrConfigured(config = {}) {
+  return config?.ocr?.mode !== "off" && config?.mode !== "off";
+}
+function closeOcrWorker() {
+  if (!ocrWorker) return;
+  const old = ocrWorker;
+  ocrWorker = null;
+  try { void Promise.resolve(old.close()).catch(() => {}); } catch {}
+}
+
+let ocrWorkerQuality;
+const OCR_OFF = "off";
+const OCR_OBSERVE = "observe";
+const OCR_QUALITIES = ["basic", "enhanced"];
+const OCR_MODES = [OCR_OFF, OCR_OBSERVE];
+const ocrConfig = config => ({ mode: OCR_MODES.includes(config?.ocr?.mode) ? config.ocr.mode : OCR_OBSERVE, quality: OCR_QUALITIES.includes(config?.ocr?.quality) ? config.ocr.quality : ocrMode() });
+const ocrAvailable = () => process.env.PII_GUARD_OCR === "1" && typeof library?.createOcrWorker === "function";
+const ocrTestable = () => typeof library?.ocrImage === "function";
+const ocrEffective = config => ocrAvailable() && ocrConfigured(config);
+const testSource = input => input === "image" ? "test/image/ocr" : "test/text";
+async function logTest(input, findings, options = {}) {
+  const hits = findings.map(f => ({ hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source: testSource(input), action: f.action }));
+  try { await append({ ts: new Date().toISOString(), type: "test", test: true, input, ...(options.where && { where: options.where }), ...(options.sample && { sample: options.sample }), ...(options.mode && { mode: options.mode }), ...(options.ocrMs !== undefined && { ocrMs: options.ocrMs }), ...(options.status && { status: options.status }), hits }); } catch { failure("write"); }
+}
+function decide(config, ignore) {
+  const act = actionFor(config);
+  return f => ignore.has(f.hash) ? "ignored" : act(f.rule);
+}
+
 function isCaptureEnabled() {
   return isOcrEnabled() && process.env.PII_GUARD_CAPTURE_IMAGES === "1";
 }
@@ -147,8 +176,10 @@ function initCaptureStore() {
   }
   return captureStore;
 }
-function getOcrWorker() {
-  if (!isOcrEnabled()) return null;
+function getOcrWorker(config = {}) {
+  if (!ocrEffective(config)) return null;
+  const quality = ocrMode(config);
+  if (ocrWorker && ocrWorkerQuality !== quality) closeOcrWorker();
   if (ocrWorker) return ocrWorker;
   if (!detectorOptions) return null;
   try {
@@ -156,11 +187,13 @@ function getOcrWorker() {
     const store = initCaptureStore();
     const options = {
       detector: detectorOptions,
-      mode: ocrMode(),
+      mode: quality,
+      quality,
       ...(captureConfig ? { capture: captureConfig } : {}),
     };
     const deps = store ? { captureStore: store } : undefined;
     ocrWorker = library.createOcrWorker(options, deps);
+    ocrWorkerQuality = quality;
     return ocrWorker;
   } catch {
     failure("ocr");
@@ -310,7 +343,7 @@ function handleOcrResult(result, requestId, imageIndex, meta, body, config, mode
     const event = {
       ts: new Date().toISOString(),
       type: "ocr",
-      mode: ocrMode(),
+      mode: ocrMode(config),
       requestId,
       imageIndex,
       endpoint: meta?.endpoint,
@@ -357,7 +390,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     let model = body?.model ?? meta.model;
 
     let imageIndex = 0;
-    const worker = getOcrWorker();
+    const worker = getOcrWorker(config);
     const onImage = worker ? (image) => {
       const idx = imageIndex++;
       try {
@@ -451,11 +484,24 @@ export async function testText(text, config, at = "user") {
     const action = decide(f);
     return { rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, hash: f.hash, action: f.readonly && action === "redact" ? "leaked" : action, match: text.slice(f.start, f.end) };
   });
+  await logTest("text", findings, { where: at, mode: config?.mode });
   return { findings, before: text, redacted: READ[at](body), blocked: findings.filter(f => f.action === "block").map(f => f.name || f.rule) };
 }
-export function health() {
+export async function testImage(buffer, config = {}, quality = "enhanced", options = {}) {
+  if (!await ready() || typeof library.ocrImage !== "function") return null;
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return null;
+  const mode = OCR_QUALITIES.includes(quality) ? quality : ocrMode(config);
+  const result = await library.ocrImage(buffer, detector, mode);
+  const ignore = new Set(Array.isArray(config.ignore) ? config.ignore.filter(h => typeof h === "string" && /^[0-9a-f]{12}$/i.test(h)) : []);
+  const decideHit = decide(config, ignore);
+  const findings = (Array.isArray(result.findings) ? result.findings : []).map(f => ({ rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, hash: f.hash, action: decideHit(f), ...(f.match !== undefined && { match: f.match }) }));
+  await logTest("image", findings, { sample: options.sample, mode, ocrMs: result.ocrMs, status: result.status });
+  return { ...result, findings };
+}
+export function health(config = {}) {
   const sorted = healthSamples.slice().sort((a, b) => a - b);
-  const ocr = { enabled: isOcrEnabled(), mode: ocrMode(), capture: isCaptureEnabled() };
+  const normalized = ocrConfig(config);
+  const ocr = { available: ocrAvailable(), enabled: ocrEffective(config), mode: normalized.quality, quality: normalized.quality, capture: process.env.PII_GUARD_CAPTURE_IMAGES === "1", testable: ocrTestable() };
   return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr };
 }
 export function eventsFile() { return process.env.PII_GUARD_EVENTS || join(homedir(), ".9router/pii-guard/events.jsonl"); }

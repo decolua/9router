@@ -68,7 +68,7 @@ const DEFAULT_SETTINGS = {
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
   // pii-guard: mode is off|observe|redact|block; rules maps a rule id to a mode override.
-  piiGuard: { mode: "observe", rules: {} },
+  piiGuard: { mode: "observe", rules: {}, ocr: { mode: "observe", quality: process.env.PII_GUARD_OCR_MODE === "basic" ? "basic" : "enhanced" } },
 };
 
 async function readRaw() {
