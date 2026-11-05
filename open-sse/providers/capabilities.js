@@ -444,6 +444,10 @@ PROVIDER_CAPABILITIES["qoder"] = {
   // on the default output ceiling rather than guessing.
   "auto":         { contextWindow: 1000000, maxOutput: 32768 },
   "efficient":    { contextWindow: 1000000, maxOutput: 32768 },
+  // `fast` is the highspeed Kimi lane; the live catalog lists it but the roster
+  // this table mirrors never named it, so it fell through to the generic
+  // 200K default while every other slot published 1M.
+  "fast":         { vision: true, contextWindow: 1000000, maxOutput: 65536 },
   "lite":         { contextWindow: 1000000, maxOutput: 32768 },
   // Concrete ids read images back, so they are vision-capable.
   "ultimate":     { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },

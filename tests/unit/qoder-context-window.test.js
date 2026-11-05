@@ -38,6 +38,7 @@ describe("qoder published context window", () => {
 describe("qoder capability table", () => {
   const models = [
     "auto",
+    "fast",
     "efficient",
     "lite",
     "ultimate",
