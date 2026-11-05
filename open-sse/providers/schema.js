@@ -26,8 +26,11 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  *
  * TransportConfig: { baseUrl, format, headers, auth, forceStream, urlSuffix, quirks, retry, timeoutMs,
  *   executor, clientId, clientSecret, tokenUrl, refreshUrl, usage, cliVersion, apiClient, regions,
- *   defaultRegion, modelsFetcher, validateUrl, responsesUrl } — clientId/clientSecret/tokenUrl are
- *   injected from `oauth` automatically (single source); declare them in `oauth`, not here.
+ *   defaultRegion, modelsFetcher, validateUrl, responsesUrl, thinkingFormat, thinkingFormatByModel }
+ *   — clientId/clientSecret/tokenUrl are injected from `oauth` automatically (single source);
+ *   declare them in `oauth`, not here. thinkingFormat states the shape this endpoint accepts;
+ *   thinkingFormatByModel ({ modelId: format }) overrides it for one model id on this endpoint
+ *   only, for providers that expose the same model on endpoints wanting different shapes.
  *
  * OAuthConfig: { clientId, authorizeUrl, tokenUrl, deviceCodeUrl, refreshUrl, scope|scopes, redirectUri,
  *   callbackPath, fixedPort, codeChallengeMethod, extraParams, refresh:{encoding,scope}, refreshLeadMs,

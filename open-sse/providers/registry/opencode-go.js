@@ -30,7 +30,13 @@ export default {
   // opencode-go models differ in endpoint support.
   transports: [
     { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
-    { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
+    // /messages is anthropic-shaped but is NOT a native Anthropic target: it rejects the
+    // Chat-shaped reasoning_effort that the deepseek family's capability entry emits
+    //   400 reasoning_effort: requires a native Anthropic Messages target
+    // and accepts the adaptive pair instead. Claude Code 2.1.318 puts an effort intent on
+    // every turn, so the whole route hard-400s (#5480). Declared per model because the
+    // same id keeps the deepseek shape on /chat/completions, which needs it (#3014).
+    { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true }, thinkingFormatByModel: { "deepseek-v4.1-flash": "claude-adaptive" } },
     // /responses rejects the Chat-shaped thinking fields (reasoning_effort, thinking:{type}) with
     // 503 "Endpoint is unavailable" (probed live on deepseek-v4.1-flash); it accepts the nested
     // reasoning:{effort,summary} for every model it serves (deepseek-v4*, gpt-*-luna, grok-4.*).

@@ -133,10 +133,20 @@ function resolveFormat(targetFormat, model, provider) {
   // endpoint accepts. It wins over the model's thinkingFormat, which describes the Chat wire:
   // strict /responses upstreams (Meta, OpenCode Go) reject Chat-shaped reasoning_effort /
   // thinking:{type} and need reasoning:{effort,summary} instead.
-  const transportFmt = provider
-    ? PROVIDERS[provider]?.transports?.find((t) => t.format === targetFormat)?.thinkingFormat
+  const transport = provider
+    ? PROVIDERS[provider]?.transports?.find((t) => t.format === targetFormat)
     : null;
-  if (transportFmt) return transportFmt;
+  // One provider can expose the same model id on endpoints that want different thinking
+  // shapes (OpenCode Go: deepseek wants the Chat shape on /chat/completions and the adaptive
+  // pair on /messages). A per-model entry on the transport wins over both the blanket
+  // transport shape and the model's own capability entry. Keys are bare ids, so strip a
+  // vendor prefix the same way getCapabilitiesForModel does.
+  const byModel = transport?.thinkingFormatByModel;
+  if (byModel && typeof model === "string") {
+    const modelFmt = byModel[model] || byModel[model.split("/").pop()];
+    if (modelFmt) return modelFmt;
+  }
+  if (transport?.thinkingFormat) return transport.thinkingFormat;
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
