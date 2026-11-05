@@ -236,6 +236,8 @@ const CATEGORY_ALIAS = {
   "cli tools provider logos - uniform, larger, no background tint": "UI",
   "provider logos": "UI",
   "provider logos - transparent backgrounds, uniform size, 9router + llmtr marks": "UI",
+  "9router sidebar logo": "UI",
+  "9router sidebar logo - replaced with the new brand mark": "UI",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",

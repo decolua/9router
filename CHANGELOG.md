@@ -1,3 +1,10 @@
+# v0.5.372 (2026-11-05) · 1 commit
+
+## 9router sidebar logo — replaced with the new brand mark
+- Swapped the sidebar logo asset to the updated 9router mark the user provided
+  (`public/providers/9router-logo.png`), replacing the earlier 4 MB image with a
+  295 KB square glyph. Renders transparent at 36×36 in the sidebar header.
+
 # v0.5.371 (2026-11-05) · 1 commit
 
 ## Provider logos — transparent backgrounds, uniform size, 9router + LLMTR marks
