@@ -252,7 +252,15 @@ export function createSSEStream(options = {}) {
                 }
               }
 
-              if (!hasValuableContent(parsed, FORMATS.OPENAI)) {
+              // Read usage before the empty-chunk filter: some upstreams (NaN) send the
+              // usage trailer as choices:[{delta:{}}], which the filter would drop.
+              // A real trailer replaces a usage estimate injected at finish_reason.
+              const extracted = extractUsage(parsed);
+              if (extracted) {
+                usage = usage?.estimated ? extracted : mergeUsage(usage, extracted);
+              }
+
+              if (!extracted && !hasValuableContent(parsed, FORMATS.OPENAI)) {
                 continue;
               }
 
@@ -266,11 +274,6 @@ export function createSSEStream(options = {}) {
               if (reasoning && typeof reasoning === "string") {
                 totalContentLength += reasoning.length;
                 accumulatedThinking += reasoning;
-              }
-
-              const extracted = extractUsage(parsed);
-              if (extracted) {
-                usage = mergeUsage(usage, extracted);
               }
 
               responsesTerminal = isOpenAIResponsesTerminalEvent(currentOpenAIResponsesEvent, parsed);

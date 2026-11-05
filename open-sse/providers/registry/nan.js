@@ -16,6 +16,8 @@ export default {
       // Dashboard quota counters; /v1/usage can return an empty history for an active key.
       url: "https://cloud-api.nan.builders/api/usage/quota",
     },
+    // NaN only emits a usage chunk when the client asks for it; without it streams are estimated.
+    quirks: { includeStreamUsage: true },
   },
   modelsFetcher: { url: "https://api.nan.builders/v1/models", type: "openai" },
   models: [

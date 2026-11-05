@@ -109,6 +109,9 @@ export class DefaultExecutor extends BaseExecutor {
       if (this.config.quirks?.dropClientMetadata) {
         delete transformed.client_metadata;
       }
+      if (this.config.quirks?.includeStreamUsage && stream && transformed.messages && !transformed.stream_options) {
+        transformed.stream_options = { include_usage: true };
+      }
       stripUnsupportedParams(this.provider, model, transformed);
     }
 

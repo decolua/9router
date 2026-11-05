@@ -3,6 +3,7 @@ import REGISTRY from "../../open-sse/providers/registry/index.js";
 import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 import { parseUpstreamError } from "../../open-sse/utils/error.js";
 import { formatNanUsage } from "../../open-sse/services/usage/nan.js";
+import { DefaultExecutor } from "../../open-sse/executors/default.js";
 
 assert.equal(new Set(REGISTRY.map((item) => item.id)).size, REGISTRY.length, "provider IDs must be unique");
 for (const id of ["nan", "tinyfish", "v1m", "muse", "minimax-code", "minimax-code-global", "bedrock", "bedrock-xai", "sensenova", "deepseek-web", "gemini-web", "muse-web", "chatgpt-web", "veoaifree-web", "uc-web"]) {
@@ -63,4 +64,9 @@ for (const invalid of [
   assert.equal(result.quotas, undefined);
   assert.match(result.message, /unavailable/i);
 }
+const nanExec = new DefaultExecutor("nan");
+const msgs = [{ role: "user", content: "hi" }];
+assert.deepEqual(nanExec.transformRequest("gemma4", { messages: msgs, stream: true }, true, {}).stream_options, { include_usage: true });
+assert.equal(nanExec.transformRequest("gemma4", { messages: msgs }, false, {}).stream_options, undefined);
+assert.deepEqual(nanExec.transformRequest("gemma4", { messages: msgs, stream_options: { include_usage: false } }, true, {}).stream_options, { include_usage: false });
 console.log("NaN provider and usage OK");
