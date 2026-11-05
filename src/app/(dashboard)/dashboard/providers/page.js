@@ -900,12 +900,12 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle, opencod
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="size-8 shrink-0 flex items-center justify-center bg-transparent">
+            <div className="size-8 shrink-0 flex items-center justify-center overflow-hidden">
               <ProviderIcon
                 src={`/providers/${provider.id}.png`}
                 alt={provider.name}
-                size={30}
-                className="object-contain rounded-xl max-w-[32px] max-h-[32px]"
+                size={32}
+                className="object-cover rounded-xl"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }
@@ -1056,12 +1056,12 @@ function ApiKeyProviderCard({
       >
         <div className="flex min-w-0 items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
-            <div className="size-8 shrink-0 flex items-center justify-center bg-transparent">
+            <div className="size-8 shrink-0 flex items-center justify-center overflow-hidden">
               <ProviderIcon
                 src={getIconPath()}
                 alt={provider.name}
-                size={30}
-                className="object-contain rounded-xl max-w-[30px] max-h-[30px]"
+                size={32}
+                className="object-cover rounded-xl"
                 fallbackText={
                   provider.textIcon || provider.id.slice(0, 2).toUpperCase()
                 }

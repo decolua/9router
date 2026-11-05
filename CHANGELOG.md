@@ -1,3 +1,22 @@
+# v0.5.371 (2026-11-05) · 1 commit
+
+## Provider logos — transparent backgrounds, uniform size, 9router + LLMTR marks
+- **9router sidebar logo**: replaced the gradient `hub` icon tile with the
+  official 9router brand mark (`public/providers/9router-logo.png`) the user
+  provided — rendered transparent in the sidebar header.
+- **Stripped baked backgrounds** from 21 provider logos that shipped with opaque
+  white/coloured boxes (`droid`, `roo`, `kiro`, `forge`, `openclaw`, `oai-cc`,
+  `oai-r`, `poolside`, `mimocode`, `xiaomi-mimo`, `xiaomi-tokenplan`, and
+  others) — corners are now transparent so they sit cleanly on the glass theme.
+  Logos whose mark is same-colour as the bg (would be destroyed by stripping)
+  are left intact.
+- **Uniform logo size**: CLI Tools cards and the providers menu now render every
+  provider logo with `object-cover` filling a fixed tile (44px / 32px), so all
+  logos appear the same size regardless of source aspect ratio.
+- **LLMTR logo**: fetched the official LLMTR brand mark from llmtr.com
+  (`favicon.svg`) and rendered it as a transparent `public/providers/llmtr.png`
+  — it previously fell back to the `LT` text tile.
+
 # v0.5.370 (2026-11-04) · 1 commit
 
 ## CLI Tools provider logos — uniform, larger, no background tint

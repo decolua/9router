@@ -234,6 +234,8 @@ const CATEGORY_ALIAS = {
   "cli tools dashboard - richer setup cards": "UI",
   "cli tools provider logos": "UI",
   "cli tools provider logos - uniform, larger, no background tint": "UI",
+  "provider logos": "UI",
+  "provider logos - transparent backgrounds, uniform size, 9router + llmtr marks": "UI",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",
