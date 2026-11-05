@@ -1,8 +1,9 @@
 const DAY = 24 * 60 * 60 * 1000;
 const RANK = { leaked: 0, block: 1, redact: 2, observe: 3, ignored: 4 };
 
-export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
-  const since = now - DAY;
+export function summarize(events, { since, until, now = Date.now(), ignore = [] } = {}) {
+  const sinceMs = Number.isFinite(since) ? since : now - DAY;
+  const untilMs = Number.isFinite(until) ? until : now;
   const groups = new Map();
   const ruleHits = Object.create(null), ruleStuck = Object.create(null), ruleHashes = Object.create(null), ruleSources = Object.create(null), bySource = Object.create(null);
   const leaked = new Set(), blocked = new Set(), unique = new Set();
@@ -10,7 +11,7 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
 
   for (const event of Array.isArray(events) ? events : []) {
     const ts = Date.parse(event?.ts);
-    if (!Number.isFinite(ts) || ts < since || ts > now) continue;
+    if (!Number.isFinite(ts) || ts < sinceMs || ts > untilMs) continue;
     if (event.type === "error") { errors24h += Number.isInteger(event.count) && event.count > 0 ? event.count : 1; continue; }
     if (event.type === "stats") continue;
     const raw = Array.isArray(event.hits) ? event.hits : Array.isArray(event.new) ? event.new : [];
@@ -75,5 +76,6 @@ export function summarize(events, { now = Date.now(), ignore = [] } = {}) {
     byRule: Object.fromEntries(Object.entries(ruleHits).map(([rule, hits]) => [rule, { unique: ruleHashes[rule]?.size || 0, hits }])),
     bySource, leaked24h: leaked.size, blocked24h: blocked.size, errors24h,
     groups: outputGroups, ruleWarnings,
+    range: { from: sinceMs, to: untilMs },
   };
 }
