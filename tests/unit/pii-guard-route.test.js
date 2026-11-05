@@ -1,13 +1,29 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/localDb", () => ({ getSettings: async () => ({ piiGuard: { mode: "observe", rules: {}, ignore: [] } }), updateSettings: async () => {} }));
-vi.mock("@/lib/piiGuard/observe.js", () => ({ ready: async () => true, rules: () => [], groups: () => [], testText: async () => null, eventsFile: () => "/tmp/ev.jsonl", health: () => ({}) }));
+const { settings, updateSettings } = vi.hoisted(() => {
+  const settings = { piiGuard: { mode: "observe", rules: {}, ignore: [] } };
+  return { settings, updateSettings: vi.fn(async update => { settings.piiGuard = update.piiGuard; }) };
+});
+vi.mock("@/lib/localDb", () => ({ getSettings: async () => settings, updateSettings }));
+vi.mock("@/lib/piiGuard/observe.js", () => ({ ready: async () => true, rules: () => [], groups: () => [], testText: async () => null, testImage: async () => null, eventsFile: () => "/tmp/ev.jsonl", health: () => ({}) }));
 
-import { GET } from "../../src/app/api/pii-guard/route.js";
+import { GET, POST } from "../../src/app/api/pii-guard/route.js";
 import { writeFile, rm } from "node:fs/promises";
 
 beforeEach(async () => {
+  settings.piiGuard = { mode: "observe", rules: {}, ignore: [] };
+  await rm("/tmp/ev.jsonl", { force: true });
   await writeFile("/tmp/ev.jsonl", JSON.stringify({ ts: new Date().toISOString(), hits: [] }) + "\n");
+});
+
+describe("route OCR config", () => {
+  it("validates OCR settings and preserves saved quality on other settings", async () => {
+    const invalid = await POST(new Request("http://localhost/api/pii-guard", { method: "POST", body: JSON.stringify({ ocr: { mode: "block" } }) }));
+    expect(invalid.status).toBe(400);
+    const saved = await POST(new Request("http://localhost/api/pii-guard", { method: "POST", body: JSON.stringify({ mode: "redact", ocr: { quality: "basic" } }) }));
+    expect(saved.status).toBe(200);
+    expect(settings.piiGuard).toMatchObject({ mode: "redact", ocr: { mode: "observe", quality: "basic" } });
+  });
 });
 
 describe("route range", () => {

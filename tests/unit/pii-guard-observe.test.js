@@ -166,7 +166,7 @@ describe("PII guard full-body coverage", () => {
     const ignored = body(value);
     await observeRequest(ignored, meta, { mode: "block", ignore: [hash] });
     expect(JSON.stringify(ignored)).toContain(value);
-    const event = JSON.parse((await lines(1)).trim());
+    const event = JSON.parse((await lines(2)).trim().split("\n").find(line => JSON.parse(line).type !== "test"));
     expect(event.ignored).toBe(1);
     expect(event.counts).toEqual({});
     vi.resetModules();
@@ -195,7 +195,9 @@ describe("PII guard test preview", () => {
     expect(r.findings[0]).toMatchObject({ rule: "in_phone", action: "redact" });
     expect(r.redacted).toMatch(/^mobile \{\{pii:in_phone#/);
     expect((await testText("mobile 9876543210", { mode: "block" })).blocked).toEqual(["in_phone"]);
-    await expect(stat(events)).rejects.toMatchObject({ code: "ENOENT" });
+    const audit = (await readFile(events, "utf8")).trim().split("\n").map(line => JSON.parse(line));
+    expect(audit).toHaveLength(2);
+    expect(audit.every(event => event.type === "test" && !JSON.stringify(event).includes("9876543210"))).toBe(true);
   });
   it("never logs a value carried in model or user agent", async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
