@@ -69,6 +69,38 @@ export function getQoderContextTiers(modelConfig) {
 const CJK_RE = /[\u1100-\u11ff\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff\uff00-\uffef]/g;
 
 /**
+ * The widest window a model_config advertises, in tokens.
+ *
+ * `max_input_tokens` is the tier the IDE currently has selected (~200K), while
+ * `context_config` lists everything the slot can select (200K / 400K / 1M). A
+ * client that reads the selected tier compacts at 200K and never sends a long
+ * request, so the published window has to be the widest one — and never smaller
+ * than the selected tier, in case the list omits it.
+ *
+ * Accepts the plain-string shape ("200K") the static roster uses and the object
+ * shape the live catalog uses.
+ */
+export function widestQoderContextWindow(modelConfig) {
+  if (!modelConfig || typeof modelConfig !== "object") return 0;
+  const list = modelConfig.context_config ?? modelConfig.contextConfig;
+  let widest = 0;
+  if (Array.isArray(list)) {
+    for (const entry of list) {
+      const tokenCount = typeof entry === "string"
+        ? parseTierTokenCount(entry)
+        : parseTierTokenCount(
+          entry?.tokenCount ?? entry?.token_count ?? entry?.max_input_tokens
+            ?? entry?.maxInputTokens ?? entry?.contextLength ?? entry?.context_length
+            ?? entry?.name ?? entry?.label,
+        );
+      if (tokenCount > widest) widest = tokenCount;
+    }
+  }
+  const selected = Number(modelConfig.max_input_tokens ?? modelConfig.maxInputTokens) || 0;
+  return Math.max(widest, selected);
+}
+
+/**
  * Rough prompt-size estimate in tokens. CJK characters count ~1 token each, everything
  * else ~4 chars/token — the plain chars/4 rule underestimates Chinese/Japanese by up to
  * 4x, which is exactly when a tier decision matters.

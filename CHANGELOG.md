@@ -5,6 +5,7 @@
 - **Qoder**: publish `context_config` tiers on the static roster and state the free-tier rule explicitly, so tier selection and the transport split work without a live catalog.
 
 ## Fixes
+- **Qoder**: publish the widest selectable context tier instead of the one the catalog reports as currently selected — every client was told ~200K (180K for the frontier pair) while the roster advertises 1M, so clients compacted at 200K and the long-context path was never used.
 - **Qoder**: omit `model_config.source` from the chat body — the catalog's `source:"system"` routes requests into the managed lane, which answers `10605/queueType=p3` for free models while the same payload without the field is served immediately.
 
 # v0.5.112 (2026-10-28)

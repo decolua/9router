@@ -67,11 +67,13 @@ describe("Qoder capabilities", () => {
 
   it("gives opaque concrete ids a real window instead of the heuristic default", () => {
     // `dmodel` / `kmodel` / `qmodel_38max` match no pattern, so without the
-    // provider table they fall through to the generic defaults.
+    // provider table they fall through to the generic defaults. The window is
+    // the widest selectable tier (1M), not the ~200K the catalog reports as
+    // currently selected — see tests/unit/qoder-context-window.test.js.
     for (const key of ["dmodel", "kmodel", "qmodel_38max", "gmodel"]) {
       const caps = getCapabilitiesForModel("qoder", key);
       expect(caps.vision).toBe(true);
-      expect(caps.contextWindow).toBe(200000);
+      expect(caps.contextWindow).toBe(1000000);
     }
   });
 

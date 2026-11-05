@@ -35,6 +35,7 @@ import {
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
+import { widestQoderContextWindow } from "../shared/qoder/contextTier.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -265,7 +266,10 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
     if (entry.enable === false) continue;
 
     const display = entry.display_name || key;
-    const ctx = Number(entry.max_input_tokens) || 131_072;
+    // Publish the widest selectable tier, not the tier the IDE currently has
+    // selected — a client that reads the selected one compacts at ~200K and
+    // never sends the long request this provider can actually carry.
+    const ctx = widestQoderContextWindow(entry) || 131_072;
     models.push({
       id: key,
       name: `${display}`,
