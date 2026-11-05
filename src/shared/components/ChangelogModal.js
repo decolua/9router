@@ -230,6 +230,8 @@ const CATEGORY_ALIAS = {
   "background loading-in-the-bell: all surfaces verified, stale tests fixed": "Features",
   "codebuddy intl oauth login fix": "Fixes",
   "codebuddy intl oauth login fix, 4 upstream prs ported, kimi code cli setup": "Features",
+  "cli tools dashboard": "UI",
+  "cli tools dashboard - richer setup cards": "UI",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",

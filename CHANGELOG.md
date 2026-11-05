@@ -1,3 +1,14 @@
+# v0.5.369 (2026-11-04) · 1 commit
+
+## CLI Tools dashboard — richer setup cards
+- **Tool summary cards redesigned**: each CLI tool card now shows the tool's
+  description (was hidden), wraps its icon in a brand-colored rounded tile
+  (8% background + matching border from the tool's brand colour), and gets a
+  status badge with a coloured dot plus a hover lift (`elev-2` shadow) and a
+  chevron nudge on hover.
+- **Setup detail cards**: the expandable per-tool setup header uses the same
+  brand-colored icon tile for visual consistency with the summary grid.
+
 # v0.5.368 (2026-11-04) · 1 commit
 
 ## CodeBuddy Intl OAuth login fix, 4 upstream PRs ported, Kimi Code CLI setup

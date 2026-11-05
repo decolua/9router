@@ -252,7 +252,10 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
     <Card padding="xs" className="overflow-hidden overflow-x-hidden">
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
-          <div className="size-8 rounded-lg flex items-center justify-center shrink-0">
+          <div
+            className="size-11 rounded-xl flex items-center justify-center shrink-0 border"
+            style={{ backgroundColor: `${tool.color}14`, borderColor: `${tool.color}2e` }}
+          >
             {renderIcon()}
           </div>
           <div className="min-w-0">
