@@ -34,3 +34,16 @@ it("does not warn for places Redact can rewrite", () => {
   const r = summarize([{ ts, hits: [{ hash: "bbbbbbbbbbbb", rule: "email", source: "assistant/tool_use", action: "observe" }] }], { now: Date.now() });
   expect(r.ruleWarnings).toEqual({});
 });
+
+describe("summarize range", () => {
+  it("honours since/until", () => {
+    const now = Date.parse("2026-01-02T00:00:00.000Z");
+    const events = [
+      { ts: "2026-01-01T23:00:00.000Z", hits: [{ hash: "a", rule: "r", source: "user/text", action: "observe" }] },
+      { ts: "2026-01-01T20:00:00.000Z", hits: [{ hash: "b", rule: "r", source: "user/text", action: "observe" }] },
+    ];
+    const r = summarize(events, { since: now - 2*60*60*1000, until: now, now });
+    expect(r.unique24h).toBe(1);
+    expect(r.range.from).toBe(now - 2*60*60*1000);
+  });
+});

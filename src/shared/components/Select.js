@@ -43,11 +43,18 @@ export default function Select({
           <option value="" disabled>
             {placeholder}
           </option>
-          {options.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
+          {/* Options with a `group` render inside <optgroup label={groupLabel}>, in first-seen order. */}
+          {options.map((option, i) => {
+            if (!option.group) return <option key={option.value} value={option.value}>{option.label}</option>;
+            if (options.findIndex(o => o.group === option.group) !== i) return null;
+            return (
+              <optgroup key={`g:${option.group}`} label={option.groupLabel || option.group}>
+                {options.filter(o => o.group === option.group).map(o => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+              </optgroup>
+            );
+          })}
         </select>
         <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-text-muted">
           <span className="material-symbols-outlined text-[20px]">expand_more</span>

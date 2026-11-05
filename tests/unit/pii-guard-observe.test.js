@@ -281,3 +281,44 @@ describe("PII guard test preview", () => {
     expect(event.hits.some(h => h.action === "leaked")).toBe(true);
   });
 });
+
+describe("PII guard rules() metadata", () => {
+  let dir, fakeModule;
+  beforeEach(async () => {
+    const { mkdtemp, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
+    dir = await mkdtemp(join(tmpdir(), "pii-rules-"));
+    fakeModule = join(dir, "scanner.js");
+    await writeFile(fakeModule, `
+      export function createDetector({ salt }) { return { knownCount: 3, scan() { return []; }, placeholder(f) { return "{{pii:" + f.rule + "}}"; } }; }
+      export function scanBody() { return { findings: [], chars: 0, images: 0, imageBytes: 0, unscanned: {} }; }
+      export const RULES = [ { id: "foo", kind: "secret" }, { id: "bar", kind: "pii" } ];
+    `);
+    process.env.PII_GUARD_MODULE = fakeModule;
+    process.env.PII_GUARD_KNOWN = join(dir, "missing-known.json");
+    process.env.PII_GUARD_EVENTS = join(dir, "events", "events.jsonl");
+  });
+  afterEach(async () => {
+    delete process.env.PII_GUARD_MODULE; delete process.env.PII_GUARD_KNOWN; delete process.env.PII_GUARD_EVENTS;
+    const { rm } = await import("node:fs/promises");
+    await rm(dir, { recursive: true, force: true });
+  });
+  it("returns group and label, with fallbacks for older builds", async () => {
+    const { ready, rules, groups } = await import("../../src/lib/piiGuard/observe.js");
+    expect(await ready()).toBe(true);
+    expect(rules()).toEqual([
+      { id: "known", kind: "known", group: "known", label: "Vault values", count: 3 },
+      { id: "foo", kind: "secret", group: "api_key", label: "foo" },
+      { id: "bar", kind: "pii", group: "other", label: "bar" },
+    ]);
+    expect(groups()).toEqual([
+      { id: "api_key", label: "API keys and secrets" },
+      { id: "known", label: "Vault values" },
+      { id: "gov_id", label: "Government IDs" },
+      { id: "financial", label: "Financial" },
+      { id: "contact", label: "Contact" },
+      { id: "network", label: "Network" },
+    ]);
+  });
+});
