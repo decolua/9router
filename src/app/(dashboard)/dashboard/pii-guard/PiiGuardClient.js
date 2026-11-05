@@ -36,10 +36,12 @@ const ACTION_BADGE_VARIANT = {
   ignored: "default",
 };
 
+const RULE_MODES = [{ value: "default", label: "Default" }, ...MODES];
+
 const KIND_CONFIG = {
-  secret: { bar: "bg-red-500", badge: "error" },
-  pii: { bar: "bg-brand-500", badge: "info" },
-  known: { bar: "bg-emerald-500", badge: "success" },
+  secret: { badge: "error" },
+  pii: { badge: "info" },
+  known: { badge: "success" },
 };
 
 const WHERE_LABEL = {
@@ -62,6 +64,7 @@ const RECENT_MINUTES = [
   { value: "60", label: "60 min" },
   { value: "240", label: "240 min" },
 ];
+
 
 const count = value => Number(value || 0).toLocaleString();
 
@@ -150,28 +153,6 @@ export default function PiiGuardClient() {
   const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
   const runTest = () => call({ test: text, testMode, testWhere }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
 
-  const rulesMap = useMemo(() => {
-    const map = new Map();
-    (state?.rules || []).forEach(r => map.set(r.id, r));
-    return map;
-  }, [state?.rules]);
-
-  const sortedRules = useMemo(() => {
-    const entries = Object.entries(state?.summary?.byRule || {});
-    return entries
-      .map(([rule, val]) => ({
-        rule,
-        unique: val?.unique || 0,
-        hits: val?.hits || 0,
-        kind: rulesMap.get(rule)?.kind || "pii",
-      }))
-      .sort((a, b) => b.unique - a.unique || b.hits - a.hits);
-  }, [state?.summary?.byRule, rulesMap]);
-
-  const maxRuleUnique = useMemo(() => {
-    return Math.max(...sortedRules.map(r => r.unique), 1);
-  }, [sortedRules]);
-
   const sortedSources = useMemo(() => {
     const entries = Object.entries(state?.summary?.bySource || {});
     return entries
@@ -195,10 +176,44 @@ export default function PiiGuardClient() {
     return Array.from(set).sort();
   }, [state?.summary?.groups]);
 
-  const ruleFilterOptions = useMemo(() => [
-    { value: "all", label: "All rules" },
-    ...availableRules.map(r => ({ value: r, label: r })),
-  ], [availableRules]);
+  const groupsList = useMemo(() => {
+    // Keep every rule reachable: add groups that rules use but the list lacks.
+    const base = Array.isArray(state?.groups) ? state.groups : [];
+    const seen = new Set(base.map(g => g.id));
+    const extra = [...new Set((state?.rules || []).map(r => r.group).filter(id => id && !seen.has(id)))];
+    return [...base, ...extra.map(id => ({ id, label: id }))];
+  }, [state?.groups, state?.rules]);
+
+  const groupRules = useMemo(() => {
+    const map = new Map();
+    (state?.rules || []).forEach(r => {
+      if (!map.has(r.group)) map.set(r.group, []);
+      map.get(r.group).push(r);
+    });
+    return map;
+  }, [state?.rules]);
+
+  const groupLabelMap = useMemo(() => new Map(groupsList.map(g => [g.id, g.label])), [groupsList]);
+
+  const ruleLabelMap = useMemo(() => new Map((state?.rules || []).map(r => [r.id, r])), [state?.rules]);
+
+  const ruleFilterOptions = useMemo(() => {
+    const byGroup = new Map();
+    availableRules.forEach(id => {
+      const r = ruleLabelMap.get(id);
+      const gid = r?.group || "other";
+      if (!byGroup.has(gid)) byGroup.set(gid, []);
+      byGroup.get(gid).push({
+        value: id,
+        label: r?.label || id,
+        group: gid,
+        groupLabel: groupLabelMap.get(gid) || gid,
+      });
+    });
+    const opts = [{ value: "all", label: "All rules" }];
+    for (const [, items] of byGroup) items.forEach(item => opts.push(item));
+    return opts;
+  }, [availableRules, ruleLabelMap, groupLabelMap]);
 
   const filteredGroups = useMemo(() => {
     const list = (state?.summary?.groups || []).filter(group => showIgnored || !group.ignored);
@@ -226,7 +241,6 @@ export default function PiiGuardClient() {
 
   const {
     config = { mode: "observe", rules: {}, ignore: [] },
-    rules = [],
     recent = [],
     summary = {},
     health = null,
@@ -402,249 +416,95 @@ export default function PiiGuardClient() {
         </Card>
       </div>
 
-      {/* 24-Hour Activity Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-4 sm:p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-text-main flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px] text-text-muted">rule</span>
-              By rule
-            </h3>
-            {summary.truncated && (
-              <Badge variant="warning" size="sm">
-                Partial log
-              </Badge>
-            )}
-          </div>
-          {sortedRules.length === 0 ? (
-            <p className="text-xs text-text-muted">No rule activity in the last 24 hours.</p>
-          ) : (
-            <div className="space-y-3">
-              {sortedRules.map(item => {
-                const cfg = KIND_CONFIG[item.kind] || KIND_CONFIG.pii;
-                const pct = Math.max(2, Math.round((item.unique / maxRuleUnique) * 100));
-                return (
-                  <div key={item.rule} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs gap-2">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-mono font-medium text-text-main truncate">{item.rule}</span>
-                        <Badge size="sm" variant={cfg.badge}>
-                          {item.kind}
-                        </Badge>
-                      </div>
-                      <div className="text-text-muted shrink-0 text-right font-mono">
-                        <span className="font-semibold text-text-main">{count(item.unique)} unique</span>
-                        <span className="mx-1">·</span>
-                        <span>{count(item.hits)} hits</span>
-                      </div>
-                    </div>
-                    <div
-                      role="progressbar"
-                      aria-label={`${item.rule}: ${count(item.unique)} unique, ${count(item.hits)} hits`}
-                      aria-valuenow={item.unique}
-                      aria-valuemin={0}
-                      aria-valuemax={maxRuleUnique}
-                      className="h-2 w-full overflow-hidden rounded-full bg-surface-2"
-                    >
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${cfg.bar}`}
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-
-        <Card className="p-4 sm:p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-text-main flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px] text-text-muted">location_on</span>
-              Where values appeared
-            </h3>
-          </div>
-          {sortedSources.length === 0 ? (
-            <p className="text-xs text-text-muted">No source activity in the last 24 hours.</p>
-          ) : (
-            <div className="space-y-3">
-              {sortedSources.map(item => {
-                const pct = Math.max(2, Math.round((item.hits / maxSourceHits) * 100));
-                return (
-                  <div key={item.source} className="space-y-1">
-                    <div className="flex items-center justify-between text-xs gap-2">
-                      <span className="font-medium text-text-main truncate">
-                        {item.label}
-                      </span>
-                      <span className="text-text-muted shrink-0 text-right font-mono">
-                        <span className="font-semibold text-text-main">{count(item.hits)}</span> hits
-                      </span>
-                    </div>
-                    <div
-                      role="progressbar"
-                      aria-label={`${item.label}: ${count(item.hits)}`}
-                      aria-valuenow={item.hits}
-                      aria-valuemin={0}
-                      aria-valuemax={maxSourceHits}
-                      className="h-2 w-full overflow-hidden rounded-full bg-surface-2"
-                    >
-                      <div
-                        className="h-full rounded-full bg-brand-500/80 transition-all duration-300"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Scanner Health Card */}
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-text-muted">monitor_heart</span>
-            Scanner health
-          </h3>
-          <div className="flex items-center gap-1.5">
-            <span
-              className={`inline-block size-2.5 rounded-full ${health?.loaded ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-red-500"}`}
-              aria-hidden="true"
-            />
-            <span className="text-xs font-medium text-text-main">
-              {health?.loaded ? "Loaded" : "Not loaded"}
-            </span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Known values</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {count(health?.knownCount)}
-            </strong>
-            <span className="text-[11px] text-text-muted block mt-0.5">{age(knownUpdated)}</span>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Scanner errors</span>
-            <strong className={`block text-base font-semibold mt-0.5 ${health?.errors ? "text-red-500" : "text-text-main"}`}>
-              {count(health?.errors)}
-            </strong>
-            <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={health?.lastError ? `${age(health.lastError.ts)} (${health.lastError.stage})` : "No errors"}>
-              {health?.lastError ? `Last: ${age(health.lastError.ts)} (${health.lastError.stage})` : "No errors"}
-            </span>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Requests</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {count(health?.requests)}
-            </strong>
-            <span className="text-[11px] text-text-muted block mt-0.5">
-              {health?.withFindings !== undefined ? `${count(health.withFindings)} findings` : "all time"}
-            </span>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Scan latency</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5 font-mono">
-              p95 {count(health?.p95ScanMs)} ms
-            </strong>
-            <span className="text-[11px] text-text-muted block mt-0.5 font-mono">
-              max {count(health?.maxScanMs)} ms
-            </span>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Images not scanned (no OCR)</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {count(health?.unscanned?.images)}
-            </strong>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Files not scanned</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {count(health?.unscanned?.files)}
-            </strong>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span
-              className="text-xs text-text-muted block font-medium cursor-help"
-              title="Signed thinking signatures and encrypted reasoning cannot be read; they are skipped."
-            >
-              Encrypted reasoning skipped
-            </span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {count(health?.unscanned?.opaque)}
-            </strong>
-          </div>
-
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Scanner uptime</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">
-              {uptime(health?.since)}
-            </strong>
-            <span className="text-[11px] text-text-muted block mt-0.5">
-              {count(health?.seen)} total seen
-            </span>
-          </div>
-        </div>
-      </Card>
-
-      {/* Rules Card */}
+      {/* Rule Groups */}
       <Card>
         <div className="mb-3">
           <h3 className="font-semibold text-text-main flex items-center gap-2">
             <span className="material-symbols-outlined text-[18px] text-text-muted">tune</span>
-            Rules
+            Rule groups
           </h3>
           <p className="text-xs text-text-muted mt-0.5">
-            Default follows the default mode. The known rule matches values from ~/.config/pii-guard/known.json.
+            Default follows the default mode. The known group matches values from ~/.config/pii-guard/known.json.
           </p>
         </div>
         <div className="divide-y divide-border border-t border-border">
-          {rules.map(r => {
-            const warning = summary.ruleWarnings?.[r.id];
-            const byRule = summary.byRule?.[r.id] || {};
+          {groupsList.map(group => {
+            const rulesInGroup = groupRules.get(group.id) || [];
+            if (!rulesInGroup.length) return null;
+            const totals = rulesInGroup.reduce((acc, r) => {
+              const byRule = summary.byRule?.[r.id] || {};
+              return { unique: acc.unique + (byRule.unique || 0), hits: acc.hits + (byRule.hits || 0) };
+            }, { unique: 0, hits: 0 });
+            const modes = rulesInGroup.map(r => config.rules?.[r.id] || "default");
+            const shared = modes.length > 0 && modes.every(m => m === modes[0]) ? modes[0] : "mixed";
             return (
-              <div key={r.id} className="flex items-center justify-between gap-4 py-2.5 flex-wrap">
-                <div className="min-w-0 space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-sm font-semibold text-text-main">{r.id}</span>
-                    <Badge size="sm" variant={KIND_CONFIG[r.kind]?.badge || "default"}>
-                      {r.kind}
-                    </Badge>
-                    {r.id === "known" && (
-                      <span className="text-xs text-text-muted">({count(r.count)} values)</span>
-                    )}
-                    <span className="text-xs text-text-muted font-mono">
-                      · {count(byRule.unique)} unique / {count(byRule.hits)} hits / 24h
-                    </span>
-                  </div>
-                  {warning && (
-                    <div>
-                      <span
-                        className="inline-block cursor-help"
-                        title={`${Math.round(warning.share * 100)}% in ${humanizeSource(warning.topSource)}`}
-                      >
-                        <Badge variant="warning" size="sm" icon="warning">
-                          Mostly in {humanizeSource(warning.topSource)}; Redact cannot rewrite it there
-                        </Badge>
+              <div key={group.id} className="py-2.5">
+                <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <details className="group min-w-0 flex-1">
+                    <summary className="cursor-pointer list-none flex items-center gap-2 text-sm">
+                      <span className="material-symbols-outlined text-[18px] text-text-muted transition-transform group-open:rotate-90">
+                        chevron_right
                       </span>
+                      <span className="font-semibold text-text-main">{group.label}</span>
+                      <span className="text-xs text-text-muted font-mono">
+                        {count(totals.unique)} unique / {count(totals.hits)} hits / 24h
+                      </span>
+                    </summary>
+                    <div className="mt-2 space-y-2 pl-6 border-l border-border-subtle">
+                      {rulesInGroup.map(r => {
+                        const byRule = summary.byRule?.[r.id] || {};
+                        const warning = summary.ruleWarnings?.[r.id];
+                        return (
+                          <div key={r.id} className="flex items-center justify-between gap-4 py-1.5 flex-wrap">
+                            <div className="min-w-0 space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-mono text-sm font-semibold text-text-main">{r.label || r.id}</span>
+                                <Badge size="sm" variant={KIND_CONFIG[r.kind]?.badge || "default"}>
+                                  {r.kind}
+                                </Badge>
+                                {r.id === "known" && (
+                                  <span className="text-xs text-text-muted">({count(r.count)} values)</span>
+                                )}
+                                <span className="text-xs text-text-muted font-mono">
+                                  · {count(byRule.unique)} unique / {count(byRule.hits)} hits / 24h
+                                </span>
+                              </div>
+                              {warning && (
+                                <div>
+                                  <span
+                                    className="inline-block cursor-help"
+                                    title={`${Math.round(warning.share * 100)}% in ${humanizeSource(warning.topSource)}`}
+                                  >
+                                    <Badge variant="warning" size="sm" icon="warning">
+                                      Mostly in {humanizeSource(warning.topSource)}; Redact cannot rewrite it there
+                                    </Badge>
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                            <SegmentedControl
+                              size="sm"
+                              options={RULE_MODES}
+                              value={config.rules?.[r.id] || "default"}
+                              onChange={mode => { if (confirmBlock(mode)) save({ rules: { [r.id]: mode } }); }}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
+                  </details>
+                  <div className="flex items-center gap-2">
+                    {shared === "mixed" && (
+                      <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Mixed</span>
+                    )}
+                    <SegmentedControl
+                      size="sm"
+                      options={RULE_MODES}
+                      value={shared === "mixed" ? null : shared}
+                      onChange={mode => { if (confirmBlock(mode)) save({ rules: Object.fromEntries(rulesInGroup.map(r => [r.id, mode])) }); }}
+                    />
+                  </div>
                 </div>
-                <SegmentedControl
-                  size="sm"
-                  options={[{ value: "default", label: "Default" }, ...MODES]}
-                  value={config.rules?.[r.id] || "default"}
-                  onChange={mode => { if (confirmBlock(mode)) save({ rules: { [r.id]: mode } }); }}
-                />
               </div>
             );
           })}
@@ -657,11 +517,19 @@ export default function PiiGuardClient() {
           <div>
             <h3 className="font-semibold text-text-main flex items-center gap-2">
               <span className="material-symbols-outlined text-[18px] text-text-muted">search_check</span>
-              Findings
+              Values seen (24h)
               <span className="text-xs font-normal text-text-muted">
                 ({count(filteredGroups.length)}{filteredGroups.length !== (summary.groups || []).length ? ` of ${count((summary.groups || []).length)}` : ""})
               </span>
+              {summary.truncated && (
+                <Badge variant="warning" size="sm">
+                  Partial log
+                </Badge>
+              )}
             </h3>
+            <p className="text-xs text-text-muted mt-1">
+              Each row is one unique value (by hash), not one request. Turns = requests that contained it.
+            </p>
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <Button
@@ -782,6 +650,8 @@ export default function PiiGuardClient() {
                   const last = group.action || actions[actions.length - 1];
                   // In leaked view the badge must match the filter, not the newest action.
                   const latest = leakedOnly ? (last === "leaked" ? "leaked" : "leaked earlier") : last;
+                  const ruleMeta = ruleLabelMap.get(group.rule);
+                  const groupLabel = groupLabelMap.get(ruleMeta?.group) || ruleMeta?.group;
                   return (
                     <tr key={`${group.rule}:${group.hash}`} className="align-middle hover:bg-surface-2/40 transition-colors">
                       <td className="py-2.5 pr-3">
@@ -794,8 +664,15 @@ export default function PiiGuardClient() {
                         />
                       </td>
                       <td className="py-2.5 pr-3" title={`${group.rule} · ${group.hash}`}>
-                        <span className="font-medium text-text-main">{group.name || "—"}</span>
-                        <span className="text-[11px] text-text-muted block">{group.rule}</span>
+                        <span className="font-medium text-text-main">{ruleMeta?.label || group.rule}</span>
+                        {ruleMeta?.group && (
+                          <span className="ml-1 inline-block rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted align-middle">
+                            {groupLabel}
+                          </span>
+                        )}
+                        {group.name && (
+                          <span className="text-[11px] text-text-muted block">{group.name}</span>
+                        )}
                         <span className="font-mono text-[10px] text-text-muted block truncate max-w-[140px] opacity-75">{group.hash}</span>
                       </td>
                       <td className="py-2.5 pr-3 text-text-muted">
@@ -853,97 +730,244 @@ export default function PiiGuardClient() {
             </Button>
           </div>
         )}
-
-        <details className="mt-4 text-xs">
-          <summary className="cursor-pointer text-text-muted font-medium hover:text-text-main transition-colors">
-            Recent event details ({recent.filter(e => e.type !== "stats").length} events)
-          </summary>
-          <ul className="mt-2 space-y-1 max-h-64 overflow-y-auto rounded-lg bg-surface-2/40 p-2.5 border border-border-subtle font-mono text-[11px]">
-            {recent.filter(e => e.type !== "stats").map((event, i) => (
-              <li key={`${event.ts}:${i}`} className="text-text-muted">
-                <span className="text-text-main">{event.ts}</span> · {event.model || event.stage || "event"} · {Object.entries(event.counts || {}).map(([k, n]) => `${k}=${n}`).join(", ")} · {[...(event.hits || event.new || []).map(hit => hit.action).filter(Boolean), ...(event.blocked ? ["blocked"] : []), ...(event.redacted ? ["redacted"] : [])].join(", ")}
-              </li>
-            ))}
-          </ul>
-        </details>
       </Card>
 
-      {/* Scanner Test Card */}
-      <Card>
-        <div className="mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-text-muted">science</span>
-            Scanner test
-          </h3>
-          <p className="text-xs text-text-muted mt-0.5">
-            Scan a text to preview a mode before you save it. The text is not sent to any provider.
-          </p>
-        </div>
-        <textarea
-          value={text}
-          onChange={e => setText(e.target.value)}
-          rows={3}
-          aria-label="Text to scan"
-          className="w-full rounded-[10px] border border-border bg-surface-2 p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/30"
-        />
-        <div className="mt-3 flex items-end gap-2 flex-wrap">
-          <Select
-            label="Test with"
-            className="w-56"
-            value={testMode}
-            onChange={e => { setTestMode(e.target.value); setResult(null); }}
-            options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]}
-          />
-          <Select
-            label="Where"
-            className="w-44"
-            value={testWhere}
-            onChange={e => { setTestWhere(e.target.value); setResult(null); }}
-            options={TEST_WHERES}
-          />
-          <Button variant="secondary" onClick={runTest}>Scan</Button>
-        </div>
-        {result && (
-          <div className="mt-4 space-y-3 pt-3 border-t border-border text-sm">
-            {result.findings.length === 0 ? (
-              <p className="text-text-muted text-xs">No findings detected.</p>
+      {/* Details disclosure */}
+      <details className="rounded-xl border border-border bg-surface p-4">
+        <summary className="cursor-pointer text-sm font-medium text-text-main hover:text-primary transition-colors">
+          Details
+        </summary>
+        <div className="mt-4 space-y-6">
+          {/* Where values appeared */}
+          <Card className="p-4 sm:p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-text-main flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-text-muted">location_on</span>
+                Where values appeared
+              </h3>
+            </div>
+            {sortedSources.length === 0 ? (
+              <p className="text-xs text-text-muted">No source activity in the last 24 hours.</p>
             ) : (
-              <ul className="space-y-1.5">
-                {result.findings.map((f, i) => (
-                  <li key={i} className="flex items-center gap-2 font-mono text-xs flex-wrap">
-                    <Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>
-                      {f.action}
-                    </Badge>
-                    <span className="font-semibold text-text-main">{f.name || f.rule}:</span>
-                    <span className="rounded bg-surface-2 px-1.5 py-0.5 text-text-muted">{f.match}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="space-y-3">
+                {sortedSources.map(item => {
+                  const pct = Math.max(2, Math.round((item.hits / maxSourceHits) * 100));
+                  return (
+                    <div key={item.source} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <span className="font-medium text-text-main truncate">
+                          {item.label}
+                        </span>
+                        <span className="text-text-muted shrink-0 text-right font-mono">
+                          <span className="font-semibold text-text-main">{count(item.hits)}</span> hits
+                        </span>
+                      </div>
+                      <div
+                        role="progressbar"
+                        aria-label={`${item.label}: ${count(item.hits)}`}
+                        aria-valuenow={item.hits}
+                        aria-valuemin={0}
+                        aria-valuemax={maxSourceHits}
+                        className="h-2 w-full overflow-hidden rounded-full bg-surface-2"
+                      >
+                        <div
+                          className="h-full rounded-full bg-brand-500/80 transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             )}
-            {result.blocked.length > 0 && (
-              <p className="text-xs text-red-500 font-medium">
-                A real request would be blocked: {result.blocked.join(", ")}
-              </p>
-            )}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {result.before !== undefined && (
-                <div>
-                  <p className="text-xs text-text-muted mb-1 font-medium">Before</p>
-                  <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-muted border border-border-subtle">
-                    {result.before}
-                  </pre>
-                </div>
-              )}
-              <div>
-                <p className="text-xs text-text-muted mb-1 font-medium">Sent upstream</p>
-                <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle">
-                  <PlaceholderText text={result.redacted} />
-                </pre>
+          </Card>
+
+          {/* Scanner Health Card */}
+          <Card>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-text-main flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-text-muted">monitor_heart</span>
+                Scanner health
+              </h3>
+              <div className="flex items-center gap-1.5">
+                <span
+                  className={`inline-block size-2.5 rounded-full ${health?.loaded ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-red-500"}`}
+                  aria-hidden="true"
+                />
+                <span className="text-xs font-medium text-text-main">
+                  {health?.loaded ? "Loaded" : "Not loaded"}
+                </span>
               </div>
             </div>
-          </div>
-        )}
-      </Card>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Known values</span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5">
+                  {count(health?.knownCount)}
+                </strong>
+                <span className="text-[11px] text-text-muted block mt-0.5">{age(knownUpdated)}</span>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Scanner errors</span>
+                <strong className={`block text-base font-semibold mt-0.5 ${health?.errors ? "text-red-500" : "text-text-main"}`}>
+                  {count(health?.errors)}
+                </strong>
+                <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={health?.lastError ? `${age(health.lastError.ts)} (${health.lastError.stage})` : "No errors"}>
+                  {health?.lastError ? `Last: ${age(health.lastError.ts)} (${health.lastError.stage})` : "No errors"}
+                </span>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Requests</span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5">
+                  {count(health?.requests)}
+                </strong>
+                <span className="text-[11px] text-text-muted block mt-0.5">
+                  {health?.withFindings !== undefined ? `${count(health.withFindings)} findings` : "all time"}
+                </span>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Scan latency</span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5 font-mono">
+                  p95 {count(health?.p95ScanMs)} ms
+                </strong>
+                <span className="text-[11px] text-text-muted block mt-0.5 font-mono">
+                  max {count(health?.maxScanMs)} ms
+                </span>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Images not scanned (no OCR)</span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5">
+                  {count(health?.unscanned?.images)}
+                </strong>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Files not scanned</span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5">
+                  {count(health?.unscanned?.files)}
+                </strong>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span
+                  className="text-xs text-text-muted block font-medium cursor-help"
+                  title="Signed thinking signatures and encrypted reasoning cannot be read; they are skipped."
+                >
+                  Encrypted reasoning skipped
+                </span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5">
+                  {count(health?.unscanned?.opaque)}
+                </strong>
+              </div>
+
+              <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
+                <span className="text-xs text-text-muted block font-medium">Scanner uptime</span>
+                <strong className="block text-base font-semibold text-text-main mt-0.5">
+                  {uptime(health?.since)}
+                </strong>
+                <span className="text-[11px] text-text-muted block mt-0.5">
+                  {count(health?.seen)} total seen
+                </span>
+              </div>
+            </div>
+          </Card>
+
+          {/* Recent event details */}
+          <details className="text-xs">
+            <summary className="cursor-pointer text-text-muted font-medium hover:text-text-main transition-colors">
+              Recent event details ({recent.filter(e => e.type !== "stats").length} events)
+            </summary>
+            <ul className="mt-2 space-y-1 max-h-64 overflow-y-auto rounded-lg bg-surface-2/40 p-2.5 border border-border-subtle font-mono text-[11px]">
+              {recent.filter(e => e.type !== "stats").map((event, i) => (
+                <li key={`${event.ts}:${i}`} className="text-text-muted">
+                  <span className="text-text-main">{event.ts}</span> · {event.model || event.stage || "event"} · {Object.entries(event.counts || {}).map(([k, n]) => `${k}=${n}`).join(", ")} · {[...(event.hits || event.new || []).map(hit => hit.action).filter(Boolean), ...(event.blocked ? ["blocked"] : []), ...(event.redacted ? ["redacted"] : [])].join(", ")}
+                </li>
+              ))}
+            </ul>
+          </details>
+
+          {/* Scanner Test Card */}
+          <Card>
+            <div className="mb-3">
+              <h3 className="font-semibold text-text-main flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-text-muted">science</span>
+                Scanner test
+              </h3>
+              <p className="text-xs text-text-muted mt-0.5">
+                Scan a text to preview a mode before you save it. The text is not sent to any provider.
+              </p>
+            </div>
+            <textarea
+              value={text}
+              onChange={e => setText(e.target.value)}
+              rows={3}
+              aria-label="Text to scan"
+              className="w-full rounded-[10px] border border-border bg-surface-2 p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/30"
+            />
+            <div className="mt-3 flex items-end gap-2 flex-wrap">
+              <Select
+                label="Test with"
+                className="w-56"
+                value={testMode}
+                onChange={e => { setTestMode(e.target.value); setResult(null); }}
+                options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]}
+              />
+              <Select
+                label="Where"
+                className="w-44"
+                value={testWhere}
+                onChange={e => { setTestWhere(e.target.value); setResult(null); }}
+                options={TEST_WHERES}
+              />
+              <Button variant="secondary" onClick={runTest}>Scan</Button>
+            </div>
+            {result && (
+              <div className="mt-4 space-y-3 pt-3 border-t border-border text-sm">
+                {result.findings.length === 0 ? (
+                  <p className="text-text-muted text-xs">No findings detected.</p>
+                ) : (
+                  <ul className="space-y-1.5">
+                    {result.findings.map((f, i) => (
+                      <li key={i} className="flex items-center gap-2 font-mono text-xs flex-wrap">
+                        <Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>
+                          {f.action}
+                        </Badge>
+                        <span className="font-semibold text-text-main">{f.name || f.rule}:</span>
+                        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-text-muted">{f.match}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {result.blocked.length > 0 && (
+                  <p className="text-xs text-red-500 font-medium">
+                    A real request would be blocked: {result.blocked.join(", ")}
+                  </p>
+                )}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {result.before !== undefined && (
+                    <div>
+                      <p className="text-xs text-text-muted mb-1 font-medium">Before</p>
+                      <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-muted border border-border-subtle">
+                        {result.before}
+                      </pre>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-xs text-text-muted mb-1 font-medium">Sent upstream</p>
+                    <pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle">
+                      <PlaceholderText text={result.redacted} />
+                    </pre>
+                  </div>
+                </div>
+              </div>
+            )}
+          </Card>
+        </div>
+      </details>
     </div>
   );
 }

@@ -141,7 +141,35 @@ export async function ready() {
   try { reload(); } catch { failure("known"); return false; }
   return !!detector;
 }
-export function rules() { return [{ id: "known", kind: "known", count: detector?.knownCount || 0 }, ...(library?.RULES || []).map(r => ({ id: r.id, kind: r.kind }))]; }
+const FALLBACK_GROUPS = [
+  { id: "api_key", label: "API keys and secrets" },
+  { id: "known", label: "Vault values" },
+  { id: "gov_id", label: "Government IDs" },
+  { id: "financial", label: "Financial" },
+  { id: "contact", label: "Contact" },
+  { id: "network", label: "Network" },
+];
+
+export function groups() {
+  const g = library?.GROUPS;
+  const out = (Array.isArray(g) && g.length ? g : FALLBACK_GROUPS).map(x => ({ id: x.id, label: x.label }));
+  if (!out.some(x => x.id === "known")) out.push({ id: "known", label: "Vault values" });
+  return out;
+}
+
+export function rules() {
+  // Old library builds lack groups: secrets go to api_key, the rest to "other" (shown with its id as label).
+  const fallbackGroup = r => (r.kind === "secret" ? "api_key" : "other");
+  return [
+    { id: "known", kind: "known", group: "known", label: "Vault values", count: detector?.knownCount || 0 },
+    ...(library?.RULES || []).map(r => ({
+      id: r.id,
+      kind: r.kind,
+      group: r.group || fallbackGroup(r),
+      label: r.label || r.id,
+    })),
+  ];
+}
 export function actionFor(config = {}) {
   const mode = ACTIONS.includes(config.mode) ? config.mode : "observe";
   const overrides = config.rules && typeof config.rules === "object" ? config.rules : {};

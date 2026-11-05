@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { open } from "node:fs/promises";
 import { getSettings, updateSettings } from "@/lib/localDb";
-import { ready, rules, testText, eventsFile, health } from "@/lib/piiGuard/observe.js";
+import { ready, rules, groups, testText, eventsFile, health } from "@/lib/piiGuard/observe.js";
 import { summarize } from "@/lib/piiGuard/summary.js";
 
 export const dynamic = "force-dynamic";
@@ -35,7 +35,7 @@ async function state() {
   const available = await ready();
   const { events, truncated } = await recentEvents();
   const config = { ...settings.piiGuard, ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
-  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], health: health(), summary: { ...summarize(events, { ignore: config.ignore }), truncated }, recent: events.slice(0, 20) };
+  return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(), summary: { ...summarize(events, { ignore: config.ignore }), truncated }, recent: events.slice(0, 20) };
 }
 
 export async function GET() {
