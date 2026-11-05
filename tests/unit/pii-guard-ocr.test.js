@@ -243,6 +243,7 @@ describe("observeRequest with OCR", () => {
     const hitEvent = parsedEvents.find(e => e.imageIndex === 0);
     expect(hitEvent).toBeDefined();
     expect(hitEvent.type).toBe("ocr");
+    expect(hitEvent.mode).toBe("enhanced");
     expect(hitEvent.imageIndex).toBe(0);
     expect(hitEvent.endpoint).toBe("/v1/chat/completions");
     expect(hitEvent.model).toBe("claude-3-haiku");
@@ -355,6 +356,26 @@ describe("observeRequest with OCR", () => {
       ttlMs: 7 * 24 * 60 * 60 * 1000,
     });
     expect(mockMod.capturedDeps.captureStore).toBeDefined();
+  });
+
+  it("passes PII_GUARD_OCR_MODE to the worker and health, and falls back to enhanced", async () => {
+    process.env.PII_GUARD_OCR = "1";
+    const mockCode = `
+      export let capturedOptions = null;
+      export function createDetector() { return { scan: () => [], knownCount: 0 }; }
+      export function scanBody() { return { findings: [], chars: 0, images: 0, imageBytes: 0, unscanned: {} }; }
+      export function createOcrWorker(options) { capturedOptions = options; return { enqueue: () => true, close: () => Promise.resolve() }; }
+    `;
+    await writeFile(mockModuleFile, mockCode);
+    for (const [env, want] of [["basic", "basic"], ["bogus", "enhanced"]]) {
+      vi.resetModules();
+      process.env.PII_GUARD_OCR_MODE = env;
+      const mod = await import("../../src/lib/piiGuard/observe.js");
+      await mod.observeRequest({ messages: [{ role: "user", content: "x" }] }, { endpoint: "/v1/chat" });
+      expect(mod.health().ocr.mode).toBe(want);
+      expect((await import(mockModuleFile)).capturedOptions.mode).toBe(want);
+    }
+    delete process.env.PII_GUARD_OCR_MODE;
   });
 
   it("recreates OCR worker and closes old worker when known file mtime changes", async () => {

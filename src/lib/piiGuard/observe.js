@@ -104,6 +104,11 @@ function isOcrEnabled() {
   if (!library) return true;
   return typeof library.createOcrWorker === "function";
 }
+// "enhanced" (library default): ffmpeg cleanup and OCR text repair. "basic": raw Tesseract, for comparison.
+function ocrMode() {
+  const m = process.env.PII_GUARD_OCR_MODE;
+  return m === "basic" || m === "enhanced" ? m : "enhanced";
+}
 function isCaptureEnabled() {
   return isOcrEnabled() && process.env.PII_GUARD_CAPTURE_IMAGES === "1";
 }
@@ -151,6 +156,7 @@ function getOcrWorker() {
     const store = initCaptureStore();
     const options = {
       detector: detectorOptions,
+      mode: ocrMode(),
       ...(captureConfig ? { capture: captureConfig } : {}),
     };
     const deps = store ? { captureStore: store } : undefined;
@@ -304,6 +310,7 @@ function handleOcrResult(result, requestId, imageIndex, meta, body, config, mode
     const event = {
       ts: new Date().toISOString(),
       type: "ocr",
+      mode: ocrMode(),
       requestId,
       imageIndex,
       endpoint: meta?.endpoint,
@@ -321,6 +328,8 @@ function handleOcrResult(result, requestId, imageIndex, meta, body, config, mode
     };
 
     void append(event).catch(() => failure("write"));
+    const summary = Object.entries(counts).map(([k, n]) => `${k}=${n}`).join(", ");
+    if (summary) console.warn(`[pii-guard] ${event.model || "-"} ${event.endpoint || "-"} image ${imageIndex} (ocr ${event.mode}, ${event.cache}): ${summary}`);
   } catch {
     failure("ocr");
   }
@@ -446,7 +455,7 @@ export async function testText(text, config, at = "user") {
 }
 export function health() {
   const sorted = healthSamples.slice().sort((a, b) => a - b);
-  const ocr = { enabled: isOcrEnabled(), capture: isCaptureEnabled() };
+  const ocr = { enabled: isOcrEnabled(), mode: ocrMode(), capture: isCaptureEnabled() };
   return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr };
 }
 export function eventsFile() { return process.env.PII_GUARD_EVENTS || join(homedir(), ".9router/pii-guard/events.jsonl"); }

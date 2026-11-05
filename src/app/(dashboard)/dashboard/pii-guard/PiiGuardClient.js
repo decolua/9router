@@ -878,6 +878,9 @@ export default function PiiGuardClient() {
               {ocrHealth?.queue !== undefined && (
                 <span className="text-xs text-text-muted font-medium">Queue: {count(ocrHealth.queue)}</span>
               )}
+              {ocrHealth?.enabled && ocrHealth?.mode && (
+                <Badge size="sm" variant="default">Mode: {ocrHealth.mode}</Badge>
+              )}
               {ocrHealth?.capture && (
                 <Badge size="sm" variant="info">Capture on</Badge>
               )}
