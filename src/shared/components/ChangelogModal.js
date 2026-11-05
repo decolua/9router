@@ -238,6 +238,8 @@ const CATEGORY_ALIAS = {
   "provider logos - transparent backgrounds, uniform size, 9router + llmtr marks": "UI",
   "9router sidebar logo": "UI",
   "9router sidebar logo - replaced with the new brand mark": "UI",
+  "runcrate": "UI",
+  "runcrate - real logo instead of the rc text tile": "UI",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",

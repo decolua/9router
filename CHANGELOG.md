@@ -1,3 +1,10 @@
+# v0.5.373 (2026-11-05) · 1 commit
+
+## Runcrate — real logo instead of the RC text tile
+- Fetched the Runcrate brand mark from runcrate.ai (favicon) and shipped it as a
+  transparent `public/providers/runcrate.png` (256px) — the provider previously
+  fell back to the `RC` text fallback in the logo tile.
+
 # v0.5.372 (2026-11-05) · 1 commit
 
 ## 9router sidebar logo — replaced with the new brand mark
