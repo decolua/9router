@@ -25,11 +25,10 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
       )}>
         <div className="flex items-start gap-3">
           <div
-            className="flex size-11 shrink-0 items-center justify-center rounded-xl border"
-            style={{ backgroundColor: `${tool.color}14`, borderColor: `${tool.color}2e` }}
+            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border-subtle bg-bg-secondary"
           >
             {tool.image ? (
-              <Image src={tool.image} alt={tool.name} width={26} height={26} className="size-7 object-contain" sizes="28px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
+              <Image src={tool.image} alt={tool.name} width={44} height={44} className="size-full object-cover" sizes="44px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />
             ) : tool.icon ? (
               <span className="material-symbols-outlined text-[24px]" style={{ color: tool.color }}>{tool.icon}</span>
             ) : (

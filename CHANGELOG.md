@@ -1,3 +1,14 @@
+# v0.5.370 (2026-11-04) · 1 commit
+
+## CLI Tools provider logos — uniform, larger, no background tint
+- Every CLI tool card logo now fills the whole icon tile (`object-cover`, 44px)
+  so all logos render at the same size regardless of their source aspect ratio —
+  previously they were 28px `object-contain` and varied in size.
+- Dropped the brand-color background tint on the icon tile (used the neutral
+  `bg-bg-secondary` surface) so transparent logos sit cleanly instead of on a
+  coloured box. Applies to both the summary grid cards and the per-tool setup
+  header.
+
 # v0.5.369 (2026-11-04) · 1 commit
 
 ## CLI Tools dashboard — richer setup cards

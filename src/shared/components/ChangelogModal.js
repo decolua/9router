@@ -232,6 +232,8 @@ const CATEGORY_ALIAS = {
   "codebuddy intl oauth login fix, 4 upstream prs ported, kimi code cli setup": "Features",
   "cli tools dashboard": "UI",
   "cli tools dashboard - richer setup cards": "UI",
+  "cli tools provider logos": "UI",
+  "cli tools provider logos - uniform, larger, no background tint": "UI",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",
