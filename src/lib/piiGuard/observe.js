@@ -188,7 +188,6 @@ function getOcrWorker(config = {}) {
     const options = {
       detector: detectorOptions,
       mode: quality,
-      quality,
       ...(captureConfig ? { capture: captureConfig } : {}),
     };
     const deps = store ? { captureStore: store } : undefined;

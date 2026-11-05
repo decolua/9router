@@ -202,7 +202,8 @@ export async function POST(request) {
     }
     if (body.testQuality !== undefined && ![...OCR_QUALITIES, "compare"].includes(body.testQuality)) return NextResponse.json({ error: "Invalid test quality" }, { status: 400 });
     if (body.testMode !== undefined && !["current", ...MODES].includes(body.testMode)) return NextResponse.json({ error: "Invalid test mode" }, { status: 400 });
-    const config = body.testMode && body.testMode !== "current" ? { ...current, mode: body.testMode } : current;
+    // Same as the text test: a mode preview applies to all rules.
+    const config = body.testMode && body.testMode !== "current" ? { mode: body.testMode, rules: {} } : current;
     const qualities = body.testQuality === "compare" ? ["basic", "enhanced"] : [body.testQuality || normalizeOcr(current.ocr).quality];
     try {
       const results = [];

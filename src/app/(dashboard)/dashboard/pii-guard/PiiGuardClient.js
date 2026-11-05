@@ -1041,12 +1041,12 @@ export default function PiiGuardClient() {
                     <span className="text-text-muted">{age(item.ts)}</span><span className="font-medium text-text-main">{item.model || item.endpoint || "request"}</span>
                     <span className="text-text-muted">image {item.imageIndex}</span><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge>
                     {(item.rules || []).length ? item.rules.map(rule => <Badge key={rule} size="sm" variant="default">{rule}</Badge>) : <span className="text-text-muted">no hits</span>}
-                    <span className="text-text-muted">{count(item.ocrMs)} ms · cache {item.cache || "miss"} · {item.mode || "observe"}</span>
+                    <span className="text-text-muted">{item.cache === "hit" ? "from cache" : `${count(item.ocrMs)} ms`} · {item.mode || "enhanced"}</span>
                   </li>
                 ))}
               </ul>
             )}
-            {Object.keys(ocrSummary?.reasons || {}).length > 0 && <p className="text-xs text-text-muted">Not scanned: {Object.entries(ocrSummary.reasons).map(([reason, n]) => `${({ queue_full: "queue full", timeout: "timeout", too_large: "too large", unsupported: "unsupported", low_confidence: "low confidence", engine_error: "engine error" })[reason] || reason} ${count(n)}`).join(" · ")}</p>}
+            {Object.keys(ocrSummary?.reasons || {}).length > 0 && <p className="text-xs text-text-muted">Read issues: {Object.entries(ocrSummary.reasons).map(([reason, n]) => `${({ queue_full: "queue full", timeout: "timeout", too_large: "too large", unsupported: "unsupported", low_confidence: "partly read", engine_error: "engine error" })[reason] || reason} ${count(n)}`).join(" · ")}</p>}
           </div>
         </Card>
       )}
