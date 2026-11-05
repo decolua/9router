@@ -1,3 +1,12 @@
+# v0.5.374 (2026-11-05) · 1 commit
+
+## CLI Tools logo tiles — transparent background, logo only
+- The logo tile in the CLI Tools summary cards and the per-tool setup header
+  carried `bg-bg-secondary`, which renders as a white-tinted glass box
+  (`rgba(255,255,255,0.11)`) behind every provider logo — that's the white
+  background the user kept seeing. Removed the tile background and border
+  entirely; each card now shows just the provider logo on the card surface.
+
 # v0.5.373 (2026-11-05) · 1 commit
 
 ## Runcrate — real logo instead of the RC text tile

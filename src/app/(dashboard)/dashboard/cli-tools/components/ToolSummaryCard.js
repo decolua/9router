@@ -25,7 +25,7 @@ export default function ToolSummaryCard({ toolId, tool, status }) {
       )}>
         <div className="flex items-start gap-3">
           <div
-            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border-subtle bg-bg-secondary"
+            className="flex size-11 shrink-0 items-center justify-center overflow-hidden rounded-xl"
           >
             {tool.image ? (
               <Image src={tool.image} alt={tool.name} width={44} height={44} className="size-full object-cover" sizes="44px" onError={(e) => { e.target.style.display = "none"; }} loading="lazy" decoding="async" />

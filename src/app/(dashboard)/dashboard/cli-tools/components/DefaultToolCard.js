@@ -253,7 +253,7 @@ export default function DefaultToolCard({ toolId, tool, isExpanded, onToggle, ba
       <div className="flex items-center justify-between hover:cursor-pointer" onClick={onToggle}>
         <div className="flex items-center gap-3">
           <div
-            className="size-11 overflow-hidden rounded-xl flex items-center justify-center shrink-0 border border-border-subtle bg-bg-secondary"
+            className="size-11 overflow-hidden rounded-xl flex items-center justify-center shrink-0"
           >
             {renderIcon()}
           </div>

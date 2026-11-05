@@ -240,6 +240,8 @@ const CATEGORY_ALIAS = {
   "9router sidebar logo - replaced with the new brand mark": "UI",
   "runcrate": "UI",
   "runcrate - real logo instead of the rc text tile": "UI",
+  "cli tools logo tiles": "UI",
+  "cli tools logo tiles - transparent background, logo only": "UI",
   "upstream feature port": "Internal",
   "upstream port completion": "Internal",
   "upstream feature port (decolua/9router v0.5.112)": "Internal",
