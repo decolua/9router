@@ -14,8 +14,15 @@ export default function Select({
   required = false,
   className,
   selectClassName,
+  size = "md",
   ...props
 }) {
+  const sizes = {
+    sm: "h-9 py-1 text-sm",
+    md: "py-2.5 text-sm",
+    lg: "py-3 text-base",
+  };
+
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       {label && (
@@ -30,7 +37,8 @@ export default function Select({
           onChange={onChange}
           disabled={disabled}
           className={cn(
-            "w-full py-2.5 px-3 pr-10 text-sm text-text-main",
+            "w-full px-3 pr-10 text-text-main",
+            sizes[size] || sizes.md,
             "bg-surface-2 border border-transparent rounded-[10px] appearance-none",
             "focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40",
             "transition-all duration-150 disabled:opacity-50 disabled:cursor-not-allowed",
