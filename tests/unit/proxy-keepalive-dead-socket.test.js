@@ -1,0 +1,202 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+describe("undici keep-alive dead-socket protection & fresh-socket retry", () => {
+  const savedEnv = { ...process.env };
+
+  beforeEach(() => {
+    vi.resetModules();
+    process.env = { ...savedEnv };
+    delete process.env.FETCH_KEEPALIVE_TIMEOUT_MS;
+    delete process.env.FETCH_KEEP_ALIVE_TIMEOUT_MS;
+    delete process.env.FETCH_KEEPALIVE_MAX_TIMEOUT_MS;
+    delete process.env.FETCH_KEEP_ALIVE_MAX_TIMEOUT_MS;
+    delete process.env.HTTPS_PROXY;
+    delete process.env.https_proxy;
+    delete process.env.HTTP_PROXY;
+    delete process.env.http_proxy;
+    delete process.env.ALL_PROXY;
+    delete process.env.all_proxy;
+  });
+
+  afterEach(() => {
+    process.env = { ...savedEnv };
+  });
+
+  it("caps default keep-alive TTL to 30s and clamps keepAliveMaxTimeout when FETCH_KEEPALIVE_TIMEOUT_MS is set", async () => {
+    const { resolveKeepAliveTimeouts, resetDirectDispatchersForTests } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
+
+    expect(resolveKeepAliveTimeouts()).toEqual({
+      keepAliveTimeout: 30_000,
+      keepAliveMaxTimeout: 30_000,
+    });
+
+    process.env.FETCH_KEEPALIVE_TIMEOUT_MS = "1";
+    expect(resolveKeepAliveTimeouts()).toEqual({
+      keepAliveTimeout: 1,
+      keepAliveMaxTimeout: 1,
+    });
+
+    process.env.FETCH_KEEPALIVE_MAX_TIMEOUT_MS = "5000";
+    expect(resolveKeepAliveTimeouts()).toEqual({
+      keepAliveTimeout: 1,
+      keepAliveMaxTimeout: 5000,
+    });
+  });
+
+  it("creates distinct shared direct and fresh-retry dispatchers", async () => {
+    const {
+      getDirectDispatcher,
+      getFreshRetryDispatcher,
+      resetDirectDispatchersForTests,
+    } = await import("../../open-sse/utils/proxyFetch.js");
+    resetDirectDispatchersForTests();
+
+    const direct1 = await getDirectDispatcher(false);
+    const direct2 = await getDirectDispatcher(false);
+    const fresh1 = await getFreshRetryDispatcher(false);
+    const fresh2 = await getFreshRetryDispatcher(false);
+
+    expect(direct1).not.toBeNull();
+    expect(direct1).toBe(direct2);
+    expect(fresh1).not.toBeNull();
+    expect(fresh1).toBe(fresh2);
+    expect(fresh1).not.toBe(direct1);
+  });
+
+  it("classifies dead-socket errors accurately and excludes aborts/DNS failures", async () => {
+    const { isStaleSocketError } = await import("../../open-sse/utils/proxyFetch.js");
+
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }))).toBe(true);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "ECONNRESET" } }))).toBe(true);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "EPIPE" } }))).toBe(true);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_HEADERS_TIMEOUT" } }))).toBe(true);
+    expect(isStaleSocketError(Object.assign(new Error("fetch failed"), { cause: new Error("other side closed") }))).toBe(true);
+    expect(isStaleSocketError(new Error("socket hang up"))).toBe(true);
+
+    expect(isStaleSocketError(Object.assign(new Error("aborted"), { name: "AbortError", cause: { code: "UND_ERR_SOCKET" } }))).toBe(false);
+    expect(isStaleSocketError(Object.assign(new Error("dns"), { cause: { code: "ENOTFOUND" } }))).toBe(false);
+    expect(isStaleSocketError(null)).toBe(false);
+  });
+
+  it("retries once on the fresh-socket dispatcher with Connection: close when a pooled socket dies", async () => {
+    const mockFetch = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "UND_ERR_SOCKET" } }))
+      .mockResolvedValueOnce({ status: 200, ok: true });
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+
+    try {
+      const {
+        proxyAwareFetch,
+        getDirectDispatcher,
+        getFreshRetryDispatcher,
+        resetDirectDispatchersForTests,
+      } = await import("../../open-sse/utils/proxyFetch.js");
+      resetDirectDispatchersForTests();
+
+      const res = await proxyAwareFetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: "Bearer nvapi-test" },
+        body: "{}",
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockFetch).toHaveBeenCalledTimes(2);
+
+      const directDispatcher = await getDirectDispatcher(false);
+      const freshDispatcher = await getFreshRetryDispatcher(false);
+
+      expect(mockFetch.mock.calls[0][1].dispatcher).toBe(directDispatcher);
+      expect(mockFetch.mock.calls[1][1].dispatcher).toBe(freshDispatcher);
+      expect(mockFetch.mock.calls[1][1].headers).toEqual({
+        Authorization: "Bearer nvapi-test",
+        Connection: "close",
+      });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("uses the fresh-socket dispatcher immediately when forceFreshSocket is requested", async () => {
+    const mockFetch = vi.fn().mockResolvedValueOnce({ status: 200, ok: true });
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch;
+
+    try {
+      const {
+        proxyAwareFetch,
+        getFreshRetryDispatcher,
+        resetDirectDispatchersForTests,
+      } = await import("../../open-sse/utils/proxyFetch.js");
+      resetDirectDispatchersForTests();
+
+      await proxyAwareFetch(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" },
+        { forceFreshSocket: true }
+      );
+
+      const freshDispatcher = await getFreshRetryDispatcher(false);
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      expect(mockFetch.mock.calls[0][1].dispatcher).toBe(freshDispatcher);
+      expect(mockFetch.mock.calls[0][1].headers.Connection).toBe("close");
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("BaseExecutor.execute sets forceFreshSocket=true when retrying after connect timeout or 502", async () => {
+    const fetchMock = vi.fn();
+    vi.doMock("../../open-sse/utils/proxyFetch.js", () => ({
+      proxyAwareFetch: (...args) => fetchMock(...args),
+    }));
+
+    const { BaseExecutor } = await import("../../open-sse/executors/base.js");
+    const ex = new BaseExecutor("nvidia", {
+      baseUrl: "https://integrate.api.nvidia.com/v1/chat/completions",
+      timeoutMs: 15,
+      retry: { 502: { attempts: 2, delayMs: 0 } },
+    });
+
+    fetchMock
+      .mockImplementationOnce((_url, opts) => new Promise((_resolve, reject) => {
+        opts.signal.addEventListener("abort", () => {
+          const err = new Error("fetch connect timeout");
+          err.name = "AbortError";
+          reject(err);
+        });
+      }))
+      .mockResolvedValueOnce({ status: 200, headers: { get: () => "application/json" } });
+
+    const out = await ex.execute({
+      model: "deepseek-ai/deepseek-v4-flash",
+      body: { messages: [] },
+      stream: true,
+      credentials: { apiKey: "nvapi-key" },
+    });
+
+    expect(out.response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[0][2]).toBeNull();
+    expect(fetchMock.mock.calls[1][2]).toEqual({ forceFreshSocket: true });
+  });
+
+  it("DefaultExecutor.transformRequest strips stream_options when stream=false without mutating input body", async () => {
+    const { DefaultExecutor } = await import("../../open-sse/executors/default.js");
+    const ex = new DefaultExecutor("nvidia");
+    const input = {
+      model: "deepseek-ai/deepseek-v4-flash",
+      messages: [{ role: "user", content: "hi" }],
+      stream_options: { include_usage: true },
+    };
+
+    const nonStreamBody = ex.transformRequest("deepseek-ai/deepseek-v4-flash", input, false, { apiKey: "nvapi-x" });
+    expect(nonStreamBody.stream_options).toBeUndefined();
+    expect(input.stream_options).toEqual({ include_usage: true });
+
+    const streamBody = ex.transformRequest("deepseek-ai/deepseek-v4-flash", input, true, { apiKey: "nvapi-x" });
+    expect(streamBody.stream_options).toEqual({ include_usage: true });
+  });
+});

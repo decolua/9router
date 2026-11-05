@@ -63,6 +63,19 @@ export const EMPTY_PEEK_DEADLINE_MS = envMs("EMPTY_PEEK_DEADLINE_MS", 45 * 1000)
 // Fetch connect timeout: abort if upstream doesn't return response headers within this duration
 export const FETCH_CONNECT_TIMEOUT_MS = envMs("FETCH_CONNECT_TIMEOUT_MS", 60 * 1000);
 
+// Pooled keep-alive socket TTLs: cap idle socket lifetime below upstream/edge idle
+// windows (Cloudflare, AWS Global Accelerator / NVIDIA NIM) so dead sockets are closed
+// client-side before reuse. Clamps keepAliveMaxTimeout to keepAliveTimeout by default
+// so an upstream `Keep-Alive: timeout=600` header cannot extend pooled lifetime back to 10m.
+export const FETCH_KEEPALIVE_TIMEOUT_MS = envMs(
+  "FETCH_KEEPALIVE_TIMEOUT_MS",
+  envMs("FETCH_KEEP_ALIVE_TIMEOUT_MS", 30 * 1000)
+);
+export const FETCH_KEEPALIVE_MAX_TIMEOUT_MS = envMs(
+  "FETCH_KEEPALIVE_MAX_TIMEOUT_MS",
+  envMs("FETCH_KEEP_ALIVE_MAX_TIMEOUT_MS", FETCH_KEEPALIVE_TIMEOUT_MS)
+);
+
 // Gemini native TTS fetch timeout: abort if Google does not return response headers in time.
 export const GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS = envMs("GEMINI_NATIVE_TTS_FETCH_TIMEOUT_MS", 45 * 1000);
 
