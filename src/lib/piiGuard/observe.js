@@ -161,19 +161,6 @@ function getOcrWorker() {
     return null;
   }
 }
-function getWorkerQueue() {
-  if (!ocrWorker) return undefined;
-  if (typeof ocrWorker.getQueueState === "function") return ocrWorker.getQueueState();
-  if (typeof ocrWorker.queueState === "function") return ocrWorker.queueState();
-  if (ocrWorker.queueState && typeof ocrWorker.queueState === "object") return ocrWorker.queueState;
-  if (typeof ocrWorker.pendingImages === "number" || typeof ocrWorker.pending === "number") {
-    return {
-      pending: ocrWorker.pendingImages ?? ocrWorker.pending,
-      queued: ocrWorker.queued ?? (Array.isArray(ocrWorker.queue) ? ocrWorker.queue.length : ocrWorker.queue),
-    };
-  }
-  return undefined;
-}
 function stats() {
   if (!requests) return;
   const sorted = samples.slice().sort((a, b) => a - b);
@@ -459,12 +446,7 @@ export async function testText(text, config, at = "user") {
 }
 export function health() {
   const sorted = healthSamples.slice().sort((a, b) => a - b);
-  const q = getWorkerQueue();
-  const ocr = {
-    enabled: isOcrEnabled(),
-    capture: isCaptureEnabled(),
-    ...(q !== undefined && { queue: q }),
-  };
+  const ocr = { enabled: isOcrEnabled(), capture: isCaptureEnabled() };
   return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr };
 }
 export function eventsFile() { return process.env.PII_GUARD_EVENTS || join(homedir(), ".9router/pii-guard/events.jsonl"); }
