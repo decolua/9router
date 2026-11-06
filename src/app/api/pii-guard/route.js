@@ -132,7 +132,10 @@ async function state(fromMs, toMs) {
   const to = Number.isFinite(toMs) ? toMs : now;
   const { events, truncated } = await loadEvents(from);
   const config = { ...settings.piiGuard, ocr: normalizeOcr(settings.piiGuard?.ocr), ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
-  const summary = { ...summarize(events, { since: from, until: to, ignore: config.ignore }), truncated };
+  // Hourly buckets up to two days, else IST days.
+  const IST = 5.5 * 3600e3, step = to - from <= 2 * DAY ? 3600e3 : DAY;
+  const origin = step === DAY ? Math.floor((from + IST) / DAY) * DAY - IST : Math.floor(from / 3600e3) * 3600e3;
+  const summary = { ...summarize(events, { since: from, until: to, ignore: config.ignore, step, origin }), truncated, step, origin };
   return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(config), summary };
 }
 

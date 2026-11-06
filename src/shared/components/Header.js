@@ -123,7 +123,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/pii-guard"))
     return {
       title: "PII Guard",
-      description: "Find, redact, or block secrets and personal data in requests",
+      description: "Find, redact, or block secrets and personal data before requests leave the VPS",
       icon: "shield_person",
       breadcrumbs: [],
     };

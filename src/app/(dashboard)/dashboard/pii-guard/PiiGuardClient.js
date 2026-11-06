@@ -1,1522 +1,471 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef, memo } from "react";
-import { Card, Button, SegmentedControl, Select, Badge } from "@/shared/components";
-import RangePicker from "./RangePicker";
-import InfoTip from "./InfoTip";
-import { computeRange, endsAtNow, rangeLabel, isValidPreset } from "./ranges";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import RangeBar from "../spend/RangeBar";
+import { buildView, place } from "./view";
+import "../spend/spend.css";
 
-const MODES = [
-  { value: "off", label: "Off" },
-  { value: "observe", label: "Observe" },
-  { value: "redact", label: "Redact" },
-  { value: "block", label: "Block" },
-];
-
-const MODE_LABEL = Object.fromEntries(MODES.map(m => [m.value, m.label]));
-
-const MODE_HELP = {
-  off: "No scan. Requests pass unchanged.",
-  observe: "Scan and log findings. Requests pass unchanged.",
-  redact: "Rewrites every editable field (user, assistant history, tool calls/results, system) with placeholders such as {{pii:pan#ab12cd}}.",
-  block: "Rejects a request the first time a new value appears (HTTP 400). Retries redact it.",
-};
-
-const MODE_HELP_OVERRIDDEN = {
-  off: "Other rules are not scanned.",
-  observe: "Other rules only log findings.",
-};
-
-const OVERRIDE_VERB = { off: "is off", observe: "observes", redact: "redacts", block: "blocks" };
-const OVERRIDE_PLURAL = { off: "are off", observe: "observe", redact: "redact", block: "block" };
-
-const ACTION_BADGE_VARIANT = {
-  block: "error",
-  leaked: "error",
-  redact: "warning",
-  observe: "info",
-  ignored: "default",
-};
-
-const ACTION_OPTIONS = [
-  { value: "all", label: "All actions" },
-  { value: "leaked", label: "Leaked" },
-  { value: "block", label: "Blocked" },
-  { value: "redact", label: "Redacted" },
-  { value: "observe", label: "Observed" },
-];
-const ACTION_LABEL_MAP = Object.fromEntries(ACTION_OPTIONS.map(o => [o.value, o.label]));
-
-const RULE_MODES = [{ value: "default", label: "Default" }, ...MODES];
-
-const KIND_CONFIG = {
-  secret: { badge: "error" },
-  pii: { badge: "info" },
-  known: { badge: "success" },
-};
-
-
-const TEST_WHERES = [
-  { value: "user", label: "User" },
-  { value: "system", label: "System" },
-  { value: "assistant", label: "Assistant" },
-  { value: "tool_result", label: "Tool result" },
-  { value: "thinking", label: "Signed thinking" },
-];
-
-const RECENT_MINUTES = [
-  { value: "15", label: "15 min" },
-  { value: "60", label: "60 min" },
-  { value: "240", label: "240 min" },
-];
-
-const SOURCE_BUCKETS = ["User", "Assistant", "Tool result", "System", "Thinking", "Image"];
-
-// Raw sources are "role/type" (e.g. "user/tool_result", "-/input_text"). Bucket by role, then by type.
-function sourceBucket(source) {
-  const [role = "", type = ""] = String(source || "").toLowerCase().split("/");
-  if (type.includes("thinking") || type.includes("reasoning")) return "Thinking";
-  if (type === "tool_result" || type === "function_call_output") return "Tool result";
-  if (type.includes("image")) return "Image";
-  if (role === "user") return "User";
-  if (role === "assistant" || role === "model") return "Assistant";
-  if (role === "system" || role === "developer") return "System";
-  if (role === "tool") return "Tool result";
-  if (type === "input_text") return "User";
-  return "Other";
-}
-
-const count = value => Number(value || 0).toLocaleString();
-
-const age = value => {
-  if (!value) return "unknown";
-  const ms = Date.now() - new Date(value).getTime();
-  if (!Number.isFinite(ms) || ms < 0) return "unknown";
-  if (ms < 60_000) return `${Math.floor(ms / 1000)}s ago`;
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  return `${Math.floor(ms / 86_400_000)}d ago`;
-};
-
-const uptime = value => {
-  if (!value) return "active";
-  const s = Math.floor((Date.now() - new Date(value).getTime()) / 1000);
-  if (!Number.isFinite(s) || s < 0) return "active";
-  if (s < 60) return `Up ${s}s`;
-  if (s < 3_600) return `Up ${Math.floor(s / 60)} min`;
-  if (s < 86_400) return `Up ${Math.floor(s / 3_600)} h`;
-  return `Up ${Math.floor(s / 86_400)} d`;
-};
-
-function humanizeSource(source) {
-  if (!source || source === "-" || source === "-/-") return "Unknown";
-  const parts = source.includes(" · ") ? source.split(" · ") : (source.includes("/") ? source.split("/") : null);
-  if (parts && (parts.length === 2 || (parts.length === 3 && parts[2] === "ocr"))) {
-    const roleDash = parts[0] === "-" || !parts[0] || parts[0].toLowerCase() === "unknown";
-    const typeDash = parts[1] === "-" || !parts[1];
-    if (roleDash && typeDash) return parts[2] ? `Unknown / ${parts[2]}` : "Unknown";
-    const role = roleDash ? "Unknown" : parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    const type = typeDash ? "" : parts[1].replace(/_/g, " ");
-    const ocrSuffix = parts[2] ? ` / ${parts[2]}` : "";
-    return type ? `${role} · ${type}${ocrSuffix}` : `${role}${ocrSuffix}`;
+const DAY = 864e5, IST = 5.5 * 3600e3;
+const PRESET_DAYS = { "7D": 7, "30D": 30, "60D": 60, All: 90 };
+// Range in ms for the API; the event log keeps at most 90 days.
+function bounds(r, now = Date.now()) {
+  if (r.preset === "Today") return { from: Math.floor((now + IST) / DAY) * DAY - IST, to: now };
+  if (r.preset === "Custom") {
+    const to = Math.min(now, Date.parse(r.to + "T00:00:00Z") - IST + DAY);
+    return { from: Math.max(Date.parse(r.from + "T00:00:00Z") - IST, to - 90 * DAY), to };
   }
-  const clean = source.replace(/_/g, " ");
-  return clean === "-" ? "Unknown" : clean;
+  return { from: now - (PRESET_DAYS[r.preset] || 1) * DAY + (r.preset === "All" ? 6e4 : 0), to: now };
 }
-
-function shortSource(s) {
-  if (!s || s === "-" || s === "-/-") return "Unknown";
-  const parts = s.includes(" · ") ? s.split(" · ") : (s.includes("/") ? s.split("/") : null);
-  if (parts && (parts.length === 2 || (parts.length === 3 && parts[2] === "ocr"))) {
-    const roleDash = parts[0] === "-" || !parts[0] || parts[0].toLowerCase() === "unknown";
-    const typeDash = parts[1] === "-" || !parts[1];
-    if (roleDash && typeDash) return parts[2] ? `?·${parts[2]}` : "Unknown";
-    const r = roleDash ? "Unknown" : parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-    let t = parts[1] || "";
-    if (t.startsWith("tool")) t = "tool";
-    else if (t.startsWith("function") || t.startsWith("func")) t = "func";
-    else if (t.includes("think") || t.includes("reason")) t = "thinking";
-    else if (t.includes("image")) t = "image";
-    else if (t.includes("text")) t = "text";
-    else t = t.replace(/_/g, " ");
-    const ocrSuffix = parts[2] ? `/ocr` : "";
-    return t ? `${r}·${t}${ocrSuffix}` : `${r}${ocrSuffix}`;
-  }
-  const str = s.replace(/_/g, " ");
-  if (str === "-" || str === "other") return "Unknown";
-  if (str === "function call output" || str === "function call") return "Func";
-  if (str === "tool result" || str === "tool use") return "Tool";
-  if (str.includes("thinking") || str.includes("reasoning")) return "Thinking";
-  return str.charAt(0).toUpperCase() + str.slice(1);
-}
-
-function highlightMatches(text, findings) {
-  const source = String(text || "");
-  const ranges = [];
-  let from = 0;
-  (findings || []).forEach(f => {
-    if (!f.match) return;
-    const start = source.indexOf(f.match, from);
-    if (start < 0) return;
-    ranges.push([start, start + f.match.length]);
-    from = start + f.match.length;
-  });
-  const parts = [];
-  let at = 0;
-  ranges.forEach(([start, end], i) => { if (start > at) parts.push(source.slice(at, start)); parts.push(<mark key={i} className="rounded bg-yellow-500/20 px-0.5 text-inherit">{source.slice(start, end)}</mark>); at = end; });
-  parts.push(source.slice(at));
-  return parts;
-}
-
-function PlaceholderText({ text }) {
-  const parts = String(text ?? "").split(/(\{\{pii:[^}]+\}\})/g);
-  return (
-    <>
-      {parts.map((part, i) => (
-        /^\{\{pii:/.test(part)
-          ? <mark key={i} className="rounded bg-yellow-500/20 px-0.5 text-inherit">{part}</mark>
-          : part
-      ))}
-    </>
-  );
-}
-
-async function call(body) {
-  const res = await fetch("/api/pii-guard", {
-    method: body ? "POST" : "GET",
-    headers: { "Content-Type": "application/json" },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const data = await res.json();
+async function call(url, body) {
+  const res = await fetch(url, { cache: "no-store", ...(body && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+  const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
 }
-
-function readUrl() {
-  if (typeof window === "undefined") return null;
-  const p = new URLSearchParams(window.location.search);
-  let range = p.get("range") || "24h";
-  if (range === "6h") range = "24h"; // 6h is gone; widen rather than hide findings
-  if (range === "custom") {
-    const from = p.get("from") ? Number(p.get("from")) : null;
-    const to = p.get("to") ? Number(p.get("to")) : null;
-    if (!from || !to || !Number.isFinite(from) || !Number.isFinite(to) || from >= to || to - from > 90 * 86400000) {
-      range = "24h";
-    }
-  } else if (!isValidPreset(range)) {
-    range = "24h";
-  }
-  return {
-    range,
-    from: p.get("from") ? Number(p.get("from")) : null,
-    to: p.get("to") ? Number(p.get("to")) : null,
-    view: p.get("view") === "events" ? "events" : "values",
-    group: p.get("group") || "all",
-    rule: p.get("rule") || "all",
-    action: p.get("action") || "all",
-    where: p.get("where") || "all",
-    status: p.get("status") || "active",
-    q: p.get("q") || "",
-    sort: p.get("sort") || "lastSeen",
-    dir: p.get("dir") || "desc",
-  };
-}
-
-const ValueRow = memo(function ValueRow({ group, ruleMeta, groupLabel, ignored, selected, onToggle, onIgnore, leakedView }) {
-  const actions = group.actions || [];
-  const last = group.action || actions[actions.length - 1];
-  const latest = leakedView ? (last === "leaked" ? "leaked" : "leaked earlier") : last;
-  const rawSources = (leakedView && group.leakedWhere?.length) ? group.leakedWhere : (group.sources || []);
-  const fullTooltip = rawSources.map(humanizeSource).join(", ");
-  const shownSources = rawSources.slice(0, 2);
-  const remainingSources = rawSources.length - 2;
-
-  return (
-    <tr className="align-middle hover:bg-surface-2/40 transition-colors">
-      <td className="py-2 pr-3 w-8">
-        <input
-          type="checkbox"
-          checked={selected}
-          onChange={onToggle}
-          aria-label={`Select ${group.name || ruleMeta?.label || group.rule}`}
-          className="size-4 accent-brand-500 cursor-pointer align-middle"
-        />
-      </td>
-      <td className="py-2 pr-3" title={`${ruleMeta?.label || group.rule} · ${group.name ? group.name + " · " : ""}${group.hash}`}>
-        <div className="flex items-center gap-1.5 truncate">
-          <span className="font-medium text-text-main truncate">{ruleMeta?.label || group.rule}</span>
-          {ruleMeta?.group && (
-            <span className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] text-text-muted">
-              {groupLabel}
-            </span>
-          )}
-          {!group.name && (
-            <span className="shrink-0 font-mono text-[10px] text-text-muted opacity-75">{group.hash}</span>
-          )}
-        </div>
-        {group.name && (
-          <div className="text-[11px] text-text-muted truncate max-w-[220px]">
-            {group.name} <span className="font-mono text-[10px] opacity-75">{group.hash}</span>
-          </div>
-        )}
-      </td>
-      <td className="py-2 pr-3 whitespace-nowrap">
-        {rawSources.length === 0 ? (
-          <span className="text-text-muted">—</span>
-        ) : (
-          <div className="flex items-center gap-1 truncate max-w-[200px]" title={fullTooltip}>
-            {shownSources.map((s, idx) => (
-              <span key={idx} className="shrink-0 inline-block rounded bg-surface-2 px-1.5 py-0.5 text-[11px] text-text-muted">
-                {shortSource(s)}
-              </span>
-            ))}
-            {remainingSources > 0 && (
-              <span className="shrink-0 text-[11px] text-text-muted font-medium" title={fullTooltip}>
-                +{remainingSources}
-              </span>
-            )}
-          </div>
-        )}
-      </td>
-      <td className="py-2 pr-3 whitespace-nowrap" title={actions.length > 0 ? `History: ${actions.join(", ")}` : undefined}>
-        {latest ? (
-          <Badge size="sm" variant={ACTION_BADGE_VARIANT[latest] || (leakedView ? "error" : "default")}>
-            {latest}
-          </Badge>
-        ) : (
-          <span className="text-text-muted">—</span>
-        )}
-      </td>
-      <td className="py-2 pr-3 whitespace-nowrap text-text-muted" title={new Date(group.firstSeen).toLocaleString()}>
-        {age(group.firstSeen)}
-      </td>
-      <td className="py-2 pr-3 whitespace-nowrap font-medium text-text-main" title={new Date(group.lastSeen).toLocaleString()}>
-        {age(group.lastSeen)}
-      </td>
-      <td className="py-2 pr-3 font-mono text-text-muted whitespace-nowrap">
-        {count(group.turns)}
-      </td>
-      <td className="py-2 text-right whitespace-nowrap">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={onIgnore}
-        >
-          {ignored ? "Unignore" : "Ignore"}
-        </Button>
-      </td>
-    </tr>
-  );
-});
+const hhmmss = (ts) => new Date(Date.parse(ts) + IST).toISOString().slice(11, 19);
+const toB64 = (file) => new Promise((ok, bad) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1] || ""); r.onerror = bad; r.readAsDataURL(file); });
 
 export default function PiiGuardClient() {
-  const urlInit = readUrl();
-  const [rangePreset, setRangePreset] = useState(urlInit?.range || "24h");
-  const [customFromMs, setCustomFromMs] = useState(urlInit?.from || null);
-  const [customToMs, setCustomToMs] = useState(urlInit?.to || null);
-  const [view, setView] = useState(urlInit?.view || "values");
-
-  const [groupFilter, setGroupFilter] = useState(urlInit?.group || "all");
-  const [ruleFilter, setRuleFilter] = useState(urlInit?.rule || "all");
-  const [actionFilter, setActionFilter] = useState(urlInit?.action || "all");
-  const [whereFilter, setWhereFilter] = useState(urlInit?.where || "all");
-  const [statusFilter, setStatusFilter] = useState(urlInit?.status || "active");
-  const [searchQuery, setSearchQuery] = useState(urlInit?.q || "");
-  const [debouncedSearch, setDebouncedSearch] = useState(urlInit?.q || "");
-  const [sortKey, setSortKey] = useState(urlInit?.sort || "lastSeen");
-  const [sortDir, setSortDir] = useState(urlInit?.dir || "desc");
-
-  const [state, setState] = useState(null);
-  const [error, setError] = useState("");
-  const [text, setText] = useState("My mobile number is {{pii:in_phone#da6f85}} and PAN is ABCPE1234F.");
-  const [result, setResult] = useState(null);
-  const [scannerTab, setScannerTab] = useState("text");
-  const [imageData, setImageData] = useState(null);
-  const [imagePreview, setImagePreview] = useState("");
-  const [imageName, setImageName] = useState("");
+  const router = useRouter();
+  const [range, setRange] = useState({ preset: "24h" });
+  const [data, setData] = useState(null);
+  const [mode, setMode] = useState("loading");
+  const [errorText, setErrorText] = useState("");
+  const [rawEvents, setRawEvents] = useState([]);
   const [samples, setSamples] = useState([]);
-  const [selectedSample, setSelectedSample] = useState("");
-  const [testQuality, setTestQuality] = useState("enhanced");
-  const [imageResult, setImageResult] = useState(null);
-  const [testBusy, setTestBusy] = useState(false);
-  const [testMode, setTestMode] = useState("current");
-  const fileInputRef = useRef(null);
-  const [testWhere, setTestWhere] = useState("user");
-  const [selected, setSelected] = useState(() => new Set());
-  const [recentMinutes, setRecentMinutes] = useState("15");
-  const [visibleCount, setVisibleCount] = useState(50);
-
-  const [eventsList, setEventsList] = useState([]);
-  const [nextBefore, setNextBefore] = useState(null);
-  const [eventsLoading, setEventsLoading] = useState(false);
-
-  const tableRef = useRef(null);
-  const scrollContainerRef = useRef(null);
-  const sentinelRef = useRef(null);
-  const eventsSentinelRef = useRef(null);
-  const fingerprintRef = useRef("");
-  const loadIdRef = useRef(0);
-  const eventsIdRef = useRef(0);
-  const debounceRef = useRef(null);
-
-  // debounce search
+  const [toastState, setToast] = useState(null);
+  const [test, setTest] = useState({ result: null, image: null, error: "", busy: false });
+  const [ui, setUi] = useState({ tab: "overview", sub: "values", openLeak: null, openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {},
+    testKind: "text", testText: "My mobile number is 9876543210 and PAN is ABCPE1234F.", testMode: "current", testWhere: "user", imgSel: 0, upload: null });
+  const set = useCallback((p) => setUi((u) => ({ ...u, ...(typeof p === "function" ? p(u) : p) })), []);
+  const [theme, setTheme] = useState("light");
   useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => setDebouncedSearch(searchQuery), 150);
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [searchQuery]);
+    const el = document.documentElement, sync = () => setTheme(el.classList.contains("dark") ? "dark" : "light");
+    sync();
+    const mo = new MutationObserver(sync);
+    mo.observe(el, { attributes: true, attributeFilter: ["class"] });
+    return () => mo.disconnect();
+  }, []);
 
-  // URL sync
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const p = new URLSearchParams();
-    if (rangePreset === "custom" && customFromMs && customToMs) {
-      p.set("range", "custom");
-      p.set("from", String(customFromMs));
-      p.set("to", String(customToMs));
-    } else if (rangePreset) {
-      p.set("range", rangePreset);
+  const loadId = useRef(0);
+  const load = useCallback(async () => {
+    const id = ++loadId.current; // ignore responses from superseded ranges
+    const { from, to } = bounds(range);
+    try {
+      const d = await call(`/api/pii-guard?from=${Math.round(from)}&to=${Math.round(to)}`);
+      if (id !== loadId.current) return;
+      setData(d); setMode("ready");
+    } catch (e) {
+      if (id !== loadId.current) return;
+      setErrorText(e.message || "Request failed"); setMode("error");
     }
-    if (view === "events") p.set("view", "events");
-    if (groupFilter !== "all") p.set("group", groupFilter);
-    if (ruleFilter !== "all") p.set("rule", ruleFilter);
-    if (actionFilter !== "all") p.set("action", actionFilter);
-    if (whereFilter !== "all") p.set("where", whereFilter);
-    if (statusFilter !== "active") p.set("status", statusFilter);
-    if (debouncedSearch) p.set("q", debouncedSearch);
-    if (sortKey !== "lastSeen") p.set("sort", sortKey);
-    if (sortDir !== "desc") p.set("dir", sortDir);
-    const qs = p.toString();
-    history.replaceState(null, "", qs ? `${window.location.pathname}?${qs}` : window.location.pathname);
-  }, [rangePreset, customFromMs, customToMs, view, groupFilter, ruleFilter, actionFilter, whereFilter, statusFilter, debouncedSearch, sortKey, sortDir]);
+  }, [range]);
+  useEffect(() => { const t = setTimeout(load, 0); const iv = setInterval(load, 30e3); return () => { clearTimeout(t); clearInterval(iv); }; }, [load]);
 
-  const load = useCallback(() => {
-    if (typeof document !== "undefined" && document.hidden) return;
-    const r = computeRange(rangePreset, customFromMs, customToMs);
-    const id = ++loadIdRef.current;
-    fetch(`/api/pii-guard?from=${r.from}&to=${r.to}`)
-      .then(async res => {
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-        if (id !== loadIdRef.current) return;
-        const { range: _range, ...summary } = data.summary || {};
-        const fp = JSON.stringify([data.config, data.health, data.rules, summary]);
-        if (fp === fingerprintRef.current) return;
-        fingerprintRef.current = fp;
-        setState(data);
-        setError("");
-      })
-      .catch(e => { if (id === loadIdRef.current) setError(e.message); });
-  }, [rangePreset, customFromMs, customToMs]);
-
-  // initial + polling
+  // Event log: latest 50 events in range, flattened to one row per hit.
   useEffect(() => {
-    load();
-    if (!endsAtNow(rangePreset)) return;
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
-  }, [load, rangePreset]);
+    if (ui.tab !== "findings" || ui.sub !== "events") return;
+    let off = false;
+    const { from, to } = bounds(range);
+    call(`/api/pii-guard?events=1&limit=50&from=${Math.round(from)}&to=${Math.round(to)}`).then(({ events = [] }) => {
+      if (off) return;
+      const rows = [];
+      for (const e of events) for (const h of e.hits || []) rows.push({ t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), loc: place(h.source), a: h.action || "observe", model: e.model || "—", key: e.ua ? String(e.ua).split("/")[0] : "—", req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" });
+      setRawEvents(rows.slice(0, 100));
+    }).catch(() => {});
+    return () => { off = true; };
+  }, [ui.tab, ui.sub, range, data]);
 
-  // visibility
+  useEffect(() => { call("/api/pii-guard?samples=1").then((s) => setSamples(Array.isArray(s) ? s : [])).catch(() => {}); }, []);
+
+  // Text test runs as the user types.
   useEffect(() => {
-    const onVis = () => { if (!document.hidden) load(); };
-    document.addEventListener("visibilitychange", onVis);
-    return () => document.removeEventListener("visibilitychange", onVis);
+    if (ui.tab !== "test" || ui.testKind !== "text") return;
+    const t = setTimeout(() => {
+      call("/api/pii-guard", { test: ui.testText, testMode: ui.testMode === "current" ? undefined : ui.testMode, testWhere: ui.testWhere })
+        .then((r) => setTest((x) => ({ ...x, result: r, error: "" }))).catch((e) => setTest((x) => ({ ...x, error: e.message })));
+    }, 300);
+    return () => clearTimeout(t);
+  }, [ui.tab, ui.testKind, ui.testText, ui.testMode, ui.testWhere]);
+  // Image test: a sample, or the uploaded file.
+  const ocrOn = !!data?.health?.ocr?.available && data?.config?.ocr?.mode !== "off";
+  useEffect(() => {
+    if (ui.tab !== "test" || ui.testKind !== "image" || !ocrOn) return;
+    let off = false;
+    const sample = samples[ui.imgSel];
+    if (!ui.upload && !sample) return;
+    const t = setTimeout(async () => {
+      setTest((x) => ({ ...x, busy: true, image: null, error: "" }));
+      try {
+        const testImage = ui.upload ? { data: await toB64(ui.upload.file) } : { sample: sample.id };
+        const r = await call("/api/pii-guard", { testImage });
+        if (!off) setTest((x) => ({ ...x, image: r, busy: false }));
+      } catch (e) { if (!off) setTest((x) => ({ ...x, error: e.message, busy: false })); }
+    }, 0);
+    return () => { off = true; clearTimeout(t); };
+  }, [ui.tab, ui.testKind, ui.imgSel, ui.upload, samples, ocrOn]);
+
+  // Saves a settings change, then reloads the current range. `undo` is the body that reverts it.
+  const act = useCallback(async (body, toast, undo) => {
+    try {
+      await call("/api/pii-guard", body);
+      setToast(toast ? { text: toast, undo } : null);
+      load();
+    } catch (e) { alert(e.message); }
   }, [load]);
 
-  const save = patch => call(patch).then(() => { setError(""); fingerprintRef.current = ""; load(); return true; }).catch(e => { setError(e.message); return false; });
+  const fit = null;
+  const v = useMemo(() => data && buildView({ data, ui, set, act, range, fit, test, events: rawEvents, samples }), [data, ui, set, act, range, fit, test, rawEvents, samples]);
 
-  const confirmBlock = mode => mode !== "block" || window.confirm("Block stops the first request that contains a new value. Later requests redact it. Continue?");
-  const chooseMode = mode => { if (confirmBlock(mode)) save({ mode }); };
-  const runTest = () => call({ test: text, testMode, testWhere }).then(r => { setResult(r); setError(""); }).catch(e => setError(e.message));
-  const [showTests, setShowTests] = useState(false);
-  const acceptImage = file => {
-    if (!file) return;
-    if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 10 * 1024 * 1024) {
-      setError("Choose a PNG, JPEG or WebP image up to 10 MiB.");
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const value = String(reader.result || "");
-      const data = value.slice(value.indexOf(",") + 1);
-      if (!data) { setError("Could not read image."); return; }
-      setImageData(data);
-      setImagePreview(value);
-      setImageName(file.name);
-      setSelectedSample("");
-      setImageResult(null);
-      setError("");
-    };
-    reader.onerror = () => setError("Could not read image.");
-    reader.readAsDataURL(file);
-  };
-  useEffect(() => {
-    fetch("/api/pii-guard?samples=1").then(r => r.ok ? r.json() : []).then(data => setSamples(Array.isArray(data) ? data : data.samples || [])).catch(() => setSamples([]));
+  const isLoading = mode === "loading" || (!v && mode !== "error"), isError = mode === "error";
+  const preset = range.preset, customLabel = range.label || "";
+  const onRange = (r) => { setRange(r); set({ sel: {}, openLeak: null }); };
+  const todayKey = new Date(Date.now() + IST).toISOString().slice(0, 10);
+  const retry = () => { setMode("loading"); load(); };
+  const openConsole = () => router.push("/dashboard/console-log");
+  const toast = toastState?.text, undo = () => { const u = toastState?.undo; setToast(null); if (u) act(u); };
+  const setFile = (file, name) => { if (file && file.type.startsWith("image/") && file.size <= 10 * 1024 * 1024) set({ upload: { file, name: name || file.name, url: URL.createObjectURL(file) } }); };
+  const onFile = (e) => setFile(e.target.files?.[0]);
+  const onDragOver = (e) => e.preventDefault();
+  const onDrop = (e) => { e.preventDefault(); setFile(e.dataTransfer.files?.[0]); };
+  const onPaste = (e) => setFile([...(e.clipboardData.files || [])].find((x) => x.type.startsWith("image/")), "pasted image");
+  const vRef = useRef(null), gRef = useRef(null), fRef = useRef(null);
+  const [fade, setFade] = useState({ v: false, g: false });
+  const checkFade = useCallback(() => {
+    const f = (el) => !!el && el.scrollWidth - el.clientWidth - el.scrollLeft > 2;
+    const next = { v: f(vRef.current), g: f(gRef.current) };
+    setFade((p) => (p.v === next.v && p.g === next.g ? p : next));
   }, []);
-  const runImageTest = () => {
-    if (!imageData && !selectedSample) return;
-    const testImage = imageData ? { data: imageData } : { sample: selectedSample };
-    setTestBusy(true);
-    call({ testImage, testQuality, testMode }).then(r => { setImageResult(r); setError(""); }).catch(e => setError(e.message)).finally(() => setTestBusy(false));
-  };
-  const statusVariant = status => status === "scanned" ? "success" : status === "partial" ? "warning" : status === "failed" ? "error" : "default";
-  const sortedSources = useMemo(() => {
-    const entries = Object.entries(state?.summary?.bySource || {});
-    return entries
-      .map(([source, hits]) => ({ source, label: humanizeSource(source), hits: Number(hits || 0) }))
-      .sort((a, b) => b.hits - a.hits);
-  }, [state?.summary?.bySource]);
-
-  const maxSourceHits = useMemo(() => Math.max(...sortedSources.map(s => s.hits), 1), [sortedSources]);
-
-  const availableRules = useMemo(() => {
-    const set = new Set();
-    (state?.summary?.groups || []).forEach(g => { if (g.rule) set.add(g.rule); });
-    return Array.from(set).sort();
-  }, [state?.summary?.groups]);
-
-  const groupsList = useMemo(() => {
-    const base = Array.isArray(state?.groups) ? state.groups : [];
-    const seen = new Set(base.map(g => g.id));
-    const extra = [...new Set((state?.rules || []).map(r => r.group).filter(id => id && !seen.has(id)))];
-    return [...base, ...extra.map(id => ({ id, label: id }))];
-  }, [state]);
-
-  const groupRules = useMemo(() => {
-    const map = new Map();
-    (state?.rules || []).forEach(r => {
-      if (!map.has(r.group)) map.set(r.group, []);
-      map.get(r.group).push(r);
-    });
-    return map;
-  }, [state?.rules]);
-
-  const groupLabelMap = useMemo(() => new Map(groupsList.map(g => [g.id, g.label])), [groupsList]);
-  const ruleLabelMap = useMemo(() => new Map((state?.rules || []).map(r => [r.id, r])), [state?.rules]);
-
-  const handleGroupChange = useCallback((newGroup) => {
-    setGroupFilter(newGroup);
-    if (ruleFilter !== "all") {
-      const r = ruleLabelMap.get(ruleFilter);
-      const gid = r?.group || "other";
-      if (newGroup !== "all" && gid !== newGroup) {
-        setRuleFilter("all");
-      }
-    }
-  }, [ruleFilter, ruleLabelMap]);
-
-  const ruleFilterOptions = useMemo(() => {
-    const byGroup = new Map();
-    availableRules.forEach(id => {
-      const r = ruleLabelMap.get(id);
-      const gid = r?.group || "other";
-      if (groupFilter !== "all" && gid !== groupFilter) return;
-      if (!byGroup.has(gid)) byGroup.set(gid, []);
-      byGroup.get(gid).push({ value: id, label: r?.label || id, group: gid, groupLabel: groupLabelMap.get(gid) || gid });
-    });
-    const opts = [{ value: "all", label: "All rules" }];
-    for (const [, items] of byGroup) items.forEach(item => opts.push(item));
-    return opts;
-  }, [availableRules, ruleLabelMap, groupLabelMap, groupFilter]);
-
-  const whereOptions = useMemo(() => {
-    const buckets = new Set();
-    (state?.summary?.groups || []).forEach(g => {
-      (g.sources || []).forEach(s => buckets.add(sourceBucket(s)));
-    });
-    const opts = [{ value: "all", label: "All sources" }];
-    SOURCE_BUCKETS.forEach(b => { if (buckets.has(b)) opts.push({ value: b, label: b }); });
-    if (buckets.has("Other")) opts.push({ value: "Other", label: "Other" });
-    return opts;
-  }, [state?.summary?.groups]);
-
-  const groupOptions = useMemo(() => {
-    const opts = [{ value: "all", label: "All groups" }];
-    groupsList.forEach(g => {
-      const rulesInGroup = groupRules.get(g.id) || [];
-      if (rulesInGroup.length) opts.push({ value: g.id, label: g.label });
-    });
-    return opts;
-  }, [groupsList, groupRules]);
-
-  const filteredRows = useMemo(() => {
-    const list = (state?.summary?.groups || []).filter(group => {
-      const ruleMeta = ruleLabelMap.get(group.rule);
-      const gGroup = ruleMeta?.group || "other";
-      if (groupFilter !== "all" && gGroup !== groupFilter) return false;
-      if (ruleFilter !== "all" && group.rule !== ruleFilter) return false;
-      if (actionFilter !== "all") {
-        if (actionFilter === "leaked") {
-          if (!(group.actions || []).includes("leaked") && group.action !== "leaked") return false;
-        } else {
-          const targetAction = actionFilter === "blocked" ? "block" : actionFilter;
-          const lastAction = group.action || (group.actions || [])[(group.actions || []).length - 1];
-          if (lastAction !== targetAction) return false;
-        }
-      }
-      if (whereFilter !== "all") {
-        const buckets = (group.sources || []).map(sourceBucket);
-        if (!buckets.includes(whereFilter)) return false;
-      }
-      if (statusFilter === "active" && group.ignored) return false;
-      if (statusFilter === "ignored" && !group.ignored) return false;
-      const q = debouncedSearch.trim().toLowerCase();
-      if (q) {
-        const matchLabel = (ruleMeta?.label || "").toLowerCase().includes(q);
-        const matchRule = (group.rule || "").toLowerCase().includes(q);
-        const matchName = (group.name || "").toLowerCase().includes(q);
-        const matchHash = (group.hash || "").toLowerCase().includes(q);
-        if (!matchLabel && !matchRule && !matchName && !matchHash) return false;
-      }
-      return true;
-    });
-
-    const dir = sortDir === "asc" ? 1 : -1;
-    list.sort((a, b) => {
-      if (sortKey === "name") {
-        const an = ruleLabelMap.get(a.rule)?.label || a.rule || "";
-        const bn = ruleLabelMap.get(b.rule)?.label || b.rule || "";
-        const cmp = an.localeCompare(bn);
-        if (cmp !== 0) return cmp * dir;
-        const an2 = a.name || a.hash || "";
-        const bn2 = b.name || b.hash || "";
-        return an2.localeCompare(bn2) * dir;
-      }
-      if (sortKey === "firstSeen") return (Date.parse(a.firstSeen) - Date.parse(b.firstSeen)) * dir;
-      if (sortKey === "lastSeen") return (Date.parse(a.lastSeen) - Date.parse(b.lastSeen)) * dir;
-      if (sortKey === "turns") return (a.turns - b.turns) * dir;
-      return 0;
-    });
-    return list;
-  }, [state?.summary?.groups, groupFilter, ruleFilter, actionFilter, whereFilter, statusFilter, debouncedSearch, sortKey, sortDir, ruleLabelMap]);
-
-  // Reset pagination and selection on filter or range change
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSelected(new Set());
-    setVisibleCount(50);
-  }, [groupFilter, ruleFilter, actionFilter, whereFilter, statusFilter, debouncedSearch, sortKey, sortDir, rangePreset, customFromMs, customToMs]);
-
-  // sentinel observer bound to the scroll block
-  useEffect(() => {
-    const el = sentinelRef.current;
-    const root = scrollContainerRef.current;
-    if (!el || !root || view !== "values") return;
-    const io = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && visibleCount < filteredRows.length) {
-        setVisibleCount(c => Math.min(c + 50, filteredRows.length));
-      }
-    }, { root });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [visibleCount, filteredRows.length, view]);
-
-  const displayedRows = filteredRows.slice(0, visibleCount);
-
-  const ignoredByHash = useMemo(() => {
-    const map = new Map();
-    (state?.summary?.groups || []).forEach(g => map.set(g.hash, !!g.ignored));
-    return map;
-  }, [state?.summary?.groups]);
-
-  // events pagination
-  const loadEventsPage = useCallback(async (cursor) => {
-    const id = ++eventsIdRef.current;
-    setEventsLoading(true);
-    try {
-      const r = computeRange(rangePreset, customFromMs, customToMs);
-      const url = `/api/pii-guard?events=1&limit=50&from=${r.from}&to=${r.to}` + (cursor ? `&before=${cursor.before}&skip=${cursor.skip}` : "");
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      if (id !== eventsIdRef.current) return;
-      if (cursor) setEventsList(prev => [...prev, ...(data.events || [])]);
-      else setEventsList(data.events || []);
-      setNextBefore(data.next);
-    } catch (e) { if (id === eventsIdRef.current) setError(e.message); }
-    finally { if (id === eventsIdRef.current) setEventsLoading(false); }
-  }, [rangePreset, customFromMs, customToMs]);
-
-  // Load first page of events when events tab is selected, and reset on range changes
-  useEffect(() => {
-    if (view !== "events") return;
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEventsList([]);
-    setNextBefore(null);
-    loadEventsPage(null);
-    const eventsId = eventsIdRef;
-    return () => { eventsId.current++; };
-  }, [view, rangePreset, customFromMs, customToMs, loadEventsPage]);
-
-  const hasState = !!state;
-  // sentinel observer for events pagination inside scroll block
-  useEffect(() => {
-    const el = eventsSentinelRef.current;
-    const root = scrollContainerRef.current;
-    if (!el || !root || view !== "events") return;
-    const io = new IntersectionObserver(entries => {
-      if (entries[0].isIntersecting && nextBefore && !eventsLoading) {
-        loadEventsPage(nextBefore);
-      }
-    }, { root });
-    io.observe(el);
-    return () => io.disconnect();
-  }, [view, nextBefore, eventsLoading, loadEventsPage, hasState]); // the scroll block mounts once the summary loads
-
-  const handleRangeChange = useCallback(({ preset, from, to }) => {
-    setRangePreset(preset);
-    setCustomFromMs(from);
-    setCustomToMs(to);
-  }, []);
-
-  if (!state) return <div className="p-6 text-text-muted">{error || "Loading..."}</div>;
-
-  const {
-    config = { mode: "observe", rules: {}, ignore: [] },
-    summary = {},
-    health = null,
-    enabled,
-    available,
-  } = state;
-
-  const ocrHealth = health?.ocr;
-  const ocrSummary = summary?.ocr;
-  const showOcr = !!ocrHealth?.available;
-
-  const knownUpdated = health?.knownUpdated;
-  const activeRangeLabel = rangeLabel(rangePreset, customFromMs, customToMs);
-
-  const overrideCounts = {};
-  Object.values(config.rules || {}).forEach(action => {
-    if (action && action !== "default" && action !== config.mode) {
-      overrideCounts[action] = (overrideCounts[action] || 0) + 1;
-    }
+    checkFade();
+    const ro = new ResizeObserver(checkFade);
+    [vRef, gRef].forEach((r) => r.current && ro.observe(r.current));
+    return () => ro.disconnect();
   });
-  const overrideParts = Object.entries(overrideCounts).map(([action, n]) =>
-    `${n} ${n > 1 ? "rules" : "rule"} ${n > 1 ? (OVERRIDE_PLURAL[action] || action) : (OVERRIDE_VERB[action] || action)}`
-  );
-  const anyBlock = config.mode === "block" || overrideCounts.block > 0;
-
-  const visibleHashes = new Set(filteredRows.map(g => g.hash));
-  const selectedVisible = [...selected].filter(h => visibleHashes.has(h));
-  const allSelected = visibleHashes.size > 0 && selectedVisible.length === visibleHashes.size; // a hash can appear under two rules
-  const toggleAll = () => {
-    if (allSelected) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(filteredRows.map(g => g.hash)));
-    }
-  };
-  const toggleRow = hash => {
-    setSelected(prev => {
-      const next = new Set(prev);
-      if (next.has(hash)) next.delete(hash);
-      else next.add(hash);
-      return next;
-    });
-  };
-  const bulkDisabled = selectedVisible.length === 0 || selectedVisible.length > 1000;
-  const anySelectedVisible = selectedVisible.some(hash => !ignoredByHash.get(hash));
-  const bulkIgnore = () => {
-    save({ ignoreMany: selectedVisible, on: anySelectedVisible })
-      .then(ok => ok && setSelected(new Set()));
-  };
-  const ruleHashes = filteredRows.filter(g => !g.ignored).map(g => g.hash);
-  const ignoreThisRule = () => {
-    if (ruleHashes.length) save({ ignoreMany: ruleHashes, on: true }).then(ok => ok && setSelected(new Set()));
-  };
-  const ignoreRecent = () => {
-    save({ ignoreRecent: Number(recentMinutes), on: true }).then(ok => ok && setSelected(new Set()));
-  };
-
-  const handleSort = (key) => {
-    if (sortKey === key) setSortDir(d => d === "asc" ? "desc" : "asc");
-    else { setSortKey(key); setSortDir("desc"); }
-  };
-
-  const ariaSort = (key) => sortKey === key ? (sortDir === "asc" ? "ascending" : "descending") : "none";
-
-  const activeChips = [];
-  if (groupFilter !== "all") activeChips.push({ key: "group", label: `Group: ${groupLabelMap.get(groupFilter) || groupFilter}`, clear: () => handleGroupChange("all") });
-  if (ruleFilter !== "all") activeChips.push({ key: "rule", label: `Rule: ${ruleLabelMap.get(ruleFilter)?.label || ruleFilter}`, clear: () => setRuleFilter("all") });
-  if (actionFilter !== "all") activeChips.push({ key: "action", label: `Action: ${ACTION_LABEL_MAP[actionFilter] || actionFilter}`, clear: () => setActionFilter("all") });
-  if (whereFilter !== "all") activeChips.push({ key: "where", label: `Where: ${whereFilter}`, clear: () => setWhereFilter("all") });
-  if (statusFilter !== "active") activeChips.push({ key: "status", label: `Status: ${statusFilter === "all" ? "All" : statusFilter === "ignored" ? "Ignored" : "Active"}`, clear: () => setStatusFilter("active") });
-  if (debouncedSearch) activeChips.push({ key: "q", label: `Search: ${debouncedSearch}`, clear: () => { setSearchQuery(""); setDebouncedSearch(""); } });
-
-  const clearAllFilters = () => {
-    setGroupFilter("all");
-    setRuleFilter("all");
-    setActionFilter("all");
-    setWhereFilter("all");
-    setStatusFilter("active");
-    setSearchQuery("");
-    setDebouncedSearch("");
-  };
-
-  const scrollToTable = () => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  const mask = (on) => (on ? "linear-gradient(to right,#000 calc(100% - 40px),transparent)" : "none");
+  const maskV = mask(fade.v), maskG = mask(fade.g), maskF = "none", fWrap = "wrap", fOverflow = "visible";
+  const S = v?.s || {};
+  const s = { header: true, leaks: S.leaks, numbers: S.numbers, where: S.where, wording: S.wording, mode: S.mode, groups: S.groups, values: S.values, test: S.test, health: S.health, ocr: S.ocr && v?.okScanner };
+  const empty = {};
+  const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, n = empty, trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
+    redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], subTabs = [], isValues, isEvents, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
+    bulkIgnore, bulkObserve, bulkRedact, bulkBlock, copyHashes, values = [], noValues, events = [], samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
+    noHitsText, testVerdict = empty, testOut, thumbs = [], hasUpload, hasSample, imgBg, imgName, sampleName, sampleBg, problems = [], metrics = [], ocrStats = [], healthNote, ocrNote, imgGroups = [], health = empty } = v || {};
+  const q = ui.q, onQ = (e) => set({ q: e.target.value });
+  const fGroup = ui.fGroup, onGroup = (e) => set({ fGroup: e.target.value }), fAction = ui.fAction, onAction = (e) => set({ fAction: e.target.value });
+  const fStatus = ui.fStatus, onStatus = (e) => set({ fStatus: e.target.value, sel: {} }), fClient = ui.fClient, onClient = (e) => set({ fClient: e.target.value });
+  const fModel = ui.fModel, onModel = (e) => set({ fModel: e.target.value }), fSource = ui.fSource, onSource = (e) => set({ fSource: e.target.value });
+  const clearSel = () => set({ sel: {} });
+  const testText = ui.testText, onTest = (e) => set({ testText: e.target.value }), testMode = ui.testMode, onTestMode = (e) => set({ testMode: e.target.value });
+  const testWhere = ui.testWhere, onTestWhere = (e) => set({ testWhere: e.target.value });
 
   return (
-    <div className="space-y-6">
-      {/* Sticky page-level toolbar directly under header */}
-      {/* Offsets cancel DashboardLayout's p-6 lg:p-10 so the bar sits flush under the header. */}
-      <div className="sticky -top-6 lg:-top-10 z-20 bg-bg border-b border-border -mt-6 lg:-mt-10 -mx-6 lg:-mx-10 px-6 lg:px-10 py-2.5">
-        <div className="flex items-center justify-end gap-2">
-          <span className="text-xs text-text-muted">Data for</span>
-          <RangePicker
-            preset={rangePreset}
-            from={customFromMs}
-            to={customToMs}
-            onChange={handleRangeChange}
-          />
+    <div data-r9={theme} style={{ display: "flex", flexDirection: "column", minHeight: "100%", backgroundColor: "var(--bg)", backgroundImage: "linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px)", backgroundSize: "44px 44px", color: "var(--tx)", fontFamily: "system-ui,-apple-system,'Segoe UI',sans-serif", fontSize: "13px", lineHeight: "1.4" }}>
+  <div style={{ display: "flex", alignItems: "stretch", flex: "1" }}>
+  <main style={{ flex: "1", minWidth: "0", display: "flex", flexDirection: "column", position: "relative" }}>
+    {(s.header) && (<>
+      <div style={{ padding: "16px 32px 12px", display: "flex" }}><button onClick={goLeaks} style={{ display: "flex", alignItems: "center", gap: "8px", height: "28px", padding: "0 12px", borderRadius: "14px", border: "0", background: status.bg, color: status.c, font: "inherit", fontSize: "12.5px", fontWeight: "600", cursor: "pointer" }}><span style={{ width: "8px", height: "8px", borderRadius: "50%", background: status.c }}></span>{status.text}</button></div>
+      <div style={{ position: "sticky", top: "0", zIndex: "30", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", padding: "8px 32px", background: "var(--bg)", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ display: "flex", gap: "2px", flexWrap: "wrap" }}>
+          {(tabs).map((t, _i) => (<Fragment key={_i}>
+            <button onClick={t.on} style={t.style}>{t.label}{(t.count) && (<><span style={{ fontSize: "11px", fontWeight: "600", padding: "0 6px", borderRadius: "9px", background: "var(--seg)", color: "var(--tx2)" }}>{t.count}</span></>)}{(t.dot) && (<><span style={{ width: "7px", height: "7px", borderRadius: "50%", background: t.dot }}></span></>)}</button>
+          </Fragment>))}
         </div>
+        <RangeBar preset={preset} customLabel={customLabel} onChange={onRange} today={todayKey} />
       </div>
+    </>)}
 
-      {error && <div className="text-sm text-red-500" role="alert">{error}</div>}
-      {!enabled && (
-        <Card>
-          <p className="text-sm">PII_GUARD_MODULE is not set. Set it in the service drop-in and restart 9Router.</p>
-        </Card>
-      )}
-      {enabled && !available && (
-        <Card>
-          <p className="text-sm text-red-500">Scanner did not load. Check the console log for [pii-guard] lines.</p>
-        </Card>
-      )}
-
-      {/* 1. Mode Card - keeps only mode control */}
-      <Card>
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="min-w-0 flex-1">
-            <h2 className="text-lg font-semibold flex items-center gap-2 text-text-main">
-              <span className="material-symbols-outlined text-primary">shield_person</span>
-              PII Guard
-              <InfoTip title="How PII Guard works">
-                <p>Every request is scanned on its way to the model. Rules find secrets and personal data; vault values catch your own known strings.</p>
-                <p>Observe only logs. Redact swaps a value for a placeholder like {"{{pii:pan#ab12cd}}"}. Block stops the first request with a new value, and later requests redact it.</p>
-                <p>Some places cannot be rewritten, such as signed thinking, object keys and numbers. A value there is reported as leaked. A scanner error never blocks a request.</p>
-              </InfoTip>
-            </h2>
-            <p className="text-xs text-text-muted mt-1">
-              {MODE_LABEL[config.mode]}
-              {overrideParts.length > 0 && <span className="font-medium text-text-main"> · {overrideParts.join(", ")}</span>}
-            </p>
-            <p className="text-xs text-text-muted mt-0.5">{(overrideParts.length > 0 && MODE_HELP_OVERRIDDEN[config.mode]) || MODE_HELP[config.mode]}</p>
-          </div>
-          <SegmentedControl options={MODES} value={config.mode} onChange={mode => chooseMode(mode)} />
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px 32px 48px" }}>
+      {(isLoading) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", padding: "18px", display: "flex", flexDirection: "column", gap: "12px" }}><div style={{ width: "120px", height: "12px", borderRadius: "6px", background: "var(--seg)" }}></div><div style={{ height: "40px", borderRadius: "8px", background: "var(--seg)" }}></div><div style={{ height: "40px", borderRadius: "8px", background: "var(--seg)" }}></div></div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))", gap: "16px" }}><div style={{ height: "200px", borderRadius: "12px", background: "var(--card)", border: "1px solid var(--line)" }}></div><div style={{ height: "200px", borderRadius: "12px", background: "var(--card)", border: "1px solid var(--line)" }}></div></div>
+        <div style={{ color: "var(--tx3)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px" }}>hourglass_top</span>Reading the PII Guard event log…</div>
+      </>)}
+      {(isError) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", padding: "56px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", textAlign: "center" }}>
+          <span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "36px", color: "var(--red)" }}>error</span>
+          <div style={{ fontSize: "16px", fontWeight: "600" }}>Could not load PII Guard</div>
+          <div style={{ color: "var(--tx2)", maxWidth: "480px", textWrap: "pretty" }}>{errorText} Requests still pass through (fail open).</div>
+          <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}><button style={{ height: "32px", padding: "0 14px", borderRadius: "8px", border: "0", background: "var(--acc)", color: "#fff", font: "inherit", fontWeight: "600", cursor: "pointer" }} onClick={retry}>Retry</button><button style={{ height: "32px", padding: "0 14px", borderRadius: "8px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", cursor: "pointer" }} onClick={openConsole}>Open Console Log</button></div>
         </div>
-        {anyBlock && (
-          <p className="text-xs text-amber-600 dark:text-amber-400 mt-3 pt-3 border-t border-border-subtle">
-            Block stops a new value once; a retry redacts it. A value inside signed thinking of an active tool loop cannot be redacted: use /rewind.
-          </p>
-        )}
-        <div className="mt-3 pt-3 border-t border-border flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-          <span className="text-xs font-medium text-text-main inline-flex items-center gap-1">Image OCR
-            <InfoTip title="What happens to images">
-              <p>The image is never edited. The model always gets the original picture.</p>
-              <p>A copy is read with Tesseract on this machine. The text it reads is checked with the same rules, ignore list and vault values as text, and the result is logged as hashes only. The text itself is thrown away.</p>
-              <p>This runs after the request is sent, so it cannot slow a request down. It also means images can be observed, but not redacted or blocked.</p>
-            </InfoTip>
-          </span>
-          <span role="group" aria-label="Image OCR mode" aria-disabled={!ocrHealth?.available} inert={!ocrHealth?.available ? "" : undefined} className={!ocrHealth?.available ? "pointer-events-none opacity-50" : ""}><SegmentedControl size="sm" aria-label="Image OCR mode" options={[{ value: "off", label: "Off" }, { value: "observe", label: "Observe" }]} value={config.ocr?.mode || "observe"} onChange={mode => save({ ocr: { mode } })} /></span>
-          <span className="text-xs font-medium text-text-main sm:ml-2 inline-flex items-center gap-1">OCR quality
-            <InfoTip title="Enhanced or Basic">
-              <p>Enhanced cleans the image first (grayscale, 2× upscale) and repairs common OCR slips, like O read for 0 or a dash split across a key. On the test images it found 40 of 42 values, against 26 for Basic.</p>
-              <p>It costs about 60–110 ms more per new image. Repeated screenshots come from the cache either way.</p>
-            </InfoTip>
-          </span>
-          <span role="group" aria-label="OCR quality" aria-disabled={!ocrHealth?.available} inert={!ocrHealth?.available ? "" : undefined} className={!ocrHealth?.available ? "pointer-events-none opacity-50" : ""}><SegmentedControl size="sm" aria-label="OCR quality" options={[{ value: "enhanced", label: "Enhanced" }, { value: "basic", label: "Basic" }]} value={config.ocr?.quality || "enhanced"} onChange={quality => save({ ocr: { quality } })} /></span>
-          <span className="text-xs text-text-muted inline-flex items-center gap-1">Keep images: {ocrHealth?.capture ? "on" : "off"}
-            <InfoTip title="Keep images">
-              <p>When on, images with findings are saved under ~/.9router/pii-guard/images so you can check what was caught. They expire on their own.</p>
-              <p>It is set in the service config (PII_GUARD_CAPTURE_IMAGES), not here, because it stores real screenshots on disk.</p>
-            </InfoTip>
-          </span>
-          {!ocrHealth?.available && <span className="text-xs text-amber-600 dark:text-amber-400">Set PII_GUARD_OCR=1 to enable image OCR.</span>}
-        </div>
-      </Card>
+      </>)}
 
-      {/* 2. Stat cards row - equal height */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="h-full flex flex-col justify-between p-4">
-          <div className="flex items-center justify-between text-text-muted">
-            <span className="text-xs font-semibold uppercase tracking-wider">Unique values</span>
-            <span className={`material-symbols-outlined text-[20px] ${summary.unique24h ? "text-brand-500" : ""}`}>fingerprint</span>
-          </div>
-          <div className="mt-3">
-            <span className={`text-2xl font-bold tracking-tight ${summary.unique24h ? "text-text-main" : "text-text-muted"}`}>{count(summary.unique24h)}</span>
-            <span className="block text-xs text-text-muted mt-0.5">{activeRangeLabel}</span>
-          </div>
-        </Card>
-
-        <Card className={`h-full p-4 ${actionFilter === "leaked" ? "border-red-500/40" : ""}`}>
-          <button
-            type="button"
-            onClick={() => setActionFilter(a => a === "leaked" ? "all" : "leaked")}
-            aria-pressed={actionFilter === "leaked"}
-            className="w-full h-full text-left cursor-pointer flex flex-col justify-between"
-          >
-            <div className="flex items-center justify-between text-text-muted">
-              <span className="text-xs font-semibold uppercase tracking-wider">Leaked through</span>
-              <span className={`material-symbols-outlined text-[20px] ${summary.leaked24h ? "text-red-500" : ""}`}>warning</span>
-            </div>
-            <div className="mt-3">
-              <span className={`text-2xl font-bold tracking-tight ${summary.leaked24h ? "text-red-500 dark:text-red-400" : "text-text-muted"}`}>{count(summary.leaked24h)}</span>
-              <p className="mt-1 text-[11px] leading-tight text-text-muted">
-                Seen but could not be rewritten (signed thinking, object keys, numbers). Click to filter the table.
-              </p>
-            </div>
-          </button>
-        </Card>
-
-        <Card className="h-full flex flex-col justify-between p-4">
-          <div className="flex items-center justify-between text-text-muted">
-            <span className="text-xs font-semibold uppercase tracking-wider">Blocked</span>
-            <span className={`material-symbols-outlined text-[20px] ${summary.blocked24h ? "text-amber-500" : ""}`}>block</span>
-          </div>
-          <div className="mt-3">
-            <span className={`text-2xl font-bold tracking-tight ${summary.blocked24h ? "text-amber-500 dark:text-amber-400" : "text-text-muted"}`}>{count(summary.blocked24h)}</span>
-            <span className="block text-xs text-text-muted mt-0.5">Requests rejected (400)</span>
-          </div>
-        </Card>
-
-        <Card className="h-full flex flex-col justify-between p-4">
-          <div className="flex items-center justify-between text-text-muted">
-            <span className="text-xs font-semibold uppercase tracking-wider">Scanner errors</span>
-            <span className={`material-symbols-outlined text-[20px] ${summary.errors24h ? "text-red-500" : ""}`}>error</span>
-          </div>
-          <div className="mt-3">
-            <span className={`text-2xl font-bold tracking-tight ${summary.errors24h ? "text-red-500 dark:text-red-400" : "text-text-muted"}`}>{count(summary.errors24h)}</span>
-            <span className="block text-xs text-text-muted mt-0.5">Fails open (never blocks)</span>
-          </div>
-        </Card>
-      </div>
-
-      {/* 3. Scanner Health Card */}
-      <Card>
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-text-muted">monitor_heart</span>
-            Scanner health
-            <InfoTip title="Scanner health">
-              <p>Shows whether the scanner is loaded, how many vault values it knows, and how long a scan takes. Scans run inline, so this is time added to each request.</p>
-              <p>“Not scanned” counts parts it cannot read: images when OCR is off, files and PDFs, and encrypted reasoning.</p>
-            </InfoTip>
-          </h3>
-          <div className="flex items-center gap-1.5">
-            <span className={`inline-block size-2.5 rounded-full ${health?.loaded ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-red-500"}`} aria-hidden="true" />
-            <span className="text-xs font-medium text-text-main">{health?.loaded ? "Loaded" : "Not loaded"}</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Known values</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">{count(health?.knownCount)}</strong>
-            <span className="text-[11px] text-text-muted block mt-0.5">{age(knownUpdated)}</span>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Scanner errors</span>
-            <strong className={`block text-base font-semibold mt-0.5 ${health?.errors ? "text-red-500" : "text-text-main"}`}>{count(health?.errors)}</strong>
-            <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={health?.lastError ? `${age(health.lastError.ts)} (${health.lastError.stage})` : "No errors"}>
-              {health?.lastError ? `Last: ${age(health.lastError.ts)} (${health.lastError.stage})` : "No errors"}
-            </span>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Requests</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">{count(health?.requests)}</strong>
-            <span className="text-[11px] text-text-muted block mt-0.5">
-              {health?.withFindings !== undefined ? `${count(health.withFindings)} findings` : "all time"}
-            </span>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Scan latency</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5 font-mono">p95 {count(health?.p95ScanMs)} ms</strong>
-            <span className="text-[11px] text-text-muted block mt-0.5 font-mono">max {count(health?.maxScanMs)} ms</span>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Images not scanned (no OCR)</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">{count(health?.unscanned?.images)}</strong>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Files not scanned</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">{count(health?.unscanned?.files)}</strong>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium cursor-help" title="Signed thinking signatures and encrypted reasoning cannot be read; they are skipped.">Encrypted reasoning skipped</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">{count(health?.unscanned?.opaque)}</strong>
-          </div>
-          <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-            <span className="text-xs text-text-muted block font-medium">Scanner uptime</span>
-            <strong className="block text-base font-semibold text-text-main mt-0.5">{uptime(health?.since)}</strong>
-            <span className="text-[11px] text-text-muted block mt-0.5">{count(health?.seen)} total seen</span>
-          </div>
-        </div>
-      </Card>
-
-      {/* Images (OCR) Card */}
-      {showOcr && (
-        <Card>
-          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h3 className="font-semibold text-text-main flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px] text-text-muted">image_search</span>
-              Images (OCR)
-              <InfoTip title="Images (OCR)">
-                <p>Each image in a request is read in the background after the request goes out. What you see here is what that reading found.</p>
-                <p>Hits also show in Values seen with the source “image / ocr”, so you can tell them from text hits.</p>
-              </InfoTip>
-            </h3>
-            <div className="flex items-center gap-2 flex-wrap">
-              {ocrHealth?.queue !== undefined && (
-                <span className="text-xs text-text-muted font-medium">Queue: {count(ocrHealth.queue)}</span>
-              )}
-              {ocrHealth?.enabled && ocrHealth?.mode && (
-                <Badge size="sm" variant="default">Mode: {ocrHealth.mode}</Badge>
-              )}
-              {ocrHealth?.capture && (
-                <Badge size="sm" variant="info">Capture on</Badge>
-              )}
-              <div className="flex items-center gap-1.5">
-                <span
-                  className={`inline-block size-2.5 rounded-full ${ocrHealth?.enabled ? "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]" : "bg-neutral-400"}`}
-                  aria-hidden="true"
-                />
-                <span className="text-xs font-medium text-text-main">{ocrHealth?.enabled ? "Enabled" : "Disabled"}</span>
+      {(s.leaks) && (<>
+        <div style={{ background: "var(--card)", border: `1px solid ${leakBorder}`, borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: status.c }}>{leakIcon}</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Leaks</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Matched a Redact or Block rule but could not be rewritten</span></div><span style={{ fontSize: "12px", color: "var(--tx3)" }}>{leakCount}</span></div>
+          {(leaks).map((l, _i) => (<Fragment key={_i}>
+            <div style={{ borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "8px 14px", alignItems: "center", padding: "10px 0 4px" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}><span style={{ fontWeight: "600" }}>{l.rule}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{l.group} · <span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span></span></div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}><span style={{ fontSize: "10.5px", fontWeight: "600", padding: "1px 7px", borderRadius: "4px", background: "var(--redbg)", color: "var(--red)" }}>{l.tag}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.loc}</span></div>
+                <span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.time}</span>
+                {(l.isOpen) && (<><div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap", gridColumn: "span 2" }}>
+                  <button onClick={l.review} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" }}>{l.reviewLabel}</button>
+                  <button onClick={l.ignore} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Ignore</button>
+                  <button onClick={l.blockNext} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "0", background: "var(--acc)", color: "#fff", font: "inherit", fontSize: "12px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}>Block next time</button>
+                </div></>)}
+                {(l.isRuled) && (<><span style={{ justifySelf: "end", fontSize: "12px", color: "var(--green)", fontWeight: "600", display: "flex", gap: "4px", alignItems: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px" }}>block</span>Blocks next time</span></>)}
               </div>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted block font-medium">Images scanned</span>
-              <strong className="block text-base font-semibold text-text-main mt-0.5">{count(ocrSummary?.totalImages)}</strong>
-              <span className="text-[11px] text-text-muted block mt-0.5">
-                {count(ocrSummary?.imagesWithHits)} with hits
-              </span>
-            </div>
-            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted font-medium inline-flex items-center gap-1">Status
-                <InfoTip title="Status">
-                  <p><b>Scanned</b>: read cleanly. <b>Partial</b>: read, but Tesseract was unsure (confidence under 60), so a value may be missed.</p>
-                  <p><b>Empty</b>: no text in the image. <b>Skipped</b>: not read, for example when the queue was full. <b>Failed</b>: the OCR engine errored.</p>
-                </InfoTip>
-              </span>
-              <strong className="block text-base font-semibold text-text-main mt-0.5">{count(ocrSummary?.status?.scanned)} ok</strong>
-              <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={`scanned: ${ocrSummary?.status?.scanned || 0}, partial: ${ocrSummary?.status?.partial || 0}, empty: ${ocrSummary?.status?.empty || 0}, failed: ${ocrSummary?.status?.failed || 0}, skipped: ${ocrSummary?.status?.skipped || 0}`}>
-                {ocrSummary?.status?.partial ? `${count(ocrSummary.status.partial)} partial · ` : ""}{count(ocrSummary?.status?.empty)} empty{ocrSummary?.status?.skipped ? ` · ${count(ocrSummary.status.skipped)} skipped` : ""}{ocrSummary?.status?.failed ? ` · ${count(ocrSummary.status.failed)} failed` : ""}
-              </span>
-            </div>
-            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted font-medium inline-flex items-center gap-1">Cache hit rate
-                <InfoTip title="Cache">
-                  <p>Agents resend the same screenshot on every turn. Each image is fingerprinted, and a repeat within 24 hours reuses the earlier result instead of being read again.</p>
-                  <p>Coalesced means the same image arrived twice at once and was read only once.</p>
-                </InfoTip>
-              </span>
-              <strong className="block text-base font-semibold text-text-main mt-0.5">
-                {Math.round((ocrSummary?.cacheHitRate || 0) * 100)}%
-              </strong>
-              <span className="text-[11px] text-text-muted block mt-0.5 truncate" title={`hit: ${ocrSummary?.cache?.hit || 0}, miss: ${ocrSummary?.cache?.miss || 0}, coalesced: ${ocrSummary?.coalesced || 0}`}>
-                {count(ocrSummary?.cache?.hit)} hit · {count(ocrSummary?.cache?.miss)} miss · {count(ocrSummary?.coalesced)} coalesced
-              </span>
-            </div>
-            <div className="rounded-lg bg-surface-2/60 p-2.5 border border-border-subtle">
-              <span className="text-xs text-text-muted font-medium inline-flex items-center gap-1">OCR latency
-                <InfoTip title="OCR latency">
-                  <p>Time to read one new image, at the 95th percentile. Cache hits are left out because they take no time.</p>
-                  <p>Requests never wait for this.</p>
-                </InfoTip>
-              </span>
-              <strong className="block text-base font-semibold text-text-main mt-0.5 font-mono">
-                p95 {count(ocrSummary?.p95OcrMs)} ms
-              </strong>
-              <span className="text-[11px] text-text-muted block mt-0.5">over cache misses</span>
-            </div>
-          </div>
-          <div className="mt-4 space-y-2">
-            <h4 className="text-xs font-semibold text-text-main">Recent images</h4>
-            {(ocrSummary?.recent || []).length === 0 ? <p className="text-xs text-text-muted">No images yet. Try a sample in Scanner test.</p> : (
-              <ul className="divide-y divide-border border-y border-border">
-                {ocrSummary.recent.map((item, i) => (
-                  <li key={`${item.ts}:${i}`} className="py-2 flex flex-wrap items-center gap-2 text-xs">
-                    <span className="text-text-muted">{age(item.ts)}</span><span className="font-medium text-text-main">{item.model || item.endpoint || "request"}</span>
-                    <span className="text-text-muted">image {item.imageIndex}</span><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge>
-                    {(item.rules || []).length ? item.rules.map(rule => <Badge key={rule} size="sm" variant="default">{rule}</Badge>) : <span className="text-text-muted">no hits</span>}
-                    <span className="text-text-muted">{item.cache === "hit" ? "from cache" : `${count(item.ocrMs)} ms`} · {item.mode || "enhanced"}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {Object.keys(ocrSummary?.reasons || {}).length > 0 && <p className="text-xs text-text-muted">Read issues: {Object.entries(ocrSummary.reasons).map(([reason, n]) => `${({ queue_full: "queue full", timeout: "timeout", too_large: "too large", unsupported: "unsupported", low_confidence: "partly read", engine_error: "engine error" })[reason] || reason} ${count(n)}`).join(" · ")}</p>}
-          </div>
-        </Card>
-      )}
-
-      {/* 4. Rule Groups Card */}
-      <Card>
-        <div className="mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-text-muted">tune</span>
-            Rule groups
-            <InfoTip title="Rule groups">
-              <p>Each rule can follow the main mode (Default) or have its own. For example, you can redact API keys and only observe emails.</p>
-              <p>Vault values are your own strings from ~/.config/pii-guard/known.json. They are matched exactly, wherever they appear.</p>
-              <p>The same settings apply to image hits, but images stay observe-only.</p>
-            </InfoTip>
-          </h3>
-        </div>
-        <div className="divide-y divide-border border-t border-border">
-          {groupsList.map(group => {
-            const rulesInGroup = groupRules.get(group.id) || [];
-            if (!rulesInGroup.length) return null;
-            const totals = rulesInGroup.reduce((acc, r) => {
-              const byRule = summary.byRule?.[r.id] || {};
-              return { unique: acc.unique + (byRule.unique || 0), hits: acc.hits + (byRule.hits || 0) };
-            }, { unique: 0, hits: 0 });
-            const modes = rulesInGroup.map(r => config.rules?.[r.id] || "default");
-            const shared = modes.length > 0 && modes.every(m => m === modes[0]) ? modes[0] : "mixed";
-            return (
-              <div key={group.id} className="py-2.5">
-                <div className="flex items-center justify-between gap-4 flex-wrap">
-                  <details className="group min-w-0 flex-1">
-                    <summary className="cursor-pointer list-none flex items-center gap-2 text-sm">
-                      <span className="material-symbols-outlined text-[18px] text-text-muted transition-transform group-open:rotate-90">
-                        chevron_right
-                      </span>
-                      <span className="font-semibold text-text-main">{group.label}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          setGroupFilter(group.id);
-                          setRuleFilter("all");
-                          scrollToTable();
-                        }}
-                        className="py-1.5 px-2 rounded text-xs text-text-muted font-mono hover:text-primary hover:bg-surface-2 transition-colors cursor-pointer inline-flex items-center min-h-[28px]"
-                        title="Filter table by this group"
-                      >
-                        {count(totals.unique)} unique / {count(totals.hits)} hits / {activeRangeLabel}
-                      </button>
-                    </summary>
-                    <div className="mt-2 space-y-2 pl-6 border-l border-border-subtle">
-                      {rulesInGroup.map(r => {
-                        const byRule = summary.byRule?.[r.id] || {};
-                        const warning = summary.ruleWarnings?.[r.id];
-                        return (
-                          <div key={r.id} className="flex items-center justify-between gap-4 py-1.5 flex-wrap">
-                            <div className="min-w-0 space-y-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-mono text-sm font-semibold text-text-main">{r.label || r.id}</span>
-                                <Badge size="sm" variant={KIND_CONFIG[r.kind]?.badge || "default"}>{r.kind}</Badge>
-                                {r.id === "known" && (
-                                  <span className="text-xs text-text-muted">({count(r.count)} values)</span>
-                                )}
-                                <span className="text-xs text-text-muted font-mono">
-                                  · {count(byRule.unique)} unique / {count(byRule.hits)} hits / {activeRangeLabel}
-                                </span>
-                              </div>
-                              {warning && (
-                                <div>
-                                  <span className="inline-block cursor-help" title={`${Math.round(warning.share * 100)}% in ${humanizeSource(warning.topSource)}`}>
-                                    <Badge variant="warning" size="sm" icon="warning">
-                                      Mostly in {humanizeSource(warning.topSource)}; Redact cannot rewrite it there
-                                    </Badge>
-                                  </span>
-                                </div>
-                              )}
-                            </div>
-                            <SegmentedControl
-                              size="sm"
-                              className="p-0.5"
-                              options={RULE_MODES}
-                              value={config.rules?.[r.id] || "default"}
-                              onChange={mode => { if (confirmBlock(mode)) save({ rules: { [r.id]: mode } }); }}
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </details>
-                  <div className="flex items-center gap-2">
-                    {shared === "mixed" && (
-                      <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Mixed</span>
-                    )}
-                    <SegmentedControl
-                      size="sm"
-                      className="p-0.5"
-                      options={RULE_MODES}
-                      value={shared === "mixed" ? null : shared}
-                      onChange={mode => { if (confirmBlock(mode)) save({ rules: Object.fromEntries(rulesInGroup.map(r => [r.id, mode])) }); }}
-                    />
-                  </div>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 6px", padding: "0 0 10px", fontSize: "11.5px", color: "var(--tx3)", minWidth: "0" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "14px" }}>person</span><span>{l.client}</span><span>·</span><span style={{ fontFamily: "var(--mono)" }}>{l.model}</span>{(l.hasSess) && (<><a href="Spend.dc.html" title="Opens Spend \u2192 Agents and sessions, filtered to this session" style={{ fontFamily: "var(--mono)", color: "var(--acc)", textDecoration: "underline", textUnderlineOffset: "2px" }}>{l.sess}</a></>)}{(l.noSess) && (<><span style={{ fontStyle: "italic" }}>session not recorded</span></>)}</div>
+              {(l.expanded) && (<>
+                <div style={{ margin: "0 0 12px", padding: "12px 14px", borderRadius: "8px", background: "var(--seg)", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "10px 18px", fontSize: "12px" }}>
+                  <div style={{ gridColumn: "1/-1", display: "flex", gap: "6px", color: "var(--tx)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px", color: "var(--red)" }}>info</span><span><b>Reason:</b> {l.why}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Location</span><span>{l.loc}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>First seen</span><span>{l.first}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Last seen</span><span>{l.last}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Hits</span><span>{l.hits}</span></div>
+                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Hash</span><span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span></div>
+                  <div style={{ gridColumn: "1/-1", color: "var(--tx2)" }}>Block next time: <b style={{ color: "var(--tx)" }}>{l.fix}</b></div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      </Card>
-
-      {/* 5. Scanner Test Card */}
-      <Card>
-        <div className="mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2"><span className="material-symbols-outlined text-[18px] text-text-muted">science</span>Scanner test
-            <InfoTip title="Scanner test">
-              <p>Try the scanner on anything. Nothing here is sent to a model.</p>
-              <p>Text shows what a real request would look like after your settings. Image shows the text OCR read and what it caught, so you can see how well it reads.</p>
-              <p>Each test is logged as a Test event with hashes only. Tests are not counted in the stats, and Events hides them unless you turn on Show tests.</p>
-            </InfoTip>
-          </h3>
-        </div>
-        <SegmentedControl aria-label="Scanner test type" options={[{ value: "text", label: "Text" }, { value: "image", label: "Image" }]} value={scannerTab} onChange={tab => { setScannerTab(tab); setResult(null); setImageResult(null); }} />
-        {scannerTab === "text" ? <div className="mt-3">
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={8} aria-label="Text to scan" placeholder="Example: Contact me at person@example.test with PAN ABCDE1234F" className="w-full rounded-[10px] border border-border bg-surface-2 p-3 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-brand-500/30" />
-          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs"><span className="text-text-muted">Try an example:</span>{[
-            ["API key", "API key: sk-ant-api03-" + "A".repeat(80)],
-            ["Card + email", "Card: 4111 1111 1111 1111, email: person@example.test"],
-            ["PAN + phone", "PAN: ABCDE1234F, phone: +91 98765 43210"],
-          ].map(([label, sample]) => <button type="button" key={label} onClick={() => { setText(sample); setResult(null); }} className="rounded-full bg-surface-2 px-2.5 py-1 text-text-main hover:bg-surface-2/70">{label}</button>)}</div>
-          <div className="mt-3 flex items-end gap-2 flex-wrap">
-            <Select label="Test with" className="w-56" value={testMode} onChange={e => { setTestMode(e.target.value); setResult(null); }} options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]} />
-            <Select label="Where" className="w-44" value={testWhere} onChange={e => { setTestWhere(e.target.value); setResult(null); }} options={TEST_WHERES} />
-            <Button type="button" variant="secondary" onClick={runTest}>Scan</Button>
-          </div>
-          {result && <div className="mt-4 space-y-3 pt-3 border-t border-border text-sm">
-            <p className="font-medium text-text-main">{count(result.findings.length)} findings · would {result.blocked.length ? "block" : result.redacted !== result.before ? "redact" : "observe"}</p>
-            {result.findings.length === 0 ? <p className="text-text-muted text-xs">No findings detected.</p> : <ul className="space-y-1.5">{result.findings.map((f, i) => <li key={i} className="flex items-center gap-2 font-mono text-xs flex-wrap"><Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge><span className="font-semibold text-text-main">{f.name || f.rule}:</span><span className="rounded bg-surface-2 px-1.5 py-0.5 text-text-muted">{f.match}</span></li>)}</ul>}
-            {result.blocked.length > 0 && <p className="text-xs text-red-500 font-medium">A real request would be blocked: {result.blocked.join(", ")}</p>}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{result.before !== undefined && <div><p className="text-xs text-text-muted mb-1 font-medium">Before</p><pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-muted border border-border-subtle">{result.before}</pre></div>}<div><p className="text-xs text-text-muted mb-1 font-medium">Sent upstream</p><pre className="whitespace-pre-wrap rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main border border-border-subtle"><PlaceholderText text={result.redacted} /></pre></div></div>
-          </div>}
-        </div> : <div className="mt-3 space-y-3">
-          <div onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); acceptImage(e.dataTransfer.files?.[0]); }} onPaste={e => { const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith("image/")); if (item) { e.preventDefault(); acceptImage(item.getAsFile()); } }} tabIndex={0} aria-label="Image upload drop zone. Paste, drop, or choose a PNG, JPEG, or WebP up to 10 MiB." onClick={() => fileInputRef.current?.click()} className="rounded-[10px] border border-dashed border-border bg-surface-2 p-5 text-center text-sm text-text-muted cursor-pointer focus:outline-none focus:ring-2 focus:ring-brand-500/30">{imageName || "Drop, paste, or choose an image (PNG, JPEG, WebP · max 10 MiB)"}<input ref={fileInputRef} type="file" accept="image/png,image/jpeg,image/webp" aria-label="Choose image" className="sr-only" onClick={e => e.stopPropagation()} onChange={e => acceptImage(e.target.files?.[0])} /></div>
-          {samples.length > 0 && <div className="flex gap-3 overflow-x-auto pb-1">{samples.map(sample => <button type="button" key={sample.id} onClick={() => { setSelectedSample(sample.id); setImageData(null); setImageName(sample.label); setImagePreview(`/pii-guard-samples/${sample.file}`); setImageResult(null); }} aria-pressed={selectedSample === sample.id} className={`shrink-0 w-28 text-left text-xs ${selectedSample === sample.id ? "ring-2 ring-brand-500" : ""}`}><img src={`/pii-guard-samples/${sample.file}`} alt={sample.label} className="h-20 w-28 rounded-[10px] object-cover border border-border" /><span className="mt-1 block text-text-main">{sample.label}</span></button>)}</div>}
-          {imagePreview && <img src={imagePreview} alt="Selected image preview" className="max-h-56 max-w-full rounded-[10px] border border-border object-contain" />}
-          <div className="flex items-end gap-2 flex-wrap"><Select label="Quality" className="w-48" value={testQuality} onChange={e => { setTestQuality(e.target.value); setImageResult(null); }} options={[{ value: "enhanced", label: "Enhanced" }, { value: "basic", label: "Basic" }, { value: "compare", label: "Compare both" }]} /><Select label="Test with" className="w-56" value={testMode} onChange={e => { setTestMode(e.target.value); setImageResult(null); }} options={[{ value: "current", label: "Current settings" }, ...MODES.map(m => ({ value: m.value, label: `${m.label} (all rules)` }))]} /><Button type="button" variant="secondary" disabled={testBusy || (!imageData && !selectedSample)} onClick={runImageTest}>{testBusy ? "Scanning…" : "Scan image"}</Button></div>
-          <p className="text-xs text-text-muted inline-flex items-center gap-1">Images are observed only.
-            <InfoTip title="Why only observed">
-              <p>OCR text is shown here only because you asked to test this image. In live traffic, the text is never kept: only the rule names and hashes are logged.</p>
-              <p>The image itself is never changed. Rewriting pixels is not possible the way text is rewritten, so a real request with this image goes out as is.</p>
-            </InfoTip>
-          </p>          {imageResult && <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">{imageResult.results.map((item, idx) => <section key={`${item.mode}:${idx}`} className="min-w-0 rounded-[10px] border border-border p-3 space-y-2"><h4 className="font-semibold text-text-main">{item.mode}</h4><div className="flex flex-wrap items-center gap-2 text-xs"><Badge size="sm" variant={statusVariant(item.status)}>{item.status}</Badge><span className="text-text-muted">{count(item.ocrMs)} ms · mean confidence {item.meanConfidence ?? "—"} · {count(item.chars)} chars</span></div><ul className="space-y-1">{item.findings.map((f, i) => <li key={`${f.rule}:${i}`} className="flex flex-wrap items-center gap-1.5 text-xs"><Badge size="sm" variant={ACTION_BADGE_VARIANT[f.action] || "default"}>{f.action}</Badge><span className="font-medium text-text-main">{f.name || f.rule}</span><span className="text-text-muted">{f.match || <span className="inline-flex items-center gap-1">(repaired read)<InfoTip title="Repaired read"><p>OCR misread this value, for example O for 0 or a space inside a key. Enhanced mode fixed the slip and then matched it, so the value is not highlighted in the raw text.</p></InfoTip></span>}</span></li>)}</ul>{item.text && <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[10px] bg-surface-2 p-3 font-mono text-xs text-text-main">{highlightMatches(item.text, item.findings)}</pre>}</section>)}</div>}
-          {imageResult?.expect && <p className="text-xs text-text-muted">Expected: {imageResult.expect.join(", ")} · {imageResult.expect.map(rule => <span key={rule} className="mr-2">{imageResult.results.some(r => r.findings.some(f => f.rule === rule)) ? "✓" : "✗"} {rule}</span>)}</p>}
-        </div>}
-      </Card>
-
-      {/* 6. Where values appeared Card */}
-      <Card className="p-4 sm:p-5">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold text-text-main flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px] text-text-muted">location_on</span>
-            Where values appeared
-            <InfoTip title="Where values appeared">
-              <p>Which part of the conversation each hit came from: your messages, the model’s replies, tool results, system prompt, thinking, or images.</p>
-              <p>Tool results are often the biggest source, because they carry file contents and command output.</p>
-            </InfoTip>
-          </h3>
-        </div>
-        {sortedSources.length === 0 ? (
-          <p className="text-xs text-text-muted">No source activity for {activeRangeLabel}.</p>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2.5">
-            {sortedSources.map(item => {
-              const pct = Math.max(2, Math.round((item.hits / maxSourceHits) * 100));
-              return (
-                <div key={item.source} className="space-y-1">
-                  <div className="flex items-center justify-between text-xs gap-2">
-                    <span className="font-medium text-text-main truncate">{item.label}</span>
-                    <span className="shrink-0 text-right">
-                      <span className="font-medium text-text-main">{count(item.hits)}</span>{" "}
-                      <span className="text-text-muted">hits</span>
-                    </span>
-                  </div>
-                  <div role="progressbar" aria-label={`${item.label}: ${count(item.hits)}`} aria-valuenow={item.hits} aria-valuemin={0} aria-valuemax={maxSourceHits} className="h-1.5 w-full overflow-hidden rounded-full bg-surface-2">
-                    <div className="h-full rounded-full bg-brand-500/80 transition-all duration-300" style={{ width: `${pct}%` }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </Card>
-
-      {/* 7. Findings Table & Recent Events Card */}
-      <Card>
-        <div ref={tableRef} />
-
-        {/* Section Header: Title + range phrase + count badge on left, small Tab switch + Refresh on right */}
-        <div className="flex items-center justify-between gap-3 mb-1 flex-wrap">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold text-text-main flex items-center gap-2">
-              <span className="material-symbols-outlined text-[18px] text-text-muted">search_check</span>
-              Values seen
-              <InfoTip title="Values seen">
-                <p>One row per unique value, not per request. Turns counts the requests that contained it.</p>
-                <p>Values are stored only as hashes, never as text. Ignore a value if it is safe, such as a test key, and it stops being reported.</p>
-              </InfoTip>
-            </h3>
-            <span className="text-xs text-text-muted">({activeRangeLabel})</span>
-            {view === "values" && (
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-text-main">
-                {count(filteredRows.length)}{filteredRows.length !== (summary.groups || []).length ? ` of ${count((summary.groups || []).length)}` : ""}
-              </span>
-            )}
-            {view === "events" && eventsList.length > 0 && (
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-xs font-medium text-text-main">
-                {count(eventsList.length)} events
-              </span>
-            )}
-            {summary.truncated && (
-              <Badge variant="warning" size="sm">Partial log</Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <SegmentedControl
-              size="sm"
-              options={[
-                { value: "values", label: "Values" },
-                { value: "events", label: "Event log" },
-              ]}
-              value={view}
-              onChange={setView}
-            />
-            <button
-              type="button"
-              onClick={view === "events" ? () => { setEventsList([]); setNextBefore(null); loadEventsPage(null); } : load}
-              aria-label="Refresh"
-              title="Refresh"
-              className="inline-flex size-9 items-center justify-center rounded-[10px] bg-surface-2 text-text-muted hover:text-text-main hover:bg-surface-2/80 transition-colors cursor-pointer"
-            >
-              <span className="material-symbols-outlined text-[18px]">refresh</span>
-            </button>
-          </div>
-        </div>
-
-        {view === "values" && (
-          <div>
-            {/* One-line explanation in smaller muted text */}
-
-            {/* Single toolbar: search + 5 compact selects + secondary ignore-recent control */}
-            <div className="flex items-center gap-2.5 mb-3 flex-wrap">
-              <div className="relative flex-1 min-w-[200px]">
-                <span className="material-symbols-outlined absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-text-muted text-[18px]">search</span>
-                <input
-                  type="text"
-                  placeholder="Filter by rule, name, or hash..."
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  aria-label="Filter findings by rule, name, or hash"
-                  className="h-9 w-full pl-9 pr-3 text-sm text-text-main bg-surface-2 rounded-[10px] border border-transparent placeholder-text-muted/70 focus:outline-none focus:ring-2 focus:ring-brand-500/30 focus:border-brand-500/40"
-                />
-              </div>
-              <Select size="sm" className="w-auto min-w-[130px]" value={groupFilter} onChange={e => handleGroupChange(e.target.value)} options={groupOptions} />
-              <Select size="sm" className="w-auto min-w-[130px]" value={ruleFilter} onChange={e => setRuleFilter(e.target.value)} options={ruleFilterOptions} />
-              <Select size="sm" className="w-auto min-w-[120px]" value={actionFilter} onChange={e => setActionFilter(e.target.value)} options={ACTION_OPTIONS} />
-              <Select size="sm" className="w-auto min-w-[130px]" value={whereFilter} onChange={e => setWhereFilter(e.target.value)} options={whereOptions} />
-              <Select size="sm" className="w-auto min-w-[100px]" value={statusFilter} onChange={e => setStatusFilter(e.target.value)} options={[
-                { value: "active", label: "Active" },
-                { value: "ignored", label: "Ignored" },
-                { value: "all", label: "All" },
-              ]} />
-              <div className="flex items-center gap-1.5 shrink-0">
-                <Select size="sm" aria-label="Ignore values first seen in the last" className="w-24" value={recentMinutes} onChange={e => setRecentMinutes(e.target.value)} options={RECENT_MINUTES} />
-                <Button size="sm" variant="secondary" className="h-9 whitespace-nowrap" onClick={ignoreRecent}>Ignore recent</Button>
-              </div>
+              </>)}
             </div>
+          </Fragment>))}
+          {(noLeaks) && (<>
+            <div style={{ borderTop: "1px solid var(--line)", padding: "26px 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", textAlign: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "30px", color: "var(--green)" }}>verified</span><span style={{ fontWeight: "600" }}>No leaks in this range</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Every value with a Redact or Block rule was handled before sending.</span></div>
+          </>)}
+          {(toast) && (<><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px", padding: "8px 12px", borderRadius: "8px", background: "var(--tx)", color: "var(--bg)", fontSize: "12px" }}><span>{toast}</span><button onClick={undo} style={{ border: "0", background: "transparent", color: "var(--acc)", font: "inherit", fontWeight: "600", cursor: "pointer" }}>Undo</button></div></>)}
+        </div>
+      </>)}
 
-            {/* Filter chips with "Clear all", shown only when a filter is active */}
-            {activeChips.length > 0 && (
-              <div className="flex items-center gap-2 mb-3 flex-wrap">
-                {activeChips.map(chip => (
-                  <button
-                    key={chip.key}
-                    type="button"
-                    onClick={chip.clear}
-                    className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-text-main hover:bg-surface-2/70 transition-colors cursor-pointer"
-                  >
-                    {chip.label}
-                    <span className="material-symbols-outlined text-[14px]">close</span>
-                  </button>
-                ))}
-                <button type="button" onClick={clearAllFilters} className="text-xs text-primary hover:underline cursor-pointer">Clear all</button>
-              </div>
-            )}
-
-            {/* Bulk action bar - slim highlighted bar, appears only when at least one row is selected */}
-            {selectedVisible.length > 0 && (
-              <div className="flex items-center justify-between gap-3 px-3 py-2 mb-3 rounded-lg bg-brand-500/10 border border-brand-500/20 text-xs flex-wrap">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-semibold text-brand-600 dark:text-brand-400">
-                    {count(selectedVisible.length)} selected
-                  </span>
-                  {!allSelected && (
-                    <button
-                      type="button"
-                      onClick={toggleAll}
-                      className="text-primary hover:underline font-medium cursor-pointer"
-                    >
-                      Select all {count(filteredRows.length)}
-                    </button>
-                  )}
-                  <span className="text-text-muted">·</span>
-                  <Button size="sm" variant="secondary" className="h-7 text-xs" disabled={bulkDisabled} onClick={bulkIgnore}>
-                    {anySelectedVisible ? "Ignore selected" : "Unignore selected"}
-                  </Button>
-                  {ruleFilter !== "all" && (
-                    <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={ignoreThisRule} disabled={!ruleHashes.length || ruleHashes.length > 1000}>
-                      Ignore all shown for this rule
-                    </Button>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setSelected(new Set())}
-                  className="text-text-muted hover:text-text-main cursor-pointer"
-                >
-                  Deselect all
-                </button>
-              </div>
-            )}
-
-            {filteredRows.length === 0 ? (
-              <div className="py-8 text-center text-sm text-text-muted">No findings matched filter.</div>
-            ) : (
-              <div ref={scrollContainerRef} className="max-h-[60vh] overflow-y-auto overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="sticky top-0 z-10 bg-surface text-left text-xs uppercase text-text-muted border-b border-border">
-                    <tr>
-                      <th className="py-2.5 pr-3 font-semibold w-8">
-                        <input
-                          type="checkbox"
-                          checked={allSelected}
-                          onChange={toggleAll}
-                          aria-label={`Select all ${filteredRows.length}`}
-                          title={`Select all ${filteredRows.length}`}
-                          className="size-4 accent-brand-500 cursor-pointer align-middle"
-                        />
-                      </th>
-                      <th className="py-2.5 pr-3 font-semibold whitespace-nowrap" aria-sort={ariaSort("name")}>
-                        <button type="button" className="uppercase font-semibold hover:text-text-main" onClick={() => handleSort("name")}>
-                          Name {sortKey === "name" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-                        </button>
-                      </th>
-                      <th className="py-2.5 pr-3 font-semibold whitespace-nowrap">Where</th>
-                      <th className="py-2.5 pr-3 font-semibold whitespace-nowrap">Action</th>
-                      <th className="py-2.5 pr-3 font-semibold whitespace-nowrap" aria-sort={ariaSort("firstSeen")}>
-                        <button type="button" className="uppercase font-semibold hover:text-text-main whitespace-nowrap" onClick={() => handleSort("firstSeen")}>
-                          First seen {sortKey === "firstSeen" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-                        </button>
-                      </th>
-                      <th className="py-2.5 pr-3 font-semibold whitespace-nowrap" aria-sort={ariaSort("lastSeen")}>
-                        <button type="button" className="uppercase font-semibold hover:text-text-main whitespace-nowrap" onClick={() => handleSort("lastSeen")}>
-                          Last seen {sortKey === "lastSeen" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-                        </button>
-                      </th>
-                      <th className="py-2.5 pr-3 font-semibold whitespace-nowrap" aria-sort={ariaSort("turns")}>
-                        <button type="button" className="uppercase font-semibold hover:text-text-main whitespace-nowrap" onClick={() => handleSort("turns")}>
-                          Turns {sortKey === "turns" ? (sortDir === "asc" ? "▲" : "▼") : ""}
-                        </button>
-                      </th>
-                      <th className="py-2.5 text-right font-semibold whitespace-nowrap w-24">
-                        <span className="sr-only">Ignore</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {displayedRows.map(group => {
-                      const ruleMeta = ruleLabelMap.get(group.rule);
-                      const groupLabel = groupLabelMap.get(ruleMeta?.group) || ruleMeta?.group;
-                      return (
-                        <ValueRow
-                          key={`${group.rule}:${group.hash}`}
-                          group={group}
-                          ruleMeta={ruleMeta}
-                          groupLabel={groupLabel}
-                          ignored={!!group.ignored}
-                          selected={selected.has(group.hash)}
-                          onToggle={() => toggleRow(group.hash)}
-                          onIgnore={() => save({ ignore: group.hash, on: !group.ignored })}
-                          leakedView={actionFilter === "leaked"}
-                        />
-                      );
-                    })}
-                  </tbody>
-                </table>
-                {/* ponytail: windowed rendering of 50 rows; switch to @tanstack/react-virtual if rows exceed ~5k */}
-                {visibleCount < filteredRows.length && (
-                  <div ref={sentinelRef} className="h-1" aria-hidden="true" />
-                )}
-              </div>
-            )}
-            {filteredRows.length > 0 && (
-              <div className="p-3 text-center border-t border-border bg-surface-2/30 text-xs text-text-muted">
-                Showing {count(Math.min(visibleCount, filteredRows.length))} of {count(filteredRows.length)}
-              </div>
-            )}
+      {(s.numbers) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", gap: "28px", flexWrap: "wrap", alignItems: "stretch" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "14px", minWidth: "180px" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11.5px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".05em" }}>VALUES FOUND</span><span style={{ fontSize: "24px", fontWeight: "650", fontVariantNumeric: "tabular-nums" }}>{n.found}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{n.foundHits}</span></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11.5px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".05em" }}>REDACTED</span><span style={{ fontSize: "24px", fontWeight: "650", color: "var(--acc)", fontVariantNumeric: "tabular-nums" }}>{n.redacted}<span style={{ fontSize: "13px", fontWeight: "500", color: "var(--tx2)" }}> values</span></span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{n.redactedHits}</span></div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11.5px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".05em" }}>BLOCKED</span><span style={{ fontSize: "24px", fontWeight: "650", fontVariantNumeric: "tabular-nums" }}>{n.blocked}<span style={{ fontSize: "13px", fontWeight: "500", color: "var(--tx2)" }}> values</span></span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{n.blockedHits}</span></div>
           </div>
-        )}
-
-        {view === "events" && (
-          <div>
-            <div className="mb-3 flex items-center justify-between gap-3 flex-wrap">
-              <p className="text-xs text-text-muted">Raw scanner events recorded for this range.</p>
-              <label className="inline-flex items-center gap-2 text-xs text-text-muted"><input type="checkbox" checked={showTests} onChange={e => setShowTests(e.target.checked)} aria-label="Show tests" className="size-4 accent-brand-500" />Show tests</label>
+          <div style={{ flex: "1", minWidth: "280px", display: "flex", flexDirection: "column", gap: "8px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>{trendTitle}</span>
+              <div style={{ display: "flex", gap: "14px", alignItems: "center", fontSize: "11.5px", color: "var(--tx2)" }}><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "9px", height: "9px", borderRadius: "2px", background: "var(--acc)", opacity: ".75" }}></span>Findings</span><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "var(--red)" }}></span>Leak</span>
+                <button onClick={goHealth} style={{ display: "flex", alignItems: "center", gap: "6px", height: "24px", padding: "0 10px", borderRadius: "12px", border: "0", background: health.bg, color: health.c, font: "inherit", fontSize: "11.5px", fontWeight: "600", cursor: "pointer" }}><span style={{ width: "7px", height: "7px", borderRadius: "50%", background: health.c }}></span>{health.text}</button></div>
             </div>
-            {(eventsList.filter(event => showTests || event.type !== "test").length === 0) && !eventsLoading ? (
-              <div className="py-8 text-center text-sm text-text-muted">No events recorded in this range.</div>
-            ) : (
-              <div ref={scrollContainerRef} className="max-h-[60vh] overflow-y-auto divide-y divide-border border border-border rounded-lg bg-surface">
-                {eventsList.filter(event => showTests || event.type !== "test").map((event, i) => {
-                  const actions = [...new Set([
-                    ...(event.hits || event.new || []).map(hit => hit.action).filter(Boolean),
-                    ...(event.blocked ? ["block"] : []),
-                    ...(event.redacted ? ["redact"] : []),
-                  ])];
-                  const countsEntries = Object.entries(event.counts || {});
-                  const countsStr = countsEntries.length > 0
-                    ? countsEntries.map(([rule, n]) => `${ruleLabelMap.get(rule)?.label || rule}: ${count(n)}`).join(" · ")
-                    : (event.hits || event.new || []).map(hit => ruleLabelMap.get(hit.rule)?.label || hit.rule).filter(Boolean).join(" · ");
-                  return (
-                    <div
-                      key={`${event.ts}:${i}`}
-                      className="flex items-center gap-3 py-2 px-3 text-xs hover:bg-surface-2/40 transition-colors truncate"
-                      title={event.ts ? new Date(event.ts).toLocaleString() : undefined}
-                    >
-                      <span className="shrink-0 text-text-muted whitespace-nowrap w-20 text-[11px]">
-                        {age(event.ts)}
-                      </span>
-                      <span className="shrink-0 font-medium text-text-main truncate max-w-[180px]">
-                        {event.type === "ocr" ? `Image ${event.imageIndex} · OCR` : event.model || event.endpoint || event.stage || (event.type === "test" ? `${event.input || "test"}${event.sample ? ` · ${event.sample}` : ""}` : event.input) || "request"}
-                      </span>
-                      {event.type === "test" && <Badge size="sm" variant="info">Test</Badge>}
-                      <div className="shrink-0 flex items-center gap-1">
-                        {actions.map(a => (
-                          <Badge key={a} size="sm" variant={ACTION_BADGE_VARIANT[a] || "default"}>
-                            {a}
-                          </Badge>
-                        ))}
-                      </div>
-                      {countsStr && (
-                        <span className="text-text-muted truncate min-w-0 font-mono text-[11px]">
-                          {countsStr}
-                        </span>
-                      )}
-                    </div>
-                  );
-                })}
-                {eventsLoading && (
-                  <div className="py-3 text-center text-xs text-text-muted">Loading events...</div>
-                )}
-                {nextBefore && !eventsLoading && (
-                  <div ref={eventsSentinelRef} className="h-1" aria-hidden="true" />
-                )}
-              </div>
-            )}
-            {eventsList.length > 0 && (
-              <div className="p-3 text-center border-t border-border bg-surface-2/30 text-xs text-text-muted mt-3 rounded-b-lg">
-                Showing {count(eventsList.length)} events{nextBefore ? " (scroll for more)" : ""}
-              </div>
-            )}
+            <div style={{ position: "relative", height: "150px", display: "flex", alignItems: "flex-end", gap: fgap, borderBottom: "1px solid var(--line2)", paddingTop: "14px" }}>
+              {(fbars).map((b, _i) => (<Fragment key={_i}>
+                <div style={{ flex: "1", minWidth: "0", height: "100%", display: "flex", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", position: "relative" }}>
+                  {(b.leak) && (<><span style={{ position: "absolute", top: "-12px", width: "9px", height: "9px", borderRadius: "50%", background: "var(--red)", border: "2px solid var(--card)" }}></span></>)}
+                  <div title={b.title} style={{ width: "100%", height: b.h, background: "var(--acc)", opacity: b.op, borderRadius: "2px 2px 0 0" }}></div>
+                </div>
+              </Fragment>))}
+            </div>
+            <div style={{ display: "flex", gap: fgap }}>{(fbars).map((b, _i) => (<Fragment key={_i}><span style={{ flex: "1", minWidth: "0", fontSize: "10.5px", color: "var(--tx3)", whiteSpace: "nowrap" }}>{b.tick}</span></Fragment>))}</div>
           </div>
-        )}
-      </Card>
+        </div>
+      </>)}
+
+      {(s.where) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>WHERE VALUES APPEARED</span><button onClick={toggleLoc} style={{ border: "0", background: "transparent", color: "var(--acc)", font: "inherit", fontSize: "12px", cursor: "pointer" }}>{locBtn}</button></div>
+          {(locs).map((w, _i) => (<Fragment key={_i}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(160px,220px) 1fr 90px", gap: "14px", alignItems: "center" }}>
+              <span style={{ fontSize: "12.5px" }}>{w.name}</span>
+              <div style={{ height: "8px", borderRadius: "4px", background: "var(--seg)", overflow: "hidden" }}><div style={{ height: "100%", width: w.w, background: "var(--acc)", borderRadius: "4px" }}></div></div>
+              <span style={{ textAlign: "right", fontSize: "12px", color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}>{w.hits} hits</span>
+            </div>
+          </Fragment>))}
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", borderTop: "1px solid var(--line)", paddingTop: "12px", marginTop: "4px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(100px,150px) 1fr 80px 64px", gap: "14px", fontSize: "11px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx3)" }}><span>BY CLIENT</span><span></span><span style={{ textAlign: "right" }}>VALUES</span><span style={{ textAlign: "right" }}>LEAKS</span></div>
+            {(byClient).map((c, _i) => (<Fragment key={_i}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(100px,150px) 1fr 80px 64px", gap: "14px", alignItems: "center", fontSize: "12.5px" }}>
+                <span style={{ display: "flex", flexDirection: "column", minWidth: "0" }}><span>{c.name}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{c.sub}</span></span>
+                <div style={{ height: "6px", borderRadius: "3px", background: "var(--seg)", overflow: "hidden" }}><div style={{ height: "100%", width: c.w, background: "var(--tx3)", borderRadius: "3px", opacity: ".6" }}></div></div>
+                <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums" }}>{c.values}</span>
+                <span style={{ textAlign: "right", fontWeight: "600", fontVariantNumeric: "tabular-nums", color: c.lc }}>{c.leaks}</span>
+              </div>
+            </Fragment>))}
+          </div>
+        </div>
+      </>)}
+
+      {(s.wording) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "14px", flexWrap: "wrap" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>Default action</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>Used by every rule group set to Default. {redactRules} rules override it with Redact.</span></div>
+            <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(globalBtns).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "8px" }}>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--seg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px" }}>Off</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Not scanned.</span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--bluebg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--blue)" }}>Observe</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Logged. Request is sent unchanged.</span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--acc2)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--acc)" }}>Redact</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Value replaced with <span style={{ fontFamily: "var(--mono)" }}>{piiEx}</span></span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--redbg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--red)" }}>Block</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Request rejected with HTTP 400.</span></div>
+          </div>
+        </div>
+      </>)}
+
+      {(s.mode) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", paddingBottom: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: "var(--tx2)" }}>image_search</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Images (OCR)</span><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Text in images can only be observed, never redacted</span></div>
+          {(ocrRows).map((o, _i) => (<Fragment key={_i}>
+            <div style={{ display: "grid", gridTemplateColumns: "140px auto 1fr", gap: "16px", alignItems: "center", padding: "10px 0", borderTop: "1px solid var(--line)" }}>
+              <span style={{ fontWeight: "600", fontSize: "12.5px" }}>{o.label}</span>
+              <div style={{ justifySelf: "start" }}>{(o.hasBtns) && (<><div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(o.btns).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div></>)}{(o.ro) && (<><span style={{ display: "inline-flex", alignItems: "center", gap: "5px", height: "28px", padding: "0 10px", borderRadius: "8px", border: "1px dashed var(--line2)", color: "var(--tx2)", fontSize: "12px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px" }}>lock</span>{o.ro}</span></>)}</div>
+              <span style={{ fontSize: "12px", color: "var(--tx2)" }}>{o.desc}</span>
+            </div>
+          </Fragment>))}
+        </div>
+      </>)}
+
+      {(s.groups) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px", minWidth: "0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>Rule groups</span><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Hits in {rangeShort}</span></div>
+          <div ref={gRef} onScroll={checkFade} style={{ overflowX: "auto", WebkitMaskImage: maskG, maskImage: maskG }}>{(groups).map((g, _i) => (<Fragment key={_i}>
+            <div style={{ borderTop: "1px solid var(--line)", minWidth: "700px" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "24px minmax(150px,1fr) 170px 150px auto", gap: "12px", alignItems: "center", padding: "10px 0" }}>
+                <button onClick={g.toggle} style={{ border: "0", background: "transparent", color: "var(--tx2)", cursor: "pointer", fontFamily: "'Material Symbols Outlined'", fontSize: "18px", padding: "0" }}>{g.chev}</button>
+                <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontWeight: "600" }}>{g.name}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{g.ruleCount} {g.ruleCount === 1 ? "rule" : "rules"}</span></div>
+                <span style={{ fontSize: "12px", color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}>{g.hits} hits · {g.uniq} unique</span>
+                <span>{(g.differs) && (<><span style={{ fontSize: "10.5px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: "var(--amberbg)", color: "var(--amber)" }}>{g.badge}</span></>)}</span>
+                <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(g.btns).map((b, _i) => (<Fragment key={_i}><button onClick={b.on} style={b.style}>{b.label}</button></Fragment>))}</div>
+              </div>
+              {(g.open) && (<>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: "6px", padding: "0 0 12px 36px" }}>
+                  {(g.rules).map((r, _i) => (<Fragment key={_i}><div style={{ display: "flex", justifyContent: "space-between", padding: "7px 10px", borderRadius: "7px", background: "var(--seg)", fontSize: "12px" }}><span>{r.name}</span><span style={{ color: "var(--tx3)", fontVariantNumeric: "tabular-nums" }}>{r.hits}</span></div></Fragment>))}
+                </div>
+              </>)}
+            </div>
+          </Fragment>))}</div>
+        </div>
+      </>)}
+
+      {(s.values) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px", minWidth: "0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+            <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(subTabs).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div>
+            <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{shownLabel}</span>
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 100%", minWidth: "200px", display: "flex", alignItems: "center", gap: "6px", height: "32px", padding: "0 10px", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "17px", color: "var(--tx3)" }}>search</span><input value={q} onChange={onQ} placeholder="Rule, name, or hash" style={{ flex: "1", border: "0", outline: "0", background: "transparent", color: "var(--tx)", font: "inherit" }} /></div>
+            <div ref={fRef} onScroll={checkFade} style={{ flex: "1 1 100%", minWidth: "0", display: "flex", gap: "8px", scrollbarWidth: "none", flexWrap: fWrap, overflowX: fOverflow, WebkitMaskImage: maskF, maskImage: maskF }}>
+            <select value={fGroup} onChange={onGroup} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All groups</option>{groupOpts.map((o) => <option key={o}>{o}</option>)}</select>
+            <select value={fAction} onChange={onAction} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All actions</option><option value="observe">Observe</option><option value="redact">Redact</option><option value="block">Block</option><option value="leaked">Leaked</option></select>
+            <select value={fStatus} onChange={onStatus} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="active">Active</option><option value="leaked">Leaked</option><option value="ignored">Ignored</option></select>
+            <select value={fClient} onChange={onClient} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All clients</option>{clientOpts.map((o) => <option key={o}>{o}</option>)}</select>
+            <select value={fModel} onChange={onModel} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All models</option>{modelOpts.map((o) => <option key={o}>{o}</option>)}</select>
+            <select value={fSource} onChange={onSource} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All sources</option><option value="text">Text</option><option value="ocr">OCR</option></select></div>
+          </div>
+          {(hasSel) && (<>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "8px 10px", borderRadius: "9px", background: "var(--tx)", color: "var(--bg)" }}>
+              <span style={{ fontWeight: "600", fontSize: "12.5px", paddingRight: "6px" }}>{selCount} selected</span>
+              <button onClick={bulkIgnore} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Ignore</button>
+              <span style={{ fontSize: "12px", opacity: ".7", paddingLeft: "4px" }}>Set action</span>
+              <button onClick={bulkObserve} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Observe</button>
+              <button onClick={bulkRedact} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Redact</button>
+              <button onClick={bulkBlock} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Block</button>
+              <button style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }} onClick={copyHashes}>Copy hashes</button>
+              <button onClick={clearSel} style={{ marginLeft: "auto", height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "transparent", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer", opacity: ".8" }}>Clear</button>
+            </div>
+          </>)}
+          <div ref={vRef} onScroll={checkFade} style={{ overflowX: "auto", WebkitMaskImage: maskV, maskImage: maskV }}>{(isValues) && (<>
+            <div style={{ display: "grid", gridTemplateColumns: "24px minmax(160px,1.5fr) minmax(130px,1.2fr) 96px 124px 76px 88px 52px 64px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "890px", alignItems: "center" }}><input type="checkbox" checked={allSel} onChange={toggleAll} /><span>NAME</span><span>WHERE</span><span>CLIENT</span><span>MODEL · SESSION</span><span>ACTION</span><span>SEEN ↓</span><span style={{ textAlign: "right" }}>HITS</span><span></span></div>
+            {(values).map((v, _i) => (<Fragment key={_i}>
+              <div style={{ display: "grid", gridTemplateColumns: "24px minmax(160px,1.5fr) minmax(130px,1.2fr) 96px 124px 76px 88px 52px 64px", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", minWidth: "890px", background: v.bg }}>
+                <input type="checkbox" checked={v.sel} onChange={v.toggle} />
+                <div style={{ display: "flex", flexDirection: "column", gap: "1px", minWidth: "0" }}><span style={{ display: "flex", gap: "6px", alignItems: "center" }}><span style={{ fontWeight: "600" }}>{v.name}</span>{(v.leaked) && (<><span style={{ fontSize: "10px", fontWeight: "700", padding: "1px 5px", borderRadius: "4px", background: "var(--redbg)", color: "var(--red)" }}>LEAKED</span></>)}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{v.group} · <span style={{ fontFamily: "var(--mono)" }}>#{v.hash}</span></span></div>
+                <span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>{v.where}</span>
+                <span style={{ fontSize: "12px", display: "flex", flexDirection: "column", minWidth: "0" }}><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.client}</span></span>
+                <span style={{ display: "flex", flexDirection: "column", minWidth: "0" }}><span title={v.model} style={{ fontFamily: "var(--mono)", fontSize: "11.5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.model}</span><span title={v.sessTip} style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--tx3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.sess}</span></span>
+                <span style={{ justifySelf: "start", fontSize: "11px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: v.abg, color: v.ac }}>{v.action}</span>
+                <span style={{ display: "flex", flexDirection: "column", minWidth: "0", whiteSpace: "nowrap" }}><span style={{ fontSize: "12px" }}>{v.last}</span><span style={{ fontSize: "10.5px", color: "var(--tx3)" }}>first {v.first}</span></span>
+                <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: "12px" }}>{v.hits}</span>
+                <button onClick={v.ignore} style={{ height: "26px", padding: "0 8px", borderRadius: "6px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "11.5px", cursor: "pointer" }}>{v.ignoreLabel}</button>
+              </div>
+            </Fragment>))}
+            {(noValues) && (<><div style={{ padding: "28px 0", textAlign: "center", color: "var(--tx3)" }}>No values match these filters.</div></>)}
+          </>)}
+          {(isEvents) && (<>
+            <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "860px" }}><span>TIME</span><span>RULE</span><span>WHERE</span><span>ACTION</span><span>MODEL</span><span>CLIENT</span><span>REQUEST</span></div>
+            {(events).map((e, _i) => (<Fragment key={_i}>
+              <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", fontSize: "12px", minWidth: "860px" }}>
+                <span style={{ color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}>{e.t}</span>
+                <span>{e.rule} <span style={{ fontFamily: "var(--mono)", color: "var(--tx3)", fontSize: "11px" }}>#{e.hash}</span></span>
+                <span style={{ color: "var(--tx2)" }}>{e.loc}</span>
+                <span style={{ justifySelf: "start", fontSize: "11px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: e.abg, color: e.ac }}>{e.action}</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "11.5px" }}>{e.model}</span>
+                <span style={{ color: "var(--tx2)" }}>{e.key}</span>
+                <span style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx3)" }}>{e.req}</span>
+              </div>
+            </Fragment>))}
+          </>)}</div>
+        </div>
+      </>)}
+
+      {(s.test) && (<>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,400px),1fr))", gap: "16px", alignItems: "stretch" }}>
+          <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>Input</span><div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(kindBtns).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div></div>
+            {(isText) && (<>
+            <textarea value={testText} onChange={onTest} style={{ minHeight: "180px", resize: "vertical", border: "1px solid var(--line2)", borderRadius: "9px", padding: "12px", background: "var(--bg)", color: "var(--tx)", fontFamily: "var(--mono)", fontSize: "12.5px", lineHeight: "1.6", outline: "0" }}></textarea>
+            <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Try an example</span>{(sampleBtns).map((x, _i) => (<Fragment key={_i}><button onClick={x.on} style={{ height: "26px", padding: "0 10px", borderRadius: "13px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "11.5px", cursor: "pointer" }}>{x.label}</button></Fragment>))}</div>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "11.5px", color: "var(--tx2)" }}>Test with<select value={testMode} onChange={onTestMode} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px", minWidth: "170px" }}><option value="current">Current rules</option><option value="redact">Everything on Redact</option></select></label>
+              <label style={{ display: "flex", flexDirection: "column", gap: "4px", fontSize: "11.5px", color: "var(--tx2)" }}>Where<select value={testWhere} onChange={onTestWhere} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px", minWidth: "170px" }}><option value="user">User · text</option><option value="tool_result">User · tool result</option><option value="assistant">Assistant · text</option><option value="system">System</option><option value="thinking">Signed thinking</option></select></label>
+            </div>
+            </>)}
+            {(isImage) && (<>
+              <div tabIndex={0} onPaste={onPaste} onDrop={onDrop} onDragOver={onDragOver} style={{ minHeight: "190px", border: "1.5px dashed var(--line2)", borderRadius: "9px", background: "var(--bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px", padding: "12px", outline: "0", boxSizing: "border-box" }}>
+                {(hasUpload) && (<><div style={{ width: "100%", height: "140px", borderRadius: "6px", background: imgBg }}></div><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{imgName}</span></>)}
+                {(hasSample) && (<><div style={{ width: "100%", height: "120px", borderRadius: "6px", background: sampleBg }} title={sampleName}></div><div style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx2)" }}>sample: {sampleName}</div></>)}
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", justifyContent: "center", fontSize: "12px", color: "var(--tx2)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "18px" }}>add_photo_alternate</span>Drop or paste (⌘V) an image here, or<label style={{ color: "var(--acc)", fontWeight: "600", cursor: "pointer" }}>choose a file<input type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} /></label></div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: "6px" }}>{(thumbs).map((t, _i) => (<Fragment key={_i}><button onClick={t.on} title={t.name} style={t.style}>{t.short}</button></Fragment>))}</div>
+              <div style={{ fontSize: "11.5px", color: "var(--tx3)", display: "flex", gap: "6px", alignItems: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px" }}>visibility</span>Images are observe only. Findings are logged; the image is sent unchanged.</div>
+            </>)}
+          </div>
+          <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>Result</span><span style={{ fontSize: "11.5px", fontWeight: "600", padding: "2px 8px", borderRadius: "5px", background: testVerdict.bg, color: testVerdict.c }}>{testVerdict.text}</span></div>
+            {(isText) && (<><div style={{ padding: "12px", borderRadius: "9px", border: "1px solid var(--line)", fontFamily: "var(--mono)", fontSize: "12.5px", lineHeight: "1.75", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{(testSegs).map((x, _i) => (<Fragment key={_i}><span style={x.st}>{x.t}</span></Fragment>))}</div></>)}
+            {(isImage) && (<><div style={{ display: "flex", flexDirection: "column", gap: "6px" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>OCR TEXT</span><div style={{ padding: "12px", borderRadius: "9px", border: "1px solid var(--line)", fontFamily: "var(--mono)", fontSize: "12.5px", lineHeight: "1.75", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{(imgSegs).map((x, _i) => (<Fragment key={_i}><span style={x.st}>{x.t}</span></Fragment>))}</div></div></>)}
+            <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+              {(testHits).map((h, _i) => (<Fragment key={_i}><div style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", fontSize: "12px" }}><span><b>{h.rule}</b> <span style={{ color: "var(--tx3)" }}>· {h.group}</span></span><span style={{ fontFamily: "var(--mono)", color: "var(--tx3)", fontSize: "11px" }}>#{h.hash}</span><span style={{ fontSize: "11px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: h.abg, color: h.ac }}>{h.action}</span></div></Fragment>))}
+              {(noTestHits) && (<><div style={{ padding: "10px 0", color: "var(--tx3)", fontSize: "12px", borderTop: "1px solid var(--line)" }}>{noHitsText}</div></>)}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>WHAT THE MODEL RECEIVES</span><div style={{ padding: "12px", borderRadius: "9px", background: "var(--seg)", fontFamily: "var(--mono)", fontSize: "12.5px", lineHeight: "1.7", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{testOut}</div></div>
+          </div>
+        </div>
+      </>)}
+
+      {(s.health) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: "var(--amber)" }}>warning</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Problems</span></div><span style={{ fontSize: "12px", color: "var(--tx3)" }}>{healthNote}</span></div>
+          {(problems).map((p, _i) => (<Fragment key={_i}>
+            <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "12px", alignItems: "center", padding: "10px 12px", borderRadius: "9px", background: p.bg }}>
+              <span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "18px", color: p.c }}>{p.icon}</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}><span style={{ fontWeight: "600" }}>{p.title}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{p.desc}</span></div>
+              <span>{(p.cta) && (<><button onClick={p.onCta} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" }}>{p.cta}</button></>)}</span>
+            </div>
+          </Fragment>))}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: "8px" }}>
+            {(metrics).map((m, _i) => (<Fragment key={_i}>
+              <div style={{ background: "var(--seg)", borderRadius: "8px", padding: "9px 12px", display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{m.label}</span><span style={{ fontWeight: "600", fontVariantNumeric: "tabular-nums", color: m.c }}>{m.value}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{m.sub}</span></div>
+            </Fragment>))}
+          </div>
+        </div>
+      </>)}
+
+      {(s.ocr) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: "var(--tx2)" }}>image_search</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Images (OCR)</span></div><span style={{ fontSize: "12px", color: "var(--tx3)" }}>{ocrNote}</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: "8px" }}>
+            {(ocrStats).map((m, _i) => (<Fragment key={_i}>
+              <div style={{ background: "var(--seg)", borderRadius: "8px", padding: "9px 12px", display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{m.label}</span><span style={{ fontWeight: "600", fontVariantNumeric: "tabular-nums" }}>{m.value}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{m.sub}</span></div>
+            </Fragment>))}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)", paddingBottom: "6px" }}>RECENT IMAGES · GROUPED</span>
+            {(imgGroups).map((g, _i) => (<Fragment key={_i}>
+              <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 72px minmax(0,1.4fr)", gap: "12px", alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: "12px" }}>
+                <span style={{ display: "flex", flexDirection: "column", gap: "1px", minWidth: "0" }}><span style={{ fontFamily: "var(--mono)", overflowWrap: "anywhere" }}>{g.model}</span><span style={{ color: "var(--tx3)", fontSize: "11px" }}>{g.when}</span></span>
+                <span style={{ fontWeight: "600" }}>{g.count}</span>
+                <span style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap", minWidth: "0" }}><span style={{ fontSize: "10.5px", fontWeight: "600", padding: "1px 6px", borderRadius: "4px", background: g.bg, color: g.c }}>{g.status}</span><span style={{ color: "var(--tx2)" }}>{g.detail}</span></span>
+              </div>
+            </Fragment>))}
+          </div>
+        </div>
+      </>)}
+    </div>
+  </main>
+  </div>
     </div>
   );
 }
