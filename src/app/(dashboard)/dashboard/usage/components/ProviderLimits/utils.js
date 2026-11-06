@@ -283,18 +283,32 @@ export function calculatePercentage(used, total) {
   return Math.round(((total - used) / total) * 100);
 }
 
+function roundRemainingPercentage(value) {
+  const clamped = Math.max(0, Math.min(100, Number(value) || 0));
+  const rounded = Math.round(clamped);
+  if (rounded === 100 && clamped < 100 && clamped >= 99) {
+    return Math.round(clamped * 10) / 10;
+  }
+  return rounded;
+}
+
 /**
  * Get remaining percentage from a normalized quota row
  * @param {Object} quota - Normalized quota object
  * @returns {number} Remaining percentage (0-100)
  */
 export function getRemainingPercentage(quota) {
+  if (quota?.percentage !== undefined) {
+    const raw = quota.percentageIsUsed ? 100 - quota.percentage : quota.percentage;
+    return roundRemainingPercentage(raw);
+  }
+
   if (quota?.remaining !== undefined) {
-    return Math.max(0, Math.round(quota.remaining));
+    return roundRemainingPercentage(quota.remaining);
   }
 
   if (quota?.remainingPercentage !== undefined) {
-    return Math.round(quota.remainingPercentage);
+    return roundRemainingPercentage(quota.remainingPercentage);
   }
 
   return calculatePercentage(quota?.used, quota?.total);
@@ -772,6 +786,31 @@ export function parseQuotaData(provider, data) {
               message: quota.message,
               isCreditBalance: quota.isCreditBalance,
               currency: quota.currency,
+            });
+          });
+        }
+        break;
+
+      case "zcode":
+      case "zc":
+      case "glm":
+      case "glm-cn":
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              remaining: quota.remaining,
+              percentage: quota.percentage,
+              remainingPercentage: quota.remainingPercentage,
+              resetAt: quota.resetAt || null,
+              expiresAt: quota.expiresAt || null,
+              recurring: quota.recurring,
+              absoluteReset: quota.absoluteReset === true,
+              totalTokens: quota.totalTokens,
+              usedTokens: quota.usedTokens,
+              unlimited: quota.unlimited,
             });
           });
         }

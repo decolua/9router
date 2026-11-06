@@ -415,6 +415,13 @@ PROVIDER_CAPABILITIES["qoder-cn"] = PROVIDER_CAPABILITIES["qoder"];
 PROVIDER_CAPABILITIES.cx = PROVIDER_CAPABILITIES.codex;
 PROVIDER_CAPABILITIES.dv = PROVIDER_CAPABILITIES["devin-cli"];
 PROVIDER_CAPABILITIES.devin = PROVIDER_CAPABILITIES["devin-cli"];
+PROVIDER_CAPABILITIES["zcode"] = {
+  "GLM-5.3-Flash": { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai-anthropic", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+  "GLM-5.3":       { reasoning: true, thinkingFormat: "zai-anthropic", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+  "GLM-5.2":       { reasoning: true, thinkingFormat: "zai-anthropic", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+  "GLM-5-Turbo":   { reasoning: true, thinkingFormat: "claude-budget", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+};
+PROVIDER_CAPABILITIES.zc = PROVIDER_CAPABILITIES["zcode"];
 // The global mcode site serves the same catalog — share the capability table.
 PROVIDER_CAPABILITIES["minimax-code-global"] = PROVIDER_CAPABILITIES["minimax-code"];
 

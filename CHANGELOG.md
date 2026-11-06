@@ -1,3 +1,20 @@
+# v0.5.375 (2026-11-06) · 1 commit
+
+## ZCode provider parity with X Router (zcode seren)
+
+- Ported the full ZCode provider stack from X Router: `ZCodeExecutor` (GLM-5.3-Flash /
+  GLM-5.3 / GLM-5.2 / GLM-5-Turbo, Bearer + ZCode JWT dual-lane), plan selection
+  (`zcodePlan`), prompt builder, TLS client, service bridge, usage tracking, and the
+  `zcode-bridge` API route.
+- Added `zcode` (OAuth) and `zai-web` (webCookie) registries (p159/p160), plus
+  `zcode`/`zc` executor wiring and the ZCode OAuth provider + `ZCODE_CONFIG`.
+- Brought secondary dependencies up to X Router parity: `zai-anthropic` thinking
+  wire with `mapEffortToSupportedLevel`, ZCode capability table, GLM-5.x effort
+  levels in `PATTERN_THINKING`, and ZCode quota normalization in ProviderLimits.
+- Added `zcode` + `zai-web` provider logos and the ported unit test
+  (`tests/unit/zcode-provider.test.js`: 21 pass / 4 fail — identical to X Router's
+  own run, the 4 failures are stale upstream expectations).
+
 # v0.5.374 (2026-11-06) · 1 commit
 
 ## CLI Tools logo tiles — transparent background, logo only

@@ -212,6 +212,14 @@ export const WINDSURF_CONFIG = {
 // refresh grant).
 export const GLM_OAUTH_CONFIG = { ...PROVIDER_OAUTH["glm"] };
 
+// ZCode (Z.ai / BigModel) start-plan lane - business JWT exchange + coding-plan
+// minting. Mirrors the desktop client's ZCode config (clientVersion 3.17.x).
+export const ZCODE_CONFIG = {
+  ...PROVIDER_OAUTH["zcode"],
+  businessLoginUrl: "https://api.z.ai/api/auth/z/login",
+  clientVersion: "3.17.1",
+};
+
 // Zed hosted LLM aggregator - RSA keypair native-app auth (NOT OAuth).
 // Client generates ephemeral RSA-2048 keypair; user signs in at zed.dev/native_app_signin;
 // Zed redirects to local callback with access_token RSA-encrypted against our public key.
