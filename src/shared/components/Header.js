@@ -99,6 +99,13 @@ const getPageInfo = (pathname) => {
       icon: "vpn_key",
       breadcrumbs: [],
     };
+  if (pathname.includes("/spend"))
+    return {
+      title: "Spend",
+      description: "Real money paid to pay-per-token providers, and what your subscriptions are worth",
+      icon: "payments",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/quota"))
     return {
       title: "Quota Tracker",
