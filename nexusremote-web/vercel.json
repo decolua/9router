@@ -45,6 +45,9 @@
     },
     "api/health.js": {
       "maxDuration": 10
+    },
+    "api/opportunities.js": {
+      "maxDuration": 25
     }
   }
 }

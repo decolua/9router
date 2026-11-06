@@ -1,0 +1,20 @@
+{
+  "id": "/",
+  "name": "NexusRemote • Operations Network",
+  "short_name": "NexusRemote",
+  "description": "3D remote recruitment and operations platform. Human-reviewed applicant onboarding and secure workforce portal.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#060b17",
+  "theme_color": "#0a1021",
+  "icons": [
+    {
+      "src": "/nexus-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

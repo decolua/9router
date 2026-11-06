@@ -1,36 +1,45 @@
-# NexusRemote · Mirror-Glass Web Platform
+# NexusRemote — 3D Mirror Spatial Edition
 
-Production website: https://nexusremote-operations.vercel.app
+**Production:** https://nexusremote-operations.vercel.app
 
-## Pages
-- / — polished, responsive, mirrored-glass landing page
-- /apply — consent-based candidate intake, private Vercel Blob storage, human review
-- /login — secure owner or worker login (no hardcoded passwords)
-- /portal — cookie-authenticated owner and worker dashboards with live private backend records
-- /privacy — transparent data notice and access/deletion request intake
+A live-hosted, responsive remote recruiting and workforce operations platform built on Vercel serverless Node.js with private applicant storage. No frontend earnings simulation or unverified onboarding promises.
 
-## Architecture
-- Vercel Serverless Node 24 + private Cape Town Vercel Blob storage
-- Owner login verifies the encrypted Vercel ADMIN_API_TOKEN. This is a high-entropy secret, not a default username/password.
-- Worker login verifies a separately approved worker ID plus invitation token stored only as a hash. No real campaign or job is asserted.
-- Session cookie: HttpOnly, Secure, SameSite=Lax, HMAC-SHA256 with expiry. Server verifies roles and user status; no client local-storage authentication.
-- Forms require consent and same-origin POST; applications enter pending_human_review.
-- Owner can review and approve portal-only access manually. A private invite token is revealed once, must be shared securely.
-- Earnings are sourced solely from signed Stripe paid webhook events. No simulated sales or bank deposits are shown.
-- Data access/deletion requests are privately logged for manual identity verification.
-- Previous owner MCP, legacy authorization endpoints and Stripe signature protection are preserved.
+## Design & interaction
+- Premium mirrored-glass UI with CSS-based 3D spiral representing all five divisions.
+- Rotation follows vertical page scroll. Touch-swipe / drag, wheel, arrow keys, Home/End and accessible buttons also work.
+- Motion respects reduced-motion accessibility settings. CSS 3D avoids GPU-heavy WebGL and is tuned for mobile devices.
+- Live public remote jobs via Himalayas with source attribution, bounded searches, strict URL validation and original posting links.
+- Local-only equipment readiness guide. This does not accept or reject applicants.
+- Saved public job listings (browser-local), searchable roles, CSV export with formula-injection protection.
+- Optional PWA install prompt and isolated offline shell; private records, login, API and financial details are network-only.
+- Owner-only candidate filter, authorized CSV export and activity timeline populated from actual backend application and Stripe-verified events.
 
-## Safety
-- Never ask job applicants for onboarding, training or equipment fees.
-- No verified campaign provider, WhatsApp template or business email is yet connected; show disabled/awaiting status.
-- Do not advertise a guaranteed vacancy or pay.
-- This is not Stripe live-mode activation; Stripe connected account is currently sandbox only.
-- Human review is required for recruitment and data rights.
-- Public-facing recruitment needs verified legal-operator details, responsible-party contact, rate limiting/CAPTCHA and a formal retention policy before scaling.
+## Main routes
+- \`/\` — mirror-glass landing, touch 3D division explorer, opportunities and readiness
+- \`/apply\` — consent-based candidate form
+- \`/login\` — separate worker invitation or owner-key login
+- \`/portal\` — role-protected dashboard with true live records
+- \`/privacy\` — privacy notice and data-rights request intake
+- \`/api/opportunities?q=customer%20support&country=ZA\` — public Himalayas job feed proxy
+- \`/api/health\` — read-only availability state
+- \`/api/session\` — signed, HttpOnly session login, session status and logout
+- \`/api/portal\` — authenticated role-scoped records and manual approval
+- \`/api/stripe\` — signed Stripe paid-event webhook (not live until connected)
+- \`/api/mcp\` — authenticated owner MCP tools, read-only
+- \`/api/privacy\` — secure privacy request intake
 
-## Run checks
+## Integrity and limitations
+- Stripe is currently not activated for live payments; WhatsApp alerts, verified business email and a live call-center dialer are not connected. The UI states these restrictions clearly.
+- Human review is mandatory for recruitment. No upfront worker fees or guaranteed jobs or earnings.
+- Third-party job advertisements are not NexusRemote campaigns and eligibility must be confirmed at the employer source.
+- Before public recruitment at scale, add verified operator contact/legal details, formal retention policy, anti-abuse controls and verified professional business email.
+- Candidate and financial records remain in the existing private Blob store; no migration or loss of existing records from this UI deployment.
+- The deployed website URL is a Vercel subdomain. Registering an independent paid domain requires domain ownership and DNS setup.
+
+## Verification
+\`\`\`sh
 npm install
 npm test
-
-## Credentials
-ADMIN_API_TOKEN is set as an encrypted Vercel env variable; never commit it or distribute it. If lost, use Vercel Settings > Environment Variables to reset/rotate it and redeploy. Workers need approved invitation codes.
+\`\`\`
+Build checks include Node syntax on the production JavaScript, original backend security tests, and assertions for the spiral, source URL validation, owner-only tools and service-worker cache boundary.
+Further verification: manually test visual and touch smoothness on target Android handsets; browser-based layout QA is not equivalent to real-device profiling.

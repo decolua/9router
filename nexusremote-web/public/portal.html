@@ -1,6 +1,6 @@
 <!doctype html><html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#070916">
-<title>Operations Portal | NexusRemote</title><link rel="stylesheet" href="/styles.css"><script src="/site.js" defer></script></head>
+<title>Operations Portal | NexusRemote</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/experience.css"><script src="/site.js" defer></script><script src="/portal-extras.js" defer></script></head>
 <body data-page="portal">
 <header class="nav-wrap"><nav class="nav container" aria-label="Workspace navigation"><a class="brand" href="/"><span class="logo"><span>N</span></span>NEXUS<em>REMOTE</em></a>
 <div class="nav-links" id="navLinks"><a href="/" data-tab="home">Overview</a><a href="/apply" data-tab="apply">Applications</a><a href="/portal" data-tab="worker" aria-current="page">My workspace</a></div>
@@ -27,6 +27,23 @@
 </div></section>
 <section class="glass portal-card" id="applications"><div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2 style="margin:0">Candidate applications</h2><span class="pill">Division B · Human review</span></div><p style="font-size:12px">Approval creates a portal invitation only. It does not create paid work or a dialer account. Share invitation codes securely, never in public chats.</p>
 <div class="table-scroll"><table><thead><tr><th>Candidate</th><th>Readiness</th><th>Submitted</th><th>State</th><th>Review</th></tr></thead><tbody id="applicantsBody"><tr><td colspan="5">Loading private candidates…</td></tr></tbody></table></div><div id="approvalResult" class="notice hidden" aria-live="polite"></div>
+</section>
+
+<section class="glass portal-card" id="candidateExplorer">
+<div class="row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px"><h2 style="margin:0">Recruitment intelligence</h2><span class="pill">Owner-only tools</span></div>
+<p style="font-size:12px">Find candidates already present in your secure review queue. Export only for authorized hiring administration; never use this information for unsolicited advertising.</p>
+<div class="form-grid">
+<label>Search candidates<input id="candidateSearch" class="field" placeholder="Name, email, worker ID…" type="search" autocomplete="off"></label>
+<label>Filter review state<select id="candidateStatus" class="field"><option value="all">All applications</option><option value="approved">Approved portal access</option><option value="pending">Awaiting review</option></select></label>
+</div>
+<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:12px">
+<button type="button" class="btn" id="candidateExport">Export reviewed applications ↓</button><span id="candidateFilterCount" style="font-size:12px;color:#a7c8da">Filters operate on your private review table.</span>
+</div>
+</section>
+<section class="glass portal-card" id="activityFeed">
+<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center"><h2 style="margin:0">Verified activity timeline</h2><span class="pill good">No synthetic metrics</span></div>
+<p style="font-size:12px">Recent applications and Stripe-verified events. Empty states mean the platform has no records to show.</p>
+<div class="status-list" id="activityItems"><div class="empty">Load the dashboard to see recent verified activity.</div></div>
 </section>
 <section class="glass portal-card" id="income"><div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2 style="margin:0">Verified payments</h2><span class="pill">Division E · Treasurer</span></div><p style="font-size:12px">Payment records appear only after Stripe sends an authentic signed paid event. Gross receipts are not your personal income, commission entitlement or bank payout.</p>
 <div class="table-scroll"><table><thead><tr><th>Worker ID</th><th>Campaign</th><th>Amount</th><th>Recorded</th><th>Payout</th></tr></thead><tbody id="paymentsBody"><tr><td colspan="5">Loading verified events…</td></tr></tbody></table></div></section>
