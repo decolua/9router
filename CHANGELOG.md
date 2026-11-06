@@ -1,4 +1,4 @@
-# v0.5.374 (2026-11-05) · 1 commit
+# v0.5.374 (2026-11-06) · 1 commit
 
 ## CLI Tools logo tiles — transparent background, logo only
 - The logo tile in the CLI Tools summary cards and the per-tool setup header
@@ -7,21 +7,21 @@
   background the user kept seeing. Removed the tile background and border
   entirely; each card now shows just the provider logo on the card surface.
 
-# v0.5.373 (2026-11-05) · 1 commit
+# v0.5.373 (2026-11-06) · 1 commit
 
 ## Runcrate — real logo instead of the RC text tile
 - Fetched the Runcrate brand mark from runcrate.ai (favicon) and shipped it as a
   transparent `public/providers/runcrate.png` (256px) — the provider previously
   fell back to the `RC` text fallback in the logo tile.
 
-# v0.5.372 (2026-11-05) · 1 commit
+# v0.5.372 (2026-11-06) · 1 commit
 
 ## 9router sidebar logo — replaced with the new brand mark
 - Swapped the sidebar logo asset to the updated 9router mark the user provided
   (`public/providers/9router-logo.png`), replacing the earlier 4 MB image with a
   295 KB square glyph. Renders transparent at 36×36 in the sidebar header.
 
-# v0.5.371 (2026-11-05) · 1 commit
+# v0.5.371 (2026-11-06) · 1 commit
 
 ## Provider logos — transparent backgrounds, uniform size, 9router + LLMTR marks
 - **9router sidebar logo**: replaced the gradient `hub` icon tile with the
