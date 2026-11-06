@@ -247,7 +247,7 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
     rank: i + 1, when: o.when, model: short(o.model), modelFull: o.model, key: o.key, combo: o.combo, wide: !fit.oNarrow, narrow: !!fit.oNarrow,
     client: o.client ? CL[o.client] || o.client : "n/a", sess: o.sess ? "s·" + o.sess : "", hasSess: !!o.sess, noSess: !o.sess,
     goSess: () => { set({ agFilter: o.sess, agView: "sessions", agOpen: o.sess, scrollTick: Date.now() }); },
-    tok: cnt(o.tok), value: usd(o.v), real: o.real ? usd(o.real, 1) : "—", realTip: "",
+    tok: cnt(o.tok), value: usd(o.v), real: o.real ? usd(o.real, 1) + (o.est ? "*" : "") : "—", realTip: o.est ? "Estimated from list price. The provider did not report a cost." : "",
     realC: o.real ? "var(--acc)" : "var(--tx3)", flag: false,
   }));
   const rankBtns = [["value", "By list price"], ["real", "By real spend"]].map(([k, label]) => ({ label, style: seg(ui.rank === k), on: () => set({ rank: k }) }));
@@ -259,7 +259,7 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
 
   return {
     rangeTitle, rangeSub,
-    k: { real: usd(totals.real, 1), or: usd(totals.realOr, 1), ds: usd(totals.realDs, 1), value: usd(totals.value), ratio: ratio ? ratio.toFixed(1) + "×" : "—",
+    k: { realSrc: totals.realEst > 0.005 ? "PARTLY ESTIMATED" : "FROM PROVIDER", realEstTip: totals.realEst > 0.005 ? `${usd(totals.realEst, 1)} is estimated from list price: the provider did not report a cost for those calls.` : "", real: usd(totals.real, 1), or: usd(totals.realOr, 1), ds: usd(totals.realDs, 1), value: usd(totals.value), ratio: ratio ? ratio.toFixed(1) + "×" : "—",
       ratioSub: usd(valueFeed) + " value ÷ " + usd(feesPro) + " fees for " + dayCount + (dayCount === 1 ? " day" : " days") + (unset.length ? ". Excludes " + unset.join(", ") + " (no fee set)." : ""),
       feesPro: usd(feesPro) },
     or, ds, trend, chart, readout, allowance, subs, dayCount,

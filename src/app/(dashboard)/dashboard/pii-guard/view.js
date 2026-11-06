@@ -91,16 +91,18 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   });
 
   const redactRules = (data.rules || []).filter((r) => effOf(r.id) === "redact").length;
+  const onRules = (data.rules || []).filter((r) => effOf(r.id) !== "off").length;
   const leakWord = openN === 1 ? "value" : "values";
   const status = !h.module ? { text: "Off · PII_GUARD_MODULE is not set · requests pass unscanned", c: "var(--tx2)", bg: "var(--seg)" }
     : !okScanner ? { text: "Not protecting · scanner not loaded · requests pass unscanned", c: "var(--red)", bg: "var(--redbg)" }
-    : mode === "off" && !redactRules ? { text: "Off · requests are not scanned", c: "var(--tx2)", bg: "var(--seg)" }
+    : mode === "off" && !onRules ? { text: "Off · requests are not scanned", c: "var(--tx2)", bg: "var(--seg)" }
     : openN ? { text: `Protecting · ${redactRules} rules redact · ${openN} ${leakWord} leaked in ${rangeShort}`, c: "var(--red)", bg: "var(--redbg)" }
     : { text: `Protecting · ${redactRules} rules redact · no leaks in ${rangeShort}`, c: "var(--green)", bg: "var(--greenbg)" };
 
   // Health problems, also counted on the Health tab dot.
   const ocr = h.ocr || {}, so = sm.ocr || {}, un = h.unscanned || {};
   const problems = [];
+  if (sm.truncated) problems.push({ icon: "warning", title: "Range is cut short", desc: "The event log is longer than the read cap, so the oldest events in this range are not counted.", cta: null, bg: "var(--amberbg)", c: "var(--amber)" });
   if (!h.module) problems.push({ icon: "power_off", title: "PII_GUARD_MODULE is not set", desc: "Set it in the service drop-in and restart 9Router.", cta: null, bg: "var(--seg)", c: "var(--tx2)" });
   else if (!okScanner) problems.push({ icon: "error", title: "Scanner not loaded", desc: "Requests pass through (fail open) and are not scanned. Check the Console Log.", cta: null, bg: "var(--redbg)", c: "var(--red)" });
   if (h.errors > 0) problems.push({ icon: "error", title: `${fmt(h.errors)} scanner errors`, desc: `Last: ${h.lastError || "unknown"}. Requests fail open and are never blocked by an error.`, cta: null, bg: "var(--redbg)", c: "var(--red)" });
@@ -175,8 +177,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     && (!ui.fGroup || gLabelOf(v) === ui.fGroup) && (!ui.fAction || v.action === ui.fAction) && (!ui.fClient || clientOf(v.ua || "") === ui.fClient)
     && (!ui.fModel || v.model === ui.fModel) && (!ui.fSource || (ui.fSource === "ocr") === v.sources.some((s) => s.endsWith("/ocr")))
     && (!q || `${nameOf(v)} ${gLabelOf(v)} ${v.hash} ${v.model || ""}`.toLowerCase().includes(q)));
-  // ponytail: renders the first 300 rows; add paging if a range regularly has more.
-  const shown = rows.slice(0, 300);
+  const shown = rows.slice(0, ui.limit);
   const selKeys = Object.keys(ui.sel).filter((k) => ui.sel[k]);
   const values = shown.map((v) => {
     const w = v.sources.map(place);
@@ -190,7 +191,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     };
   });
   const selRules = [...new Set(all.filter((v) => ui.sel[v.hash]).map((v) => v.rule))];
-  const setAct = (a) => () => { if (confirmBlock(cap(a))) { act({ rules: Object.fromEntries(selRules.map((r) => [r, a])) }); set({ sel: {} }); } };
+  const setAct = (a) => () => { if (window.confirm(`Set ${selRules.length} ${selRules.length === 1 ? "rule" : "rules"} to ${cap(a)}? This changes every value of ${selRules.length === 1 ? "that rule" : "those rules"}, not only the selected ones.${a === "block" ? " Block rejects requests with HTTP 400 the first time a new value appears." : ""}`)) { act({ rules: Object.fromEntries(selRules.map((r) => [r, a])) }); set({ sel: {} }); } };
   const opts = (f) => [...new Set(all.map(f).filter(Boolean))].sort();
 
   // Test
@@ -240,7 +241,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     toggleAll: () => set({ sel: values.every((v) => v.sel) ? {} : Object.fromEntries(values.map((v) => [v.hash, true])) }),
     bulkIgnore: () => { act({ ignoreMany: selKeys, on: true }); set({ sel: {} }); }, bulkObserve: setAct("observe"), bulkRedact: setAct("redact"), bulkBlock: setAct("block"),
     copyHashes: () => navigator.clipboard?.writeText(selKeys.join("\n")),
-    values, noValues: values.length === 0,
+    values, noValues: values.length === 0, moreValues: rows.length > shown.length ? () => set((u) => ({ limit: u.limit + 300 })) : null, moreLabel: `Show ${Math.min(300, rows.length - shown.length)} more`,
     events: events.map((e) => ({ ...e, abg: (AC[e.a] || AC.observe)[0], ac: (AC[e.a] || AC.observe)[1], action: cap(e.a), rule: e.name || ruleLabel[e.rule] || e.rule })),
     samples: SAMPLES.map(([label, t]) => ({ label, on: () => set({ testText: t }) })),
     kindBtns: [["text", "Text"], ["image", "Image"]].map(([k, label]) => ({ label, style: seg(ui.testKind === k), on: () => set({ testKind: k }) })),

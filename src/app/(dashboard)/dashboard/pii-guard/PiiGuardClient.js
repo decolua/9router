@@ -33,10 +33,12 @@ export default function PiiGuardClient() {
   const [mode, setMode] = useState("loading");
   const [errorText, setErrorText] = useState("");
   const [rawEvents, setRawEvents] = useState([]);
+  const [evPaged, setEvPaged] = useState(false);
+  const [evNext, setEvNext] = useState(null);
   const [samples, setSamples] = useState([]);
   const [toastState, setToast] = useState(null);
   const [test, setTest] = useState({ result: null, image: null, error: "", busy: false });
-  const [ui, setUi] = useState({ tab: "overview", sub: "values", openLeak: null, openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {},
+  const [ui, setUi] = useState({ tab: "overview", sub: "values", openLeak: null, openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {}, limit: 300,
     testKind: "text", testText: "My mobile number is 9876543210 and PAN is ABCPE1234F.", testMode: "current", testWhere: "user", imgSel: 0, upload: null });
   const set = useCallback((p) => setUi((u) => ({ ...u, ...(typeof p === "function" ? p(u) : p) })), []);
   const [theme, setTheme] = useState("light");
@@ -48,7 +50,7 @@ export default function PiiGuardClient() {
     return () => mo.disconnect();
   }, []);
 
-  const loadId = useRef(0);
+  const loadId = useRef(0), fileRef = useRef(null);
   const load = useCallback(async () => {
     const id = ++loadId.current; // ignore responses from superseded ranges
     const { from, to } = bounds(range);
@@ -63,28 +65,34 @@ export default function PiiGuardClient() {
   }, [range]);
   useEffect(() => { const t = setTimeout(load, 0); const iv = setInterval(load, 30e3); return () => { clearTimeout(t); clearInterval(iv); }; }, [load]);
 
-  // Event log: latest 50 events in range, flattened to one row per hit.
-  useEffect(() => {
-    if (ui.tab !== "findings" || ui.sub !== "events") return;
-    let off = false;
+  // Event log: 50 events per page, newest first, flattened to one row per hit.
+  // The 30 s refresh reloads the newest page only until the user loads older pages.
+  const fetchEvents = useCallback(async (cursor) => {
     const { from, to } = bounds(range);
-    call(`/api/pii-guard?events=1&limit=50&from=${Math.round(from)}&to=${Math.round(to)}`).then(({ events = [] }) => {
-      if (off) return;
-      const rows = [];
-      for (const e of events) for (const h of e.hits || []) rows.push({ t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), loc: place(h.source), a: h.action || "observe", model: e.model || "—", key: e.ua ? String(e.ua).split("/")[0] : "—", req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" });
-      setRawEvents(rows.slice(0, 100));
-    }).catch(() => {});
+    const cur = cursor ? `&before=${cursor.before}&skip=${cursor.skip}` : "";
+    const { events = [], next = null } = await call(`/api/pii-guard?events=1&limit=50&from=${Math.round(from)}&to=${Math.round(to)}${cur}`);
+    const rows = [];
+    for (const e of events) for (const h of e.hits || []) rows.push({ t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), loc: place(h.source), a: h.action || "observe", model: e.model || "—", key: e.ua ? String(e.ua).split("/")[0] : "—", req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" });
+    return { rows, next };
+  }, [range]);
+  useEffect(() => {
+    if (ui.tab !== "findings" || ui.sub !== "events" || evPaged) return;
+    let off = false;
+    fetchEvents(null).then(({ rows, next }) => { if (!off) { setRawEvents(rows); setEvNext(next); } }).catch(() => {});
     return () => { off = true; };
-  }, [ui.tab, ui.sub, range, data]);
+  }, [ui.tab, ui.sub, data, evPaged, fetchEvents]);
+  const loadOlder = evNext ? () => { setEvPaged(true); fetchEvents(evNext).then(({ rows, next }) => { setRawEvents((old) => [...old, ...rows]); setEvNext(next); }).catch(() => {}); } : null;
 
   useEffect(() => { call("/api/pii-guard?samples=1").then((s) => setSamples(Array.isArray(s) ? s : [])).catch(() => {}); }, []);
 
   // Text test runs as the user types.
+  const testId = useRef(0);
   useEffect(() => {
     if (ui.tab !== "test" || ui.testKind !== "text") return;
+    const id = ++testId.current; // ignore responses from older inputs
     const t = setTimeout(() => {
       call("/api/pii-guard", { test: ui.testText, testMode: ui.testMode === "current" ? undefined : ui.testMode, testWhere: ui.testWhere })
-        .then((r) => setTest((x) => ({ ...x, result: r, error: "" }))).catch((e) => setTest((x) => ({ ...x, error: e.message })));
+        .then((r) => { if (id === testId.current) setTest((x) => ({ ...x, result: r, error: "" })); }).catch((e) => { if (id === testId.current) setTest((x) => ({ ...x, error: e.message })); });
     }, 300);
     return () => clearTimeout(t);
   }, [ui.tab, ui.testKind, ui.testText, ui.testMode, ui.testWhere]);
@@ -120,7 +128,7 @@ export default function PiiGuardClient() {
 
   const isLoading = mode === "loading" || (!v && mode !== "error"), isError = mode === "error";
   const preset = range.preset, customLabel = range.label || "";
-  const onRange = (r) => { setRange(r); set({ sel: {}, openLeak: null }); };
+  const onRange = (r) => { setRange(r); setEvPaged(false); set({ sel: {}, openLeak: null, limit: 300 }); };
   const todayKey = new Date(Date.now() + IST).toISOString().slice(0, 10);
   const retry = () => { setMode("loading"); load(); };
   const openConsole = () => router.push("/dashboard/console-log");
@@ -150,13 +158,15 @@ export default function PiiGuardClient() {
   const empty = {};
   const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, n = empty, trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
     redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], subTabs = [], isValues, isEvents, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
-    bulkIgnore, bulkObserve, bulkRedact, bulkBlock, copyHashes, values = [], noValues, events = [], samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
+    bulkIgnore, bulkObserve, bulkRedact, bulkBlock, copyHashes, values = [], noValues, moreValues, moreLabel, events = [], samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
     noHitsText, testVerdict = empty, testOut, thumbs = [], hasUpload, hasSample, imgBg, imgName, sampleName, sampleBg, problems = [], metrics = [], ocrStats = [], healthNote, ocrNote, imgGroups = [], health = empty } = v || {};
-  const q = ui.q, onQ = (e) => set({ q: e.target.value });
-  const fGroup = ui.fGroup, onGroup = (e) => set({ fGroup: e.target.value }), fAction = ui.fAction, onAction = (e) => set({ fAction: e.target.value });
-  const fStatus = ui.fStatus, onStatus = (e) => set({ fStatus: e.target.value, sel: {} }), fClient = ui.fClient, onClient = (e) => set({ fClient: e.target.value });
-  const fModel = ui.fModel, onModel = (e) => set({ fModel: e.target.value }), fSource = ui.fSource, onSource = (e) => set({ fSource: e.target.value });
+  // A filter change clears the selection, so bulk actions never hit hidden rows.
+  const filt = (k) => (e) => set({ [k]: e.target.value, sel: {}, limit: 300 });
+  const q = ui.q, onQ = filt("q"), fGroup = ui.fGroup, onGroup = filt("fGroup"), fAction = ui.fAction, onAction = filt("fAction");
+  const fStatus = ui.fStatus, onStatus = filt("fStatus"), fClient = ui.fClient, onClient = filt("fClient");
+  const fModel = ui.fModel, onModel = filt("fModel"), fSource = ui.fSource, onSource = filt("fSource");
   const clearSel = () => set({ sel: {} });
+  const moreBtn = { alignSelf: "center", marginTop: "10px", height: "28px", padding: "0 12px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" };
   const testText = ui.testText, onTest = (e) => set({ testText: e.target.value }), testMode = ui.testMode, onTestMode = (e) => set({ testMode: e.target.value });
   const testWhere = ui.testWhere, onTestWhere = (e) => set({ testWhere: e.target.value });
 
@@ -372,6 +382,7 @@ export default function PiiGuardClient() {
               </div>
             </Fragment>))}
             {(noValues) && (<><div style={{ padding: "28px 0", textAlign: "center", color: "var(--tx3)" }}>No values match these filters.</div></>)}
+            {(moreValues) && (<><button onClick={moreValues} style={moreBtn}>{moreLabel}</button></>)}
           </>)}
           {(isEvents) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "860px" }}><span>TIME</span><span>RULE</span><span>WHERE</span><span>ACTION</span><span>MODEL</span><span>CLIENT</span><span>REQUEST</span></div>
@@ -386,6 +397,7 @@ export default function PiiGuardClient() {
                 <span style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx3)" }}>{e.req}</span>
               </div>
             </Fragment>))}
+            {(loadOlder) && (<><button onClick={loadOlder} style={moreBtn}>Load 50 older events</button></>)}
           </>)}</div>
         </div>
       </>)}
@@ -406,7 +418,7 @@ export default function PiiGuardClient() {
               <div tabIndex={0} onPaste={onPaste} onDrop={onDrop} onDragOver={onDragOver} style={{ minHeight: "190px", border: "1.5px dashed var(--line2)", borderRadius: "9px", background: "var(--bg)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "10px", padding: "12px", outline: "0", boxSizing: "border-box" }}>
                 {(hasUpload) && (<><div style={{ width: "100%", height: "140px", borderRadius: "6px", background: imgBg }}></div><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{imgName}</span></>)}
                 {(hasSample) && (<><div style={{ width: "100%", height: "120px", borderRadius: "6px", background: sampleBg }} title={sampleName}></div><div style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx2)" }}>sample: {sampleName}</div></>)}
-                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", justifyContent: "center", fontSize: "12px", color: "var(--tx2)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "18px" }}>add_photo_alternate</span>Drop or paste (⌘V) an image here, or<label style={{ color: "var(--acc)", fontWeight: "600", cursor: "pointer" }}>choose a file<input type="file" accept="image/*" onChange={onFile} style={{ display: "none" }} /></label></div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap", justifyContent: "center", fontSize: "12px", color: "var(--tx2)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "18px" }}>add_photo_alternate</span>Drop or paste (⌘V) an image here, or<button type="button" onClick={() => fileRef.current?.click()} style={{ border: "0", padding: "0", background: "transparent", color: "var(--acc)", font: "inherit", fontWeight: "600", cursor: "pointer" }}>choose a file</button><input ref={fileRef} type="file" accept="image/*" onChange={onFile} hidden /></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(6,minmax(0,1fr))", gap: "6px" }}>{(thumbs).map((t, _i) => (<Fragment key={_i}><button onClick={t.on} title={t.name} style={t.style}>{t.short}</button></Fragment>))}</div>
               <div style={{ fontSize: "11.5px", color: "var(--tx3)", display: "flex", gap: "6px", alignItems: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px" }}>visibility</span>Images are observe only. Findings are logged; the image is sent unchanged.</div>

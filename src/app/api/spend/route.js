@@ -60,6 +60,7 @@ export async function GET(request) {
     const range = resolveRange(params, now, firstMs);
 
     const keyNames = new Map(db.all(`SELECT key, name FROM apiKeys`).map((r) => [r.key, r.name]));
+    // ponytail: loads every row in range (All = whole history) and aggregates in JS; move the sums to SQL GROUP BY when usageHistory passes ~500k rows.
     const rows = db.all(
       `SELECT timestamp, provider, model, apiKey, promptTokens, completionTokens, cost, meta FROM usageHistory WHERE timestamp >= ? AND timestamp < ?`,
       [new Date(range.from).toISOString(), new Date(range.to).toISOString()],
@@ -80,7 +81,7 @@ export async function GET(request) {
 
     const byKey = new Map(), byModel = new Map(), byCombo = new Map(), byClient = new Map(), bySess = new Map(), byProv = new Map();
     const subs = Object.fromEntries(SUBS.map((s) => [s.k, 0]));
-    let value = 0, real = 0, list = 0, req = 0, tok = 0, realOr = 0, realDs = 0, nrList = 0, nrReq = 0, nrTok = 0;
+    let value = 0, real = 0, realEst = 0, list = 0, req = 0, tok = 0, realOr = 0, realDs = 0, nrList = 0, nrReq = 0, nrTok = 0;
     const top = [];
 
     for (const r of rows) {
@@ -91,7 +92,9 @@ export async function GET(request) {
       if (r.meta && r.meta !== "{}") { try { meta = JSON.parse(r.meta); } catch { /* bad row */ } }
       const cost = Number(r.cost) || 0;
       const paid = PAID(r.provider);
-      const rReal = Number.isFinite(meta.realCost) ? meta.realCost : paid ? cost : 0;
+      const est = !Number.isFinite(meta.realCost) && paid; // no provider-reported cost: fall back to list price
+      const rReal = est ? cost : Number.isFinite(meta.realCost) ? meta.realCost : 0;
+      if (est) realEst += cost;
       const sk = SUB_OF[r.provider];
       const t = (r.promptTokens || 0) + (r.completionTokens || 0);
       b.list += cost; b.real += rReal;
@@ -118,7 +121,7 @@ export async function GET(request) {
           const sm = bump(s.models, r.model, () => ({ provider: r.provider, req: 0, v: 0, real: 0 })); sm.req++; sm.v += cost; sm.real += rReal;
         }
       } else { nrList += cost; nrReq++; nrTok += t; }
-      top.push({ ms, model: r.model, provider: r.provider, key: keyName, combo: meta.combo || "", client, sess: meta.session || null, tok: t, v: cost, real: rReal, logged: !!client });
+      top.push({ ms, model: r.model, provider: r.provider, key: keyName, combo: meta.combo || "", client, sess: meta.session || null, tok: t, v: cost, real: rReal, est, logged: !!client });
     }
 
     const pack = (m) => [...m.entries()].map(([k, o]) => ({ k, v: o.v, real: o.real, req: o.req, tok: o.tok, n: o.n, provider: o.provider,
@@ -153,7 +156,7 @@ export async function GET(request) {
       now, range: { ...range, first: bars[0]?.label, last: [...bars].reverse().find((b) => !b.future)?.label, days: range.hourly ? 1 : nB },
       loggedSince, loggedSinceLabel: loggedSince ? fmtDay(loggedSince) : null,
       bars: bars.map(({ t, keys, ...b }) => b),
-      totals: { value, real, list, req, tok, realOr, realDs, realDs30: ds30?.c || 0, subs, nrList, nrReq, nrTok },
+      totals: { value, real, realEst, list, req, tok, realOr, realDs, realDs30: ds30?.c || 0, subs, nrList, nrReq, nrTok },
       allLogged: loggedSince !== null && loggedSince <= range.from,
       subsMeta: SUBS,
       fees: settings.spendFees || {},
