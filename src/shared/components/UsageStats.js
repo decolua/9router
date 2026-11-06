@@ -100,7 +100,7 @@ function RecentRequests({ requests = [] }) {
                 <th className="py-2.5 pl-3 pr-1 text-center font-semibold text-text-muted w-8" title="Status">
                   <span className="material-symbols-outlined text-xs leading-none select-none text-text-muted/60">radio_button_checked</span>
                 </th>
-                <th className="py-2.5 px-2 text-left font-semibold text-text-muted">Model & Channel</th>
+                <th className="py-2.5 px-2 text-left font-semibold text-text-muted">Model</th>
                 <th className="py-2.5 px-2 text-right font-semibold text-text-muted whitespace-nowrap">Tokens (In / Out)</th>
                 <th className="py-2.5 pl-2 pr-3 text-right font-semibold text-text-muted w-20">Time</th>
               </tr>
@@ -109,35 +109,15 @@ function RecentRequests({ requests = [] }) {
               {requests.map((r, i) => {
                 const ok = !r.status || r.status === "ok" || r.status === "success";
                 const cleanModel = (r.model || "unknown").replace(/^\/+/, "");
-                const bareModel = (m) => String(m || "").replace(/^[^/]+\//, "");
-                // A request can be rewritten to the same model on another
-                // provider (gweb/gemini-4-argon -> gemini-web/gemini-4-argon).
-                // Only a different model name is worth an arrow; the provider
-                // chip already says which account served it.
-                const showResolved = Boolean(bareModel(r.resolvedModel)) && bareModel(r.resolvedModel) !== bareModel(r.model);
                 return (
                   <tr key={i} className="hover:bg-bg-hover transition-colors group">
                     <td className="py-2.5 pl-3 pr-1 text-center align-middle">
                       <span className={`inline-block size-2.5 rounded-full ${ok ? "bg-success" : "bg-danger"}`} />
                     </td>
-                    <td className="py-2.5 px-2 font-mono text-xs text-text-main align-middle min-w-0">
-                      <div className="flex flex-col gap-1">
-                        <span className="truncate max-w-full font-medium text-text-main group-hover:text-primary transition-colors" title={cleanModel}>
-                          {cleanModel}
-                        </span>
-                        {showResolved && (
-                          <span className="truncate max-w-full text-[10px] text-text-muted" title={`${r.providerName || r.provider}/${bareModel(r.resolvedModel)}`}>
-                            → {r.providerName || r.provider}/{bareModel(r.resolvedModel)}
-                          </span>
-                        )}
-                        {!showResolved && r.provider && (
-                          <span
-                            className="w-fit rounded border border-border-subtle bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium text-text-muted/90"
-                          >
-                            {r.providerName || r.provider}
-                          </span>
-                        )}
-                      </div>
+                    <td className="py-2.5 px-2 font-mono text-xs text-text-main align-middle min-w-0" title={cleanModel}>
+                      <span className="truncate max-w-full font-medium text-text-main group-hover:text-primary transition-colors">
+                        {cleanModel}
+                      </span>
                     </td>
                     <td className="py-2.5 px-2 text-right whitespace-nowrap align-middle">
                       <div className="inline-flex items-center gap-2 font-mono text-xs">
