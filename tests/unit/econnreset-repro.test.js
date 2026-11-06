@@ -112,7 +112,9 @@ describe("A. request-phase ECONNRESET (RST before response headers)", () => {
     expect(caught).toBeTruthy();
     expect(caught.message).toBe("fetch failed");
     expect(caught.cause?.code).toBe("ECONNRESET");
-    expect(rstHits).toBe(4); // 1 attempt + 3 retries — the retry layer already ran
+    // 1 attempt + 1 immediate stale-socket replay + 3 retries: the transport replays
+    // once on a dead keep-alive socket before the executor's 502 retry layer runs.
+    expect(rstHits).toBe(5);
 
     expect(formatProviderError(caught, "claude", BODY.model, 502))
       .toBe("[502]: fetch failed (cause: ECONNRESET: read ECONNRESET)");
@@ -123,7 +125,7 @@ describe("A. request-phase ECONNRESET (RST before response headers)", () => {
     await expect(
       ex.execute({ model: BODY.model, body: BODY, stream: false, credentials: { accessToken: "tok" } }),
     ).rejects.toMatchObject({ message: "fetch failed" });
-    expect(rstHits).toBe(5); // 4 from the case above + 1 here
+    expect(rstHits).toBe(7); // 6 from the case above (3 + its 3 retries) + 1 here
   });
 });
 
