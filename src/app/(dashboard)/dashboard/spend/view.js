@@ -94,7 +94,7 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
     hasNl: bars.some((b) => !b.logged && !b.future), gap: bars.length > 60 ? "1px" : bars.length > 24 ? "3px" : "5px",
     grid: [0.25, 0.5, 0.75, 1].map((f) => ({ b: f * 100 + "%", label: fmtAxis(nice * f) })),
     note: preset === "Today" ? "Hours that have not happened yet are outlined. Real spend under $0.01 is drawn as a 2 px marker so it stays visible."
-      : `Hatched ${hourly ? "hours" : "days"} are before ${loggedLabel}, when per-request attribution logging started. Real spend under $0.01 is drawn as a 2 px marker. Hover a bar for exact numbers.`,
+      : "Real spend under $0.01 is drawn as a 2 px marker. Hover a bar for exact numbers.",
   };
   const hb = bars[hi] || bars[0];
   const readout = { label: hb.label, real: usd(hb.real, 1), value: usd(hb.val) };
@@ -135,7 +135,7 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
     balance: dsUsd ? usd(dsUsd.total, 1) : dsBal[0] ? `${dsBal[0].total.toFixed(2)} ${dsBal[0].currency}` : "—",
     extra: dsUsd && dsOther.length ? dsOther.map((q) => `+ ${q.total.toFixed(2)} ${q.currency}`).join(" ") : "",
     monthLabel: "Spent in last 30 days", month: usd(dsRate30, 1),
-    runway: dsUsd && dsRate30 > 0 ? "~" + Math.round(dsUsd.total / dsRate30) + " months" : "—",
+    runway: !dsUsd ? "—" : dsRate30 <= 0 ? "No spend" : dsUsd.total / dsRate30 > 120 ? "10+ years" : "~" + Math.round(dsUsd.total / dsRate30) + " months",
   };
 
   // Allowance
@@ -240,7 +240,7 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
     rank: i + 1, when: o.when, model: short(o.model), modelFull: o.model, key: o.key, combo: o.combo, wide: !fit.oNarrow, narrow: !!fit.oNarrow,
     client: o.client ? CL[o.client] || o.client : "n/a", sess: o.sess ? "s·" + o.sess : "", hasSess: !!o.sess, noSess: !o.sess,
     goSess: () => { set({ agFilter: o.sess, agView: "sessions", agOpen: o.sess, scrollTick: Date.now() }); },
-    tok: cnt(o.tok), value: usd(o.v), real: !o.logged && !o.real ? "n/a" : o.real ? usd(o.real, 1) : "—", realTip: o.logged ? "" : "Real spend not logged before " + loggedLabel,
+    tok: cnt(o.tok), value: usd(o.v), real: o.real ? usd(o.real, 1) : "—", realTip: "",
     realC: o.real ? "var(--acc)" : "var(--tx3)", flag: false,
   }));
   const rankBtns = [["value", "By list price"], ["real", "By real spend"]].map(([k, label]) => ({ label, style: seg(ui.rank === k), on: () => set({ rank: k }) }));
@@ -261,9 +261,9 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
     groups, groupHead, rows, rankBtns, outliers: outl, noOutliers: outl.length === 0, topDays, topDaysTitle: hourly ? "TOP 5 HOURS" : "TOP 5 DAYS", ag,
     aWpx: Math.max(260, fit.aW - 44) + "px", detCols: fit.aW < 640 ? "minmax(0,1fr)" : "minmax(0,1fr) minmax(0,1fr)",
     maskA: fit.fadeA ? "linear-gradient(to right,#000 calc(100% - 40px),transparent)" : "none", maskR: fit.fadeR ? "linear-gradient(to right,#000 calc(100% - 40px),transparent)" : "none",
-    bdNote: allLogged ? `Real spend per request logged since ${loggedLabel}.` : `Real spend per request logged since ${loggedLabel}. Earlier requests count in list-price value only` + (NRK[ui.group] ? "; their " + NRK[ui.group] + " fall under “Not recorded”." : "."),
+    bdNote: allLogged || !NRK[ui.group] ? `Client, session and combo logged since ${loggedLabel}.` : `Client, session and combo logged since ${loggedLabel}. Earlier requests fall under “Not recorded”.`,
     outNote: ui.rank === "real" ? "Requests with real spend in range, highest first." : "Time (IST) · model · key and role · client · session · tokens · list-price value · real spend. Real spend only on OpenRouter and DeepSeek.",
-    loggedNote: `Real spend per request logged since ${loggedLabel}`, nrTip: "Session not recorded before " + loggedLabel,
+    loggedNote: "Real spend from OpenRouter and DeepSeek request costs", nrTip: "Session not recorded before " + loggedLabel,
     skel: [40, 62, 55, 70, 48, 80, 66, 52, 74, 58, 45, 68, 60, 77, 50, 64, 72, 56, 61, 70].map((h) => ({ h: h + "%" })),
   };
 }

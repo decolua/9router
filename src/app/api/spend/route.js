@@ -81,7 +81,7 @@ export async function GET(request) {
       return {
         t, val: 0, real: 0, list: 0, subs: {},
         future: t > now,
-        logged: true,
+        logged: true, // real spend comes from the cost column, known for all history
         label: range.hourly ? `${fmtDay(t)}, ${hhmm(t)}` : fmtDay(t),
         tick: range.hourly ? hhmm(t).slice(0, 2) : fmtDay(t),
       };
@@ -104,11 +104,13 @@ export async function GET(request) {
       const sk = SUB_OF[r.provider];
       const t = (r.promptTokens || 0) + (r.completionTokens || 0);
       b.list += cost; b.real += rReal;
+      const keyName0 = keyNames.get(r.apiKey) || (r.apiKey ? "Unknown key" : "No key");
+      (b.keys ||= new Map()).set(keyName0, (b.keys.get(keyName0) || 0) + cost);
       if (sk) { b.val += cost; b.subs[sk] = (b.subs[sk] || 0) + cost; subs[sk] += cost; value += cost; }
       real += rReal; list += cost; req++; tok += t;
       if (r.provider === "openrouter") realOr += rReal; else if (r.provider === "deepseek") realDs += rReal;
 
-      const keyName = keyNames.get(r.apiKey) || (r.apiKey ? "Unknown key" : "No key");
+      const keyName = keyName0;
       const client = meta.ua !== undefined ? clientOf(meta.ua) : null;
       const role = meta.ua !== undefined ? meta.combo || "main" : null;
       const add = (m, k) => { const o = bump(m, k, () => ({ ...acc(), clients: {}, keys: {}, mix: {}, n: 0, provider: r.provider })); o.v += cost; o.real += rReal; o.req++; o.tok += t; return o; };
@@ -152,16 +154,14 @@ export async function GET(request) {
     };
     const topBars = bars.filter((b) => !b.future).map((b) => ({ ...b, tot: b.val + b.real })).sort((a, b) => b.tot - a.tot).slice(0, 5)
       .map((b) => ({ label: b.label, val: b.val, real: b.real, tot: b.tot, logged: b.logged, top: topSessByBar(b),
-        topKey: [...rows.filter((r) => { const ms = Date.parse(r.timestamp); return ms >= b.t && ms < b.t + step; })
-          .reduce((m, r) => m.set(keyNames.get(r.apiKey) || "No key", (m.get(keyNames.get(r.apiKey) || "No key") || 0) + (Number(r.cost) || 0)), new Map()).entries()]
-          .sort((a, b2) => b2[1] - a[1])[0]?.[0] || null }));
+        topKey: [...(b.keys || new Map()).entries()].sort((a, c) => c[1] - a[1])[0]?.[0] || null }));
 
     const ds30 = db.get(`SELECT SUM(cost) AS c FROM usageHistory WHERE provider = 'deepseek' AND timestamp >= ?`, [new Date(now - 30 * DAY).toISOString()]);
     const settings = await getSettings();
     return NextResponse.json({
       now, range: { ...range, first: bars[0]?.label, last: [...bars].reverse().find((b) => !b.future)?.label, days: range.hourly ? 1 : nB },
       loggedSince, loggedSinceLabel: loggedSince ? fmtDay(loggedSince) : null,
-      bars: bars.map(({ t, ...b }) => b),
+      bars: bars.map(({ t, keys, ...b }) => b),
       totals: { value, real, list, req, tok, realOr, realDs, realDs30: ds30?.c || 0, subs, nrList, nrReq, nrTok },
       allLogged: loggedSince !== null && loggedSince <= range.from,
       subsMeta: SUBS,

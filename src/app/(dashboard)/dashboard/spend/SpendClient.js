@@ -120,7 +120,7 @@ export default function SpendClient() {
           </div>
         </>)}
         <div style={{ display: "flex", flexDirection: "column", gap: "16px", padding: "16px 32px 48px" }}>
-    
+
           {(isLoading) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: "16px" }}>
               <div style={{ height: "118px", borderRadius: "12px", background: "var(--card)", border: "1px solid var(--line)", padding: "18px", boxSizing: "border-box", display: "flex", flexDirection: "column", gap: "12px" }}><div style={{ width: "40%", height: "10px", borderRadius: "5px", background: "var(--seg)" }}></div><div style={{ width: "55%", height: "24px", borderRadius: "6px", background: "var(--seg)" }}></div><div style={{ width: "75%", height: "10px", borderRadius: "5px", background: "var(--seg)" }}></div></div>
@@ -130,7 +130,7 @@ export default function SpendClient() {
             <div style={{ height: "300px", borderRadius: "12px", background: "var(--card)", border: "1px solid var(--line)", display: "flex", alignItems: "flex-end", gap: "6px", padding: "24px", boxSizing: "border-box" }}>{(skel).map((k, _i) => (<Fragment key={_i}><div style={{ flex: "1", borderRadius: "3px", background: "var(--seg)", height: k.h }}></div></Fragment>))}</div>
             <div style={{ color: "var(--tx3)", fontSize: "12px", display: "flex", alignItems: "center", gap: "6px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px" }}>hourglass_top</span>Reading request rows and quota data…</div>
           </>)}
-    
+
           {(isEmpty) && (<>
             <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", padding: "64px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", textAlign: "center" }}>
               <span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "36px", color: "var(--tx3)" }}>receipt_long</span>
@@ -139,7 +139,7 @@ export default function SpendClient() {
               <button style={{ marginTop: "8px", height: "32px", padding: "0 14px", borderRadius: "8px", border: "0", background: "var(--acc)", color: "#fff", font: "inherit", fontWeight: "600", cursor: "pointer" }} onClick={showLast30}>Show last 30 days</button>
             </div>
           </>)}
-    
+
           {(isError) && (<>
             <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", padding: "56px 24px", display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", textAlign: "center" }}>
               <span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "36px", color: "var(--red)" }}>error</span>
@@ -148,7 +148,7 @@ export default function SpendClient() {
               <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}><button onClick={retry} style={{ height: "32px", padding: "0 14px", borderRadius: "8px", border: "0", background: "var(--acc)", color: "#fff", font: "inherit", fontWeight: "600", cursor: "pointer" }}>Retry</button><button style={{ height: "32px", padding: "0 14px", borderRadius: "8px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", cursor: "pointer" }} onClick={openConsole}>Open Console Log</button></div>
             </div>
           </>)}
-    
+
           {(s.top) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))", gap: "16px" }}>
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -168,7 +168,7 @@ export default function SpendClient() {
               </div>
             </div>
           </>)}
-    
+
           {(s.real) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(300px,1fr))", gap: "16px" }}>
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -213,7 +213,7 @@ export default function SpendClient() {
               </div>
             </div>
           </>)}
-    
+
           {(s.time) && (<>
             <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
@@ -245,7 +245,7 @@ export default function SpendClient() {
               <div style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{chart.note}</div>
             </div>
           </>)}
-    
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,440px),1fr))", gap: "16px", alignItems: "start" }}>
             {(s.allowance) && (<>
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -257,12 +257,12 @@ export default function SpendClient() {
                       <div style={{ height: "8px", borderRadius: "4px", background: "var(--seg)", overflow: "hidden" }}><div style={{ height: "100%", width: a.w, background: a.c, borderRadius: "4px" }}></div></div>
                       <span style={{ fontSize: "11.5px", color: a.c, fontWeight: "600" }}>{a.usedLabel}</span>
                     </div>
-                    <div style={{ textAlign: "right", fontSize: "12px", color: "var(--tx2)" }}>resets in<br /><b style={{ color: "var(--tx)", fontVariantNumeric: "tabular-nums" }}>{a.reset}</b>
+                    <div style={{ textAlign: "right", fontSize: "12px", color: "var(--tx2)" }}>resets in<br /><b style={{ color: "var(--tx)", fontVariantNumeric: "tabular-nums" }}>{a.reset}</b></div>
                   </div>
-                </div>
+                </Fragment>))}
                 <div style={{ display: "flex", gap: "14px", fontSize: "11px", color: "var(--tx3)", paddingTop: "6px" }}><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "var(--green)" }}></span>under 70%</span><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "var(--amber)" }}></span>70–90%</span><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "8px", height: "8px", borderRadius: "2px", background: "var(--red)" }}></span>over 90%</span></div>
-              </Fragment>))}
-            </div>
+              </div>
+            </>)}
             {(s.subvalue) && (<>
               <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)", display: "flex", gap: "8px", alignItems: "center" }}>SUBSCRIPTION VALUE<span style={{ fontSize: "10px", fontWeight: "600", padding: "1px 6px", borderRadius: "4px", background: "var(--violetbg)", color: "var(--violet)" }}>ESTIMATE</span></span>
@@ -273,27 +273,27 @@ export default function SpendClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr .8fr", gap: "10px", alignItems: "center", padding: "8px 0", borderTop: "1px solid var(--line)", fontVariantNumeric: "tabular-nums" }}>
                     <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontWeight: "600" }}>{r.name}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{r.plan}</span></div>
                     <div style={{ textAlign: "right" }}>
-                      {(r.inputReady) && (<><input type="number" placeholder="Not set" ref={r.ref} value={r.draft} onChange={r.onFee} style={{ width: "80px", height: "28px", boxSizing: "border-box", border: "1px solid var(--line2)", borderRadius: "7px", padding: "0 8px", background: "var(--bg)", color: "var(--tx)", font: "inherit", textAlign: "right" }} />
+                      {(r.inputReady) && (<><input type="number" placeholder="Not set" ref={r.ref} value={r.draft} onChange={r.onFee} style={{ width: "80px", height: "28px", boxSizing: "border-box", border: "1px solid var(--line2)", borderRadius: "7px", padding: "0 8px", background: "var(--bg)", color: "var(--tx)", font: "inherit", textAlign: "right" }} /></>)}
                       {(r.showFee) && (<><span>{r.fee}</span></>)}{(r.showSet) && (<><button onClick={r.setFee} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: "var(--tx3)", textDecoration: "underline dotted", textUnderlineOffset: "3px", cursor: "pointer" }} className="r9-hacc">Not set</button></>)}
-                    </>)}
+                    </div>
                     <div style={{ textAlign: "right", color: "var(--violet)", fontWeight: "600" }}>{r.value}</div>
                     <div style={{ textAlign: "right", fontWeight: "650", color: r.c }}>{r.ratio}</div>
                   </div>
-                </div>
+                </Fragment>))}
                 {(editing) && (<>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", paddingTop: "10px", borderTop: "1px solid var(--line)" }}><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>Saved to 9Router settings.</span><div style={{ display: "flex", gap: "6px" }}><button onClick={cancelEdit} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Cancel</button><button onClick={saveEdit} style={{ height: "28px", padding: "0 12px", borderRadius: "7px", border: "0", background: "var(--acc)", color: "#fff", font: "inherit", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>Save fees</button></div></div>
                 </>)}
                 {(notEditing) && (<>
                   <div style={{ display: "flex", justifyContent: "space-between", paddingTop: "10px", borderTop: "1px solid var(--line)", fontVariantNumeric: "tabular-nums", fontWeight: "600" }}><span>Total <span style={{ fontWeight: "400", color: "var(--tx3)" }}>· fees prorated to {dayCount} days</span></span><span>{k.feesPro} → <span style={{ color: "var(--violet)" }}>{k.value}</span> · <span style={{ color: "var(--green)" }}>{k.ratio}</span></span></div>
                 </>)}
-              </Fragment>))}
-            </div>
-          </>)}
-    
+              </div>
+            </>)}
+          </div>
+
           {(s.breakdown) && (<>
             <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px", overflowX: "auto" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", paddingBottom: "8px", flexWrap: "wrap" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>BREAKDOWN</span>
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Group by</span><div style={{ display: "flex", flexWrap: "wrap", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(groups).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={{  }}>{g.label}</button></Fragment>))}</div></div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Group by</span><div style={{ display: "flex", flexWrap: "wrap", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(groups).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div></div>
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "minmax(180px,2fr) 1fr 1fr 1fr 1.1fr minmax(140px,1.6fr)", gap: "12px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "6px 0", minWidth: "760px" }}><span>{groupHead}</span><span style={{ textAlign: "right" }}>REQUESTS</span><span style={{ textAlign: "right" }}>TOKENS</span><span style={{ textAlign: "right" }}>REAL SPEND</span><span style={{ textAlign: "right" }}>LIST-PRICE VALUE</span><span>SHARE OF VALUE</span></div>
               {(rows).map((r, _i) => (<Fragment key={_i}>
@@ -309,14 +309,14 @@ export default function SpendClient() {
               <div style={{ fontSize: "11px", color: "var(--tx3)", paddingTop: "8px" }}>{bdNote}</div>
             </div>
           </>)}
-    
+
           {(s.agents) && (<>
             <div ref={aPanel} style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>AGENTS AND SESSIONS</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{ag.sub}</span></div>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                   {(ag.filter) && (<><button onClick={ag.clearFilter} style={{ display: "flex", alignItems: "center", gap: "4px", height: "26px", padding: "0 6px 0 10px", borderRadius: "13px", border: "0", background: "var(--acc2)", color: "var(--acc)", font: "inherit", fontSize: "12px", fontWeight: "600", cursor: "pointer" }}>Session {ag.filter}<span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px" }}>close</span></button></>)}
-                  <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(ag.views).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={{  }}>{g.label}</button></Fragment>))}</div>
+                  <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(ag.views).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div>
                 </div>
               </div>
               {(ag.loading) && (<>
@@ -381,12 +381,12 @@ export default function SpendClient() {
               <div style={{ fontSize: "11px", color: "var(--tx3)" }}>{ag.note}</div>
             </div>
           </>)}
-    
+
           {(s.outliers) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,380px),1fr))", gap: "16px", alignItems: "start" }}>
               <div ref={oRef} style={{ gridColumn: "1/-1", minWidth: "0", background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px", overflowX: "auto" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", paddingBottom: "8px", flexWrap: "wrap" }}><span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>TOP 10 REQUESTS <span style={{ fontWeight: "400", letterSpacing: "0", color: "var(--tx3)" }}>· most expensive in range</span></span>
-                  <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(rankBtns).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={{  }}>{g.label}</button></Fragment>))}</div>
+                  <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(rankBtns).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div>
                 </div>
                 {(outliers).map((o, _i) => (<Fragment key={_i}>
                   {(o.wide) && (<>
@@ -437,10 +437,8 @@ export default function SpendClient() {
               </div>
             </div>
           </>)}
-        </>)}
-      </div>
-      </div>
-    </main>
+        </div>
+      </main>
       </div>
     </div>
   );
