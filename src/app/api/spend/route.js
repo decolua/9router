@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdapter } from "@/lib/db/driver.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
+import { clientOf } from "@/lib/spendClient.js";
 
 export const dynamic = "force-dynamic";
 
@@ -17,20 +18,10 @@ const SUBS = [
   { k: "muse", provider: "muse", name: "Muse" },
 ];
 const SUB_OF = Object.fromEntries(SUBS.map((s) => [s.provider, s.k]));
-const PAID = (p) => p === "openrouter" || p === "deepseek" || (p || "").startsWith("openai-compatible");
+const PAID = (p) => p === "openrouter" || p === "deepseek";
 const PRESET_DAYS = { "7D": 7, "30D": 30, "60D": 60 };
 const DAYKEY = /^\d{4}-\d{2}-\d{2}$/;
 
-export function clientOf(ua = "") {
-  const u = ua.toLowerCase();
-  if (u.startsWith("claude-cli") || u.includes("claude-code")) return "Claude Code";
-  if (u.includes("codex")) return "Codex";
-  if (u.startsWith("open-code-review")) return "OpenCode Review";
-  if (u.includes("opencode")) return "OpenCode";
-  if (u.startsWith("t3")) return "T3 Code";
-  if (!u) return "Unknown";
-  return "Other";
-}
 
 const dayKey = (ms) => new Date(ms + IST).toISOString().slice(0, 10);
 const istMidnight = (ms) => Math.floor((ms + IST) / DAY) * DAY - IST;
@@ -44,9 +35,9 @@ function resolveRange(params, now, firstMs) {
   if (preset === "24h") { const end = Math.floor(now / 36e5) * 36e5 + 36e5; return { preset, hourly: true, from: end - DAY, to: end }; }
   if (preset === "Custom") {
     const f = params.get("from"), t = params.get("to");
-    if (DAYKEY.test(f || "") && DAYKEY.test(t || "")) {
+    if (DAYKEY.test(f || "") && DAYKEY.test(t || "") && !Number.isNaN(Date.parse(f)) && !Number.isNaN(Date.parse(t))) {
       const a = Date.parse(f + "T00:00:00Z") - IST, b = Date.parse(t + "T00:00:00Z") - IST + DAY;
-      if (b > a && b - a <= 400 * DAY) return { preset, hourly: false, from: a, to: Math.min(b, today0 + DAY) };
+      if (b > a && a <= today0 && b - a <= 400 * DAY) return { preset, hourly: false, from: a, to: Math.min(b, today0 + DAY) };
     }
   }
   if (preset === "All") return { preset, hourly: false, from: istMidnight(Math.min(firstMs || now, now)), to: today0 + DAY };
@@ -168,6 +159,7 @@ export async function GET(request) {
       fees: settings.spendFees || {},
       groups: { key: pack(byKey), model: pack(byModel), role: pack(byCombo), client: pack(byClient), provider: pack(byProv) },
       roleCount, sessionCount: sessions.length, sessionValue: sessions.reduce((a, s) => a + s.v, 0),
+      sessionRest: sessions.slice(8).reduce((a, s) => ({ v: a.v + s.v, real: a.real + s.real, req: a.req + s.req, tok: a.tok + s.tok }), { v: 0, real: 0, req: 0, tok: 0 }),
       sessions: sessOut, outliers: { value: byValue, real: byReal }, topBars,
     }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

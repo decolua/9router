@@ -34,15 +34,19 @@ export default function SpendClient() {
     return () => mo.disconnect();
   }, []);
 
+  const loadId = useRef(0);
   const load = useCallback(async () => {
+    const id = ++loadId.current; // ignore responses from superseded ranges
     setMode((m) => (m === "ready" ? "ready" : "loading"));
     const q = new URLSearchParams({ preset: range.preset });
     if (range.preset === "Custom") { q.set("from", range.from); q.set("to", range.to); }
     try {
       const d = await getJson(`/api/spend?${q}`);
+      if (id !== loadId.current) return;
       setData(d);
       setMode(d.totals.req === 0 ? "empty" : "ready");
     } catch (e) {
+      if (id !== loadId.current) return;
       setErrorText(e.message || "Request failed");
       setMode("error");
     }
@@ -103,7 +107,7 @@ export default function SpendClient() {
   const openConsole = () => router.push("/dashboard/console-log");
   const emptyText = `9Router logged no calls in this range (${data?.range?.first ?? ""} – ${data?.range?.last ?? ""} IST). Real spend is $0.00. Allowance and fees still apply.`;
   const ready = mode === "ready" && v;
-  const s = { range: true, top: ready, real: ready, time: ready, allowance: ready, subvalue: ready, breakdown: ready, agents: ready, outliers: ready };
+  const s = { range: true, top: ready, real: ready, time: ready, allowance: (ready || isEmpty) && !!v, subvalue: (ready || isEmpty) && !!v, breakdown: ready, agents: ready, outliers: ready };
   const minH = "100%";
   const rangeTitle = v?.rangeTitle ?? "";
   const rangeSub = v?.rangeSub ?? "";
@@ -333,7 +337,7 @@ export default function SpendClient() {
                   <div style={{ display: "grid", gridTemplateColumns: "76px 90px 92px minmax(230px,1.6fr) 56px 76px 96px 54px 66px minmax(90px,1fr)", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "1060px" }}><span>SESSION</span><span>CLIENT</span><span>ROLE</span><span>MODELS</span><span style={{ textAlign: "right" }}>REQ.</span><span style={{ textAlign: "right" }}>DURATION</span><span>STARTED</span><span style={{ textAlign: "right" }}>REAL</span><span style={{ textAlign: "right" }}>VALUE</span><span>SHARE</span></div>
                   {(ag.sessions).map((x, _i) => (<Fragment key={_i}>
                     <div style={{ borderTop: "1px solid var(--line)", minWidth: "1060px" }}>
-                      <div onClick={x.toggle} style={{ display: "grid", gridTemplateColumns: "76px 90px 92px minmax(230px,1.6fr) 56px 76px 96px 54px 66px minmax(90px,1fr)", gap: "10px", alignItems: "center", padding: "7px 0", fontSize: "12px", fontVariantNumeric: "tabular-nums", cursor: "pointer", background: x.bg }}>
+                      <div onClick={x.toggle} role="button" tabIndex={0} aria-expanded={x.open} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); x.toggle(); } }} style={{ display: "grid", gridTemplateColumns: "76px 90px 92px minmax(230px,1.6fr) 56px 76px 96px 54px 66px minmax(90px,1fr)", gap: "10px", alignItems: "center", padding: "7px 0", fontSize: "12px", fontVariantNumeric: "tabular-nums", cursor: "pointer", background: x.bg }}>
                         <span style={{ display: "flex", alignItems: "center", gap: "3px", fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px", color: "var(--tx3)" }}>{x.chev}</span>{x.id}</span>
                         <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{x.client}</span>
                         <span><span style={{ fontSize: "10.5px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: x.roleBg, color: x.roleC }}>{x.role}</span></span>

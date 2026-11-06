@@ -113,7 +113,15 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
   };
 
   // OpenRouter / DeepSeek cards from provider usage endpoints
-  const orQ = Object.assign({}, ...(quota.openrouter || []).map((e) => e.quotas || {}));
+  // Sum same-named counters across connections instead of letting the last response win.
+  const sumQ = (list = []) => list.reduce((acc, e) => {
+    for (const [n, q] of Object.entries(e.quotas || {})) {
+      const o = acc[n];
+      acc[n] = o ? { ...o, used: (o.used || 0) + (q.used || 0), total: (o.total || 0) + (q.total || 0) } : { ...q };
+    }
+    return acc;
+  }, {});
+  const orQ = sumQ(quota.openrouter);
   const orNames = (quota.openrouter || []).map((e) => e.name).filter(Boolean);
   const daily = orQ["Daily budget (USD)"];
   const bw = daily ? Math.min(100, (daily.used / daily.total) * 100) : 0;
@@ -125,7 +133,7 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
     budgetW: Math.max(0.5, bw) + "%", budgetC: bw > 90 ? "var(--red)" : bw >= 70 ? "var(--amber)" : "var(--green)",
     budgetReset: "Resets at 05:30 IST (00:00 UTC)", balance: orQ["Balance (USD)"] ? usd(orQ["Balance (USD)"].total, 1) : "—",
   };
-  const dsQ = Object.assign({}, ...(quota.deepseek || []).map((e) => e.quotas || {}));
+  const dsQ = sumQ(quota.deepseek);
   const dsBal = Object.entries(dsQ).filter(([n]) => n.startsWith("Balance (")).map(([, q]) => q);
   const dsUsd = dsBal.find((q) => q.currency === "USD"), dsOther = dsBal.filter((q) => q.currency !== "USD");
   const dsRate30 = data.totals.realDs30 ?? 0;
@@ -177,11 +185,10 @@ export function buildView({ data, quota, ui, set, fit, range, feeRefs, saveFees 
       { mix: mix.map(([m, p]) => ({ w: p + "%", c: MC[m] || "#a0958e", t: m + " · " + p + "%" })) });
   });
   else if (ui.group === "session") {
-    const top = data.sessions.slice(0, 8), rest = data.sessions.slice(8);
+    const top = data.sessions.slice(0, 8);
     rowsSrc = top.map((x) => mk("s·" + x.id, x.client + " · " + x.role + " · " + (x.isToday ? "Today" : x.startDay) + ", " + x.startTime, x));
     if (data.sessionCount > 8) {
-      const o = rest.reduce((a, x) => ({ v: a.v + x.v, real: a.real + x.real, req: a.req + x.req, tok: a.tok + x.tok }), { v: 0, real: 0, req: 0, tok: 0 });
-      rowsSrc.push(mk("Other sessions", data.sessionCount - 8 + " smaller sessions", o, { other: true }));
+      rowsSrc.push(mk("Other sessions", data.sessionCount - 8 + " smaller sessions", data.sessionRest, { other: true }));
     }
   } else rowsSrc = G.provider.map((o) => mk(PROV[o.k] || o.k, SUBN[o.k] ? (o.k in { openrouter: 1, deepseek: 1 } ? "Pay per token" : SUBN[o.k] === "local" ? "Local · free" : "Subscription") : "Provider", o));
   if (["role", "client", "session"].includes(ui.group) && totals.nrReq > 0)
