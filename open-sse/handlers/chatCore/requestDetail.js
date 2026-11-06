@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { saveRequestUsage, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { COLORS } from "../../utils/stream.js";
 import { canonicalizeUsage } from "../../utils/usageTracking.js";
@@ -46,7 +47,8 @@ export function extractUsageFromResponse(responseBody) {
       prompt_tokens: responseBody.usage.prompt_tokens || 0,
       completion_tokens: responseBody.usage.completion_tokens || 0,
       cached_tokens: responseBody.usage.cached_tokens ?? responseBody.usage.prompt_tokens_details?.cached_tokens,
-      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens
+      reasoning_tokens: responseBody.usage.completion_tokens_details?.reasoning_tokens,
+      cost: responseBody.usage.cost
     };
   }
 
@@ -115,7 +117,20 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, label = "USAGE", silent = false }) {
+// Spend page attribution: client app, session hash and combo, from the raw client request.
+export function spendMeta(clientRawRequest, tokens) {
+  if (!clientRawRequest) return {};
+  const h = clientRawRequest.headers || {};
+  const meta = {};
+  const ua = h["user-agent"] || "";
+  meta.ua = ua.slice(0, 80); // always set: marks the row as attributed, even without a user-agent
+  if (clientRawRequest?.session) meta.session = createHash("sha256").update(String(clientRawRequest.session)).digest("hex").slice(0, 12);
+  if (clientRawRequest?.combo) meta.combo = clientRawRequest.combo;
+  if (Number.isFinite(tokens?.cost)) meta.realCost = tokens.cost;
+  return meta;
+}
+
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, clientRawRequest, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -143,6 +158,7 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     timestamp: new Date().toISOString(),
     connectionId: connectionId || undefined,
     apiKey: apiKey || undefined,
-    endpoint: endpoint || null
+    endpoint: endpoint || null,
+    meta: spendMeta(clientRawRequest, tokens)
   }).catch(() => {});
 }

@@ -131,6 +131,7 @@ export function normalizeUsage(usage) {
   assignNumber("cache_creation_input_tokens", usage?.cache_creation_input_tokens);
   assignNumber("cached_tokens", usage?.cached_tokens);
   assignNumber("reasoning_tokens", usage?.reasoning_tokens);
+  assignNumber("cost", usage?.cost); // OpenRouter: real USD charged
 
   // Preserve nested details objects for OpenAI format forwarding
   if (usage?.prompt_tokens_details && typeof usage.prompt_tokens_details === "object") {
@@ -283,7 +284,8 @@ export function extractUsage(chunk) {
       cached_tokens: chunk.usage.prompt_tokens_details?.cached_tokens || chunk.usage.prompt_cache_hit_tokens,
       reasoning_tokens: chunk.usage.completion_tokens_details?.reasoning_tokens,
       prompt_tokens_details: chunk.usage.prompt_tokens_details,
-      completion_tokens_details: chunk.usage.completion_tokens_details
+      completion_tokens_details: chunk.usage.completion_tokens_details,
+      cost: chunk.usage.cost
     });
   }
 

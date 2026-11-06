@@ -1,7 +1,8 @@
 const DAY = 24 * 60 * 60 * 1000;
 const RANK = { leaked: 0, block: 1, redact: 2, observe: 3, ignored: 4 };
 
-export function summarize(events, { since, until, now = Date.now(), ignore = [] } = {}) {
+// step/origin: bucket hits into a trend (ms per bucket, start of bucket 0). Off when step is not set.
+export function summarize(events, { since, until, now = Date.now(), ignore = [], step, origin } = {}) {
   const sinceMs = Number.isFinite(since) ? since : now - DAY;
   const untilMs = Number.isFinite(until) ? until : now;
   const groups = new Map();
@@ -9,6 +10,9 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
   const leaked = new Set(), blocked = new Set(), unique = new Set();
   let errors24h = 0;
   let requests = 0;
+  const actionHits = Object.create(null);
+  const nTrend = step > 0 ? Math.min(400, Math.ceil(((Number.isFinite(until) ? until : now) - origin) / step)) : 0;
+  const trend = Array.from({ length: Math.max(0, nTrend) }, () => ({ hits: 0, leaks: 0 }));
 
   const ocrStatus = { scanned: 0, partial: 0, empty: 0, failed: 0, skipped: 0 };
   let cacheHit = 0, cacheMiss = 0, cacheCoalesced = 0, cacheNone = 0;
@@ -54,6 +58,9 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
       const source = typeof hit.source === "string" ? hit.source : "-/-";
       const action = typeof hit.action === "string" ? hit.action : "observe";
       ruleHits[hit.rule] = (ruleHits[hit.rule] || 0) + 1;
+      actionHits[action] = (actionHits[action] || 0) + 1;
+      const bucket = trend[Math.floor((ts - origin) / step)];
+      if (bucket) { bucket.hits++; if (action === "leaked") bucket.leaks++; }
       bySource[source] = (bySource[source] || 0) + 1;
       // Warnings count only places Redact cannot rewrite (hit.where is set for those).
       if (typeof hit.where === "string") {
@@ -71,6 +78,7 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
         group = { hash: hit.hash, rule: hit.rule, name: hit.name, kind: hit.kind, sources: [], actions: [], action, actionTs: ts, leakedWhere: [], firstSeen: event.ts, lastSeen: event.ts, turns: new Set(), ignored: false };
         groups.set(key, group);
       }
+      if (ts >= Date.parse(group.lastSeen)) { if (typeof event.ua === "string") group.ua = event.ua.slice(0, 80); if (typeof event.model === "string") group.model = event.model.slice(0, 80); }
       if (!group.name && hit.name) group.name = hit.name;
       if (!group.kind && hit.kind) group.kind = hit.kind;
       if (!group.sources.includes(source)) group.sources.push(source);
@@ -135,7 +143,7 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [] 
     unique24h: unique.size,
     byRule: Object.fromEntries(Object.entries(ruleHits).map(([rule, hits]) => [rule, { unique: ruleHashes[rule]?.size || 0, hits }])),
     bySource, leaked24h: leaked.size, blocked24h: blocked.size, errors24h,
-    groups: outputGroups, ruleWarnings,
+    groups: outputGroups, ruleWarnings, actionHits, trend,
     range: { from: sinceMs, to: untilMs },
     ocr,
   };

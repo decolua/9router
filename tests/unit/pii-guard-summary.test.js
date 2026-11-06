@@ -67,3 +67,17 @@ describe("summarize range", () => {
     expect(r.range.from).toBe(now - 2*60*60*1000);
   });
 });
+
+describe("summarize trend", () => {
+  it("buckets hits by step and counts leaks per bucket", () => {
+    const hit = (action) => ({ hash: "aaaaaaaaaaaa", rule: "pan", source: "user/text", action });
+    const events = [
+      { ts: "2026-11-06T00:10:00.000Z", ua: "claude-cli/2", model: "opus", hits: [hit("redact")] },
+      { ts: "2026-11-06T01:20:00.000Z", hits: [hit("leaked")] },
+    ];
+    const r = summarize(events, { since: Date.parse("2026-11-06T00:00:00Z"), until: Date.parse("2026-11-06T03:00:00Z"), step: 36e5, origin: Date.parse("2026-11-06T00:00:00Z") });
+    expect(r.trend).toEqual([{ hits: 1, leaks: 0 }, { hits: 1, leaks: 1 }, { hits: 0, leaks: 0 }]);
+    expect(r.actionHits).toEqual({ redact: 1, leaked: 1 });
+    expect(r.groups[0]).toMatchObject({ ua: "claude-cli/2", model: "opus" });
+  });
+});

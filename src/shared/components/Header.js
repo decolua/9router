@@ -99,6 +99,13 @@ const getPageInfo = (pathname) => {
       icon: "vpn_key",
       breadcrumbs: [],
     };
+  if (pathname.includes("/spend"))
+    return {
+      title: "Spend",
+      description: "Real money paid to pay-per-token providers, and what your subscriptions are worth",
+      icon: "payments",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/quota"))
     return {
       title: "Quota Tracker",
@@ -116,7 +123,7 @@ const getPageInfo = (pathname) => {
   if (pathname.includes("/pii-guard"))
     return {
       title: "PII Guard",
-      description: "Find, redact, or block secrets and personal data in requests",
+      description: "Find, redact, or block secrets and personal data before requests leave the VPS",
       icon: "shield_person",
       breadcrumbs: [],
     };
