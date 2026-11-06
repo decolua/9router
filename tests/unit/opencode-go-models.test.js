@@ -112,9 +112,9 @@ describe("OpenCode Go multi-endpoint transports", () => {
   });
 
   it("resolveTransport picks the endpoint matching the client sourceFormat", () => {
-    expect(resolveTransport("opencode-go", "claude").baseUrl).toBe("https://opencode.ai/zen/go/v1/messages");
-    expect(resolveTransport("opencode-go", "openai-responses").baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
-    expect(resolveTransport("opencode-go", "openai").baseUrl).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(resolveTransport("opencode-go", "claude").baseUrl).toBe("https://opencode.ai/inference/go/anthropic/v1/messages");
+    expect(resolveTransport("opencode-go", "openai-responses").baseUrl).toBe("https://opencode.ai/inference/go/openai/v1/responses");
+    expect(resolveTransport("opencode-go", "openai").baseUrl).toBe("https://opencode.ai/inference/go/openai/v1/chat/completions");
   });
 
   it("uses x-api-key + anthropicVersion on the claude transport", () => {
@@ -127,7 +127,7 @@ describe("OpenCode Go multi-endpoint transports", () => {
 describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
   it("routes MiniMax/Qwen + claude-format client to /messages", () => {
     for (const m of CLAUDE_CAPABLE) {
-      expect(pickTransport("opencode-go", "claude", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/messages");
+      expect(pickTransport("opencode-go", "claude", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/inference/go/anthropic/v1/messages");
     }
   });
 
@@ -139,20 +139,20 @@ describe("OpenCode Go per-model transport guard (chatCore logic)", () => {
 
   it("pins /messages-only models to /messages for the claude wire", () => {
     for (const m of CLAUDE_ONLY) {
-      expect(pickTransport("opencode-go", "claude", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/messages");
+      expect(pickTransport("opencode-go", "claude", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/inference/go/anthropic/v1/messages");
     }
   });
 
   it("routes DeepSeek + responses-format client to /responses", () => {
     for (const m of RESPONSES_CAPABLE) {
-      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
+      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/inference/go/openai/v1/responses");
     }
   });
 
   it("routes Muse Spark (responses-only) to /responses, never to /messages", () => {
     for (const m of ["muse-spark-1.2-contributor", "muse-spark-1.3-contributor", "grok-4.7", "grok-4.6", "grok-4.5", "gpt-5.6-luna", "gpt-6-luna"]) {
       expect(getModelSupportedFormats("opencode-go", m)).toEqual(["openai-responses"]);
-      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/zen/go/v1/responses");
+      expect(pickTransport("opencode-go", "openai-responses", "opencode-go", m)?.baseUrl).toBe("https://opencode.ai/inference/go/openai/v1/responses");
       expect(pickTransport("opencode-go", "claude", "opencode-go", m)).toBeNull();
       expect(pickTransport("opencode-go", "openai", "opencode-go", m)).toBeNull();
     }
