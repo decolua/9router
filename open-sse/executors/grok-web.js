@@ -1,5 +1,6 @@
 import { BaseExecutor } from "./base.js";
 import { PROVIDERS } from "../config/providers.js";
+import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { SSE_DONE, SSE_HEADERS_NO_BUFFER } from "../utils/sseConstants.js";
 import { sseChunk } from "../utils/sse.js";
 import { GROK_TLS_USER_AGENT, GrokTlsUnavailableError, grokTlsFetch, isCloudflareChallenge } from "../services/grokTlsClient.js";
@@ -495,8 +496,13 @@ export class GrokWebExecutor extends BaseExecutor {
    *   "imagine-video-gen" + mediaGenInput.textToVideo; the mp4 asset URL is
    *   deep-scanned from the NDJSON reply (exact chunk shape varies).
    */
-  async generateMedia({ prompt, kind = "image", size, duration, n = 1, credentials, signal, log }) {
+  async generateMedia({ prompt, kind = "image", size, duration, n = 1, images = [], credentials, signal, log }) {
     if (kind !== "image" && kind !== "video") throw new Error("Grok Web supports image and video generation only");
+    if (kind === "video" && Array.isArray(images) && images.length > 0) {
+      const error = new Error("Grok Web video generation does not support reference images");
+      error.status = HTTP_STATUS.BAD_REQUEST;
+      throw error;
+    }
     if (!prompt?.trim()) throw new Error("prompt is required for media generation");
     // Video quota is ~1/day even on paid tiers — never loop video requests.
     const iterations = kind === "video" ? 1 : Math.max(1, n);
