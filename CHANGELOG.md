@@ -1,3 +1,16 @@
+# v0.5.377 (2026-11-07) · 1 commit
+
+## ZCode bonus start plan — visible claim + in-app Aliyun verification
+
+- The bonus banner now also shows for `zcode` / `zc` connections (previously only
+  `glm`), and the bonus endpoint scans the whole ZCode family — connected ZCode
+  accounts can now see their promotional start-plan bonuses right after connect.
+- Claiming a plan that needs Aliyun NoCaptcha (HTTP code 3007) now returns
+  `verifyRequired` with the verify URL and app deep link instead of failing
+  silently. The banner opens a verification panel with a "Buka Aplikasi ZCode"
+  deep link, a `zcode.z.ai` fallback, and a field to paste the
+  `X-Aliyun-Captcha-Verify-Param` captured in-app before retrying the claim.
+
 # v0.5.376 (2026-11-06) · 1 commit
 
 ## Live Requests Stream — model name only

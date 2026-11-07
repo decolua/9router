@@ -4,13 +4,15 @@ import { getZCodeClaimablePlans, claimZCodePlan } from "@/lib/services/zcodeClai
 
 export const dynamic = "force-dynamic";
 
+const ZCODE_FAMILY = ["glm", "zcode", "zc"];
+
 /**
  * GET /api/providers/glm/bonus
  * Lists available promotional plans for connected ZCode / GLM accounts.
  */
 export async function GET(request) {
   try {
-    const connections = await getProviderConnections({ provider: "glm" });
+    const connections = (await getProviderConnections()).filter((c) => ZCODE_FAMILY.includes(c.provider));
     if (!connections || connections.length === 0) {
       return NextResponse.json({
         ok: true,
@@ -23,7 +25,7 @@ export async function GET(request) {
     const results = [];
     for (const conn of connections) {
       // Find session JWT or token
-      const token = conn.providerSpecificData?.zcodeJwtToken || conn.apiKey || conn.accessToken;
+      const token = conn.providerSpecificData?.zcodeJwtToken || conn.providerSpecificData?.zaiBusinessToken || conn.apiKey || conn.accessToken;
       if (!token) continue;
 
       const deviceId = conn.providerSpecificData?.machineId || null;
@@ -59,7 +61,7 @@ export async function POST(request) {
     const body = await request.json().catch(() => ({}));
     const { connectionId, planId } = body;
 
-    const connections = await getProviderConnections({ provider: "glm" });
+    const connections = (await getProviderConnections()).filter((c) => ZCODE_FAMILY.includes(c.provider));
     const targetConn = connectionId
       ? connections.find((c) => String(c.id) === String(connectionId))
       : connections[0];
@@ -71,7 +73,7 @@ export async function POST(request) {
       );
     }
 
-    const token = targetConn.providerSpecificData?.zcodeJwtToken || targetConn.apiKey || targetConn.accessToken;
+    const token = targetConn.providerSpecificData?.zcodeJwtToken || targetConn.providerSpecificData?.zaiBusinessToken || targetConn.apiKey || targetConn.accessToken;
     if (!token) {
       return NextResponse.json(
         { ok: false, error: "No valid ZCode token on this connection" },
@@ -80,7 +82,22 @@ export async function POST(request) {
     }
 
     const deviceId = targetConn.providerSpecificData?.machineId || null;
-    const result = await claimZCodePlan(token, planId, deviceId);
+    const result = await claimZCodePlan(token, planId, deviceId, body?.captchaParam || "");
+
+    // Aliyun NoCaptcha / device attestation can only be completed inside the
+    // ZCode desktop app. Hand the browser a deep link so the user verifies
+    // there, then retries the claim with the captcha param the app now has.
+    if (result?.code === 3007) {
+      return NextResponse.json(
+        {
+          ...result,
+          verifyRequired: true,
+          verifyUrl: "https://zcode.z.ai",
+          appDeepLink: "zcode://",
+        },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json(result, { status: result.ok ? 200 : 400 });
   } catch (error) {

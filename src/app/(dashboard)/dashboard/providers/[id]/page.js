@@ -73,6 +73,10 @@ export default function ProviderDetailPage() {
   const [zcodeBonuses, setZcodeBonuses] = useState([]);
   const [zcodeClaiming, setZcodeClaiming] = useState(false);
   const [zcodeClaimMessage, setZcodeClaimMessage] = useState(null);
+  const [zcodeCaptchaParam, setZcodeCaptchaParam] = useState("");
+  const [zcodeVerifyRequired, setZcodeVerifyRequired] = useState(false);
+  const [zcodeVerifyUrl, setZcodeVerifyUrl] = useState("https://zcode.z.ai");
+  const [zcodeAppDeepLink, setZcodeAppDeepLink] = useState("zcode://");
   const [modelTestResults, setModelTestResults] = useState({});
   const [modelsTestError, setModelsTestError] = useState("");
   const [testingModelIds, setTestingModelIds] = useState(() => new Set());
@@ -385,7 +389,7 @@ export default function ProviderDetailPage() {
 
   // Check for claimable promotional bonuses for ZCode / GLM
   useEffect(() => {
-    if (providerId !== "glm") return;
+    if (providerId !== "glm" && providerId !== "zcode" && providerId !== "zc") return;
     fetch("/api/providers/glm/bonus")
       .then((res) => res.json())
       .then((data) => {
@@ -407,14 +411,21 @@ export default function ProviderDetailPage() {
   const handleClaimZCodeBonus = async (bonus) => {
     setZcodeClaiming(true);
     setZcodeClaimMessage(null);
+    setZcodeVerifyRequired(false);
     try {
       const res = await fetch("/api/providers/glm/bonus", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ connectionId: bonus.connectionId, planId: bonus.planId }),
+        body: JSON.stringify({
+          connectionId: bonus.connectionId,
+          planId: bonus.planId,
+          captchaParam: zcodeCaptchaParam || undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (data.ok) {
+        setZcodeVerifyRequired(false);
+        setZcodeCaptchaParam("");
         setZcodeClaimMessage({ type: "success", text: data.message || "Bonus successfully claimed!" });
         // Refresh bonuses list after 2 seconds
         setTimeout(() => {
@@ -431,6 +442,20 @@ export default function ProviderDetailPage() {
             })
             .catch(() => {});
         }, 2000);
+      } else if (data.verifyRequired) {
+        // Aliyun NoCaptcha can only be completed inside the ZCode app — store
+        // the verify links and show the verify panel. Auto-opening from an
+        // async handler gets blocked by popup blockers, so the panel button
+        // carries the real user gesture.
+        setZcodeVerifyRequired(true);
+        setZcodeVerifyUrl(data.verifyUrl || "https://zcode.z.ai");
+        setZcodeAppDeepLink(data.appDeepLink || "zcode://");
+        setZcodeClaimMessage({
+          type: "error",
+          text:
+            data.message ||
+            "Verifikasi Aliyun dibutuhkan. Buka aplikasi ZCode untuk verifikasi, salin param verifikasi, lalu Claim lagi.",
+        });
       } else {
         setZcodeClaimMessage({ type: "error", text: data.error || "Failed to claim bonus." });
       }
@@ -1746,7 +1771,7 @@ export default function ProviderDetailPage() {
       )}
 
       {/* ZCode Claimable Bonus Banner */}
-      {providerId === "glm" && (zcodeBonuses.length > 0 || zcodeClaimMessage) && (
+      {(providerId === "glm" || providerId === "zcode" || providerId === "zc") && (zcodeBonuses.length > 0 || zcodeClaimMessage) && (
         <div className="flex flex-col gap-3 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2">
@@ -1759,6 +1784,61 @@ export default function ProviderDetailPage() {
           {zcodeClaimMessage && (
             <div className={`text-xs px-3 py-2 rounded-lg ${zcodeClaimMessage.type === "success" ? "bg-success/15 text-success border border-success/30" : "bg-danger/15 text-danger border border-danger/30"}`}>
               {zcodeClaimMessage.text}
+            </div>
+          )}
+
+          {zcodeVerifyRequired && (
+            <div className="flex flex-col gap-2 rounded-lg bg-surface/60 border border-border-subtle p-3">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-amber-500">verified_user</span>
+                <span className="text-xs font-medium text-text-main">Verifikasi Aliyun (X-Aliyun-Captcha-Verify-Param)</span>
+              </div>
+              <p className="text-xs text-text-muted">
+                Selesaikan verifikasi captcha Aliyun di aplikasi ZCode, salin nilai header{" "}
+                <code className="text-amber-400">X-Aliyun-Captcha-Verify-Param</code> dari request di app/DevTools ke kolom di
+                bawah, lalu klik Claim lagi.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <a
+                  href={zcodeAppDeepLink}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-amber-500/20 border border-amber-500/40 px-3 py-2 text-xs font-medium text-amber-400 hover:bg-amber-500/30 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">open_in_new</span>
+                  Buka Aplikasi ZCode
+                </a>
+                <a
+                  href={zcodeVerifyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-surface border border-border-subtle px-3 py-2 text-xs font-medium text-text-muted hover:text-text-main hover:border-border transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[16px]">language</span>
+                  Buka zcode.z.ai
+                </a>
+              </div>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={zcodeCaptchaParam}
+                  onChange={(e) => setZcodeCaptchaParam(e.target.value)}
+                  placeholder="Tempel X-Aliyun-Captcha-Verify-Param di sini..."
+                  className="flex-1 min-w-0 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-xs text-text-main placeholder:text-text-subtle outline-none focus:border-amber-500/50"
+                />
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => {
+                    if (zcodeCaptchaParam.trim()) {
+                      // Re-run claim for the first bonus with the pasted param
+                      if (zcodeBonuses[0]) handleClaimZCodeBonus(zcodeBonuses[0]);
+                    }
+                  }}
+                  disabled={zcodeClaiming || !zcodeCaptchaParam.trim()}
+                  className="shrink-0"
+                >
+                  {zcodeClaiming ? "Claiming..." : "Claim dengan Verifikasi"}
+                </Button>
+              </div>
             </div>
           )}
 
