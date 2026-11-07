@@ -26,16 +26,16 @@ export function place(src) {
 
 const seg = (on, c) => ({ border: 0, height: 26, padding: "0 10px", borderRadius: 7, font: "inherit", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap", background: on ? "var(--segon)" : "transparent", color: on ? c || "var(--tx)" : "var(--tx2)", fontWeight: on ? 600 : 400, boxShadow: on ? "0 1px 2px rgba(0,0,0,.08)" : "none" });
 const AC = { off: ["var(--seg)", "var(--tx2)"], observe: ["var(--bluebg)", "var(--blue)"], redact: ["var(--acc2)", "var(--acc)"], block: ["var(--violetbg)", "var(--violet)"], leaked: ["var(--redbg)", "var(--red)"], ignored: ["var(--seg)", "var(--tx3)"], allowed: ["var(--seg)", "var(--tx3)"] };
-const ALABEL = { observe: "Observed", redact: "Redacted", block: "Blocked", leaked: "Leaked", ignored: "Allowed", allowed: "Allowed", off: "Off" };
+const ALABEL = { observe: "Observed", redact: "Redacted", block: "Blocked", leaked: "Couldn't redact", ignored: "Allowed", allowed: "Allowed", off: "Off" };
 export const ACTIONS = ["redact", "observe", "block", "leaked", "allowed"];
 export const placeholder = (rule, hash) => (rule === "known" ? `{{vault:#${String(hash).slice(0, 6)}}}` : `{{pii:${rule}#${String(hash).slice(0, 6)}}}`);
-const WHY = { redact: "Replaced with a placeholder before the request left the VPS.", observe: "Logged only. The request was sent unchanged.", block: "The request was rejected with HTTP 400 and a /rewind hint.", leaked: "Matched a Redact or Block rule, but sits where PII Guard cannot rewrite it, so it was sent as is.", allowed: "On the allow list. Sent unchanged in every request and every rule.", ignored: "On the allow list. Sent unchanged in every request and every rule." };
+const WHY = { redact: "Replaced with a placeholder before the request left this server.", observe: "Logged only. The request was sent unchanged.", block: "The request was stopped with HTTP 400 and never reached the model. The message tells you to /rewind.", leaked: "The rule says Redact, but the value sits where it cannot be changed, so it was sent as is. See the reason above.", allowed: "You marked this value as safe. It is never redacted or blocked.", ignored: "You marked this value as safe. It is never redacted or blocked." };
 const ACOL = { Off: "var(--tx2)", Observe: "var(--blue)", Redact: "var(--acc)", Block: "var(--violet)", Default: "var(--tx)" };
 const LEAK_TAG = {
-  "assistant/thinking": ["Signed thinking", "Inside a signed thinking block. Editing it would break the signature, so it was sent as is."],
-  key: ["JSON object key", "The value was a JSON object key. PII Guard only rewrites values."],
-  number: ["Number value", "The value was a JSON number, not a string, so it could not be replaced with a placeholder."],
-  body: ["Whole body", "The value was the whole request body, so it could not be rewritten in place."],
+  "assistant/thinking": ["In the model's reasoning", "The model repeated the value in its own signed reasoning. The provider rejects the request if that reasoning changes, so it goes back as is. The provider already had the value: it came from an earlier message. Once the turn ends, Redact deletes that reasoning from later requests."],
+  key: ["In a JSON key", "The value was a JSON object key. Only values can be replaced, so the key was sent as is."],
+  number: ["In a number", "The value was a JSON number. Replacing it with text would break the request, so it was sent as is."],
+  body: ["Whole body", "The request body was one bare string, which cannot be edited in place."],
 };
 const SAMPLES = [["API key", "Deploy with key sk-test-FAKE9x2kQ7mZ4pL1 and ping ops@example.com if it fails."], ["Card + email", "Card 4111 1111 1111 1111 is on file for priya.s@example.com."], ["PAN + phone", "My mobile number is 9876543210 and PAN is ABCPE1234F."]];
 const RANGE_SHORT = { Today: "today", "24h": "24 h", "7D": "7 days", "30D": "30 days", "60D": "60 days", All: "90 days" };
@@ -90,7 +90,11 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   const ix = indexOf(data, nameOf, gLabelOf, (v) => ruleGroup[v.rule] || "other");
 
   // Leaks: values that leaked at least once in the range.
-  const leakVals = all.filter((v) => v.actions.includes("leaked") && !v.ignored);
+  // Dismissed: hidden until the value shows up somewhere new.
+  const dismissed = config.dismissed || {};
+  const isOpen = (v) => !(dismissed[v.hash] || []).length || (v.leakedWhere || []).some((w) => !dismissed[v.hash].includes(w));
+  const leakVals = all.filter((v) => v.actions.includes("leaked") && !v.ignored && isOpen(v));
+  const dismissBody = (list) => ({ dismiss: Object.fromEntries(list.map((v) => [v.hash, v.leakedWhere?.length ? v.leakedWhere : ["-"]])) });
   const openN = leakVals.length;
   const leakPages = Math.max(1, Math.ceil(openN / LEAK_PAGE)), leakPage = Math.min(ui.leakPage, leakPages - 1);
   // Rule action buttons ask first; the pending change shows inline under the row. One rule, every value of it.
@@ -98,26 +102,32 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     on: () => effOf(rule) !== a && set({ pending: { key, rule, action: a } }) }));
   const pend = ui.pending;
   const pending = (key) => pend?.key === key ? {
-    text: `Set rule ${ruleLabel[pend.rule] || pend.rule} to ${cap(pend.action)} for all values?${pend.action === "block" ? " The next request with a new value fails with HTTP 400." : ""}`,
+    text: `${cap(pend.action)} every ${ruleLabel[pend.rule] || pend.rule} value from now on?${pend.action === "block" ? " The next request with a new value fails with HTTP 400." : pend.action === "observe" ? " Values will be logged but sent unchanged." : ""}`,
     ok: () => { set({ pending: null }); act({ rules: { [pend.rule]: pend.action } }, `${ruleLabel[pend.rule] || pend.rule} set to ${cap(pend.action)}.`, { rules: { [pend.rule]: overrides[pend.rule] || "default" } }); },
     cancel: () => set({ pending: null }),
   } : null;
   // Allow always confirms and offers undo. `v` needs hash, preview and a name.
   const allowHash = (hash, name, preview, on) => () => {
-    if (on && !window.confirm(`Allow ${name} ${preview || "#" + hash}?\n\nThis value will be sent unchanged in every request and every rule. You can restore it under Allowed values.`)) return;
+    if (on && !window.confirm(`Mark ${name} ${preview || "#" + hash} as safe?\n\nThis one value will never be redacted or blocked again, under any rule. Undo it under Allowed values.`)) return;
     act({ ignore: hash, on }, on ? `Allowed ${name} #${hash}.` : `Restored ${name} #${hash}.`, { ignore: hash, on: !on });
   };
   const allow = (v, on = true) => allowHash(v.hash, nameOf(v), v.preview, on);
   const leaks = (tab === "overview" ? leakVals.slice(leakPage * LEAK_PAGE, (leakPage + 1) * LEAK_PAGE) : []).map((v) => {
-    const [tag, why] = LEAK_TAG[v.leakedWhere?.[0]] || ["Not rewritten", "The value matched a Redact or Block rule but sits where PII Guard cannot rewrite it."];
+    const [tag, why] = LEAK_TAG[v.leakedWhere?.[0]] || ["Could not be changed", "The rule says Redact, but the value sat where it cannot be changed, so it was sent as is."];
     const key = `${v.hash}:${v.rule}`;
     return {
-      rule: nameOf(v), group: gLabelOf(v), hash: v.hash, preview: v.preview || "", tag, why, loc: place(v.sources[0]), time: age(v.lastSeen),
+      rule: nameOf(v), group: gLabelOf(v), hash: v.hash, preview: v.preview || "", tag, why, tip: why, loc: place(v.sources[0]), time: age(v.lastSeen),
       key, client: ix.get(v).client, model: v.model || "—",
       signed: v.leakedWhere?.includes("assistant/thinking"),
+      ruleName: nameOf(v),
       view: () => set({ detail: { kind: "value", key } }), allow: allow(v), ruleBtns: ruleBtns(v.rule, key), pending: pending(key),
+      dismiss: () => act(dismissBody([v]), `Dismissed ${nameOf(v)} ${v.preview || "#" + v.hash}.`, { undismiss: [v.hash] }),
     };
   });
+  // Each reason is explained once, on its first row; later rows keep it as a tooltip on the tag.
+  const told = new Set();
+  for (const l of leaks) { if (told.has(l.tag)) l.why = ""; else told.add(l.tag); }
+  const dismissAll = openN ? () => { if (window.confirm(`Dismiss all ${openN}? A value comes back only if it shows up somewhere new.`)) act(dismissBody(leakVals), `Dismissed ${openN}.`, { undismiss: leakVals.map((v) => v.hash) }); } : null;
 
   const redactRules = (data.rules || []).filter((r) => effOf(r.id) === "redact").length;
   const onRules = (data.rules || []).filter((r) => effOf(r.id) !== "off").length;
@@ -125,15 +135,15 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   const status = !h.module ? { text: "Off · PII_GUARD_MODULE is not set · requests pass unscanned", c: "var(--tx2)", bg: "var(--seg)" }
     : !okScanner ? { text: "Not protecting · scanner not loaded · requests pass unscanned", c: "var(--red)", bg: "var(--redbg)" }
     : mode === "off" && !onRules ? { text: "Off · requests are not scanned", c: "var(--tx2)", bg: "var(--seg)" }
-    : openN ? { text: `Protecting · ${redactRules} rules redact · ${openN} ${leakWord} leaked in ${rangeShort}`, c: "var(--red)", bg: "var(--redbg)" }
-    : { text: `Protecting · ${redactRules} rules redact · no leaks in ${rangeShort}`, c: "var(--green)", bg: "var(--greenbg)" };
+    : openN ? { text: `Protecting · ${redactRules} rules redact · ${openN} ${leakWord} to review in ${rangeShort}`, c: "var(--amber)", bg: "var(--amberbg)" }
+    : { text: `Protecting · ${redactRules} rules redact · nothing to review in ${rangeShort}`, c: "var(--green)", bg: "var(--greenbg)" };
 
   // Health problems, also counted on the Health tab dot.
   const ocr = h.ocr || {}, so = sm.ocr || {}, un = h.unscanned || {};
   const problems = [];
   if (sm.truncated) problems.push({ icon: "warning", title: "Range is cut short", desc: "The event log is longer than the read cap, so the oldest events in this range are not counted.", cta: null, bg: "var(--amberbg)", c: "var(--amber)" });
   if (!h.module) problems.push({ icon: "power_off", title: "PII_GUARD_MODULE is not set", desc: "Set it in the service drop-in and restart 9Router.", cta: null, bg: "var(--seg)", c: "var(--tx2)" });
-  else if (!okScanner) problems.push({ icon: "error", title: "Scanner not loaded", desc: "Requests pass through (fail open) and are not scanned. Check the Console Log.", cta: null, bg: "var(--redbg)", c: "var(--red)" });
+  else if (!okScanner) problems.push({ icon: "error", title: "Scanner not loaded", desc: "Requests still go through, but nothing is scanned. Check the Console Log.", cta: null, bg: "var(--redbg)", c: "var(--red)" });
   if (h.errors > 0) problems.push({ icon: "error", title: `${fmt(h.errors)} scanner errors`, desc: `Last: ${h.lastError || "unknown"}. Requests fail open and are never blocked by an error.`, cta: null, bg: "var(--redbg)", c: "var(--red)" });
   if ((so.status?.partial || 0) > 0) problems.push({ icon: "image_not_supported", title: `${fmt(so.status.partial)} images only partly read`, desc: "Low-resolution screenshots. Enhanced quality reads more of them, at about 3× the time.", cta: ocr.quality === "basic" ? "Try Enhanced" : null, onCta: () => act({ ocr: { quality: "enhanced" } }), bg: "var(--amberbg)", c: "var(--amber)" });
   if (so.reasons?.queue_full) problems.push({ icon: "warning", title: `OCR queue overflowed ${fmt(so.reasons.queue_full)} times`, desc: "Those images were sent without being scanned; they count in “Images not scanned”. Cached and repeated images no longer use queue space.", cta: null, bg: "var(--amberbg)", c: "var(--amber)" });
@@ -158,7 +168,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   const ah = sm.actionHits || {};
   const allReq = sm.requests || 0;
   const goFind = (gid, action) => () => set({ tab: "findings", view: "value", fGroup: gid || "", fAction: action || "", page: 0, sel: {} });
-  const cards = [["Found", null, "var(--tx)"], ["Redacted", "redact", "var(--acc)"], ["Observed", "observe", "var(--blue)"], ["Blocked", "block", "var(--violet)"], ["Leaked", "leaked", "var(--red)"], ["Allowed", "allowed", "var(--tx3)"]]
+  const cards = [["Found", null, "var(--tx)"], ["Redacted", "redact", "var(--acc)"], ["Observed", "observe", "var(--blue)"], ["Blocked", "block", "var(--violet)"], ["Couldn't redact", "leaked", "var(--red)"], ["Allowed", "allowed", "var(--tx3)"]]
     .map(([label, a, c]) => {
       const values = a ? ba.values[a] || 0 : sm.unique24h || 0;
       const req = a ? ba.requests[a === "allowed" ? "ignored" : a] || 0 : allReq;
@@ -195,7 +205,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   const byClient = cl.map(([name, o]) => ({ name, sub: Object.entries(o.models).sort((a, b) => b[1] - a[1])[0]?.[0] || "—", values: fmt(o.values), w: (o.values / (cl[0]?.[1].values || 1)) * 100 + "%", leaks: String(o.leaks), lc: o.leaks ? "var(--red)" : "var(--tx3)" }));
 
   // Rules
-  const confirmBlock = (a) => a !== "Block" || window.confirm("Block rejects requests with HTTP 400 the first time a new value appears. Continue?");
+  const confirmBlock = (a) => a !== "Block" || window.confirm("Block stops a request with HTTP 400 the first time a new value appears. After that, the same value is redacted. Continue?");
   const globalBtns = ["Off", "Observe", "Redact", "Block"].map((a) => ({ label: a, style: seg(mode === a.toLowerCase(), ACOL[a]), on: () => confirmBlock(a) && act({ mode: a.toLowerCase() }) }));
   const ocrOn = !!ocr.available;
   const ocrCfg = config.ocr || {};
@@ -240,7 +250,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
       sel: !!ui.sel[v.hash], bg: ui.sel[v.hash] ? "var(--acc2)" : "transparent",
       toggle: () => set((u) => ({ sel: { ...u.sel, [v.hash]: !u.sel[v.hash] } })),
       view: () => set({ detail: { kind: "value", key } }), menu: ui.menu === key, openMenu: () => set((u) => ({ menu: u.menu === key ? null : key })),
-      allowLabel: v.ignored ? "Restore value" : "Allow value", allow: allow(v, !v.ignored), ruleBtns: ruleBtns(v.rule, key), pending: pending(key),
+      allowLabel: v.ignored ? "Scan this value again" : "Mark value as safe", allow: allow(v, !v.ignored), ruleBtns: ruleBtns(v.rule, key), pending: pending(key),
     };
   });
   const hits = (tab === "findings" && ui.view === "hit" ? events : []).map((e) => ({
@@ -262,15 +272,18 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     const image = hit?.image || (!hit && v?.image) || null;
     detail = {
       title: hit ? hit.rule : v ? nameOf(v) : rule, group: groupLabel[ruleGroup[rule]] || "Other", preview: hit?.preview || v?.preview || "—",
-      became: a === "redact" ? placeholder(rule, hash) : a === "block" ? "Request rejected (HTTP 400)" : "Not replaced · sent as is",
+      became: a === "redact" ? placeholder(rule, hash) : a === "block" ? "Request stopped (HTTP 400)" : "Sent as is",
       ...badge(a), why: image && a === "observe" ? "Text in images is observe only. The image was sent unchanged." : WHY[a] || WHY.observe, rule: ruleLabel[rule] || rule, where: hit ? hit.loc : v ? v.sources.map(place).join(", ") : "—",
       context: hit?.context || v?.context || "", noContext: !(hit?.context || v?.context),
       client: hit ? hit.client : v ? ix.get(v).client : "—", model: (hit ? hit.model : v?.model) || "—",
-      request: hit?.requestId || v?.requestId || "", hash,
+      request: hit?.requestId || v?.requestId || "", session: hit?.sessionId || v?.sessionId || "", hash,
+      // Prompt lookup: newest stored messages holding this value (each message is stored once per session).
+      promptQuery: `hash=${hash}`,
+      openSession: (hit?.sessionId || v?.sessionId) ? () => set({ tab: "findings", view: "prompt", q: "", session: hit?.sessionId || v?.sessionId, detail: null }) : null,
       first: v ? stamp(v.firstSeen) : "—", last: v ? stamp(v.lastSeen) : hit ? stamp(hit.ts) : "—", reqs: v ? fmt(v.turns) : "—",
       image: image ? `/api/pii-guard/image?id=${image}` : null, imageLabel: image ? `Image #${(hit?.imageIndex ?? v?.imageIndex ?? 0) + 1}` : "",
       ruleBtns: rule ? ruleBtns(rule, "detail") : [], pending: pending("detail"),
-      allowLabel: a === "allowed" ? "Restore value" : "Allow value",
+      allowLabel: a === "allowed" ? "Scan this value again" : "Mark value as safe",
       allow: v ? allow(v, a !== "allowed") : allowHash(hash, ruleLabel[rule] || rule, hit?.preview, a !== "allowed"),
       close: () => set({ detail: null, pending: null }),
     };
@@ -313,18 +326,18 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     status, health, tabs, rangeShort, okScanner,
     s: { leaks: tab === "overview", numbers: tab === "overview", bygroup: tab === "overview", where: tab === "overview", wording: tab === "rules", mode: tab === "rules", groups: tab === "rules", values: tab === "findings", test: tab === "test", health: tab === "health", ocr: tab === "health" },
     goLeaks: () => set({ tab: "overview" }), goHealth: () => set({ tab: "health" }),
-    leaks, noLeaks: leaks.length === 0, leakCount: openN ? `${openN} open` : "", leakBorder: openN ? "var(--red)" : "var(--line)", leakIcon: openN ? "gpp_bad" : "gpp_good",
+    leaks, noLeaks: leaks.length === 0, leakCount: openN ? `${openN} to review` : "", leakBorder: openN ? "var(--amber)" : "var(--line)", leakIcon: openN ? "gpp_maybe" : "gpp_good", dismissAll,
     n, cards, sumNote, byGroup, trendTitle: hourly ? "FINDINGS PER HOUR (IST)" : "FINDINGS PER DAY (IST)", fbars, fgap: trend.length > 40 ? "1px" : "3px",
     locs, toggleLoc: () => set((u) => ({ allLoc: !u.allLoc })), locBtn: ui.allLoc ? "Show top 5" : `Show all ${locAll.length}`, byClient,
     redactRules, globalBtns, piiEx: "{{pii:email#4b7538}}", ocrRows, groups,
-    viewBtns: [["value", "Group by value"], ["hit", "Every hit"]].map(([k, label]) => ({ label, style: seg(ui.view === k), on: () => set({ view: k, sel: {}, page: 0 }) })),
-    isValues: ui.view === "value", isEvents: ui.view === "hit",
-    shownLabel: ui.view === "value" ? (rows.length ? `${fmt(page * PAGE + 1)}–${fmt(page * PAGE + shown.length)} of ${fmt(rows.length)} values` : `0 of ${fmt(all.length)} values`) : `${fmt(hits.length)} hits on this page`,
+    viewBtns: [["value", "Group by value"], ["hit", "Every hit"], ["prompt", "Prompts"]].map(([k, label]) => ({ label, style: seg(ui.view === k), on: () => set({ view: k, sel: {}, page: 0 }) })),
+    isValues: ui.view === "value", isEvents: ui.view === "hit", isPrompts: ui.view === "prompt",
+    shownLabel: ui.view === "value" ? (rows.length ? `${fmt(page * PAGE + 1)}–${fmt(page * PAGE + shown.length)} of ${fmt(rows.length)} values` : `0 of ${fmt(all.length)} values`) : ui.view === "prompt" ? "Partially masked · kept 14 days" : `${fmt(hits.length)} hits on this page`,
     groupOpts: (data.groups || []).map((g) => [g.id, g.label]), clientOpts: opts((v) => ix.get(v).client), modelOpts: opts((v) => v.model),
     hasSel: selKeys.length > 0, selCount: selKeys.length,
     allSel: (ui.view === "value" ? values : hits).length > 0 && (ui.view === "value" ? values : hits).every((v) => v.sel),
     toggleAll: () => { const list = ui.view === "value" ? values.map((x) => x.hash) : hits.map((x) => x.fullHash); set({ sel: list.every((h) => ui.sel[h]) ? {} : Object.fromEntries(list.map((h) => [h, true])) }); },
-    bulkAllow: () => { if (!window.confirm(`Allow ${selKeys.length} ${selKeys.length === 1 ? "value" : "values"}?\n\nThey will be sent unchanged in every request and every rule. You can restore them under Allowed values.`)) return; act({ ignoreMany: selKeys, on: true }, `Allowed ${selKeys.length} values.`, { ignoreMany: selKeys, on: false }); set({ sel: {} }); },
+    bulkAllow: () => { if (!window.confirm(`Mark ${selKeys.length} ${selKeys.length === 1 ? "value" : "values"} as safe?\n\nThey will never be redacted or blocked again, under any rule. Undo it under Allowed values.`)) return; act({ ignoreMany: selKeys, on: true }, `Allowed ${selKeys.length} values.`, { ignoreMany: selKeys, on: false }); set({ sel: {} }); },
     values, noValues: values.length === 0, hits, noHits: hits.length === 0,
     prevValues: page > 0 ? () => set({ page: page - 1, sel: {} }) : null, nextValues: page < pages - 1 ? () => set({ page: page + 1, sel: {} }) : null,
     prevLeaks: leakPage > 0 ? () => set({ leakPage: leakPage - 1 }) : null, nextLeaks: leakPage < leakPages - 1 ? () => set({ leakPage: leakPage + 1 }) : null,

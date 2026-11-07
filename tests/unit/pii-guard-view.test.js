@@ -50,3 +50,19 @@ describe("pii-guard view", () => {
     expect(view(data).values.map((x) => x.hash)).not.toContain("c");
   });
 });
+
+describe("couldn't-redact review", () => {
+  it("hides a dismissed value until it shows up somewhere new, and wording never says leaked", async () => {
+    const { buildView } = await import("../../src/app/(dashboard)/dashboard/pii-guard/view.js");
+    const g = (where) => ({ hash: "aaaaaaaaaaaa", rule: "pan", sources: ["assistant/thinking"], actions: ["leaked"], action: "redact", leakedWhere: where, firstSeen: new Date().toISOString(), lastSeen: new Date().toISOString(), turns: 1, ignored: false });
+    const make = (where, dismissed) => buildView({ data: { config: { mode: "observe", rules: { pan: "redact" }, dismissed }, health: { module: true, loaded: true }, rules: [{ id: "pan", label: "PAN", group: "gov_id" }], groups: [{ id: "gov_id", label: "Government IDs" }], summary: { groups: [g(where)], byAction: {} } },
+      ui: { tab: "overview", view: "value", q: "", sel: {}, page: 0, leakPage: 0 }, set: () => {}, act: () => {}, range: { preset: "24h" }, test: {}, events: [], samples: [] });
+    const open = make(["assistant/thinking"], {});
+    expect(open.leaks).toHaveLength(1);
+    expect(open.leaks[0].tag).toBe("In the model's reasoning");
+    expect(open.status.text).toMatch(/1 value to review/);
+    expect(JSON.stringify(open.cards)).not.toMatch(/leak/i);
+    expect(make(["assistant/thinking"], { aaaaaaaaaaaa: ["assistant/thinking"] }).leaks).toHaveLength(0);
+    expect(make(["assistant/thinking", "key"], { aaaaaaaaaaaa: ["assistant/thinking"] }).leaks).toHaveLength(1);
+  });
+});

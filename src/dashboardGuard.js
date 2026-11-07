@@ -50,6 +50,8 @@ const ALWAYS_PROTECTED = [
   "/api/oauth/minimax-code-global/lease",
   // Raw captured images can hold PII.
   "/api/pii-guard/image",
+  // Masked prompts still hold values the rules miss.
+  "/api/pii-guard/prompts",
 ];
 
 // Require auth, but allow through if requireLogin is disabled

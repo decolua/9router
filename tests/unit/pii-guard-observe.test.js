@@ -19,6 +19,7 @@ async function writeKnown(name, val) {
   await writeFile(known, JSON.stringify({ version: 1, salt: "abcdef0123456789", items: [{ name, value: val }] }));
 }
 beforeEach(async () => {
+  process.env.PII_GUARD_PROMPTS = "off";
   vi.resetModules();
   dir = await mkdtemp(join(tmpdir(), "pii-observe-"));
   events = join(dir, "events", "events.jsonl"); known = join(dir, "known.json");

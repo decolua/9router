@@ -1,10 +1,12 @@
 import { mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { appendFile, chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { performance } from "node:perf_hooks";
+import { clientOf } from "../spendClient.js";
+import { capture as capturePrompts, collect as collectPrompts, stats as promptStats } from "./prompts.js";
 
 const since = new Date().toISOString();
 let loading, library, detector, knownMtime, lastCheck = -Infinity, warnedAt = -Infinity;
@@ -387,6 +389,8 @@ export async function observeRequest(body, meta = {}, config = {}) {
     const decide = f => ignore.has(f.hash) ? "ignored" : act(f.rule) === "block" ? (seen.has(f.hash) && !f.readonly ? "redact" : "block") : act(f.rule);
 
     const requestId = randomUUID();
+    // Session ids come from client headers; store a keyed hash so a value in one never reaches disk.
+    const sessionKey = typeof meta.sessionId === "string" && meta.sessionId ? createHash("sha256").update(meta.sessionId).digest("hex").slice(0, 24) : null;
     const ua0 = (meta.userAgent || "").split(" ")[0];
     const ua = detector.scan(ua0).length ? "[redacted]" : ua0;
     let model = body?.model ?? meta.model;
@@ -418,6 +422,8 @@ export async function observeRequest(body, meta = {}, config = {}) {
       }
     } : undefined;
 
+    // Prompt store: references to the original strings, taken before redaction rewrites the body.
+    const promptNodes = process.env.PII_GUARD_PROMPTS !== "off" ? collectPrompts(body) : [];
     const result = library.scanBody(body, detector, onImage, hasRedact ? (text, fs) => replace(text, fs, decide, redacted) : undefined);
     const findings = result.findings;
     // Readonly thinking outside the active tool loop becomes removable, so it is treated like editable text.
@@ -427,6 +433,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     for (const f of findings) if (f.readonly) { const at = thinkingBlock(body, f); if (at) { delete f.readonly; drop.set(f, at); } }
     // meta.model is a pre-scan copy; log the body value, which redaction may have rewritten, and drop it if it held a finding.
     model = findings.some(f => /^\.?model$/.test(f.path)) ? "[redacted]" : body?.model ?? meta.model;
+    capturePrompts({ nodes: promptNodes, bodyFindings: findings.map(f => ({ path: f.path, start: f.start, end: f.end, hash: f.hash, rule: f.rule, kind: f.kind })), requestId, sessionId: sessionKey, model, client: clientOf(ua0) }, library, detector);
     for (const f of findings) foundActions.set(f, decide(f));
     const strip = new Map();
     for (const [f, at] of drop) if (foundActions.get(f) === "redact") { strip.set(`${at.i}:${at.j}`, at); redacted[label(f)] = (redacted[label(f)] || 0) + 1; }
@@ -453,7 +460,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
     }
     const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
     withFindings++; totalWithFindings++;
-    const event = { ts: new Date().toISOString(), requestId, endpoint: meta.endpoint, model: model, ua, chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh, hits, ...(hitRows.size > hits.length && { hitsDropped: hitRows.size - hits.length }), ...(blocked.length && { blocked }), ...(Object.keys(redacted).length && { redacted }), ...(Object.keys(leaked).length && { leaked }), ignored: findings.filter(f => foundActions.get(f) === "ignored").length };
+    const event = { ts: new Date().toISOString(), requestId, ...(sessionKey && { sessionId: sessionKey }), endpoint: meta.endpoint, model: model, ua, chars: result.chars, images: result.images, imageBytes: result.imageBytes, unscanned: result.unscanned, scanMs, counts, new: fresh, hits, ...(hitRows.size > hits.length && { hitsDropped: hitRows.size - hits.length }), ...(blocked.length && { blocked }), ...(Object.keys(redacted).length && { redacted }), ...(Object.keys(leaked).length && { leaked }), ignored: findings.filter(f => foundActions.get(f) === "ignored").length };
     markSeen(newHashes);
     void append(event).catch(() => failure("write"));
     const summary = Object.entries(counts).map(([k, n]) => `${k}=${n}`).join(", ");
@@ -511,6 +518,6 @@ export function health(config = {}) {
   const sorted = healthSamples.slice().sort((a, b) => a - b);
   const normalized = ocrConfig(config);
   const ocr = { concurrency: OCR_CONCURRENCY, queueMax: 32, available: ocrAvailable(), enabled: ocrEffective(config), mode: normalized.quality, quality: normalized.quality, capture: process.env.PII_GUARD_CAPTURE_IMAGES === "1", testable: ocrTestable() };
-  return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr };
+  return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr, prompts: { ...promptStats, enabled: process.env.PII_GUARD_PROMPTS !== "off" } };
 }
 export function eventsFile() { return process.env.PII_GUARD_EVENTS || join(homedir(), ".9router/pii-guard/events.jsonl"); }

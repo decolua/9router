@@ -53,8 +53,10 @@ export async function handleChat(request, clientRawRequest = null) {
       headers: Object.fromEntries(request.headers.entries())
     };
   }
+  // Resolved before the scan so PII Guard can link stored prompts to the conversation.
+  const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
   if (process.env.PII_GUARD_MODULE) {
-    const guard = await observeRequest(body, { endpoint: clientRawRequest.endpoint, userAgent: clientRawRequest.headers?.["user-agent"], model: body?.model }, (await getSettings()).piiGuard);
+    const guard = await observeRequest(body, { endpoint: clientRawRequest.endpoint, userAgent: clientRawRequest.headers?.["user-agent"], model: body?.model, sessionId: session?.random ? null : session?.sessionId }, (await getSettings()).piiGuard);
     if (guard?.blocked) return errorResponse(HTTP_STATUS.BAD_REQUEST, blockMessage(guard.blocked, true, guard.stuck));
   }
   // Claude Code marks a 1M-context request as `<model>[1m]`; the marker matches
@@ -63,7 +65,6 @@ export async function handleChat(request, clientRawRequest = null) {
   const { model: modelStr, contextMarker } = stripModelContextMarker(body.model);
   if (contextMarker) body.model = modelStr;
 
-  const session = resolveSessionIdentity({ headers: clientRawRequest?.headers, body });
   const sessionId = session?.sessionId || null;
   clientRawRequest.session = sessionId;
 

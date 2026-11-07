@@ -100,7 +100,7 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [],
       if (action === "block") blocked.add(hit.hash);
       if (turnKey) for (const k of [hit.rule, "all"]) ((ruleTurns[k] ||= Object.create(null))[action] ||= new Set()).add(turnKey);
       if (typeof hit.preview === "string") { group.preview = hit.preview; if (typeof hit.context === "string") group.context = hit.context; }
-      if (event.requestId && ts >= Date.parse(group.lastSeen)) group.requestId = event.requestId;
+      if (event.requestId && ts >= Date.parse(group.lastSeen)) { group.requestId = event.requestId; if (typeof event.sessionId === "string") group.sessionId = event.sessionId.slice(0, 200); }
       if (event.type === "ocr" && typeof event.sha256Prefix === "string" && ts >= Date.parse(group.lastSeen)) { group.image = event.sha256Prefix; group.imageIndex = event.imageIndex; }
     }
   }

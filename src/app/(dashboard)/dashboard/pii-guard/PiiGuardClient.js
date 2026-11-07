@@ -40,7 +40,7 @@ export default function PiiGuardClient() {
   const [samples, setSamples] = useState([]);
   const [toastState, setToast] = useState(null);
   const [test, setTest] = useState({ result: null, image: null, error: "", busy: false });
-  const [ui, setUi] = useState({ tab: "overview", view: "value", openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", tests: false, sel: {}, page: 0, leakPage: 0, detail: null, pending: null, menu: null, showAllowed: false,
+  const [ui, setUi] = useState({ tab: "overview", view: "value", openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", tests: false, sel: {}, page: 0, leakPage: 0, detail: null, pending: null, menu: null, showAllowed: false, session: "",
     testKind: "text", testText: "My mobile number is 9876543210 and PAN is ABCPE1234F.", testMode: "current", testWhere: "user", imgSel: 0, upload: null });
   const set = useCallback((p) => setUi((u) => ({ ...u, ...(typeof p === "function" ? p(u) : p) })), []);
   const [theme, setTheme] = useState("light");
@@ -88,7 +88,7 @@ export default function PiiGuardClient() {
     const rows = [];
     for (const e of events) (e.hits || []).forEach((h, i) => rows.push({ id: `${e.ts}:${e.requestId || ""}:${h.hash}:${h.rule}:${i}`, ts: e.ts, t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), fullHash: h.hash, preview: h.preview || "", context: h.context || "",
       loc: e.type === "ocr" ? `${place(String(h.source || "").replace(/\/ocr$/, ""))} · image #${(e.imageIndex ?? 0) + 1}` : place(h.source), a: h.action === "ignored" ? "allowed" : h.action || "observe", model: e.model || "—", client: e.client || "—",
-      test: e.type === "test" || e.test === true, requestId: e.requestId || "", image: e.type === "ocr" ? e.sha256Prefix || null : null, imageIndex: e.imageIndex, req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" }));
+      test: e.type === "test" || e.test === true, requestId: e.requestId || "", sessionId: e.sessionId || "", image: e.type === "ocr" ? e.sha256Prefix || null : null, imageIndex: e.imageIndex, req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" }));
     return { rows, next };
   }, [range, evFilter]);
   // Range or filter change: back to the newest page.
@@ -190,8 +190,8 @@ export default function PiiGuardClient() {
   const S = v?.s || {};
   const s = { header: true, leaks: S.leaks, numbers: S.numbers, bygroup: S.bygroup, where: S.where, wording: S.wording, mode: S.mode, groups: S.groups, values: S.values, test: S.test, health: S.health, ocr: S.ocr && v?.okScanner };
   const empty = {};
-  const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, n = empty, cards = [], sumNote, byGroup = [], trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
-    redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], viewBtns = [], isValues, isEvents, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
+  const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, dismissAll, n = empty, cards = [], sumNote, byGroup = [], trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
+    redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], viewBtns = [], isValues, isEvents, isPrompts, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
     bulkAllow, values = [], noValues, hits = [], noHits, allowedCount = 0, showAllowed, toggleAllowed, allowed = [], detail, prevValues, nextValues, prevLeaks, nextLeaks, leakPageLabel, samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
     noHitsText, testVerdict = empty, testOut, thumbs = [], hasUpload, hasSample, imgBg, imgName, sampleName, sampleBg, problems = [], metrics = [], ocrStats = [], healthNote, ocrNote, imgGroups = [], health = empty } = v || {};
   // A filter change clears the selection, so bulk actions never hit hidden rows.
@@ -238,21 +238,22 @@ export default function PiiGuardClient() {
 
       {(s.leaks) && (<>
         <div style={{ background: "var(--card)", border: `1px solid ${leakBorder}`, borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: status.c }}>{leakIcon}</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Leaks</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Matched a Redact or Block rule but could not be rewritten</span></div><span style={{ fontSize: "12px", color: "var(--tx3)" }}>{leakCount}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: status.c }}>{leakIcon}</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Couldn&apos;t redact</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>The rule says Redact, but these values sat where they cannot be changed, so they were sent as is</span></div><span style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px", color: "var(--tx3)" }}>{leakCount}{dismissAll && <button onClick={dismissAll} style={btn}>Dismiss all</button>}</span></div>
           {(leaks).map((l) => (<Fragment key={l.key}>
             <div style={{ borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: "6px", padding: "10px 0" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "8px 16px", alignItems: "center" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}><span style={{ display: "flex", gap: "8px", alignItems: "baseline", minWidth: "0" }}><span style={{ fontWeight: "600" }}>{l.rule}</span>{l.preview && <span style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.preview}</span>}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{l.group} · <span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span> · {l.time}</span></div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}><span title={l.why} style={badgeSt("var(--redbg)", "var(--red)")}>{l.tag}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.loc}</span></div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}><span title={l.tip} style={badgeSt("var(--redbg)", "var(--red)")}>{l.tag}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.loc}</span></div>
                 <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap", gridColumn: "span 2" }}>
-                  <button onClick={l.view} style={btn}>View</button>
-                  <button onClick={l.allow} style={btn}>Allow</button>
-                  <span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>Rule action</span>
+                  <button onClick={l.view} title="Open details and the stored prompt" style={btn}>View</button>
+                  <button onClick={l.dismiss} title="Hide this row. It comes back if the value shows up somewhere new." style={btn}>Dismiss</button>
+                  <button onClick={l.allow} title="This one value is never redacted or blocked again" style={btn}>Mark as safe</button>
+                  <span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>Every {l.ruleName}:</span>
                   <div style={segWrap}>{l.ruleBtns.map((b) => <button key={b.label} onClick={b.on} style={b.style}>{b.label}</button>)}</div>
                 </div>
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 6px", fontSize: "11.5px", color: "var(--tx3)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "14px" }}>person</span><span>{l.client}</span><span>·</span><span style={{ fontFamily: "var(--mono)" }}>{l.model}</span></div>
-              {(l.signed) && <div style={{ fontSize: "11.5px", color: "var(--tx2)", display: "flex", gap: "6px", alignItems: "flex-start" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px", color: "var(--amber)" }}>info</span>Signed thinking can’t be rewritten. Redact drops it from older turns; Block stops the turn with a /rewind hint.</div>}
+              {(l.why) && <div style={{ fontSize: "11.5px", color: "var(--tx2)", display: "flex", gap: "6px", alignItems: "flex-start" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px", color: "var(--amber)" }}>info</span>{l.why}</div>}
               {(l.pending) && <Confirm p={l.pending} />}
             </div>
           </Fragment>))}
@@ -262,7 +263,7 @@ export default function PiiGuardClient() {
             <button onClick={nextLeaks || undefined} disabled={!nextLeaks} style={moreBtn}>Next</button>
           </div>)}
           {(noLeaks) && (<>
-            <div style={{ borderTop: "1px solid var(--line)", padding: "26px 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", textAlign: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "30px", color: "var(--green)" }}>verified</span><span style={{ fontWeight: "600" }}>No leaks in this range</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Every value with a Redact or Block rule was handled before sending.</span></div>
+            <div style={{ borderTop: "1px solid var(--line)", padding: "26px 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", textAlign: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "30px", color: "var(--green)" }}>verified</span><span style={{ fontWeight: "600" }}>Nothing to review in this range</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Every value with a Redact or Block rule was replaced or stopped before sending.</span></div>
           </>)}
           {(toast) && (<><div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "6px", padding: "8px 12px", borderRadius: "8px", background: "var(--tx)", color: "var(--bg)", fontSize: "12px" }}><span>{toast}</span><button onClick={undo} style={{ border: "0", background: "transparent", color: "var(--acc)", font: "inherit", fontWeight: "600", cursor: "pointer" }}>Undo</button></div></>)}
         </div>
@@ -278,12 +279,12 @@ export default function PiiGuardClient() {
                 <span style={{ fontSize: "11px", color: "var(--tx3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.sub}</span>
               </button>))}
             </div>
-            <span style={{ fontSize: "11px", color: "var(--tx3)", fontVariantNumeric: "tabular-nums" }}>Counts are unique values. Found = Redacted + Observed + Blocked + Leaked + Allowed ({sumNote}). Second line: requests (distinct turns). Hover a card for hits.</span>
+            <span style={{ fontSize: "11px", color: "var(--tx3)", fontVariantNumeric: "tabular-nums" }}>Counts are unique values. Found = Redacted + Observed + Blocked + Couldn&apos;t redact + Allowed ({sumNote}). Second line: requests (distinct turns). Hover a card for hits.</span>
           </div>
           <div style={{ flex: "1", minWidth: "280px", display: "flex", flexDirection: "column", gap: "8px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
               <span style={{ fontSize: "11.5px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx2)" }}>{trendTitle}</span>
-              <div style={{ display: "flex", gap: "14px", alignItems: "center", fontSize: "11.5px", color: "var(--tx2)" }}><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "9px", height: "9px", borderRadius: "2px", background: "var(--acc)", opacity: ".75" }}></span>Findings</span><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "var(--red)" }}></span>Leak</span>
+              <div style={{ display: "flex", gap: "14px", alignItems: "center", fontSize: "11.5px", color: "var(--tx2)" }}><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "9px", height: "9px", borderRadius: "2px", background: "var(--acc)", opacity: ".75" }}></span>Findings</span><span style={{ display: "flex", gap: "5px", alignItems: "center" }}><span style={{ width: "9px", height: "9px", borderRadius: "50%", background: "var(--red)" }}></span>Couldn&apos;t redact</span>
                 <button onClick={goHealth} style={{ display: "flex", alignItems: "center", gap: "6px", height: "24px", padding: "0 10px", borderRadius: "12px", border: "0", background: health.bg, color: health.c, font: "inherit", fontSize: "11.5px", fontWeight: "600", cursor: "pointer" }}><span style={{ width: "7px", height: "7px", borderRadius: "50%", background: health.c }}></span>{health.text}</button></div>
             </div>
             <div style={{ position: "relative", height: "150px", display: "flex", alignItems: "flex-end", gap: fgap, borderBottom: "1px solid var(--line2)", paddingTop: "14px" }}>
@@ -304,7 +305,7 @@ export default function PiiGuardClient() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>By rule group</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>Unique values · click a count to open Findings</span></div>
           <div style={{ overflowX: "auto" }}>
             <div style={{ display: "grid", gridTemplateColumns: "minmax(140px,1.2fr) minmax(120px,1fr) repeat(4,72px) 64px", gap: "8px 12px", alignItems: "center", minWidth: "640px", fontSize: "12.5px" }}>
-              {["Group", "Split", "Redacted", "Observed", "Blocked", "Leaked", "Total"].map((h, i) => <span key={i} style={{ fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", textAlign: i > 1 ? "right" : "left", textTransform: "uppercase" }}>{h}</span>)}
+              {["Group", "Split", "Redacted", "Observed", "Blocked", "Couldn't redact", "Total"].map((h, i) => <span key={i} style={{ fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", textAlign: i > 1 ? "right" : "left", textTransform: "uppercase" }}>{h}</span>)}
               {byGroup.map((g) => (<Fragment key={g.id}>
                 <span>{g.name}</span>
                 <Bar parts={g.bar} />
@@ -347,10 +348,10 @@ export default function PiiGuardClient() {
             <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(globalBtns).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(200px,1fr))", gap: "8px" }}>
-            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--seg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px" }}>Off</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Not scanned.</span></div>
-            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--bluebg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--blue)" }}>Observe</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Logged. Request is sent unchanged.</span></div>
-            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--acc2)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--acc)" }}>Redact</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Value replaced with <span style={{ fontFamily: "var(--mono)" }}>{piiEx}</span></span></div>
-            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--redbg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--red)" }}>Block</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Request rejected with HTTP 400.</span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--seg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px" }}>Off</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Not scanned at all.</span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--bluebg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--blue)" }}>Observe</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>Logged only. The model gets the real value.</span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--acc2)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--acc)" }}>Redact</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>The model gets <span style={{ fontFamily: "var(--mono)" }}>{piiEx}</span> instead of the value.</span></div>
+            <div style={{ padding: "10px 12px", borderRadius: "8px", background: "var(--violetbg)", display: "flex", flexDirection: "column", gap: "3px" }}><span style={{ fontWeight: "600", fontSize: "12px", color: "var(--violet)" }}>Block</span><span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>First time a value appears, the request is stopped (HTTP 400). After that it is redacted.</span></div>
           </div>
         </div>
       </>)}
@@ -395,19 +396,19 @@ export default function PiiGuardClient() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
             <div style={segWrap}>{viewBtns.map((g) => <button key={g.label} onClick={g.on} style={g.style}>{g.label}</button>)}</div>
             <span style={{ display: "flex", gap: "16px", alignItems: "center", fontSize: "12px", color: "var(--tx3)" }}>
-              <button onClick={toggleAllowed} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: "var(--acc)", cursor: "pointer" }}>Allowed values ({allowedCount})</button>
+              <button onClick={toggleAllowed} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: "var(--acc)", cursor: "pointer" }}>Marked safe ({allowedCount})</button>
               <span>{shownLabel}</span>
             </span>
           </div>
           {(showAllowed) && (<div style={{ padding: "8px 16px", borderRadius: "8px", background: "var(--seg)", display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
-            <span style={{ color: "var(--tx2)", padding: "4px 0" }}>Allowed values are sent unchanged in every request and every rule. Restore one to scan it again.</span>
-            {allowed.map((x) => <div key={x.hash} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", borderTop: "1px solid var(--line)", padding: "4px 0" }}><span style={{ minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name} <span style={{ fontFamily: "var(--mono)", color: "var(--tx3)" }}>{x.preview}</span></span><button onClick={x.restore} style={btn}>Restore</button></div>)}
-            {allowed.length === 0 && <span style={{ color: "var(--tx3)", padding: "4px 0" }}>No values are allowed.</span>}
+            <span style={{ color: "var(--tx2)", padding: "4px 0" }}>Values marked safe are never redacted or blocked, under any rule. Choose Scan again to undo.</span>
+            {allowed.map((x) => <div key={x.hash} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", borderTop: "1px solid var(--line)", padding: "4px 0" }}><span style={{ minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name} <span style={{ fontFamily: "var(--mono)", color: "var(--tx3)" }}>{x.preview}</span></span><button onClick={x.restore} style={btn}>Scan again</button></div>)}
+            {allowed.length === 0 && <span style={{ color: "var(--tx3)", padding: "4px 0" }}>No values are marked safe.</span>}
           </div>)}
           <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 220px", minWidth: "0", display: "flex", alignItems: "center", gap: "6px", height: "32px", padding: "0 8px", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "17px", color: "var(--tx3)" }}>search</span><input value={q} onChange={onQ} placeholder="Rule, masked value, model, client or hash" style={{ border: "0", outline: "none", background: "transparent", color: "var(--tx)", font: "inherit", flex: "1", minWidth: "0" }} /></div>
+            <div style={{ flex: "1 1 220px", minWidth: "0", display: "flex", alignItems: "center", gap: "6px", height: "32px", padding: "0 8px", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "17px", color: "var(--tx3)" }}>search</span><input value={q} onChange={onQ} placeholder={isPrompts ? "Words in the prompt, e.g. repeat this" : "Rule, masked value, model, client or hash"} style={{ border: "0", outline: "none", background: "transparent", color: "var(--tx)", font: "inherit", flex: "1", minWidth: "0" }} /></div>
             <select value={fGroup} onChange={onGroup} style={selSt}><option value="">All groups</option>{groupOpts.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
-            <select value={fAction} onChange={onAction} style={selSt}><option value="">All actions</option><option value="redact">Redacted</option><option value="observe">Observed</option><option value="block">Blocked</option><option value="leaked">Leaked</option><option value="allowed">Allowed</option></select>
+            <select value={fAction} onChange={onAction} style={selSt}><option value="">All actions</option><option value="redact">Redacted</option><option value="observe">Observed</option><option value="block">Blocked</option><option value="leaked">Couldn&apos;t redact</option><option value="allowed">Allowed</option></select>
             <select value={fSource} onChange={onSource} style={selSt}><option value="">All sources</option><option value="text">Text</option><option value="ocr">OCR</option></select>
             <select value={fClient} onChange={onClient} style={selSt}><option value="">All clients</option>{clientOpts.map((o) => <option key={o}>{o}</option>)}</select>
             <select value={fModel} onChange={onModel} style={selSt}><option value="">All models</option>{modelOpts.map((o) => <option key={o}>{o}</option>)}</select>
@@ -415,7 +416,7 @@ export default function PiiGuardClient() {
           </div>
           {(hasSel) && (<div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "8px", borderRadius: "8px", background: "var(--tx)", color: "var(--bg)" }}>
             <span style={{ fontWeight: "600", fontSize: "12.5px", padding: "0 8px" }}>{selCount} selected</span>
-            <button onClick={bulkAllow} style={darkBtn}>Allow</button>
+            <button onClick={bulkAllow} style={darkBtn}>Mark as safe</button>
             <button onClick={clearSel} style={{ ...darkBtn, marginLeft: "auto", background: "transparent" }}>Clear</button>
           </div>)}
           <div ref={vRef} onScroll={checkFade} style={{ overflowX: "auto", WebkitMaskImage: maskV, maskImage: maskV }}>{(isValues) && (<>
@@ -464,7 +465,8 @@ export default function PiiGuardClient() {
               {(loadNewer) && (<button onClick={loadNewer} style={moreBtn}>Newer 50</button>)}
               {(loadOlder) && (<button onClick={loadOlder} style={moreBtn}>Older 50</button>)}
             </div>
-          </>)}</div>
+          </>)}
+          {(isPrompts) && <Prompts q={dq0} session={ui.session} range={range} clearSession={() => set({ session: "" })} setSession={(id) => set({ session: id, q: "" })} />}</div>
         </div>
       </>)}
 
@@ -589,7 +591,7 @@ function RowMenu({ v, close }) {
     <div ref={ref} role="menu" style={{ position: "absolute", right: "0", top: "100%", zIndex: 40, width: "220px", background: "var(--card)", border: "1px solid var(--line2)", borderRadius: "10px", boxShadow: "0 12px 32px rgba(40,20,10,.16)", padding: "4px", display: "flex", flexDirection: "column" }}>
       <button role="menuitem" style={item} onClick={() => { close(); v.view(); }}>View details</button>
       <button role="menuitem" style={item} onClick={() => { close(); v.allow(); }}>{v.allowLabel}</button>
-      <span style={{ padding: "6px 10px 2px", fontSize: "11px", color: "var(--tx3)" }}>Set rule action (all values)</span>
+      <span style={{ padding: "6px 10px 2px", fontSize: "11px", color: "var(--tx3)" }}>Every {v.name} value:</span>
       <div style={{ ...segWrap, margin: "2px 6px 6px" }}>{v.ruleBtns.map((b) => <button key={b.label} role="menuitem" onClick={() => { close(); b.on(); }} style={b.style}>{b.label}</button>)}</div>
     </div>
   );
@@ -603,6 +605,81 @@ function highlight(text, mark) {
   const at = mark ? text.indexOf(mark) : -1;
   if (at < 0) return text;
   return <>{text.slice(0, at)}<span style={{ background: "var(--bluebg)", color: "var(--blue)", borderRadius: "4px", padding: "0 4px" }}>{mark}</span>{text.slice(at + mark.length)}</>;
+}
+
+// Snippet marks from SQLite (\u0001…\u0002) become <mark>; text renders as React text, never HTML.
+function marked(text) {
+  return String(text || "").split("\u0001").map((part, i) => {
+    if (!i) return <Fragment key={i}>{part}</Fragment>;
+    const [hit, rest = ""] = part.split("\u0002");
+    return <Fragment key={i}><mark style={{ background: "var(--acc2)", color: "inherit", borderRadius: "3px" }}>{hit}</mark>{rest}</Fragment>;
+  });
+}
+const KIND = { text: "", tool_use: "tool call", tool_result: "tool result" };
+const promptWhen = (ts) => new Date(ts + IST).toISOString().slice(5, 16).replace("T", " ");
+// Full masked message, loaded on demand; long text scrolls in a fixed box.
+function PromptText({ id, mark }) {
+  const [m, setM] = useState(null);
+  useEffect(() => {
+    const ctl = new AbortController();
+    call(`/api/pii-guard/prompts?id=${id}`, null, ctl.signal).then(setM).catch((e) => { if (!ctl.signal.aborted) setM({ error: e.message }); });
+    return () => ctl.abort();
+  }, [id]);
+  if (!m) return <span style={{ fontSize: "12px", color: "var(--tx3)" }}>Loading…</span>;
+  if (m.error) return <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{m.error}</span>;
+  return <><pre style={{ margin: "0", maxHeight: "360px", overflow: "auto", whiteSpace: "pre-wrap", overflowWrap: "anywhere", fontFamily: "var(--mono)", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--line2)", background: "var(--card)" }}>{mark ? highlight(m.text, mark) : m.text}</pre>
+    {m.cut ? <span style={{ fontSize: "11px", color: "var(--tx3)" }}>Cut at the size limit (1 MB, tool output 128 KB).</span> : null}</>;
+}
+function PromptPeek({ query, mark }) {
+  const [res, setRes] = useState(null);
+  useEffect(() => {
+    const ctl = new AbortController();
+    call(`/api/pii-guard/prompts?${query}&limit=5`, null, ctl.signal).then(setRes).catch(() => { if (!ctl.signal.aborted) setRes({ rows: [] }); });
+    return () => ctl.abort();
+  }, [query]);
+  if (!res) return <span style={{ fontSize: "12px", color: "var(--tx3)" }}>Loading…</span>;
+  if (!res.rows?.length) return <span style={{ fontSize: "12px", color: "var(--tx3)" }}>No stored prompt. Prompts are kept 14 days, starting Nov 7, 2026.</span>;
+  return <>{res.rows.map((r) => <Fragment key={r.id}><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{r.role}{KIND[r.kind] ? ` · ${KIND[r.kind]}` : ""} · {promptWhen(r.ts)}</span><PromptText id={r.id} mark={mark} /></Fragment>)}
+    <span style={{ fontSize: "11px", color: "var(--tx3)" }}>Detected values are masked. Text the rules miss, like names, is stored as is.</span></>;
+}
+// Prompts view: server search, 300 ms after typing stops; a newer search cancels the older one.
+function Prompts({ q, session, range, clearSession, setSession }) {
+  const [state, setState] = useState({ rows: [], next: null, busy: true, error: "" });
+  const [open, setOpen] = useState(null);
+  // Page cursors belong to one filter; a new filter starts on the newest page.
+  const fkey = `${q}\0${session}\0${JSON.stringify(range)}`;
+  const [pageState, setPageState] = useState({ fkey, list: [] });
+  const pages = pageState.fkey === fkey ? pageState.list : [];
+  const setPages = (f) => setPageState({ fkey, list: f(pages) });
+  const cursor = pages.at(-1) ?? null;
+  useEffect(() => {
+    const ctl = new AbortController();
+    const t = setTimeout(() => {
+      const { from, to } = bounds(range);
+      setState((x) => ({ ...x, busy: true }));
+      call(`/api/pii-guard/prompts?q=${encodeURIComponent(q)}&sessionId=${encodeURIComponent(session)}&from=${Math.round(from)}&to=${Math.round(to)}${cursor ? `&before=${cursor}` : ""}`, null, ctl.signal)
+        .then((r) => setState({ rows: r.rows || [], next: r.next, busy: false, error: r.unavailable ? "Prompt store unavailable on this server." : "" }))
+        .catch((e) => { if (!ctl.signal.aborted) setState({ rows: [], next: null, busy: false, error: e.message }); });
+    }, 300);
+    return () => { clearTimeout(t); ctl.abort(); };
+  }, [q, session, range, cursor]);
+  return <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+    {session && <div style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px", color: "var(--tx2)", padding: "4px 0" }}>Conversation <span style={{ fontFamily: "var(--mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", minWidth: "0" }}>{session}</span><button onClick={clearSession} style={btn}>Show all</button></div>}
+    {state.error && <div style={{ padding: "16px 0", color: "var(--tx3)", textAlign: "center" }}>{state.error}</div>}
+    {state.rows.map((r) => <div key={r.id} style={{ borderTop: "1px solid var(--line)", padding: "8px 0", display: "flex", flexDirection: "column", gap: "4px" }}>
+      <button onClick={() => setOpen(open === r.id ? null : r.id)} aria-expanded={open === r.id} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: "var(--tx)", textAlign: "left", cursor: "pointer", display: "flex", flexDirection: "column", gap: "2px" }}>
+        <span style={{ fontSize: "11px", color: "var(--tx3)" }}>{promptWhen(r.ts)} · {r.role}{KIND[r.kind] ? ` · ${KIND[r.kind]}` : ""} · {r.client || "—"} · <span style={{ fontFamily: "var(--mono)" }}>{r.model || "—"}</span>{r.hashes ? " · has findings" : ""}</span>
+        <span style={{ fontFamily: "var(--mono)", fontSize: "12px", whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: "3.6em", overflow: "hidden" }}>{marked(r.snip)}</span>
+      </button>
+      {open === r.id && <><PromptText id={r.id} /><span style={{ display: "flex", gap: "8px", flexWrap: "wrap", fontSize: "11px", color: "var(--tx3)" }}>Request <span style={{ fontFamily: "var(--mono)" }}>{r.requestId}</span>{r.sessionId && !session && <button onClick={() => setSession(r.sessionId)} style={btn}>Show whole conversation</button>}</span></>}
+    </div>)}
+    {!state.busy && !state.error && !state.rows.length && <div style={{ padding: "32px 0", textAlign: "center", color: "var(--tx3)" }}>{q ? "No stored prompt has these words." : "No prompts stored in this range yet."}</div>}
+    <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+      {pages.length > 0 && <button onClick={() => setPages((p) => p.slice(0, -1))} style={btn}>Newer 50</button>}
+      {state.next && <button onClick={() => setPages((p) => [...p, state.next])} style={btn}>Older 50</button>}
+    </div>
+    <span style={{ fontSize: "11px", color: "var(--tx3)", paddingTop: "4px" }}>Searches whole words and word starts. Detected values are masked; text the rules miss, like names, is stored as is.</span>
+  </div>;
 }
 
 function Drawer({ d }) {
@@ -627,21 +704,22 @@ function Drawer({ d }) {
           <Sec label="Became"><span style={{ fontFamily: d.action === "Redacted" ? "var(--mono)" : "inherit", fontSize: "12.5px" }}>{d.became}</span></Sec>
           <Sec label="Action"><span style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}><span style={badgeSt(d.abg, d.ac)}>{d.action}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{d.why}</span></span></Sec>
           <Sec label="Where in the request"><span style={{ fontSize: "12.5px" }}>{d.where}</span>
-            {d.noContext ? <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{d.image ? "Found in an image; see below." : "No context recorded. Context is stored for findings logged from this release on."}</span>
-              : <><span style={{ fontFamily: "var(--mono)", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--line2)", overflowWrap: "anywhere" }}>{highlight(d.context, d.preview)}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>Masked preview and about 20 characters of masked context. Raw values are never stored.</span></>}</Sec>
+            {d.noContext ? <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{d.image ? "Found in an image; see below." : "No context stored. Findings logged before Nov 7 have none."}</span>
+              : <><span style={{ fontFamily: "var(--mono)", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--line2)", overflowWrap: "anywhere" }}>{highlight(d.context, d.preview)}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>About 20 characters on each side, masked. The full prompt is below.</span></>}</Sec>
           {(d.image) && (<Sec label={`Image · ${d.imageLabel}`}>
             {broken ? <span style={{ fontSize: "12px", color: "var(--tx3)", padding: "16px", borderRadius: "6px", background: "var(--seg)", textAlign: "center" }}>Image expired (kept 14 days)</span>
               : <a href={d.image} target="_blank" rel="noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element -- auth-checked API image */}
                 <img src={d.image} alt={d.imageLabel} onError={() => setBrokenSrc(d.image)} style={{ width: "100%", maxHeight: "320px", objectFit: "contain", borderRadius: "6px", background: "var(--seg)" }} /></a>}</Sec>)}
+          <Sec label="Prompt"><PromptPeek query={d.promptQuery} mark={d.preview} />{d.openSession && <button onClick={d.openSession} style={{ ...btn, alignSelf: "flex-start" }}>Show whole conversation</button>}</Sec>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
-            {row("Client", d.client)}{row("Model", d.model, true)}{row("Requests", d.reqs)}{row("First seen", d.first)}{row("Last seen", d.last)}{row("Hash", `#${d.hash}`, true)}{row("Request", d.request, true)}
+            {row("Client", d.client)}{row("Model", d.model, true)}{row("Requests", d.reqs)}{row("First seen", d.first)}{row("Last seen", d.last)}{row("Hash", `#${d.hash}`, true)}{row("Request", d.request, true)}{row("Session", d.session, true)}
           </div>
           {(d.pending) && <Confirm p={d.pending} />}
         </div>
         <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", padding: "16px", borderTop: "1px solid var(--line)" }}>
           <button onClick={d.allow} style={btn}>{d.allowLabel}</button>
-          <span style={{ marginLeft: "auto", fontSize: "11.5px", color: "var(--tx3)" }}>Set rule action</span>
+          <span style={{ marginLeft: "auto", fontSize: "11.5px", color: "var(--tx3)" }}>Every {d.rule}:</span>
           <div style={segWrap}>{d.ruleBtns.map((b) => <button key={b.label} onClick={b.on} style={b.style}>{b.label}</button>)}</div>
         </div>
       </aside>

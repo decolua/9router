@@ -128,3 +128,15 @@ describe("route range", () => {
     expect(body.next).not.toBeNull();
   });
 });
+
+describe("route dismiss", () => {
+  it("stores dismissed places per hash, validates input, and undismisses", async () => {
+    const post = (b) => POST(new Request("http://localhost/api/pii-guard", { method: "POST", body: JSON.stringify(b) }));
+    expect((await post({ dismiss: { nothex: ["x"] } })).status).toBe(400);
+    expect((await post({ dismiss: ["aaaaaaaaaaaa"] })).status).toBe(400);
+    expect((await post({ dismiss: { aaaaaaaaaaaa: ["assistant/thinking"] } })).status).toBe(200);
+    expect(settings.piiGuard.dismissed).toEqual({ aaaaaaaaaaaa: ["assistant/thinking"] });
+    expect((await post({ undismiss: ["aaaaaaaaaaaa"] })).status).toBe(200);
+    expect(settings.piiGuard.dismissed).toEqual({});
+  });
+});

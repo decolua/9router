@@ -207,7 +207,7 @@ function assistantTextSessionId(scope, body) {
  * @param {string} [opts.connectionId] - Connection identifier (fallback scope)
  * @param {string} [opts.workspaceId] - Provider workspace id (account-wide fallback)
  * @param {string} [opts.scope] - Provider scope to isolate cache keys across providers
- * @returns {{sessionId: string, ephemeral: boolean}} A session id plus whether it is one-shot
+ * @returns {{sessionId: string, ephemeral: boolean, random?: boolean}} A session id, whether it is one-shot, and whether it is random per request
  */
 export function resolveSessionIdentity({ headers, body, connectionId, workspaceId, scope = "" } = {}) {
     const client = extractClientSessionId(headers, body, scope);
@@ -217,7 +217,8 @@ export function resolveSessionIdentity({ headers, body, connectionId, workspaceI
     const ws = normalizeSessionId(workspaceId);
     if (ws) return { sessionId: ws, ephemeral: false };
     if (scope === "kiro") return { sessionId: generateBinaryStyleId(), ephemeral: true };
-    return { sessionId: deriveSessionId(connectionId), ephemeral: false };
+    // `random`: no client id, history or connection, so this id is new on every request.
+    return { sessionId: deriveSessionId(connectionId), ephemeral: false, ...(!connectionId && { random: true }) };
 }
 
 export function resolveSessionId(opts = {}) {

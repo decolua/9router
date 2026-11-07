@@ -255,7 +255,19 @@ export async function POST(request) {
     const result = await testText(body.test, config, WHERES.includes(body.testWhere) ? body.testWhere : "user");
     return result ? NextResponse.json(result) : NextResponse.json({ error: "Scanner unavailable" }, { status: 503 });
   }
-  const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [], ocr: normalizeOcr(current.ocr) };
+  const next = { mode: current.mode || "observe", rules: { ...(current.rules || {}) }, ignore: Array.isArray(current.ignore) ? [...current.ignore] : [], ocr: normalizeOcr(current.ocr), dismissed: { ...(current.dismissed || {}) } };
+  // Dismissed "couldn't redact" rows: hash -> places seen when dismissed. A new place shows the row again.
+  if (body.dismiss !== undefined) {
+    const entries = body.dismiss && typeof body.dismiss === "object" && !Array.isArray(body.dismiss) ? Object.entries(body.dismiss) : null;
+    if (!entries || entries.length > MAX_IGNORE || entries.some(([h, w]) => !HASH.test(h) || !Array.isArray(w) || w.length > 20 || w.some(x => typeof x !== "string" || x.length > 40))) return NextResponse.json({ error: "Invalid dismiss" }, { status: 400 });
+    for (const [h, w] of entries) next.dismissed[h] = w;
+    const keys = Object.keys(next.dismissed);
+    for (const h of keys.slice(0, Math.max(0, keys.length - MAX_IGNORE))) delete next.dismissed[h];
+  }
+  if (body.undismiss !== undefined) {
+    if (!Array.isArray(body.undismiss) || body.undismiss.length > MAX_IGNORE || body.undismiss.some(h => typeof h !== "string" || !HASH.test(h))) return NextResponse.json({ error: "Invalid dismiss" }, { status: 400 });
+    for (const h of body.undismiss) delete next.dismissed[h];
+  }
   if (body.ocr !== undefined) {
     if (!body.ocr || typeof body.ocr !== "object" || Array.isArray(body.ocr) || Object.keys(body.ocr).some(key => !["mode", "quality"].includes(key)) || (body.ocr.mode !== undefined && !OCR_MODES.includes(body.ocr.mode)) || (body.ocr.quality !== undefined && !OCR_QUALITIES.includes(body.ocr.quality))) return NextResponse.json({ error: "Invalid OCR setting" }, { status: 400 });
     next.ocr = normalizeOcr(body.ocr, current.ocr);
@@ -298,7 +310,7 @@ export async function POST(request) {
     }
   }
   await updateSettings({ piiGuard: next });
-  console.info(`[pii-guard] Settings changed: mode=${next.mode}, overrides=${Object.keys(next.rules).length}`);
+  console.info(`[pii-guard] Settings changed: mode=${next.mode}, overrides=${Object.keys(next.rules).length}, dismissed=${Object.keys(next.dismissed).length}`);
   // The dashboard reloads its own range after a save, so no summary is built here.
   return NextResponse.json({ ok: true, config: next });
 }

@@ -245,6 +245,13 @@ describe("dashboard guard local-only access", () => {
     expect(response.body.error).toBe("Local only: CLI token required");
   });
 
+  it("requires login for stored PII Guard prompts even when requireLogin=false", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    mocks.verifyDashboardAuthToken.mockResolvedValue(false);
+    const response = await proxy(localRequest("/api/pii-guard/prompts?q=x", { host: "localhost:20128", origin: "http://localhost:20128" }));
+    expect(response.status).toBe(401);
+  });
+
   it("allows local-only route on loopback when requireLogin=false", async () => {
     mocks.getSettings.mockResolvedValue({ requireLogin: false });
 
