@@ -420,6 +420,40 @@ describe("handleImageGenerationCore", () => {
     expect(responseBody.data[0].b64_json).toBe("base64codeximage");
   });
 
+  it.each(["gpt-image-2.6-flare", "gpt-image-2.6-sunburst"])("routes Codex %s without the unsupported complexity override", async (model) => {
+    global.fetch.mockResolvedValueOnce(new Response([
+      "event: response.output_item.done",
+      'data: {"item":{"type":"image_generation_call","result":"base64codeximage"}}',
+      "",
+      "",
+    ].join("\n"), { status: 200, headers: { "Content-Type": "text/event-stream" } }));
+
+    const result = await handleImageGenerationCore({
+      body: {
+        prompt: "A futuristic city",
+        size: "1024x1024",
+        quality: "high",
+        complexity: "medium",
+        output_format: "png",
+      },
+      modelInfo: { provider: "codex", model },
+      credentials: { accessToken: "codex-token", providerSpecificData: { chatgptAccountId: "account-123" } },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(requestBody.model).toBe("gpt-6-sol");
+    expect(requestBody.tools).toEqual([{
+      type: "image_generation",
+      output_format: "png",
+      action: "generate",
+      model,
+      size: "1024x1024",
+      quality: "high",
+    }]);
+  });
+
   it("generates image with Cloudflare Workers AI JSON response", async () => {
     global.fetch.mockResolvedValueOnce(
       new Response(
