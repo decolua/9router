@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import PropTypes from "prop-types";
-import { Button, Modal, Input } from "@/shared/components";
+import { Button, Modal, Input, ModelSelectModal } from "@/shared/components";
 
 /**
  * Bulk edit keys: write one field to every selected key in one call.
@@ -24,11 +24,28 @@ export default function BulkEditKeys({ selectedCount, onApply, onClose }) {
   });
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
 
   const toggle = (name) =>
     setFields((prev) => ({ ...prev, [name]: { ...prev[name], on: !prev[name].on } }));
   const setValue = (name, value) =>
     setFields((prev) => ({ ...prev, [name]: { ...prev[name], value } }));
+
+  // Allowed models is a comma-separated pattern list ("*" = all). The picker
+  // edits it as a list; chips and the read-only input echo the raw value.
+  const allowedModelsList = () => {
+    const raw = String(fields.allowedModels.value || "").trim();
+    if (!raw || raw === "*") return [];
+    return raw.split(",").map((s) => s.trim()).filter(Boolean);
+  };
+  const addAllowedModel = (modelVal) => {
+    const list = allowedModelsList();
+    if (!modelVal || list.includes(modelVal)) return;
+    setValue("allowedModels", list.length ? [...list, modelVal].join(", ") : modelVal);
+  };
+  const removeAllowedModel = (modelVal) => {
+    setValue("allowedModels", allowedModelsList().filter((m) => m !== modelVal).join(", "));
+  };
 
   const handleApply = async () => {
     const patch = {};
@@ -121,6 +138,48 @@ export default function BulkEditKeys({ selectedCount, onApply, onClose }) {
                   <option value="true">Active</option>
                   <option value="false">Disabled</option>
                 </select>
+              ) : name === "allowedModels" ? (
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex items-center justify-between gap-2">
+                    <Input
+                      value={fields[name].value}
+                      readOnly
+                      disabled={!fields[name].on}
+                      inputClassName="truncate font-mono"
+                      placeholder="* (all models)"
+                    />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      icon="add"
+                      disabled={!fields[name].on}
+                      onClick={() => setModelPickerOpen(true)}
+                    >
+                      Select
+                    </Button>
+                  </div>
+                  {allowedModelsList().length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {allowedModelsList().map((m) => (
+                        <span
+                          key={m}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary/10 text-primary font-mono text-xs"
+                        >
+                          {m}
+                          <button
+                            type="button"
+                            onClick={() => removeAllowedModel(m)}
+                            disabled={!fields[name].on}
+                            className="hover:text-red-500 transition-colors"
+                            aria-label={`Remove ${m}`}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : (
                 <Input
                   value={fields[name].value}
@@ -147,6 +206,16 @@ export default function BulkEditKeys({ selectedCount, onApply, onClose }) {
           </Button>
         </div>
       </div>
+
+      <ModelSelectModal
+        isOpen={modelPickerOpen}
+        onClose={() => setModelPickerOpen(false)}
+        onSelect={(model) => addAllowedModel(model?.value)}
+        onDeselect={(model) => removeAllowedModel(model?.value)}
+        title="Select Allowed Models"
+        addedModelValues={allowedModelsList()}
+        closeOnSelect={false}
+      />
     </Modal>
   );
 }
