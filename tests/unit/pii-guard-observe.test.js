@@ -58,6 +58,17 @@ describe("PII observation", () => {
     expect(text).not.toContain(value);
     expect(JSON.parse(text.trim().split("\n")[1]).new).toEqual([]);
   });
+  it("stores a masked preview and context, never the raw value", async () => {
+    const key = "sk-ant-" + "Q1w2E3r4T5y6U7i8O9p0AsDf";
+    await observeRequest(body(`my key is ${key} and ${value} ok`), meta);
+    const text = await lines(1);
+    expect(text).not.toContain(key); expect(text).not.toContain(value); expect(text).not.toContain("739201");
+    const hits = JSON.parse(text.trim()).hits;
+    const k = hits.find(h => h.rule === "anthropic_key");
+    expect(k.preview).toBe("sk-ant•••••sDf");
+    expect(k.context).toContain("my key is sk-ant•••••sDf and •••••");
+    expect(hits.find(h => h.rule === "known").preview).toBe("•••••");
+  });
   it("never throws when scanning fails", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     const bad = { get messages() { throw new Error("synthetic"); } };

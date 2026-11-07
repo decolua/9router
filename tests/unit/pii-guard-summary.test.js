@@ -93,3 +93,21 @@ describe("summary OCR recent list", () => {
     expect(ocr.totalImages).toBe(450);
   });
 });
+
+describe("summary byAction", () => {
+  it("counts each value once under its latest action, allowed first, and blocked only for block hits", () => {
+    const now = Date.parse("2026-01-02T00:00:00.000Z");
+    const h = (hash, rule, action) => ({ hash, rule, action, source: "user/text" });
+    const result = summarize([
+      { ts: "2026-01-01T20:00:00.000Z", requestId: "a", blocked: ["r"], hits: [h("aaaaaaaaaaaa", "r", "redact"), h("bbbbbbbbbbbb", "r", "block")] },
+      { ts: "2026-01-01T21:00:00.000Z", requestId: "b", hits: [h("aaaaaaaaaaaa", "r", "observe"), h("cccccccccccc", "pan", "redact")] },
+      { ts: "2026-01-01T22:00:00.000Z", requestId: "c", hits: [h("dddddddddddd", "pan", "redact")] },
+    ], { now, ignore: ["dddddddddddd"] });
+    expect(result.byAction.r.values).toEqual({ observe: 1, block: 1 });
+    expect(result.byAction.pan.values).toEqual({ redact: 1, allowed: 1 });
+    const all = result.byAction.all.values;
+    expect(Object.values(all).reduce((a, b) => a + b, 0)).toBe(result.unique24h);
+    expect(result.byAction.all.requests).toEqual({ redact: 3, block: 1, observe: 1 });
+    expect(result.blocked24h).toBe(1);
+  });
+});

@@ -5,7 +5,7 @@ const { settings, updateSettings } = vi.hoisted(() => {
   return { settings, updateSettings: vi.fn(async update => { settings.piiGuard = update.piiGuard; }) };
 });
 vi.mock("@/lib/localDb", () => ({ getSettings: async () => settings, updateSettings }));
-vi.mock("@/lib/piiGuard/observe.js", () => ({ ready: async () => true, rules: () => [], groups: () => [], testText: async () => null, testImage: async () => null, eventsFile: () => "/tmp/ev.jsonl", health: () => ({}) }));
+vi.mock("@/lib/piiGuard/observe.js", () => ({ ready: async () => true, rules: () => [{ id: "r", group: "api_key", label: "Key rule" }, { id: "pan", group: "gov_id", label: "PAN" }], groups: () => [], testText: async () => null, testImage: async () => null, eventsFile: () => "/tmp/ev.jsonl", health: () => ({}) }));
 
 import { GET, POST } from "../../src/app/api/pii-guard/route.js";
 import { writeFile, rm, appendFile } from "node:fs/promises";
@@ -67,6 +67,30 @@ describe("route range", () => {
     expect(seen).toEqual(["h6", "h5", "h1"]);
     const claude = await get("limit=10&client=Claude%20Code&source=ocr");
     expect(claude.events.flatMap(e => e.hits.map(h => h.hash))).toEqual(["h4"]);
+  });
+  it("events filter by group, allowed, search, and hide tests unless asked", async () => {
+    const ts = new Date(Date.now() - 5000).toISOString();
+    settings.piiGuard.ignore = ["aaaaaaaaaaaa"];
+    const lines = [
+      { ts, ua: "claude-cli/2", hits: [{ hash: "aaaaaaaaaaaa", rule: "pan", action: "ignored", source: "user/text", preview: "AB•••••F" }] },
+      { ts, ua: "codex/1", hits: [{ hash: "bbbbbbbbbbbb", rule: "r", action: "redact", source: "user/text" }] },
+      { ts, type: "test", test: true, hits: [{ hash: "cccccccccccc", rule: "r", action: "redact", source: "test/text" }] },
+    ];
+    await writeFile("/tmp/ev.jsonl", lines.map(l => JSON.stringify(l)).join("\n") + "\n");
+    const hashes = async (q) => (await (await GET(new Request(`http://localhost/api/pii-guard?events=1&${q}`))).json()).events.flatMap(e => e.hits.map(h => h.hash));
+    expect(await hashes("group=api_key")).toEqual(["bbbbbbbbbbbb"]);
+    expect(await hashes("group=api_key&tests=1")).toEqual(["cccccccccccc", "bbbbbbbbbbbb"]);
+    expect(await hashes("action=allowed")).toEqual(["aaaaaaaaaaaa"]);
+    expect(await hashes("q=AB%E2%80%A2")).toEqual(["aaaaaaaaaaaa"]);
+    expect(await hashes("q=claude%20code")).toEqual(["aaaaaaaaaaaa"]);
+    const page = await (await GET(new Request("http://localhost/api/pii-guard?events=1&group=gov_id"))).json();
+    expect(page.events[0].client).toBe("Claude Code");
+  });
+  it("image route rejects bad ids and reports expired images", async () => {
+    expect((await GET(new Request("http://localhost/api/pii-guard?image=../../etc"))).status).toBe(400);
+    const gone = await GET(new Request("http://localhost/api/pii-guard?image=0123456789ab"));
+    expect(gone.status).toBe(404);
+    expect((await gone.json()).error).toBe("Image expired");
   });
   it("summary memo reuses an idle summary and refreshes when the log grows", async () => {
     const ts = new Date(Date.now() - 5000).toISOString();

@@ -10,7 +10,7 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [],
   const leaked = new Set(), blocked = new Set(), unique = new Set();
   let errors24h = 0;
   let requests = 0;
-  const actionHits = Object.create(null);
+  const actionHits = Object.create(null), ruleTurns = Object.create(null);
   const nTrend = step > 0 ? Math.min(400, Math.ceil(((Number.isFinite(until) ? until : now) - origin) / step)) : 0;
   const trend = Array.from({ length: Math.max(0, nTrend) }, () => ({ hits: 0, leaks: 0 }));
 
@@ -96,7 +96,12 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [],
         group.turns.add(event.ts);
       }
       if (action === "leaked") leaked.add(hit.hash);
-      if ((action === "block" || (Array.isArray(event.blocked) && (event.blocked.includes(hit.name) || event.blocked.includes(hit.rule))))) blocked.add(hit.hash);
+      // Only a hit that was itself blocked counts; event.blocked lists rule names, not values.
+      if (action === "block") blocked.add(hit.hash);
+      if (turnKey) for (const k of [hit.rule, "all"]) ((ruleTurns[k] ||= Object.create(null))[action] ||= new Set()).add(turnKey);
+      if (typeof hit.preview === "string") { group.preview = hit.preview; if (typeof hit.context === "string") group.context = hit.context; }
+      if (event.requestId && ts >= Date.parse(group.lastSeen)) group.requestId = event.requestId;
+      if (event.type === "ocr" && typeof event.sha256Prefix === "string" && ts >= Date.parse(group.lastSeen)) { group.image = event.sha256Prefix; group.imageIndex = event.imageIndex; }
     }
   }
 
@@ -145,8 +150,23 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [],
     unique24h: unique.size,
     byRule: Object.fromEntries(Object.entries(ruleHits).map(([rule, hits]) => [rule, { unique: ruleHashes[rule]?.size || 0, hits }])),
     bySource, leaked24h: leaked.size, blocked24h: blocked.size, errors24h,
-    groups: outputGroups, ruleWarnings, actionHits, trend,
+    groups: outputGroups, ruleWarnings, actionHits, trend, byAction: breakdown(outputGroups, ruleTurns),
     range: { from: sinceMs, to: untilMs },
     ocr,
   };
+}
+
+
+// One unit: a value (hash + rule) counts once: Allowed, else Leaked if it leaked, else its latest action. So the
+// parts sum to the total. requests: distinct turns where a hit of that rule had that action.
+function breakdown(groups, ruleTurns) {
+  const out = Object.create(null);
+  const row = key => out[key] ||= { values: Object.create(null), requests: Object.create(null) };
+  for (const g of groups) {
+    // A value that leaked in the range counts as Leaked, matching the Leaks card.
+    const action = g.ignored ? "allowed" : g.actions.includes("leaked") ? "leaked" : g.action;
+    for (const key of [g.rule, "all"]) row(key).values[action] = (row(key).values[action] || 0) + 1;
+  }
+  for (const [key, byAction] of Object.entries(ruleTurns)) for (const [action, turns] of Object.entries(byAction)) row(key).requests[action] = turns.size;
+  return out;
 }

@@ -40,7 +40,7 @@ export default function PiiGuardClient() {
   const [samples, setSamples] = useState([]);
   const [toastState, setToast] = useState(null);
   const [test, setTest] = useState({ result: null, image: null, error: "", busy: false });
-  const [ui, setUi] = useState({ tab: "overview", sub: "values", openLeak: null, openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {}, page: 0, leakPage: 0,
+  const [ui, setUi] = useState({ tab: "overview", view: "value", openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", tests: false, sel: {}, page: 0, leakPage: 0, detail: null, pending: null, menu: null, showAllowed: false,
     testKind: "text", testText: "My mobile number is 9876543210 and PAN is ABCPE1234F.", testMode: "current", testWhere: "user", imgSel: 0, upload: null });
   const set = useCallback((p) => setUi((u) => ({ ...u, ...(typeof p === "function" ? p(u) : p) })), []);
   const [theme, setTheme] = useState("light");
@@ -79,13 +79,16 @@ export default function PiiGuardClient() {
 
   // Event log: 50 events per page, newest first, flattened to one row per hit. The server applies the
   // client, model, source and action filters. The 30 s refresh reloads only the newest page.
-  const evFilter = `&client=${encodeURIComponent(ui.fClient)}&model=${encodeURIComponent(ui.fModel)}&source=${ui.fSource}&action=${ui.fAction}`;
+  const dq0 = useDeferredValue(ui.q);
+  const evFilter = `&client=${encodeURIComponent(ui.fClient)}&model=${encodeURIComponent(ui.fModel)}&source=${ui.fSource}&action=${ui.fAction}&group=${encodeURIComponent(ui.fGroup)}&q=${encodeURIComponent(dq0)}${ui.tests ? "&tests=1" : ""}`;
   const fetchEvents = useCallback(async (cursor, signal) => {
     const { from, to } = bounds(range);
     const cur = cursor ? `&before=${cursor.before}&skip=${cursor.skip}` : "";
     const { events = [], next = null } = await call(`/api/pii-guard?events=1&limit=50&from=${Math.round(from)}&to=${Math.round(to)}${cur}${evFilter}`, null, signal);
     const rows = [];
-    for (const e of events) (e.hits || []).forEach((h, i) => rows.push({ id: `${e.ts}:${e.requestId || ""}:${h.hash}:${h.rule}:${i}`, t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), loc: place(h.source), a: h.action || "observe", model: e.model || "—", key: e.ua ? String(e.ua).split("/")[0] : "—", req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" }));
+    for (const e of events) (e.hits || []).forEach((h, i) => rows.push({ id: `${e.ts}:${e.requestId || ""}:${h.hash}:${h.rule}:${i}`, ts: e.ts, t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), fullHash: h.hash, preview: h.preview || "", context: h.context || "",
+      loc: e.type === "ocr" ? `${place(String(h.source || "").replace(/\/ocr$/, ""))} · image #${(e.imageIndex ?? 0) + 1}` : place(h.source), a: h.action === "ignored" ? "allowed" : h.action || "observe", model: e.model || "—", client: e.client || "—",
+      test: e.type === "test" || e.test === true, requestId: e.requestId || "", image: e.type === "ocr" ? e.sha256Prefix || null : null, imageIndex: e.imageIndex, req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" }));
     return { rows, next };
   }, [range, evFilter]);
   // Range or filter change: back to the newest page.
@@ -94,12 +97,12 @@ export default function PiiGuardClient() {
   // The newest page follows `data` (the poll); older pages load once.
   const evTick = evNewest ? data : null;
   useEffect(() => {
-    if (ui.tab !== "findings" || ui.sub !== "events") return;
+    if (ui.tab !== "findings" || ui.view !== "hit") return;
     const ctl = new AbortController();
     setEvBusy(true);
     fetchEvents(evCursor, ctl.signal).then(({ rows, next }) => { setRawEvents(rows); setEvNext(next); setEvBusy(false); }).catch(() => { if (!ctl.signal.aborted) setEvBusy(false); });
     return () => ctl.abort();
-  }, [ui.tab, ui.sub, evTick, evCursor, fetchEvents]);
+  }, [ui.tab, ui.view, evTick, evCursor, fetchEvents]);
   const loadOlder = evNext && !evBusy ? () => setEvPage((p) => [...p, { cursor: evNext }]) : null;
   const loadNewer = !evNewest && !evBusy ? () => setEvPage((p) => p.slice(0, -1)) : null;
   const loadNewest = !evNewest && !evBusy ? () => setEvPage([]) : null;
@@ -155,7 +158,7 @@ export default function PiiGuardClient() {
 
   const isLoading = mode === "loading" || (!v && mode !== "error"), isError = mode === "error";
   const preset = range.preset, customLabel = range.label || "";
-  const onRange = (r) => { setRange(r); set({ sel: {}, openLeak: null, page: 0, leakPage: 0 }); };
+  const onRange = (r) => { setRange(r); set({ sel: {}, detail: null, pending: null, page: 0, leakPage: 0 }); };
   const todayKey = new Date(Date.now() + IST).toISOString().slice(0, 10);
   const retry = () => { setMode("loading"); load(); };
   const openConsole = () => router.push("/dashboard/console-log");
@@ -178,25 +181,26 @@ export default function PiiGuardClient() {
     const ro = new ResizeObserver(checkFade);
     [vRef.current, gRef.current].forEach((el) => el && ro.observe(el));
     return () => ro.disconnect();
-  }, [ui.tab, ui.sub, mode, checkFade]);
+  }, [ui.tab, ui.view, mode, checkFade]);
   // Free the previous upload preview when it is replaced or the page closes.
   const uploadUrl = ui.upload?.url;
   useEffect(() => () => { if (uploadUrl) URL.revokeObjectURL(uploadUrl); }, [uploadUrl]);
   const mask = (on) => (on ? "linear-gradient(to right,#000 calc(100% - 40px),transparent)" : "none");
   const maskV = mask(fade.v), maskG = mask(fade.g), maskF = "none", fWrap = "wrap", fOverflow = "visible";
   const S = v?.s || {};
-  const s = { header: true, leaks: S.leaks, numbers: S.numbers, where: S.where, wording: S.wording, mode: S.mode, groups: S.groups, values: S.values, test: S.test, health: S.health, ocr: S.ocr && v?.okScanner };
+  const s = { header: true, leaks: S.leaks, numbers: S.numbers, bygroup: S.bygroup, where: S.where, wording: S.wording, mode: S.mode, groups: S.groups, values: S.values, test: S.test, health: S.health, ocr: S.ocr && v?.okScanner };
   const empty = {};
-  const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, n = empty, trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
-    redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], subTabs = [], isValues, isEvents, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
-    bulkIgnore, bulkObserve, bulkRedact, bulkBlock, copyHashes, values = [], noValues, prevValues, nextValues, prevLeaks, nextLeaks, leakPageLabel, events = [], samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
+  const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, n = empty, cards = [], sumNote, byGroup = [], trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
+    redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], viewBtns = [], isValues, isEvents, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
+    bulkAllow, values = [], noValues, hits = [], noHits, allowedCount = 0, showAllowed, toggleAllowed, allowed = [], detail, prevValues, nextValues, prevLeaks, nextLeaks, leakPageLabel, samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
     noHitsText, testVerdict = empty, testOut, thumbs = [], hasUpload, hasSample, imgBg, imgName, sampleName, sampleBg, problems = [], metrics = [], ocrStats = [], healthNote, ocrNote, imgGroups = [], health = empty } = v || {};
   // A filter change clears the selection, so bulk actions never hit hidden rows.
   const filt = (k) => (e) => set({ [k]: e.target.value, sel: {}, page: 0 });
   const q = ui.q, onQ = filt("q"), fGroup = ui.fGroup, onGroup = filt("fGroup"), fAction = ui.fAction, onAction = filt("fAction");
-  const fStatus = ui.fStatus, onStatus = filt("fStatus"), fClient = ui.fClient, onClient = filt("fClient");
+  const fClient = ui.fClient, onClient = filt("fClient"), onTests = (e) => set({ tests: e.target.checked, sel: {}, page: 0 });
   const fModel = ui.fModel, onModel = filt("fModel"), fSource = ui.fSource, onSource = filt("fSource");
   const clearSel = () => set({ sel: {} });
+  const closeMenu = useCallback(() => set({ menu: null }), [set]);
   const moreBtn = { alignSelf: "center", marginTop: "10px", height: "28px", padding: "0 12px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" };
   const testText = ui.testText, onTest = (e) => set({ testText: e.target.value }), testMode = ui.testMode, onTestMode = (e) => set({ testMode: e.target.value });
   const testWhere = ui.testWhere, onTestWhere = (e) => set({ testWhere: e.target.value });
@@ -236,30 +240,20 @@ export default function PiiGuardClient() {
         <div style={{ background: "var(--card)", border: `1px solid ${leakBorder}`, borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: status.c }}>{leakIcon}</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Leaks</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Matched a Redact or Block rule but could not be rewritten</span></div><span style={{ fontSize: "12px", color: "var(--tx3)" }}>{leakCount}</span></div>
           {(leaks).map((l) => (<Fragment key={l.key}>
-            <div style={{ borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "8px 14px", alignItems: "center", padding: "10px 0 4px" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}><span style={{ fontWeight: "600" }}>{l.rule}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{l.group} · <span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span></span></div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}><span style={{ fontSize: "10.5px", fontWeight: "600", padding: "1px 7px", borderRadius: "4px", background: "var(--redbg)", color: "var(--red)" }}>{l.tag}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.loc}</span></div>
-                <span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.time}</span>
-                {(l.isOpen) && (<><div style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap", gridColumn: "span 2" }}>
-                  <button onClick={l.review} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" }}>{l.reviewLabel}</button>
-                  <button onClick={l.ignore} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Ignore</button>
-                  <button onClick={l.blockNext} style={{ height: "28px", padding: "0 10px", borderRadius: "7px", border: "0", background: "var(--acc)", color: "#fff", font: "inherit", fontSize: "12px", fontWeight: "600", cursor: "pointer", whiteSpace: "nowrap" }}>Block next time</button>
-                </div></>)}
-                {(l.isRuled) && (<><span style={{ justifySelf: "end", fontSize: "12px", color: "var(--green)", fontWeight: "600", display: "flex", gap: "4px", alignItems: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px" }}>block</span>Blocks next time</span></>)}
-              </div>
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 6px", padding: "0 0 10px", fontSize: "11.5px", color: "var(--tx3)", minWidth: "0" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "14px" }}>person</span><span>{l.client}</span><span>·</span><span style={{ fontFamily: "var(--mono)" }}>{l.model}</span>{(l.hasSess) && (<><a href="Spend.dc.html" title="Opens Spend \u2192 Agents and sessions, filtered to this session" style={{ fontFamily: "var(--mono)", color: "var(--acc)", textDecoration: "underline", textUnderlineOffset: "2px" }}>{l.sess}</a></>)}{(l.noSess) && (<><span style={{ fontStyle: "italic" }}>session not recorded</span></>)}</div>
-              {(l.expanded) && (<>
-                <div style={{ margin: "0 0 12px", padding: "12px 14px", borderRadius: "8px", background: "var(--seg)", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: "10px 18px", fontSize: "12px" }}>
-                  <div style={{ gridColumn: "1/-1", display: "flex", gap: "6px", color: "var(--tx)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "16px", color: "var(--red)" }}>info</span><span><b>Reason:</b> {l.why}</span></div>
-                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Location</span><span>{l.loc}</span></div>
-                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>First seen</span><span>{l.first}</span></div>
-                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Last seen</span><span>{l.last}</span></div>
-                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Hits</span><span>{l.hits}</span></div>
-                  <div style={{ display: "flex", flexDirection: "column" }}><span style={{ color: "var(--tx3)" }}>Hash</span><span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span></div>
-                  <div style={{ gridColumn: "1/-1", color: "var(--tx2)" }}>Block next time: <b style={{ color: "var(--tx)" }}>{l.fix}</b></div>
+            <div style={{ borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column", gap: "6px", padding: "10px 0" }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: "8px 16px", alignItems: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}><span style={{ display: "flex", gap: "8px", alignItems: "baseline", minWidth: "0" }}><span style={{ fontWeight: "600" }}>{l.rule}</span>{l.preview && <span style={{ fontFamily: "var(--mono)", fontSize: "12px", color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{l.preview}</span>}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{l.group} · <span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span> · {l.time}</span></div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", alignItems: "flex-start" }}><span title={l.why} style={badgeSt("var(--redbg)", "var(--red)")}>{l.tag}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{l.loc}</span></div>
+                <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap", gridColumn: "span 2" }}>
+                  <button onClick={l.view} style={btn}>View</button>
+                  <button onClick={l.allow} style={btn}>Allow</button>
+                  <span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>Rule action</span>
+                  <div style={segWrap}>{l.ruleBtns.map((b) => <button key={b.label} onClick={b.on} style={b.style}>{b.label}</button>)}</div>
                 </div>
-              </>)}
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "2px 6px", fontSize: "11.5px", color: "var(--tx3)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "14px" }}>person</span><span>{l.client}</span><span>·</span><span style={{ fontFamily: "var(--mono)" }}>{l.model}</span></div>
+              {(l.signed) && <div style={{ fontSize: "11.5px", color: "var(--tx2)", display: "flex", gap: "6px", alignItems: "flex-start" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "15px", color: "var(--amber)" }}>info</span>Signed thinking can’t be rewritten. Redact drops it from older turns; Block stops the turn with a /rewind hint.</div>}
+              {(l.pending) && <Confirm p={l.pending} />}
             </div>
           </Fragment>))}
           {(prevLeaks || nextLeaks) && (<div style={{ display: "flex", gap: "8px", justifyContent: "center", alignItems: "center", paddingTop: "8px", fontSize: "12px", color: "var(--tx3)" }}>
@@ -276,10 +270,15 @@ export default function PiiGuardClient() {
 
       {(s.numbers) && (<>
         <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", gap: "28px", flexWrap: "wrap", alignItems: "stretch" }}>
-          <div style={{ display: "flex", flexDirection: "column", gap: "14px", minWidth: "180px" }}>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11.5px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".05em" }}>VALUES FOUND</span><span style={{ fontSize: "24px", fontWeight: "650", fontVariantNumeric: "tabular-nums" }}>{n.found}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{n.foundHits}</span></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11.5px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".05em" }}>REDACTED</span><span style={{ fontSize: "24px", fontWeight: "650", color: "var(--acc)", fontVariantNumeric: "tabular-nums" }}>{n.redacted}<span style={{ fontSize: "13px", fontWeight: "500", color: "var(--tx2)" }}> values</span></span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{n.redactedHits}</span></div>
-            <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontSize: "11.5px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".05em" }}>BLOCKED</span><span style={{ fontSize: "24px", fontWeight: "650", fontVariantNumeric: "tabular-nums" }}>{n.blocked}<span style={{ fontSize: "13px", fontWeight: "500", color: "var(--tx2)" }}> values</span></span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{n.blockedHits}</span></div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: "min(100%,300px)", flex: "0 1 340px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: "8px" }}>
+              {cards.map((c) => (<button key={c.label} onClick={c.on} title={c.title} style={{ textAlign: "left", border: "0", borderRadius: "8px", background: "var(--seg)", padding: "8px 10px", font: "inherit", color: "var(--tx)", cursor: "pointer", display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}>
+                <span style={{ fontSize: "11px", color: "var(--tx2)", fontWeight: "600", letterSpacing: ".04em", textTransform: "uppercase" }}>{c.label}</span>
+                <span style={{ fontSize: "20px", fontWeight: "650", color: c.c, fontVariantNumeric: "tabular-nums" }}>{c.value}</span>
+                <span style={{ fontSize: "11px", color: "var(--tx3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{c.sub}</span>
+              </button>))}
+            </div>
+            <span style={{ fontSize: "11px", color: "var(--tx3)", fontVariantNumeric: "tabular-nums" }}>Counts are unique values. Found = Redacted + Observed + Blocked + Leaked + Allowed ({sumNote}). Second line: requests (distinct turns). Hover a card for hits.</span>
           </div>
           <div style={{ flex: "1", minWidth: "280px", display: "flex", flexDirection: "column", gap: "8px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
@@ -296,6 +295,23 @@ export default function PiiGuardClient() {
               </Fragment>))}
             </div>
             <div style={{ display: "flex", gap: fgap }}>{(fbars).map((b, _i) => (<Fragment key={_i}><span style={{ flex: "1", minWidth: "0", fontSize: "10.5px", color: "var(--tx3)", whiteSpace: "nowrap" }}>{b.tick}</span></Fragment>))}</div>
+          </div>
+        </div>
+      </>)}
+
+      {(s.bygroup && byGroup.length > 0) && (<>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>By rule group</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>Unique values · click a count to open Findings</span></div>
+          <div style={{ overflowX: "auto" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "minmax(140px,1.2fr) minmax(120px,1fr) repeat(4,72px) 64px", gap: "8px 12px", alignItems: "center", minWidth: "640px", fontSize: "12.5px" }}>
+              {["Group", "Split", "Redacted", "Observed", "Blocked", "Leaked", "Total"].map((h, i) => <span key={i} style={{ fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", textAlign: i > 1 ? "right" : "left", textTransform: "uppercase" }}>{h}</span>)}
+              {byGroup.map((g) => (<Fragment key={g.id}>
+                <span>{g.name}</span>
+                <Bar parts={g.bar} />
+                {g.cells.map((c, i) => c.on ? <button key={i} onClick={c.on} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: c.c, textAlign: "right", cursor: "pointer", textDecoration: "underline", textUnderlineOffset: "2px", fontVariantNumeric: "tabular-nums" }}>{c.n}</button> : <span key={i} style={{ textAlign: "right", color: c.c, fontVariantNumeric: "tabular-nums" }}>{c.n}</span>)}
+                <span style={{ textAlign: "right", fontWeight: "600", fontVariantNumeric: "tabular-nums" }}>{g.total}</span>
+              </Fragment>))}
+            </div>
           </div>
         </div>
       </>)}
@@ -354,19 +370,19 @@ export default function PiiGuardClient() {
 
       {(s.groups) && (<>
         <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px", minWidth: "0" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>Rule groups</span><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Hits in {rangeShort}</span></div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><span style={{ fontWeight: "600", fontSize: "14px" }}>Rule groups</span><span style={{ fontSize: "12px", color: "var(--tx3)" }}>Unique values in {rangeShort}, by action</span></div>
           <div ref={gRef} onScroll={checkFade} style={{ overflowX: "auto", WebkitMaskImage: maskG, maskImage: maskG }}>{(groups).map((g, _i) => (<Fragment key={_i}>
             <div style={{ borderTop: "1px solid var(--line)", minWidth: "700px" }}>
               <div style={{ display: "grid", gridTemplateColumns: "24px minmax(150px,1fr) 170px 150px auto", gap: "12px", alignItems: "center", padding: "10px 0" }}>
                 <button onClick={g.toggle} style={{ border: "0", background: "transparent", color: "var(--tx2)", cursor: "pointer", fontFamily: "'Material Symbols Outlined'", fontSize: "18px", padding: "0" }}>{g.chev}</button>
                 <div style={{ display: "flex", flexDirection: "column", gap: "1px" }}><span style={{ fontWeight: "600" }}>{g.name}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{g.ruleCount} {g.ruleCount === 1 ? "rule" : "rules"}</span></div>
-                <span style={{ fontSize: "12px", color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}>{g.hits} hits · {g.uniq} unique</span>
+                <span style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px", color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}><Bar parts={g.bar} /><span style={{ minWidth: "32px", textAlign: "right" }}>{g.total}</span></span>
                 <span>{(g.differs) && (<><span style={{ fontSize: "10.5px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: "var(--amberbg)", color: "var(--amber)" }}>{g.badge}</span></>)}</span>
                 <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(g.btns).map((b, _i) => (<Fragment key={_i}><button onClick={b.on} style={b.style}>{b.label}</button></Fragment>))}</div>
               </div>
               {(g.open) && (<>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(220px,1fr))", gap: "6px", padding: "0 0 12px 36px" }}>
-                  {(g.rules).map((r, _i) => (<Fragment key={_i}><div style={{ display: "flex", justifyContent: "space-between", padding: "7px 10px", borderRadius: "7px", background: "var(--seg)", fontSize: "12px" }}><span>{r.name}</span><span style={{ color: "var(--tx3)", fontVariantNumeric: "tabular-nums" }}>{r.hits}</span></div></Fragment>))}
+                  {(g.rules).map((r, _i) => (<Fragment key={_i}><div style={{ display: "flex", flexDirection: "column", gap: "6px", padding: "7px 10px", borderRadius: "7px", background: "var(--seg)", fontSize: "12px" }}><span style={{ display: "flex", justifyContent: "space-between" }}><span>{r.name}</span><span style={{ color: "var(--tx3)", fontVariantNumeric: "tabular-nums" }}>{r.total}</span></span><Bar parts={r.bar} /></div></Fragment>))}
                 </div>
               </>)}
             </div>
@@ -375,67 +391,74 @@ export default function PiiGuardClient() {
       </>)}
 
       {(s.values) && (<>
-        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "14px 18px", display: "flex", flexDirection: "column", gap: "10px", minWidth: "0" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
-            <div style={{ display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" }}>{(subTabs).map((g, _i) => (<Fragment key={_i}><button onClick={g.on} style={g.style}>{g.label}</button></Fragment>))}</div>
-            <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{shownLabel}</span>
+        <div style={{ background: "var(--card)", border: "1px solid var(--line)", borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px", display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <div style={segWrap}>{viewBtns.map((g) => <button key={g.label} onClick={g.on} style={g.style}>{g.label}</button>)}</div>
+            <span style={{ display: "flex", gap: "16px", alignItems: "center", fontSize: "12px", color: "var(--tx3)" }}>
+              <button onClick={toggleAllowed} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: "var(--acc)", cursor: "pointer" }}>Allowed values ({allowedCount})</button>
+              <span>{shownLabel}</span>
+            </span>
           </div>
+          {(showAllowed) && (<div style={{ padding: "8px 16px", borderRadius: "8px", background: "var(--seg)", display: "flex", flexDirection: "column", gap: "4px", fontSize: "12px" }}>
+            <span style={{ color: "var(--tx2)", padding: "4px 0" }}>Allowed values are sent unchanged in every request and every rule. Restore one to scan it again.</span>
+            {allowed.map((x) => <div key={x.hash} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", borderTop: "1px solid var(--line)", padding: "4px 0" }}><span style={{ minWidth: "0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.name} <span style={{ fontFamily: "var(--mono)", color: "var(--tx3)" }}>{x.preview}</span></span><button onClick={x.restore} style={btn}>Restore</button></div>)}
+            {allowed.length === 0 && <span style={{ color: "var(--tx3)", padding: "4px 0" }}>No values are allowed.</span>}
+          </div>)}
           <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 100%", minWidth: "200px", display: "flex", alignItems: "center", gap: "6px", height: "32px", padding: "0 10px", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "17px", color: "var(--tx3)" }}>search</span><input value={q} onChange={onQ} placeholder="Rule, name, or hash" style={{ flex: "1", border: "0", outline: "0", background: "transparent", color: "var(--tx)", font: "inherit" }} /></div>
-            <div ref={fRef} onScroll={checkFade} style={{ flex: "1 1 100%", minWidth: "0", display: "flex", gap: "8px", scrollbarWidth: "none", flexWrap: fWrap, overflowX: fOverflow, WebkitMaskImage: maskF, maskImage: maskF }}>
-            <select value={fGroup} onChange={onGroup} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All groups</option>{groupOpts.map((o) => <option key={o}>{o}</option>)}</select>
-            <select value={fAction} onChange={onAction} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All actions</option><option value="observe">Observe</option><option value="redact">Redact</option><option value="block">Block</option><option value="leaked">Leaked</option></select>
-            <select value={fStatus} onChange={onStatus} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="active">Active</option><option value="leaked">Leaked</option><option value="ignored">Ignored</option></select>
-            <select value={fClient} onChange={onClient} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All clients</option>{clientOpts.map((o) => <option key={o}>{o}</option>)}</select>
-            <select value={fModel} onChange={onModel} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All models</option>{modelOpts.map((o) => <option key={o}>{o}</option>)}</select>
-            <select value={fSource} onChange={onSource} style={{ height: "32px", flex: "none", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)", color: "var(--tx)", font: "inherit", padding: "0 8px" }}><option value="">All sources</option><option value="text">Text</option><option value="ocr">OCR</option></select></div>
+            <div style={{ flex: "1 1 220px", minWidth: "0", display: "flex", alignItems: "center", gap: "6px", height: "32px", padding: "0 8px", border: "1px solid var(--line2)", borderRadius: "8px", background: "var(--card)" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "17px", color: "var(--tx3)" }}>search</span><input value={q} onChange={onQ} placeholder="Rule, masked value, model, client or hash" style={{ border: "0", outline: "none", background: "transparent", color: "var(--tx)", font: "inherit", flex: "1", minWidth: "0" }} /></div>
+            <select value={fGroup} onChange={onGroup} style={selSt}><option value="">All groups</option>{groupOpts.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select>
+            <select value={fAction} onChange={onAction} style={selSt}><option value="">All actions</option><option value="redact">Redacted</option><option value="observe">Observed</option><option value="block">Blocked</option><option value="leaked">Leaked</option><option value="allowed">Allowed</option></select>
+            <select value={fSource} onChange={onSource} style={selSt}><option value="">All sources</option><option value="text">Text</option><option value="ocr">OCR</option></select>
+            <select value={fClient} onChange={onClient} style={selSt}><option value="">All clients</option>{clientOpts.map((o) => <option key={o}>{o}</option>)}</select>
+            <select value={fModel} onChange={onModel} style={selSt}><option value="">All models</option>{modelOpts.map((o) => <option key={o}>{o}</option>)}</select>
+            {(isEvents) && <label style={{ display: "flex", gap: "6px", alignItems: "center", fontSize: "12px", color: "var(--tx2)", whiteSpace: "nowrap" }}><input type="checkbox" checked={ui.tests} onChange={onTests} />Include tests</label>}
           </div>
-          {(hasSel) && (<>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "8px 10px", borderRadius: "9px", background: "var(--tx)", color: "var(--bg)" }}>
-              <span style={{ fontWeight: "600", fontSize: "12.5px", paddingRight: "6px" }}>{selCount} selected</span>
-              <button onClick={bulkIgnore} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Ignore</button>
-              <span style={{ fontSize: "12px", opacity: ".7", paddingLeft: "4px" }}>Set action</span>
-              <button onClick={bulkObserve} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Observe</button>
-              <button onClick={bulkRedact} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Redact</button>
-              <button onClick={bulkBlock} style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }}>Block</button>
-              <button style={{ height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" }} onClick={copyHashes}>Copy hashes</button>
-              <button onClick={clearSel} style={{ marginLeft: "auto", height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "transparent", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer", opacity: ".8" }}>Clear</button>
-            </div>
-          </>)}
+          {(hasSel) && (<div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", padding: "8px", borderRadius: "8px", background: "var(--tx)", color: "var(--bg)" }}>
+            <span style={{ fontWeight: "600", fontSize: "12.5px", padding: "0 8px" }}>{selCount} selected</span>
+            <button onClick={bulkAllow} style={darkBtn}>Allow</button>
+            <button onClick={clearSel} style={{ ...darkBtn, marginLeft: "auto", background: "transparent" }}>Clear</button>
+          </div>)}
           <div ref={vRef} onScroll={checkFade} style={{ overflowX: "auto", WebkitMaskImage: maskV, maskImage: maskV }}>{(isValues) && (<>
-            <div style={{ display: "grid", gridTemplateColumns: "24px minmax(160px,1.5fr) minmax(130px,1.2fr) 96px 124px 76px 88px 52px 64px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "890px", alignItems: "center" }}><input type="checkbox" checked={allSel} onChange={toggleAll} /><span>NAME</span><span>WHERE</span><span>CLIENT</span><span>MODEL · SESSION</span><span>ACTION</span><span>SEEN ↓</span><span style={{ textAlign: "right" }}>HITS</span><span></span></div>
+            <div style={{ ...rowGrid(VCOLS), fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0" }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Select all" /><span>VALUE</span><span>BECAME</span><span>ACTION</span><span style={{ textAlign: "right" }}>REQUESTS</span><span>LAST SEEN</span><span>CLIENT</span><span></span></div>
             {(values).map((v) => (<Fragment key={v.key}>
-              <div style={{ display: "grid", gridTemplateColumns: "24px minmax(160px,1.5fr) minmax(130px,1.2fr) 96px 124px 76px 88px 52px 64px", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", minWidth: "890px", background: v.bg }}>
-                <input type="checkbox" checked={v.sel} onChange={v.toggle} />
-                <div style={{ display: "flex", flexDirection: "column", gap: "1px", minWidth: "0" }}><span style={{ display: "flex", gap: "6px", alignItems: "center" }}><span style={{ fontWeight: "600" }}>{v.name}</span>{(v.leaked) && (<><span style={{ fontSize: "10px", fontWeight: "700", padding: "1px 5px", borderRadius: "4px", background: "var(--redbg)", color: "var(--red)" }}>LEAKED</span></>)}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{v.group} · <span style={{ fontFamily: "var(--mono)" }}>#{v.hash}</span></span></div>
-                <span style={{ fontSize: "11.5px", color: "var(--tx2)" }}>{v.where}</span>
-                <span style={{ fontSize: "12px", display: "flex", flexDirection: "column", minWidth: "0" }}><span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.client}</span></span>
-                <span style={{ display: "flex", flexDirection: "column", minWidth: "0" }}><span title={v.model} style={{ fontFamily: "var(--mono)", fontSize: "11.5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.model}</span><span title={v.sessTip} style={{ fontFamily: "var(--mono)", fontSize: "10.5px", color: "var(--tx3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.sess}</span></span>
-                <span style={{ justifySelf: "start", fontSize: "11px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: v.abg, color: v.ac }}>{v.action}</span>
-                <span style={{ display: "flex", flexDirection: "column", minWidth: "0", whiteSpace: "nowrap" }}><span style={{ fontSize: "12px" }}>{v.last}</span><span style={{ fontSize: "10.5px", color: "var(--tx3)" }}>first {v.first}</span></span>
-                <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: "12px" }}>{v.hits}</span>
-                <button onClick={v.ignore} style={{ height: "26px", padding: "0 8px", borderRadius: "6px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "11.5px", cursor: "pointer" }}>{v.ignoreLabel}</button>
+              <div style={{ ...rowGrid(VCOLS), padding: "8px 0", borderTop: "1px solid var(--line)", background: v.bg, position: "relative" }}>
+                <input type="checkbox" checked={v.sel} onChange={v.toggle} aria-label={`Select ${v.name}`} />
+                <button onClick={v.view} style={{ border: "0", background: "transparent", padding: "0", font: "inherit", color: "var(--tx)", textAlign: "left", cursor: "pointer", display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}>
+                  <span style={{ fontFamily: "var(--mono)", fontSize: "12px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.preview}</span>
+                  <span style={{ fontSize: "11px", color: "var(--tx3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.name} · {v.group}{v.ocr ? " · OCR" : ""}</span>
+                </button>
+                <span title={v.became} style={{ fontFamily: "var(--mono)", fontSize: "11px", color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.became}</span>
+                <span style={badgeSt(v.abg, v.ac)}>{v.action}</span>
+                <span style={{ textAlign: "right", fontVariantNumeric: "tabular-nums", fontSize: "12px" }}>{v.reqs}</span>
+                <span style={{ fontSize: "12px", color: "var(--tx2)", whiteSpace: "nowrap" }}>{v.last}</span>
+                <span style={{ fontSize: "12px", color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{v.client}</span>
+                <button onClick={v.openMenu} aria-label="Row actions" aria-expanded={v.menu} style={{ ...btn, padding: "0", width: "28px", fontFamily: "'Material Symbols Outlined'", fontSize: "18px" }}>more_horiz</button>
+                {(v.menu) && <RowMenu v={v} close={closeMenu} />}
               </div>
+              {(v.pending) && <div style={{ padding: "0 0 8px 32px" }}><Confirm p={v.pending} /></div>}
             </Fragment>))}
-            {(noValues) && (<><div style={{ padding: "28px 0", textAlign: "center", color: "var(--tx3)" }}>No values match these filters.</div></>)}
+            {(noValues) && (<><div style={{ padding: "32px 0", textAlign: "center", color: "var(--tx3)" }}>No values match these filters.</div></>)}
             {(prevValues || nextValues) && (<div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
               <button onClick={prevValues || undefined} disabled={!prevValues} style={moreBtn}>Previous {PAGE}</button>
               <button onClick={nextValues || undefined} disabled={!nextValues} style={moreBtn}>Next {PAGE}</button>
             </div>)}
           </>)}
           {(isEvents) && (<>
-            <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "860px" }}><span>TIME</span><span>RULE</span><span>WHERE</span><span>ACTION</span><span>MODEL</span><span>CLIENT</span><span>REQUEST</span></div>
-            {(events).map((e) => (<Fragment key={e.id}>
-              <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", fontSize: "12px", minWidth: "860px" }}>
+            <div style={{ ...rowGrid(HCOLS), fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0" }}><input type="checkbox" checked={allSel} onChange={toggleAll} aria-label="Select all" /><span>TIME</span><span>VALUE</span><span>ACTION</span><span>WHERE</span><span>CLIENT</span><span>MODEL</span><span>REQUEST</span><span></span></div>
+            {(hits).map((e) => (<Fragment key={e.id}>
+              <div style={{ ...rowGrid(HCOLS), padding: "8px 0", borderTop: "1px solid var(--line)", fontSize: "12px", background: e.bg }}>
+                <input type="checkbox" checked={e.sel} onChange={e.toggle} aria-label={`Select ${e.rule}`} />
                 <span style={{ color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}>{e.t}</span>
-                <span>{e.rule} <span style={{ fontFamily: "var(--mono)", color: "var(--tx3)", fontSize: "11px" }}>#{e.hash}</span></span>
-                <span style={{ color: "var(--tx2)" }}>{e.loc}</span>
-                <span style={{ justifySelf: "start", fontSize: "11px", fontWeight: "600", padding: "2px 7px", borderRadius: "5px", background: e.abg, color: e.ac }}>{e.action}</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: "11.5px" }}>{e.model}</span>
-                <span style={{ color: "var(--tx2)" }}>{e.key}</span>
-                <span style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx3)" }}>{e.req}</span>
+                <span style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}><span style={{ fontFamily: "var(--mono)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.preview || `#${e.hash}`}</span><span style={{ fontSize: "11px", color: "var(--tx3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.rule}{e.test ? " · test" : ""}</span></span>
+                <span style={badgeSt(e.abg, e.ac)}>{e.action}</span>
+                <span style={{ color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.loc}</span>
+                <span style={{ color: "var(--tx2)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.client}</span>
+                <span title={e.model} style={{ fontFamily: "var(--mono)", fontSize: "11.5px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{e.model}</span>
+                <span title={e.requestId} style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx3)" }}>{e.req}</span>
+                <button onClick={e.view} style={btn}>View</button>
               </div>
             </Fragment>))}
+            {(noHits && !evBusy) && (<div style={{ padding: "32px 0", textAlign: "center", color: "var(--tx3)" }}>No hits match these filters.</div>)}
             <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
               {(loadNewest) && (<button onClick={loadNewest} style={moreBtn}>Newest</button>)}
               {(loadNewer) && (<button onClick={loadNewer} style={moreBtn}>Newer 50</button>)}
@@ -521,6 +544,107 @@ export default function PiiGuardClient() {
     </div>
   </main>
   </div>
+      {(detail) && <Drawer d={detail} />}
     </div>
+  );
+}
+
+// Shared bits. Inline styles match the rest of the page (design: PII Guard.dc.html, round 17).
+const btn = { height: "28px", padding: "0 10px", borderRadius: "7px", border: "1px solid var(--line2)", background: "var(--card)", color: "var(--tx)", font: "inherit", fontSize: "12px", cursor: "pointer", whiteSpace: "nowrap" };
+const darkBtn = { height: "26px", padding: "0 10px", borderRadius: "6px", border: "0", background: "rgba(127,127,127,.25)", color: "inherit", font: "inherit", fontSize: "12px", cursor: "pointer" };
+const segWrap = { display: "flex", gap: "2px", padding: "3px", borderRadius: "9px", background: "var(--seg)" };
+// Native select with its own chevron 8px after the text, so a long model name never pushes it far right.
+const CHEV = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23888' stroke-width='1.5'/%3E%3C/svg%3E\")";
+const selSt = { height: "32px", flex: "none", maxWidth: "180px", textOverflow: "ellipsis", appearance: "none", WebkitAppearance: "none", border: "1px solid var(--line2)", borderRadius: "8px", backgroundColor: "var(--card)", backgroundImage: CHEV, backgroundRepeat: "no-repeat", backgroundPosition: "right 8px center", color: "var(--tx)", font: "inherit", fontSize: "12.5px", padding: "0 26px 0 8px", cursor: "pointer" };
+const badgeSt = (bg, c) => ({ justifySelf: "start", display: "inline-flex", alignItems: "center", height: "20px", fontSize: "11px", fontWeight: "600", padding: "0 8px", borderRadius: "5px", background: bg, color: c, whiteSpace: "nowrap" });
+const VCOLS = "24px minmax(180px,1.6fr) minmax(140px,1.1fr) 88px 72px 80px minmax(96px,.8fr) 32px";
+const HCOLS = "24px 64px minmax(150px,1.3fr) 88px minmax(140px,1.1fr) minmax(96px,.8fr) minmax(110px,.9fr) 80px 56px";
+const rowGrid = (cols) => ({ display: "grid", gridTemplateColumns: cols, gap: "8px", alignItems: "center", minWidth: "880px" });
+
+function Bar({ parts }) {
+  return <div style={{ display: "flex", height: "8px", borderRadius: "4px", background: "var(--seg)", overflow: "hidden", flex: "1", minWidth: "80px" }}>{parts.map((p, i) => <div key={i} title={p.title} style={{ width: p.w, background: p.color }} />)}</div>;
+}
+
+function Confirm({ p }) {
+  return (
+    <div role="alertdialog" style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", padding: "8px 12px", borderRadius: "8px", background: "var(--amberbg)", fontSize: "12px", color: "var(--tx)" }}>
+      <span style={{ flex: "1 1 240px" }}>{p.text}</span>
+      <button onClick={p.cancel} style={btn}>Cancel</button>
+      <button onClick={p.ok} style={{ ...btn, border: "0", background: "var(--acc)", color: "#fff", fontWeight: "600" }}>Change rule</button>
+    </div>
+  );
+}
+
+function RowMenu({ v, close }) {
+  const ref = useRef(null);
+  // Light dismiss, same as the range calendar.
+  useEffect(() => {
+    const down = (e) => { if (!ref.current?.contains(e.target)) close(); };
+    const key = (e) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", down); document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+  }, [close]);
+  const item = { border: "0", background: "transparent", textAlign: "left", padding: "6px 10px", borderRadius: "6px", font: "inherit", fontSize: "12.5px", color: "var(--tx)", cursor: "pointer" };
+  return (
+    <div ref={ref} role="menu" style={{ position: "absolute", right: "0", top: "100%", zIndex: 40, width: "220px", background: "var(--card)", border: "1px solid var(--line2)", borderRadius: "10px", boxShadow: "0 12px 32px rgba(40,20,10,.16)", padding: "4px", display: "flex", flexDirection: "column" }}>
+      <button role="menuitem" style={item} onClick={() => { close(); v.view(); }}>View details</button>
+      <button role="menuitem" style={item} onClick={() => { close(); v.allow(); }}>{v.allowLabel}</button>
+      <span style={{ padding: "6px 10px 2px", fontSize: "11px", color: "var(--tx3)" }}>Set rule action (all values)</span>
+      <div style={{ ...segWrap, margin: "2px 6px 6px" }}>{v.ruleBtns.map((b) => <button key={b.label} role="menuitem" onClick={() => { close(); b.on(); }} style={b.style}>{b.label}</button>)}</div>
+    </div>
+  );
+}
+
+function Sec({ label, children }) {
+  return <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}><span style={{ fontSize: "11px", fontWeight: "600", letterSpacing: ".05em", color: "var(--tx3)", textTransform: "uppercase" }}>{label}</span>{children}</div>;
+}
+// Marks the masked value inside its masked context.
+function highlight(text, mark) {
+  const at = mark ? text.indexOf(mark) : -1;
+  if (at < 0) return text;
+  return <>{text.slice(0, at)}<span style={{ background: "var(--bluebg)", color: "var(--blue)", borderRadius: "4px", padding: "0 4px" }}>{mark}</span>{text.slice(at + mark.length)}</>;
+}
+
+function Drawer({ d }) {
+  // Broken image = expired; keyed by URL so a new image starts unbroken.
+  const [brokenSrc, setBrokenSrc] = useState(null);
+  const broken = brokenSrc === d.image;
+  useEffect(() => {
+    const key = (e) => { if (e.key === "Escape") d.close(); };
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
+  }, [d]);
+  const row = (label, value, mono) => value ? <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{label}</span><span style={{ fontSize: "12.5px", fontFamily: mono ? "var(--mono)" : "inherit", overflowWrap: "anywhere" }}>{value}</span></div> : null;
+  return (
+    <>
+      <div onClick={d.close} style={{ position: "fixed", inset: "0", background: "rgba(0,0,0,.25)", zIndex: 80 }} />
+      <aside role="dialog" aria-modal="true" aria-label={`${d.title} details`} style={{ position: "fixed", top: "0", right: "0", bottom: "0", width: "min(420px,100vw)", zIndex: 81, background: "var(--card)", borderLeft: "1px solid var(--line2)", boxShadow: "-12px 0 32px rgba(0,0,0,.12)", display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", padding: "16px", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px", minWidth: "0" }}><span style={{ fontFamily: "var(--mono)", fontSize: "16px", fontWeight: "600", overflowWrap: "anywhere" }}>{d.preview}</span><span style={{ display: "flex", gap: "8px", alignItems: "center", fontSize: "12px", color: "var(--tx3)" }}><span style={{ ...badgeSt("var(--card)", "var(--tx2)"), border: "1px solid var(--line2)" }}>{d.rule}</span>{d.group}</span></div>
+          <button onClick={d.close} aria-label="Close" style={{ ...btn, padding: "0", width: "28px", fontFamily: "'Material Symbols Outlined'", fontSize: "18px" }}>close</button>
+        </div>
+        <div style={{ flex: "1", overflowY: "auto", padding: "16px", display: "flex", flexDirection: "column", gap: "16px" }}>
+          <Sec label="Became"><span style={{ fontFamily: d.action === "Redacted" ? "var(--mono)" : "inherit", fontSize: "12.5px" }}>{d.became}</span></Sec>
+          <Sec label="Action"><span style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}><span style={badgeSt(d.abg, d.ac)}>{d.action}</span><span style={{ fontSize: "12px", color: "var(--tx2)" }}>{d.why}</span></span></Sec>
+          <Sec label="Where in the request"><span style={{ fontSize: "12.5px" }}>{d.where}</span>
+            {d.noContext ? <span style={{ fontSize: "12px", color: "var(--tx3)" }}>{d.image ? "Found in an image; see below." : "No context recorded. Context is stored for findings logged from this release on."}</span>
+              : <><span style={{ fontFamily: "var(--mono)", fontSize: "12px", padding: "8px 12px", borderRadius: "8px", border: "1px solid var(--line2)", overflowWrap: "anywhere" }}>{highlight(d.context, d.preview)}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>Masked preview and about 20 characters of masked context. Raw values are never stored.</span></>}</Sec>
+          {(d.image) && (<Sec label={`Image · ${d.imageLabel}`}>
+            {broken ? <span style={{ fontSize: "12px", color: "var(--tx3)", padding: "16px", borderRadius: "6px", background: "var(--seg)", textAlign: "center" }}>Image expired (kept 14 days)</span>
+              : <a href={d.image} target="_blank" rel="noreferrer">
+                {/* eslint-disable-next-line @next/next/no-img-element -- auth-checked API image */}
+                <img src={d.image} alt={d.imageLabel} onError={() => setBrokenSrc(d.image)} style={{ width: "100%", maxHeight: "320px", objectFit: "contain", borderRadius: "6px", background: "var(--seg)" }} /></a>}</Sec>)}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+            {row("Client", d.client)}{row("Model", d.model, true)}{row("Requests", d.reqs)}{row("First seen", d.first)}{row("Last seen", d.last)}{row("Hash", `#${d.hash}`, true)}{row("Request", d.request, true)}
+          </div>
+          {(d.pending) && <Confirm p={d.pending} />}
+        </div>
+        <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap", padding: "16px", borderTop: "1px solid var(--line)" }}>
+          <button onClick={d.allow} style={btn}>{d.allowLabel}</button>
+          <span style={{ marginLeft: "auto", fontSize: "11.5px", color: "var(--tx3)" }}>Set rule action</span>
+          <div style={segWrap}>{d.ruleBtns.map((b) => <button key={b.label} onClick={b.on} style={b.style}>{b.label}</button>)}</div>
+        </div>
+      </aside>
+    </>
   );
 }

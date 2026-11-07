@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 // Preset segment + month calendar for a custom range (design: Shared.dc.html "range").
 const PRESETS = ["Today", "24h", "7D", "30D", "60D", "All"];
@@ -13,6 +13,16 @@ export default function RangeBar({ preset, customLabel, onChange, today }) {
   const [open, setOpen] = useState(false);
   const [m, setM] = useState(0);
   const [a, setA] = useState(null);
+  const root = useRef(null);
+  // Same light-dismiss as HeaderMenu: a press outside or Escape closes the calendar.
+  useEffect(() => {
+    if (!open) return;
+    const down = (e) => { if (!root.current?.contains(e.target)) setOpen(false); };
+    const key = (e) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", key);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", key); };
+  }, [open]);
   const T = today ? new Date(today + "T00:00:00") : new Date();
   const base = new Date(T.getFullYear(), T.getMonth() - m, 1);
   const off = (base.getDay() + 6) % 7, dim = new Date(base.getFullYear(), base.getMonth() + 1, 0).getDate();
@@ -27,7 +37,7 @@ export default function RangeBar({ preset, customLabel, onChange, today }) {
     onChange({ preset: "Custom", from: key(from), to: key(to), label });
   };
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, position: "relative", maxWidth: "100%" }}>
+    <div ref={root} style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, position: "relative", maxWidth: "100%" }}>
       <div style={{ display: "flex", flexWrap: "nowrap", gap: 2, padding: 3, borderRadius: 9, background: "var(--seg)", maxWidth: "100%", overflowX: "auto", boxSizing: "border-box" }}>
         {PRESETS.map((k) => <button key={k} onClick={() => { setOpen(false); onChange({ preset: k }); }} style={seg(preset === k)}>{k}</button>)}
         <button onClick={() => { setOpen((o) => !o); setA(null); }} style={seg(preset === "Custom")} aria-expanded={open}>
