@@ -48,6 +48,8 @@ const ALWAYS_PROTECTED = [
   "/api/oauth/zed/auto-import",
   "/api/oauth/minimax-code/lease",
   "/api/oauth/minimax-code-global/lease",
+  // Raw captured images can hold PII.
+  "/api/pii-guard/image",
 ];
 
 // Require auth, but allow through if requireLogin is disabled

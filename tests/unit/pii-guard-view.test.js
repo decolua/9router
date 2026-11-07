@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildView, PAGE } from "../../src/app/(dashboard)/dashboard/pii-guard/view.js";
 
-const ui = { tab: "findings", sub: "values", q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {}, page: 0, leakPage: 0, testKind: "text", testText: "", imgSel: 0 };
+const ui = { tab: "findings", view: "value", q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", sel: {}, page: 0, leakPage: 0, testKind: "text", testText: "", imgSel: 0 };
 const base = (over = {}) => ({
   health: { module: true, loaded: true }, config: { mode: "off", rules: {} },
   rules: [{ id: "pan", label: "PAN", group: "id" }, { id: "email", label: "Email", group: "contact" }],
@@ -29,5 +29,24 @@ describe("pii-guard view", () => {
     expect(first.nextValues).toBeTypeOf("function");
     expect(second.nextValues).toBeNull();
     expect(view(data, { ...ui, tab: "overview" }).values).toHaveLength(0);
+  });
+  it("cards share one unit, sum to Found, and leaks offer rule actions, not Block next time", () => {
+    const now = new Date().toISOString();
+    const g = (hash, rule, action, extra = {}) => ({ hash, rule, sources: ["assistant/thinking"], actions: [action], action, firstSeen: now, lastSeen: now, turns: 1, ignored: false, ...extra });
+    const groups = [g("a", "pan", "redact"), g("b", "pan", "leaked", { leakedWhere: ["assistant/thinking"], preview: "AB•••••F" }), g("c", "email", "observe", { ignored: true })];
+    const byAction = { all: { values: { redact: 1, leaked: 1, allowed: 1 }, requests: { redact: 1, leaked: 1, ignored: 1 } }, pan: { values: { redact: 1, leaked: 1 }, requests: {} }, email: { values: { allowed: 1 }, requests: {} } };
+    const data = base({ groups: [{ id: "id", label: "Government IDs" }, { id: "contact", label: "Contact" }], summary: { groups, trend: [], unique24h: 3, byAction, requests: 2 } });
+    const v = view(data, { ...ui, tab: "overview" });
+    const vals = v.cards.map((c) => Number(c.value));
+    expect(vals[0]).toBe(vals.slice(1).reduce((a, b) => a + b, 0));
+    expect(v.leaks).toHaveLength(1);
+    expect(v.leaks[0].preview).toBe("AB•••••F");
+    expect(v.leaks[0].signed).toBe(true);
+    expect(v.leaks[0].ruleBtns.map((b) => b.label)).toEqual(["Observe", "Redact", "Block"]);
+    expect(v.leaks[0]).not.toHaveProperty("blockNext");
+    expect(v.byGroup.map((x) => x.name)).toEqual(["Government IDs", "Contact"]);
+    const allowedOnly = view(data, { ...ui, fAction: "allowed" });
+    expect(allowedOnly.values.map((x) => x.hash)).toEqual(["c"]);
+    expect(view(data).values.map((x) => x.hash)).not.toContain("c");
   });
 });

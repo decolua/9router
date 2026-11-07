@@ -165,10 +165,21 @@ export async function GET(request) {
     const vr = validateRange(url.searchParams.get("from") ?? undefined, url.searchParams.get("to") ?? undefined);
     if (vr === "bad") return NextResponse.json({ error: "Invalid range" }, { status: 400 });
     const range = vr || { from: Date.now() - DAY, to: Date.now() };
-    // Optional filters, same meaning as the Values tab: model, client (from the user agent), source (ocr or text), action.
-    const f = Object.fromEntries(["model", "client", "source", "action"].map((k) => [k, url.searchParams.get(k) || ""]));
-    const keep = (e) => (!f.model || e.model === f.model) && (!f.client || clientOf(e.ua || "") === f.client);
-    const hitOk = (h) => (!f.action || (h.action || "observe") === f.action) && (!f.source || (f.source === "ocr") === String(h.source || "").endsWith("/ocr"));
+    // Filters, same meaning in both Findings views. action "allowed" means the hash is on the allow (ignore) list now.
+    const f = Object.fromEntries(["model", "client", "source", "action", "group", "q"].map((k) => [k, (url.searchParams.get(k) || "").slice(0, 200)]));
+    const tests = url.searchParams.get("tests") === "1";
+    const q = f.q.toLowerCase();
+    const allowed = new Set(f.action === "allowed" || q ? ((await getSettings()).piiGuard?.ignore || []) : []);
+    const ruleList = f.group || q ? rules() : [];
+    const groupOf = Object.fromEntries(ruleList.map((r) => [r.id, r.group]));
+    const labelOf = Object.fromEntries(ruleList.map((r) => [r.id, r.label || r.id]));
+    const keep = (e) => (tests || !(e.type === "test" || e.test === true)) && (!f.model || e.model === f.model) && (!f.client || clientOf(e.ua || "") === f.client);
+    // Allowed = allowed now, or allowed when it was logged; the row badge uses the logged action.
+    const actionOk = (h) => f.action === "allowed" ? h.action === "ignored" || allowed.has(h.hash) : (h.action || "observe") === f.action;
+    const text = (e, h) => [h.rule, h.name, labelOf[h.rule], h.hash, h.preview, h.source, e.model, clientOf(e.ua || "")].join(" ").toLowerCase();
+    const hitOk = (e, h) => (!f.action || actionOk(h)) && (!f.source || (f.source === "ocr") === String(h.source || "").endsWith("/ocr"))
+      && (!f.group || groupOf[h.rule] === f.group) && (!q || text(e, h).includes(q));
+    const filtered = f.action || f.source || f.group || q;
     const page = [];
     // `seen`: events visited at timestamp `seenTs`, kept or filtered out, so the cursor skips exactly those.
     let skipped = 0, seenTs = NaN, seen = 0, lastSeen = 0;
@@ -178,9 +189,9 @@ export async function GET(request) {
       if (ts !== seenTs) { seenTs = ts; seen = 0; }
       seen++;
       if (e.type === "stats" || !keep(e)) return;
-      const hits = (f.action || f.source) ? (e.hits || []).filter(hitOk) : e.hits;
+      const hits = filtered ? (e.hits || []).filter((h) => hitOk(e, h)) : e.hits;
       if (!hits?.length) return;
-      page.push(hits === e.hits ? e : { ...e, hits });
+      page.push({ ...e, hits, client: clientOf(e.ua || "") });
       lastSeen = seen;
       return page.length < limit;
     });

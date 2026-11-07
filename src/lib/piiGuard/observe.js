@@ -10,6 +10,7 @@ const since = new Date().toISOString();
 let loading, library, detector, knownMtime, lastCheck = -Infinity, warnedAt = -Infinity;
 let requests = 0, withFindings = 0, totalRequests = 0, totalWithFindings = 0, samples = [], healthSamples = [], maxScanMs = 0, healthMaxScanMs = 0, errors = 0, lastError = null;
 let knownUpdated = null, seenLoading, seenStore, seenTimer, unscanned = { images: 0, files: 0, opaque: 0 };
+export const OCR_CONCURRENCY = 2;
 let ocrWorker = null, captureStore = null, sweeperStarted = false, detectorOptions = null;
 const errorAppend = new Map(), errorSuppressed = new Map();
 const roles = new Set(["-", "system", "developer", "user", "assistant", "tool", "function", "model"]);
@@ -188,6 +189,8 @@ function getOcrWorker(config = {}) {
     const options = {
       detector: detectorOptions,
       mode: quality,
+      // 4 vCPU: two Tesseract runs at once keep bursts of resent screenshots from filling the queue.
+      concurrency: OCR_CONCURRENCY,
       ...(captureConfig ? { capture: captureConfig } : {}),
     };
     const deps = store ? { captureStore: store } : undefined;
@@ -446,7 +449,7 @@ export async function observeRequest(body, meta = {}, config = {}) {
       }
       const hitAction = action === "block" ? "block" : action === "ignored" ? "ignored" : f.readonly && action === "redact" ? "leaked" : action;
       // A leaked or block occurrence must win over a redacted one for the same value and source.
-      if (!hitRows.has(key) || RANK[hitAction] < RANK[hitRows.get(key).action]) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction, ...(f.readonly && { where: where(f) }) });
+      if (!hitRows.has(key) || RANK[hitAction] < RANK[hitRows.get(key).action]) hitRows.set(key, { hash: f.hash, rule: f.rule, ...(f.name && { name: f.name }), kind: f.kind, source, action: hitAction, ...(f.readonly && { where: where(f) }), ...preview(f) });
     }
     const blocked = [...preliminaryBlocked], hits = [...hitRows.values()].sort((a, b) => RANK[a.action] - RANK[b.action]).slice(0, 200);
     withFindings++; totalWithFindings++;
@@ -462,6 +465,13 @@ export async function observeRequest(body, meta = {}, config = {}) {
     else console.info(line);
     if (blocked.length) return { blocked, ...(stuck && { stuck }) };
   } catch { failure(stage); }
+}
+// The library masks previews; recheck shape here so a raw value can never reach the log from an old library build.
+// Edge chars (at most 11, e.g. "sk-svcacct-"), the 5-dot mask, then up to 3 tail chars or an email domain.
+const PREVIEW = /^[^•]{0,11}•••••(?:[^•@]{0,3}|@[^•\s@]{1,253})$/u;
+function preview(f) {
+  if (typeof f.preview !== "string" || !PREVIEW.test(f.preview) || typeof f.context !== "string" || f.context.length > 340 || !f.context.includes(f.preview) || /\d/.test(f.context.replace(f.preview, ""))) return {};
+  return { preview: f.preview, context: f.context };
 }
 const WHERE = {
   user: text => ({ messages: [{ role: "user", content: text }] }),
@@ -500,7 +510,7 @@ export async function testImage(buffer, config = {}, quality = "enhanced", optio
 export function health(config = {}) {
   const sorted = healthSamples.slice().sort((a, b) => a - b);
   const normalized = ocrConfig(config);
-  const ocr = { available: ocrAvailable(), enabled: ocrEffective(config), mode: normalized.quality, quality: normalized.quality, capture: process.env.PII_GUARD_CAPTURE_IMAGES === "1", testable: ocrTestable() };
+  const ocr = { concurrency: OCR_CONCURRENCY, queueMax: 32, available: ocrAvailable(), enabled: ocrEffective(config), mode: normalized.quality, quality: normalized.quality, capture: process.env.PII_GUARD_CAPTURE_IMAGES === "1", testable: ocrTestable() };
   return { module: !!process.env.PII_GUARD_MODULE, loaded: !!detector, knownCount: detector?.knownCount || 0, knownUpdated, errors, lastError, since, requests: totalRequests, withFindings: totalWithFindings, p95ScanMs: sorted.length ? sorted[Math.ceil(sorted.length * .95) - 1] : 0, maxScanMs: healthMaxScanMs, unscanned: { ...unscanned }, seen: seenStore?.size || 0, ocr };
 }
 export function eventsFile() { return process.env.PII_GUARD_EVENTS || join(homedir(), ".9router/pii-guard/events.jsonl"); }
