@@ -102,10 +102,12 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     ok: () => { set({ pending: null }); act({ rules: { [pend.rule]: pend.action } }, `${ruleLabel[pend.rule] || pend.rule} set to ${cap(pend.action)}.`, { rules: { [pend.rule]: overrides[pend.rule] || "default" } }); },
     cancel: () => set({ pending: null }),
   } : null;
-  const allow = (v, on = true) => () => {
-    if (on && !window.confirm(`Allow ${nameOf(v)} ${v.preview || "#" + v.hash}?\n\nThis value will be sent unchanged in every request and every rule. You can restore it under Allowed values.`)) return;
-    act({ ignore: v.hash, on }, on ? `Allowed ${nameOf(v)} #${v.hash}.` : `Restored ${nameOf(v)} #${v.hash}.`, { ignore: v.hash, on: !on });
+  // Allow always confirms and offers undo. `v` needs hash, preview and a name.
+  const allowHash = (hash, name, preview, on) => () => {
+    if (on && !window.confirm(`Allow ${name} ${preview || "#" + hash}?\n\nThis value will be sent unchanged in every request and every rule. You can restore it under Allowed values.`)) return;
+    act({ ignore: hash, on }, on ? `Allowed ${name} #${hash}.` : `Restored ${name} #${hash}.`, { ignore: hash, on: !on });
   };
+  const allow = (v, on = true) => allowHash(v.hash, nameOf(v), v.preview, on);
   const leaks = (tab === "overview" ? leakVals.slice(leakPage * LEAK_PAGE, (leakPage + 1) * LEAK_PAGE) : []).map((v) => {
     const [tag, why] = LEAK_TAG[v.leakedWhere?.[0]] || ["Not rewritten", "The value matched a Redact or Block rule but sits where PII Guard cannot rewrite it."];
     const key = `${v.hash}:${v.rule}`;
@@ -266,10 +268,10 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
       client: hit ? hit.client : v ? ix.get(v).client : "—", model: (hit ? hit.model : v?.model) || "—",
       request: hit?.requestId || v?.requestId || "", hash,
       first: v ? stamp(v.firstSeen) : "—", last: v ? stamp(v.lastSeen) : hit ? stamp(hit.ts) : "—", reqs: v ? fmt(v.turns) : "—",
-      image: image ? `/api/pii-guard?image=${image}` : null, imageLabel: image ? `Image #${(hit?.imageIndex ?? v?.imageIndex ?? 0) + 1}` : "",
+      image: image ? `/api/pii-guard/image?id=${image}` : null, imageLabel: image ? `Image #${(hit?.imageIndex ?? v?.imageIndex ?? 0) + 1}` : "",
       ruleBtns: rule ? ruleBtns(rule, "detail") : [], pending: pending("detail"),
       allowLabel: a === "allowed" ? "Restore value" : "Allow value",
-      allow: v ? allow(v, a !== "allowed") : () => act({ ignore: hash, on: a !== "allowed" }),
+      allow: v ? allow(v, a !== "allowed") : allowHash(hash, ruleLabel[rule] || rule, hit?.preview, a !== "allowed"),
       close: () => set({ detail: null, pending: null }),
     };
   }

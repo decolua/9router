@@ -467,9 +467,10 @@ export async function observeRequest(body, meta = {}, config = {}) {
   } catch { failure(stage); }
 }
 // The library masks previews; recheck shape here so a raw value can never reach the log from an old library build.
-const PREVIEW = /^.{0,6}•••••.{0,3}$/u;
+// Edge chars (at most 11, e.g. "sk-svcacct-"), the 5-dot mask, then up to 3 tail chars or an email domain.
+const PREVIEW = /^[^•]{0,11}•••••(?:[^•@]{0,3}|@[^•\s@]{1,253})$/u;
 function preview(f) {
-  if (typeof f.preview !== "string" || !PREVIEW.test(f.preview) || typeof f.context !== "string" || f.context.length > 80 || !f.context.includes(f.preview) || /\d/.test(f.context.replace(f.preview, ""))) return {};
+  if (typeof f.preview !== "string" || !PREVIEW.test(f.preview) || typeof f.context !== "string" || f.context.length > 340 || !f.context.includes(f.preview) || /\d/.test(f.context.replace(f.preview, ""))) return {};
   return { preview: f.preview, context: f.context };
 }
 const WHERE = {

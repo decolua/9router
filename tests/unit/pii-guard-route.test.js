@@ -81,14 +81,19 @@ describe("route range", () => {
     expect(await hashes("group=api_key")).toEqual(["bbbbbbbbbbbb"]);
     expect(await hashes("group=api_key&tests=1")).toEqual(["cccccccccccc", "bbbbbbbbbbbb"]);
     expect(await hashes("action=allowed")).toEqual(["aaaaaaaaaaaa"]);
+    settings.piiGuard.ignore = [];
+    // Restored since: the hit was allowed when logged, so it stays under Allowed.
+    expect(await hashes("action=allowed")).toEqual(["aaaaaaaaaaaa"]);
+    settings.piiGuard.ignore = ["aaaaaaaaaaaa"];
     expect(await hashes("q=AB%E2%80%A2")).toEqual(["aaaaaaaaaaaa"]);
     expect(await hashes("q=claude%20code")).toEqual(["aaaaaaaaaaaa"]);
     const page = await (await GET(new Request("http://localhost/api/pii-guard?events=1&group=gov_id"))).json();
     expect(page.events[0].client).toBe("Claude Code");
   });
   it("image route rejects bad ids and reports expired images", async () => {
-    expect((await GET(new Request("http://localhost/api/pii-guard?image=../../etc"))).status).toBe(400);
-    const gone = await GET(new Request("http://localhost/api/pii-guard?image=0123456789ab"));
+    const { GET: IMG } = await import("../../src/app/api/pii-guard/image/route.js");
+    expect((await IMG(new Request("http://localhost/api/pii-guard/image?id=../../etc"))).status).toBe(400);
+    const gone = await IMG(new Request("http://localhost/api/pii-guard/image?id=0123456789ab"));
     expect(gone.status).toBe(404);
     expect((await gone.json()).error).toBe("Image expired");
   });

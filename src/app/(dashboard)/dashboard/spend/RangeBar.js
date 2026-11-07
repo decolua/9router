@@ -39,7 +39,7 @@ export default function RangeBar({ preset, customLabel, onChange, today }) {
   return (
     <div ref={root} style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, position: "relative", maxWidth: "100%" }}>
       <div style={{ display: "flex", flexWrap: "nowrap", gap: 2, padding: 3, borderRadius: 9, background: "var(--seg)", maxWidth: "100%", overflowX: "auto", boxSizing: "border-box" }}>
-        {PRESETS.map((k) => <button key={k} onClick={() => { setOpen(false); onChange({ preset: k }); }} style={seg(preset === k)}>{k}</button>)}
+        {PRESETS.map((k) => <button key={k} onClick={() => { setOpen(false); setA(null); onChange({ preset: k }); }} style={seg(preset === k)}>{k}</button>)}
         <button onClick={() => { setOpen((o) => !o); setA(null); }} style={seg(preset === "Custom")} aria-expanded={open}>
           <span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: 15 }}>calendar_month</span>{preset === "Custom" ? customLabel || "Custom" : "Custom"}
         </button>

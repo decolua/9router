@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { clientOf } from "@/lib/spendClient.js";
-import { open, readFile, readdir, stat } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { open, readFile, stat } from "node:fs/promises";
+import { join } from "node:path";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { ready, rules, groups, testText, testImage, eventsFile, health } from "@/lib/piiGuard/observe.js";
 import { summarize } from "@/lib/piiGuard/summary.js";
@@ -150,24 +150,9 @@ async function state(fromMs, toMs) {
 }
 let memo = null;
 
-// Captured OCR image by the 12-char sha256 prefix an OCR event carries. The route sits behind dashboard login.
-// Files are named <sha256>.<ext> by the capture store and expire after the capture TTL (default 14 days).
-const IMAGE_TYPES = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", webp: "image/webp", gif: "image/gif" };
-async function image(prefix) {
-  if (!HASH.test(prefix || "")) return NextResponse.json({ error: "Invalid image id" }, { status: 400 });
-  const dir = join(dirname(eventsFile()), "images");
-  const name = (await readdir(dir).catch(() => [])).find((n) => n.startsWith(prefix) && /^[0-9a-f]{64}\.[a-z]+$/.test(n));
-  const type = name && IMAGE_TYPES[name.split(".").pop()];
-  if (!type) return NextResponse.json({ error: "Image expired" }, { status: 404 });
-  const bytes = await readFile(join(dir, name)).catch(() => null);
-  if (!bytes) return NextResponse.json({ error: "Image expired" }, { status: 404 });
-  return new NextResponse(bytes, { headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600", "X-Content-Type-Options": "nosniff", "Content-Security-Policy": "default-src 'none'" } });
-}
-
 export async function GET(request) {
   const url = new URL(request.url);
   if (url.searchParams.get("samples") === "1") return NextResponse.json(await sampleList());
-  if (url.searchParams.has("image")) return image(url.searchParams.get("image"));
   // Events pager: newest first, stats skipped. Cursor `before` (ms) + `skip` (events at exactly that ms already sent),
   // so events sharing a timestamp across a page boundary are not lost.
   if (url.searchParams.get("events") === "1") {
@@ -189,7 +174,8 @@ export async function GET(request) {
     const groupOf = Object.fromEntries(ruleList.map((r) => [r.id, r.group]));
     const labelOf = Object.fromEntries(ruleList.map((r) => [r.id, r.label || r.id]));
     const keep = (e) => (tests || !(e.type === "test" || e.test === true)) && (!f.model || e.model === f.model) && (!f.client || clientOf(e.ua || "") === f.client);
-    const actionOk = (h) => f.action === "allowed" ? allowed.has(h.hash) : (h.action || "observe") === f.action;
+    // Allowed = allowed now, or allowed when it was logged; the row badge uses the logged action.
+    const actionOk = (h) => f.action === "allowed" ? h.action === "ignored" || allowed.has(h.hash) : (h.action || "observe") === f.action;
     const text = (e, h) => [h.rule, h.name, labelOf[h.rule], h.hash, h.preview, h.source, e.model, clientOf(e.ua || "")].join(" ").toLowerCase();
     const hitOk = (e, h) => (!f.action || actionOk(h)) && (!f.source || (f.source === "ocr") === String(h.source || "").endsWith("/ocr"))
       && (!f.group || groupOf[h.rule] === f.group) && (!q || text(e, h).includes(q));

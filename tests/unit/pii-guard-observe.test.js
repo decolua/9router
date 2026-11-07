@@ -65,8 +65,8 @@ describe("PII observation", () => {
     expect(text).not.toContain(key); expect(text).not.toContain(value); expect(text).not.toContain("739201");
     const hits = JSON.parse(text.trim()).hits;
     const k = hits.find(h => h.rule === "anthropic_key");
-    expect(k.preview).toBe("sk-ant•••••sDf");
-    expect(k.context).toContain("my key is sk-ant•••••sDf and •••••");
+    expect(k.preview).toBe("sk-ant-•••••sDf");
+    expect(k.context).toContain("my key is sk-ant-•••••sDf and •••••");
     expect(hits.find(h => h.rule === "known").preview).toBe("•••••");
   });
   it("never throws when scanning fails", async () => {

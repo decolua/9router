@@ -101,7 +101,7 @@ export default function PiiGuardClient() {
     const ctl = new AbortController();
     setEvBusy(true);
     fetchEvents(evCursor, ctl.signal).then(({ rows, next }) => { setRawEvents(rows); setEvNext(next); setEvBusy(false); }).catch(() => { if (!ctl.signal.aborted) setEvBusy(false); });
-    return () => ctl.abort();
+    return () => { ctl.abort(); setEvBusy(false); };
   }, [ui.tab, ui.view, evTick, evCursor, fetchEvents]);
   const loadOlder = evNext && !evBusy ? () => setEvPage((p) => [...p, { cursor: evNext }]) : null;
   const loadNewer = !evNewest && !evBusy ? () => setEvPage((p) => p.slice(0, -1)) : null;
