@@ -1,3 +1,14 @@
+# v0.5.378 (2026-11-07) · 1 commit
+
+## Remove Z.ai web cookie provider (`zai-web`)
+
+- Removed the `zai-web` registry (`open-sse/providers/registry/zai-web.js`),
+  its registry slot `p159`, and the provider logo `public/providers/zai-web.png`.
+- `zcode-bridge` fallback no longer resolves `zai-web` connections; it now
+  prefers GLM, then `zcode`/`zc`.
+- Deleted the leftover `zai-web` connection (and its usage history) from the
+  preview database.
+
 # v0.5.377 (2026-11-07) · 1 commit
 
 ## ZCode bonus start plan — visible claim + in-app Aliyun verification

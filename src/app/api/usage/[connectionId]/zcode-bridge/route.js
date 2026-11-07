@@ -21,9 +21,9 @@ export async function GET(request, { params }) {
   if (!connection) {
     const allConns = await getProviderConnections();
     connection =
-      allConns.find((c) => (c.provider === "glm" || c.provider === "zai-web") && c.providerSpecificData?.zcodeJwtToken) ||
+      allConns.find((c) => c.provider === "glm" && c.providerSpecificData?.zcodeJwtToken) ||
       allConns.find((c) => c.provider === "glm") ||
-      allConns.find((c) => c.provider === "zai-web") ||
+      allConns.find((c) => c.provider === "zcode" || c.provider === "zc") ||
       null;
   }
 
