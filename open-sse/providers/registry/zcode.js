@@ -2,6 +2,7 @@ export default {
   id: "zcode",
   alias: "zc",
   uiAlias: "zc",
+  hidden: true, // Duplicate of the glm registry (same ZCode plan); glm holds the active connection
   display: {
     name: "ZCode (Z.ai)",
     icon: "terminal",
