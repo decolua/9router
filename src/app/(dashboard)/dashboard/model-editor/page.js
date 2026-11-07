@@ -412,7 +412,7 @@ function ModelStudioContent({ antiProbe = true }) {
                     title="Duplicate"
                     className="p-1 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
                   >
-                    <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                    <span className="material-symbols-outlined text-[14px]">library_add</span>
                   </button>
                   <button
                     onClick={() => openEdit(model)}
