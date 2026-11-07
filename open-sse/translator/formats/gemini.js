@@ -552,7 +552,7 @@ export function normalizeGeminiContents(contents, model = null) {
     // If an explicit turn was provided but had empty parts (e.g. error/filtered assistant turn),
     // preserve it as a minimal placeholder so it does not collapse surrounding turns into consecutive duplicates
     if (parts.length === 0) {
-      parts = [{ text: "..." }];
+      parts = [{ text: "Processing." }];
     }
 
     const last = raw.at(-1);
@@ -570,7 +570,7 @@ export function normalizeGeminiContents(contents, model = null) {
           return { functionResponse: fr };
         });
         raw.push({ role: "user", parts: autoResponses });
-        raw.push({ role: "model", parts: [{ text: "..." }] });
+        raw.push({ role: "model", parts: [{ text: "Tool results processed." }] });
       }
     }
 
@@ -585,7 +585,7 @@ export function normalizeGeminiContents(contents, model = null) {
         if (lastHasFnResponse || currHasFnResponse) {
           // Gemini forbids mixing functionResponse with text/inlineData in the same Content,
           // and forbids adjacent user turns. Insert an intervening model turn to alternate cleanly.
-          raw.push({ role: "model", parts: [{ text: "..." }] });
+          raw.push({ role: "model", parts: [{ text: "Processing tool output..." }] });
           raw.push({ ...c, parts: [...parts] });
         } else {
           // Both are regular user messages — safe to merge parts
@@ -622,7 +622,7 @@ export function normalizeGeminiContents(contents, model = null) {
 
     if (prev && prev.role === curr.role) {
       if (curr.role === "user") {
-        alternating.push({ role: "model", parts: [{ text: "..." }] });
+        alternating.push({ role: "model", parts: [{ text: "Understood." }] });
       } else {
         alternating.push({ role: "user", parts: [{ text: "Continue." }] });
       }
@@ -632,7 +632,7 @@ export function normalizeGeminiContents(contents, model = null) {
 
   // Pass 3: Initial turn must be user
   if (alternating.length > 0 && alternating[0].role !== "user") {
-    alternating.unshift({ role: "user", parts: [{ text: "..." }] });
+    alternating.unshift({ role: "user", parts: [{ text: "Hello" }] });
   }
 
   // Pass 4: Terminal turn must be user

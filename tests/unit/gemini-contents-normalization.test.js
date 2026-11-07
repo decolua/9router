@@ -77,7 +77,7 @@ describe("normalizeGeminiContents terminal turn guards", () => {
     const contents = [{ role: "model", parts: [{ text: "prefill" }] }];
     const out = normalizeGeminiContents(contents);
     expect(out).toHaveLength(3);
-    expect(out[0]).toEqual({ role: "user", parts: [{ text: "..." }] });
+    expect(out[0]).toEqual({ role: "user", parts: [{ text: "Hello" }] });
     expect(out[1]).toEqual({ role: "model", parts: [{ text: "prefill" }] });
     expect(out[2]).toEqual({ role: "user", parts: [{ text: "Continue." }] });
   });
@@ -208,7 +208,7 @@ describe("strict role alternation (user <-> model)", () => {
     const roles = out.map(c => c.role);
     expect(roles).toEqual(["user", "model", "user", "model", "user"]);
     expect(out[2].parts[0].functionResponse).toBeDefined();
-    expect(out[3].parts[0].text).toBe("...");
+    expect(out[3].parts[0].text).toBe("Processing tool output...");
     expect(out[4].parts[0].text).toBe("now summarize");
   });
 
@@ -224,7 +224,7 @@ describe("strict role alternation (user <-> model)", () => {
     const roles = out.contents.map(c => c.role);
     expect(roles).toEqual(["user", "model", "user"]);
     expect(out.contents[0].parts[0].text).toBe("Query 1");
-    expect(out.contents[1].parts[0].text).toBe("...");
+    expect(out.contents[1].parts[0].text).toBe("Processing.");
     expect(out.contents[2].parts[0].text).toBe("Query 2");
   });
 
@@ -238,7 +238,7 @@ describe("strict role alternation (user <-> model)", () => {
     const roles = out.map(c => c.role);
     expect(roles).toEqual(["user", "model", "user", "model", "user"]);
     expect(out[2].parts[0].functionResponse.id).toBe("c_cancel");
-    expect(out[3].parts[0].text).toBe("...");
+    expect(out[3].parts[0].text).toBe("Tool results processed.");
     expect(out[4].parts[0].text).toBe("cancel, do something else");
   });
 

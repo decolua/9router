@@ -326,7 +326,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
         } else {
           // If assistant message was present in conversation history but empty/stripped,
           // preserve it as a model placeholder turn so surrounding user turns do not collide
-          result.contents.push({ role: GEMINI_ROLE.MODEL, parts: [{ text: "..." }] });
+          result.contents.push({ role: GEMINI_ROLE.MODEL, parts: [{ text: "Processing." }] });
         }
       }
     }
@@ -634,7 +634,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       } else if (msg.role === ROLE.ASSISTANT) {
         envelope.request.contents.push({
           role: GEMINI_ROLE.MODEL,
-          parts: [{ text: "..." }]
+          parts: [{ text: "Processing." }]
         });
       }
     }
