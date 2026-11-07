@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { open, readFile } from "node:fs/promises";
+import { clientOf } from "@/lib/spendClient.js";
+import { open, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { ready, rules, groups, testText, testImage, eventsFile, health } from "@/lib/piiGuard/observe.js";
@@ -61,13 +62,14 @@ function parseLines(buf) {
 // Returns { events (newest first, ts >= fromMs), truncated }. truncated: the cap stopped the read before `fromMs`.
 // Calls run one at a time: polls, the events pager and two tabs share one cache.
 let queue = Promise.resolve();
-export function loadEvents(fromMs) {
-  const run = queue.then(() => readEvents(fromMs));
+// `visit(e)`, if given, sees events newest first and returns false to stop; no copy of the range is made.
+export function loadEvents(fromMs, visit) {
+  const run = queue.then(() => readEvents(fromMs, visit));
   queue = run.catch(() => {});
   return run;
 }
 
-async function readEvents(fromMs) {
+async function readEvents(fromMs, visit) {
   const file = eventsFile();
   let handle;
   try {
@@ -82,7 +84,7 @@ async function readEvents(fromMs) {
     if (size > cache.end) {
       const buf = await readRange(handle, cache.end, size);
       const cut = buf.lastIndexOf(0x0a) + 1;
-      cache.events.push(...parseLines(buf.subarray(0, cut)));
+      for (const e of parseLines(buf.subarray(0, cut))) cache.events.push(e); // no spread: a big append would overflow the call stack
       cache.end += cut;
     }
     const oldest = () => Date.parse(cache.events[0]?.ts);
@@ -92,7 +94,7 @@ async function readEvents(fromMs) {
       const buf = await readRange(handle, from, cache.start);
       const cut = from === 0 ? 0 : buf.indexOf(0x0a) + 1; // the first line may be partial; the next round reads it whole
       if (from > 0 && cut === 0) { back *= 2; if (back > CAP) break; continue; }
-      cache.events.unshift(...parseLines(buf.subarray(cut)));
+      cache.events = parseLines(buf.subarray(cut)).concat(cache.events);
       cache.start = from + cut;
       back = CHUNK;
     }
@@ -101,7 +103,7 @@ async function readEvents(fromMs) {
     for (let i = cache.events.length - 1; i >= 0; i--) {
       const ts = Date.parse(cache.events[i].ts);
       if (ts < fromMs) break;
-      out.push(cache.events[i]);
+      if (visit) { if (visit(cache.events[i], ts) === false) break; } else out.push(cache.events[i]);
     }
     // Appends grow the cache past CAP over a long uptime; rebuild it on the next call.
     if (cache.end - cache.start > CAP * 1.5) cache = null;
@@ -130,14 +132,23 @@ async function state(fromMs, toMs) {
   const now = Date.now();
   const from = Number.isFinite(fromMs) ? fromMs : now - DAY;
   const to = Number.isFinite(toMs) ? toMs : now;
-  const { events, truncated } = await loadEvents(from);
   const config = { ...settings.piiGuard, ocr: normalizeOcr(settings.piiGuard?.ocr), ignore: Array.isArray(settings.piiGuard?.ignore) ? settings.piiGuard.ignore : [] };
   // Hourly buckets up to two days, else IST days.
   const IST = 5.5 * 3600e3, step = to - from <= 2 * DAY ? 3600e3 : DAY;
   const origin = step === DAY ? Math.floor((from + IST) / DAY) * DAY - IST : Math.floor(from / 3600e3) * 3600e3;
-  const summary = { ...summarize(events, { since: from, until: to, ignore: config.ignore, step, origin }), truncated, step, origin };
+  // ponytail: one-entry summary memo. Same minute range, same log file size and same ignore list reuse the last
+  // summary, so idle polls and several open tabs cost one aggregation. Health stays live. Upgrade path: incremental aggregates.
+  const st = await stat(eventsFile()).catch(() => null);
+  const key = `${Math.floor(from / 6e4)}|${Math.floor(to / 6e4)}|${st?.ino}|${st?.size}|${config.ignore.join(",")}`;
+  let summary = memo?.key === key ? memo.summary : null;
+  if (!summary) {
+    const { events, truncated } = await loadEvents(from);
+    summary = { ...summarize(events, { since: from, until: to, ignore: config.ignore, step, origin }), truncated, step, origin };
+    memo = { key, summary };
+  }
   return { enabled: !!process.env.PII_GUARD_MODULE, available, config, rules: available ? rules() : [], groups: available ? groups() : [], health: health(config), summary };
 }
+let memo = null;
 
 export async function GET(request) {
   const url = new URL(request.url);
@@ -154,21 +165,30 @@ export async function GET(request) {
     const vr = validateRange(url.searchParams.get("from") ?? undefined, url.searchParams.get("to") ?? undefined);
     if (vr === "bad") return NextResponse.json({ error: "Invalid range" }, { status: 400 });
     const range = vr || { from: Date.now() - DAY, to: Date.now() };
-    const { events } = await loadEvents(range.from);
+    // Optional filters, same meaning as the Values tab: model, client (from the user agent), source (ocr or text), action.
+    const f = Object.fromEntries(["model", "client", "source", "action"].map((k) => [k, url.searchParams.get(k) || ""]));
+    const keep = (e) => (!f.model || e.model === f.model) && (!f.client || clientOf(e.ua || "") === f.client);
+    const hitOk = (h) => (!f.action || (h.action || "observe") === f.action) && (!f.source || (f.source === "ocr") === String(h.source || "").endsWith("/ocr"));
     const page = [];
-    let skipped = 0;
-    for (const e of events) {
-      const ts = Date.parse(e?.ts);
-      if (!(ts <= range.to) || e.type === "stats" || ts > before) continue;
-      if (ts === before && skipped < skip) { skipped++; continue; }
-      page.push(e);
-      if (page.length === limit) break;
-    }
+    // `seen`: events visited at timestamp `seenTs`, kept or filtered out, so the cursor skips exactly those.
+    let skipped = 0, seenTs = NaN, seen = 0, lastSeen = 0;
+    await loadEvents(range.from, (e, ts) => {
+      if (!(ts <= range.to) || ts > before) return;
+      if (ts === before && skipped < skip) { skipped++; return; }
+      if (ts !== seenTs) { seenTs = ts; seen = 0; }
+      seen++;
+      if (e.type === "stats" || !keep(e)) return;
+      const hits = (f.action || f.source) ? (e.hits || []).filter(hitOk) : e.hits;
+      if (!hits?.length) return;
+      page.push(hits === e.hits ? e : { ...e, hits });
+      lastSeen = seen;
+      return page.length < limit;
+    });
     const last = page.at(-1);
     let next = null;
     if (page.length === limit) {
       const ts = Date.parse(last.ts);
-      next = { before: ts, skip: page.filter(e => Date.parse(e.ts) === ts).length + (ts === before ? skip : 0) };
+      next = { before: ts, skip: lastSeen + (ts === before ? skip : 0) };
     }
     return NextResponse.json({ events: page, next });
   }
@@ -268,5 +288,6 @@ export async function POST(request) {
   }
   await updateSettings({ piiGuard: next });
   console.info(`[pii-guard] Settings changed: mode=${next.mode}, overrides=${Object.keys(next.rules).length}`);
-  return NextResponse.json(await state());
+  // The dashboard reloads its own range after a save, so no summary is built here.
+  return NextResponse.json({ ok: true, config: next });
 }

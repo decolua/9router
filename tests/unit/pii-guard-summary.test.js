@@ -81,3 +81,15 @@ describe("summarize trend", () => {
     expect(r.groups[0]).toMatchObject({ ua: "claude-cli/2", model: "opus" });
   });
 });
+
+describe("summary OCR recent list", () => {
+  it("keeps only the newest 20 OCR records, even across the batch trim", () => {
+    const base = Date.now() - 3600e3;
+    const events = Array.from({ length: 450 }, (_, i) => ({ type: "ocr", ts: new Date(base + i * 1000).toISOString(), status: "scanned", cache: "miss", ocrMs: 5 }));
+    const { ocr } = summarize(events, { since: base - 1, until: Date.now() });
+    expect(ocr.recent).toHaveLength(20);
+    expect(ocr.recent[0].ts).toBe(events[449].ts);
+    expect(ocr.recent[19].ts).toBe(events[430].ts);
+    expect(ocr.totalImages).toBe(450);
+  });
+});

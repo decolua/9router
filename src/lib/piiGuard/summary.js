@@ -32,6 +32,8 @@ export function summarize(events, { since, until, now = Date.now(), ignore = [],
       totalOcrEvents++;
       if (event.reason) reasons[event.reason] = (reasons[event.reason] || 0) + 1;
       recentOcr.push({ ts: event.ts, requestId: event.requestId, model: event.model, endpoint: event.endpoint, imageIndex: event.imageIndex, status: event.status, ...(event.reason && { reason: event.reason }), cache: event.cache, ocrMs: event.ocrMs, mode: event.mode, rules: [...new Set((Array.isArray(event.hits) ? event.hits : []).filter(hit => hit && hit.action !== "ignored").map(hit => hit.name || hit.rule).filter(Boolean))] });
+      // Keep only the newest 20; trim in batches so a long range never holds every OCR event.
+      if (recentOcr.length > 200) { recentOcr.sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts)); recentOcr.length = 20; }
       if (Object.hasOwn(ocrStatus, event.status)) {
         ocrStatus[event.status]++;
       }

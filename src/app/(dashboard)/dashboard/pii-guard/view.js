@@ -52,6 +52,22 @@ function segments(text, findings) {
   return out;
 }
 
+// Per-response lookups (client, group label, search text per value). Built once per poll, not per keystroke.
+const indexes = new WeakMap();
+function indexOf(data, nameOf, gLabelOf) {
+  let ix = indexes.get(data);
+  if (!ix) {
+    ix = new Map();
+    for (const v of data.summary?.groups || []) {
+      const client = clientOf(v.ua || ""), group = gLabelOf(v);
+      ix.set(v, { client, group, ocr: v.sources.some((s) => s.endsWith("/ocr")), text: `${nameOf(v)} ${group} ${v.hash} ${v.model || ""}`.toLowerCase() });
+    }
+    indexes.set(data, ix);
+  }
+  return ix;
+}
+export const PAGE = 100, LEAK_PAGE = 20;
+
 export function buildView({ data, ui, set, act, range, fit, test, events, samples }) {
   const { config = {}, health: h = {}, summary: sm = {} } = data;
   const tab = ui.tab;
@@ -68,16 +84,18 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   const nameOf = (v) => v.name || ruleLabel[v.rule] || v.rule;
   const gLabelOf = (v) => groupLabel[ruleGroup[v.rule]] || "Other";
   const okScanner = !!h.loaded;
+  const ix = indexOf(data, nameOf, gLabelOf);
 
   // Leaks: values that leaked at least once in the range.
   const leakVals = all.filter((v) => v.actions.includes("leaked") && !v.ignored);
   const openN = leakVals.length;
-  const leaks = leakVals.map((v) => {
+  const leakPages = Math.max(1, Math.ceil(openN / LEAK_PAGE)), leakPage = Math.min(ui.leakPage, leakPages - 1);
+  const leaks = (tab === "overview" ? leakVals.slice(leakPage * LEAK_PAGE, (leakPage + 1) * LEAK_PAGE) : []).map((v) => {
     const [tag, why] = LEAK_TAG[v.leakedWhere?.[0]] || ["Not rewritten", "The value matched a Redact or Block rule but sits where PII Guard cannot rewrite it."];
     const gid = ruleGroup[v.rule], glabel = groupLabel[gid] || "this rule";
     return {
       rule: nameOf(v), group: gLabelOf(v), hash: v.hash, tag, why, loc: place(v.sources[0]), time: age(v.lastSeen), first: stamp(v.firstSeen), last: stamp(v.lastSeen), hits: fmt(v.turns),
-      client: clientOf(v.ua || ""), model: v.model || "—", isOpen: true, isRuled: false, expanded: ui.openLeak === v.hash,
+      key: `${v.hash}:${v.rule}`, client: ix.get(v).client, model: v.model || "—", isOpen: true, isRuled: false, expanded: ui.openLeak === v.hash,
       fix: `sets ${glabel} to Block. The next request with this value fails with HTTP 400 and a /rewind hint for the client.`,
       reviewLabel: ui.openLeak === v.hash ? "Close" : "Review",
       review: () => set((u) => ({ openLeak: u.openLeak === v.hash ? null : v.hash })),
@@ -136,8 +154,8 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   const maxLoc = locAll[0]?.[1] || 1;
   const locs = (ui.allLoc ? locAll : locAll.slice(0, 5)).map(([s, c]) => ({ name: place(s), hits: fmt(c), w: Math.max(0.6, (c / maxLoc) * 100) + "%" }));
   const clients = new Map();
-  for (const v of all) {
-    const c = clientOf(v.ua || "");
+  if (tab === "overview") for (const v of all) {
+    const c = ix.get(v).client;
     const o = clients.get(c) || { values: 0, leaks: 0, models: {} };
     o.values++; if (v.actions.includes("leaked") && !v.ignored) o.leaks++;
     if (v.model) o.models[v.model] = (o.models[v.model] || 0) + 1;
@@ -156,7 +174,7 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     ["keep", "Keep images", null, ocr.capture ? "On: set by PII_GUARD_CAPTURE_IMAGES. Kept 14 days for OCR replay; backups skip them." : "Off: set PII_GUARD_CAPTURE_IMAGES=1 in the service drop-in."]];
   const ocrRows = ocrDef.map(([k, label, opts, desc]) => ({ label, desc, hasBtns: !!opts, ro: opts ? null : ocr.capture ? "On" : "Off",
     btns: (opts || []).map((o) => ({ label: o, style: { ...seg((ocrCfg[k] || "") === o.toLowerCase()), ...(ocrOn ? {} : { opacity: 0.5, cursor: "not-allowed" }) }, on: () => ocrOn && act({ ocr: { [k]: o.toLowerCase() } }) })) }));
-  const groups = (data.groups || []).map((g) => {
+  const groups = (tab === "rules" ? data.groups || [] : []).map((g) => {
     const rs = (data.rules || []).filter((r) => r.group === g.id);
     const set1 = new Set(rs.map((r) => overrides[r.id] || "default"));
     const cur = set1.size === 1 ? cap([...set1][0]) : null;
@@ -172,33 +190,35 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
   });
 
   // Findings
+  // Fixed pages of PAGE values; the list never grows past one page.
   const q = ui.q.toLowerCase();
-  const rows = all.filter((v) => (ui.fStatus === "ignored" ? v.ignored : ui.fStatus === "leaked" ? v.actions.includes("leaked") && !v.ignored : !v.ignored)
-    && (!ui.fGroup || gLabelOf(v) === ui.fGroup) && (!ui.fAction || v.action === ui.fAction) && (!ui.fClient || clientOf(v.ua || "") === ui.fClient)
-    && (!ui.fModel || v.model === ui.fModel) && (!ui.fSource || (ui.fSource === "ocr") === v.sources.some((s) => s.endsWith("/ocr")))
-    && (!q || `${nameOf(v)} ${gLabelOf(v)} ${v.hash} ${v.model || ""}`.toLowerCase().includes(q)));
-  const shown = rows.slice(0, ui.limit);
+  const rows = tab !== "findings" ? [] : all.filter((v) => { const x = ix.get(v); return (ui.fStatus === "ignored" ? v.ignored : ui.fStatus === "leaked" ? v.actions.includes("leaked") && !v.ignored : !v.ignored)
+    && (!ui.fGroup || x.group === ui.fGroup) && (!ui.fAction || v.action === ui.fAction) && (!ui.fClient || x.client === ui.fClient)
+    && (!ui.fModel || v.model === ui.fModel) && (!ui.fSource || (ui.fSource === "ocr") === x.ocr)
+    && (!q || x.text.includes(q)); });
+  const pages = Math.max(1, Math.ceil(rows.length / PAGE)), page = Math.min(ui.page, pages - 1);
+  const shown = rows.slice(page * PAGE, (page + 1) * PAGE);
   const selKeys = Object.keys(ui.sel).filter((k) => ui.sel[k]);
   const values = shown.map((v) => {
     const w = v.sources.map(place);
     return {
-      name: nameOf(v), group: gLabelOf(v), hash: v.hash, leaked: v.actions.includes("leaked"), where: w.slice(0, 2).join(", ") + (w.length > 2 ? ` +${w.length - 2}` : ""),
-      client: clientOf(v.ua || ""), key: "", model: v.model || "—", sess: "—", sessTip: "Session not recorded by PII Guard",
+      key: `${v.hash}:${v.rule}`, name: nameOf(v), group: ix.get(v).group, hash: v.hash, leaked: v.actions.includes("leaked"), where: w.slice(0, 2).join(", ") + (w.length > 2 ? ` +${w.length - 2}` : ""),
+      client: ix.get(v).client, apiKey: "", model: v.model || "—", sess: "—", sessTip: "Session not recorded by PII Guard",
       action: cap(v.action), abg: (AC[v.action] || AC.observe)[0], ac: (AC[v.action] || AC.observe)[1], last: age(v.lastSeen), first: age(v.firstSeen), hits: fmt(v.turns),
       sel: !!ui.sel[v.hash], bg: ui.sel[v.hash] ? "var(--acc2)" : "transparent",
       toggle: () => set((u) => ({ sel: { ...u.sel, [v.hash]: !u.sel[v.hash] } })),
       ignoreLabel: v.ignored ? "Restore" : "Ignore", ignore: () => act({ ignore: v.hash, on: !v.ignored }),
     };
   });
-  const selRules = [...new Set(all.filter((v) => ui.sel[v.hash]).map((v) => v.rule))];
+  const selRules = selKeys.length ? [...new Set(all.filter((v) => ui.sel[v.hash]).map((v) => v.rule))] : [];
   const setAct = (a) => () => { if (window.confirm(`Set ${selRules.length} ${selRules.length === 1 ? "rule" : "rules"} to ${cap(a)}? This changes every value of ${selRules.length === 1 ? "that rule" : "those rules"}, not only the selected ones.${a === "block" ? " Block rejects requests with HTTP 400 the first time a new value appears." : ""}`)) { act({ rules: Object.fromEntries(selRules.map((r) => [r, a])) }); set({ sel: {} }); } };
-  const opts = (f) => [...new Set(all.map(f).filter(Boolean))].sort();
+  const opts = (f) => (tab === "findings" ? [...new Set(all.map(f).filter(Boolean))].sort() : []);
 
   // Test
   const tr = test.result, ir = test.image?.results?.[0];
   const isImg = ui.testKind === "image", imgOff = !ocrOn || ocrCfg.mode === "off";
   const hitRow = (f) => ({ rule: f.name || ruleLabel[f.rule] || f.rule, group: groupLabel[ruleGroup[f.rule]] || "Other", hash: String(f.hash).slice(0, 6), action: cap(f.action), abg: (AC[f.action] || AC.observe)[0], ac: (AC[f.action] || AC.observe)[1] });
-  const tHits = (isImg ? ir?.findings : tr?.findings) || [];
+  const tHits = (tab === "test" && (isImg ? ir?.findings : tr?.findings)) || [];
   const blocked = !isImg && tr?.blocked?.length > 0;
   const nR = tHits.filter((f) => f.action === "redact").length, nO = tHits.filter((f) => f.action === "observe").length;
   const textVerdict = test.error ? { text: test.error, bg: "var(--redbg)", c: "var(--red)" } : !tr ? { text: "Scanning…", bg: "var(--seg)", c: "var(--tx2)" } : blocked ? { text: "Request blocked", bg: "var(--redbg)", c: "var(--red)" } : !tHits.length ? { text: "Nothing found", bg: "var(--greenbg)", c: "var(--green)" } : { text: `${nR} redacted · ${nO} observed`, bg: nO ? "var(--bluebg)" : "var(--acc2)", c: nO ? "var(--blue)" : "var(--acc)" };
@@ -235,19 +255,22 @@ export function buildView({ data, ui, set, act, range, fit, test, events, sample
     redactRules, globalBtns, piiEx: "{{pii:email#4b7538}}", ocrRows, groups,
     subTabs: [["values", "Values"], ["events", "Event log"]].map(([k, label]) => ({ label, style: seg(ui.sub === k), on: () => set({ sub: k }) })),
     isValues: ui.sub === "values", isEvents: ui.sub === "events",
-    shownLabel: ui.sub === "values" ? `${shown.length} of ${fmt(all.length)} values` : `Latest ${events.length} events`,
-    groupOpts: opts(gLabelOf), clientOpts: opts((v) => clientOf(v.ua || "")), modelOpts: opts((v) => v.model),
+    shownLabel: ui.sub === "values" ? (rows.length ? `${fmt(page * PAGE + 1)}–${fmt(page * PAGE + shown.length)} of ${fmt(rows.length)} values` : `0 of ${fmt(all.length)} values`) : `${events.length} hits on this page`,
+    groupOpts: opts((v) => ix.get(v).group), clientOpts: opts((v) => ix.get(v).client), modelOpts: opts((v) => v.model),
     hasSel: selKeys.length > 0, selCount: selKeys.length, allSel: values.length > 0 && values.every((v) => v.sel),
     toggleAll: () => set({ sel: values.every((v) => v.sel) ? {} : Object.fromEntries(values.map((v) => [v.hash, true])) }),
     bulkIgnore: () => { act({ ignoreMany: selKeys, on: true }); set({ sel: {} }); }, bulkObserve: setAct("observe"), bulkRedact: setAct("redact"), bulkBlock: setAct("block"),
     copyHashes: () => navigator.clipboard?.writeText(selKeys.join("\n")),
-    values, noValues: values.length === 0, moreValues: rows.length > shown.length ? () => set((u) => ({ limit: u.limit + 300 })) : null, moreLabel: `Show ${Math.min(300, rows.length - shown.length)} more`,
+    values, noValues: values.length === 0,
+    prevValues: page > 0 ? () => set({ page: page - 1, sel: {} }) : null, nextValues: page < pages - 1 ? () => set({ page: page + 1, sel: {} }) : null,
+    prevLeaks: leakPage > 0 ? () => set({ leakPage: leakPage - 1 }) : null, nextLeaks: leakPage < leakPages - 1 ? () => set({ leakPage: leakPage + 1 }) : null,
+    leakPageLabel: leakPages > 1 ? `${leakPage * LEAK_PAGE + 1}–${Math.min(openN, (leakPage + 1) * LEAK_PAGE)} of ${openN}` : "",
     events: events.map((e) => ({ ...e, abg: (AC[e.a] || AC.observe)[0], ac: (AC[e.a] || AC.observe)[1], action: cap(e.a), rule: e.name || ruleLabel[e.rule] || e.rule })),
     samples: SAMPLES.map(([label, t]) => ({ label, on: () => set({ testText: t }) })),
     kindBtns: [["text", "Text"], ["image", "Image"]].map(([k, label]) => ({ label, style: seg(ui.testKind === k), on: () => set({ testKind: k }) })),
     isText: !isImg, isImage: isImg,
-    testSegs: tr ? segments(String(tr.before ?? ""), tr.findings || []) : [{ t: ui.testText, st: {} }],
-    imgSegs: ir ? segments(String(ir.text || ""), ir.findings || []) : [{ t: imgOff ? "—" : "Reading…", st: {} }],
+    testSegs: tab !== "test" ? [] : tr ? segments(String(tr.before ?? ""), tr.findings || []) : [{ t: ui.testText, st: {} }],
+    imgSegs: tab !== "test" ? [] : ir ? segments(String(ir.text || ""), ir.findings || []) : [{ t: imgOff ? "—" : "Reading…", st: {} }],
     testHits: tHits.map(hitRow), noTestHits: tHits.length === 0,
     noHitsText: isImg ? (imgOff ? "Image OCR is Off, so nothing was read." : "Nothing found in the OCR text.") : "Nothing found. The text would be sent unchanged.",
     testVerdict: isImg ? imgVerdict : textVerdict, testOut,
