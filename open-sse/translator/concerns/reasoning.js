@@ -1,5 +1,14 @@
 import { ROLE } from "../schema/index.js";
 
+// Mistral emits thinking and text as content chunks instead of OpenAI fields.
+export function normalizeMistralContent(message) {
+  const parts = message?.content;
+  if (!Array.isArray(parts) || !parts.length || parts.some(p => p?.type !== "thinking" && p?.type !== "text")) return message;
+  const reasoning = parts.filter(p => p.type === "thinking").flatMap(p => Array.isArray(p.thinking) ? p.thinking : []).map(p => p?.text || "").join("");
+  const text = parts.filter(p => p.type === "text").map(p => p.text || "").join("");
+  return { ...message, content: text || null, ...(reasoning ? { reasoning_content: reasoning } : {}) };
+}
+
 // Build OpenAI delta carrying reasoning_content (optional leading assistant role)
 export function reasoningDelta(text, withRole = false) {
   return withRole

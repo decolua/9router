@@ -7,7 +7,7 @@ import { openAICompletionToClaudeMessage } from "../../translator/concerns/claud
 import { PROVIDERS } from "../../config/providers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
-import { extractReasoningText } from "../../translator/concerns/reasoning.js";
+import { extractReasoningText, normalizeMistralContent } from "../../translator/concerns/reasoning.js";
 
 // Responses-API providers (e.g. codex) may emit SSE without content-type + use Responses output shape
 const isResponsesProvider = (p) => PROVIDERS[p]?.format === FORMATS.OPENAI_RESPONSES;
@@ -112,7 +112,7 @@ function chatCompletionToResponses(responseBody, customToolNames = null) {
  * Parse OpenAI-style SSE text into a single chat completion JSON.
  * Used when provider forces streaming but client wants non-streaming.
  */
-export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
+export function parseSSEToOpenAIResponse(rawSSE, fallbackModel, provider = null) {
   const chunks = [];
   let streamError = null;
 
@@ -140,7 +140,7 @@ export function parseSSEToOpenAIResponse(rawSSE, fallbackModel) {
 
   for (const chunk of chunks) {
     const choice = chunk?.choices?.[0];
-    const delta = choice?.delta || {};
+    const delta = provider === "mistral" ? normalizeMistralContent(choice?.delta || {}) : choice?.delta || {};
     if (typeof delta.content === "string" && delta.content.length > 0) contentParts.push(delta.content);
     // Vendor aliases (`reasoning`, `reasoning_details[]`) count as reasoning too:
     // without this an alias lane's thinking is silently dropped before the
@@ -302,7 +302,7 @@ export async function handleForcedSSEToJson({ providerResponse, sourceFormat, ta
   // Standard Chat Completions SSE path
   try {
     const sseText = await providerResponse.text();
-    const parsed = parseSSEToOpenAIResponse(sseText, model);
+    const parsed = parseSSEToOpenAIResponse(sseText, model, provider);
     if (!parsed) return createErrorResult(HTTP_STATUS.BAD_GATEWAY, "Invalid SSE response for non-streaming request");
     if (parsed.error) {
       // Structured error chunks may carry the real upstream status (e.g. the
