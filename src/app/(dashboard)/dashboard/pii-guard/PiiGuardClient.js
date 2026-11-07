@@ -1,9 +1,9 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import RangeBar from "../spend/RangeBar";
-import { buildView, place } from "./view";
+import { buildView, place, PAGE } from "./view";
 import "../spend/spend.css";
 
 const DAY = 864e5, IST = 5.5 * 3600e3;
@@ -17,8 +17,8 @@ function bounds(r, now = Date.now()) {
   }
   return { from: now - (PRESET_DAYS[r.preset] || 1) * DAY + (r.preset === "All" ? 6e4 : 0), to: now };
 }
-async function call(url, body) {
-  const res = await fetch(url, { cache: "no-store", ...(body && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
+async function call(url, body, signal) {
+  const res = await fetch(url, { cache: "no-store", signal, ...(body && { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;
@@ -33,12 +33,14 @@ export default function PiiGuardClient() {
   const [mode, setMode] = useState("loading");
   const [errorText, setErrorText] = useState("");
   const [rawEvents, setRawEvents] = useState([]);
-  const [evPaged, setEvPaged] = useState(false);
+  // Event log shows one fixed page. `evPage`: cursors of the pages above the current one (empty = newest page).
+  const [evPage, setEvPage] = useState([]);
   const [evNext, setEvNext] = useState(null);
+  const [evBusy, setEvBusy] = useState(false);
   const [samples, setSamples] = useState([]);
   const [toastState, setToast] = useState(null);
   const [test, setTest] = useState({ result: null, image: null, error: "", busy: false });
-  const [ui, setUi] = useState({ tab: "overview", sub: "values", openLeak: null, openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {}, limit: 300,
+  const [ui, setUi] = useState({ tab: "overview", sub: "values", openLeak: null, openGroup: null, allLoc: false, q: "", fGroup: "", fAction: "", fClient: "", fModel: "", fSource: "", fStatus: "active", sel: {}, page: 0, leakPage: 0,
     testKind: "text", testText: "My mobile number is 9876543210 and PAN is ABCPE1234F.", testMode: "current", testWhere: "user", imgSel: 0, upload: null });
   const set = useCallback((p) => setUi((u) => ({ ...u, ...(typeof p === "function" ? p(u) : p) })), []);
   const [theme, setTheme] = useState("light");
@@ -50,38 +52,57 @@ export default function PiiGuardClient() {
     return () => mo.disconnect();
   }, []);
 
-  const loadId = useRef(0), fileRef = useRef(null);
+  const fileRef = useRef(null), loadCtl = useRef(null);
+  // A new load aborts the one in flight, so a slow old range never overwrites a newer one.
   const load = useCallback(async () => {
-    const id = ++loadId.current; // ignore responses from superseded ranges
+    loadCtl.current?.abort();
+    const ctl = (loadCtl.current = new AbortController());
     const { from, to } = bounds(range);
     try {
-      const d = await call(`/api/pii-guard?from=${Math.round(from)}&to=${Math.round(to)}`);
-      if (id !== loadId.current) return;
+      const d = await call(`/api/pii-guard?from=${Math.round(from)}&to=${Math.round(to)}`, null, ctl.signal);
       setData(d); setMode("ready");
     } catch (e) {
-      if (id !== loadId.current) return;
+      if (ctl.signal.aborted) return;
       setErrorText(e.message || "Request failed"); setMode("error");
     }
   }, [range]);
-  useEffect(() => { const t = setTimeout(load, 0); const iv = setInterval(load, 30e3); return () => { clearTimeout(t); clearInterval(iv); }; }, [load]);
+  // Poll every 30 s while the tab is visible. The next poll starts after the last one ends; a hidden tab
+  // stops polling and reloads when it is shown again.
+  useEffect(() => {
+    let t, gen = 0, off = false; // `gen`: only the newest tick schedules the next one, so chains never double up
+    const tick = async () => { clearTimeout(t); const g = ++gen; if (document.visibilityState !== "visible") return; await load(); if (!off && g === gen) t = setTimeout(tick, 30e3); };
+    const onVis = () => { if (document.visibilityState === "visible") tick(); else clearTimeout(t); };
+    tick();
+    document.addEventListener("visibilitychange", onVis);
+    return () => { off = true; clearTimeout(t); loadCtl.current?.abort(); document.removeEventListener("visibilitychange", onVis); };
+  }, [load]);
 
-  // Event log: 50 events per page, newest first, flattened to one row per hit.
-  // The 30 s refresh reloads the newest page only until the user loads older pages.
-  const fetchEvents = useCallback(async (cursor) => {
+  // Event log: 50 events per page, newest first, flattened to one row per hit. The server applies the
+  // client, model, source and action filters. The 30 s refresh reloads only the newest page.
+  const evFilter = `&client=${encodeURIComponent(ui.fClient)}&model=${encodeURIComponent(ui.fModel)}&source=${ui.fSource}&action=${ui.fAction}`;
+  const fetchEvents = useCallback(async (cursor, signal) => {
     const { from, to } = bounds(range);
     const cur = cursor ? `&before=${cursor.before}&skip=${cursor.skip}` : "";
-    const { events = [], next = null } = await call(`/api/pii-guard?events=1&limit=50&from=${Math.round(from)}&to=${Math.round(to)}${cur}`);
+    const { events = [], next = null } = await call(`/api/pii-guard?events=1&limit=50&from=${Math.round(from)}&to=${Math.round(to)}${cur}${evFilter}`, null, signal);
     const rows = [];
-    for (const e of events) for (const h of e.hits || []) rows.push({ t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), loc: place(h.source), a: h.action || "observe", model: e.model || "—", key: e.ua ? String(e.ua).split("/")[0] : "—", req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" });
+    for (const e of events) (e.hits || []).forEach((h, i) => rows.push({ id: `${e.ts}:${e.requestId || ""}:${h.hash}:${h.rule}:${i}`, t: hhmmss(e.ts), rule: h.rule, name: h.name, hash: String(h.hash).slice(0, 6), loc: place(h.source), a: h.action || "observe", model: e.model || "—", key: e.ua ? String(e.ua).split("/")[0] : "—", req: e.requestId ? `${e.requestId.slice(0, 6)}…${e.requestId.slice(-2)}` : "—" }));
     return { rows, next };
-  }, [range]);
+  }, [range, evFilter]);
+  // Range or filter change: back to the newest page.
+  useEffect(() => { setEvPage([]); }, [range, evFilter]);
+  const evCursor = evPage.at(-1)?.cursor || null, evNewest = evPage.length === 0;
+  // The newest page follows `data` (the poll); older pages load once.
+  const evTick = evNewest ? data : null;
   useEffect(() => {
-    if (ui.tab !== "findings" || ui.sub !== "events" || evPaged) return;
-    let off = false;
-    fetchEvents(null).then(({ rows, next }) => { if (!off) { setRawEvents(rows); setEvNext(next); } }).catch(() => {});
-    return () => { off = true; };
-  }, [ui.tab, ui.sub, data, evPaged, fetchEvents]);
-  const loadOlder = evNext ? () => { setEvPaged(true); fetchEvents(evNext).then(({ rows, next }) => { setRawEvents((old) => [...old, ...rows]); setEvNext(next); }).catch(() => {}); } : null;
+    if (ui.tab !== "findings" || ui.sub !== "events") return;
+    const ctl = new AbortController();
+    setEvBusy(true);
+    fetchEvents(evCursor, ctl.signal).then(({ rows, next }) => { setRawEvents(rows); setEvNext(next); setEvBusy(false); }).catch(() => { if (!ctl.signal.aborted) setEvBusy(false); });
+    return () => ctl.abort();
+  }, [ui.tab, ui.sub, evTick, evCursor, fetchEvents]);
+  const loadOlder = evNext && !evBusy ? () => setEvPage((p) => [...p, { cursor: evNext }]) : null;
+  const loadNewer = !evNewest && !evBusy ? () => setEvPage((p) => p.slice(0, -1)) : null;
+  const loadNewest = !evNewest && !evBusy ? () => setEvPage([]) : null;
 
   useEffect(() => { call("/api/pii-guard?samples=1").then((s) => setSamples(Array.isArray(s) ? s : [])).catch(() => {}); }, []);
 
@@ -115,20 +136,26 @@ export default function PiiGuardClient() {
   }, [ui.tab, ui.testKind, ui.imgSel, ui.upload, samples, ocrOn]);
 
   // Saves a settings change, then reloads the current range. `undo` is the body that reverts it.
+  // `loadRef` reloads the range current when the save ends, not the one when it started.
+  const loadRef = useRef(load);
+  useEffect(() => { loadRef.current = load; }, [load]);
   const act = useCallback(async (body, toast, undo) => {
     try {
       await call("/api/pii-guard", body);
       setToast(toast ? { text: toast, undo } : null);
-      load();
+      loadRef.current();
     } catch (e) { alert(e.message); }
-  }, [load]);
+  }, []);
 
   const fit = null;
-  const v = useMemo(() => data && buildView({ data, ui, set, act, range, fit, test, events: rawEvents, samples }), [data, ui, set, act, range, fit, test, rawEvents, samples]);
+  // Typing in the search box updates the input at once; the filtered list follows at lower priority.
+  const dq = useDeferredValue(ui.q);
+  const vui = useMemo(() => (dq === ui.q ? ui : { ...ui, q: dq }), [ui, dq]);
+  const v = useMemo(() => data && buildView({ data, ui: vui, set, act, range, fit, test, events: rawEvents, samples }), [data, vui, set, act, range, fit, test, rawEvents, samples]);
 
   const isLoading = mode === "loading" || (!v && mode !== "error"), isError = mode === "error";
   const preset = range.preset, customLabel = range.label || "";
-  const onRange = (r) => { setRange(r); setEvPaged(false); set({ sel: {}, openLeak: null, limit: 300 }); };
+  const onRange = (r) => { setRange(r); set({ sel: {}, openLeak: null, page: 0, leakPage: 0 }); };
   const todayKey = new Date(Date.now() + IST).toISOString().slice(0, 10);
   const retry = () => { setMode("loading"); load(); };
   const openConsole = () => router.push("/dashboard/console-log");
@@ -145,12 +172,16 @@ export default function PiiGuardClient() {
     const next = { v: f(vRef.current), g: f(gRef.current) };
     setFade((p) => (p.v === next.v && p.g === next.g ? p : next));
   }, []);
+  // Re-observe only when the tab or sub-tab changes, the only times the two scrollers mount or unmount.
   useEffect(() => {
     checkFade();
     const ro = new ResizeObserver(checkFade);
-    [vRef, gRef].forEach((r) => r.current && ro.observe(r.current));
+    [vRef.current, gRef.current].forEach((el) => el && ro.observe(el));
     return () => ro.disconnect();
-  });
+  }, [ui.tab, ui.sub, mode, checkFade]);
+  // Free the previous upload preview when it is replaced or the page closes.
+  const uploadUrl = ui.upload?.url;
+  useEffect(() => () => { if (uploadUrl) URL.revokeObjectURL(uploadUrl); }, [uploadUrl]);
   const mask = (on) => (on ? "linear-gradient(to right,#000 calc(100% - 40px),transparent)" : "none");
   const maskV = mask(fade.v), maskG = mask(fade.g), maskF = "none", fWrap = "wrap", fOverflow = "visible";
   const S = v?.s || {};
@@ -158,10 +189,10 @@ export default function PiiGuardClient() {
   const empty = {};
   const { rangeShort = "", status = { text: "Loading…", c: "var(--tx2)", bg: "var(--seg)" }, tabs = [], goLeaks, goHealth, leaks = [], noLeaks, leakCount, leakBorder, leakIcon, n = empty, trendTitle, fbars = [], fgap, locs = [], toggleLoc, locBtn, byClient = [],
     redactRules, globalBtns = [], piiEx, ocrRows = [], groups = [], subTabs = [], isValues, isEvents, shownLabel, groupOpts = [], clientOpts = [], modelOpts = [], hasSel, selCount, allSel, toggleAll,
-    bulkIgnore, bulkObserve, bulkRedact, bulkBlock, copyHashes, values = [], noValues, moreValues, moreLabel, events = [], samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
+    bulkIgnore, bulkObserve, bulkRedact, bulkBlock, copyHashes, values = [], noValues, prevValues, nextValues, prevLeaks, nextLeaks, leakPageLabel, events = [], samples: sampleBtns = [], kindBtns = [], isText, isImage, testSegs = [], imgSegs = [], testHits = [], noTestHits,
     noHitsText, testVerdict = empty, testOut, thumbs = [], hasUpload, hasSample, imgBg, imgName, sampleName, sampleBg, problems = [], metrics = [], ocrStats = [], healthNote, ocrNote, imgGroups = [], health = empty } = v || {};
   // A filter change clears the selection, so bulk actions never hit hidden rows.
-  const filt = (k) => (e) => set({ [k]: e.target.value, sel: {}, limit: 300 });
+  const filt = (k) => (e) => set({ [k]: e.target.value, sel: {}, page: 0 });
   const q = ui.q, onQ = filt("q"), fGroup = ui.fGroup, onGroup = filt("fGroup"), fAction = ui.fAction, onAction = filt("fAction");
   const fStatus = ui.fStatus, onStatus = filt("fStatus"), fClient = ui.fClient, onClient = filt("fClient");
   const fModel = ui.fModel, onModel = filt("fModel"), fSource = ui.fSource, onSource = filt("fSource");
@@ -204,7 +235,7 @@ export default function PiiGuardClient() {
       {(s.leaks) && (<>
         <div style={{ background: "var(--card)", border: `1px solid ${leakBorder}`, borderRadius: "12px", boxShadow: "var(--shadow)", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "4px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "8px" }}><div style={{ display: "flex", alignItems: "center", gap: "8px" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "19px", color: status.c }}>{leakIcon}</span><span style={{ fontWeight: "600", fontSize: "14px" }}>Leaks</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Matched a Redact or Block rule but could not be rewritten</span></div><span style={{ fontSize: "12px", color: "var(--tx3)" }}>{leakCount}</span></div>
-          {(leaks).map((l, _i) => (<Fragment key={_i}>
+          {(leaks).map((l) => (<Fragment key={l.key}>
             <div style={{ borderTop: "1px solid var(--line)", display: "flex", flexDirection: "column" }}>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: "8px 14px", alignItems: "center", padding: "10px 0 4px" }}>
                 <div style={{ display: "flex", flexDirection: "column", gap: "2px", minWidth: "0" }}><span style={{ fontWeight: "600" }}>{l.rule}</span><span style={{ fontSize: "11.5px", color: "var(--tx3)" }}>{l.group} · <span style={{ fontFamily: "var(--mono)" }}>#{l.hash}</span></span></div>
@@ -231,6 +262,11 @@ export default function PiiGuardClient() {
               </>)}
             </div>
           </Fragment>))}
+          {(prevLeaks || nextLeaks) && (<div style={{ display: "flex", gap: "8px", justifyContent: "center", alignItems: "center", paddingTop: "8px", fontSize: "12px", color: "var(--tx3)" }}>
+            <button onClick={prevLeaks || undefined} disabled={!prevLeaks} style={moreBtn}>Previous</button>
+            <span>{leakPageLabel}</span>
+            <button onClick={nextLeaks || undefined} disabled={!nextLeaks} style={moreBtn}>Next</button>
+          </div>)}
           {(noLeaks) && (<>
             <div style={{ borderTop: "1px solid var(--line)", padding: "26px 0 18px", display: "flex", flexDirection: "column", alignItems: "center", gap: "6px", textAlign: "center" }}><span style={{ fontFamily: "'Material Symbols Outlined'", fontSize: "30px", color: "var(--green)" }}>verified</span><span style={{ fontWeight: "600" }}>No leaks in this range</span><span style={{ color: "var(--tx3)", fontSize: "12px" }}>Every value with a Redact or Block rule was handled before sending.</span></div>
           </>)}
@@ -368,7 +404,7 @@ export default function PiiGuardClient() {
           </>)}
           <div ref={vRef} onScroll={checkFade} style={{ overflowX: "auto", WebkitMaskImage: maskV, maskImage: maskV }}>{(isValues) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "24px minmax(160px,1.5fr) minmax(130px,1.2fr) 96px 124px 76px 88px 52px 64px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "890px", alignItems: "center" }}><input type="checkbox" checked={allSel} onChange={toggleAll} /><span>NAME</span><span>WHERE</span><span>CLIENT</span><span>MODEL · SESSION</span><span>ACTION</span><span>SEEN ↓</span><span style={{ textAlign: "right" }}>HITS</span><span></span></div>
-            {(values).map((v, _i) => (<Fragment key={_i}>
+            {(values).map((v) => (<Fragment key={v.key}>
               <div style={{ display: "grid", gridTemplateColumns: "24px minmax(160px,1.5fr) minmax(130px,1.2fr) 96px 124px 76px 88px 52px 64px", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", minWidth: "890px", background: v.bg }}>
                 <input type="checkbox" checked={v.sel} onChange={v.toggle} />
                 <div style={{ display: "flex", flexDirection: "column", gap: "1px", minWidth: "0" }}><span style={{ display: "flex", gap: "6px", alignItems: "center" }}><span style={{ fontWeight: "600" }}>{v.name}</span>{(v.leaked) && (<><span style={{ fontSize: "10px", fontWeight: "700", padding: "1px 5px", borderRadius: "4px", background: "var(--redbg)", color: "var(--red)" }}>LEAKED</span></>)}</span><span style={{ fontSize: "11px", color: "var(--tx3)" }}>{v.group} · <span style={{ fontFamily: "var(--mono)" }}>#{v.hash}</span></span></div>
@@ -382,11 +418,14 @@ export default function PiiGuardClient() {
               </div>
             </Fragment>))}
             {(noValues) && (<><div style={{ padding: "28px 0", textAlign: "center", color: "var(--tx3)" }}>No values match these filters.</div></>)}
-            {(moreValues) && (<><button onClick={moreValues} style={moreBtn}>{moreLabel}</button></>)}
+            {(prevValues || nextValues) && (<div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+              <button onClick={prevValues || undefined} disabled={!prevValues} style={moreBtn}>Previous {PAGE}</button>
+              <button onClick={nextValues || undefined} disabled={!nextValues} style={moreBtn}>Next {PAGE}</button>
+            </div>)}
           </>)}
           {(isEvents) && (<>
             <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", fontSize: "11px", fontWeight: "600", color: "var(--tx3)", letterSpacing: ".04em", padding: "4px 0", minWidth: "860px" }}><span>TIME</span><span>RULE</span><span>WHERE</span><span>ACTION</span><span>MODEL</span><span>CLIENT</span><span>REQUEST</span></div>
-            {(events).map((e, _i) => (<Fragment key={_i}>
+            {(events).map((e) => (<Fragment key={e.id}>
               <div style={{ display: "grid", gridTemplateColumns: "80px minmax(160px,1.3fr) minmax(150px,1.2fr) 86px minmax(120px,1fr) minmax(130px,1fr) 90px", gap: "10px", alignItems: "center", padding: "7px 0", borderTop: "1px solid var(--line)", fontSize: "12px", minWidth: "860px" }}>
                 <span style={{ color: "var(--tx2)", fontVariantNumeric: "tabular-nums" }}>{e.t}</span>
                 <span>{e.rule} <span style={{ fontFamily: "var(--mono)", color: "var(--tx3)", fontSize: "11px" }}>#{e.hash}</span></span>
@@ -397,7 +436,11 @@ export default function PiiGuardClient() {
                 <span style={{ fontFamily: "var(--mono)", fontSize: "11.5px", color: "var(--tx3)" }}>{e.req}</span>
               </div>
             </Fragment>))}
-            {(loadOlder) && (<><button onClick={loadOlder} style={moreBtn}>Load 50 older events</button></>)}
+            <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
+              {(loadNewest) && (<button onClick={loadNewest} style={moreBtn}>Newest</button>)}
+              {(loadNewer) && (<button onClick={loadNewer} style={moreBtn}>Newer 50</button>)}
+              {(loadOlder) && (<button onClick={loadOlder} style={moreBtn}>Older 50</button>)}
+            </div>
           </>)}</div>
         </div>
       </>)}
