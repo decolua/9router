@@ -1,4 +1,4 @@
-import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind } from "@/shared/constants/models";
+import { PROVIDER_MODELS, PROVIDER_ID_TO_ALIAS, getModelKind, getModelsByProviderId } from "@/shared/constants/models";
 import {
   ALIAS_TO_ID,
   AI_PROVIDERS,
@@ -17,6 +17,7 @@ import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
 import { resolveClinepassModels, resolveClineModels } from "open-sse/services/clinepassModels.js";
 import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
 import { resolveCursorModels } from "open-sse/services/cursorModels.js";
+import { resolveCodexCatalog, mergeCodexRegistryModels } from "open-sse/services/codexCatalog.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
@@ -62,7 +63,52 @@ function comboSeatCapabilities(seat) {
 // Per-provider live model resolvers. Each receives a connection record and
 // returns { models: [{ id, name? }, ...] } | null on failure.
 // Adding a provider here makes /v1/models prefer the live catalog for it.
+// The second argument carries every active connection of the provider, for
+// resolvers that must merge several credentials (Codex catalogs are per-plan).
 const LIVE_MODEL_RESOLVERS = {
+  codex: async (conn, providerConnections) => {
+    const list = (providerConnections || [conn]).filter((c) => c?.accessToken);
+    const catalog = await resolveCodexCatalog({
+      connections: list,
+      proxyOptionsFor: async (c) => {
+        const proxy = await resolveConnectionProxyConfig(c.providerSpecificData || {});
+        return {
+          connectionProxyEnabled: proxy.connectionProxyEnabled === true,
+          connectionProxyUrl: proxy.connectionProxyUrl || "",
+          connectionNoProxy: proxy.connectionNoProxy || "",
+          vercelRelayUrl: proxy.vercelRelayUrl || "",
+          strictProxy: proxy.strictProxy === true,
+        };
+      },
+      onCredentialsRefreshed: async (c, refreshed) => {
+        await updateProviderCredentials(c.id, {
+          accessToken: refreshed.accessToken,
+          refreshToken: refreshed.refreshToken,
+          idToken: refreshed.idToken,
+          expiresIn: refreshed.expiresIn,
+        });
+      },
+    });
+    if (!catalog.models.length) return null;
+    const registry = getModelsByProviderId("codex");
+    const merged = mergeCodexRegistryModels(catalog.models, registry);
+    if (!merged.length) return null;
+    // The live catalog only knows the context window. Start from the full
+    // capability set so vision/reasoning/search are not dropped, then let the
+    // upstream window win — the registry value can be stale.
+    const models = merged.map((m) => {
+      if (m.kind && m.kind !== "llm") return m;
+      const base = getCapabilitiesForModel("codex", m.id);
+      const contextWindow = m.upstreamContextWindow;
+      return {
+        ...m,
+        capabilities: Number.isFinite(contextWindow)
+          ? { ...base, contextWindow }
+          : base,
+      };
+    });
+    return { models };
+  },
   kiro: async (conn) => {
     const result = await resolveKiroModels({
       accessToken: conn.accessToken,
@@ -487,7 +533,7 @@ export async function buildModelsList(kindFilter, options = {}) {
       const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
       if (liveResolver && !hasExplicitEnabledModels) {
         try {
-          const live = await liveResolver(conn);
+          const live = await liveResolver(conn, connections.filter((c) => c.provider === providerId));
           if (live?.models?.length) {
             rawModelIds = live.models.map((m) => m.id);
             liveModelKindById = new Map(
@@ -497,7 +543,9 @@ export async function buildModelsList(kindFilter, options = {}) {
             );
             liveCapabilitiesById = new Map(
               live.models
-                .filter((m) => m?.id && m.capabilities)
+                // Image/stt entries carry a capability list, not the object the
+                // model list reads contextWindow/maxOutput from.
+                .filter((m) => m?.id && m.capabilities && !Array.isArray(m.capabilities))
                 .map((m) => [m.id, m.capabilities])
             );
           }

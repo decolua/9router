@@ -105,6 +105,83 @@ describe("mergeCodexCatalogs", () => {
   });
 });
 
+describe("mergeCodexRegistryModels", () => {
+  const registry = [
+    { id: "gpt-6.1-sol", name: "GPT 6.1 Sol" },
+    { id: "gpt-6-astra", name: "GPT 6.0 Astra" },
+    { id: "gpt-6-astra[1m]", name: "GPT 6.0 Astra (extended context)", upstreamModelId: "gpt-6-astra" },
+    { id: "gpt-5.6-sol-review", name: "GPT 5.6 Sol Review", upstreamModelId: "gpt-5.6-sol" },
+    { id: "gpt-image-2.5", name: "GPT Image 2.5", capabilities: ["text2img", "edit"], kind: "image" },
+    { id: "transcribe", name: "Codex Transcription", kind: "stt" },
+  ];
+
+  it("keeps registry-only models that upstream never advertises", () => {
+    const merged = catalog.mergeCodexRegistryModels([], registry);
+    expect(merged.map((m) => m.id)).toEqual([
+      "gpt-6.1-sol", "gpt-6-astra", "gpt-6-astra[1m]", "gpt-5.6-sol-review", "gpt-image-2.5", "transcribe",
+    ]);
+  });
+
+  it("lets the live context window win for a base model", () => {
+    const merged = catalog.mergeCodexRegistryModels(
+      [entry("gpt-6.1-sol", ["plus"], { context_window: 500000, max_context_window: 872000 })],
+      registry,
+    );
+    const sol = merged.find((m) => m.id === "gpt-6.1-sol");
+    expect(sol.upstreamContextWindow).toBe(500000);
+    expect(sol.upstreamMaxContextWindow).toBe(872000);
+  });
+
+  it("does not shrink an extended-context variant to the base window", () => {
+    const merged = catalog.mergeCodexRegistryModels(
+      [entry("gpt-6-astra", ["plus"], { context_window: 272000, max_context_window: 872000 })],
+      registry,
+    );
+    const extended = merged.find((m) => m.id === "gpt-6-astra[1m]");
+    // The variant's own window is the registry's; upstream describes the base.
+    expect(extended.upstreamContextWindow).toBeUndefined();
+    const base = merged.find((m) => m.id === "gpt-6-astra");
+    expect(base.upstreamContextWindow).toBe(272000);
+  });
+
+  it("keeps a review variant on its registry capabilities", () => {
+    const merged = catalog.mergeCodexRegistryModels(
+      [entry("gpt-5.6-sol", ["plus"], { context_window: 372000 })],
+      registry,
+    );
+    const review = merged.find((m) => m.id === "gpt-5.6-sol-review");
+    expect(review.upstreamContextWindow).toBeUndefined();
+  });
+
+  it("adds a model upstream advertises but the registry never listed", () => {
+    const merged = catalog.mergeCodexRegistryModels(
+      [entry("gpt-9-nova", ["plus"], { context_window: 400000, display_name: "GPT-9 Nova" })],
+      registry,
+    );
+    const nova = merged.find((m) => m.id === "gpt-9-nova");
+    expect(nova).toBeTruthy();
+    expect(nova.name).toBe("GPT-9 Nova");
+    expect(nova.upstreamContextWindow).toBe(400000);
+  });
+
+  it("leaves image and transcription capability lists as lists", () => {
+    const merged = catalog.mergeCodexRegistryModels(
+      [entry("gpt-image-2.5", ["plus"], { context_window: 100 })],
+      registry,
+    );
+    const image = merged.find((m) => m.id === "gpt-image-2.5");
+    expect(Array.isArray(image.capabilities)).toBe(true);
+    expect(image.kind).toBe("image");
+    const stt = merged.find((m) => m.id === "transcribe");
+    expect(stt.kind).toBe("stt");
+  });
+
+  it("returns the registry untouched when there is no live catalog", () => {
+    const merged = catalog.mergeCodexRegistryModels([], registry);
+    expect(merged).toEqual(registry);
+  });
+});
+
 describe("resolveCodexCatalog — live fetch", () => {
   it("fetches the Codex catalog with the CLI identity headers and persists it", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ models: [entry("gpt-6-astra"), entry("gpt-6.1-sol")] }));

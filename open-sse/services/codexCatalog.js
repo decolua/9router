@@ -94,6 +94,72 @@ export function mergeCodexCatalogs(lists) {
   return [...bySlug.values()];
 }
 
+/**
+ * Merge the live upstream catalog with the provider registry list.
+ *
+ * The registry carries the variants upstream never advertises — the "[1m]"
+ * extended-context twins and the "-review" quota family — so it is kept in
+ * full. For every id both sides know, the live entry wins: upstream is the
+ * authority on the context window, and a stale registry value would overstate
+ * or understate it.
+ *
+ * @param {object[]} live - entries from resolveCodexCatalog
+ * @param {object[]} registry - PROVIDER_MODELS entries ({ id, name, kind, upstreamModelId })
+ * @returns {object[]} merged entries for the model list
+ */
+export function mergeCodexRegistryModels(live, registry) {
+  const liveBySlug = new Map();
+  for (const entry of Array.isArray(live) ? live : []) {
+    if (typeof entry?.slug === "string" && entry.slug) liveBySlug.set(entry.slug, entry);
+  }
+
+  const merged = [];
+  const seen = new Set();
+
+  for (const entry of Array.isArray(registry) ? registry : []) {
+    if (!entry?.id) continue;
+    const liveEntry = liveBySlug.get(entry.id) || liveBySlug.get(entry.upstreamModelId);
+    seen.add(entry.id);
+    if (!liveEntry) {
+      merged.push({ ...entry });
+      continue;
+    }
+    // A registry entry whose upstreamModelId differs from its id is a variant:
+    // the "[1m]" extended-context twins and the "-review" quota family. The
+    // live context window describes the base model, so applying it to the
+    // variant would shrink the extended window back to the base one. Variants
+    // keep their registry capabilities.
+    const isVariant = Boolean(entry.upstreamModelId) && entry.upstreamModelId !== entry.id;
+    const contextWindow = isVariant ? undefined : Number(liveEntry.context_window);
+    // Image and transcription entries carry a capability *list* (["text2img",
+    // "edit"]); chat entries carry an object. The merge does not fabricate
+    // capabilities — the caller composes the full set and overrides the window.
+    const capabilities = entry.capabilities && !Array.isArray(entry.capabilities)
+      ? { ...entry.capabilities }
+      : entry.capabilities;
+    merged.push({
+      ...entry,
+      capabilities,
+      upstreamContextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
+      upstreamMaxContextWindow: Number(liveEntry.max_context_window) || undefined,
+    });
+  }
+
+  // Models upstream advertises that the registry has never heard of.
+  for (const [slug, liveEntry] of liveBySlug) {
+    if (seen.has(slug)) continue;
+    const contextWindow = Number(liveEntry.context_window);
+    merged.push({
+      id: slug,
+      name: liveEntry.display_name || slug,
+      upstreamContextWindow: Number.isFinite(contextWindow) ? contextWindow : undefined,
+      upstreamMaxContextWindow: Number(liveEntry.max_context_window) || undefined,
+    });
+  }
+
+  return merged;
+}
+
 async function fetchConnectionCatalog(conn, { onCredentialsRefreshed, proxyOptions, log }) {
   if (!conn?.accessToken) return { error: "no access token" };
 
@@ -157,7 +223,7 @@ export async function resolveCodexCatalog({
       try {
         const result = await fetchConnectionCatalog(conn, {
           onCredentialsRefreshed,
-          proxyOptions: proxyOptionsFor?.(conn) || null,
+          proxyOptions: await proxyOptionsFor?.(conn) || null,
           log,
         });
         if (result.models?.length) lists.push(result.models);
