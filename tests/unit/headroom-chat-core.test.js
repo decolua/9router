@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import "../translator/registerAll.js";
 
 const { executeMock } = vi.hoisted(() => ({
   executeMock: vi.fn(),
@@ -25,6 +26,7 @@ vi.mock("../../open-sse/utils/requestLogger.js", () => ({
 vi.mock("../../open-sse/utils/stream.js", () => ({
   COLORS: { red: "", reset: "" },
   createPassthroughStreamWithLogger: vi.fn(() => new TransformStream()),
+  createSSETransformStreamWithLogger: vi.fn(() => new TransformStream()),
 }));
 
 vi.mock("@/lib/usageDb.js", () => ({
@@ -158,7 +160,7 @@ describe("handleChatCore Headroom diagnostics", () => {
     expect(logs).not.toContain("abc123");
   });
 
-  it("sends Headroom-compressed messages to the provider executor", async () => {
+  it.each([["openai", "gpt-4o"], ["commandcode", "test-model"]])("sends Headroom-compressed messages to the %s executor", async (provider, model) => {
     const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
     const original = "very large context that should be replaced";
     const compressed = "compressed context";
@@ -176,8 +178,8 @@ describe("handleChatCore Headroom diagnostics", () => {
     });
 
     await handleChatCore({
-      body: { model: "gpt-4o", stream: false, messages: [{ role: "user", content: original }] },
-      modelInfo: { provider: "openai", model: "gpt-4o" },
+      body: { model, stream: false, messages: [{ role: "user", content: original }] },
+      modelInfo: { provider, model },
       credentials: { apiKey: "test-key", providerSpecificData: {} },
       log,
       connectionId: "test-conn",
@@ -195,9 +197,9 @@ describe("handleChatCore Headroom diagnostics", () => {
     });
 
     expect(executeMock).toHaveBeenCalledWith(expect.objectContaining({
-      body: expect.objectContaining({
-        messages: [{ role: "user", content: compressed }],
-      }),
+      body: expect.objectContaining(provider === "commandcode"
+        ? { params: expect.objectContaining({ messages: [{ role: "user", content: [{ type: "text", text: compressed }] }] }) }
+        : { messages: [{ role: "user", content: compressed }] }),
     }));
     expect(JSON.stringify(executeMock.mock.calls[0][0].body)).not.toContain(original);
     expect(log.info).toHaveBeenCalledWith("HEADROOM", expect.stringContaining("reported token delta=90 before=100 after=10"));
@@ -207,6 +209,86 @@ describe("handleChatCore Headroom diagnostics", () => {
     const logs = JSON.stringify([...log.info.mock.calls, ...log.warn.mock.calls]);
     expect(logs).not.toContain("saved");
     expect(logs).not.toContain(original);
+  });
+
+  it("sends compressed Responses tool output through the Antigravity translator to its executor", async () => {
+    const original = "search output ".repeat(1000);
+    const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn() };
+    global.fetch = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        messages: payload.messages.map((message) => ({ ...message, content: "short result" })),
+        tokens_before: 1000, tokens_after: 10, tokens_saved: 990,
+      }));
+    });
+
+    await handleChatCore({
+      body: {
+        model: "gemini-2.5-flash", stream: true,
+        input: [
+          { type: "function_call", call_id: "call_1", name: "search", arguments: '{"query":"symbol"}' },
+          { type: "function_call_output", call_id: "call_1", output: original },
+          { role: "user", content: "continue" },
+        ],
+        tools: [{ type: "function", name: "search", parameters: { type: "object" } }],
+      },
+      modelInfo: { provider: "antigravity", model: "gemini-2.5-flash" },
+      credentials: { accessToken: "test-token", projectId: "test-project" },
+      sourceFormatOverride: "openai-responses",
+      log, connectionId: "test-conn", headroomEnabled: true, headroomUrl: "http://localhost:8787",
+      rtkEnabled: false, cavemanEnabled: false, ponytailEnabled: false,
+      clientRawRequest: { endpoint: "/v1/responses", body: {}, headers: {} },
+    });
+
+    expect(global.fetch).toHaveBeenCalledOnce();
+    expect(executeMock).toHaveBeenCalledOnce();
+    const outbound = executeMock.mock.calls[0][0].body;
+    const parts = outbound.request.contents.flatMap((content) => content.parts);
+    expect(parts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ functionResponse: expect.objectContaining({ id: "call_1", response: { result: { result: "short result" } } }) }),
+      expect.objectContaining({ functionCall: expect.objectContaining({ name: "search", args: { query: "symbol" } }) }),
+    ]));
+    expect(JSON.stringify(outbound)).not.toContain(original);
+    expect(log.info).toHaveBeenCalledWith("HEADROOM", expect.stringContaining("reported token delta=990"));
+  });
+
+  it.each(["anthropic", "claude"])("preserves Claude PDFs and tool results through Headroom to the %s executor", async (provider) => {
+    const model = "claude-sonnet-4-5";
+    const document = { type: "document", source: { type: "base64", media_type: "application/pdf", data: "JVBERi0xLjQK" }, title: "report.pdf" };
+    const toolUse = { type: "tool_use", id: "toolu_pdf", name: "read_pdf", input: { path: "report.pdf" } };
+    const messages = [
+      { role: "user", content: [{ type: "text", text: "Summarize the attached PDF document" }, document] },
+      { role: "assistant", content: [toolUse] },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: "toolu_pdf", content: [
+        { type: "text", text: "Long extracted PDF contents" }, document,
+      ] }] },
+    ];
+    const expected = structuredClone(messages);
+    expected[0].content[0].text = "short";
+    expected[2].content[0].content[0].text = "short";
+    expected[1].content[0].cache_control = { type: "ephemeral" };
+    expected[2].content[0].cache_control = { type: "ephemeral" };
+    global.fetch = vi.fn(async (_url, init) => {
+      const payload = JSON.parse(init.body);
+      return Response.json({
+        messages: payload.messages.map((message) => ({ ...message, content: message.content ? "short" : "" })),
+        tokens_before: 100, tokens_after: 10, tokens_saved: 90,
+      });
+    });
+
+    await handleChatCore({
+      body: { model, stream: false, max_tokens: 2048, messages, tools: [{ name: "read_pdf", input_schema: { type: "object" } }] },
+      modelInfo: { provider, model }, sourceFormatOverride: "claude",
+      credentials: { apiKey: "test-key", providerSpecificData: {} },
+      log: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() }, connectionId: "test-conn",
+      headroomEnabled: true, headroomUrl: "http://localhost:8787", headroomCompressUserMessages: true,
+      rtkEnabled: false, cavemanEnabled: false, ponytailEnabled: false,
+      clientRawRequest: { endpoint: "/v1/messages", body: {}, headers: {} },
+    });
+
+    expect(global.fetch).toHaveBeenCalledOnce();
+    expect(executeMock).toHaveBeenCalledOnce();
+    expect(executeMock.mock.calls[0][0].body.messages).toEqual(expected);
   });
 
   it("does not warn about healthy message compression when tools dominate the body", async () => {
