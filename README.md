@@ -1353,6 +1353,9 @@ Notes:
 
 ### Runtime Files and Storage
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/yedjju)
+
+
 - Main app state: `${DATA_DIR}/db/data.sqlite` (SQLite — providers, combos, aliases, keys, settings, usage history)
 - Auto backups: `${DATA_DIR}/db/backups/`
 - Optional request/translator logs: `<repo>/logs/...` when `ENABLE_REQUEST_LOGS=true`
