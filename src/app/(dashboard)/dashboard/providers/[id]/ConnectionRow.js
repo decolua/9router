@@ -117,6 +117,11 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
 
   const rowAuthType = connection.authType || (isOAuth ? "oauth" : "apikey");
   const isOAuthConnection = rowAuthType === "oauth";
+  // access_token rows are quarantined by the same re-auth path, but they are not
+  // "oauth" — gating the repair button on isOAuthConnection left them with no
+  // way to sign in again. onReconnect is only passed for providers that actually
+  // support an OAuth login, so it stays the authority on whether this is offered.
+  const isOAuthStyleCredential = isOAuthConnection || rowAuthType === "access_token";
   const isCookieConnection = rowAuthType === "cookie";
   const isLeaseConnection = rowAuthType === "mcode-lease";
   const authIcon = isLeaseConnection ? "desktop_windows" : isCookieConnection ? "cookie" : isOAuthConnection ? "lock" : "key";
@@ -171,6 +176,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   const showCredentialEdit = isReauthRequired
     && !isOAuthConnection
     && (rowAuthType === "apikey" || rowAuthType === "api_key");
+  // Offer Reconnect on any disabled OAuth-style row, not just flagged ones: an
+  // account switched off by hand still needs a way back in, and re-login repairs
+  // the existing row rather than adding another.
+  const showReconnect = (isReauthRequired || connection.isActive === false)
+    && isOAuthStyleCredential
+    && !!onReconnect;
 
   const getStatusVariant = () => getConnectionStatusVariant(connection.isActive, effectiveStatus);
 
@@ -192,8 +203,12 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
   };
 
   return (
-    <div className={`group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between ${connection.isActive === false ? "opacity-60" : ""}`}>
-      <div className="flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3">
+    <div className="group flex min-w-0 flex-col gap-3 rounded-lg p-2 transition-colors hover:bg-black/[0.02] dark:hover:bg-white/[0.02] sm:flex-row sm:items-center sm:justify-between">
+      {/* Dim the identity/status block only. A quarantined row is isActive:false,
+          and opacity on the row would composite over the Reconnect / Update key
+          button — a child cannot render brighter than its parent, so the repair
+          action would look switched off exactly when it is the way out. */}
+      <div className={`flex min-w-0 flex-1 items-start gap-2 sm:items-center sm:gap-3 ${connection.isActive === false ? "opacity-60" : ""}`}>
         {/* Priority arrows */}
         <div className="flex shrink-0 flex-col">
           <button
@@ -319,9 +334,9 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
               </button>
             </Tooltip>
           )}
-          {isReauthRequired && isOAuthConnection && onReconnect && (
-            <Tooltip text="Sign in again to repair this account">
-              <button onClick={onReconnect} className="flex flex-col items-center rounded px-2 py-1 text-amber-600 hover:bg-amber-500/10">
+          {showReconnect && (
+            <Tooltip text={isReauthRequired ? "Sign in again to repair this account" : "Sign in again to refresh this account"}>
+              <button onClick={onReconnect} className="flex flex-col items-center rounded bg-amber-500/10 px-2 py-1 text-amber-600 hover:bg-amber-500/20">
                 <span className="material-symbols-outlined text-[18px]">sync_problem</span>
                 <span className="text-[10px] leading-tight">Reconnect</span>
               </button>

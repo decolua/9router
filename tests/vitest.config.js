@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { transformWithOxc } from "vite";
 import { resolve } from "path";
 import { fileURLToPath } from "url";
 
@@ -26,4 +27,17 @@ export default defineConfig({
       { find: /^@\//, replacement: resolve(__dirname, "../src") + "/" },
     ],
   },
+  // Dashboard components live in .js files but contain JSX, which the default
+  // loader rejects. Parse just those as JSX so component tests can import them.
+  plugins: [
+    {
+      name: "jsx-in-js-app",
+      enforce: "pre",
+      async transform(code, id) {
+        if (!id.includes("/src/app/") || !id.endsWith(".js")) return null;
+        const result = await transformWithOxc(code, id, { lang: "jsx" });
+        return { code: result.code, map: result.map };
+      },
+    },
+  ],
 });
