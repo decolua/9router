@@ -69,6 +69,12 @@ export const ERROR_RULES = [
   // enough that the operator sees "unavailable / reconnect" instead.
   { provider: "qoder", text: "login expired", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
   { provider: "qoder-cn", text: "login expired", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  // Billing daily count (110): the account's daily request window is exhausted.
+  // A 2-minute cooldown just makes the client retry into the same exhausted
+  // window every 2 minutes until midnight UTC; hold the max cooldown instead —
+  // account fallback still applies, so other accounts keep serving.
+  { provider: "qoder", text: "billing daily count exceeded", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
+  { provider: "qoder-cn", text: "billing daily count exceeded", cooldownMs: MAX_RATE_LIMIT_COOLDOWN_MS },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },

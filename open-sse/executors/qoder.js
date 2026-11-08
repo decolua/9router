@@ -35,6 +35,7 @@ import {
   getQoderStaticModelConfig,
   qoderChatModelConfig,
   qoderInferenceBase,
+  qoderQuotaUsageUrl,
 } from "../shared/qoder/constants.js";
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials, invalidateQoderJobToken } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
@@ -420,6 +421,58 @@ function isLoginExpiredFrame(inner, statusVal) {
   return false;
 }
 
+/**
+ * Enrich a billing-block error message with the account's live quota and the
+ * next daily-reset boundary. Upstream's `110` body carries no timestamp (the
+ * quota API's `expiresAt` is the *subscription* expiry, not the daily reset),
+ * so the reset time is computed: Qoder's billing day rolls at midnight UTC.
+ * Best-effort with a short timeout — a quota-fetch failure must never delay
+ * or fail the error response itself.
+ */
+async function describeQoderDailyQuota(inner, credentials, region, log) {
+  const base = inner && typeof inner === "string" ? inner : "qoder billing block";
+  let quotaText = "";
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort("timeout"), 4000);
+    let body = null;
+    try {
+      const res = await proxyAwareFetch(
+        qoderQuotaUsageUrl(region || "intl"),
+        { method: "GET", headers: { Accept: "application/json", "User-Agent": "qodercli/1.0.0" }, signal: controller.signal },
+        null,
+      );
+      if (res.ok) body = await res.json().catch(() => null);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (body) {
+      const uq = body.userQuota || {};
+      const ao = body.addOnQuota || {};
+      const parts = [];
+      if (typeof uq.used === "number" || typeof uq.total === "number") {
+        parts.push(`plan credits ${uq.used ?? "?"}/${uq.total ?? "?"}`);
+      }
+      if (typeof ao.used === "number" && (ao.total || 0) > 0 && ao.used > 0) {
+        parts.push(`add-on ${ao.used}/${ao.total}`);
+      }
+      if (body.userType) parts.push(`plan: ${body.userType}`);
+      quotaText = parts.join(", ");
+    }
+  } catch (e) {
+    log?.debug?.("QODER", `quota fetch for error message failed: ${e?.message || e}`);
+  }
+
+  // Next midnight UTC — Qoder's daily billing window boundary.
+  const now = new Date();
+  const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+  const mins = Math.max(1, Math.round((reset.getTime() - now.getTime()) / 60000));
+  const resetText = `resets in ~${mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`} (${reset.toISOString().replace("T", " ").slice(0, 16)} UTC)`;
+
+  const quotaClause = quotaText ? ` — ${quotaText}` : "";
+  return `${base}${quotaClause}; ${resetText}`;
+}
+
 function isBillingBlock(inner) {
   if (!inner || typeof inner !== "string") return false;
   const lowerMsg = inner.toLowerCase();
@@ -504,7 +557,7 @@ async function peekFirstQoderFrame(reader, decoder) {
  * error text as a successful completion. Billing blocks retain the existing
  * 403 mapping for quota/account fallback.
  */
-async function wrapQoderSSE(response, model, log = null) {
+async function wrapQoderSSE(response, model, log = null, describeBilling = null) {
   if (!response.ok || !response.body) return response;
 
   const decoder = new TextDecoder();
@@ -536,7 +589,7 @@ async function wrapQoderSSE(response, model, log = null) {
   };
 
   // Process one already-extracted SSE line (no trailing newline).
-  const processLine = (line, controller) => {
+  const processLine = async (line, controller) => {
     const trimmed = line.replace(/\r$/, "").trim();
     if (!trimmed) return;
     if (!trimmed.startsWith("data:")) return;
@@ -567,9 +620,15 @@ async function wrapQoderSSE(response, model, log = null) {
         // parseSSEToOpenAIResponse understands chunk.error and turns it into a
         // non-200 result so chat.js locks the model and falls back. Streaming
         // clients receive a real SSE error instead of "[qoder error ...]" text.
+        let billingMessage = inner || `qoder billing block (${statusVal})`;
+        if (typeof describeBilling === "function") {
+          try {
+            billingMessage = await describeBilling(inner);
+          } catch { /* keep the plain upstream message */ }
+        }
         const errObj = JSON.stringify({
           error: {
-            message: inner || `qoder billing block (${statusVal})`,
+            message: billingMessage,
             code: "qoder_billing_block",
             status: 403,
             type: "quota_error",
@@ -608,7 +667,7 @@ async function wrapQoderSSE(response, model, log = null) {
         while ((nlSeed = buffer.indexOf("\n")) !== -1) {
           const line = buffer.slice(0, nlSeed);
           buffer = buffer.slice(nlSeed + 1);
-          processLine(line, controller);
+          await processLine(line, controller);
           if (doneEmitted) {
             await reader.cancel().catch(() => {});
             controller.close();
@@ -619,7 +678,7 @@ async function wrapQoderSSE(response, model, log = null) {
           // Peek hit end-of-stream: flush any trailing partial line.
           buffer += decoder.decode();
           if (buffer.length > 0) {
-            processLine(buffer, controller);
+            await processLine(buffer, controller);
             buffer = "";
           }
         }
@@ -629,7 +688,7 @@ async function wrapQoderSSE(response, model, log = null) {
           if (done) {
             buffer += decoder.decode();
             if (buffer.length > 0) {
-              processLine(buffer, controller);
+              await processLine(buffer, controller);
               buffer = "";
             }
             break;
@@ -640,7 +699,7 @@ async function wrapQoderSSE(response, model, log = null) {
           while ((nl = buffer.indexOf("\n")) !== -1) {
             const line = buffer.slice(0, nl);
             buffer = buffer.slice(nl + 1);
-            processLine(line, controller);
+            await processLine(line, controller);
             if (doneEmitted) {
               // Terminal frame received — drop upstream keepalive and end.
               await reader.cancel().catch(() => {});
@@ -1033,9 +1092,15 @@ export class QoderExecutor extends BaseExecutor {
           const status = peek.isBilling ? HTTP_STATUS.FORBIDDEN
             : Number.isInteger(peek.statusVal) && peek.statusVal >= 400 && peek.statusVal <= 599
               ? peek.statusVal : HTTP_STATUS.BAD_GATEWAY;
+          // Billing blocks get the live quota and the daily-reset boundary
+          // appended, so the client sees WHY and UNTIL WHEN instead of a bare
+          // "Billing daily count exceeded".
+          const message = peek.isBilling
+            ? await describeQoderDailyQuota(peek.message, credentials, this.region, log)
+            : peek.message || "qoder upstream error";
           return {
             response: new Response(
-              JSON.stringify({ error: { message: peek.message || "qoder upstream error", code: peek.statusVal } }),
+              JSON.stringify({ error: { message, code: peek.statusVal } }),
               { status, headers: { "Content-Type": "application/json" } },
             ),
             url: sent.url,
@@ -1091,7 +1156,8 @@ export class QoderExecutor extends BaseExecutor {
           }),
           { status: sent.response.status, statusText: sent.response.statusText, headers: sent.response.headers },
         );
-        const wrapped = await wrapQoderSSE(reconstructed, label, log);
+        const wrapped = await wrapQoderSSE(reconstructed, label, log, (inner) =>
+          describeQoderDailyQuota(inner, credentials, this.region, log));
         return { response: wrapped, url: sent.url, headers: sent.headers, transformedBody: sent.transformedBody };
       }
 
