@@ -148,7 +148,7 @@ async function fetchCandidates(target = 50) {
     })
   );
 
-  return Array.from(candidates).slice(0, candidateLimit);
+  return Array.from(candidates).sort(() => Math.random() - 0.5).slice(0, candidateLimit);
 }
 
 async function runWithConcurrency(items, limit, fn, shouldStop) {

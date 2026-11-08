@@ -1,3 +1,10 @@
+# v0.5.384 (2026-11-07) · 1 commit
+
+## Auto Harvester: candidate shuffle fix
+
+- Candidates were taken in feed order, so the first 500 all came from the first feed (jetkai), which was 100% dead on this network. The harvester always finished 0/500.
+- Candidates are now shuffled before the scan window is picked, so live proxies from healthy feeds (monosans, TheSpeedX, sunny9577) are reached in every run.
+
 # v0.5.383 (2026-11-07) · 1 commit
 
 ## Auto Harvester: dead feed pruning, English UI, de-slopped
