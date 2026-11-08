@@ -60,4 +60,8 @@ export default {
     authHeader: "bearer",
   },
   imageConfig: { baseUrl: "https://api.cloudflare.com/client/v4/accounts" },
+  features: {
+    usage: true,
+    usageApikey: true,
+  },
 };
