@@ -89,3 +89,19 @@ export const COOLDOWN_MS = {
   transient: TRANSIENT_COOLDOWN_MS,
   requestNotAllowed: COOLDOWN.short,
 };
+
+/**
+ * Client-error statuses that are NOT request-scoped, i.e. that must fall back
+ * instead of being handed straight back to the caller.
+ *
+ *  - 401/402/403/429 are account/quota scoped and have their own rules in
+ *    ERROR_RULES (checked before the unmatched-4xx catch-all).
+ *  - 408 Request Timeout, 425 Too Early and 499 Client Closed Request are
+ *    emitted by load balancers and edge proxies (ALB, Cloudflare, HAProxy,
+ *    nginx) when an upstream node stalls or resets. The payload is fine — the
+ *    node is not — so they are transient transport failures, not client
+ *    mistakes. Falling back to the next account / combo member is the only way
+ *    to keep serving; aborting here makes a fallback combo ignore its backup
+ *    members. (#4911)
+ */
+export const FALLBACK_ELIGIBLE_CLIENT_STATUSES = new Set([401, 402, 403, 429, 408, 425, 499]);

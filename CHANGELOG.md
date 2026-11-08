@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Combos**: treat transient gateway statuses 408, 425 and 499 as account-fallback eligible while preserving request-scoped handling for other client errors (#4911).
+
 # v0.5.116 (2026-11-08)
 
 ## Features
