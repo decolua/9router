@@ -36,7 +36,7 @@ import {
   qoderChatModelConfig,
   qoderInferenceBase,
 } from "../shared/qoder/constants.js";
-import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
+import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials, invalidateQoderJobToken } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
 import { buildCosyHeaders, deriveMachineId } from "../shared/qoder/cosy.js";
@@ -400,6 +400,26 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
  * insufficient_quota and locks the model for minutes, so a queued request used
  * to fail permanently instead of waiting ~30s. See shared/qoder/queue.js.
  */
+/**
+ * Upstream body for an auth-invalidated credential: {"code":"105","message":"Login expired"}.
+ * The gateway answers it with HTTP 403 whenever the jt-/dt- it was given is no
+ * longer accepted — server-side early invalidation the local expiresAt cannot
+ * see. Detected at any frame position so both the first-frame peek and the
+ * mid-stream envelope path recognise it.
+ */
+function isLoginExpiredFrame(inner, statusVal) {
+  if (statusVal === 401) return true;
+  if (!inner || typeof inner !== "string") return false;
+  if (statusVal === 403) {
+    try {
+      const parsed = JSON.parse(inner);
+      if (String(parsed?.code) === "105") return true;
+    } catch { /* not JSON */ }
+    return inner.toLowerCase().includes("login expired");
+  }
+  return false;
+}
+
 function isBillingBlock(inner) {
   if (!inner || typeof inner !== "string") return false;
   const lowerMsg = inner.toLowerCase();
@@ -672,7 +692,47 @@ export class QoderExecutor extends BaseExecutor {
   //   - body encoded with QoderEncodeBody before signing
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  //
+  // Wraps _executeAttempt with a single login-expired recovery: when upstream
+  // rejects the cached job token (403/code 105 "Login expired" — a
+  // server-side early invalidation the local expiresAt bookkeeping cannot
+  // see), drop the cached jt- and retry once with a freshly exchanged one.
+  // Before this, an invalidated jt- was treated as a transient 403: the
+  // account got a 2-minute cooldown, the client retried into the same dead
+  // token, and the loop repeated forever.
+  async execute(params) {
+    const result = await this._executeAttempt(params);
+    if (!(await this._isLoginExpiredResult(result))) return result;
+
+    const { log, credentials } = params;
+    log?.warn?.("QODER", "upstream rejected the job token (Login expired); re-exchanging and retrying once");
+    invalidateQoderJobToken(credentials);
+    try {
+      const retry = await this._executeAttempt(params);
+      return retry;
+    } catch (err) {
+      log?.warn?.("QODER", `retry after job-token re-exchange failed: ${err.message}`);
+      return result;
+    }
+  }
+
+  /**
+   * True when an executor result's response is the login-expired rejection:
+   * HTTP 403/401 whose body carries Qoder code 105 (or the literal message).
+   * Error responses from _executeAttempt are built from a JSON string, so the
+   * body is safe to read. Successful streams (Response.ok) never reach the
+   * body read.
+   */
+  async _isLoginExpiredResult(result) {
+    const resp = result?.response;
+    if (!resp || resp.ok) return false;
+    if (resp.status !== 403 && resp.status !== 401) return false;
+    let text = "";
+    try { text = await resp.text(); } catch { return false; }
+    return isLoginExpiredFrame(text, resp.status);
+  }
+
+  async _executeAttempt({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     // PAT (pt-...) → exchange for short-lived job token + resolve userId so
     // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
     // job tokens (jt-...) skip this and are used directly.

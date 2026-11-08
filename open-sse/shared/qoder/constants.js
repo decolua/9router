@@ -93,6 +93,16 @@ export function qoderJobTokenExchangeUrl(region) {
 }
 export const QODER_JOB_TOKEN_EXCHANGE_URL = qoderJobTokenExchangeUrl(QODER_REGION_INTL);
 
+// Job-token rotation (qodercli 1.1.85 uses this; the jobToken/exchange response
+// carries a rotating `refresh_token` of its own, `jrt-...`). POST with the
+// CURRENT jt- as Bearer + {refresh_token: <jrt-...>} answers a fresh jt- and a
+// fresh jrt-. This is NOT the device-flow `/api/v1/deviceToken/refresh`, which
+// only accepts `drt-` tokens.
+export function qoderJobTokenRefreshUrl(region) {
+  return `${qoderOpenApiBase(region)}/api/v1/jobToken/refresh`;
+}
+export const QODER_JOB_TOKEN_REFRESH_URL = qoderJobTokenRefreshUrl(QODER_REGION_INTL);
+
 // Inference endpoints (under /algo on the chat host, all COSY-signed)
 export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generation";
 export const QODER_CHAT_URL = `${QODER_CHAT_BASE}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common`;
