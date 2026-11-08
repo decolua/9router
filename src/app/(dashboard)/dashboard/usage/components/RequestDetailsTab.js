@@ -7,6 +7,7 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { formatRequestDetailResponse } from "./responseDisplay";
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -178,6 +179,8 @@ export default function RequestDetailsTab() {
   const handleClearFilters = () => {
     setFilters({ provider: "", startDate: "", endDate: "" });
   };
+
+  const displayResponse = formatRequestDetailResponse(selectedDetail?.response);
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
@@ -482,14 +485,14 @@ export default function RequestDetailsTab() {
               )}
               
               <CollapsibleSection title="4. Client Response (Final)" defaultOpen={true} icon="output">
-                {selectedDetail.response?.thinking && (
+                {displayResponse.thinking && (
                   <div className="mb-4">
                     <h4 className="font-semibold text-text-main mb-2 flex items-center gap-2 text-xs uppercase tracking-wide opacity-70">
                       <span className="material-symbols-outlined text-[16px]">psychology</span>
                       Thinking Process
                     </h4>
                     <pre className="max-h-[200px] max-w-full overflow-auto rounded-lg border border-amber-200 bg-amber-50 p-3 font-mono text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-100 sm:p-4">
-                      {selectedDetail.response.thinking}
+                      {displayResponse.thinking}
                     </pre>
                   </div>
                 )}
@@ -498,7 +501,7 @@ export default function RequestDetailsTab() {
                   Content
                 </h4>
                 <pre className="max-h-[300px] max-w-full overflow-auto rounded-lg border border-black/5 bg-black/5 p-3 font-mono text-xs text-text-main dark:border-white/5 dark:bg-white/5 sm:p-4">
-                  {selectedDetail.response?.content || "[No content]"}
+                  {displayResponse.content}
                 </pre>
               </CollapsibleSection>
             </div>
