@@ -226,7 +226,7 @@
     "forceStream": true,
     "headers": {
       "User-Agent": "cli",
-      "x-command-code-version": "1.88.0",
+      "x-command-code-version": "1.88.5",
       "x-cli-environment": "production",
       "x-cli-surface": "cli",
       "x-taste-learning": "false"
@@ -758,16 +758,16 @@
     "format": "openai"
   },
   "opencode-go": {
-    "baseUrl": "https://opencode.ai/zen/go/v1/chat/completions",
+    "baseUrl": "https://opencode.ai/inference/go/openai/v1/chat/completions",
     "headers": {},
     "usage": {
-      "url": "https://opencode.ai/zen/go/v1/usage"
+      "url": "https://opencode.ai/inference/go/v1/usage"
     },
     "format": "openai",
     "transports": [
       {
         "format": "openai",
-        "baseUrl": "https://opencode.ai/zen/go/v1/chat/completions",
+        "baseUrl": "https://opencode.ai/inference/go/openai/v1/chat/completions",
         "auth": {
           "combined": true,
           "header": "Authorization",
@@ -776,17 +776,18 @@
       },
       {
         "format": "claude",
-        "baseUrl": "https://opencode.ai/zen/go/v1/messages",
+        "baseUrl": "https://opencode.ai/inference/go/anthropic/v1/messages",
         "auth": {
           "combined": true,
           "header": "x-api-key",
           "scheme": "raw",
           "anthropicVersion": true
-        }
+        },
+        "thinkingFormat": "claude-adaptive"
       },
       {
         "format": "openai-responses",
-        "baseUrl": "https://opencode.ai/zen/go/v1/responses",
+        "baseUrl": "https://opencode.ai/inference/go/openai/v1/responses",
         "auth": {
           "combined": true,
           "header": "Authorization",

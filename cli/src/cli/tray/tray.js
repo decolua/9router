@@ -1,9 +1,13 @@
-const { exec } = require("child_process");
+const { exec, execFileSync } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 
 let trayInstance = null;
 let isWinTray = false;
+
+// How long to wait for systray2's Go child to write its stdout handshake
+// before treating the tray as failed.
+const TRAY_READY_TIMEOUT_MS = 3000;
 
 /**
  * Get icon base64 from file — used for systray (mac/linux)
@@ -38,11 +42,15 @@ function isTraySupported() {
 
 /**
  * Initialize system tray with menu
- * @param {Object} options - { port, onQuit, onOpenDashboard }
+ * @param {Object} options - { port, onQuit, onOpenDashboard, onReady, onError }
+ *   onReady/onError are optional and fire once the tray is actually usable (or
+ *   provably is not). Callers must not announce a tray icon before onReady:
+ *   the systray2 child can die before it ever registers one.
  * @returns {Object|null} tray instance or null if not supported/failed
  */
 function initTray(options) {
   if (!isTraySupported()) {
+    options.onError?.(new Error("no graphical session (DISPLAY/WAYLAND_DISPLAY unset)"));
     return null;
   }
 
@@ -132,8 +140,10 @@ function initWindowsTray(options) {
     });
 
     isWinTray = true;
+    options.onReady?.();
     return trayInstance;
   } catch (err) {
+    options.onError?.(err);
     return null;
   }
 }
@@ -188,6 +198,54 @@ function chmodTrayBin(pkgName) {
   } catch (e) {}
 }
 
+/**
+ * Shared libraries the tray binary needs but cannot load.
+ * ldd prints "<soname> => not found" for each one.
+ */
+function missingSharedLibs(binPath) {
+  try {
+    const out = execFileSync("ldd", [binPath], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 2000
+    });
+    return out
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.endsWith("not found"))
+      .map((line) => line.split(/\s+/)[0]);
+  } catch (e) {
+    return [];
+  }
+}
+
+/**
+ * Turn a dead Linux tray child into something the user can act on.
+ *
+ * systray2's bundled Go binary links against libappindicator3.so.1 (the Ubuntu
+ * ABI). Distros that ship only the maintained libayatana fork (Arch, for one)
+ * expose the same symbols under libayatana-appindicator3.so.1, so ld.so aborts
+ * the child with exit 127 before it writes its handshake: systray2's ready()
+ * never settles and the tray silently never appears.
+ *
+ * Returns null when there is nothing useful to say.
+ */
+function linuxTrayHint(binPath) {
+  if (process.platform !== "linux" || !binPath) return null;
+  const missing = missingSharedLibs(binPath);
+  if (missing.length === 0) return null;
+
+  const lines = [`  missing shared libraries: ${missing.join(", ")}`];
+  if (missing.includes("libappindicator3.so.1")) {
+    lines.push(
+      "  Some distros (Arch, for example) ship only the libayatana fork, which is",
+      "  ABI-compatible. Install your distro's libappindicator3 package, or link it:",
+      "    sudo ln -s /usr/lib/libayatana-appindicator3.so.1 /usr/lib/libappindicator3.so.1"
+    );
+  }
+  return lines.join("\n");
+}
+
 function initUnixTray(options) {
   const { port } = options;
   try {
@@ -229,20 +287,41 @@ function initUnixTray(options) {
     });
 
     if (isV2) {
-      // systray2 exposes a ready() promise instead of onReady/onError. Surface
-      // failures (binary crash, EACCES, etc.) so users can see why the icon
-      // didn't appear instead of getting a misleading "running in tray" log.
-      trayInstance.ready().catch((err) => {
-        process.stderr.write(`[9router] tray failed to start: ${err && err.message ? err.message : err}\n`);
-      });
+      // systray2 resolves ready() only once the Go child writes its single
+      // handshake line to stdout. A child that dies before that (missing
+      // shared library, EACCES, wrong architecture) emits no 'error' event and
+      // no line, so the promise stays pending forever while the caller
+      // announces a tray icon that isn't there. Bound it with a timeout.
+      let settled = false;
+      const reportFailure = (err) => {
+        if (settled) return;
+        settled = true;
+        const hint = linuxTrayHint(trayInstance && trayInstance._binPath);
+        options.onError?.(hint ? new Error(`${err.message}\n${hint}`) : err);
+      };
+      const timer = setTimeout(
+        () => reportFailure(new Error(`no handshake from the tray process within ${TRAY_READY_TIMEOUT_MS}ms`)),
+        TRAY_READY_TIMEOUT_MS
+      );
+
+      trayInstance
+        .ready()
+        .then(() => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          options.onReady?.();
+        })
+        .catch(reportFailure);
     } else {
-      trayInstance.onReady(() => {});
+      trayInstance.onReady(() => options.onReady?.());
       trayInstance.onError(() => {});
     }
 
     return trayInstance;
   } catch (err) {
     process.stderr.write(`[9router] tray init error: ${err.message}\n`);
+    options.onError?.(err);
     return null;
   }
 }
