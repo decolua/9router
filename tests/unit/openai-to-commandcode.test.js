@@ -226,6 +226,15 @@ describe("openaiToCommandCodeRequest — defaults & envelope", () => {
 
     expect(out.params.reasoning_effort).toBe("high");
   });
+
+  it("extracts effort from Claude output_config.effort", () => {
+    const out = openaiToCommandCodeRequest(MODEL, {
+      messages: [{ role: "user", content: "hi" }],
+      output_config: { effort: "max" },
+    }, true);
+
+    expect(out.params.reasoning_effort).toBe("max");
+  });
 });
 
 describe("openaiToCommandCodeRequest — assistant tool_calls / tool-call", () => {

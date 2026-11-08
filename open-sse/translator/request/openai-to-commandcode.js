@@ -226,7 +226,9 @@ export function openaiToCommandCodeRequest(model, body, stream, credentials) {
   if (body.top_p != null) params.top_p = body.top_p;
 
   // Reasoning effort if specified by client (Claude effort or OpenAI reasoning_effort)
-  const effort = body.reasoning_effort ?? (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
+  const effort = body.reasoning_effort ??
+    body.output_config?.effort ??
+    (typeof body.reasoning === "object" ? body.reasoning?.effort : null);
   if (effort && typeof effort === "string") {
     params.reasoning_effort = effort;
   }
