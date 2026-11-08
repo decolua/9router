@@ -461,6 +461,18 @@ PROVIDER_CAPABILITIES["qoder"] = {
 // Qoder CN serves the identical model catalog from the CN gateway, so it shares
 // the intl Qoder capability table verbatim (vision/reasoning/contextWindow).
 PROVIDER_CAPABILITIES["qoder-cn"] = PROVIDER_CAPABILITIES["qoder"];
+
+// ZCode coding plans serve GLM through the Anthropic Messages endpoint.
+// Thinking is the binary enabled/disabled shape (budget-style on the wire).
+PROVIDER_CAPABILITIES["zcode"] = {
+  // Start-plan GLM effort tiers: low | high | max (no disable on 5.3 line).
+  "GLM-5.3-Flash": { vision: true, videoInput: true, pdf: true, reasoning: true, thinkingFormat: "zai-anthropic", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+  "GLM-5.3":       { reasoning: true, thinkingFormat: "zai-anthropic", thinkingCanDisable: false, contextWindow: 1000000, maxOutput: 128000 },
+  // GLM-5.2 keeps a disable path (none/minimal stop thinking).
+  "GLM-5.2":       { reasoning: true, thinkingFormat: "zai-anthropic", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+  "GLM-5-Turbo":   { reasoning: true, thinkingFormat: "claude-budget", thinkingCanDisable: true, contextWindow: 1000000, maxOutput: 128000 },
+};
+PROVIDER_CAPABILITIES.zc = PROVIDER_CAPABILITIES["zcode"];
 PROVIDER_CAPABILITIES.cx = PROVIDER_CAPABILITIES.codex;
 PROVIDER_CAPABILITIES.dv = PROVIDER_CAPABILITIES["devin-cli"];
 PROVIDER_CAPABILITIES.devin = PROVIDER_CAPABILITIES["devin-cli"];

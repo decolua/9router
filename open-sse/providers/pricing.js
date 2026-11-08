@@ -195,6 +195,13 @@ export const MODEL_PRICING = {
  * Keyed by provider alias (cc, cx, gc, gh, ...) or provider id (openai, anthropic, ...).
  */
 export const PROVIDER_PRICING = {
+  // ZCode plans are prepaid subscriptions; per-token cost is informational only.
+  zcode: {
+    "GLM-5.3-Flash": { ...ZERO_PRICING },
+    "GLM-5.3": { ...ZERO_PRICING },
+    "GLM-5.2": { ...ZERO_PRICING },
+    "GLM-5-Turbo": { ...ZERO_PRICING },
+  },
   // GitHub Copilot (gh) — explicit override, matches canonical gpt-5.3-codex rate
   gh: {
     "gpt-5.3-codex": { input: 1.75, output: 14.00, cached: 0.175, reasoning: 14.00, cache_creation: 1.75 },

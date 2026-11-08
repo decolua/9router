@@ -176,6 +176,12 @@ export default function QuotaTable({
           // and their resetAt is a hard expiry, so word it as "expires".
           const recurring = quota.recurring !== false;
           const countdownLabel = recurring ? `in ${countdown}` : `expires in ${countdown}`;
+          // One-time grants (e.g. ZCode Start Plan) are clearer as an absolute
+          // expiry date than a reset countdown.
+          const absoluteExpiry = quota.absoluteReset === true
+            ? formatResetTimeDisplay(quota.expiresAt || quota.resetAt)
+            : null;
+          const absoluteLabel = absoluteExpiry ? `Expires ${absoluteExpiry}` : null;
 
           // "See details" rows are a link to the provider's own usage page —
           // used where the API exposes no per-bucket date (Qoder add-on grants).
@@ -253,21 +259,36 @@ export default function QuotaTable({
                   compact ? (
                     <div
                       className={`${resetPrimary} text-text-primary font-medium truncate`}
-                      title={resetSecondaryText || ""}
+                      title={absoluteLabel ? `${absoluteLabel} (${countdownLabel})` : resetSecondaryText || ""}
                     >
-                      {countdown !== "-" ? countdownLabel : renderResetCell(resetPrimary)}
+                      {absoluteLabel ? absoluteLabel : countdown !== "-" ? countdownLabel : renderResetCell(resetPrimary)}
                     </div>
                   ) : (
                     <div className="min-w-0 space-y-0.5">
-                      {countdown !== "-" && (
-                        <div className={`${resetPrimary} text-text-primary font-medium truncate`}>
-                          {countdownLabel}
-                        </div>
-                      )}
-                      {resetDisplay && (
-                        <div className={`${resetSecondary} text-text-muted truncate`}>
-                          {renderResetCell(resetSecondary)}
-                        </div>
+                      {absoluteLabel ? (
+                        <>
+                          <div className={`${resetPrimary} text-text-primary font-medium truncate`}>
+                            {absoluteLabel}
+                          </div>
+                          {countdown !== "-" && (
+                            <div className={`${resetSecondary} text-text-muted truncate`}>
+                              {countdownLabel}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          {countdown !== "-" && (
+                            <div className={`${resetPrimary} text-text-primary font-medium truncate`}>
+                              {countdownLabel}
+                            </div>
+                          )}
+                          {resetDisplay && (
+                            <div className={`${resetSecondary} text-text-muted truncate`}>
+                              {renderResetCell(resetSecondary)}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   )

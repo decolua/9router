@@ -21,6 +21,7 @@ const FORMAT_LEVELS = {
   openai: L.openai,
   "claude-adaptive": L.budgetX,
   "claude-budget": L.budgetX,
+  "zai-anthropic": L.budgetX,
   "gemini-level": L.gemini,
   "gemini-budget": L.base,
   zai: L.onOff,
@@ -41,6 +42,15 @@ const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 
 // Model-name pattern overrides (glob, first match wins) — more precise than format default.
 const PATTERN_THINKING = [
+  // ZCode start-plan GLM tiers (Anthropic Messages wire): effort is emitted as
+  // output_config.effort. 5.3 line serves low|high|max and cannot disable;
+  // 5.2 serves none|high|max and can stop thinking.
+  { provider: "zcode", pattern: "*glm-5.3-flash*", levels: ["low", "high", "max"] },
+  { provider: "zcode", pattern: "*glm-5.3*", levels: ["low", "high", "max"] },
+  { provider: "zcode", pattern: "*glm-5.2*", levels: ["none", "high", "max"] },
+  { provider: "zc", pattern: "*glm-5.3-flash*", levels: ["low", "high", "max"] },
+  { provider: "zc", pattern: "*glm-5.3*", levels: ["low", "high", "max"] },
+  { provider: "zc", pattern: "*glm-5.2*", levels: ["none", "high", "max"] },
   // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
   { pattern: "*claude*4.6*", levels: CLAUDE_NO_XHIGH },
