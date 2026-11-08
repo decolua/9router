@@ -10,38 +10,9 @@ import {
 import { getProviderConnections, getCombos, getCustomModels, getModelAliases } from "@/lib/localDb";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { getKeyAccessContext, filterModelsListForKey } from "@/sse/services/keyAccess.js";
-import { resolveKiroModels } from "open-sse/services/kiroModels.js";
-import { resolveKimchiModels } from "open-sse/services/kimchiModels.js";
-import { resolveQoderModels, routableQoderModels } from "open-sse/services/qoderModels.js";
-import { resolveCopilotModels } from "open-sse/services/copilotModels.js";
-import { resolveClinepassModels, resolveClineModels } from "open-sse/services/clinepassModels.js";
-import { resolveGrokCliModels } from "open-sse/services/grokCliModels.js";
-import { resolveCursorModels } from "open-sse/services/cursorModels.js";
-import { resolveZedModels } from "open-sse/shared/zedAuth.js";
-import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
-import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { getLiveCatalogSnapshot, requestLiveCatalogRefresh } from "@/lib/modelCatalog/liveCatalogs.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 
-// Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
-// credentials carry the provider id so qoderModels picks the right region's
-// catalog endpoint.
-async function resolveQoderLiveModels(conn, provider) {
-  const result = await resolveQoderModels({
-    provider,
-    accessToken: conn.accessToken,
-    // PAT (pt-...) connections keep the token in apiKey; without it the live
-    // catalog silently fails and /v1/models falls back to the static list.
-    apiKey: conn.apiKey,
-    refreshToken: conn.refreshToken,
-    email: conn.email,
-    displayName: conn.displayName,
-    providerSpecificData: conn.providerSpecificData || {}
-  });
-  // Visible + hidden (enable:false) catalog keys — chat routes all of them.
-  const models = routableQoderModels(result);
-  if (!models.length) return null;
-  return { models: models.map((m) => ({ id: m.id, name: m.name })) };
-}
 
 // Combo seats use UI aliases; the model registry also has transport aliases.
 // Capability overrides and catalog limits are keyed by provider id.
@@ -58,116 +29,6 @@ function comboSeatCapabilities(seat) {
   const alias = seat.slice(0, slash);
   return getCapabilitiesForModel(ALIAS_TO_PROVIDER_ID[alias] || alias, seat.slice(slash + 1));
 }
-
-// Per-provider live model resolvers. Each receives a connection record and
-// returns { models: [{ id, name? }, ...] } | null on failure.
-// Adding a provider here makes /v1/models prefer the live catalog for it.
-const LIVE_MODEL_RESOLVERS = {
-  kiro: async (conn) => {
-    const result = await resolveKiroModels({
-      accessToken: conn.accessToken,
-      refreshToken: conn.refreshToken,
-      providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  qoder: async (conn) => resolveQoderLiveModels(conn, "qoder"),
-  "qoder-cn": async (conn) => resolveQoderLiveModels(conn, "qoder-cn"),
-  kimchi: async (conn) => {
-    const result = await resolveKimchiModels({
-      accessToken: conn.accessToken,
-      apiKey: conn.apiKey,
-      providerSpecificData: conn.providerSpecificData || {}
-    }, { log: console });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  github: async (conn) => {
-    const result = await resolveCopilotModels({
-      accessToken: conn.accessToken,
-      refreshToken: conn.refreshToken,
-      providerSpecificData: conn.providerSpecificData || {}
-    }, {
-      log: console,
-      onCredentialsRefreshed: async (refreshed) => {
-        await updateProviderCredentials(conn.id, {
-          copilotToken: refreshed.copilotToken,
-          copilotTokenExpiresAt: refreshed.copilotTokenExpiresAt,
-          existingProviderSpecificData: conn.providerSpecificData || {},
-        });
-      },
-    });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  clinepass: async (conn) => {
-    const result = await resolveClinepassModels({
-      accessToken: conn.accessToken,
-      apiKey: conn.apiKey,
-    });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  cline: async (conn) => {
-    const result = await resolveClineModels({
-      accessToken: conn.accessToken,
-      apiKey: conn.apiKey,
-    });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  "grok-cli": async (conn) => {
-    const proxy = await resolveConnectionProxyConfig(conn.providerSpecificData || {});
-    const result = await resolveGrokCliModels({
-      ...conn,
-      connectionId: conn.id,
-    }, {
-      log: console,
-      proxyOptions: {
-        connectionProxyEnabled: proxy.connectionProxyEnabled === true,
-        connectionProxyUrl: proxy.connectionProxyUrl || "",
-        connectionNoProxy: proxy.connectionNoProxy || "",
-        vercelRelayUrl: proxy.vercelRelayUrl || "",
-        strictProxy: proxy.strictProxy === true,
-      },
-      onCredentialsRefreshed: async (refreshed) => {
-        await updateProviderCredentials(conn.id, {
-          ...refreshed,
-          existingProviderSpecificData: conn.providerSpecificData || {},
-        });
-      },
-    });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  cursor: async (conn) => {
-    const result = await resolveCursorModels({
-      accessToken: conn.accessToken,
-      providerSpecificData: conn.providerSpecificData || {},
-    }, { log: console });
-    return result?.models?.length ? { models: result.models } : null;
-  },
-  zed: async (conn) => {
-    const result = await resolveZedModels({
-      accessToken: conn.accessToken,
-      providerSpecificData: conn.providerSpecificData || {},
-    });
-    if (!result?.models?.length) return null;
-    return {
-      models: result.models
-        .filter((m) => !m.isDisabled)
-        .map((m) => ({
-          id: m.id,
-          name: m.name,
-          capabilities: m.supportsTools ? { tools: true } : undefined,
-        })),
-    };
-  },
-};
-
-const parseOpenAIStyleModels = (data) => {
-  if (Array.isArray(data)) return data;
-  return data?.data || data?.models || data?.results || [];
-};
-
-// Header sent by fetchCompatibleModelIds to detect cross-instance /models fetches
-// and break recursive loops between 9router instances connected to each other.
-const INTERNAL_MODELS_FETCH_HEADER = "x-9r-internal-models-fetch";
 
 // LLM kind sentinel — combos/models with no explicit kind default to LLM
 const LLM_KIND = "llm";
@@ -197,63 +58,6 @@ function inferKindFromUnknownModelId(modelId) {
   if (/tts|speech|audio|voice/.test(lower)) return "tts";
   if (/image|imagen|dall-?e|flux|sdxl|sd-|stable-diffusion/.test(lower)) return "image";
   return LLM_KIND;
-}
-
-async function fetchCompatibleModelIds(connection) {
-  if (!connection?.apiKey) return [];
-
-  const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
-    ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
-    : "";
-
-  if (!baseUrl) return [];
-
-  let url = `${baseUrl}/models`;
-  const headers = {
-    "Content-Type": "application/json",
-  };
-
-  if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-  } else if (isAnthropicCompatibleProvider(connection.provider)) {
-    if (url.endsWith("/messages/models")) {
-      url = url.slice(0, -9);
-    } else if (url.endsWith("/messages")) {
-      url = `${url.slice(0, -9)}/models`;
-    }
-    headers["x-api-key"] = connection.apiKey;
-    headers["anthropic-version"] = "2023-06-01";
-    headers.Authorization = `Bearer ${connection.apiKey}`;
-  } else {
-    return [];
-  }
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000);
-    const response = await fetch(url, {
-      method: "GET",
-      headers: { ...headers, [INTERNAL_MODELS_FETCH_HEADER]: "1" },
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    clearTimeout(timeoutId);
-
-    if (!response.ok) return [];
-
-    const data = await response.json();
-    const rawModels = parseOpenAIStyleModels(data);
-
-    return Array.from(
-      new Set(
-        rawModels
-          .map((model) => model?.id || model?.name || model?.model)
-          .filter((modelId) => typeof modelId === "string" && modelId.trim() !== "")
-      )
-    );
-  } catch {
-    return [];
-  }
 }
 
 // Provider matches kindFilter when its serviceKinds intersect the requested kinds.
@@ -318,11 +122,7 @@ function comboSeatLimits(combo, combosByName, visiting = new Set()) {
  * Build OpenAI-format models list filtered by service kinds.
  * @param {string[]} kindFilter - List of service kinds to include (e.g. ["llm"], ["webSearch","webFetch"]).
  */
-export async function buildModelsList(kindFilter, options = {}) {
-  // When this header is present, the /v1/models request came from another
-  // 9router instance's fetchCompatibleModelIds — skip dynamic fetch to break
-  // cross-instance recursive loops.
-  const skipDynamicFetch = options.skipDynamicFetch === true;
+export async function buildModelsList(kindFilter) {
   let connections = [];
   try {
     connections = await getProviderConnections();
@@ -377,6 +177,12 @@ export async function buildModelsList(kindFilter, options = {}) {
       });
     }
   }
+
+  const { catalogs: liveCatalogs, missing } = await getLiveCatalogSnapshot(
+    [...activeConnectionByProvider.values()],
+  );
+  requestLiveCatalogRefresh(missing);
+  const compatibleCatalogs = liveCatalogs;
 
   const models = [];
   const combosByName = new Map(
@@ -477,33 +283,23 @@ export async function buildModelsList(kindFilter, options = {}) {
           )
         : providerModels.map((model) => model.id);
 
-      if (isCompatibleProvider && rawModelIds.length === 0 && !skipDynamicFetch) {
-        rawModelIds = await fetchCompatibleModelIds(conn);
+      if (isCompatibleProvider && rawModelIds.length === 0) {
+        rawModelIds = compatibleCatalogs.get(providerId) || [];
       }
 
-      // Config-driven live catalog override (e.g. Kiro returns dynamic
-      // -thinking/-agentic variants per account). On failure, fall back to
-      // whatever rawModelIds already holds.
-      const liveResolver = LIVE_MODEL_RESOLVERS[providerId];
-      if (liveResolver && !hasExplicitEnabledModels) {
-        try {
-          const live = await liveResolver(conn);
-          if (live?.models?.length) {
-            rawModelIds = live.models.map((m) => m.id);
-            liveModelKindById = new Map(
-              live.models
-                .filter((m) => m?.id)
-                .map((m) => [m.id, modelKind(m)])
-            );
-            liveCapabilitiesById = new Map(
-              live.models
-                .filter((m) => m?.id && m.capabilities)
-                .map((m) => [m.id, m.capabilities])
-            );
-          }
-        } catch (err) {
-          console.log(`Live model fetch failed for ${providerId}: ${err?.message || err}`);
-        }
+      const liveModels = liveCatalogs.get(providerId);
+      if (liveModels?.length) {
+        rawModelIds = liveModels.map((m) => m.id);
+        liveModelKindById = new Map(
+          liveModels
+            .filter((m) => m?.id)
+            .map((m) => [m.id, modelKind(m)])
+        );
+        liveCapabilitiesById = new Map(
+          liveModels
+            .filter((m) => m?.id && m.capabilities)
+            .map((m) => [m.id, m.capabilities])
+        );
       }
 
       const modelIds = rawModelIds
@@ -662,11 +458,9 @@ export async function OPTIONS() {
  */
 export async function GET(request) {
   try {
-    // Detect cross-instance recursive /models fetch (another 9router fetching our /models)
-    const skipDynamicFetch = request?.headers?.get(INTERNAL_MODELS_FETCH_HEADER) === "1";
     const data = await filterModelsListForKey(
       await getKeyAccessContext(request),
-      await buildModelsList([LLM_KIND], { skipDynamicFetch })
+      await buildModelsList([LLM_KIND])
     );
     return Response.json({ object: "list", data }, {
       headers: { "Access-Control-Allow-Origin": "*" },
