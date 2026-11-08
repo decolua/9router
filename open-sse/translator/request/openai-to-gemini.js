@@ -123,7 +123,10 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
   if (body.messages && Array.isArray(body.messages)) {
     for (const msg of body.messages) {
       if (msg.role === ROLE.TOOL && msg.tool_call_id) {
-        (toolResponses[msg.tool_call_id] ||= []).push(msg.content);
+        (toolResponses[msg.tool_call_id] ||= []).push({
+          content: msg.content,
+          isError: Boolean(msg.is_error || msg.status === "error"),
+        });
       }
     }
   }
@@ -146,10 +149,17 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
       const content = msg.content;
 
       if (role === ROLE.SYSTEM && body.messages.length > 1) {
-        result.systemInstruction = {
-          role: GEMINI_ROLE.USER,
-          parts: [{ text: typeof content === "string" ? content : extractTextContent(content) }]
-        };
+        const text = typeof content === "string" ? content : extractTextContent(content);
+        if (text) {
+          if (!result.systemInstruction) {
+            result.systemInstruction = {
+              role: GEMINI_ROLE.USER,
+              parts: [{ text }],
+            };
+          } else {
+            result.systemInstruction.parts.push({ text });
+          }
+        }
       } else if (role === ROLE.USER || (role === ROLE.SYSTEM && body.messages.length === 1)) {
         const parts = convertOpenAIContentToParts(content);
         if (parts.length > 0) {
@@ -228,13 +238,18 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               // unconsumed result; only the emitted id is uniquified. #4273 #4532
               const queue = toolResponses[origId];
               const cursor = toolResponseCursor[origId] || 0;
-              let resp;
+              let item;
               if (queue && cursor < queue.length) {
-                resp = queue[cursor];
+                item = queue[cursor];
                 toolResponseCursor[origId] = cursor + 1;
               } else {
-                resp = "";
+                item = { content: "", isError: false };
               }
+
+              const resp = typeof item === "object" && item !== null && "content" in item
+                ? item.content
+                : item;
+              const isError = Boolean(typeof item === "object" && item !== null && item.isError);
 
               // Name comes from THIS call, not from the conversation-wide id->name map,
               // which a later duplicate of the same id would have overwritten.
@@ -249,10 +264,13 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
               }
 
               let parsedResp = tryParseJSON(resp);
-              if (parsedResp === null) {
-                parsedResp = { result: resp };
-              } else if (typeof parsedResp !== "object") {
-                parsedResp = { result: parsedResp };
+              let responseObj;
+              if (isError) {
+                responseObj = { error: parsedResp !== null ? parsedResp : resp };
+              } else if (parsedResp !== null && typeof parsedResp === "object") {
+                responseObj = parsedResp.result !== undefined ? parsedResp : { result: parsedResp };
+              } else {
+                responseObj = { result: parsedResp !== null ? parsedResp : resp };
               }
 
               toolParts.push({
@@ -261,7 +279,7 @@ function openaiToGeminiBase(model, body, stream, signature = DEFAULT_THINKING_AG
                   // never points at an id the call does not carry. #4532
                   id: emitId,
                   name: sanitizeGeminiFunctionName(name),
-                  response: { result: parsedResp }
+                  response: responseObj
                 }
               });
             }
@@ -391,7 +409,7 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
       contents: [],
       generationConfig: {
         temperature: claudeRequest.temperature || 1,
-        maxOutputTokens: claudeRequest.max_tokens || 4096
+        maxOutputTokens: claudeRequest.max_tokens || 64000
       }
     }
   };
@@ -445,11 +463,23 @@ function wrapInCloudCodeEnvelopeForClaude(model, claudeRequest, credentials = nu
             const resolvedName = toolUseIdToName[block.tool_use_id]
               ? sanitizeGeminiFunctionName(toolUseIdToName[block.tool_use_id])
               : "tool";
+            const isError = Boolean(block.is_error || block.status === "error");
+            const parsed = tryParseJSON(content);
+            const value = parsed !== null ? parsed : content;
+            let response;
+            if (isError) {
+              response = { error: value };
+            } else if (value && typeof value === "object") {
+              response = value.result !== undefined ? value : { result: value };
+            } else {
+              response = { result: value };
+            }
+
             parts.push({
               functionResponse: {
                 id: block.tool_use_id,
                 name: resolvedName,
-                response: { result: tryParseJSON(content) || content }
+                response
               }
             });
           }
