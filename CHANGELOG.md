@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Anthropic**: omit the Claude Code beta from API-key defaults and merged client headers, avoiding the misleading insufficient-credit error reported in #4739
+
 # v0.5.116 (2026-11-08)
 
 ## Features
