@@ -32,16 +32,33 @@ export async function POST(request) {
   }
 }
 
-// DELETE /api/models/disabled?providerAlias=xxx[&id=yyy]
+// DELETE /api/models/disabled?providerAlias=xxx[&id=yyy][&ids=y1,y2]
 export async function DELETE(request) {
   try {
     const { searchParams } = new URL(request.url);
-    const providerAlias = searchParams.get("providerAlias");
+    let providerAlias = searchParams.get("providerAlias");
     const id = searchParams.get("id");
+    const idsParam = searchParams.get("ids");
+    let ids = [];
+
+    if (idsParam) {
+      ids = idsParam.split(",").map((s) => s.trim()).filter(Boolean);
+    } else if (id) {
+      ids = [id];
+    }
+
+    if (!providerAlias) {
+      try {
+        const body = await request.json();
+        if (body?.providerAlias) providerAlias = body.providerAlias;
+        if (Array.isArray(body?.ids)) ids = body.ids;
+      } catch {}
+    }
+
     if (!providerAlias) {
       return NextResponse.json({ error: "providerAlias required" }, { status: 400 });
     }
-    await enableModels(providerAlias, id ? [id] : []);
+    await enableModels(providerAlias, ids);
     return NextResponse.json({ success: true });
   } catch (error) {
     console.log("Error enabling models:", error);

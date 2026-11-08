@@ -51,6 +51,9 @@ export async function GET() {
     const customModels = (await getCustomModels()).filter((m) => {
       if (!m?.id || (m.kind || m.type || "llm") !== "llm") return false;
       if (seenRouted.has(`${m.providerAlias}/${m.id}`)) return false;
+      const alias = getProviderAlias(m.providerAlias) || m.providerAlias;
+      const list = disabled[alias] || disabled[m.providerAlias] || [];
+      if (list.includes(m.id)) return false;
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
     for (const m of customModels) {

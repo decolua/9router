@@ -389,6 +389,7 @@
   "Dimensions": "维度",
   "Disable": "禁用",
   "Disable All": "全部禁用",
+  "Free Only": "仅限免费",
   "Disable Tailscale": "禁用 Tailscale",
   "Disable Tunnel": "禁用隧道",
   "Disable connections with depleted quota on the current page": "禁用当前页面上配额已耗尽的连接",
