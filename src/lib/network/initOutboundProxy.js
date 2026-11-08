@@ -2,9 +2,14 @@ import { getSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
 
 let initialized = false;
+// next build / export must not touch the database or mutate process env -
+// there is no user settings store to read in that phase anyway.
+const isBuildPhase = process.env.NEXT_PHASE === "phase-production-build"
+  || process.env.NEXT_PHASE === "phase-export"
+  || process.env.NEXT_PHASE === "phase-static";
 
 export async function ensureOutboundProxyInitialized() {
-  if (initialized) return true;
+  if (initialized || isBuildPhase) return true;
 
   try {
     const settings = await getSettings();
@@ -18,8 +23,10 @@ export async function ensureOutboundProxyInitialized() {
 }
 
 // Defer init so HTTP server accepts connections first
-setImmediate(() => {
-  ensureOutboundProxyInitialized().catch(console.log);
-});
+if (!isBuildPhase) {
+  setImmediate(() => {
+    ensureOutboundProxyInitialized().catch(console.log);
+  });
+}
 
 export default ensureOutboundProxyInitialized;
