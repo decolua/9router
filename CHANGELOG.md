@@ -1,3 +1,12 @@
+# v0.5.382 (2026-11-07) · 1 commit
+
+## FEATURE+ — Auto Harvester
+
+- New dedicated page under FEATURE+ that auto-fills the proxy pool from 15 public free-proxy feeds.
+- Pipeline: parallel feed fetch (4s cap) -> sub-second TCP ping pre-check -> HTTP verification via Cloudflare trace (captures egress IP + location, drops duplicate egress so quota buckets stay distinct).
+- Configurable target (1-200 live proxies) and loop interval (once / 2m aggressive / 5m / 15m / 30m / 60m), with live status, progress bar, cycle history and per-run stats.
+- Backend worker lives at /api/harvester with its own isolated state; imported proxies land in Proxy Pools as FreeProxy-<ip>_<port>[-<loc>].
+
 # v0.5.378 (2026-11-07) · 1 commit
 
 ## Remove Z.ai web cookie provider (`zai-web`)
