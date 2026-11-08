@@ -18,6 +18,108 @@ const execute = (body, extra = {}) => new AzureExecutor().execute({
 const sentBodies = () => proxyAwareFetch.mock.calls.map(([, init]) => JSON.parse(init.body));
 
 describe("Azure token limits (#4936)", () => {
+  const runWith = (executor, body, extra = {}) => executor.execute({
+    model: "production", body, stream: false, credentials, ...extra,
+  });
+
+  const learnCompletionLimit = async (executor) => {
+    proxyAwareFetch.mockResolvedValueOnce(unsupported())
+      .mockResolvedValueOnce(Response.json({ choices: [] }));
+    await runWith(executor, { max_tokens: 100 });
+    proxyAwareFetch.mockClear();
+  };
+
+  it("reuses the accepted parameter on subsequent requests without mutating the body", async () => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    proxyAwareFetch.mockResolvedValue(Response.json({ choices: [] }));
+    const body = { max_tokens: 200 };
+    await runWith(executor, body, { stream: true });
+    expect(sentBodies()).toEqual([{ max_completion_tokens: 200 }]);
+    expect(body).toEqual({ max_tokens: 200 });
+  });
+
+  it.each([
+    { azureEndpoint: "https://other.openai.azure.com" },
+    { deployment: "other" },
+    { apiVersion: "2025-01-01-preview" },
+  ])("does not share parameter preferences across deployment URLs: %j", async (change) => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    proxyAwareFetch.mockResolvedValue(Response.json({ choices: [] }));
+    await runWith(executor, { max_tokens: 200 }, {
+      credentials: { ...credentials, providerSpecificData: { ...credentials.providerSpecificData, ...change } },
+    });
+    expect(sentBodies()).toEqual([{ max_tokens: 200 }]);
+  });
+
+  it("does not remember a parameter whose retry failed", async () => {
+    const executor = new AzureExecutor();
+    proxyAwareFetch.mockResolvedValueOnce(unsupported())
+      .mockResolvedValueOnce(Response.json({ error: "invalid" }, { status: 400 }))
+      .mockResolvedValueOnce(Response.json({ choices: [] }));
+    await runWith(executor, { max_tokens: 100 });
+    await runWith(executor, { max_tokens: 200 });
+    expect(sentBodies()[2]).toEqual({ max_tokens: 200 });
+  });
+
+  it("renegotiates a cached deployment if it starts rejecting completion limits", async () => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    proxyAwareFetch.mockResolvedValueOnce(Response.json({ error: {
+      code: "unsupported_parameter", param: "max_completion_tokens",
+    } }, { status: 400 })).mockResolvedValue(Response.json({ choices: [] }));
+    await runWith(executor, { max_tokens: 200 });
+    await runWith(executor, { max_tokens: 300 });
+    expect(sentBodies()).toEqual([
+      { max_completion_tokens: 200 }, { max_tokens: 200 }, { max_tokens: 300 },
+    ]);
+  });
+
+  it("preserves explicit completion limits when a deployment preference is cached", async () => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    proxyAwareFetch.mockResolvedValue(Response.json({ choices: [] }));
+    await runWith(executor, { max_tokens: 200, max_completion_tokens: 0 });
+    expect(sentBodies()).toEqual([{ max_completion_tokens: 0 }]);
+  });
+
+  it("does not retry a cached parameter rejection after cancellation", async () => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    const controller = new AbortController();
+    proxyAwareFetch.mockImplementationOnce(async () => {
+      controller.abort();
+      return Response.json({ error: {
+        code: "unsupported_parameter", param: "max_completion_tokens",
+      } }, { status: 400 });
+    });
+    await runWith(executor, { max_tokens: 200 }, { signal: controller.signal });
+    expect(sentBodies()).toEqual([{ max_completion_tokens: 200 }]);
+  });
+
+  it("bounds retries when a cached preference and its fallback are both rejected", async () => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    proxyAwareFetch.mockResolvedValueOnce(Response.json({ error: {
+      code: "unsupported_parameter", param: "max_completion_tokens",
+    } }, { status: 400 })).mockResolvedValueOnce(unsupported());
+    const result = await runWith(executor, { max_tokens: 200 });
+    expect(result.response.status).toBe(400);
+    expect(sentBodies()).toEqual([{ max_completion_tokens: 200 }, { max_tokens: 200 }]);
+  });
+
+  it("does not replace an explicit completion limit when a deployment rejects it", async () => {
+    const executor = new AzureExecutor();
+    await learnCompletionLimit(executor);
+    proxyAwareFetch.mockResolvedValueOnce(Response.json({ error: {
+      code: "unsupported_parameter", param: "max_completion_tokens",
+    } }, { status: 400 }));
+    const result = await runWith(executor, { max_tokens: 200, max_completion_tokens: 300 });
+    expect(result.response.status).toBe(400);
+    expect(sentBodies()).toEqual([{ max_completion_tokens: 300 }]);
+  });
+
   it("keeps max_tokens for legacy deployments that accept it", async () => {
     proxyAwareFetch.mockResolvedValue(Response.json({ choices: [] }));
     const body = { messages: [{ role: "user", content: "hi" }], max_tokens: 2048 };
