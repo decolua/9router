@@ -102,16 +102,32 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
 
   // Resolve requested thinking level from suffix or client request body
   const rawSuffix = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
-  let tier = rawSuffix === "xhigh" || rawSuffix === "max" ? "high" : rawSuffix === "minimal" ? "low" : rawSuffix;
+  let tier = rawSuffix === "xhigh" || rawSuffix === "max" || rawSuffix === "auto"
+    ? "high"
+    : rawSuffix === "minimal" || rawSuffix === "none" || rawSuffix === "off"
+    ? "low"
+    : rawSuffix;
   if (!tier && clientBody && typeof clientBody === "object") {
     const rawEffort = clientBody.reasoning_effort || clientBody.output_config?.effort || (typeof clientBody.reasoning === "object" ? clientBody.reasoning?.effort : null);
     if (typeof rawEffort === "string" && rawEffort) {
       const v = rawEffort.toLowerCase().trim();
-      tier = v === "xhigh" || v === "max" ? "high" : v === "minimal" ? "low" : v;
+      tier = v === "xhigh" || v === "max" || v === "auto"
+        ? "high"
+        : v === "minimal" || v === "none" || v === "off"
+        ? "low"
+        : v;
     } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
-      const b = Number(clientBody.thinking.budget_tokens);
-      if (Number.isFinite(b) && b > 0) {
-        tier = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+      if (clientBody.thinking.type === "adaptive") {
+        tier = "high";
+      } else if (clientBody.thinking.type === "disabled" || clientBody.thinking.type === "none") {
+        tier = "low";
+      } else {
+        const b = Number(clientBody.thinking.budget_tokens);
+        if (Number.isFinite(b) && b > 0) {
+          tier = b > 16384 ? "high" : b <= 4096 ? "low" : "medium";
+        } else if (b === 0) {
+          tier = "low";
+        }
       }
     }
   }
