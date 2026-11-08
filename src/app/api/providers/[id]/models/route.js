@@ -15,11 +15,38 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import commandcodeProvider from "open-sse/providers/registry/commandcode.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
 // Model discovery must identify as the same Codex CLI version as inference.
 const CODEX_MODELS_URL = `https://chatgpt.com/backend-api/codex/models?client_version=${codexProvider.transport.cliVersion}`;
+
+// CommandCode publishes the catalog its own CLI polls (ETag = catalogVersion,
+// refreshAfterSeconds: 900). The registry's static list is only a fallback and
+// goes stale on every vendor release, so discovery resolves it live.
+const COMMANDCODE_MODELS_URL = "https://api.commandcode.ai/provider/v1/models?view=client";
+
+// Catalog rows carry display copy plus capability flags. `hidden` entries are
+// the free/stealth aliases the vendor CLI keeps out of its own picker.
+const parseCommandCodeModels = (data) => {
+  const models = Array.isArray(data?.data) ? data.data : [];
+  return models
+    .filter((model) => model?.id && !model.hidden)
+    .map((model) => {
+      const modalities = Array.isArray(model.inputModalities) ? model.inputModalities : [];
+      const efforts = Array.isArray(model.reasoningEfforts) ? model.reasoningEfforts : [];
+      return {
+        id: model.id,
+        name: model.display?.label || model.name || model.id,
+        description: model.display?.description || null,
+        contextLength: model.context_length,
+        maxOutputTokens: model.maxOutputTokens ?? undefined,
+        isVL: modalities.includes("image"),
+        isReasoning: efforts.length > 0
+      };
+    });
+};
 
 const parseOpenAIStyleModels = (data) => {
   if (Array.isArray(data)) return data;
@@ -261,6 +288,14 @@ const PROVIDER_MODELS_CONFIG = {
   nous: {
     ...createOpenAIModelsConfig(NOUS_MODELS_URL),
     parseResponse: normalizeRoutedNousModels,
+  },
+  // CommandCode's catalog URL needs no auth, but the route's token guard above
+  // still requires a configured connection, so an empty key cannot enumerate it.
+  commandcode: {
+    url: COMMANDCODE_MODELS_URL,
+    method: "GET",
+    headers: { ...commandcodeProvider.transport.headers },
+    parseResponse: parseCommandCodeModels,
   },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
