@@ -10,19 +10,21 @@ const cache = new Map(); // key: fetcher.url → { data, expiresAt }
  * @param {{ url: string, type: string }} fetcher
  * @returns {Promise<Array<{ id: string, name: string, contextLength?: number }>>}
  */
-export async function fetchSuggestedModels(fetcher) {
+export async function fetchSuggestedModels(fetcher, providerId) {
   if (!fetcher?.url || !fetcher?.type) return [];
 
-  const cached = cache.get(fetcher.url);
+  const type = (providerId === "nous" || fetcher.url?.includes("nousresearch")) ? "nous" : fetcher.type;
+  const cacheKey = `${fetcher.url}#${type}`;
+  const cached = cache.get(cacheKey);
   if (cached && Date.now() < cached.expiresAt) return cached.data;
 
   try {
-    const params = new URLSearchParams({ url: fetcher.url, type: fetcher.type });
+    const params = new URLSearchParams({ url: fetcher.url, type });
     const res = await fetch(`/api/providers/suggested-models?${params}`);
     if (!res.ok) return [];
     const json = await res.json();
     const data = json.data ?? [];
-    cache.set(fetcher.url, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+    cache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
     return data;
   } catch {
     return [];

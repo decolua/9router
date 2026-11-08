@@ -93,6 +93,7 @@ export default function ProviderDetailPage() {
   const stopOneByOneRef = useRef(false);
   const [importingQoderModels, setImportingQoderModels] = useState(false);
   const [importingClineModels, setImportingClineModels] = useState(false);
+  const [importingNousModels, setImportingNousModels] = useState(false);
   const { copied, copy } = useCopyToClipboard();
 
   const AG_RISK_STORAGE_KEY = "ag_risk_confirmed";
@@ -529,7 +530,7 @@ export default function ProviderDetailPage() {
   useEffect(() => {
     const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
     if (!fetcher) return;
-    fetchSuggestedModels(fetcher).then(setSuggestedModels);
+    fetchSuggestedModels(fetcher, providerId).then(setSuggestedModels);
   }, [providerId]);
 
   const handleSetAlias = async (modelId, alias, providerAliasOverride = providerAlias) => {
@@ -697,6 +698,59 @@ export default function ProviderDetailPage() {
       alert(translate("Error fetching models") + ": " + error.message);
     } finally {
       setImportingClineModels(false);
+    }
+  };
+
+  // Fetch the live Nous /models catalog and add every model not yet present.
+  const handleImportNousModels = async () => {
+    if (importingNousModels) return;
+    setImportingNousModels(true);
+    try {
+      let modelsList = [];
+      const activeConnection = connections.find((conn) => conn.isActive !== false) || connections[0];
+      if (activeConnection) {
+        const res = await fetch(`/api/providers/${activeConnection.id}/models`);
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.models) && data.models.length > 0) {
+          modelsList = data.models;
+        }
+      }
+      if (modelsList.length === 0) {
+        const fetcher = (OAUTH_PROVIDERS[providerId] || APIKEY_PROVIDERS[providerId] || FREE_PROVIDERS[providerId] || FREE_TIER_PROVIDERS[providerId])?.modelsFetcher;
+        if (fetcher?.url) {
+          const res = await fetch(`/api/providers/suggested-models?url=${encodeURIComponent(fetcher.url)}&type=nous`);
+          const data = await res.json();
+          if (res.ok && Array.isArray(data.data)) {
+            modelsList = data.data;
+          }
+        }
+      }
+      if (modelsList.length === 0) {
+        alert(translate("No models returned"));
+        return;
+      }
+      let importedCount = 0;
+      for (const model of modelsList) {
+        const rawId = model.id || model.name;
+        if (!rawId) continue;
+        const cleanModelId = rawId.replace(/^nous\//, "");
+        const alreadyExists = customModels.some(
+          (entry) => entry.providerAlias === providerStorageAlias && entry.id === cleanModelId && (entry.kind || entry.type || "llm") === "llm"
+        ) || Object.values(modelAliases).includes(`${providerStorageAlias}/${cleanModelId}`) || staticModels.some((m) => m.id === cleanModelId);
+        if (alreadyExists) continue;
+        await handleAddCustomModel(cleanModelId, "llm", providerStorageAlias);
+        importedCount += 1;
+      }
+      if (importedCount === 0) {
+        alert(translate("All models already exist, no new models added"));
+      } else {
+        alert(translate("Successfully added") + ` ${importedCount} ` + translate("models"));
+      }
+    } catch (error) {
+      console.log("Error importing Nous models:", error);
+      alert(translate("Error fetching models") + ": " + error.message);
+    } finally {
+      setImportingNousModels(false);
     }
   };
 
@@ -1228,8 +1282,9 @@ export default function ProviderDetailPage() {
         ))}
 
         {displayModels.map((model) => {
-          const fullModel = `${providerStorageAlias}/${model.id}`;
-          const oldFormatModel = `${providerId}/${model.id}`;
+          const cleanModelId = model.id.startsWith(`${providerStorageAlias}/`) ? model.id.slice(providerStorageAlias.length + 1) : model.id;
+          const fullModel = `${providerStorageAlias}/${cleanModelId}`;
+          const oldFormatModel = `${providerId}/${cleanModelId}`;
           const existingAlias = Object.entries(modelAliases).find(
             ([, m]) => m === fullModel || m === oldFormatModel
           )?.[0];
@@ -1237,19 +1292,19 @@ export default function ProviderDetailPage() {
             <ModelRow
               key={model.id}
               model={model}
-              fullModel={`${providerDisplayAlias}/${model.id}`}
+              fullModel={`${providerDisplayAlias}/${cleanModelId}`}
               alias={existingAlias}
               copied={copied}
               onCopy={copy}
-              onSetAlias={(alias) => handleSetAlias(model.id, alias, providerStorageAlias)}
+              onSetAlias={(alias) => handleSetAlias(cleanModelId, alias, providerStorageAlias)}
               onDeleteAlias={() => handleDeleteAlias(existingAlias)}
-              testStatus={modelTestResults[model.id]}
-              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(model.id) : undefined}
-              isTesting={testingModelIds.has(model.id)}
+              testStatus={modelTestResults[cleanModelId] || modelTestResults[model.id]}
+              onTest={connections.length > 0 || isFreeNoAuth ? () => handleTestModel(cleanModelId) : undefined}
+              isTesting={testingModelIds.has(cleanModelId) || testingModelIds.has(model.id)}
               isFree={model.isFree}
-              onDisable={() => handleDisableModel(model.id)}
-              caps={getCaps(`${providerId}/${model.id}`)}
-              thinkingSuffix={resolveThinkingSuffix(model.id)}
+              onDisable={() => handleDisableModel(cleanModelId)}
+              caps={getCaps(`${providerId}/${cleanModelId}`)}
+              thinkingSuffix={resolveThinkingSuffix(cleanModelId)}
             />
           );
         })}
@@ -1291,6 +1346,20 @@ export default function ProviderDetailPage() {
           </button>
         )}
 
+        {/* Import Nous /models catalog button — show for nous provider */}
+        {providerId === "nous" && (
+          <button
+            onClick={handleImportNousModels}
+            disabled={importingNousModels}
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-blue-500/40 px-3 py-2 text-xs text-blue-600 dark:text-blue-400 transition-colors hover:border-blue-500 hover:bg-blue-500/5 sm:w-auto disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <span className="material-symbols-outlined text-sm" style={importingNousModels ? { animation: "spin 1s linear infinite" } : undefined}>
+              {importingNousModels ? "progress_activity" : "download"}
+            </span>
+            {importingNousModels ? translate("Fetching...") : translate("Import from /models")}
+          </button>
+        )}
+
         {/* Suggested models from provider API — show only models not yet added */}
         {suggestedModels.length > 0 && (() => {
           const addedFullModels = new Set([
@@ -1299,26 +1368,32 @@ export default function ProviderDetailPage() {
           ]);
           const hardcodedIds = new Set(models.map((m) => m.id));
           const notAdded = suggestedModels.filter(
-            (m) => !addedFullModels.has(`${providerStorageAlias}/${m.id}`) && !hardcodedIds.has(m.id)
+            (m) => {
+              const cleanId = m.id.replace(/^nous\//, "");
+              return !addedFullModels.has(`${providerStorageAlias}/${cleanId}`) && !hardcodedIds.has(cleanId) && !hardcodedIds.has(m.id);
+            }
           );
           if (notAdded.length === 0) return null;
           return (
             <div className="w-full mt-2">
-              <p className="text-xs text-text-muted mb-2">Suggested free models (≥200k context):</p>
+              <p className="text-xs text-text-muted mb-2">{providerId === "nous" ? translate("Suggested models (≥200k context):") : translate("Suggested free models (≥200k context):")}</p>
               <div className="flex flex-wrap gap-2">
-                {notAdded.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={async () => {
-                      await handleAddCustomModel(m.id, "llm", providerStorageAlias);
-                    }}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
-                    title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
-                  >
-                    <span className="material-symbols-outlined text-[13px]">add</span>
-                    {m.id.split("/").pop()}
-                  </button>
-                ))}
+                {notAdded.map((m) => {
+                  const cleanId = m.id.replace(/^nous\//, "");
+                  return (
+                    <button
+                      key={m.id}
+                      onClick={async () => {
+                        await handleAddCustomModel(cleanId, "llm", providerStorageAlias);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 text-xs text-text-muted hover:text-primary hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                      title={`${m.name} · ${(m.contextLength / 1000).toFixed(0)}k ctx`}
+                    >
+                      <span className="material-symbols-outlined text-[13px]">add</span>
+                      {cleanId.split("/").pop()}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           );
