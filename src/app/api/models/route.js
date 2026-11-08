@@ -2,14 +2,24 @@ import { NextResponse } from "next/server";
 import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
-import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
+import { getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
 import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getProviderConnections } from "@/lib/localDb";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
   try {
     const modelAliases = await getModelAliases();
     const disabled = await getDisabledModels();
+    const allCustomModels = await getCustomModels();
+    const customByFullModel = new Map();
+    for (const model of allCustomModels) {
+      if ((model.kind || model.type || "llm") !== "llm") continue;
+      const fullModel = `${model.providerAlias}/${model.id}`;
+      customByFullModel.set(fullModel, model);
+      const normalizedModel = `${resolveProviderId(model.providerAlias)}/${model.id}`;
+      if (!customByFullModel.has(normalizedModel)) customByFullModel.set(normalizedModel, model);
+    }
 
     const models = AI_MODELS
       .filter((m) => {
@@ -21,7 +31,13 @@ export async function GET() {
         const fullModel = `${m.provider}/${m.model}`;
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        const c = {
+          ...getCapabilitiesForModel(resolveProviderId(m.provider), m.model),
+          ...(customByFullModel.get(`${providerAlias}/${m.model}`)?.caps
+            || customByFullModel.get(fullModel)?.caps
+            || customByFullModel.get(`${resolveProviderId(m.provider)}/${m.model}`)?.caps
+            || {}),
+        };
         return {
           ...m,
           fullModel,
@@ -29,6 +45,9 @@ export async function GET() {
           alias: modelAliases[fullModel] || m.model,
           caps: {
             vision: c.vision,
+            pdf: c.pdf,
+            audioInput: c.audioInput,
+            videoInput: c.videoInput,
             search: c.search,
             reasoning: c.reasoning,
             contextWindow: c.contextWindow,
@@ -48,24 +67,31 @@ export async function GET() {
     // provider-scoped entries and falls back to the generic patterns.
     const seenFull = new Set(models.map((m) => m.fullModel));
     const seenRouted = new Set(models.map((m) => m.routedModel));
-    const customModels = (await getCustomModels()).filter((m) => {
+    const connections = await getProviderConnections();
+    const prefixes = new Map(connections
+      .filter((connection) => connection.providerSpecificData?.prefix)
+      .map((connection) => [connection.provider, connection.providerSpecificData.prefix]));
+    const customModels = allCustomModels.filter((m) => {
       if (!m?.id || (m.kind || m.type || "llm") !== "llm") return false;
       if (seenRouted.has(`${m.providerAlias}/${m.id}`)) return false;
       return !seenFull.has(`${m.providerAlias}/${m.id}`);
     });
     for (const m of customModels) {
       const fullModel = `${m.providerAlias}/${m.id}`;
-      const providerId = ALIAS_TO_ID[m.providerAlias] || m.providerAlias;
-      const c = getCapabilitiesForModel(providerId, m.id);
+      const routedModel = `${prefixes.get(m.providerAlias) || m.providerAlias}/${m.id}`;
+      const c = getCapabilitiesForModel(resolveProviderId(m.providerAlias), m.id);
       models.push({
         provider: m.providerAlias,
         model: m.id,
         name: m.name || m.id,
         fullModel,
-        routedModel: fullModel,
+        routedModel,
         alias: modelAliases[fullModel] || m.id,
         caps: {
           vision: c.vision,
+          pdf: c.pdf,
+          audioInput: c.audioInput,
+          videoInput: c.videoInput,
           search: c.search,
           reasoning: c.reasoning,
           contextWindow: c.contextWindow,

@@ -1,5 +1,14 @@
+import { resolveProviderId } from "@/shared/constants/providers";
+
 function modelType(model) {
   return model?.kind || model?.type || "llm";
+}
+
+export function findProviderModelMetadata(customModels, providerAlias, modelId, type = "llm") {
+  const matchesModel = (model) => model.id === modelId && modelType(model) === type;
+  return customModels.find((model) => matchesModel(model) && model.providerAlias === providerAlias)
+    || customModels.find((model) => matchesModel(model)
+      && resolveProviderId(model.providerAlias) === resolveProviderId(providerAlias));
 }
 
 export function getProviderCustomModelRows({

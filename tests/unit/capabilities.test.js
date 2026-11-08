@@ -342,4 +342,10 @@ describe("OpenCode Free ids newer than the capability tables", () => {
       maxOutput: 131072,
     });
   });
+
+  it("uses the documented 1M window for GLM 5.2 and 5.3 without changing older GLM", () => {
+    expect(getCapabilitiesForModel("glm", "glm-5.3").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("glm", "glm-5.2").contextWindow).toBe(1000000);
+    expect(getCapabilitiesForModel("glm", "glm-5.1").contextWindow).toBe(200000);
+  });
 });
