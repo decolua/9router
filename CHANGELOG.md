@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **GLM**: omit the redundant thinking enable block for always-on reasoning models, preventing Anthropic-wire validation errors while preserving reasoning effort (#4771)
+
 # v0.5.116 (2026-11-08)
 
 ## Features
