@@ -41,4 +41,15 @@ describe("Anthropic API-key beta headers", () => {
     expect(headers["Authorization"]).toBe("Bearer test-oauth-token");
     expect(headers["x-api-key"]).toBeUndefined();
   });
+
+  it.each([false, true])("filters Claude Code out of merged client flags (stream: %s)", (stream) => {
+    const headers = new DefaultExecutor("anthropic").buildHeaders({
+      apiKey: "sk-test-api-key",
+      rawHeaders: { "anthropic-beta": " claude-code-20250219,context-management-2025-06-27,claude-code-20250219 " },
+    }, stream);
+
+    expect(headers["Anthropic-Beta"].split(",")).toEqual([
+      "interleaved-thinking-2025-05-14", "context-management-2025-06-27",
+    ]);
+  });
 });
