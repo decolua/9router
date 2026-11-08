@@ -14,7 +14,7 @@ const LOOP_OPTIONS = [
 ];
 
 function formatTime(iso) {
-  if (!iso) return "—";
+  if (!iso) return "-";
   return new Date(iso).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
@@ -81,11 +81,11 @@ export default function AutoHarvesterPage() {
             <Badge variant="warning">FEATURE+</Badge>
           </div>
           <p className="text-sm text-text-muted mt-1">
-            Isi proxy pool otomatis dari 15 feed proxy publik — tanpa sentuh manual.
+            Auto-fills your proxy pool from 12 public free-proxy feeds.
           </p>
         </div>
         <Badge variant={running ? "success" : "default"} className="shrink-0">
-          {running ? "● RUNNING" : "○ IDLE"}
+          {running ? "Running" : "Idle"}
         </Badge>
       </div>
 
@@ -93,27 +93,19 @@ export default function AutoHarvesterPage() {
 
       <div className="grid grid-cols-2 gap-3 mt-3 sm:grid-cols-4">
         <Card className="p-3">
-          <div className="text-[11px] uppercase tracking-wider text-text-muted flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">speed</span> Tested
-          </div>
+          <div className="text-[11px] uppercase tracking-wider text-text-muted">Tested</div>
           <div className="text-xl font-semibold mt-1 tabular-nums">{lastTested}</div>
         </Card>
         <Card className="p-3">
-          <div className="text-[11px] uppercase tracking-wider text-text-muted flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">check_circle</span> Live imported
-          </div>
+          <div className="text-[11px] uppercase tracking-wider text-text-muted">Live imported</div>
           <div className="text-xl font-semibold mt-1 tabular-nums text-emerald-400">{lastAdded}</div>
         </Card>
         <Card className="p-3">
-          <div className="text-[11px] uppercase tracking-wider text-text-muted flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">track_changes</span> Target
-          </div>
+          <div className="text-[11px] uppercase tracking-wider text-text-muted">Target</div>
           <div className="text-xl font-semibold mt-1 tabular-nums">{targetCount}</div>
         </Card>
         <Card className="p-3">
-          <div className="text-[11px] uppercase tracking-wider text-text-muted flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">schedule</span> Loop
-          </div>
+          <div className="text-[11px] uppercase tracking-wider text-text-muted">Loop</div>
           <div className="text-xl font-semibold mt-1">
             {status?.loopIntervalMinutes > 0 ? `every ${status.loopIntervalMinutes}m` : "once"}
           </div>
@@ -122,7 +114,7 @@ export default function AutoHarvesterPage() {
 
       <Card className="p-4 mt-3">
         <div className="flex items-center justify-between text-sm mb-2">
-          <span className="text-text-muted">Progress menuju target</span>
+          <span className="text-text-muted">Progress toward target</span>
           <span className="font-semibold tabular-nums">{progress}%</span>
         </div>
         <div className="h-2 rounded-full bg-surface-2 overflow-hidden">
@@ -176,58 +168,32 @@ export default function AutoHarvesterPage() {
       {/*__PART3__*/}
 
       <Card className="p-4 mt-3">
-        <div className="text-[11px] uppercase tracking-wider text-text-muted mb-2 flex items-center gap-1">
-          <span className="material-symbols-outlined text-[14px]">terminal</span> Live status
-        </div>
-        <div className="rounded-lg bg-surface-2 px-3 py-2 font-mono text-sm whitespace-pre-wrap break-words">
-          {status?.lastMessage || "Menunggu status harvester..."}
-        </div>
+        <div className="text-[11px] uppercase tracking-wider text-text-muted mb-2">Live status</div>
+        <p className="text-sm whitespace-pre-wrap break-words">
+          {status?.lastMessage || "Waiting for harvester status..."}
+        </p>
       </Card>
 
-      <div className="grid grid-cols-1 gap-3 mt-3 lg:grid-cols-2">
-        <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wider text-text-muted mb-2 flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">history</span> Riwayat siklus
+      <Card className="p-4 mt-3">
+        <div className="text-[11px] uppercase tracking-wider text-text-muted mb-2">Cycle history</div>
+        {status?.history?.length ? (
+          <div className="flex flex-col divide-y divide-black/5 dark:divide-white/5">
+            {status.history.map((h, i) => (
+              <div key={i} className="flex items-center justify-between py-2 text-sm">
+                <span className="text-text-muted tabular-nums">{formatTime(h.at)}</span>
+                <span>
+                  <span className="text-emerald-400 font-semibold tabular-nums">+{h.added}</span>
+                  <span className="text-text-muted"> / {h.tested} tested</span>
+                </span>
+              </div>
+            ))}
           </div>
-          {status?.history?.length ? (
-            <div className="flex flex-col divide-y divide-black/5 dark:divide-white/5">
-              {status.history.map((h, i) => (
-                <div key={i} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-text-muted tabular-nums">{formatTime(h.at)}</span>
-                  <span>
-                    <span className="text-emerald-400 font-semibold tabular-nums">+{h.added}</span>
-                    <span className="text-text-muted"> / {h.tested} tested</span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-text-muted">
-              Belum ada siklus. Tekan <span className="text-text-main">Start Harvest</span> untuk memulai.
-            </p>
-          )}
-        </Card>
-
-        <Card className="p-4">
-          <div className="text-[11px] uppercase tracking-wider text-text-muted mb-3 flex items-center gap-1">
-            <span className="material-symbols-outlined text-[14px]">psychology</span> Cara kerja
-          </div>
-          <ol className="flex flex-col gap-2 text-sm">
-            <li className="flex gap-2">
-              <span className="shrink-0 w-5 h-5 rounded bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">1</span>
-              <span>Ambil kandidat dari 15 feed proxy publik (paralel, batas 4 detik per feed).</span>
-            </li>
-            <li className="flex gap-2">
-              <span className="shrink-0 w-5 h-5 rounded bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">2</span>
-              <span>TCP ping super cepat (&lt;1 dtk) menyaring IP mati tanpa biaya koneksi HTTP.</span>
-            </li>
-            <li className="flex gap-2">
-              <span className="shrink-0 w-5 h-5 rounded bg-primary/10 text-primary text-xs font-semibold flex items-center justify-center">3</span>
-              <span>Verifikasi HTTP lewat Cloudflare trace — cek egress IP &amp; lokasi, buang duplikat, lalu import ke proxy pool.</span>
-            </li>
-          </ol>
-        </Card>
-      </div>
+        ) : (
+          <p className="text-sm text-text-muted">
+            No runs yet. Press <span className="text-text-main">Start Harvest</span> to begin.
+          </p>
+        )}
+      </Card>
     </PageShell>
   );
 }

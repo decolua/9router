@@ -6,21 +6,17 @@ export const dynamic = "force-dynamic";
 
 // Verified and active fresh proxy feeds (sorted by speed & working ratio)
 const HARVEST_FEEDS = [
-  // High-yield curated live feeds (tested working, refreshed every 30m)
-  "https://raw.githubusercontent.com/stormsia/proxy-list/main/working_proxies.txt",
   "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt",
   "https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt",
   "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt",
   "https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt",
   "https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt",
+  "https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt",
   "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt",
-  "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&proxy_format=ipport&format=text&timeout=2500",
   "https://raw.githubusercontent.com/proxmint/free-proxy-list/main/proxies/http.txt",
   "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt",
-  "https://raw.githubusercontent.com/MuRongPIG/Proxy-Master-Collection/main/http.txt",
   "https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt",
   "https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt",
-  "https://raw.githubusercontent.com/officialputuid/KangProxy/KangProxy/http.txt",
   "https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt",
 ];
 

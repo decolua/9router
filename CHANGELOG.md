@@ -1,3 +1,10 @@
+# v0.5.383 (2026-11-07) · 1 commit
+
+## Auto Harvester: dead feed pruning, English UI, de-slopped
+
+- Pruned 3 dead/empty proxy feeds (MuRongPIG, KangProxy, stormsia), added TheSpeedX/PROXY-List (2.7k live). 12 feeds total, all verified reachable.
+- Page copy now English (was Indonesian). Removed the fake-terminal status box, icon clutter and the generic 3-step explainer card.
+
 # v0.5.382 (2026-11-07) · 1 commit
 
 ## FEATURE+ — Auto Harvester
