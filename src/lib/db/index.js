@@ -43,7 +43,7 @@ export {
 // Aliases (model + custom + mitm)
 export {
   getModelAliases, setModelAlias, deleteModelAlias,
-  getCustomModels, addCustomModel, deleteCustomModel,
+  getCustomModels, addCustomModel, deleteCustomModel, pruneCustomModels,
   getMitmAlias, setMitmAliasAll,
 } from "./repos/aliasRepo.js";
 
@@ -56,6 +56,18 @@ export {
 export {
   getDisabledModels, getDisabledByProvider, disableModels, enableModels,
 } from "./repos/disabledModelsRepo.js";
+
+// Ranking bindings (remembered model -> leaderboard slug)
+export {
+  getRankingBindings, setRankingBinding, setRankingBindings,
+  deleteRankingBinding, clearRankingBindings,
+} from "./repos/rankingBindingsRepo.js";
+
+// Sync model filter decisions (remembered keep/reject decisions for provider model updates)
+export {
+  getFilterDecisions, getFilterDecision, setFilterDecision,
+  setFilterDecisions, deleteFilterDecision, clearFilterDecisions,
+} from "./repos/syncFilterDecisionsRepo.js";
 
 // Usage
 export {
