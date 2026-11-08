@@ -127,6 +127,10 @@ function openAIThinkingDisplay(body) {
 
 const NATIVE_ONLY_FORMATS = new Set(["gemini-level", "gemini-budget", "claude-budget", "claude-adaptive", "kiro"]);
 
+// Self-hosted gateways (vLLM/SGLang) validate thinking.budget_tokens; first-party
+// DeepSeek ignores it. Only dynamic compat nodes opt into the passthrough.
+const isOpenAICompatibleNode = (provider) => String(provider || "").startsWith("openai-compatible-");
+
 function resolveFormat(targetFormat, model, provider) {
   if (targetFormat === "commandcode") return "commandcode";
   // A multi-endpoint provider can declare, per transports[] entry, the thinking shape that
@@ -259,7 +263,7 @@ function stripAll(body) {
 }
 
 // Apply unified thinking config to body in the resolved provider-native format.
-function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "") {
+function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "", budgetPassthrough = false) {
   const none = cfg.mode === "none";
   const canDisable = caps.thinkingCanDisable !== false;
   // Model cannot disable thinking → clamp "none" to minimal effort instead.
@@ -355,7 +359,11 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "")
     }
     case "deepseek": {
       if (none && canDisable) { body.thinking = { type: "disabled" }; break; }
-      body.thinking = { type: "enabled" };
+      // Keep an explicit budget captured before translation/stripAll; strict
+      // DeepSeek-compatible hosts validate it when thinking is enabled.
+      body.thinking = budgetPassthrough && cfg.mode === "budget" && Number.isFinite(cfg.budget) && cfg.budget > 0
+        ? { type: "enabled", budget_tokens: cfg.budget }
+        : { type: "enabled" };
       // DeepSeek's own API collapses low/medium→high and xhigh/max→max, so the wire
       // stays on {high,max} for it. The declared levels win where they disagree:
       // zen's free deepseek-v4.1-flash publishes low|high|max and its upstream takes
@@ -457,6 +465,6 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   // An OpenAI-shaped client's ask arrives via the captured intent instead.
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
-  applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel);
+  applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel, isOpenAICompatibleNode(provider));
   return body;
 }
