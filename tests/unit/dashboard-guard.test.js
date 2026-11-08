@@ -287,6 +287,71 @@ describe("dashboard guard local-only access", () => {
   });
 });
 
+describe("dashboard guard webhook management auth", () => {
+  const surfaces = [
+    ["GET", "/api/webhooks"],
+    ["POST", "/api/webhooks"],
+    ["PATCH", "/api/webhooks/destination-fixture"],
+    ["DELETE", "/api/webhooks/destination-fixture"],
+    ["POST", "/api/webhooks/destination-fixture/test"],
+    ["GET", "/api/webhooks/deliveries?destinationId=destination-fixture&limit=20"],
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.getSettings.mockResolvedValue({ requireLogin: true });
+    mocks.validateApiKey.mockResolvedValue(true);
+    mocks.getConsistentMachineId.mockResolvedValue("cli-token");
+    mocks.verifyDashboardAuthToken.mockImplementation(async (token) => token === "valid-dashboard-jwt");
+  });
+
+  it.each(surfaces)("denied: %s %s requires dashboard auth when login is on", async (method, pathname) => {
+    const incoming = request(pathname, { host: "router.example.com", "x-api-key": "valid-llm-key" });
+    incoming.method = method;
+    expect(await proxy(incoming)).toMatchObject({ status: 401, body: { error: "Unauthorized" } });
+    expect(mocks.validateApiKey).not.toHaveBeenCalled();
+  });
+
+  it.each(surfaces)("allowed: %s %s accepts existing dashboard JWT without reauthentication", async (method, pathname) => {
+    const incoming = request(pathname, { host: "router.example.com" });
+    incoming.method = method;
+    incoming.cookies.get.mockImplementation((key) => key === "auth_token" ? { value: "valid-dashboard-jwt" } : undefined);
+    expect(await proxy(incoming)).toBe(mocks.nextResponse);
+    expect(mocks.verifyDashboardAuthToken).toHaveBeenCalledWith("valid-dashboard-jwt");
+  });
+
+  it.each(surfaces)("allowed: %s %s remains remotely accessible with login disabled", async (method, pathname) => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    const incoming = request(pathname, { host: "router.example.com" });
+    incoming.method = method;
+    expect(await proxy(incoming)).toBe(mocks.nextResponse);
+  });
+
+  it.each(surfaces)("allowed: %s %s accepts the existing CLI token", async (method, pathname) => {
+    const incoming = request(pathname, { host: "router.example.com", "x-9r-cli-token": "cli-token" });
+    incoming.method = method;
+    expect(await proxy(incoming)).toBe(mocks.nextResponse);
+  });
+
+  it("denied: spoofable same-origin and local headers do not authenticate management requests", async () => {
+    const response = await proxy(request("/api/webhooks", {
+      host: "localhost:20128", origin: "http://localhost:20128",
+      "sec-fetch-site": "same-origin", "x-9r-real-ip": "127.0.0.1",
+    }));
+    expect(response.status).toBe(401);
+  });
+
+  it("denied: unavailable settings fail closed without changing the login-off policy", async () => {
+    mocks.getSettings.mockRejectedValueOnce(new Error("fixture unavailable"));
+    expect(await proxy(request("/api/webhooks"))).toMatchObject({ status: 401 });
+  });
+
+  it("denied: database export retains stricter existing auth when login is off", async () => {
+    mocks.getSettings.mockResolvedValue({ requireLogin: false });
+    expect(await proxy(request("/api/settings/database"))).toMatchObject({ status: 401 });
+  });
+});
+
 describe("dashboard guard helpers", () => {
   it("extracts bearer API keys before x-api-key", () => {
     const apiRequest = request("/v1/chat/completions", {

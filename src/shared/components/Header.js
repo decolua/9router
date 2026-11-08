@@ -141,6 +141,13 @@ const getPageInfo = (pathname) => {
       icon: "extension",
       breadcrumbs: [],
     };
+  if (pathname.includes("/webhooks"))
+    return {
+      title: "Webhooks",
+      description: "Send selected operational alerts to Discord, Slack or Generic JSON destinations.",
+      icon: "webhook",
+      breadcrumbs: [],
+    };
   if (pathname.includes("/endpoint"))
     return {
       title: "Endpoint",

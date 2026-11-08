@@ -46,6 +46,7 @@ export function createBetterSqliteAdapter(filePath) {
     exec(sql) { return db.exec(sql); },
     transaction(fn) { return db.transaction(fn)(); },
     checkpoint() { try { db.pragma("wal_checkpoint(TRUNCATE)"); } catch {} },
+    flush() {},
     close() {
       clearInterval(checkpointTimer);
       gracefulClose();

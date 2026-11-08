@@ -4,6 +4,7 @@ import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLock
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
+import { emitAccountUnavailable } from "./webhookTransient.js";
 import * as log from "../utils/logger.js";
 
 // Mutex to prevent race conditions during account selection
@@ -289,6 +290,16 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
 
   if (provider && status && reason) {
     console.error(`❌ ${provider} [${status}]: ${reason}`);
+  }
+
+  if (provider && Number.isInteger(status)) {
+    emitAccountUnavailable({
+      provider,
+      model,
+      connectionId,
+      statusCode: status,
+      errorClass: "upstream_http",
+    });
   }
 
   return { shouldFallback: true, cooldownMs };

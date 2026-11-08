@@ -4,6 +4,7 @@
 import * as log from "../utils/logger.js";
 import { getRefreshLeadMs } from "open-sse/services/tokenRefresh.js";
 import { getCredentialExpiryMs } from "open-sse/services/oauthCredentialManager.js";
+import { emitTokenRefreshFailed } from "./webhookTransient.js";
 
 /** Refresh when expiry is within 30 minutes (or the provider on-request lead, whichever larger). */
 export const BACKGROUND_REFRESH_LEAD_MS = 30 * 60 * 1000;
@@ -119,6 +120,13 @@ export async function runBackgroundTokenRefreshTick(deps = {}) {
           provider: conn?.provider,
           error: err?.message ?? String(err),
         });
+        if (conn?.provider && conn?.id) {
+          emitTokenRefreshFailed({
+            provider: conn.provider,
+            connectionId: conn.id,
+            errorClass: "refresh_failed",
+          });
+        }
       }
 
       // Sequential delay between accounts to prevent bursting upstream providers (especially Google Cloud)
