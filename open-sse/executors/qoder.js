@@ -727,8 +727,12 @@ export class QoderExecutor extends BaseExecutor {
     const resp = result?.response;
     if (!resp || resp.ok) return false;
     if (resp.status !== 403 && resp.status !== 401) return false;
+    // Read a CLONE: chatCore's parseUpstreamError consumes the original body
+    // later, and a Response body can only be read once. Reading the original
+    // here left the client-facing error with an empty body ("HTTP 403" with no
+    // upstream message) for every non-105 403 — billing blocks included.
     let text = "";
-    try { text = await resp.text(); } catch { return false; }
+    try { text = await resp.clone().text(); } catch { return false; }
     return isLoginExpiredFrame(text, resp.status);
   }
 
