@@ -431,8 +431,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
         delete body.params.reasoning_effort;
         break;
       }
-      const level = toLevel(eff);
-      if (level) body.params.reasoning_effort = level;
+      const rawLevel = toLevel(eff);
+      const level = rawLevel === "auto" ? "high"
+        : rawLevel === "minimal" ? "low"
+        : rawLevel;
+      const validLevels = ["off", "low", "medium", "high", "xhigh", "max"];
+      if (level && validLevels.includes(level)) {
+        body.params.reasoning_effort = level;
+      }
       break;
     }
     default:

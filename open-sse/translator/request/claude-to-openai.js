@@ -99,6 +99,8 @@ export function claudeToOpenAIRequest(model, body, stream, credentials, opts = {
 
   if (body.reasoning_effort !== undefined) {
     result.reasoning_effort = body.reasoning_effort;
+  } else if (body.output_config?.effort !== undefined) {
+    result.reasoning_effort = body.output_config.effort;
   } else if (body.reasoning?.effort !== undefined) {
     result.reasoning_effort = body.reasoning.effort;
   }
