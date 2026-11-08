@@ -1276,5 +1276,10 @@
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",
     "authType": "cookie"
+  },
+  "llmtr": {
+    "baseUrl": "https://llmtr.com/v1/chat/completions",
+    "thinkingFormat": "llmtr",
+    "format": "openai"
   }
 }

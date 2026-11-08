@@ -15,6 +15,7 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
+import { routeLlmtrModel } from "@/lib/llmtrModels";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
 
@@ -78,6 +79,8 @@ const createOpenAIModelsConfig = (url) => ({
   authPrefix: "Bearer ",
   parseResponse: parseOpenAIStyleModels
 });
+
+const parseLlmtrModels = (data) => parseOpenAIStyleModels(data).map(routeLlmtrModel).filter(Boolean);
 
 const normalizeRoutedNousModels = (data) => normalizeNousModels(data).map((model) => ({
   ...model,
@@ -322,6 +325,14 @@ const PROVIDER_MODELS_CONFIG = {
   assemblyai: createOpenAIModelsConfig("https://api.assemblyai.com/v1/models"),
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
   // OpenAI-compatible aggregators.
+  llmtr: {
+    url: "https://llmtr.com/v1/models",
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: parseLlmtrModels,
+  },
   tokenharbor: createOpenAIModelsConfig("https://tokenharbor.ai/v1/models"),
   dahl: createOpenAIModelsConfig("https://inference.dahl.global/v1/models"),
   atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
