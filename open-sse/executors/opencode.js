@@ -1,5 +1,12 @@
+import {
+  isOpencodeServiceAlive,
+  getDaemonForProxy,
+  executeServiceStream,
+  resolveClientWorkingDirectory,
+} from "../services/opencodeServiceBridge.js";
 import crypto from "crypto";
 import { BaseExecutor } from "./base.js";
+import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
 import { MEMORY_CONFIG } from "../config/runtimeConfig.js";
 import { getThinkingLevels } from "../providers/thinkingLevels.js";
@@ -347,6 +354,86 @@ function dropAdaptiveReasoningEffort(body) {
   if (body?.reasoning_effort === "auto") delete body.reasoning_effort;
 }
 
+function textFromServiceContent(content) {
+  if (typeof content === "string") return content;
+  if (!Array.isArray(content)) return content == null ? "" : String(content);
+  return content.map((part) => {
+    if (typeof part === "string") return part;
+    if (typeof part?.text === "string") return part.text;
+    if (typeof part?.value === "string") return part.value;
+    return "";
+  }).filter(Boolean).join("\n");
+}
+
+function responsesInputToServiceMessages(input, instructions) {
+  const messages = [];
+  const systemText = textFromServiceContent(instructions);
+  if (systemText) messages.push({ role: "system", content: systemText });
+  if (!Array.isArray(input)) return messages;
+
+  for (const item of input) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    if (item.type === "message") {
+      messages.push({
+        role: item.role || "user",
+        content: textFromServiceContent(item.content),
+      });
+    } else if (item.type === "function_call") {
+      messages.push({
+        role: "assistant",
+        content: null,
+        tool_calls: [{
+          id: item.call_id || item.id,
+          type: "function",
+          function: {
+            name: item.name,
+            arguments: typeof item.arguments === "string" ? item.arguments : JSON.stringify(item.arguments || {}),
+          },
+        }],
+      });
+    } else if (item.type === "function_call_output") {
+      messages.push({
+        role: "tool",
+        tool_call_id: item.call_id || item.id,
+        content: serializeServiceOutput(item.output),
+      });
+    }
+  }
+  return messages;
+}
+
+function serializeServiceOutput(output) {
+  if (typeof output === "string") return output;
+  if (output == null) return "";
+  try { return JSON.stringify(output); } catch { return String(output); }
+}
+
+function prepareServiceMessages(body) {
+  if (Array.isArray(body?.messages) && body.messages.length > 0) {
+    return body.messages;
+  }
+  if (Array.isArray(body?.input)) {
+    return responsesInputToServiceMessages(body.input, body.instructions);
+  }
+  if (typeof body?.prompt === "string" && body.prompt.trim()) {
+    return [{ role: "user", content: body.prompt }];
+  }
+  if (typeof body?.input === "string" && body.input.trim()) {
+    return [{ role: "user", content: body.input }];
+  }
+  return [];
+}
+
+function prepareServiceToolChoice(toolChoice) {
+  if (typeof toolChoice === "string") return toolChoice;
+  if (!toolChoice || typeof toolChoice !== "object" || Array.isArray(toolChoice)) return undefined;
+  if (typeof toolChoice.mode === "string") return toolChoice.mode;
+  if (toolChoice.type === "function" && toolChoice.function?.name) {
+    return { type: "function", function: { name: toolChoice.function.name } };
+  }
+  return undefined;
+}
+
 export class OpenCodeExecutor extends BaseExecutor {
   constructor() {
     super("opencode", PROVIDERS.opencode);
@@ -408,10 +495,79 @@ export class OpenCodeExecutor extends BaseExecutor {
   // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
   // request still goes out on native fetch instead of erroring here.
   async execute(args) {
-    const credentials = this.prepareRequestCredentials(args);
+    const { model, body, credentials, signal, proxyOptions } = args;
+    const apiKey = credentials?.apiKey || credentials?.accessToken || credentials?.providerSpecificData?.apiKey;
+    const isPublicAuth = !apiKey || apiKey === "public" || apiKey === "Bearer public";
+    const hasExplicitApiKey = !isPublicAuth;
+    const isTestEnv = process.env.NODE_ENV === "test" || Boolean(process.env.VITEST);
+    const proxyUrl = (proxyOptions?.connectionProxyEnabled && proxyOptions?.connectionProxyUrl)
+      ? proxyOptions.connectionProxyUrl
+      : (credentials?.providerSpecificData?.connectionProxyEnabled && credentials?.providerSpecificData?.connectionProxyUrl)
+        ? credentials.providerSpecificData.connectionProxyUrl
+        : "";
+    const proxyNoProxy = proxyOptions?.connectionNoProxy
+      || credentials?.providerSpecificData?.connectionNoProxy
+      || "";
+
+    const useServiceDaemon = credentials?.providerSpecificData?.useServiceDaemon !== false;
+
+    // Dual-Mode Architecture:
+    // If user enabled Local Service Daemon (useServiceDaemon === true) and not in test env,
+    // route free requests to the service REST bridge.
+    // If user toggled off Local Service Daemon, execute directly via HTTP wire (super.execute).
+    if (!isTestEnv && !hasExplicitApiKey && useServiceDaemon) {
+      const daemon = await getDaemonForProxy(proxyUrl, { noProxy: proxyNoProxy, apiKey });
+      const isAlive = await isOpencodeServiceAlive(daemon);
+
+      if (!isAlive) {
+        throw new Error("OpenCode local service daemon is not running or unreachable. Please start opencode service or disable Local Service Daemon in dashboard.");
+      }
+
+      const directory = resolveClientWorkingDirectory(credentials, body, body?.messages);
+      const timeStr = new Date().toLocaleTimeString("en-GB");
+      console.log(`[${timeStr}] ℹ️ [BRIDGE] OPENCODE | ${model} | daemon=${daemon?.url || "127.0.0.1"}`);
+
+      const messages = prepareServiceMessages(body);
+      const serviceResponse = await executeServiceStream({
+        model,
+        body,
+        messages,
+        tools: body?.tools || [],
+        toolChoice: prepareServiceToolChoice(body?.tool_choice),
+        credentials: this.prepareRequestCredentials({ body, credentials }),
+        proxyUrl,
+        proxyNoProxy,
+        signal,
+      });
+      const session = credentials?.[SESSION_FIELD] || resolveOpencodeSession(body, credentials);
+      return {
+        response: serviceResponse,
+        url: "http://127.0.0.1/api/session/prompt",
+        headers: {
+          "Content-Type": "text/event-stream",
+          "x-opencode-session": session,
+        },
+        transformedBody: body,
+        responseFormat: FORMATS.OPENAI,
+      };
+    }
+
+    const timeStr = new Date().toLocaleTimeString("en-GB");
+    console.log(`[${timeStr}] ℹ️ [DIRECT] OPENCODE | ${model}`);
+
+    const preparedCredentials = this.prepareRequestCredentials(args);
+    const effectiveProxyOptions = proxyOptions || (credentials?.providerSpecificData?.connectionProxyEnabled && credentials?.providerSpecificData?.connectionProxyUrl
+      ? {
+          connectionProxyEnabled: true,
+          connectionProxyUrl: credentials.providerSpecificData.connectionProxyUrl,
+          connectionNoProxy: credentials.providerSpecificData.connectionNoProxy || "",
+        }
+      : null);
+
     return super.execute({
       ...args,
-      credentials,
+      proxyOptions: effectiveProxyOptions,
+      credentials: preparedCredentials,
       directFetch: (url, options) => opencodeTlsFetch(url, {
         method: options.method,
         headers: options.headers,

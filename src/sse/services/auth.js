@@ -55,6 +55,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         pickedId = pickProxyPoolId(poolIds, strategy, providerId);
       }
       const resolvedProxy = await resolveConnectionProxyConfig({ proxyPoolId: pickedId || "" });
+      const useServiceDaemon = providerId === "opencode" ? override.useServiceDaemon !== false : true;
       return {
         id: "noauth",
         connectionName: "Public",
@@ -67,6 +68,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           connectionProxyPoolId: resolvedProxy.proxyPoolId || null,
           vercelRelayUrl: resolvedProxy.vercelRelayUrl || "",
           strictProxy: resolvedProxy.strictProxy === true,
+          useServiceDaemon,
         },
       };
     }
