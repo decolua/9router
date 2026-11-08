@@ -8,6 +8,7 @@ const KIND_ENDPOINT = {
   tts: "/v1/audio/speech",
   stt: "/v1/audio/transcriptions",
   embedding: "/v1/embeddings",
+  rerank: "/v1/rerank",
   imageToText: "/v1/chat/completions",
   webSearch: "/v1/search",
   webFetch: "/v1/fetch",

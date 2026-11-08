@@ -57,6 +57,10 @@ export async function writeStreamError(writer, statusCode, message) {
  * @returns {Promise<{statusCode: number, message: string, resetsAtMs?: number}>}
  */
 export async function parseUpstreamError(response, executor = null) {
+  const retryAfter = response.status === 429 ? response.headers.get("retry-after") : null;
+  const retrySeconds = Number(retryAfter);
+  const retryAt = retryAfter && (Number.isFinite(retrySeconds) ? Date.now() + retrySeconds * 1000 : Date.parse(retryAfter));
+  const resetsAtMs = Number.isFinite(retryAt) && retryAt > Date.now() ? retryAt : undefined;
   let bodyText = "";
   try {
     bodyText = await response.text();
@@ -70,7 +74,7 @@ export async function parseUpstreamError(response, executor = null) {
       const parsed = executor.parseError(response, bodyText);
       if (parsed && typeof parsed === "object") {
         const msg = parsed.message || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
-        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs };
+        return { statusCode: parsed.status || response.status, message: msg, resetsAtMs: parsed.resetsAtMs || resetsAtMs };
       }
     } catch { /* fall through to default parsing */ }
   }
@@ -86,7 +90,7 @@ export async function parseUpstreamError(response, executor = null) {
   const messageStr = typeof message === "string" ? message : JSON.stringify(message);
   const finalMessage = messageStr || DEFAULT_ERROR_MESSAGES[response.status] || `Upstream error: ${response.status}`;
 
-  return { statusCode: response.status, message: finalMessage };
+  return { statusCode: response.status, message: finalMessage, resetsAtMs };
 }
 
 /**

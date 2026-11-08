@@ -179,6 +179,7 @@ function buildQoderModelsResolver(providerId) {
 
 // Provider models endpoints configuration
 const PROVIDER_MODELS_CONFIG = {
+  nan: createOpenAIModelsConfig("https://api.nan.builders/v1/models"),
   "muse": {
     url: "https://api.meta.ai/v1/models",
     method: "GET",

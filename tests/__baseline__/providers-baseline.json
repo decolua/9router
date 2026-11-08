@@ -1276,5 +1276,22 @@
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",
     "authType": "cookie"
+  },
+  "sensenova": {
+    "baseUrl": "https://token.sensenova.cn/v1/chat/completions",
+    "validateUrl": "https://token.sensenova.cn/v1/models",
+    "format": "openai"
+  },
+  "nan": {
+    "baseUrl": "https://api.nan.builders/v1/chat/completions",
+    "usage": {
+      "url": "https://cloud-api.nan.builders/api/usage/quota"
+    },
+    "format": "openai"
+  },
+  "runcrate": {
+    "baseUrl": "https://api.runcrate.ai/v1/chat/completions",
+    "validateUrl": "https://www.runcrate.ai/api/v1/billing/balance",
+    "format": "openai"
   }
 }

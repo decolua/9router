@@ -53,6 +53,7 @@ const { handleVideoCreate } = await import("../../src/sse/handlers/videoGenerati
 const { handleSearch } = await import("../../src/sse/handlers/search.js");
 const { handleFetch } = await import("../../src/sse/handlers/fetch.js");
 const { handleSystemone } = await import("../../src/sse/handlers/systemone.js");
+const { rerank, editImage } = await import("../../src/sse/handlers/nanExtra.js");
 const geminiRoute = await import("../../src/app/api/v1beta/models/[...path]/route.js");
 const modelsRoute = await import("../../src/app/api/v1/models/route.js");
 const modelsKindRoute = await import("../../src/app/api/v1/models/[...model]/route.js");
@@ -196,6 +197,29 @@ describe.each(handlers)("%s handler is wired", (_name, call, allowed, denied) =>
   });
   it("denies everything for the empty-list key", async () => {
     expect((await call(allowed, "sk-empty")).status).toBe(403);
+  });
+});
+
+describe.each([
+  ["nan/rerank", (k) => rerank(post("/v1/rerank", { model: "nan/rerank", query: "x", documents: ["x"] }, k))],
+  ["nan/flux-2-klein", (k) => {
+    const body = new FormData();
+    body.set("model", "nan/flux-2-klein");
+    body.set("prompt", "x");
+    body.set("image", new Blob([new Uint8Array(4)], { type: "image/png" }), "a.png");
+    return editImage(new Request("http://localhost/v1/images/edits", { method: "POST", headers: auth(k), body }));
+  }],
+])("NaN key access: %s", (model, call) => {
+  it("denies unlisted models before credential lookup", async () => {
+    expect((await call("sk-empty")).status).toBe(403);
+    expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
+  });
+  it("allows listed models and unrestricted keys", async () => {
+    fx.keys["sk-media"].access.allow.push(model);
+    for (const key of ["sk-media", "sk-open", null]) {
+      expect((await call(key)).status).toBe(503);
+    }
+    expect(mocks.getProviderCredentials).toHaveBeenCalledTimes(3);
   });
 });
 

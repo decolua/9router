@@ -1,0 +1,46 @@
+export default {
+  id: "nan",
+  alias: "nan",
+  category: "apikey",
+  display: {
+    name: "NaN",
+    icon: "hub",
+    color: "#6D5EF3",
+    textIcon: "NaN",
+    website: "https://nan.builders",
+    notice: { apiKeyUrl: "https://cloud.nan.builders" },
+  },
+  transport: {
+    baseUrl: "https://api.nan.builders/v1/chat/completions",
+    usage: {
+      // Dashboard quota counters; /v1/usage can return an empty history for an active key.
+      url: "https://cloud-api.nan.builders/api/usage/quota",
+    },
+    // NaN only emits a usage chunk when the client asks for it; without it streams are estimated.
+    quirks: { includeStreamUsage: true },
+  },
+  modelsFetcher: { url: "https://api.nan.builders/v1/models", type: "openai" },
+  models: [
+    { id: "deepseek-v4-flash" },
+    { id: "mimo-v2.5" },
+    { id: "mimo-v2.6-flash" },
+    { id: "qwen3.8-flash" },
+    { id: "glm5.3-flash" },
+    { id: "qwen3.6" },
+    { id: "gemma4" },
+    { id: "glm5.3" },
+    { id: "qwen3-embedding", kind: "embedding", dimensions: 4096 },
+    { id: "whisper", kind: "stt" },
+    { id: "kokoro", kind: "tts" },
+    { id: "flux-2-klein", kind: "image", capabilities: ["text2img", "edit"] },
+    { id: "qwen-image-2.1", kind: "image", capabilities: ["text2img"] },
+    { id: "rerank", kind: "rerank" },
+  ],
+  serviceKinds: ["llm", "imageToText", "embedding", "stt", "tts", "image", "rerank"],
+  embeddingConfig: { baseUrl: "https://api.nan.builders/v1/embeddings", authType: "apikey", authHeader: "bearer" },
+  sttConfig: { baseUrl: "https://api.nan.builders/v1/audio/transcriptions", authType: "apikey", authHeader: "bearer", format: "openai" },
+  ttsConfig: { baseUrl: "https://api.nan.builders/v1/audio/speech", authType: "apikey", authHeader: "bearer", format: "openai", defaultVoice: "af_heart" },
+  imageConfig: { baseUrl: "https://api.nan.builders/v1/images/generations", editUrl: "https://api.nan.builders/v1/images/edits" },
+  rerankConfig: { baseUrl: "https://api.nan.builders/v1/rerank" },
+  features: { usage: true, usageApikey: true },
+};

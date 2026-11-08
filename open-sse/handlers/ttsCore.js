@@ -64,7 +64,7 @@ export async function handleTtsCore({ provider, model, input, credentials, respo
     }
 
     // Generic config-driven (hyperbolic, deepgram, nvidia, huggingface, inworld, cartesia, playht, coqui, tortoise, qwen, ...)
-    const result = await synthesizeViaConfig(provider, input.trim(), model, credentials);
+    const result = await synthesizeViaConfig(provider, input.trim(), model, credentials, responseFormat);
     if (result) return createTtsResponse(result.base64, result.format, responseFormat);
 
     return createErrorResult(HTTP_STATUS.BAD_REQUEST, `Provider '${provider}' does not support TTS via this route.`);

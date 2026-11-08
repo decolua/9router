@@ -1378,15 +1378,16 @@ export default function ProviderLimits() {
                     quotas={visibleQuotas}
                     compact
                     sortMode="default"
+                    rowLabel={conn.provider === "nan" ? "model" : "quota"}
                     showSortLabel={
                       conn.provider === "codex" && quotaSortMode !== "default"
                     }
                     onHideQuota={(quotaRow) => handleHideQuota(conn.provider, quotaRow)}
                   />
                 )}
-                {quota?.message && !error && !isLoading && (
+                {quota?.raw?.summary && !error && !isLoading && (
                   <p className="mt-2 px-1 text-[10px] leading-relaxed text-text-muted">
-                    {quota.message}
+                    {quota.raw.summary}
                   </p>
                 )}
                 {hiddenQuotaRows.length > 0 && (
