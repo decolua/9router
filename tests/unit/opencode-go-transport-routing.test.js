@@ -66,11 +66,11 @@ vi.mock("../../open-sse/translator/concerns/image.js", () => ({
 
 const { handleChatCore } = await import("../../open-sse/handlers/chatCore.js");
 
-const BASE = "https://opencode.ai/zen/go/v1";
+const BASE = "https://opencode.ai/inference/go";
 const ENDPOINTS = {
-  openai: `${BASE}/chat/completions`,
-  claude: `${BASE}/messages`,
-  "openai-responses": `${BASE}/responses`,
+  openai: `${BASE}/openai/v1/chat/completions`,
+  claude: `${BASE}/anthropic/v1/messages`,
+  "openai-responses": `${BASE}/openai/v1/responses`,
 };
 
 // Minimal non-stream provider JSON per target format — the mocked executor's response.

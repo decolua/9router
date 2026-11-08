@@ -877,7 +877,7 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
         return { valid: res.ok, error: res.ok ? null : "OpenCode free tier unavailable" };
       }
       case "opencode-go": {
-        const res = await fetchWithConnectionProxy("https://opencode.ai/zen/go/v1/chat/completions", {
+        const res = await fetchWithConnectionProxy("https://opencode.ai/inference/go/openai/v1/chat/completions", {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${connection.apiKey}` },
           body: JSON.stringify({ model: getDefaultModel("opencode-go"), messages: [{ role: "user", content: "ping" }], max_tokens: 1, stream: false }),
