@@ -7,6 +7,7 @@ import { reasoningDelta } from "../concerns/reasoning.js";
 import { encodeDataUri } from "../concerns/image.js";
 import { toOpenAIFinish } from "../concerns/finishReason.js";
 import { storeGeminiThoughtSignature } from "../../services/thoughtSignatureStore.js";
+import { SYNTHETIC_MIMICRY_TEXTS } from "../formats/gemini.js";
 
 // Build chunk meta for current gemini state
 function chunkMeta(state) {
@@ -91,11 +92,14 @@ export function geminiToOpenAIResponse(chunk, state) {
         }
 
         if (hasTextContent) {
-          results.push(buildChunk(
-            chunkMeta(state),
-            isThought ? reasoningDelta(part.text) : { content: part.text },
-            null
-          ));
+          const trimmed = String(part.text || "").trim();
+          if (isThought || !SYNTHETIC_MIMICRY_TEXTS.has(trimmed)) {
+            results.push(buildChunk(
+              chunkMeta(state),
+              isThought ? reasoningDelta(part.text) : { content: part.text },
+              null
+            ));
+          }
         }
 
         if (hasFunctionCall) {
@@ -110,11 +114,14 @@ export function geminiToOpenAIResponse(chunk, state) {
       // can also stream thought parts without a signature; those must not be
       // surfaced as normal assistant content in OpenAI-compatible clients.
       if (part.text !== undefined && part.text !== "") {
-        results.push(buildChunk(
-          chunkMeta(state),
-          isThought ? reasoningDelta(part.text) : { content: part.text },
-          null
-        ));
+        const trimmed = String(part.text || "").trim();
+        if (isThought || !SYNTHETIC_MIMICRY_TEXTS.has(trimmed)) {
+          results.push(buildChunk(
+            chunkMeta(state),
+            isThought ? reasoningDelta(part.text) : { content: part.text },
+            null
+          ));
+        }
       }
 
       // Function call
