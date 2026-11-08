@@ -7,6 +7,7 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+import { outputTokensPerSecond } from "open-sse/utils/outputRate.js";
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -312,6 +313,9 @@ export default function RequestDetailsTab() {
                       <div className="flex flex-col gap-0.5">
                         <div>TTFT: <span className="font-mono">{detail.latency?.ttft || 0}ms</span></div>
                         <div>Total: <span className="font-mono">{detail.latency?.total || 0}ms</span></div>
+                        {outputTokensPerSecond(detail.tokens, detail.latency) !== null && (
+                          <div>Rate: <span className="font-mono">{outputTokensPerSecond(detail.tokens, detail.latency)} tok/s</span></div>
+                        )}
                       </div>
                     </td>
                     <td className="p-4 text-center">
@@ -383,6 +387,20 @@ export default function RequestDetailsTab() {
                   TTFT {selectedDetail.latency?.ttft || 0}ms / Total {selectedDetail.latency?.total || 0}ms
                 </span>
               </div>
+              {outputTokensPerSecond(selectedDetail.tokens, selectedDetail.latency) !== null && (
+                <div>
+                  <span className="text-text-muted">Output Rate:</span>{" "}
+                  <span className="text-text-main font-mono">
+                    {outputTokensPerSecond(selectedDetail.tokens, selectedDetail.latency)} tok/s
+                  </span>
+                </div>
+              )}
+              {selectedDetail.latency?.maxGap > 0 && (
+                <div>
+                  <span className="text-text-muted">Max Gap:</span>{" "}
+                  <span className="text-text-main font-mono">{selectedDetail.latency.maxGap}ms</span>
+                </div>
+              )}
               <div>
                 <span className="text-text-muted">Input Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
