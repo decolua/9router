@@ -255,6 +255,9 @@ export async function resolveQoderCredentials(credentials, proxyOptions = null, 
     return {
       ...credentials,
       accessToken: resolved.accessToken,
+      // The PAT is a year-long secret; the job token is a 24h derivative.
+      // Dropping apiKey keeps the long-lived secret out of logs and out of any
+      // consumer that reads apiKey and skips accessToken.
       apiKey: "",
       providerSpecificData: {
         authMethod: "pat",
