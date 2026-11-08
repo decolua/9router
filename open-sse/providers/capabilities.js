@@ -37,6 +37,7 @@
 
 import { matchPattern } from "./pricing.js";
 import { looksLikeVisionModel } from "./visionPatterns.js";
+import { getDotHooshLive } from "./models/dothooshLive.js";
 
 /**
  * Safe floor — every resolved result is merged over this so consumers
@@ -814,7 +815,28 @@ function isCommandCodeTextOnly(model) {
   }
   return false;
 }
+const isDotHooshProvider = (provider) => provider === "dothoosh" || provider === "dh";
+
+// DotHoosh serves its own limits and modalities, which differ from the vendor card the model id
+// resolves to. When the live listing carries a value it wins over every static table.
+function applyDotHooshLive(caps, model) {
+  const live = getDotHooshLive(model);
+  if (!live) return caps;
+  const result = { ...caps };
+  if (live.contextWindow) result.contextWindow = live.contextWindow;
+  if (live.maxOutput) result.maxOutput = live.maxOutput;
+  if (typeof live.vision === "boolean") result.vision = live.vision;
+  // A static output cap must never exceed the live window.
+  if (live.contextWindow && result.maxOutput > live.contextWindow) result.maxOutput = live.contextWindow;
+  return result;
+}
+
 export function getCapabilitiesForModel(provider, model) {
+  const caps = resolveCapabilities(provider, model);
+  return model && isDotHooshProvider(provider) ? applyDotHooshLive(caps, model) : caps;
+}
+
+function resolveCapabilities(provider, model) {
   if (!model) return { ...DEFAULT_CAPABILITIES };
 
   // Canonical exact lookup strips vendor prefix: "anthropic/claude-opus-4.7" -> "claude-opus-4.7".

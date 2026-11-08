@@ -1,4 +1,5 @@
 import { FORMATS } from "../../translator/formats.js";
+import { getDotHooshLive } from "./dothooshLive.js";
 
 // Codex auto-generates a "-review" variant for each llm model (review quota family)
 export const CODEX_REVIEW_SUFFIX = "-review";
@@ -63,4 +64,25 @@ export function opencodeFamilyFormats(modelId) {
   if (!modelId || typeof modelId !== "string") return null;
   const base = modelId.replace(/\([^()]+\)\s*$/, "").trim();
   return OPENCODE_FAMILIES.find((f) => f.match.test(base)) || null;
+}
+
+// DotHoosh serves every model on one key, but not every model on every lane: Claude only on
+// /anthropic/v1/messages, GPT also on /v1/responses, DeepSeek also on the Anthropic lane,
+// everything else on Chat Completions. The lanes come from the live listing's protocols[]
+// (dothooshLive.js); this family table is only the fallback for ids the listing does not carry.
+// First match wins; an id no family claims stays on Chat Completions, which every model supports.
+const DOTHOOSH_FAMILIES = [
+  { match: /^claude-/i, supportedFormats: [FORMATS.CLAUDE], targetFormat: FORMATS.CLAUDE },
+  { match: /^gpt-/i, supportedFormats: [FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES] },
+  { match: /^deepseek-/i, supportedFormats: [FORMATS.OPENAI, FORMATS.CLAUDE] },
+];
+
+export function dothooshFamilyFormats(modelId) {
+  if (!modelId || typeof modelId !== "string") return null;
+  // The live listing knows which lanes serve a model; the name-based table below only covers
+  // ids the listing does not carry (before the first refresh, or a model it dropped).
+  const live = getDotHooshLive(modelId);
+  if (live) return { supportedFormats: live.supportedFormats, targetFormat: live.targetFormat };
+  const base = modelId.replace(/\([^()]+\)\s*$/, "").trim();
+  return DOTHOOSH_FAMILIES.find((f) => f.match.test(base)) || { supportedFormats: [FORMATS.OPENAI] };
 }

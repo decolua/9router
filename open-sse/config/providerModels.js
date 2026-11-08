@@ -2,13 +2,15 @@ import REGISTRY from "../providers/registry/index.js";
 // PROVIDER_MODELS now built from providers/registry (transport + models co-located)
 import { PROVIDER_MODELS } from "../providers/index.js";
 import { modelQuotaFamily, modelStrip, modelTargetFormat, modelSupportedFormats, normalizeModelId } from "../providers/models/schema.js";
-import { CODEX_REVIEW_SUFFIX, isMuseSparkModel, opencodeFamilyFormats } from "../providers/models/helpers.js";
+import { CODEX_REVIEW_SUFFIX, dothooshFamilyFormats, isMuseSparkModel, opencodeFamilyFormats } from "../providers/models/helpers.js";
 import { FORMATS } from "../translator/formats.js";
 export { PROVIDER_MODELS };
 
 // OpenCode providers sharing the endpoint-family fallback for unknown model ids
 const isOpenCodeAlias = (aliasOrId) => !aliasOrId || ["oc", "opencode", "ocg", "opencode-go", "ocz", "opencode-zen"].includes(aliasOrId);
 
+// DotHoosh has no registry model list (its catalog is live), so lanes come from the family table
+const isDotHooshAlias = (aliasOrId) => aliasOrId === "dothoosh" || aliasOrId === "dh";
 
 // Helper functions
 export function getProviderModels(aliasOrId) {
@@ -58,6 +60,7 @@ export function getModelTargetFormat(aliasOrId, modelId) {
   if (isOpenCodeAlias(aliasOrId) && isMuseSparkModel(modelId)) {
     return FORMATS.OPENAI_RESPONSES;
   }
+  if (isDotHooshAlias(aliasOrId)) return dothooshFamilyFormats(modelId)?.targetFormat || null;
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   const found = findModel(models, modelId, aliasOrId);
@@ -72,6 +75,7 @@ export function getModelTargetFormat(aliasOrId, modelId) {
 // Unknown OpenCode ids fall back to the family regex (chat lane by default) so
 // auto-fetched models never wrongly use the sourceFormat-matched transport.
 export function getModelSupportedFormats(aliasOrId, modelId) {
+  if (isDotHooshAlias(aliasOrId)) return dothooshFamilyFormats(modelId)?.supportedFormats || null;
   const models = PROVIDER_MODELS[aliasOrId];
   if (!models) return null;
   const found = findModel(models, modelId, aliasOrId);
