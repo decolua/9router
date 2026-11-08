@@ -3,6 +3,39 @@
 ## Fixes
 - **Combos**: treat transient gateway statuses 408, 425 and 499 as account-fallback eligible while preserving request-scoped handling for other client errors (#4911).
 
+# v0.5.116 (2026-11-08)
+
+## Features
+- **CommandCode**: align data bridge with official CLI v1.88.5 and add credential auto-import
+- **Antigravity**: track and display a separate Gemini 4 Argon weekly/session quota
+- **Codex Image**: add GPT Image 2.6 models (`gpt-image-2.6-flare`, `gpt-image-2.6-sunburst`)
+- **SenseNova**: add `sensenova-6.8-flash` and `glm-5.3`
+
+## Fixes
+- **Transport**: claude provider survives DPI-shaped networks (happy-eyeballs, undici 8, configurable TLS curve)
+- **Lazy Runtime**: fix lost named exports when loading CJS deps from the runtime dir
+- **OpenCode Go**: send Claude reasoning on the Messages transport
+- **Codex Image**: use native OAuth image generation safely
+- **Thinking**: keep thinking config on OpenAI tool-result turns (#5171)
+- **OpenCode Free**: alias "terminal" tool names the free tier 429-rejects (#5319)
+- **TTS**: list public voices without dashboard self-fetch auth (#1551)
+- **Translator**: retain Claude cache markers for DashScope targets (#2069)
+- **CLI**: launcher startup ~2.5x faster via PID-file process handling
+- **Gemini**: send concrete MIME for remote images instead of `image/*`
+- **Translator**: keep all Gemini tool results and follow-up parts (#2393)
+- **Codex Image**: drop `reasoning.effort` on tool requests, surface real upstream errors
+- **CLI**: ship `deepseek-pow-hash.js` next to the PoW worker (#5460)
+- **Web Fetch**: forward the selected output format to Jina and Tavily (#2239)
+- **Kiro**: stop splicing unserved regions into service hostnames; add `KIRO_INTEGRITY_GATE=off`
+- **Thinking**: preserve explicit DeepSeek thinking budgets on compat nodes (#5108)
+- **Tray**: report a tray that never started instead of claiming success
+- **Fetch**: stop reusing dead keep-alive sockets silently dropped by upstream edges
+- **CodeBuddy**: preserve client system prompts and sanitize CLI agent identity (intl WAF)
+- **OpenCode Go**: use current inference endpoints (`/zen/go/v1` retired)
+- **CLI Tools**: Add All Active Models now includes no-auth, alias and custom models (#5449)
+- **Runtime**: pass `--global=false` so npm hooks can't create stray global installs (#5443)
+- **Dedupe**: drop `tool_reference` blocks naming tools stripped by MCP dedupe (z.ai 400)
+
 # v0.5.112 (2026-10-28)
 
 ## Features
@@ -43,7 +76,6 @@
 - **Thinking**: keep `reasoning_effort: max` for GPT-5.6 / GPT-6 served through OpenAI Compatible nodes instead of clamping it to `xhigh` (#5186)
 - **Codex Image**: drive the `image_generation` tool call from `gpt-6-sol` instead of the legacy `gpt-5.6-terra` host, and add `cx/gpt-6-sol-image`; drop the `gpt-5.6-{sol,terra,luna}-image` aliases they supersede
 - **Capabilities**: match `*gpt-6*image*` before the generic `gpt-6` family pattern so `gpt-6-sol-image` resolves as an image model instead of inheriting the chat caps (vision/reasoning/1.05M window) and losing `imageOutput`
-
 
 # v0.5.109 (2026-10-23)
 
@@ -91,7 +123,6 @@
 - **Search**: reset regex state between model matches in search filters (#5853a88)
 - **Pi Settings**: declare `existingProvider` before use in POST handler to prevent ReferenceError 500 (#342ecb0)
 - **Tests**: triage master test suite (GLM-5.2 effort, gpt-6.1-sol codex capabilities, image SSRF mocks, refresh known-fails) (#b6a9ca4)
-
 
 # v0.5.104 (2026-10-15)
 
