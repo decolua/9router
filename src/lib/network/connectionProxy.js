@@ -1,4 +1,4 @@
-import { getProxyPoolById } from "@/models";
+import { getProxyPoolById, getProxyPools, getSettings } from "@/models";
 
 // Safely normalize any value into a trimmed string.
 function normalizeString(value) {
@@ -31,6 +31,42 @@ export function pickProxyPoolId(poolIds, strategy, providerId) {
   }
 
   return poolIds[0]; // "none" or unknown
+}
+
+/**
+ * Resolve the proxy used by a capability surface that has no provider
+ * connection of its own (today: MCP). The binding lives in
+ * `settings.providerStrategies[scope]` — the same shape the free-provider branch
+ * of getProviderCredentials reads for noAuth providers.
+ */
+export async function resolveSurfaceProxyOptions(scope = "mcp") {
+  try {
+    const settings = (await getSettings()) || {};
+    const override = (settings.providerStrategies || {})[scope] || {};
+    const strategy = override.rotateStrategy || "none";
+
+    let pickedId = normalizeString(override.proxyPoolId);
+    if (strategy !== "none") {
+      const pools = await getProxyPools({ isActive: true });
+      const poolIds = (pools || [])
+        .filter((pool) => normalizeString(pool?.proxyUrl))
+        .map((pool) => pool.id);
+      pickedId = pickProxyPoolId(poolIds, strategy, scope) || "";
+    }
+
+    return await resolveConnectionProxyConfig({ proxyPoolId: pickedId });
+  } catch (error) {
+    console.error(`[resolveSurfaceProxyOptions] Failed for ${scope}:`, error);
+    return {
+      source: "error",
+      proxyPoolId: null,
+      proxyPool: null,
+      connectionProxyEnabled: false,
+      connectionProxyUrl: "",
+      connectionNoProxy: "",
+      strictProxy: false,
+    };
+  }
 }
 
 /**

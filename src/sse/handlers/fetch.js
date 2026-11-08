@@ -8,6 +8,7 @@ import {
 import { getSettings, getCombos } from "@/lib/localDb";
 import { AI_PROVIDERS, resolveProviderId } from "@/shared/constants/providers.js";
 import { handleFetchCore } from "open-sse/handlers/fetch/index.js";
+import { buildProxyOptions, runWithProxyOptions, ensureProxyFetchPatched } from "open-sse/utils/proxyContext.js";
 import { errorResponse, unavailableResponse } from "open-sse/utils/error.js";
 import { HTTP_STATUS } from "open-sse/config/runtimeConfig.js";
 import * as log from "../utils/logger.js";
@@ -143,6 +144,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   // No-auth fetch path (kept for parity though no current fetch provider sets noAuth)
   if (resolvedProvider.noAuth) {
     log.info("AUTH", `\x1b[32m${providerId} no-auth mode\x1b[0m`);
+    await ensureProxyFetchPatched();
     const result = await handleFetchCore({
       url: targetUrl,
       format,
@@ -192,7 +194,8 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
 
     const refreshedCredentials = await checkAndRefreshToken(providerId, credentials);
 
-    const result = await handleFetchCore({
+    await ensureProxyFetchPatched();
+    const result = await runWithProxyOptions(buildProxyOptions(refreshedCredentials), () => handleFetchCore({
       url: targetUrl,
       format,
       maxCharacters,
@@ -208,7 +211,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
           testStatus: "active"
         });
       }
-    });
+    }));
 
     if (result.success) {
       await clearAccountError(credentials.connectionId, credentials, fetchLockKey);
