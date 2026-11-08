@@ -400,6 +400,7 @@ export async function POST(request) {
         case "nanobanana":
         case "chutes":
         case "runcrate":
+        case "cloudgpu":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia": {
