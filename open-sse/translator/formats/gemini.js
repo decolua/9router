@@ -433,12 +433,12 @@ function cleanupRequired(obj) {
 // 2. Schema.properties / required predicate: $type == Type.OBJECT. If type is not "object", properties and required MUST NOT exist.
 function enforceTypeConstraints(obj) {
   if (!obj || typeof obj !== "object") return;
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      enforceTypeConstraints(value);
-    }
+  if (Array.isArray(obj)) {
+    for (const item of obj) enforceTypeConstraints(item);
+    return;
   }
+
+  forEachSubschema(obj, enforceTypeConstraints);
 
   if (obj.type === "array") {
     delete obj.properties;
@@ -536,6 +536,15 @@ function moveFunctionResponsesLast(parts) {
   return [...parts.filter(p => !p.functionResponse), ...responses];
 }
 
+// Known synthetic placeholders injected by gateways that models can mimic and halt on
+export const SYNTHETIC_MIMICRY_TEXTS = new Set([
+  "...",
+  "Processing.",
+  "Processing tool output...",
+  "Tool results processed.",
+  "Understood."
+]);
+
 // Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns,
 // and enforce strict alternating roles (user <-> model) required by Google Gemini.
 export function normalizeGeminiContents(contents, model = null) {
@@ -549,16 +558,21 @@ export function normalizeGeminiContents(contents, model = null) {
       .filter(p => p && Object.keys(p).length > 0)
       .map(sanitizeFunctionResponsePart);
 
-    // If an explicit turn was provided but had empty parts (e.g. error/filtered assistant turn),
-    // preserve it as a minimal placeholder so it does not collapse surrounding turns into consecutive duplicates
+    // Strip synthetic mimicry model turns from conversation history to prevent in-context token mimicry
+    if (c.role === "model" && parts.length === 1 && parts[0].text && SYNTHETIC_MIMICRY_TEXTS.has(parts[0].text.trim())) {
+      continue;
+    }
+
     if (parts.length === 0) {
-      parts = [{ text: "Processing." }];
+      if (c.role === "model") continue;
+      parts = [{ text: "Hello" }];
     }
 
     const last = raw.at(-1);
 
     // If previous turn was a model turn with functionCall, and next turn is a user turn without functionResponse:
     // Gemini requires every functionCall to be immediately followed by functionResponse in the next USER turn.
+    // Prepend autoResponses directly into the user turn parts so roles alternate without dummy model turns.
     if (last && last.role === "model" && c.role === "user") {
       const lastFnCalls = last.parts.filter(p => p && p.functionCall);
       const currHasFnResp = parts.some(p => p && p.functionResponse);
@@ -569,29 +583,20 @@ export function normalizeGeminiContents(contents, model = null) {
           if (call.id) fr.id = call.id;
           return { functionResponse: fr };
         });
-        raw.push({ role: "user", parts: autoResponses });
-        raw.push({ role: "model", parts: [{ text: "Tool results processed." }] });
+        parts = [...autoResponses, ...parts];
       }
     }
 
     const updatedLast = raw.at(-1);
     if (updatedLast?.role === c.role) {
-      const lastHasFnResponse = updatedLast.parts.some(p => p && p.functionResponse);
-      const currHasFnResponse = parts.some(p => p && p.functionResponse);
       const lastHasFnCall = updatedLast.parts.some(p => p && p.functionCall);
       const currHasFnCall = parts.some(p => p && p.functionCall);
 
       if (c.role === "user") {
-        if (lastHasFnResponse || currHasFnResponse) {
-          // Gemini forbids mixing functionResponse with text/inlineData in the same Content,
-          // and forbids adjacent user turns. Insert an intervening model turn to alternate cleanly.
-          raw.push({ role: "model", parts: [{ text: "Processing tool output..." }] });
-          raw.push({ ...c, parts: [...parts] });
-        } else {
-          // Both are regular user messages — safe to merge parts
-          updatedLast.parts.push(...parts);
-          if (frLast) updatedLast.parts = moveFunctionResponsesLast(updatedLast.parts);
-        }
+        // Both are user turns — merge all parts directly.
+        // Google Gemini natively supports functionResponse and text in the same user turn.
+        updatedLast.parts.push(...parts);
+        if (frLast) updatedLast.parts = moveFunctionResponsesLast(updatedLast.parts);
       } else if (c.role === "model") {
         if (lastHasFnCall && !currHasFnCall) {
           // Model turn called tools, but next model turn did not.
@@ -621,11 +626,12 @@ export function normalizeGeminiContents(contents, model = null) {
     const prev = alternating.at(-1);
 
     if (prev && prev.role === curr.role) {
-      if (curr.role === "user") {
-        alternating.push({ role: "model", parts: [{ text: "Understood." }] });
-      } else {
-        alternating.push({ role: "user", parts: [{ text: "Continue." }] });
+      // Merge adjacent same-role messages rather than injecting dummy conversational turns
+      prev.parts.push(...curr.parts);
+      if (curr.role === "user" && frLast) {
+        prev.parts = moveFunctionResponsesLast(prev.parts);
       }
+      continue;
     }
     alternating.push(curr);
   }
