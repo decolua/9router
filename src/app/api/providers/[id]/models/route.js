@@ -323,6 +323,7 @@ const PROVIDER_MODELS_CONFIG = {
   "vercel-ai-gateway": createOpenAIModelsConfig("https://ai-gateway.vercel.sh/v1/models"),
   // OpenAI-compatible aggregators.
   tokenharbor: createOpenAIModelsConfig("https://tokenharbor.ai/v1/models"),
+  jembatanai: createOpenAIModelsConfig("https://freeai.jembatanai.com/v1/models"),
   dahl: createOpenAIModelsConfig("https://inference.dahl.global/v1/models"),
   atria: createOpenAIModelsConfig("https://api.atria-asi.ai/v1/models"),
   agnes: createOpenAIModelsConfig("https://apihub.agnes-ai.com/v1/models"),

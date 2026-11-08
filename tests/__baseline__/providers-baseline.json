@@ -1276,5 +1276,10 @@
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",
     "authType": "cookie"
+  },
+  "jembatanai": {
+    "baseUrl": "https://freeai.jembatanai.com/v1/chat/completions",
+    "validateUrl": "https://freeai.jembatanai.com/v1/models",
+    "format": "openai"
   }
 }
