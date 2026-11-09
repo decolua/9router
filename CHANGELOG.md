@@ -1,3 +1,11 @@
+# v0.5.387 (2026-11-07) · 1 commit
+
+## Auto Harvester: working proxy probe + verified imports
+
+- Root cause of 0/500 harvests: the route statically imported undici, which Next bundles into its compiled undici copy whose ProxyAgent fails at runtime. Probes now use the same pattern as open-sse/proxyFetch (dynamic import + global fetch), verified returning ok:true with egress IP and location.
+- End-to-end verified: start target 5, ran the real cycle, imported FreeProxy-<ip>_<port>-[LOC] entries (status working, active) into Proxy Pools.
+- Removed the temporary ?debug=1 endpoint.
+
 # v0.5.384 (2026-11-07) · 1 commit
 
 ## Auto Harvester: candidate shuffle fix

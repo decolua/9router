@@ -283,28 +283,7 @@ function scheduleNextLoop() {
  * GET /api/harvester
  * Get current harvester daemon status
  */
-export async function GET(request) {
-  const url = new URL(request.url);
-  if (url.searchParams.get("debug") === "1") {
-    try {
-      const res = await fetch("https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt", {
-        signal: AbortSignal.timeout(8000),
-      });
-      const text = await res.text();
-      const cands = text
-        .split("\n")
-        .map((l) => l.trim().replace(/^(?:https?|socks[45]):\/\//i, ""))
-        .filter((l) => /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{2,5}$/.test(l))
-        .slice(0, 20);
-      const tcp = await Promise.all(cands.map(async (c) => [c, await tcpPrecheck(c)]));
-      const alive = tcp.filter(([, ok]) => ok);
-      const probes = [];
-      for (const [c] of alive.slice(0, 3)) probes.push([c, await probeProxy(c)]);
-      return NextResponse.json({ cands: cands.length, tcpAlive: alive.length, probes });
-    } catch (e) {
-      return NextResponse.json({ debugError: e?.message || String(e) }, { status: 500 });
-    }
-  }
+export async function GET() {
   return NextResponse.json({
     running: state.running,
     targetCount: state.targetCount,
