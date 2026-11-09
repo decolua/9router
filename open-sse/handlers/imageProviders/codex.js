@@ -8,9 +8,11 @@ import { CODEX_CLI_VERSION } from "../../config/appConstants.js";
 const CODEX_RESPONSES_URL = PROVIDERS["codex"].baseUrl;
 // Codex OAuth image generation uses the native Images endpoint. The Responses
 // image_generation path has returned unsupported `complexity=medium` errors for
-// GPT Image models. Native has ignored explicit n/size/format controls,
-// so preserve Responses for those requests, edits, and older virtual models.
+// GPT Image models, for edits too. Reference-image requests go to the native
+// Images edits endpoint, the same one Codex CLI uses. Native has ignored explicit
+// n/size/format controls, so preserve Responses for those requests and older virtual models.
 const CODEX_IMAGES_GENERATIONS_URL = PROVIDER_MEDIA.codex.imageConfig.baseUrl;
+const CODEX_IMAGES_EDITS_URL = CODEX_IMAGES_GENERATIONS_URL.replace(/\/generations$/, "/edits");
 const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
@@ -67,18 +69,46 @@ function hasImageRefs(body) {
   return Boolean(body?.image || (Array.isArray(body?.images) && body.images.length > 0));
 }
 
-function shouldUseNativeGeneration(model, body = {}) {
+function hasNativeOutputControls(model, body) {
   // Native Codex has been observed returning one auto-sized PNG even when n,
   // size, or output_format requests something else. Do not silently reroute
   // those requests to a transport that cannot honor their output controls.
   return CODEX_TOOL_IMAGE_MODELS.has(model)
-    && !hasImageRefs(body)
     && (body.n == null || body.n === 1)
     && (!body.size || body.size === "auto")
     && (!body.output_format || body.output_format.toLowerCase() === "png")
     && (!body.background || ["auto", "opaque"].includes(body.background))
     && (!body.quality || ["auto", "low", "medium", "high"].includes(body.quality))
     && body.output_compression == null;
+}
+
+function shouldUseNativeGeneration(model, body = {}) {
+  return !hasImageRefs(body) && hasNativeOutputControls(model, body);
+}
+
+function shouldUseNativeEdit(model, body = {}) {
+  return hasImageRefs(body) && hasNativeOutputControls(model, body);
+}
+
+function collectImageRefs(body) {
+  const refs = [];
+  if (Array.isArray(body.images)) body.images.forEach((i) => { const u = toDataUrl(i); if (u) refs.push(u); });
+  const single = toDataUrl(body.image);
+  if (single) refs.push(single);
+  return refs;
+}
+
+// Same shape as Codex CLI's ImageEditRequest (codex-rs/codex-api/src/images.rs).
+function buildNativeEditBody(model, body) {
+  return {
+    model,
+    prompt: body.prompt,
+    images: collectImageRefs(body).map((image_url) => ({ image_url })),
+    n: 1,
+    size: "auto",
+    quality: body.quality || "auto",
+    background: body.background || "auto",
+  };
 }
 
 function buildNativeGenerationBody(model, body) {
@@ -308,9 +338,11 @@ export default {
   // (upstream returns 400 "Tool choice 'image_generation' must be specified with 'tools' parameter").
   // Unknown plan is allowed so accounts without plan claims keep working.
   canUseCredentials: (creds) => resolveChatgptPlanType(creds) !== "free",
-  buildUrl: (model, creds, body) => shouldUseNativeGeneration(model, body)
-    ? CODEX_IMAGES_GENERATIONS_URL
-    : CODEX_RESPONSES_URL,
+  buildUrl: (model, creds, body) => {
+    if (shouldUseNativeGeneration(model, body)) return CODEX_IMAGES_GENERATIONS_URL;
+    if (shouldUseNativeEdit(model, body)) return CODEX_IMAGES_EDITS_URL;
+    return CODEX_RESPONSES_URL;
+  },
   buildHeaders: (creds, requestBody) => {
     const accountId = creds?.providerSpecificData?.chatgptAccountId || decodeAccountId(creds?.idToken);
     return {
@@ -329,11 +361,9 @@ export default {
   },
   buildBody: (model, body) => {
     if (shouldUseNativeGeneration(model, body)) return buildNativeGenerationBody(model, body);
+    if (shouldUseNativeEdit(model, body)) return buildNativeEditBody(model, body);
 
-    const refs = [];
-    if (Array.isArray(body.images)) body.images.forEach((i) => { const u = toDataUrl(i); if (u) refs.push(u); });
-    const single = toDataUrl(body.image);
-    if (single) refs.push(single);
+    const refs = collectImageRefs(body);
     const detail = body.image_detail || CODEX_REF_DETAIL;
     const { responsesModel, toolModel } = resolveCodexImageModels(model);
     const imgTool = { type: "image_generation", output_format: (body.output_format || "png").toLowerCase() };
