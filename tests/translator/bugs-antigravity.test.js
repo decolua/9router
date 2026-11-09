@@ -53,6 +53,84 @@ describe("Antigravity → OpenAI", () => {
       : content === "";
     expect(hasEmpty, "empty text part emitted").toBe(false);
   });
+
+  it("normalizes ProtoJSON int64 tool-schema constraints recursively", () => {
+    const out = AG2O({
+      contents: [{ role: "user", parts: [{ text: "hi" }] }],
+      tools: [{
+        functionDeclarations: [{
+          name: "send_message",
+          parameters: {
+            type: "OBJECT",
+            minProperties: "1",
+            maxProperties: "5",
+            properties: {
+              message: {
+                type: "STRING",
+                minLength: "1",
+                maxLength: "4000",
+              },
+              tags: {
+                type: "ARRAY",
+                minItems: "1",
+                maxItems: "10",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    label: { type: "STRING", minLength: "2" },
+                  },
+                },
+              },
+            },
+          },
+        }],
+      }],
+    });
+
+    const schema = out.tools[0].function.parameters;
+    expect(schema.type).toBe("object");
+    expect(schema.minProperties).toBe(1);
+    expect(schema.maxProperties).toBe(5);
+    expect(schema.properties.message).toMatchObject({
+      type: "string",
+      minLength: 1,
+      maxLength: 4000,
+    });
+    expect(schema.properties.tags).toMatchObject({
+      type: "array",
+      minItems: 1,
+      maxItems: 10,
+    });
+    expect(schema.properties.tags.items.properties.label).toEqual({
+      type: "string",
+      minLength: 2,
+    });
+  });
+
+  it("preserves non-numeric and unsafe ProtoJSON int64 strings", () => {
+    const unsafe = String(Number.MAX_SAFE_INTEGER + 2);
+    const out = AG2O({
+      tools: [{
+        functionDeclarations: [{
+          name: "validate",
+          parameters: {
+            type: "OBJECT",
+            minProperties: "not-a-number",
+            properties: {
+              value: {
+                type: "STRING",
+                minLength: unsafe,
+              },
+            },
+          },
+        }],
+      }],
+    });
+
+    const schema = out.tools[0].function.parameters;
+    expect(schema.minProperties).toBe("not-a-number");
+    expect(schema.properties.value.minLength).toBe(unsafe);
+  });
 });
 
 describe("Antigravity → Claude", () => {
