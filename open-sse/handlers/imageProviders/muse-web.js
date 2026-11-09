@@ -13,7 +13,7 @@ export default {
   buildHeaders: () => ({}),
   buildBody: () => ({}),
 
-  async executeViaExecutor(model, body, credentials, log) {
+  async executeViaExecutor(model, body, credentials, log, proxyOptions = null) {
     const executor = getExecutor("muse-web");
     if (!executor) throw new Error("Muse Web executor not found");
 
@@ -24,6 +24,7 @@ export default {
       n: Math.max(1, Math.min(4, Number(body.n) || 1)),
       credentials,
       log,
+      proxyOptions,
     });
 
     return {

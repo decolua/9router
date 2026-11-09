@@ -652,4 +652,106 @@ describe("handleImageGenerationCore", () => {
     expect(result.success).toBe(true);
     expect(onRequestSuccess).toHaveBeenCalledTimes(1);
   });
+
+  it("routes Antigravity image generation with proxy options to executor", async () => {
+    const { getExecutor } = await import("../../open-sse/executors/index.js");
+    const executor = getExecutor("antigravity");
+    const executeSpy = vi.spyOn(executor, "execute").mockResolvedValueOnce({
+      response: new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [{ inlineData: { mimeType: "image/png", data: "base64antigravity" } }],
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      ),
+    });
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "Cyberpunk astronaut", size: "1024x1024" },
+      modelInfo: { provider: "antigravity", model: "gemini-3.1-flash-image" },
+      credentials: {
+        accessToken: "ag-access-token",
+        providerSpecificData: {
+          connectionProxyEnabled: true,
+          connectionProxyUrl: "http://127.0.0.1:7890",
+          connectionNoProxy: "localhost",
+          connectionProxyPoolId: "pool-1",
+          strictProxy: true,
+        },
+      },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(executeSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: "gemini-3.1-flash-image-1x1",
+        proxyOptions: expect.objectContaining({
+          connectionProxyEnabled: true,
+          connectionProxyUrl: "http://127.0.0.1:7890",
+          connectionNoProxy: "localhost",
+          proxyPoolId: "pool-1",
+          strictProxy: true,
+        }),
+      })
+    );
+
+    const json = await result.response.json();
+    expect(json.data[0].b64_json).toBe("base64antigravity");
+    executeSpy.mockRestore();
+  });
+
+  it("antigravity adapter refreshes credentials with proxyOptions on 401", async () => {
+    const { getExecutor } = await import("../../open-sse/executors/index.js");
+    const executor = getExecutor("antigravity");
+    const refreshSpy = vi.spyOn(executor, "refreshCredentials").mockResolvedValueOnce({
+      accessToken: "new-refreshed-token",
+    });
+    const executeSpy = vi.spyOn(executor, "execute")
+      .mockResolvedValueOnce({
+        response: new Response(JSON.stringify({ error: { message: "Unauthorized" } }), { status: 401 }),
+      })
+      .mockResolvedValueOnce({
+        response: new Response(
+          JSON.stringify({
+            candidates: [
+              { content: { parts: [{ inlineData: { data: "refreshed-image" } }] } },
+            ],
+          }),
+          { status: 200 }
+        ),
+      });
+
+    const result = await handleImageGenerationCore({
+      body: { prompt: "Neon city" },
+      modelInfo: { provider: "antigravity", model: "gemini-3.1-flash-image" },
+      credentials: {
+        accessToken: "expired-token",
+        refreshToken: "valid-refresh-token",
+        providerSpecificData: {
+          connectionProxyEnabled: true,
+          connectionProxyUrl: "http://127.0.0.1:7890",
+        },
+      },
+      log: null,
+    });
+
+    expect(result.success).toBe(true);
+    expect(refreshSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ refreshToken: "valid-refresh-token" }),
+      null,
+      expect.objectContaining({
+        connectionProxyEnabled: true,
+        connectionProxyUrl: "http://127.0.0.1:7890",
+      })
+    );
+    expect(executeSpy).toHaveBeenCalledTimes(2);
+    refreshSpy.mockRestore();
+    executeSpy.mockRestore();
+  });
 });

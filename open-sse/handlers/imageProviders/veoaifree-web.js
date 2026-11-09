@@ -12,7 +12,7 @@ export default {
   buildBody: () => ({}),
   normalize: (responseBody) => responseBody,
 
-  async executeViaExecutor(model, body, credentials, log) {
+  async executeViaExecutor(model, body, credentials, log, proxyOptions = null) {
     const executor = getExecutor("veoaifree-web");
     if (!executor) throw new Error("veoaifree-web executor not found");
 
@@ -22,6 +22,7 @@ export default {
       size: body.size,
       credentials,
       log,
+      proxyOptions,
     });
 
     return {

@@ -46,7 +46,7 @@ export default {
   buildHeaders: () => ({}),
   buildBody: () => ({}),
 
-  async executeViaExecutor(model, body, credentials, log) {
+  async executeViaExecutor(model, body, credentials, log, proxyOptions = null) {
     const executor = getExecutor("antigravity");
     if (!executor) throw new Error("Antigravity executor not found");
 
@@ -85,13 +85,35 @@ export default {
       contents: [{ role: "user", parts }],
     };
 
-    const result = await executor.execute({
+    let result = await executor.execute({
       model: targetModel,
       body: chatBody,
       stream: false,
       credentials,
       log,
+      proxyOptions,
     });
+
+    if (
+      !result.response.ok &&
+      (result.response.status === 401 || result.response.status === 403) &&
+      credentials?.refreshToken
+    ) {
+      try {
+        const newCreds = await executor.refreshCredentials(credentials, log, proxyOptions);
+        if (newCreds?.accessToken) {
+          Object.assign(credentials, newCreds);
+          result = await executor.execute({
+            model: targetModel,
+            body: chatBody,
+            stream: false,
+            credentials,
+            log,
+            proxyOptions,
+          });
+        }
+      } catch {}
+    }
 
     if (!result.response.ok) {
       const text = await result.response.text();

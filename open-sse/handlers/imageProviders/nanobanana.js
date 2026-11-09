@@ -1,6 +1,7 @@
 // NanoBanana API — async submit + poll record-info
 import { sleep, nowSec, sizeToAspectRatio, POLL_INTERVAL_MS, POLL_TIMEOUT_MS } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { proxyAwareFetch } from "../../utils/proxyFetch.js";
 
 const IMG_CFG = PROVIDER_MEDIA["nanobanana"]?.imageConfig || {};
 const SUBMIT_URL = IMG_CFG.baseUrl;
@@ -34,7 +35,7 @@ export default {
     return req;
   },
   // Async: parse submit → poll until SUCCESS, return raw poll data
-  async parseResponse(response, { headers }) {
+  async parseResponse(response, { headers, proxyOptions = null }) {
     const submitData = await response.json();
     if (submitData.code !== 200) throw new Error(submitData.msg || "NanoBanana submit failed");
     const taskId = submitData.data?.taskId;
@@ -43,7 +44,7 @@ export default {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const r = await fetch(pollUrl, { headers });
+      const r = await proxyAwareFetch(pollUrl, { headers }, proxyOptions);
       if (!r.ok) throw new Error(`NanoBanana status ${r.status}`);
       const s = await r.json();
       const flag = s.data?.successFlag;
