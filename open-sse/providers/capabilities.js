@@ -241,6 +241,13 @@ export const PROVIDER_CAPABILITIES = {
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
+    "nvidia/nemotron-3.5-bolt-e4b": { tools: true, contextWindow: 128000, maxOutput: 8192 },
+    "nvidia/nemotron-3.5-lightning-30b-a3b": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
+    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
+    "nvidia/nemotron-3-ultra-550b-a55b": { tools: false, reasoning: true, thinkingFormat: "openai", contextWindow: 128000, maxOutput: 8192 },
+    "poolside/laguna-xs-2.1": { tools: true, contextWindow: 200000, maxOutput: 32000 },
+    "meta/llama-guard-4-12b": { tools: false, contextWindow: 128000, maxOutput: 4096 },
+    "nvidia/riva-translate-4b-instruct-v2": { tools: false, contextWindow: 128000, maxOutput: 4096 },
     "meta/llama-3.3-70b-instruct": { tools: true, contextWindow: 128000, maxOutput: 4096 },
     "minimaxai/minimax-m2.7": { tools: false, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 200000, maxOutput: 131072 },
     "minimaxai/minimax-m3": { tools: false, vision: true, reasoning: true, thinkingFormat: "openai", thinkingCanDisable: false, contextWindow: 512000, maxOutput: 131072 },

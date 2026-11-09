@@ -11,9 +11,16 @@ test("NVIDIA transport quirks declare dropClientMetadata and timeoutMs", () => {
   assert.equal(nvidiaConfig.transport.timeoutMs, 90000);
 });
 
-test("NVIDIA models list includes meta/llama-3.3-70b-instruct", () => {
-  const found = nvidiaConfig.models.some((m) => m.id === "meta/llama-3.3-70b-instruct");
-  assert.equal(found, true);
+test("NVIDIA models list includes meta/llama-3.3-70b-instruct and active models", () => {
+  const hasLlama = nvidiaConfig.models.some((m) => m.id === "meta/llama-3.3-70b-instruct");
+  const hasLightning = nvidiaConfig.models.some((m) => m.id === "nvidia/nemotron-3.5-lightning-30b-a3b");
+  const hasBolt = nvidiaConfig.models.some((m) => m.id === "nvidia/nemotron-3.5-bolt-e4b");
+  const hasLaguna = nvidiaConfig.models.some((m) => m.id === "poolside/laguna-xs-2.1");
+
+  assert.equal(hasLlama, true);
+  assert.equal(hasLightning, true);
+  assert.equal(hasBolt, true);
+  assert.equal(hasLaguna, true);
 });
 
 test("stripUnsupportedParams strips client_metadata, prompt_cache_key, service_tier, and extra fields for nvidia", () => {
