@@ -1,3 +1,10 @@
+# v0.5.391 (2026-11-09) · 1 commit
+
+## OpenCode Free V2: optional account sign-in (device flow)
+
+- Reverse of the v2 CLI showed it only falls back to the shared "public" key when no account is signed in. Added a device-flow sign-in (POST /api/opencode-account: start, poll, logout; GET status) that stores the OAuth token in settings, and the executor now sends that token as the bearer when present.
+- Quota itself is daily and resets at 00:00 UTC (retry-after equals seconds to midnight UTC); every free model shares the same bucket, and datacenter proxy ranges are already exhausted, so the account lane is the only way to a fresh bucket.
+
 # v0.5.390 (2026-11-09) · 1 commit
 
 ## OpenCode Free V2: proxied TLS sessions tolerate broken pool certs

@@ -36,6 +36,7 @@ const MAX_SESSION_LENGTH = 256;
 const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
+const ACCOUNT_TOKEN_FIELD = "_opencodeAccountToken";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -427,6 +428,13 @@ export class OpenCodeV2Executor extends BaseExecutor {
   // Bun-shaped ClientHello on the pool's egress.
   async execute(args) {
     const credentials = this.prepareRequestCredentials(args);
+    try {
+      const { getAccountToken } = await import("../../src/lib/opencodeAccount.js");
+      const accountToken = await getAccountToken();
+      if (accountToken) credentials[ACCOUNT_TOKEN_FIELD] = accountToken;
+    } catch {
+      // No account store available: stay on the public key.
+    }
     let proxyUrl = null;
     try {
       const targetUrl = this.buildUrl(args.model);
@@ -467,9 +475,13 @@ export class OpenCodeV2Executor extends BaseExecutor {
 
     // Mirrors the v2 CLI. Upstream needs x-opencode-session-id next to
     // x-opencode-session, and rejects any x-opencode-request (v1 only) with 403.
+    // The v2 CLI only falls back to the shared "public" key when no account is
+    // signed in, so a stored account token keeps the free lane on its own quota
+    // bucket instead of the public one.
+    const accountToken = credentials?.[ACCOUNT_TOKEN_FIELD] || null;
     const headers = {
       "Content-Type": "application/json",
-      "Authorization": "Bearer public",
+      "Authorization": accountToken ? `Bearer ${accountToken}` : "Bearer public",
       "User-Agent": isOpencodeDownstream ? downstreamUa : OPENCODE_UA,
       "x-opencode-client": lower["x-opencode-client"] || OPENCODE_CLIENT,
       "x-opencode-session": session,
