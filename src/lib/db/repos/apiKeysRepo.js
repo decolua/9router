@@ -75,6 +75,25 @@ export async function updateApiKey(id, data) {
   return result;
 }
 
+// Replace a key's secret with a freshly generated one. id, name, isActive and
+// access are kept, so clients only need to swap the credential. machineId is the
+// server's current one (same source as createApiKey), so legacy sk-{random8}
+// keys upgrade to the sk-{machineId}-{keyId}-{crc8} format on rotation.
+export async function rotateApiKey(id, machineId) {
+  if (!machineId) throw new Error("machineId is required");
+  const db = await getAdapter();
+  const { generateApiKeyWithMachine } = await import("@/shared/utils/apiKey");
+  let result = null;
+  db.transaction(() => {
+    const row = db.get(`SELECT id FROM apiKeys WHERE id = ?`, [id]);
+    if (!row) return;
+    const { key } = generateApiKeyWithMachine(machineId);
+    db.run(`UPDATE apiKeys SET key = ?, machineId = ? WHERE id = ?`, [key, machineId, id]);
+    result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
+  });
+  return result;
+}
+
 export async function deleteApiKey(id) {
   const db = await getAdapter();
   const res = db.run(`DELETE FROM apiKeys WHERE id = ?`, [id]);
