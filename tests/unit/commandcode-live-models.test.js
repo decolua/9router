@@ -152,13 +152,25 @@ describe("CommandCode catalog — failure handling", () => {
     stub.mode = "error";
     const conn = await seedCommandCode("e1");
     const res = await getModels(conn.id);
-    expect(res.status).toBe(500);
+    // The resolver falls back to the static catalog rather than failing the request.
+    expect(res.status).toBe(200);
     const data = await res.json();
-    expect(data.error).toMatch(/failed to fetch models/i);
+    expect(data.warning).toMatch(/no live models/i);
+    expect(data.models.length).toBeGreaterThan(0);
   });
 
   it("404s for an unknown connection", async () => {
     const res = await getModels("00000000-0000-0000-0000-000000000000");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("GET /v1/models — the gateway advertises the live catalog", () => {
+  it("replaces the static registry list for the cmc alias", async () => {
+    const { buildModelsList } = await import("@/app/api/v1/models/route.js");
+    const ids = (await buildModelsList(["llm"])).map((m) => m.id);
+    expect(ids).toContain("cmc/claude-sonnet-5-5");
+    expect(ids).toContain("cmc/deepseek/deepseek-v4.1-flash-fast");
+    expect(ids).not.toContain("cmc/stealth/glyph-cluster:free");
   });
 });
