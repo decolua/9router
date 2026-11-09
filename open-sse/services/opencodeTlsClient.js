@@ -38,6 +38,7 @@ const OPENCODE_CIPHER_LIST = [
 const DEFAULT_TIMEOUT_MS = 120000;
 
 let sessionPromise = null;
+const proxySessions = new Map();
 
 export class OpencodeTlsUnavailableError extends Error {
   constructor(message) {
@@ -46,29 +47,49 @@ export class OpencodeTlsUnavailableError extends Error {
   }
 }
 
-async function loadSession() {
-  if (!sessionPromise) {
-    sessionPromise = (async () => {
-      const wreq = await loadRuntimeDep("wreq-js");
-      if (typeof wreq.createSession !== "function") {
-        throw new Error("wreq-js runtime is missing createSession");
-      }
-      return wreq.createSession({
-        emulation: { tlsOptions: { cipherList: OPENCODE_CIPHER_LIST } },
-      });
-    })().catch((error) => {
-      sessionPromise = null;
-      throw error;
-    });
+async function createImpersonatedSession(proxy) {
+  const wreq = await loadRuntimeDep("wreq-js");
+  if (typeof wreq.createSession !== "function") {
+    throw new Error("wreq-js runtime is missing createSession");
   }
-  return sessionPromise;
+  return wreq.createSession({
+    emulation: { tlsOptions: { cipherList: OPENCODE_CIPHER_LIST } },
+    ...(proxy ? { proxy } : {}),
+  });
 }
 
-/** Drop the cached session so the next call builds a fresh one. */
+async function loadSession(proxy = null) {
+  if (!proxy) {
+    if (!sessionPromise) {
+      sessionPromise = createImpersonatedSession(null).catch((error) => {
+        sessionPromise = null;
+        throw error;
+      });
+    }
+    return sessionPromise;
+  }
+  // wreq-js locks the proxy for a session's lifetime ("Session proxy cannot be
+  // changed after creation"), so each pool proxy gets its own cached session.
+  let pending = proxySessions.get(proxy);
+  if (!pending) {
+    pending = createImpersonatedSession(proxy).catch((error) => {
+      proxySessions.delete(proxy);
+      throw error;
+    });
+    proxySessions.set(proxy, pending);
+  }
+  return pending;
+}
+
+/** Drop cached sessions so the next call builds fresh ones. */
 export function resetOpencodeTlsSession() {
   const pending = sessionPromise;
   sessionPromise = null;
   pending?.then((session) => session.close?.()).catch(() => {});
+  for (const entry of proxySessions.values()) {
+    entry?.then((session) => session.close?.()).catch(() => {});
+  }
+  proxySessions.clear();
 }
 
 /**
@@ -78,10 +99,10 @@ export function resetOpencodeTlsSession() {
  * Streaming is preserved: the response body is handed over as the live
  * ReadableStream, never buffered.
  */
-export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEFAULT_TIMEOUT_MS, proxy = null } = {}) {
   let session;
   try {
-    session = await loadSession();
+    session = await loadSession(proxy);
   } catch (error) {
     throw new OpencodeTlsUnavailableError(
       `wreq-js unavailable (${error instanceof Error ? error.message : "unknown"}) — install the optional wreq-js dependency to reach the OpenCode free tier`
@@ -94,6 +115,10 @@ export async function opencodeTlsFetch(url, init = {}, { signal, timeoutMs = DEF
     redirect: "follow",
     timeout: timeoutMs,
   };
+  // The free gate keys on the TLS ClientHello only (measured: same egress IP
+  // passes on Bun's cipher hash and is refused on OpenSSL), so routing the
+  // impersonated session through a pool proxy keeps the fingerprint while
+  // moving the egress. The proxy is bound at session creation.
   if (init.body !== undefined) options.body = init.body;
   if (signal) options.signal = signal;
 

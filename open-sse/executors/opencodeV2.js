@@ -19,6 +19,7 @@ import { resolveSessionId } from "../utils/sessionManager.js";
 import { isMuseSparkModel } from "../providers/models/helpers.js";
 import { applyFingerprintTools } from "../utils/opencodeFingerprint.js";
 import { opencodeTlsFetch } from "../services/opencodeTlsClient.js";
+import { resolveEffectiveProxyUrl } from "../utils/proxyResolution.js";
 import { ANTHROPIC_API_VERSION } from "../providers/shared.js";
 import {
   normalizeResponsesInput,
@@ -418,16 +419,30 @@ export class OpenCodeV2Executor extends BaseExecutor {
   // and keep proxy handling on the existing path (proxyAwareFetch delegates to
   // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
   // request still goes out on native fetch instead of erroring here.
+  //
+  // Proxy pools: the pool egress must NOT ride Undici's OpenSSL fingerprint
+  // (the gate answers 403 FreeTierError and proxyFetch then replays direct,
+  // silently dropping the pool). Resolve the effective proxy here, disable the
+  // outer proxy path, and hand the proxy to the impersonating client instead:
+  // Bun-shaped ClientHello on the pool's egress.
   async execute(args) {
     const credentials = this.prepareRequestCredentials(args);
+    let proxyUrl = null;
+    try {
+      const targetUrl = this.buildUrl(args.model);
+      proxyUrl = resolveEffectiveProxyUrl(targetUrl, args.proxyOptions || null).url || null;
+    } catch {
+      proxyUrl = null;
+    }
     return super.execute({
       ...args,
       credentials,
+      proxyOptions: proxyUrl ? null : args.proxyOptions,
       directFetch: (url, options) => opencodeTlsFetch(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
-      }, { signal: options.signal }),
+      }, { signal: options.signal, proxy: proxyUrl }),
     });
   }
 
