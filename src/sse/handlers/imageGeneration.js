@@ -107,6 +107,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       modelInfo: { provider, model },
       credentials: null,
       binaryOutput,
+      log,
     });
     if (result.success) return result.response;
     return errorResponse(result.status || HTTP_STATUS.BAD_GATEWAY, result.error || "Image generation failed");
@@ -151,6 +152,7 @@ async function handleSingleModelImage(body, modelStr, { wantsStream, binaryOutpu
       credentials: refreshedCredentials,
       streamToClient: wantsStream,
       binaryOutput,
+      log,
       onCredentialsRefreshed: async (newCreds) => {
         await updateProviderCredentials(credentials.connectionId, {
           accessToken: newCreds.accessToken,
