@@ -74,9 +74,10 @@ function tcpPrecheck(hostPort, timeoutMs = TCP_PRECHECK_TIMEOUT_MS) {
 async function probeProxy(hostPort, timeoutMs = PROBE_TIMEOUT_MS) {
   let dispatcher;
   try {
+    const { ProxyAgent } = await import("undici");
     dispatcher = new ProxyAgent({ uri: `http://${hostPort}` });
     const startedAt = Date.now();
-    const res = await undiciFetch("https://1.1.1.1/cdn-cgi/trace", {
+    const res = await fetch("https://1.1.1.1/cdn-cgi/trace", {
       dispatcher,
       signal: AbortSignal.timeout(timeoutMs),
       headers: { "User-Agent": "9Router" },
