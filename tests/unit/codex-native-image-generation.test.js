@@ -177,4 +177,41 @@ describe("legacy Codex image Responses compatibility", () => {
     expect(result.success).toBe(true);
     expect((await result.response.json()).data).toEqual(image.data);
   });
+
+  const hostRejected = () => Response.json({
+    detail: "The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.",
+    error: { type: "invalid_request_error", code: "model_not_found" },
+  }, { status: 400 });
+  const imageStream = () => new Response(
+    sse("response.output_item.done", { item: { type: "image_generation_call", result: "aW1hZ2U=" } }),
+    { headers: { "content-type": "text/event-stream" } },
+  );
+
+  it("retries once on the fallback host model when the account rejects gpt-6-sol", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(hostRejected()).mockResolvedValueOnce(imageStream());
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await handleImageGenerationCore(request({ body: { prompt: "cat", size: "1024x1024" } }));
+    expect(result.success).toBe(true);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const [first, second] = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body));
+    expect(first.model).toBe("gpt-6-sol");
+    expect(second.model).toBe("gpt-5.6-terra");
+    expect(second.tools[0].model).toBe("gpt-image-2.5");
+  });
+
+  it("does not swap the host of a *-image model requested by name", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(hostRejected());
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await handleImageGenerationCore(request({ modelInfo: { provider: "codex", model: "gpt-6-sol-image" } }));
+    expect(result.success).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry other upstream 400s", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(Response.json({ detail: "Invalid size." }, { status: 400 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const result = await handleImageGenerationCore(request({ body: { prompt: "cat", size: "1024x1024" } }));
+    expect(result.success).toBe(false);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

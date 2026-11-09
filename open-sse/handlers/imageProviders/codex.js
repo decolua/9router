@@ -15,8 +15,11 @@ const CODEX_USER_AGENT = `codex_cli_rs/${CODEX_CLI_VERSION}`;
 const CODEX_ORIGINATOR = "codex_cli_rs";
 const CODEX_MODEL_SUFFIX = "-image";
 const CODEX_REF_DETAIL = "high";
-// Only drives the image_generation tool call; any chat model on the plan works as host.
+// Only drives the image_generation tool call. Some ChatGPT accounts reject gpt-6-sol
+// ("model is not supported when using Codex with a ChatGPT account"), so retry once on gpt-5.6-terra.
 const CODEX_IMAGES_MAIN_MODEL = "gpt-6-sol";
+const CODEX_IMAGES_FALLBACK_MAIN_MODEL = "gpt-5.6-terra";
+const CODEX_MODEL_UNSUPPORTED_RE = /model is not supported when using Codex/i;
 const CODEX_TOOL_IMAGE_MODELS = new Set([
   "gpt-image-1.5",
   "gpt-image-2",
@@ -358,6 +361,12 @@ export default {
       store: false,
       reasoning: null,
     };
+  },
+  // Only for tool-hosted GPT Image requests: a *-image virtual model was asked for by name.
+  buildFallbackBody: (requestBody, status, errorText) => {
+    const isHostedToolRequest = requestBody?.model === CODEX_IMAGES_MAIN_MODEL && requestBody.tools?.[0]?.model;
+    if (status !== 400 || !isHostedToolRequest || !CODEX_MODEL_UNSUPPORTED_RE.test(errorText)) return null;
+    return { ...requestBody, model: CODEX_IMAGES_FALLBACK_MAIN_MODEL };
   },
   // Custom: codex parses SSE → either pipe to client or collect b64
   async parseResponse(response, { log, streamToClient, onRequestSuccess, onUsage, requestBody }) {
