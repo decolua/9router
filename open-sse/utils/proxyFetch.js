@@ -131,6 +131,7 @@ async function tryGotScrapingFetch(url, options) {
 
 // DNS cache — use Map to avoid prototype pollution via malformed hostnames
 const DNS_CACHE = new Map();
+const SYSTEM_DNS_CACHE = new Map();
 const TLS_CERT_ERRORS = new Set([
   "SELF_SIGNED_CERT_IN_CHAIN",
   "DEPTH_ZERO_SELF_SIGNED_CERT",
@@ -164,6 +165,24 @@ function normalizeString(value) {
 }
 
 /**
+ * Check if the host is currently redirected to loopback in system DNS (e.g. hosts file MITM)
+ */
+async function isSystemDnsLoopback(hostname) {
+  const cached = SYSTEM_DNS_CACHE.get(hostname);
+  if (cached && Date.now() < cached.expiry) return cached.isLoopback;
+
+  try {
+    const dns = await import("dns/promises");
+    const res = await dns.lookup(hostname);
+    const isLoopback = res.address === "127.0.0.1" || res.address === "::1" || res.address === "0.0.0.0";
+    SYSTEM_DNS_CACHE.set(hostname, { isLoopback, expiry: Date.now() + 15000 });
+    return isLoopback;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
 async function resolveRealIP(hostname) {
@@ -177,6 +196,7 @@ async function resolveRealIP(hostname) {
     resolver.setServers(GOOGLE_DNS_SERVERS);
     const resolve4 = promisify(resolver.resolve4.bind(resolver));
     const addresses = await resolve4(hostname);
+    if (!addresses || addresses.length === 0) return null;
     DNS_CACHE.set(hostname, { ip: addresses[0], expiry: Date.now() + MEMORY_CONFIG.dnsCacheTtlMs });
     return addresses[0];
   } catch (error) {
@@ -270,8 +290,20 @@ const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 // requestTls must stay TLS-options-only (undici 8 rejects connect-level options there
 // with UND_ERR_INVALID_ARG).
 const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
-function buildConnectOptions(insecure) {
-  return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
+function buildConnectOptions(insecure, customDns = null) {
+  return {
+    ...EYEBALLS_CONNECT,
+    ecdhCurve: TLS_ECDH_CURVE,
+    ...(insecure ? { rejectUnauthorized: false } : {}),
+    ...(customDns ? {
+      lookup: (hostname, opts, cb) => {
+        if (customDns.hostname === hostname && customDns.ip) {
+          return cb(null, [{ address: customDns.ip, family: 4 }]);
+        }
+        import("dns").then((dns) => dns.lookup(hostname, opts, cb)).catch(cb);
+      }
+    } : {}),
+  };
 }
 
 function evictOldest(cacheMap) {
@@ -280,13 +312,13 @@ function evictOldest(cacheMap) {
   }
 }
 
-async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout) {
+async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout, customDns = null) {
   const cached = directDispatchers.get(key);
   if (cached) return cached;
   const { Agent } = await import("undici");
   evictOldest(directDispatchers);
   const agent = new Agent({
-    connect: buildConnectOptions(insecure),
+    connect: buildConnectOptions(insecure, customDns),
     keepAliveTimeout,
     keepAliveMaxTimeout,
   });
@@ -299,23 +331,26 @@ async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAlive
  * reusing idle sockets that upstream edges (NVIDIA NIM, Cloudflare) silently
  * dropped without sending a TCP RST.
  */
-export function getDirectDispatcher(insecure = false) {
+export function getDirectDispatcher(insecure = false, customDns = null) {
   const { keepAliveTimeout, keepAliveMaxTimeout } = resolveKeepAliveTimeouts();
-  const key = `direct::${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}`;
-  return getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout);
+  const dnsSuffix = customDns?.hostname ? `::${customDns.hostname}` : "";
+  const key = `direct::${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}${dnsSuffix}`;
+  return getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout, customDns);
 }
 
 /**
  * No-keep-alive retry dispatcher (`keepAliveTimeout: 1ms`) — guarantees a fresh
  * TCP/TLS connection after a poisoned pooled socket or a connect timeout.
  */
-export function getFreshRetryDispatcher(insecure = false) {
-  const key = `fresh::${insecure ? "insecure" : "secure"}`;
+export function getFreshRetryDispatcher(insecure = false, customDns = null) {
+  const dnsSuffix = customDns?.hostname ? `::${customDns.hostname}` : "";
+  const key = `fresh::${insecure ? "insecure" : "secure"}${dnsSuffix}`;
   return getOrCreateDirectAgent(
     key,
     insecure,
     FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
-    FRESH_RETRY_KEEPALIVE_TIMEOUT_MS
+    FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
+    customDns
   );
 }
 
@@ -324,10 +359,10 @@ export function getFreshRetryDispatcher(insecure = false) {
  * Always returns a dispatcher — the direct path needs the custom Agent too,
  * otherwise the default global agent's ClientHello gets RST-ed by DPI.
  */
-async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false) {
+async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false, customDns = null) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) {
-    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure);
+    return forceFreshSocket ? getFreshRetryDispatcher(insecure, customDns) : getDirectDispatcher(insecure, customDns);
   }
 
   const key = `${normalized}::${insecure ? "insecure" : "secure"}`;
@@ -352,12 +387,12 @@ function isBodyReplaySafe(body) {
   return !(body && typeof body.getReader === "function" && body.locked);
 }
 
-async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = false) {
+async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = false, customDns = null) {
   try {
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
+    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket, customDns);
     return await rawFetch(url, { ...options, dispatcher });
   } catch (err) {
     const isStrictSsl = options.strictTls === true || process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
@@ -367,7 +402,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
       }
       // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
       console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
-      const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket);
+      const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket, customDns);
       return await rawFetch(url, { ...options, dispatcher: insecureDispatcher });
     }
 
@@ -383,7 +418,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
       && isStaleSocketError(err)
     ) {
       dbg("FETCH", `stale keep-alive socket (${err.cause?.code || err.code || err.message}), retrying on fresh socket: ${url}`);
-      return await fetchWithTlsFallback(url, options, proxyUrl, true);
+      return await fetchWithTlsFallback(url, options, proxyUrl, true, customDns);
     }
     throw err;
   }
@@ -395,56 +430,94 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
 async function createBypassRequest(parsedUrl, realIP, options) {
   const httpsModule = await import("https");
   const netModule = await import("net");
+  const tlsModule = await import("tls");
   // CJS modules expose exports via .default in ESM dynamic import context
   const https = httpsModule.default ?? httpsModule;
   const net = netModule.default ?? netModule;
+  const tls = tlsModule.default ?? tlsModule;
 
   return new Promise((resolve, reject) => {
-    const socket = new net.Socket();
+    const rawSocket = new net.Socket();
+    rawSocket.setTimeout(15000);
 
-    socket.connect(HTTPS_PORT, realIP, () => {
-      const reqOptions = {
-        socket,
-        // SNI + cert hostname are validated against the hostname the caller
-        // asked for, not the IP we connected to. This keeps the DNS-bypass
-        // (avoiding /etc/hosts MITM) while still rejecting on-path attackers
-        // that present a different cert. The MITM_BYPASS_HOSTS targets are
-        // all public-CA-issued (Google / GitHub / AWS / Cursor) so default
-        // verification works without any extra trust store.
+    const cleanup = () => {
+      try { rawSocket.destroy(); } catch { }
+    };
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        cleanup();
+        return reject(new Error("aborted"));
+      }
+      options.signal.addEventListener("abort", () => {
+        cleanup();
+        reject(new Error("aborted"));
+      }, { once: true });
+    }
+
+    rawSocket.connect(HTTPS_PORT, realIP, () => {
+      const tlsSocket = tls.connect({
+        socket: rawSocket,
         servername: parsedUrl.hostname,
-        path: parsedUrl.pathname + parsedUrl.search,
-        method: options.method || "POST",
-        headers: {
-          ...options.headers,
-          Host: parsedUrl.hostname,
-        },
-      };
-
-      const req = https.request(reqOptions, (res) => {
-        const response = {
-          ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
-          status: res.statusCode,
-          statusText: res.statusMessage,
-          headers: new Map(Object.entries(res.headers)),
-          body: Readable.toWeb(res),
-          text: async () => {
-            const chunks = [];
-            for await (const chunk of res) chunks.push(chunk);
-            return Buffer.concat(chunks).toString();
+      }, () => {
+        const reqOptions = {
+          createConnection: () => tlsSocket,
+          servername: parsedUrl.hostname,
+          path: parsedUrl.pathname + parsedUrl.search,
+          method: options.method || "POST",
+          headers: {
+            ...options.headers,
+            Host: parsedUrl.hostname,
           },
-          json: async () => JSON.parse(await response.text()),
         };
-        resolve(response);
+
+        const req = https.request(reqOptions, (res) => {
+          const resHeaders = new Headers();
+          for (const [k, v] of Object.entries(res.headers || {})) {
+            if (Array.isArray(v)) v.forEach((x) => resHeaders.append(k, String(x)));
+            else if (v != null) resHeaders.set(k, String(v));
+          }
+
+          const response = {
+            ok: res.statusCode >= HTTP_SUCCESS_MIN && res.statusCode < HTTP_SUCCESS_MAX,
+            status: res.statusCode,
+            statusText: res.statusMessage,
+            headers: resHeaders,
+            body: Readable.toWeb(res),
+            text: async () => {
+              const chunks = [];
+              for await (const chunk of res) chunks.push(chunk);
+              return Buffer.concat(chunks).toString();
+            },
+            json: async () => JSON.parse(await response.text()),
+          };
+          resolve(response);
+        });
+
+        req.on("error", (err) => {
+          cleanup();
+          reject(err);
+        });
+        if (options.body) {
+          req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
+        }
+        req.end();
       });
 
-      req.on("error", reject);
-      if (options.body) {
-        req.write(typeof options.body === "string" ? options.body : JSON.stringify(options.body));
-      }
-      req.end();
+      tlsSocket.on("error", (err) => {
+        cleanup();
+        reject(err);
+      });
     });
 
-    socket.on("error", reject);
+    rawSocket.on("timeout", () => {
+      cleanup();
+      reject(new Error("connect ETIMEDOUT"));
+    });
+    rawSocket.on("error", (err) => {
+      cleanup();
+      reject(err);
+    });
   });
 }
 
@@ -484,13 +557,24 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
         console.warn(`[ProxyFetch] Proxy failed, falling back to direct bypass: ${proxyError.message}`);
       }
     }
-    // No proxy — manually resolve real IP to bypass DNS spoof
-    try {
-      const parsedUrl = new URL(targetUrl);
-      const realIP = await resolveRealIP(parsedUrl.hostname);
-      if (realIP) return await createBypassRequest(parsedUrl, realIP, options);
-    } catch (error) {
-      console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+
+    let parsedUrl;
+    try { parsedUrl = new URL(targetUrl); } catch { parsedUrl = null; }
+
+    // Only bypass if system DNS actually redirects this host to loopback (MITM active)
+    if (parsedUrl) {
+      const isLoopback = await isSystemDnsLoopback(parsedUrl.hostname);
+      if (isLoopback) {
+        try {
+          const realIP = await resolveRealIP(parsedUrl.hostname);
+          if (realIP) {
+            // First preference: Undici Agent with custom lookup
+            return await fetchWithTlsFallback(url, options, null, forceFreshSocket, { hostname: parsedUrl.hostname, ip: realIP });
+          }
+        } catch (error) {
+          console.warn(`[ProxyFetch] MITM bypass failed: ${error.message}`);
+        }
+      }
     }
   }
 

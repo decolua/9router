@@ -82,7 +82,7 @@ export function convertOpenAIContentToParts(content) {
           const mimeType = mimePart.split(";")[0];
 
           parts.push({
-            inlineData: { mime_type: mimeType, data: data }
+            inlineData: { mimeType, mime_type: mimeType, data: data }
           });
         }
       } else if (item.type === OPENAI_BLOCK.IMAGE_URL && item.image_url?.url && (item.image_url.url.startsWith("http://") || item.image_url.url.startsWith("https://"))) {
@@ -93,7 +93,7 @@ export function convertOpenAIContentToParts(content) {
         const format = item.input_audio.format || "wav";
         const mimeType = format === "mp3" ? "audio/mpeg" : `audio/${format}`;
         parts.push({
-          inlineData: { mime_type: mimeType, data: item.input_audio.data }
+          inlineData: { mimeType, mime_type: mimeType, data: item.input_audio.data }
         });
       } else if (item.type === OPENAI_BLOCK.AUDIO_URL && item.audio_url?.url?.startsWith("data:")) {
         const url = item.audio_url.url;
@@ -103,7 +103,7 @@ export function convertOpenAIContentToParts(content) {
           const data = url.substring(commaIndex + 1);
           const mimeType = mimePart.split(";")[0];
           parts.push({
-            inlineData: { mime_type: mimeType, data: data }
+            inlineData: { mimeType, mime_type: mimeType, data: data }
           });
         }
       } else if (item.type === OPENAI_BLOCK.FILE && item.file?.file_data?.startsWith("data:")) {
@@ -112,7 +112,7 @@ export function convertOpenAIContentToParts(content) {
         if (commaIndex !== -1) {
           const mimeType = url.substring(5, commaIndex).split(";")[0];
           const data = url.substring(commaIndex + 1);
-          parts.push({ inlineData: { mime_type: mimeType, data: data } });
+          parts.push({ inlineData: { mimeType, mime_type: mimeType, data: data } });
         }
       }
     }
@@ -154,6 +154,31 @@ export function generateProjectId() {
   return `${adj}-${noun}-${crypto.randomUUID().slice(0, 5)}`;
 }
 
+// Schema map keys that contain dictionaries of schemas rather than schema nodes
+const SCHEMA_MAP_KEYS = new Set([
+  "properties",
+  "$defs",
+  "definitions",
+  "patternProperties",
+  "dependentSchemas",
+]);
+
+function forEachSubschema(obj, fn) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) fn(item);
+    return;
+  }
+  for (const [key, val] of Object.entries(obj)) {
+    if (!val || typeof val !== "object") continue;
+    if (SCHEMA_MAP_KEYS.has(key) && !Array.isArray(val)) {
+      for (const sub of Object.values(val)) fn(sub);
+    } else {
+      fn(val);
+    }
+  }
+}
+
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
 function removeUnsupportedKeywords(obj, keywords) {
@@ -171,12 +196,9 @@ function removeUnsupportedKeywords(obj, keywords) {
       delete obj[key];
       continue;
     }
-
-    const value = obj[key];
-    if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
-    }
   }
+
+  forEachSubschema(obj, sub => removeUnsupportedKeywords(sub, keywords));
 }
 
 // Convert const to enum
@@ -184,15 +206,11 @@ function convertConstToEnum(obj) {
   if (!obj || typeof obj !== "object") return;
 
   if (obj.const !== undefined && !obj.enum) {
-    obj.enum = [obj.const];
+    obj.enum = [String(obj.const)];
     delete obj.const;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertConstToEnum(value);
-    }
-  }
+  forEachSubschema(obj, convertConstToEnum);
 }
 
 // Convert enum values to strings (Gemini requires string enum values + explicit type:"string")
@@ -207,11 +225,7 @@ function convertEnumValuesToStrings(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertEnumValuesToStrings(value);
-    }
-  }
+  forEachSubschema(obj, convertEnumValuesToStrings);
 }
 
 // Merge allOf schemas
@@ -241,11 +255,7 @@ function mergeAllOf(obj) {
     if (merged.required) obj.required = [...(obj.required || []), ...merged.required];
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      mergeAllOf(value);
-    }
-  }
+  forEachSubschema(obj, mergeAllOf);
 }
 
 // Select best schema from anyOf/oneOf
@@ -299,11 +309,7 @@ function flattenAnyOfOneOf(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenAnyOfOneOf(value);
-    }
-  }
+  forEachSubschema(obj, flattenAnyOfOneOf);
 }
 
 // Flatten type arrays
@@ -336,25 +342,18 @@ function flattenTypeArrays(obj) {
     }
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      flattenTypeArrays(value);
-    }
+  if (typeof obj.type === "string") {
+    obj.type = obj.type.toLowerCase();
   }
+
+  forEachSubschema(obj, flattenTypeArrays);
 }
 
 // Infer missing type=object when properties exist (Gemini requires explicit type)
 function ensureObjectType(obj) {
   if (!obj || typeof obj !== "object") return;
   if (obj.properties && !obj.type) obj.type = "object";
-  for (const [key, v] of Object.entries(obj)) {
-    if (!v || typeof v !== "object") continue;
-    if (key === "properties" && !Array.isArray(v)) {
-      for (const sub of Object.values(v)) ensureObjectType(sub);
-    } else {
-      ensureObjectType(v);
-    }
-  }
+  forEachSubschema(obj, ensureObjectType);
 }
 
 // Convert prefixItems (tuple validation) to items — Gemini cannot express tuples,
@@ -372,11 +371,7 @@ function convertPrefixItems(obj) {
     delete obj.prefixItems;
   }
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      convertPrefixItems(value);
-    }
-  }
+  forEachSubschema(obj, convertPrefixItems);
 }
 
 // Gemini requires items on every type:"array" schema — fill a permissive placeholder
@@ -395,7 +390,42 @@ function ensureArrayItems(obj) {
       }
     }
   }
-  for (const v of Object.values(obj)) if (v && typeof v === "object") ensureArrayItems(v);
+  forEachSubschema(obj, ensureArrayItems);
+}
+
+// Ensure object schemas have a valid properties map (never undefined or null)
+function ensureObjectProperties(obj) {
+  if (!obj || typeof obj !== "object") return;
+  if (Array.isArray(obj)) {
+    for (const item of obj) ensureObjectProperties(item);
+    return;
+  }
+  if (obj.type === "object" && (!obj.properties || typeof obj.properties !== "object")) {
+    obj.properties = {};
+  }
+  forEachSubschema(obj, ensureObjectProperties);
+}
+
+// Cleanup required fields recursively
+function cleanupRequired(obj) {
+  if (!obj || typeof obj !== "object") return;
+
+  if (obj.required && Array.isArray(obj.required)) {
+    if (obj.properties && typeof obj.properties === "object" && !Array.isArray(obj.properties)) {
+      const validRequired = obj.required.filter(field =>
+        typeof field === "string" && Object.prototype.hasOwnProperty.call(obj.properties, field)
+      );
+      if (validRequired.length === 0) {
+        delete obj.required;
+      } else {
+        obj.required = validRequired;
+      }
+    } else {
+      delete obj.required;
+    }
+  }
+
+  forEachSubschema(obj, cleanupRequired);
 }
 
 // Gemini Schema proto validation rules:
@@ -403,12 +433,12 @@ function ensureArrayItems(obj) {
 // 2. Schema.properties / required predicate: $type == Type.OBJECT. If type is not "object", properties and required MUST NOT exist.
 function enforceTypeConstraints(obj) {
   if (!obj || typeof obj !== "object") return;
-
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
-      enforceTypeConstraints(value);
-    }
+  if (Array.isArray(obj)) {
+    for (const item of obj) enforceTypeConstraints(item);
+    return;
   }
+
+  forEachSubschema(obj, enforceTypeConstraints);
 
   if (obj.type === "array") {
     delete obj.properties;
@@ -437,7 +467,7 @@ function enforceTypeConstraints(obj) {
 
 // Clean JSON Schema for Antigravity API compatibility - removes unsupported keywords recursively
 export function cleanJSONSchemaForAntigravity(schema) {
-  if (!schema || typeof schema !== "object") return schema;
+  if (!schema || typeof schema !== "object") return { type: "object", properties: {} };
 
   // Mutate directly (schema is only used once per request)
   let cleaned = schema;
@@ -460,68 +490,13 @@ export function cleanJSONSchemaForAntigravity(schema) {
   removeUnsupportedKeywords(cleaned, UNSUPPORTED_SCHEMA_CONSTRAINTS);
 
   // Phase 4: Cleanup required fields recursively
-  function cleanupRequired(obj) {
-    if (!obj || typeof obj !== "object") return;
-
-    if (obj.required && Array.isArray(obj.required) && obj.properties) {
-      const validRequired = obj.required.filter(field =>
-        Object.prototype.hasOwnProperty.call(obj.properties, field)
-      );
-      if (validRequired.length === 0) {
-        delete obj.required;
-      } else {
-        obj.required = validRequired;
-      }
-    }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        cleanupRequired(value);
-      }
-    }
-  }
-
   cleanupRequired(cleaned);
 
-  // Phase 5: Add placeholder for empty object schemas (Antigravity requirement)
-  function addPlaceholders(obj) {
-    if (!obj || typeof obj !== "object") return;
+  // Phase 5: Ensure object schemas have properties map (no synthetic reason placeholders)
+  ensureObjectProperties(cleaned);
 
-    // Empty schema {} (no type, no properties) after $ref removal — treat as object with placeholder
-    if (Object.keys(obj).length === 0) {
-      obj.type = "object";
-      obj.properties = {
-        reason: {
-          type: "string",
-          description: "Brief explanation of why you are calling this tool"
-        }
-      };
-      obj.required = ["reason"];
-      return;
-    }
-
-    if (obj.type === "object") {
-      if (!obj.properties || Object.keys(obj.properties).length === 0) {
-        obj.properties = {
-          reason: {
-            type: "string",
-            description: "Brief explanation of why you are calling this tool"
-          }
-        };
-        obj.required = ["reason"];
-      }
-    }
-
-    // Recurse into nested objects
-    for (const value of Object.values(obj)) {
-      if (value && typeof value === "object") {
-        addPlaceholders(value);
-      }
-    }
-  }
-
-  addPlaceholders(cleaned);
+  if (!cleaned.type) cleaned.type = "object";
+  if (!cleaned.properties || typeof cleaned.properties !== "object") cleaned.properties = {};
 
   // Phase 6: Enforce Gemini protobuf type predicates (items only on array, properties/required only on object)
   enforceTypeConstraints(cleaned);
@@ -561,25 +536,114 @@ function moveFunctionResponsesLast(parts) {
   return [...parts.filter(p => !p.functionResponse), ...responses];
 }
 
-// Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns
+// Known synthetic placeholders injected by gateways that models can mimic and halt on
+export const SYNTHETIC_MIMICRY_TEXTS = new Set([
+  "...",
+  "Processing.",
+  "Processing tool output...",
+  "Tool results processed.",
+  "Understood."
+]);
+
+// Merge adjacent same-role messages, strip empty parts, ensure initial and terminal user turns,
+// and enforce strict alternating roles (user <-> model) required by Google Gemini.
 export function normalizeGeminiContents(contents, model = null) {
+  if (!contents || !Array.isArray(contents)) return [];
   const frLast = isGemini4Model(model);
-  const out = [];
-  for (const c of contents || []) {
-    if (!c?.role || !Array.isArray(c.parts)) continue;
-    const parts = c.parts.filter(p => p && Object.keys(p).length > 0).map(sanitizeFunctionResponsePart);
-    if (parts.length === 0) continue;
-    const last = out.at(-1);
-    if (last?.role === c.role) {
-      last.parts.push(...parts);
-      if (frLast) last.parts = moveFunctionResponsesLast(last.parts);
-    } else out.push({ ...c, parts: [...parts] });
+
+  const raw = [];
+  for (const c of contents) {
+    if (!c?.role) continue;
+    let parts = (Array.isArray(c.parts) ? c.parts : [])
+      .filter(p => p && Object.keys(p).length > 0)
+      .map(sanitizeFunctionResponsePart);
+
+    // Strip synthetic mimicry model turns from conversation history to prevent in-context token mimicry
+    if (c.role === "model" && parts.length === 1 && parts[0].text && SYNTHETIC_MIMICRY_TEXTS.has(parts[0].text.trim())) {
+      continue;
+    }
+
+    if (parts.length === 0) {
+      if (c.role === "model") continue;
+      parts = [{ text: "Hello" }];
+    }
+
+    const last = raw.at(-1);
+
+    // If previous turn was a model turn with functionCall, and next turn is a user turn without functionResponse:
+    // Gemini requires every functionCall to be immediately followed by functionResponse in the next USER turn.
+    // Prepend autoResponses directly into the user turn parts so roles alternate without dummy model turns.
+    if (last && last.role === "model" && c.role === "user") {
+      const lastFnCalls = last.parts.filter(p => p && p.functionCall);
+      const currHasFnResp = parts.some(p => p && p.functionResponse);
+      if (lastFnCalls.length > 0 && !currHasFnResp) {
+        const autoResponses = lastFnCalls.map(p => {
+          const call = p.functionCall || {};
+          const fr = { name: call.name || "tool", response: { result: "Continue." } };
+          if (call.id) fr.id = call.id;
+          return { functionResponse: fr };
+        });
+        parts = [...autoResponses, ...parts];
+      }
+    }
+
+    const updatedLast = raw.at(-1);
+    if (updatedLast?.role === c.role) {
+      const lastHasFnCall = updatedLast.parts.some(p => p && p.functionCall);
+      const currHasFnCall = parts.some(p => p && p.functionCall);
+
+      if (c.role === "user") {
+        // Both are user turns — merge all parts directly.
+        // Google Gemini natively supports functionResponse and text in the same user turn.
+        updatedLast.parts.push(...parts);
+        if (frLast) updatedLast.parts = moveFunctionResponsesLast(updatedLast.parts);
+      } else if (c.role === "model") {
+        if (lastHasFnCall && !currHasFnCall) {
+          // Model turn called tools, but next model turn did not.
+          // Synthesize user tool responses so Gemini validation succeeds.
+          const responses = updatedLast.parts.filter(p => p && p.functionCall).map(p => ({
+            functionResponse: {
+              name: p.functionCall.name || "tool",
+              id: p.functionCall.id,
+              response: { result: "Continue." }
+            }
+          }));
+          raw.push({ role: "user", parts: responses });
+          raw.push({ ...c, parts: [...parts] });
+        } else {
+          updatedLast.parts.push(...parts);
+        }
+      }
+    } else {
+      raw.push({ ...c, parts: [...parts] });
+    }
   }
-  if (out.length > 0 && out[0].role !== "user") {
-    out.unshift({ role: "user", parts: [{ text: "..." }] });
+
+  // Pass 2: Strict guarantee of alternating roles (user <-> model)
+  const alternating = [];
+  for (let i = 0; i < raw.length; i++) {
+    const curr = raw[i];
+    const prev = alternating.at(-1);
+
+    if (prev && prev.role === curr.role) {
+      // Merge adjacent same-role messages rather than injecting dummy conversational turns
+      prev.parts.push(...curr.parts);
+      if (curr.role === "user" && frLast) {
+        prev.parts = moveFunctionResponsesLast(prev.parts);
+      }
+      continue;
+    }
+    alternating.push(curr);
   }
-  if (out.length > 0 && out.at(-1).role === "model") {
-    const fnCalls = (out.at(-1).parts || []).filter(p => p && p.functionCall);
+
+  // Pass 3: Initial turn must be user
+  if (alternating.length > 0 && alternating[0].role !== "user") {
+    alternating.unshift({ role: "user", parts: [{ text: "Hello" }] });
+  }
+
+  // Pass 4: Terminal turn must be user
+  if (alternating.length > 0 && alternating.at(-1).role === "model") {
+    const fnCalls = (alternating.at(-1).parts || []).filter(p => p && p.functionCall);
     if (fnCalls.length > 0) {
       const responses = fnCalls.map(p => {
         const call = p.functionCall || {};
@@ -590,12 +654,21 @@ export function normalizeGeminiContents(contents, model = null) {
         if (call.id) fr.id = call.id;
         return { functionResponse: fr };
       });
-      out.push({ role: "user", parts: responses });
+      alternating.push({ role: "user", parts: responses });
     } else {
-      out.push({ role: "user", parts: [{ text: "Continue." }] });
+      alternating.push({ role: "user", parts: [{ text: "Continue." }] });
     }
   }
-  return out;
+
+  if (frLast) {
+    for (const turn of alternating) {
+      if (turn.role === "user" && Array.isArray(turn.parts)) {
+        turn.parts = moveFunctionResponsesLast(turn.parts);
+      }
+    }
+  }
+
+  return alternating;
 }
 
 
