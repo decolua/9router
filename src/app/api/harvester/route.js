@@ -231,7 +231,7 @@ async function executeHarvestCycle(target = 5) {
               lastTestedAt: new Date().toISOString(),
             });
             addedCount += 1;
-            liveProxies.push({ hostPort, latencyMs: result.elapsedMs, egressIp });
+            liveProxies.push({ hostPort, latencyMs: result.elapsedMs, egressIp, loc: result.loc });
           }
         } catch {
           // Drop dead proxy silently
@@ -250,9 +250,14 @@ async function executeHarvestCycle(target = 5) {
     state.lastTested = unadded.length;
     state.lastMessage = `Finished: Added ${addedCount} live proxies (tested ${unadded.length}).`;
     state.history = [
-      { at: new Date().toISOString(), added: addedCount, tested: unadded.length },
+      {
+        at: new Date().toISOString(),
+        added: addedCount,
+        tested: unadded.length,
+        proxies: liveProxies.slice(0, 10),
+      },
       ...(state.history || []),
-    ].slice(0, 8);
+    ].slice(0, 10);
   } catch (err) {
     state.lastMessage = `Cycle failed: ${err.message}`;
   } finally {
