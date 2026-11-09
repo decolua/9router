@@ -54,7 +54,10 @@ async function createImpersonatedSession(proxy) {
   }
   return wreq.createSession({
     emulation: { tlsOptions: { cipherList: OPENCODE_CIPHER_LIST } },
-    ...(proxy ? { proxy } : {}),
+    // Public pool proxies routinely terminate TLS with broken or MITM certs;
+    // verification stays on for the direct path, but a proxied session would
+    // otherwise fail as 502 CERTIFICATE_VERIFY_FAILED before the gate is reached.
+    ...(proxy ? { proxy, insecure: true } : {}),
   });
 }
 

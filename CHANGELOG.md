@@ -1,3 +1,10 @@
+# v0.5.390 (2026-11-09) · 1 commit
+
+## OpenCode Free V2: proxied TLS sessions tolerate broken pool certs
+
+- Pool proxies frequently terminate TLS with broken or MITM certificates, so proxied requests died as 502 CERTIFICATE_VERIFY_FAILED before reaching the gate. Proxied wreq-js sessions now run with certificate verification disabled; the direct session keeps full verification.
+- Live probe: two fresh pool proxies reached the upstream (429 FreeUsageLimitError) instead of failing the handshake.
+
 # v0.5.389 (2026-11-07) · 2 commits
 
 ## OpenCode Free V2: proxy pools ride the impersonated TLS client
