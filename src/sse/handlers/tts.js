@@ -90,7 +90,7 @@ async function handleSingleModelTts(body, modelStr, responseFormat, language, st
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { serviceKind: "tts" });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

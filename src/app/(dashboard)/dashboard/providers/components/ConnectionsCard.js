@@ -31,7 +31,7 @@ function CooldownTimer({ until }) {
 CooldownTimer.propTypes = { until: PropTypes.string.isRequired };
 
 // ── ConnectionRow ──────────────────────────────────────────────
-function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete }) {
+function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, toggleLocked = false, onUpdateProxy, onEdit, onDelete }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const [isCooldown, setIsCooldown] = useState(false);
@@ -165,7 +165,7 @@ function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMov
             <span className="text-[10px] leading-tight">Delete</span>
           </button>
         </div>
-        <Toggle size="sm" checked={connection.isActive ?? true} onChange={onToggleActive} title={(connection.isActive ?? true) ? "Disable" : "Enable"} />
+        <Toggle size="sm" checked={connection.isActive ?? true} onChange={onToggleActive} disabled={toggleLocked} title={toggleLocked ? "Disabled for all services on the Providers page" : (connection.isActive ?? true) ? "Disable" : "Enable"} />
       </div>
     </div>
   );
@@ -189,6 +189,7 @@ ConnectionRow.propTypes = {
   onMoveUp: PropTypes.func.isRequired,
   onMoveDown: PropTypes.func.isRequired,
   onToggleActive: PropTypes.func.isRequired,
+  toggleLocked: PropTypes.bool,
   onUpdateProxy: PropTypes.func,
   onEdit: PropTypes.func.isRequired,
   onDelete: PropTypes.func.isRequired,
@@ -296,7 +297,7 @@ AddApiKeyModal.propTypes = {
 
 // ── ConnectionsCard ────────────────────────────────────────────
 // Self-contained card: fetches, displays and manages all connections for a provider.
-export default function ConnectionsCard({ providerId, isOAuth, loginProviderId = null }) {
+export default function ConnectionsCard({ providerId, isOAuth, loginProviderId = null, serviceKind = null }) {
   const [connections, setConnections] = useState([]);
   const [proxyPools, setProxyPools] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -367,6 +368,16 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
         } catch (e) { console.log("delete error:", e); }
       }
     });
+  };
+
+  // On a media page the switch only covers that kind; isActive stays the all-services switch.
+  const handleToggleKind = async (conn, enabled) => {
+    const current = conn.providerSpecificData?.disabledKinds || [];
+    const disabledKinds = enabled ? current.filter((k) => k !== serviceKind) : [...new Set([...current, serviceKind])];
+    try {
+      const res = await fetch(`/api/providers/${conn.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ providerSpecificData: { disabledKinds } }) });
+      if (res.ok) setConnections((prev) => prev.map((c) => c.id === conn.id ? { ...c, providerSpecificData: { ...c.providerSpecificData, disabledKinds } } : c));
+    } catch (e) { console.log("toggle error:", e); }
   };
 
   const handleToggleActive = async (id, isActive) => {
@@ -444,14 +455,15 @@ export default function ConnectionsCard({ providerId, isOAuth, loginProviderId =
               {connections.map((conn, idx) => (
                 <ConnectionRow
                   key={conn.id}
-                  connection={conn}
+                  connection={serviceKind ? { ...conn, isActive: conn.isActive !== false && !conn.providerSpecificData?.disabledKinds?.includes(serviceKind) } : conn}
                   proxyPools={proxyPools}
                   isOAuth={isOAuth}
                   isFirst={idx === 0}
                   isLast={idx === connections.length - 1}
                   onMoveUp={() => handleSwapPriority(idx, idx - 1)}
                   onMoveDown={() => handleSwapPriority(idx, idx + 1)}
-                  onToggleActive={(isActive) => handleToggleActive(conn.id, isActive)}
+                  onToggleActive={(isActive) => serviceKind ? handleToggleKind(conn, isActive) : handleToggleActive(conn.id, isActive)}
+                  toggleLocked={!!serviceKind && conn.isActive === false}
                   onUpdateProxy={(poolId) => handleUpdateProxy(conn.id, poolId)}
                   onEdit={() => { setSelectedConnection(conn); setShowEditModal(true); }}
                   onDelete={() => handleDelete(conn.id)}
@@ -500,4 +512,5 @@ ConnectionsCard.propTypes = {
   providerId: PropTypes.string.isRequired,
   isOAuth: PropTypes.bool,
   loginProviderId: PropTypes.string,
+  serviceKind: PropTypes.string,
 };
