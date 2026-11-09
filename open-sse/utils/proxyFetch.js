@@ -1,3 +1,5 @@
+import "./zstdCompat.js";
+import { sanitizeAcceptEncoding } from "./zstdCompat.js";
 import { Readable } from "stream";
 import {
   MEMORY_CONFIG,
@@ -32,7 +34,10 @@ export function isStaleSocketError(error) {
 // bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
 // option once we build our own Agents.
 let undiciFetch = null;
-async function rawFetch(url, options) {
+async function rawFetch(url, options = {}) {
+  if (options.headers) {
+    sanitizeAcceptEncoding(options.headers);
+  }
   undiciFetch ??= (await import("undici")).fetch;
   return undiciFetch(url, options);
 }

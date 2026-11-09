@@ -1,3 +1,4 @@
+import "@/../open-sse/utils/zstdCompat.js";
 import { NextResponse } from "next/server";
 import { getProxyPoolById, updateProxyPool } from "@/models";
 import { testProxyUrl } from "@/lib/network/proxyTest";

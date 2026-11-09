@@ -1,3 +1,4 @@
+import "../../../open-sse/utils/zstdCompat.js";
 import { ProxyAgent, fetch as undiciFetch } from "undici";
 
 const DEFAULT_TEST_URL = "https://google.com/";

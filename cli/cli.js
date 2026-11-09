@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+try { require("../open-sse/utils/zstdCompat.js"); } catch {}
+
 const { spawn, exec, execSync } = require("child_process");
 const path = require("path");
 const fs = require("fs");

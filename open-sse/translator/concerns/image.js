@@ -12,6 +12,7 @@ export function parseDataUri(url) {
   return m ? { mimeType: m[1], base64: m[2] } : null;
 }
 
+import "../../utils/zstdCompat.js";
 import { lookup } from "node:dns/promises";
 import { Agent } from "undici";
 import { MAX_IMAGE_BYTES, FETCH_TIMEOUT_MS, IMAGE_SIGNATURES, BLOCKED_HOSTS } from "../../config/mediaConfig.js";
