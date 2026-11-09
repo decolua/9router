@@ -14,9 +14,9 @@ import { DefaultExecutor } from "../../open-sse/executors/default.js";
 import { getExecutor } from "../../open-sse/executors/index.js";
 
 const TRANSPORTS = [
-  { format: "openai", baseUrl: "https://opencode.ai/zen/go/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
-  { format: "claude", baseUrl: "https://opencode.ai/zen/go/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
-  { format: "openai-responses", baseUrl: "https://opencode.ai/zen/go/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+  { format: "openai", baseUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
+  { format: "claude", baseUrl: "https://opencode.ai/inference/go/anthropic/v1/messages", auth: { combined: true, header: "x-api-key", scheme: "raw", anthropicVersion: true } },
+  { format: "openai-responses", baseUrl: "https://opencode.ai/inference/go/openai/v1/responses", auth: { combined: true, header: "Authorization", scheme: "bearer" } },
 ];
 
 function makeCredentials(overrides = {}) {
