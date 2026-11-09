@@ -1,3 +1,11 @@
+# v0.5.389 (2026-11-07) · 2 commits
+
+## OpenCode Free V2: proxy pools ride the impersonated TLS client
+
+- Proxy pools were unusable on the free lane: a configured proxy forced the Undici/OpenSSL path, the upstream answered 403 FreeTierError, and proxyFetch replayed direct, discarding the pool. The executor now resolves the effective proxy itself, disables the outer proxy path, and hands the proxy to the wreq-js impersonating client.
+- opencodeTlsClient caches one TLS session per proxy (wreq-js locks the proxy per session). Live probes from 12 different egress IPs all cleared the TLS gate.
+- Remaining blocker is upstream quota, not transport: every egress returns 429 FreeUsageLimitError with retry-after ~9.5h (shared Bearer public account), so IP rotation cannot mint fresh quota until it resets.
+
 # v0.5.387 (2026-11-07) · 1 commit
 
 ## Auto Harvester: working proxy probe + verified imports
