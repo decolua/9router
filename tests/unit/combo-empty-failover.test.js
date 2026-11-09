@@ -45,7 +45,11 @@ const REASONING = `data: {"id":"x","choices":[{"index":0,"delta":{"reasoning_con
 describe("deltaHasClientContent", () => {
   it("role-only delta is NOT content", () => expect(deltaHasClientContent({ role: "assistant" })).toBe(false));
   it("empty string content is NOT content", () => expect(deltaHasClientContent({ content: "" })).toBe(false));
-  it("reasoning_content is NOT content", () => expect(deltaHasClientContent({ reasoning_content: "x" })).toBe(false));
+  it("reasoning_content and reasoning aliases ARE content", () => {
+    expect(deltaHasClientContent({ reasoning_content: "x" })).toBe(true);
+    expect(deltaHasClientContent({ reasoning: "x" })).toBe(true);
+    expect(deltaHasClientContent({ reasoning_content: "" })).toBe(false);
+  });
   it("non-empty string content IS content", () => expect(deltaHasClientContent({ content: "hi" })).toBe(true));
   it("content array IS content", () => expect(deltaHasClientContent({ content: [{ type: "text", text: "a" }] })).toBe(true));
   it("tool_calls IS content", () => expect(deltaHasClientContent({ tool_calls: [{ id: "1" }] })).toBe(true));
@@ -99,9 +103,9 @@ describe("peekStreamForContent", () => {
     expect(p.outcome).toBe("content");
   });
 
-  it("reasoning-only then abort → still empty (reasoning is not content)", async () => {
+  it("reasoning-only stream → outcome content", async () => {
     const p = await peekStreamForContent(sseStream([ROLE, REASONING, EMPTY_STOP, DONE]));
-    expect(p.outcome).toBe("empty");
+    expect(p.outcome).toBe("content");
   });
 
   it("content-filter empty → empty with content_filter reason (caller won't retry)", async () => {
@@ -192,8 +196,9 @@ describe("inspectSSELine — Anthropic Messages client format", () => {
     expect(inspectSSELine(ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "hi" } })).content).toBe(true);
     expect(inspectSSELine(ev({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "" } })).content).toBe(false);
   });
-  it("thinking_delta is NOT content (as reasoning_content is not)", () => {
-    expect(inspectSSELine(ev({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } })).content).toBe(false);
+  it("thinking_delta with thinking IS content; empty thinking_delta is NOT", () => {
+    expect(inspectSSELine(ev({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "hmm" } })).content).toBe(true);
+    expect(inspectSSELine(ev({ type: "content_block_delta", index: 0, delta: { type: "thinking_delta", thinking: "" } })).content).toBe(false);
   });
   it("a tool_use block start IS content; input_json_delta with JSON IS content", () => {
     expect(inspectSSELine(ev({ type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "t", name: "f", input: {} } })).content).toBe(true);
@@ -237,14 +242,19 @@ describe("inspectSSELine — OpenAI Responses client format", () => {
     expect(inspectSSELine(ev({ type: "response.function_call_arguments.delta", item_id: "fc_call_1", delta: "" })).content).toBe(false);
     expect(inspectSSELine(ev({ type: "response.custom_tool_call_input.delta", item_id: "ctc_call_2", delta: "*** Begin Patch" })).content).toBe(true);
   });
-  it("reasoning items and reasoning / reasoning-summary deltas are NOT content", () => {
+  it("reasoning text / summary output IS content when non-empty", () => {
     for (const o of [
-      { type: "response.output_item.added", output_index: 0, item: { id: "rs_1", type: "reasoning", summary: [] } },
-      { type: "response.reasoning_summary_part.added", item_id: "rs_1", summary_index: 0, part: { type: "summary_text", text: "" } },
       { type: "response.reasoning_summary_text.delta", item_id: "rs_1", summary_index: 0, delta: "thinking" },
       { type: "response.reasoning_summary_text.done", item_id: "rs_1", summary_index: 0, text: "thinking" },
       { type: "response.reasoning_text.delta", item_id: "rs_1", delta: "thinking" },
       { type: "response.output_item.done", output_index: 0, item: { id: "rs_1", type: "reasoning", summary: [{ type: "summary_text", text: "thinking" }] } },
+    ]) expect(inspectSSELine(ev(o)).content).toBe(true);
+  });
+  it("empty reasoning containers are NOT content", () => {
+    for (const o of [
+      { type: "response.output_item.added", output_index: 0, item: { id: "rs_1", type: "reasoning", summary: [] } },
+      { type: "response.reasoning_summary_part.added", item_id: "rs_1", summary_index: 0, part: { type: "summary_text", text: "" } },
+      { type: "response.reasoning_summary_text.delta", item_id: "rs_1", summary_index: 0, delta: "" },
     ]) expect(inspectSSELine(ev(o)).content).toBe(false);
   });
   it("response.created, response.in_progress, a message item / empty content part are NOT content", () => {
@@ -344,10 +354,11 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
         const { tried } = await combo([[ROLE, TOOL, DONE], [ROLE, C("from-m1"), STOP, DONE]], fmt);
         expect(tried).toEqual(["openai/m0"]);
       });
-      it("reasoning-only first member falls through", async () => {
+      it("reasoning-only first member is committed", async () => {
         const { out, tried } = await combo([[ROLE, REASONING, STOP, DONE], [ROLE, C("from-m1"), STOP, DONE]], fmt);
-        expect(tried).toEqual(["openai/m0", "openai/m1"]);
-        expect(out).toContain("from-m1");
+        expect(tried).toEqual(["openai/m0"]);
+        expect(out).toContain("thinking...");
+        expect(out).not.toContain("from-m1");
       });
     });
   }
@@ -384,9 +395,9 @@ describe("combo fall-through per client format (real combo.js + streaming pipeli
       expect(out).toContain("from-m1");
       expect(out).not.toContain("response.failed");
     });
-    it("a function_call item counts as content; reasoning-only does not", async () => {
+    it("function-call and reasoning output both count as content", async () => {
       expect((await combo([[CREATED, FC, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0"]);
-      expect((await combo([[CREATED, REASON, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0", "openai/m1"]);
+      expect((await combo([[CREATED, REASON, COMPLETED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP)).tried).toEqual(["openai/m0"]);
     });
     it("response.incomplete (content_filter) is NOT retried", async () => {
       const { out, tried } = await combo([[CREATED, FILTERED], [CREATED, TEXT("from-m1"), COMPLETED]], RESP);
