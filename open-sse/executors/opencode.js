@@ -405,18 +405,19 @@ export class OpenCodeExecutor extends BaseExecutor {
   // The free gate keys on the TLS ClientHello, so a native Node fetch is refused
   // no matter how faithful the body is. Route through the impersonating client
   // and keep proxy handling on the existing path (proxyAwareFetch delegates to
-  // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
-  // request still goes out on native fetch instead of erroring here.
+  // `directFetch` when no proxy is configured, and passes the resolved proxy
+  // URL through when one is). Fail-open: without wreq-js the request still goes
+  // out on native fetch instead of erroring here.
   async execute(args) {
     const credentials = this.prepareRequestCredentials(args);
     return super.execute({
       ...args,
       credentials,
-      directFetch: (url, options) => opencodeTlsFetch(url, {
+      directFetch: (url, options, proxyUrl) => opencodeTlsFetch(url, {
         method: options.method,
         headers: options.headers,
         body: options.body,
-      }, { signal: options.signal }),
+      }, { signal: options.signal, proxyUrl }),
     });
   }
 

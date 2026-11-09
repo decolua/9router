@@ -163,6 +163,25 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+/** scheme://host:port only — never credentials. */
+function safeProxyHost(proxyUrl) {
+  try {
+    const parsed = new URL(String(proxyUrl));
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  } catch {
+    return "unparseable-proxy-url";
+  }
+}
+
+/** Destination host only, never the full URL (which may carry a query/path). */
+function safeTargetHost(url) {
+  try {
+    return new URL(typeof url === "string" ? url : url.toString()).host;
+  } catch {
+    return "unparseable-url";
+  }
+}
+
 /**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
@@ -470,6 +489,28 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
+
+  // Protocol adapters that own their transport (wreq-js TLS impersonation)
+  // cannot use an undici dispatcher: they must drive the proxy themselves.
+  // Hand the resolved proxy URL to the adapter so the selected proxy still
+  // carries the connection — the alternative is a silent fall back to undici,
+  // which drops both the proxy and the impersonation.
+  if (proxyUrl && typeof options?.directFetch === "function") {
+    try {
+      const res = await options.directFetch(url, { ...options, proxyUrl }, proxyUrl);
+      // Transport-level success through the adapter is only meaningful as a
+      // proxy proof when the adapter actually carried the proxy (it reports
+      // the tunnel it used; see opencodeTlsClient).
+      const via = res?.headers?.get?.("x-9r-proxy-via");
+      dbg("PROXY", `PROXY ROUTING VERIFIED | ${safeTargetHost(targetUrl)} | transport=wreq-js | proxy=${via || safeProxyHost(proxyUrl)} | status=${res?.status}`);
+      return res;
+    } catch (err) {
+      if (proxyOptions?.strictProxy === true) {
+        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${err.message}`);
+      }
+      throw err;
+    }
+  }
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
