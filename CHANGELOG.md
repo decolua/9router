@@ -1,3 +1,9 @@
+# v0.5.399 (2026-11-10) · 1 commit
+
+## What's Added?
+
+- Custom model names may carry a prefix, so a model can be called as anthropic/claude-opus-5 instead of a bare name. The prefix is a label: an exact custom-model name wins over provider routing, and the target still resolves through the normal provider map.
+
 # v0.5.398 (2026-11-10) · 1 commit
 
 ## What's Added?

@@ -7,7 +7,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioComboGuard";
 
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})?$/;
 
 // Fields the bulk editor may write, and how each one reads to the operator.
 const MODEL_BULK_LABELS = {
@@ -722,8 +722,8 @@ function StudioFormModal({
   );
   const nameError = useMemo(() => {
     if (!callName) return "";
-    if (callName.includes("/")) return "Use a name without \"/\" - it is the model ID clients send.";
-    if (!NAME_RE.test(callName)) return "Letters, numbers, dot, dash and underscore only (max 64).";
+    if (!NAME_RE.test(callName))
+      return "Letters, numbers, dot, dash and underscore only, with an optional prefix (max 64 per part).";
     return "";
   }, [callName]);
 
@@ -861,7 +861,7 @@ function StudioFormModal({
             <Input
               value={callName}
               onChange={(e) => setCallName(e.target.value)}
-              placeholder="e.g. workhorse"
+              placeholder="e.g. workhorse or anthropic/workhorse"
               autoFocus
             />
             {nameError ? (
@@ -869,6 +869,7 @@ function StudioFormModal({
             ) : (
               <p className="text-[11px] text-text-muted mt-1">
                 Clients call <code className="font-mono">{`"${callName || "name"}"`}</code> as the model ID.
+                A prefix such as <code className="font-mono">anthropic/</code> is allowed.
               </p>
             )}
           </div>

@@ -228,7 +228,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   // A studio name may also resolve here: getModelInfo answers a studio that
   // points at a combo with the combo name in `model`, so use it as the entry.
   if (!modelInfo.provider) {
-    const comboEntryName = (!modelStr.includes("/") && modelInfo.model && modelInfo.model !== modelStr)
+    const comboEntryName = modelInfo.model && modelInfo.model !== modelStr
       ? modelInfo.model
       : modelStr;
     const comboModels = await getComboModels(comboEntryName);

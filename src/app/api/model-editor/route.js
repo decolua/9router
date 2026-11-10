@@ -13,7 +13,7 @@ import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioCombo
 
 export const dynamic = "force-dynamic";
 
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})?$/;
 
 /**
   * Target normalization lives in a shared helper so the bulk editor resolves
@@ -33,7 +33,7 @@ export async function GET() {
 
 async function validate({ callName, targetModel, previousName }) {
   if (!NAME_RE.test(callName)) {
-  return "Name must start with a letter or number and only use letters, numbers, dot, dash or underscore (max 64, no \"/\").";
+  return "Name must start with a letter or number and only use letters, numbers, dot, dash or underscore, with at most one optional prefix (max 64 per part).";
   }
   if (!targetModel || !targetModel.trim()) {
   return "Pick the model this name should call.";
