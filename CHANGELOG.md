@@ -1,3 +1,11 @@
+# v0.5.395 (2026-11-10) · 1 commit
+
+## Provider page: unauthenticated shelf, brand logos
+
+- New section Unauthenticated Providers above Free Tier Providers: MiMoCode Free, OpenCode Free, DeepAI Free.
+- Custom OpenAI Compatible cards use the OpenAI mark, Anthropic Compatible use Claude, Moonshot Compatible keep the Moonshot mark.
+- MiMo and Xiaomi providers share the official Xiaomi MiMo icon (mimo-free, mimocode, mmf, xiaomi-mimo, xiaomi-tokenplan), GitHub Copilot gets its own mark, and three logos with baked white backgrounds (atria, iflow, youcom) were cut to transparency.
+
 # v0.5.393 (2026-11-10) · 1 commit
 
 ## DeepAI free provider (accountless)

@@ -1660,10 +1660,10 @@ export default function ProviderDetailPage() {
       return "/providers/moonshot-ai.png";
     }
     if (isOpenAICompatible && providerInfo.apiType) {
-      return providerInfo.apiType === "responses" ? "/providers/oai-r.png" : "/providers/oai-cc.png";
+      return "/providers/openai.png";
     }
     if (isAnthropicCompatible) {
-      return "/providers/anthropic-m.png";
+      return "/providers/claude.png";
     }
     return getProviderIconSrc(providerInfo.id);
   };

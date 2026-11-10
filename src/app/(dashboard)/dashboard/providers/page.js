@@ -17,6 +17,7 @@ import { getCustomLogo } from "@/shared/utils/providerLogo";
 import { OAUTH_PROVIDERS, APIKEY_PROVIDERS } from "@/shared/constants/config";
 import {
   FREE_PROVIDERS,
+  UNAUTH_PROVIDERS,
   FREE_TIER_PROVIDERS,
   WEB_COOKIE_PROVIDERS,
   OPENAI_COMPATIBLE_PREFIX,
@@ -377,10 +378,17 @@ export default function ProvidersPage() {
     ),
     "oauth",
   );
+  const unauthEntries = Object.entries(UNAUTH_PROVIDERS).filter(
+    ([key, info]) =>
+      !info.hidden &&
+      matchSearch(info.name) &&
+      matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
+  );
   const freeEntries = Object.entries(FREE_PROVIDERS)
     .filter(
       ([key, info]) =>
         !info.hidden &&
+        !(key in UNAUTH_PROVIDERS) &&
         matchSearch(info.name) &&
         matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
     )
@@ -584,6 +592,32 @@ export default function ProvidersPage() {
                 stats={getProviderStats(key, authTypes)}
                 authType="oauth"
                 onToggle={(active) => handleToggleProvider(key, authTypes, active)}
+              />
+            );
+          })}
+        </div>
+      </div>
+      )}
+
+      {/* Unauthenticated Providers */}
+      {unauthEntries.length > 0 && (
+      <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
+            Unauthenticated Providers
+          </h2>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3 xl:grid-cols-4">
+          {unauthEntries.map(([key, info]) => {
+            const unauthAuthTypes = dualAuthTypes(info, key);
+            return (
+              <ProviderCard
+                key={key}
+                providerId={key}
+                provider={info}
+                stats={getProviderStats(key, unauthAuthTypes)}
+                authType="free"
+                onToggle={(active) => handleToggleProvider(key, unauthAuthTypes, active)}
               />
             );
           })}
@@ -1041,10 +1075,8 @@ function ApiKeyProviderCard({
     if (isCompatible && (provider.brand === "moonshot" || /moonshot|kimi/i.test(provider.name || "")))
       return "/providers/moonshot-ai.png";
     if (isCompatible && provider.apiType)
-      return provider.apiType === "responses"
-        ? "/providers/oai-r.png"
-        : "/providers/oai-cc.png";
-    if (isAnthropicCompatible) return "/providers/anthropic-m.png";
+      return "/providers/openai.png";
+    if (isAnthropicCompatible) return "/providers/claude.png";
     return getProviderIconSrc(provider.id);
   };
 

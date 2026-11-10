@@ -49,6 +49,12 @@ const byCategory = (cat) => Object.fromEntries(
 export const FREE_PROVIDERS = byCategory("free");
 export const FREE_TIER_PROVIDERS = byCategory("freeTier");
 
+// No-credential providers that live on their own shelf above the free tiers.
+export const UNAUTH_PROVIDER_IDS = ["mimocode", "opencode", "deepai"];
+export const UNAUTH_PROVIDERS = Object.fromEntries(
+  UNAUTH_PROVIDER_IDS.filter((id) => FREE_PROVIDERS[id]).map((id) => [id, FREE_PROVIDERS[id]])
+);
+
 // Thinking config definitions
 // options: list of selectable modes ("auto" = no override from server)
 // defaultMode: fallback when user hasn't configured
