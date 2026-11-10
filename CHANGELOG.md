@@ -1,3 +1,10 @@
+# v0.5.392 (2026-11-09) · 1 commit
+
+## Harvester chrome cleanup
+
+- Dropped the FEATURE+ label from the sidebar section and the page header.
+- Removed the Active/Idle status badge from the harvester worker card.
+
 # v0.5.391 (2026-11-09) · 1 commit
 
 ## OpenCode Free V2: optional account sign-in (device flow)

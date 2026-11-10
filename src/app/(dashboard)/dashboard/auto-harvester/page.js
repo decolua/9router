@@ -117,7 +117,6 @@ export default function AutoHarvesterPage() {
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="text-xl font-semibold sm:text-2xl">Proxy Harvester</h1>
-              <Badge variant="warning">FEATURE+</Badge>
             </div>
             <p className="text-xs text-text-muted mt-0.5">
               Autonomous background worker discovering and testing public proxy feeds.
@@ -150,9 +149,6 @@ export default function AutoHarvesterPage() {
               <div className="min-w-0 flex flex-col">
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-semibold text-text-main">Harvester Worker</span>
-                  <Badge variant={running ? "success" : "default"} className="font-mono text-[10px] uppercase">
-                    {running ? "Active" : "Idle"}
-                  </Badge>
                 </div>
                 <span className="text-xs text-text-muted truncate mt-0.5">
                   {status?.lastMessage || "Ready to discover and verify proxy feeds"}
