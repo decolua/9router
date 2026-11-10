@@ -429,9 +429,31 @@ function isLoginExpiredFrame(inner, statusVal) {
  * Best-effort with a short timeout — a quota-fetch failure must never delay
  * or fail the error response itself.
  */
-async function describeQoderDailyQuota(inner, credentials, region, log) {
-  const base = inner && typeof inner === "string" ? inner : "qoder billing block";
-  let quotaText = "";
+/**
+ * Billing-block message enrichment.
+ *
+ * Upstream's `110` body carries no timestamp and the quota API exposes plan
+ * credits only — NOT the daily request count that `110` actually means. So the
+ * message must not imply credits caused the block; they are plan context. The
+ * reset line is an ESTIMATE (next midnight UTC, the only boundary observed so
+ * far) and is labelled as such.
+ *
+ * The quota read is cached for QUOTA_CACHE_TTL_MS: a billing block usually
+ * repeats for every request in the window, and re-fetching per request only
+ * adds latency to an already-failing path.
+ */
+const QUOTA_CACHE_TTL_MS = 60 * 1000;
+const quotaCache = new Map();
+
+async function fetchQoderQuota(credentials, region, log) {
+  const psd = credentials?.providerSpecificData || {};
+  const key = psd.userId || credentials?.connectionId || credentials?.accessToken || "anon";
+  const cached = quotaCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.body;
+
+  const token = credentials?.accessToken;
+  if (!token) return null;
+
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort("timeout"), 4000);
@@ -439,7 +461,18 @@ async function describeQoderDailyQuota(inner, credentials, region, log) {
     try {
       const res = await proxyAwareFetch(
         qoderQuotaUsageUrl(region || "intl"),
-        { method: "GET", headers: { Accept: "application/json", "User-Agent": "qodercli/1.0.0" }, signal: controller.signal },
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "qodercli/1.0.0",
+            // The quota endpoint is authenticated like every other openApi
+            // call: without the job/device token it answers 401 and the whole
+            // enrichment silently degrades to the bare upstream message.
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        },
         null,
       );
       if (res.ok) body = await res.json().catch(() => null);
@@ -447,30 +480,41 @@ async function describeQoderDailyQuota(inner, credentials, region, log) {
       clearTimeout(timer);
     }
     if (body) {
-      const uq = body.userQuota || {};
-      const ao = body.addOnQuota || {};
-      const parts = [];
-      if (typeof uq.used === "number" || typeof uq.total === "number") {
-        parts.push(`plan credits ${uq.used ?? "?"}/${uq.total ?? "?"}`);
+      quotaCache.set(key, { body, expiresAt: Date.now() + QUOTA_CACHE_TTL_MS });
+      if (quotaCache.size > 100) {
+        const oldest = quotaCache.keys().next().value;
+        quotaCache.delete(oldest);
       }
-      if (typeof ao.used === "number" && (ao.total || 0) > 0 && ao.used > 0) {
-        parts.push(`add-on ${ao.used}/${ao.total}`);
-      }
-      if (body.userType) parts.push(`plan: ${body.userType}`);
-      quotaText = parts.join(", ");
     }
+    return body;
   } catch (e) {
     log?.debug?.("QODER", `quota fetch for error message failed: ${e?.message || e}`);
+    return null;
   }
+}
 
-  // Next midnight UTC — Qoder's daily billing window boundary.
+async function describeQoderDailyQuota(inner, credentials, region, log) {
+  const base = inner && typeof inner === "string" ? inner : "qoder billing block";
+  const body = await fetchQoderQuota(credentials, region, log);
+
+  const parts = [];
+  if (body) {
+    const uq = body.userQuota || {};
+    if (typeof uq.used === "number" && typeof uq.total === "number") {
+      parts.push(`${uq.used}/${uq.total} plan credits used`);
+    }
+    if (body.userType) parts.push(`plan ${body.userType}`);
+  }
+  const planClause = parts.length > 0 ? ` (${parts.join(", ")}; credits are not the limit here)` : "";
+
+  // Next midnight UTC — the only daily boundary observed so far. Explicitly an
+  // estimate: the real window may roll sooner (observed recovery inside ~1h).
   const now = new Date();
   const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
   const mins = Math.max(1, Math.round((reset.getTime() - now.getTime()) / 60000));
-  const resetText = `resets in ~${mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`} (${reset.toISOString().replace("T", " ").slice(0, 16)} UTC)`;
+  const span = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
 
-  const quotaClause = quotaText ? ` — ${quotaText}` : "";
-  return `${base}${quotaClause}; ${resetText}`;
+  return `${base}${planClause}; daily request window resets by ~${span} at the latest (est., ${reset.toISOString().replace("T", " ").slice(0, 16)} UTC)`;
 }
 
 function isBillingBlock(inner) {

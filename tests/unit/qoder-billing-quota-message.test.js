@@ -90,11 +90,16 @@ describe("QoderExecutor billing-block message enrichment", () => {
     const parsed = JSON.parse(body);
 
     expect(parsed.error.message).toContain("Billing daily count exceeded");
-    expect(parsed.error.message).toContain("plan credits 300/300");
-    expect(parsed.error.message).toContain("add-on 12/400");
-    expect(parsed.error.message).toContain("personal_professional_trial");
-    // Reset estimate: next midnight UTC, formatted either as "Xh Ym" or "Nm"
-    expect(parsed.error.message).toMatch(/resets in ~(\d+h \d+m|\d+m) \(\d{4}-\d{2}-\d{2} \d{2}:00 UTC\)/);
+    expect(parsed.error.message).toContain("300/300 plan credits used");
+    expect(parsed.error.message).toContain("plan personal_professional_trial");
+    // Credits must be framed as context, not as the cause of a request-count block.
+    expect(parsed.error.message).toContain("credits are not the limit here");
+    // Reset line is explicitly an estimate.
+    expect(parsed.error.message).toMatch(/daily request window resets by ~(\d+h \d+m|\d+m) at the latest \(est\./);
+    // The quota call must be authenticated — without a token it 401s and the
+    // enrichment silently degrades.
+    const quotaCall = fetchMock.mock.calls.find(([u]) => String(u).includes("quota/usage"));
+    expect(quotaCall[1].headers.Authorization).toMatch(/^Bearer jt-/);
     // The quota endpoint was consulted exactly once
     const quotaCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes("quota/usage"));
     expect(quotaCalls).toHaveLength(1);
@@ -109,8 +114,25 @@ describe("QoderExecutor billing-block message enrichment", () => {
     const parsed = JSON.parse(await result.response.text());
     expect(parsed.error.message).toContain("Billing daily count exceeded");
     // Reset estimate is still appended — it needs no upstream data
-    expect(parsed.error.message).toMatch(/resets in ~/);
+    expect(parsed.error.message).toMatch(/resets by ~/);
     expect(parsed.error.message).not.toContain("plan credits");
+  });
+
+  it("caches the quota read so repeated billing blocks do not re-fetch", async () => {
+    const fetchMock = mockFetchWithQuota({
+      userType: "personal_professional_trial",
+      userQuota: { total: 300, used: 300, remaining: 0, unit: "credits" },
+    });
+    const executor = await loadExecutor(fetchMock);
+
+    await executor.execute({ ...request, credentials: creds() });
+    await executor.execute({ ...request, credentials: creds() });
+
+    const quotaCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes("quota/usage"));
+    expect(quotaCalls).toHaveLength(1);
+    // Both attempts still hit inference — only the quota read is cached.
+    const chatCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes("agent_chat_generation"));
+    expect(chatCalls).toHaveLength(2);
   });
 
   it("does not consult the quota endpoint on non-billing errors", async () => {
