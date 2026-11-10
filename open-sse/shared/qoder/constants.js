@@ -259,9 +259,9 @@ export function getQoderStaticModelConfig(key) {
  * keep steering the request exactly as the IDE steers it. The X-Model-Source
  * header keeps reporting the catalog's value.
  */
-export function qoderChatModelConfig(modelConfig) {
+export function qoderChatModelConfig(modelConfig, { keepSource = false } = {}) {
   if (modelConfig == null || typeof modelConfig !== "object") return modelConfig;
-  if (!("source" in modelConfig)) return modelConfig;
+  if (keepSource || !("source" in modelConfig)) return modelConfig;
   const { source: _source, ...rest } = modelConfig;
   return rest;
 }

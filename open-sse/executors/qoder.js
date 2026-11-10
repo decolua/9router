@@ -301,6 +301,20 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
   }
 
   const { messages, systemText } = normalizeMessages(incoming);
+  // Images live in message content as image_url blocks (the CLI's own shape);
+  // their presence decides whether model_config keeps `source` (see below).
+  const hasImages = messages.some(
+    (m) =>
+      Array.isArray(m?.content) &&
+      m.content.some((b) => b && typeof b === "object" && b.type === OPENAI_BLOCK.IMAGE_URL),
+  );
+  // The catalog entry has no `source`, so a vision request must inject it:
+  // `source: "system"` marks the model as system-provided, and only then does
+  // the server actually read the image parts (verified: same payload with
+  // source -> "Red", without -> "NOIMAGE").
+  const chatModelConfig = hasImages
+    ? { ...qoderChatModelConfig(modelConfig, { keepSource: true }), source: modelConfig?.source || "system" }
+    : qoderChatModelConfig(modelConfig);
   const tools = body.tools;
   const isReasoning = !!modelConfig.is_reasoning;
   const maxOutputTokens = Number(modelConfig.max_output_tokens) || 0;
@@ -371,7 +385,13 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
       // Echoed without `source`: that field selects Qoder's managed lane, which
       // parks the request with 10605/queueType=p3 while it is busy. The
       // X-Model-Source header below still reports the catalog value.
-      model_config: qoderChatModelConfig(modelConfig),
+      //
+      // Exception: a request carrying images MUST keep `source`. Dropping it
+      // makes the server ignore the image parts entirely and answer as if no
+      // image was attached ("NOIMAGE"), which is how vision looked broken
+      // upstream. Verified against a live account: identical payload with
+      // source -> "Red", without -> "NOIMAGE".
+      model_config: chatModelConfig,
       business: {
         product: "cli",
         version: "1.0.0",
