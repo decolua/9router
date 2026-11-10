@@ -159,6 +159,8 @@ export async function handleChat(request, clientRawRequest = null) {
             body: b,
             models: m,
             routerModel: comboCfg.routerModel,
+            routerInstructions: comboCfg.routerInstructions,
+            memberDescriptions: comboCfg.memberDescriptions,
             log,
           })
         : null,
@@ -254,6 +256,8 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
               body: b,
               models: m,
               routerModel: comboCfg.routerModel,
+              routerInstructions: comboCfg.routerInstructions,
+              memberDescriptions: comboCfg.memberDescriptions,
               log,
             })
           : null,
