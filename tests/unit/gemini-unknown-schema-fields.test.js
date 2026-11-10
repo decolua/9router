@@ -17,6 +17,12 @@ import { describe, it, expect } from "vitest";
 import { cleanJSONSchemaForAntigravity, UNSUPPORTED_SCHEMA_CONSTRAINTS } from "../../open-sse/translator/formats/gemini.js";
 
 describe("UNSUPPORTED_SCHEMA_CONSTRAINTS includes non-standard annotation keywords (#4283)", () => {
+  it("includes optional", () => {
+    expect(UNSUPPORTED_SCHEMA_CONSTRAINTS).toContain("optional");
+  });
+  it("includes ~optional", () => {
+    expect(UNSUPPORTED_SCHEMA_CONSTRAINTS).toContain("~optional");
+  });
   it("includes errorMessage", () => {
     expect(UNSUPPORTED_SCHEMA_CONSTRAINTS).toContain("errorMessage");
   });
@@ -88,6 +94,50 @@ describe("cleanJSONSchemaForAntigravity strips errorMessage recursively (#4283)"
     const result = cleanJSONSchemaForAntigravity(structuredClone(schema));
     expect(result).not.toHaveProperty("minProperties");
     expect(result).not.toHaveProperty("maxProperties");
+  });
+
+  it("strips ~optional from root, nested properties, and nested array items", () => {
+    const schema = {
+      type: "object",
+      "~optional": true,
+      required: ["name"],
+      properties: {
+        name: {
+          type: "string",
+          description: "Entity name"
+        },
+        metadata: {
+          type: "object",
+          "~optional": true,
+          properties: {
+            tags: {
+              type: "array",
+              "~optional": true,
+              items: {
+                type: "object",
+                "~optional": true,
+                properties: {
+                  key: { type: "string", "~optional": false },
+                  value: { type: "string", "~optional": true }
+                }
+              }
+            }
+          }
+        }
+      }
+    };
+    const result = cleanJSONSchemaForAntigravity(structuredClone(schema));
+    expect(result).not.toHaveProperty("~optional");
+    expect(result.required).toEqual(["name"]);
+    expect(result.properties.name.type).toBe("string");
+    expect(result.properties.name.description).toBe("Entity name");
+    expect(result.properties.metadata).not.toHaveProperty("~optional");
+    expect(result.properties.metadata.properties.tags).not.toHaveProperty("~optional");
+    expect(result.properties.metadata.properties.tags.items).not.toHaveProperty("~optional");
+    expect(result.properties.metadata.properties.tags.items.properties.key).not.toHaveProperty("~optional");
+    expect(result.properties.metadata.properties.tags.items.properties.key.type).toBe("string");
+    expect(result.properties.metadata.properties.tags.items.properties.value).not.toHaveProperty("~optional");
+    expect(result.properties.metadata.properties.tags.items.properties.value.type).toBe("string");
   });
 
   it("leaves other valid fields intact", () => {
