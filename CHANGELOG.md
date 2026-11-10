@@ -1,3 +1,11 @@
+# v0.5.393 (2026-11-10) · 1 commit
+
+## DeepAI free provider (accountless)
+
+- New free provider deepai: talks to the public DeepAI chat endpoint with the per-request MD5 api-key signature, so no account, email, or captcha is involved.
+- Eleven models unlocked on the free lane, from deepseek-v4.1-flash to llama-3.1-8b-instant.
+- OpenAI-compatible output: the plain-text answer is wrapped as chat completion chunks (or a single JSON body for non-stream clients), and pool proxies apply through the standard proxy path.
+
 # v0.5.392 (2026-11-09) · 1 commit
 
 ## Harvester chrome cleanup
