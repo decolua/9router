@@ -119,9 +119,9 @@ export async function getStudioModels() {
 /** One studio model by callable name, or null. */
 export async function getStudioModel(callName) {
   const name = String(callName ?? "").trim();
-  // A callable name may carry one prefix (`anthropic/workhorse`); the legacy
-  // per-model override key stays excluded because it holds a `provider|model`.
-  if (!name || name.includes("|") || name.split("/").length > 2) return null;
+  // A callable name may carry prefixes (`anthropic/workhorse` or `fake/provider/model`);
+  // the legacy per-model override key stays excluded because it holds a `provider|model`.
+  if (!name || name.includes("|")) return null;
   const value = await store().get(name);
   return value ? toModel(name, value) : null;
 }

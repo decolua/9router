@@ -13,7 +13,7 @@ import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioCombo
 
 export const dynamic = "force-dynamic";
 
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})?$/;
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})*$/;
 
 /**
   * Target normalization lives in a shared helper so the bulk editor resolves

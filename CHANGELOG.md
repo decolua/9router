@@ -1,3 +1,9 @@
+# v0.5.401 (2026-11-10)
+
+## What Looks Different?
+
+- Custom model names accept more than one prefix: `meta/llama/llama-4-qa` saves as written. Resolution now looks the full name up in the database, so multi segment names still route to their configured provider and model.
+
 # v0.5.400 (2026-11-10) · 1 commit
 
 ## What Looks Different?

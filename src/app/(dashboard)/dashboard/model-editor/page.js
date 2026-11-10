@@ -7,7 +7,7 @@ import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioComboGuard";
 
-const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})?$/;
+const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})*$/;
 
 // Fields the bulk editor may write, and how each one reads to the operator.
 const MODEL_BULK_LABELS = {
