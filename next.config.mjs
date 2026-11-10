@@ -54,6 +54,9 @@ const nextConfig = {
   },
   env: stampBuild(),
   experimental: {
+    // Cap build workers: each worker loads the SQLite driver, and on a high-core
+    // host Next spawns enough of them to abort the build (SIGABRT) mid-prerender.
+    cpus: 4,
     // Next 14 reads tracing keys here (top-level is Next 15+ and ignored with a
     // warning). #4: also exclude Windows user-profile junctions (EPERM scandir
     // AppData/Local/Application Data) plus roaming/config caches from NFT tracing.
