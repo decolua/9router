@@ -115,7 +115,7 @@ export function formatDoneLine({ usage, latency }) {
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
 }
 
-export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, combo, comboVia, label = "USAGE", silent = false }) {
+export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, endpoint, combo, comboVia, comboRoute, label = "USAGE", silent = false }) {
   if (!tokens || typeof tokens !== "object") return;
 
   const inTokens = tokens.input_tokens ?? tokens.prompt_tokens ?? 0;
@@ -145,6 +145,10 @@ export function saveUsageStats({ provider, model, tokens, connectionId, apiKey, 
     apiKey: apiKey || undefined,
     endpoint: endpoint || null,
     combo: combo || undefined,
-    comboVia: comboVia || undefined
+    comboVia: comboVia || undefined,
+    // Routing outcome of the combo that served this request (see handleComboChat)
+    route: comboRoute?.route || undefined,
+    routeConfidence: typeof comboRoute?.confidence === "number" ? comboRoute.confidence : undefined,
+    failover: comboRoute?.attempt > 0 || undefined
   }).catch(() => {});
 }

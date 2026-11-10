@@ -56,6 +56,27 @@ function comboStatsKey(combo, comboVia, model, provider) {
   return `${combo || ""}|${comboVia || ""}|${model}|${provider || "unknown"}`;
 }
 
+const ROUTE_FIELDS = { routed: "routed", kept: "kept", default: "defaulted" };
+const ROUTE_COUNTERS = ["routed", "kept", "defaulted", "failover", "confidenceSum", "confidenceCount"];
+
+// Count how a combo picked the model for one request: router decision used,
+// session model kept, configured order, plus failover and router confidence.
+function addRouteCounters(bucket, { route, routeConfidence, failover }) {
+  const field = ROUTE_FIELDS[route];
+  if (field) bucket[field] = (bucket[field] || 0) + 1;
+  if (failover) bucket.failover = (bucket.failover || 0) + 1;
+  if (route === "routed" && typeof routeConfidence === "number" && Number.isFinite(routeConfidence)) {
+    bucket.confidenceSum = (bucket.confidenceSum || 0) + routeConfidence;
+    bucket.confidenceCount = (bucket.confidenceCount || 0) + 1;
+  }
+}
+
+function mergeRouteCounters(target, source) {
+  for (const f of ROUTE_COUNTERS) {
+    if (source[f]) target[f] = (target[f] || 0) + source[f];
+  }
+}
+
 function addToCounter(target, key, values) {
   if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
   target[key].requests += values.requests || 1;
@@ -106,7 +127,9 @@ function aggregateEntryToDay(day, entry) {
   // combo "" = request sent directly to a model (no combo)
   const combo = typeof entry.combo === "string" ? entry.combo : "";
   const comboVia = typeof entry.comboVia === "string" ? entry.comboVia : "";
-  addToCounter(day.byCombo, comboStatsKey(combo, comboVia, entry.model, entry.provider), { ...vals, meta: { combo, comboVia, rawModel: entry.model, provider: entry.provider } });
+  const comboKey = comboStatsKey(combo, comboVia, entry.model, entry.provider);
+  addToCounter(day.byCombo, comboKey, { ...vals, meta: { combo, comboVia, rawModel: entry.model, provider: entry.provider } });
+  addRouteCounters(day.byCombo[comboKey], entry);
 }
 
 function pushToRing(entry) {
@@ -297,7 +320,13 @@ export async function saveRequestUsage(entry) {
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
           stringifyJson(tokens),
-          stringifyJson(entry.combo ? { combo: entry.combo, ...(entry.comboVia ? { comboVia: entry.comboVia } : {}) } : {}),
+          stringifyJson(entry.combo ? {
+            combo: entry.combo,
+            ...(entry.comboVia ? { comboVia: entry.comboVia } : {}),
+            ...(entry.route ? { route: entry.route } : {}),
+            ...(typeof entry.routeConfidence === "number" ? { routeConfidence: entry.routeConfidence } : {}),
+            ...(entry.failover ? { failover: true } : {}),
+          } : {}),
         ]
       );
 
@@ -561,6 +590,7 @@ export async function getUsageStats(period = "all") {
         stats.byCombo[cbKey].completionTokens += cb.completionTokens || 0;
         stats.byCombo[cbKey].cachedTokens += cb.cachedTokens || 0;
         stats.byCombo[cbKey].cost += cb.cost || 0;
+        mergeRouteCounters(stats.byCombo[cbKey], cb);
         if (dateKey > (stats.byCombo[cbKey].lastUsed || "")) stats.byCombo[cbKey].lastUsed = dateKey;
       }
     }
@@ -703,6 +733,7 @@ export async function getUsageStats(period = "all") {
       }
       const cbe = stats.byCombo[cbKey];
       cbe.requests++; cbe.promptTokens += promptTokens; cbe.completionTokens += completionTokens; cbe.cachedTokens += cachedTokens; cbe.cost += entryCost;
+      addRouteCounters(cbe, rm);
       if (new Date(r.timestamp) > new Date(cbe.lastUsed)) cbe.lastUsed = r.timestamp;
     }
   }

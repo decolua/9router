@@ -150,6 +150,8 @@ Each combo card has a **Prompt** button. The text you save there is appended to 
 ### Usage per Combo
 **Usage → Usage by Combo** groups requests by the combo they were sent to and lists the models that actually served them, with each model's share of that combo's requests. For a nested combo the row shows which inner combo the model was reached through. Requests sent straight to a model appear under **Direct (no combo)**. Combo names are recorded from the version that added this view, so earlier usage is not attributed to a combo.
 
+The combo row also shows router statistics: for Smart Router combos, how often the router's decision was used (**Routed**), the session model was kept (**Kept**), or the configured member order was used because the router was unsure or unavailable (**Default order**), plus the average confidence of the decisions that were used. **Failover** counts requests served by a later member after the first choice failed, for any strategy.
+
 ## Cursor / Claude Default Combos
 
 Cursor and Claude Code send **unprefixed** model IDs (`composer-2.5`, `claude-opus-5`, `opus`), while 9Router routes with provider prefixes (`cu/composer-2.5`, `cc/claude-opus-5`). Default combo generators bridge that gap.

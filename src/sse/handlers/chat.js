@@ -120,6 +120,8 @@ export async function handleChat(request, clientRawRequest = null) {
     const comboPrompt = resolveComboPrompt(comboStrategies[modelStr]?.systemPrompt);
     // Tag the request with the combo it came through, for per-combo usage stats
     const comboRawRequest = { ...clientRawRequest, combo: modelStr };
+    // Routing outcome of the attempt in flight (members are tried one at a time)
+    const comboRoute = { current: null };
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -148,7 +150,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, comboRawRequest, request, apiKey, null, comboPrompt),
+        (b, m) => handleSingleModelChat(b, m, withComboRoute(comboRawRequest, comboRoute.current), request, apiKey, null, comboPrompt),
         adapterAdded
       ),
       log,
@@ -156,6 +158,7 @@ export async function handleChat(request, clientRawRequest = null) {
       comboStrategy,
       comboStickyLimit,
       sessionId,
+      onRouteAttempt: (route) => { comboRoute.current = route; },
       smartPolicy: comboCfg.smartPolicy || "smart",
       sessionSticky: comboCfg.sessionSticky !== false,
       confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
@@ -195,6 +198,20 @@ export async function handleChat(request, clientRawRequest = null) {
 }
 
 /**
+ * Attach the combo routing outcome ({ route, confidence, attempt }) to the request
+ * for per-combo usage stats. A nested combo keeps the outer combo's routing
+ * decision and only carries its own failover forward.
+ */
+function withComboRoute(rawRequest, route) {
+  if (!route || typeof route !== "object") return rawRequest;
+  const outer = rawRequest?.comboRoute;
+  const comboRoute = outer
+    ? { ...outer, attempt: Math.max(outer.attempt || 0, route.attempt || 0) }
+    : route;
+  return { ...rawRequest, comboRoute };
+}
+
+/**
  * Handle single model chat request
  */
 async function handleSingleModelChat(body, modelStr, clientRawRequest = null, request = null, apiKey = null, requestedModel = null, comboPrompt = "") {
@@ -221,6 +238,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const nestedRawRequest = clientRawRequest?.combo
         ? { ...clientRawRequest, comboVia: modelStr }
         : { ...clientRawRequest, combo: modelStr };
+      const nestedRoute = { current: null };
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -251,7 +269,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, nestedRawRequest, request, apiKey, null, nestedPrompt),
+          (b, m) => handleSingleModelChat(b, m, withComboRoute(nestedRawRequest, nestedRoute.current), request, apiKey, null, nestedPrompt),
           adapterAdded
         ),
         log,
@@ -259,6 +277,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         comboStrategy,
         comboStickyLimit,
         sessionId: nestedSessionId,
+        onRouteAttempt: (route) => { nestedRoute.current = route; },
         smartPolicy: comboCfg.smartPolicy || "smart",
         sessionSticky: comboCfg.sessionSticky !== false,
         confidenceThreshold: typeof comboCfg.confidenceThreshold === "number" ? comboCfg.confidenceThreshold : 0.8,
