@@ -255,6 +255,31 @@ describe("System One Smart Combo Router", () => {
       expect(calls[1]).toBe("ds/deepseek-v4");
     });
 
+    it("reports the routing outcome of each attempt through onRouteAttempt", async () => {
+      const seen = [];
+      let current = null;
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        seen.push({ model, ...current });
+        return model === "ds/deepseek-v4" ? errResponse(503, "Service Unavailable") : okResponse("ok");
+      });
+      const common = { models: ["cx/gpt-5-mini", "ds/deepseek-v4"], handleSingleModel, log, comboStrategy: "smart", sessionSticky: false, onRouteAttempt: (route) => { current = route; } };
+
+      // Router decision used, first choice fails -> second attempt carries the same outcome
+      await handleComboChat({ ...common, body: { messages: [{ role: "user", content: "a" }] }, comboName: "stats-1",
+        resolveSmartChoice: async () => ({ choice: "ds/deepseek-v4", confidence: 0.9 }) });
+      // Below threshold -> configured order
+      await handleComboChat({ ...common, body: { messages: [{ role: "user", content: "b" }] }, comboName: "stats-2",
+        resolveSmartChoice: async () => ({ choice: "ds/deepseek-v4", confidence: 0.5 }) });
+
+      expect(seen).toEqual([
+        { model: "ds/deepseek-v4", route: "routed", confidence: 0.9, attempt: 0 },
+        { model: "cx/gpt-5-mini", route: "routed", confidence: 0.9, attempt: 1 },
+        { model: "cx/gpt-5-mini", route: "default", confidence: null, attempt: 0 },
+      ]);
+      // handleSingleModel keeps its (body, model) contract
+      expect(handleSingleModel.mock.calls.every((call) => call.length === 2)).toBe(true);
+    });
+
     it("fails open to default order if System One evaluation fails or times out", async () => {
       const calls = [];
       const handleSingleModel = vi.fn(async (_body, model) => {

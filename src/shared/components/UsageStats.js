@@ -117,6 +117,31 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
 
 const DIRECT_COMBO_LABEL = "Direct (no combo)";
 
+// Router statistics of one combo: how the first model was picked, and how many
+// requests were served by a later member after the first choice failed.
+function ComboRouterStats({ router }) {
+  const decided = (router?.routed || 0) + (router?.kept || 0) + (router?.defaulted || 0);
+  const failover = router?.failover || 0;
+  if (!decided && !failover) return <span className="text-text-muted">—</span>;
+  const pct = (n) => `${Math.round((n / decided) * 100)}%`;
+  const avgConfidence = router.confidenceCount > 0 ? (router.confidenceSum / router.confidenceCount).toFixed(2) : null;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-text-muted">
+      {decided > 0 && (
+        <>
+          <span title="Router decision was used">Routed <b className="font-semibold text-text-main">{pct(router.routed)}</b></span>
+          <span title="Session model kept (prompt cache retained)">Kept <b className="font-semibold text-text-main">{pct(router.kept)}</b></span>
+          <span title="Router unsure or unavailable: configured member order was used">Default order <b className="font-semibold text-text-main">{pct(router.defaulted)}</b></span>
+          {avgConfidence && <span title="Average confidence of the router decisions that were used">Conf <b className="font-semibold text-text-main">{avgConfidence}</b></span>}
+        </>
+      )}
+      {failover > 0 && (
+        <span title="Served by a later member after the first choice failed">Failover <b className="font-semibold text-text-main">{fmt(failover)}</b></span>
+      )}
+    </div>
+  );
+}
+
 function getGroupKey(item, keyField) {
   switch (keyField) {
     case "rawModel": return item.rawModel || "Unknown Model";
@@ -424,9 +449,12 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
         const groupedData = groupDataByKey(sortData(stats.byCombo, {}, sortBy, sortOrder), "combo");
         // Share = portion of the combo's requests that this model ended up serving
         for (const group of groupedData) {
+          const router = { routed: 0, kept: 0, defaulted: 0, failover: 0, confidenceSum: 0, confidenceCount: 0 };
           for (const item of group.items) {
             item.share = group.summary.requests > 0 ? Math.round((item.requests / group.summary.requests) * 100) : 0;
+            for (const f of Object.keys(router)) router[f] += item[f] || 0;
           }
+          group.router = router;
         }
         return {
           columns: COMBO_COLUMNS,
@@ -435,8 +463,7 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
           emptyMessage: "No combo usage recorded yet. Combo names are tracked from the moment this view was added.",
           renderSummaryCells: (group) => (
             <>
-              <td className="px-6 py-3 text-text-muted">—</td>
-              <td className="px-6 py-3 text-text-muted">—</td>
+              <td colSpan={2} className="px-6 py-3"><ComboRouterStats router={group.router} /></td>
               <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
             </>

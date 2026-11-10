@@ -61,4 +61,31 @@ describe("Usage stats by combo", () => {
     expect(total).toBe(5);
     expect(comboTotal).toBe(5);
   });
+
+  it("counts router outcomes, confidence and failover per combo on both read paths", async () => {
+    const smart = { ...base, model: "router-model", combo: "team-smart", tokens: { prompt_tokens: 1, completion_tokens: 1 } };
+    await db.saveRequestUsage({ ...smart, timestamp: "2099-01-01T00:00:01.000Z", route: "routed", routeConfidence: 0.9 });
+    await db.saveRequestUsage({ ...smart, timestamp: "2099-01-01T00:00:02.000Z", route: "routed", routeConfidence: 0.7, failover: true });
+    await db.saveRequestUsage({ ...smart, timestamp: "2099-01-01T00:00:03.000Z", route: "kept" });
+    await db.saveRequestUsage({ ...smart, timestamp: "2099-01-01T00:00:04.000Z", route: "default" });
+    // Non-smart combo: no routing outcome, only failover
+    await db.saveRequestUsage({ ...base, model: "router-model", combo: "team-fallback", timestamp: "2099-01-01T00:00:05.000Z", failover: true, tokens: { prompt_tokens: 1, completion_tokens: 1 } });
+
+    for (const period of ["24h", "all"]) {
+      const stats = await db.getUsageStats(period);
+      const entries = Object.values(stats.byCombo);
+      const smartEntry = entries.find((e) => e.combo === "team-smart");
+      expect(smartEntry.requests).toBe(4);
+      expect(smartEntry.routed).toBe(2);
+      expect(smartEntry.kept).toBe(1);
+      expect(smartEntry.defaulted).toBe(1);
+      expect(smartEntry.failover).toBe(1);
+      expect(smartEntry.confidenceCount).toBe(2);
+      expect(smartEntry.confidenceSum).toBeCloseTo(1.6);
+
+      const fallbackEntry = entries.find((e) => e.combo === "team-fallback");
+      expect(fallbackEntry.failover).toBe(1);
+      expect(fallbackEntry.routed).toBeUndefined();
+    }
+  });
 });
