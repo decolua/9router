@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **SenseNova**: add `sensenova-intl` provider on `token.sensenova.ai` for international keys (the `.cn` host returns 401 Forbidden for them)
+
 # v0.5.116 (2026-11-08)
 
 ## Features
