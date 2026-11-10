@@ -53,10 +53,13 @@ export const WEB_LOGIN_CONFIGS = {
       if (typeof value !== "string" || !value.trim()) return false;
       try {
         const parsed = JSON.parse(value);
-        const token = typeof parsed?.value === "string" ? parsed.value : value;
-        return typeof token === "string" && token.length >= 20;
+        // DeepSeek's sign-in page initializes localStorage.userToken to {"value":null,"__version":"0"}.
+        if (parsed && typeof parsed === "object" && "value" in parsed) {
+          return typeof parsed.value === "string" && parsed.value.trim().length >= 20;
+        }
+        return typeof parsed === "string" && parsed.trim().length >= 20;
       } catch {
-        return value.length >= 20;
+        return value.trim().length >= 20;
       }
     },
   },
