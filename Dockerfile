@@ -68,6 +68,7 @@ ENV PORT=20128
 ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
+ENV CHROME_PATH=/usr/bin/chromium
 
 COPY --chown=node:node --from=builder /app/public ./public
 COPY --chown=node:node --from=builder /app/.next/static ./.next/static
@@ -95,7 +96,7 @@ RUN mkdir -p /app/data /app/data-home && \
 
 # Avoid a full distribution upgrade in the runtime image. It makes builds less
 # reproducible and is unrelated to installing the runtime entrypoint helper.
-RUN apk add --no-cache su-exec ffmpeg && \
+RUN apk add --no-cache su-exec ffmpeg chromium xvfb nss freetype harfbuzz ca-certificates ttf-freefont && \
   printf '#!/bin/sh\nchown -R node:node /app/data /app/data-home 2>/dev/null\nexec su-exec node "$@"\n' > /entrypoint.sh && \
   chmod +x /entrypoint.sh
 
