@@ -8,6 +8,10 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioComboGuard";
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})*$/;
+// The name box itself holds one segment; the fake provider prefix (its own
+// toggle) holds any number, and the two are joined on submit.
+const SEGMENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
+const PREFIX_RE = NAME_RE;
 
 // Fields the bulk editor may write, and how each one reads to the operator.
 const MODEL_BULK_LABELS = {
@@ -672,7 +676,21 @@ function StudioFormModal({
   // A duplicate opens with the source model's rules already filled in, so the
   // only thing left to decide is the new name.
   const source = editing || duplicating || null;
-  const [callName, setCallName] = useState(editing?.callName || duplicateName || "");
+  // The fake provider prefix is a separate concern from the model name, so it
+  // gets its own toggle and field instead of letting people type slashes into
+  // the name box. A stored name that already carries one opens with the toggle
+  // on and the prefix split out of it.
+  const [namePrefix, setNamePrefix] = useState(() => {
+    const stored = editing?.callName || duplicateName || "";
+    const idx = stored.lastIndexOf("/");
+    return idx > 0 ? stored.slice(0, idx) : "";
+  });
+  const [prefixEnabled, setPrefixEnabled] = useState(() => !!namePrefix);
+  const [callName, setCallName] = useState(() => {
+    const stored = editing?.callName || duplicateName || "";
+    const idx = stored.lastIndexOf("/");
+    return idx > 0 ? stored.slice(idx + 1) : stored;
+  });
   const [displayName, setDisplayName] = useState(source?.displayName || "");
   // Label this model claims in a model listing (owned_by). Free-form; blank means
   // "present itself as the model name clients call".
@@ -722,10 +740,21 @@ function StudioFormModal({
   );
   const nameError = useMemo(() => {
     if (!callName) return "";
-    if (!NAME_RE.test(callName))
-      return "Letters, numbers, dot, dash and underscore only, with any number of prefix segments (max 64 per part).";
+    if (!SEGMENT_RE.test(callName))
+      return "Letters, numbers, dot, dash and underscore only (max 64). The provider prefix has its own field below.";
     return "";
   }, [callName]);
+  const prefixError = useMemo(() => {
+    if (!prefixEnabled || !namePrefix) return "";
+    if (!PREFIX_RE.test(namePrefix))
+      return "Prefix segments use letters, numbers, dot, dash and underscore (max 64 per segment).";
+    return "";
+  }, [prefixEnabled, namePrefix]);
+  const fullCallName = useMemo(() => {
+    const base = callName.trim();
+    if (!base) return "";
+    return prefixEnabled && namePrefix.trim() ? `${namePrefix.trim()}/${base}` : base;
+  }, [callName, prefixEnabled, namePrefix]);
 
   // Client-side precheck mirroring the server guard: warn before saving when
   // the picked combo leads back to this model. The server still decides.
@@ -733,12 +762,12 @@ function StudioFormModal({
   // Only computed while the switch is on: the panel is not rendered otherwise,
   // and re-deriving it on every keystroke for a hidden check is wasted work.
   const maskFindings = useMemo(
-    () => (antiProbe ? antiMaskFindings({ callName, ownedBy, targetModel }) : []),
-    [antiProbe, callName, ownedBy, targetModel]
+    () => (antiProbe ? antiMaskFindings({ callName: fullCallName, ownedBy, targetModel }) : []),
+    [antiProbe, fullCallName, ownedBy, targetModel]
   );
   const maskWarns = maskFindings.filter((f) => f.level === "warn");
   const cycleError = useMemo(() => {
-    const name = callName.trim();
+    const name = fullCallName;
     const target = targetModel.trim();
     if (!name || !target || target.includes("/")) return "";
     if (!combos.some((c) => c.name === target)) return "";
@@ -752,7 +781,7 @@ function StudioFormModal({
       extraSelfNames: editing?.callName && editing.callName !== name ? [editing.callName] : [],
     });
     return chain ? describeStudioCycle(chain) : "";
-  }, [callName, targetModel, combos, siblings, editing]);
+  }, [fullCallName, targetModel, combos, siblings, editing]);
 
   const handlePickModel = (model) => {
     if (!model?.value || model.isPlaceholder) return;
@@ -764,14 +793,14 @@ function StudioFormModal({
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!callName.trim() || !targetModel || nameError || cycleError) return;
+    if (!fullCallName || !targetModel || nameError || prefixError || cycleError) return;
     setSaving(true);
     try {
       const res = await fetch("/api/model-editor", {
         method: editing ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          callName: callName.trim(),
+          callName: fullCallName,
           previousName: editing?.callName,
           displayName: displayName.trim(),
           ownedBy: ownedBy.trim(),
@@ -861,16 +890,54 @@ function StudioFormModal({
             <Input
               value={callName}
               onChange={(e) => setCallName(e.target.value)}
-              placeholder="e.g. anthropic/claude-opus-5 or meta/llama/llama-4"
+              placeholder="e.g. claude-opus-5"
               autoFocus
             />
             {nameError ? (
               <p className="text-[11px] text-red-500 mt-1">{nameError}</p>
             ) : (
               <p className="text-[11px] text-text-muted mt-1">
-                Clients call <code className="font-mono">{`"${callName || "name"}"`}</code> as the model ID.
-                A prefix such as <code className="font-mono">anthropic/</code> is allowed.
+                Clients call <code className="font-mono">{`"${fullCallName || "name"}"`}</code> as the model ID.
               </p>
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <label className="block text-xs font-medium text-text-main">Fake provider prefix</label>
+                <p className="text-[11px] text-text-muted mt-0.5">
+                  Calls this model as <code className="font-mono">vendor/model</code>, like it belongs to
+                  another vendor. Off by default: the model stays callable by its plain name.
+                </p>
+              </div>
+              <Toggle checked={prefixEnabled} onChange={setPrefixEnabled} />
+            </div>
+            {prefixEnabled && (
+              <div className="mt-2">
+                <div className="flex items-stretch rounded-lg border border-border overflow-hidden focus-within:border-primary/60 transition-colors">
+                  <input
+                    value={namePrefix}
+                    onChange={(e) => setNamePrefix(e.target.value)}
+                    placeholder="anthropic"
+                    spellCheck={false}
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-text-main outline-none font-mono placeholder:font-sans placeholder:text-text-muted/70"
+                  />
+                  <span className="flex items-center px-1 text-sm font-mono text-text-muted bg-surface-light/60 border-l border-border select-none">
+                    /
+                  </span>
+                  <span className="flex items-center px-3 text-sm font-mono text-text-muted bg-surface-light/60 border-l border-border truncate max-w-[45%]" title={callName || "name"}>
+                    {callName || "name"}
+                  </span>
+                </div>
+                {prefixError ? (
+                  <p className="text-[11px] text-red-500 mt-1">{prefixError}</p>
+                ) : (
+                  <p className="text-[11px] text-text-muted mt-1">
+                    Any label works; it does not need to be a provider you connected.
+                  </p>
+                )}
+              </div>
             )}
           </div>
 
@@ -892,7 +959,7 @@ function StudioFormModal({
             <Input
               value={ownedBy}
               onChange={(e) => setOwnedBy(e.target.value)}
-              placeholder={`Defaults to "${callName || "the model name"}"`}
+              placeholder={`Defaults to "${fullCallName || "the model name"}"`}
             />
             <p className="text-[11px] text-text-muted mt-1">
               Shown as <code className="font-mono">owned_by</code> when clients list
@@ -1054,7 +1121,7 @@ function StudioFormModal({
             <Button type="button" variant="secondary" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!callName.trim() || !targetModel || !!nameError || !!cycleError || saving}>
+            <Button type="submit" disabled={!fullCallName || !targetModel || !!nameError || !!prefixError || !!cycleError || saving}>
               {saving ? "Saving..." : editing ? "Save" : "Create"}
             </Button>
           </div>
