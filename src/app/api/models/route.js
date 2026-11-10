@@ -21,7 +21,12 @@ export async function GET() {
         const fullModel = `${m.provider}/${m.model}`;
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        // Capability tables are keyed by provider *id* (`qoder`), while the
+        // roster — and therefore `AI_MODELS` — is keyed by the UI alias (`qd`).
+        // Looking the alias up misses every provider-scoped entry and falls
+        // through to the name heuristics, which is why Qoder's models reported
+        // vision:false and the "Add Vision Model" picker listed almost nothing.
+        const c = getCapabilitiesForModel(ALIAS_TO_ID[m.provider] || m.provider, m.model);
         return {
           ...m,
           fullModel,
