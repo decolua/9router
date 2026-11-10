@@ -1,6 +1,6 @@
 # v0.5.395 (2026-11-10) · 1 commit
 
-## Provider page: unauthenticated shelf, brand logos
+## What's Added?
 
 - New section Unauthenticated Providers above Free Tier Providers: MiMoCode Free, OpenCode Free, DeepAI Free.
 - Custom OpenAI Compatible cards use the OpenAI mark, Anthropic Compatible use Claude, Moonshot Compatible keep the Moonshot mark.
@@ -8,7 +8,7 @@
 
 # v0.5.393 (2026-11-10) · 1 commit
 
-## DeepAI free provider (accountless)
+## What's Added?
 
 - New free provider deepai: talks to the public DeepAI chat endpoint with the per-request MD5 api-key signature, so no account, email, or captcha is involved.
 - Eleven models unlocked on the free lane, from deepseek-v4.1-flash to llama-3.1-8b-instant.
@@ -16,28 +16,28 @@
 
 # v0.5.392 (2026-11-09) · 1 commit
 
-## Harvester chrome cleanup
+## What Looks Different?
 
 - Dropped the FEATURE+ label from the sidebar section and the page header.
 - Removed the Active/Idle status badge from the harvester worker card.
 
 # v0.5.391 (2026-11-09) · 1 commit
 
-## OpenCode Free V2: optional account sign-in (device flow)
+## What's Added?
 
 - Reverse of the v2 CLI showed it only falls back to the shared "public" key when no account is signed in. Added a device-flow sign-in (POST /api/opencode-account: start, poll, logout; GET status) that stores the OAuth token in settings, and the executor now sends that token as the bearer when present.
 - Quota itself is daily and resets at 00:00 UTC (retry-after equals seconds to midnight UTC); every free model shares the same bucket, and datacenter proxy ranges are already exhausted, so the account lane is the only way to a fresh bucket.
 
 # v0.5.390 (2026-11-09) · 1 commit
 
-## OpenCode Free V2: proxied TLS sessions tolerate broken pool certs
+## What Was Fixed
 
 - Pool proxies frequently terminate TLS with broken or MITM certificates, so proxied requests died as 502 CERTIFICATE_VERIFY_FAILED before reaching the gate. Proxied wreq-js sessions now run with certificate verification disabled; the direct session keeps full verification.
 - Live probe: two fresh pool proxies reached the upstream (429 FreeUsageLimitError) instead of failing the handshake.
 
 # v0.5.389 (2026-11-07) · 2 commits
 
-## OpenCode Free V2: proxy pools ride the impersonated TLS client
+## What Was Fixed
 
 - Proxy pools were unusable on the free lane: a configured proxy forced the Undici/OpenSSL path, the upstream answered 403 FreeTierError, and proxyFetch replayed direct, discarding the pool. The executor now resolves the effective proxy itself, disables the outer proxy path, and hands the proxy to the wreq-js impersonating client.
 - opencodeTlsClient caches one TLS session per proxy (wreq-js locks the proxy per session). Live probes from 12 different egress IPs all cleared the TLS gate.
@@ -45,7 +45,7 @@
 
 # v0.5.387 (2026-11-07) · 1 commit
 
-## Auto Harvester: working proxy probe + verified imports
+## What Was Fixed
 
 - Root cause of 0/500 harvests: the route statically imported undici, which Next bundles into its compiled undici copy whose ProxyAgent fails at runtime. Probes now use the same pattern as open-sse/proxyFetch (dynamic import + global fetch), verified returning ok:true with egress IP and location.
 - End-to-end verified: start target 5, ran the real cycle, imported FreeProxy-<ip>_<port>-[LOC] entries (status working, active) into Proxy Pools.
@@ -53,21 +53,21 @@
 
 # v0.5.384 (2026-11-07) · 1 commit
 
-## Auto Harvester: candidate shuffle fix
+## What Was Fixed
 
 - Candidates were taken in feed order, so the first 500 all came from the first feed (jetkai), which was 100% dead on this network. The harvester always finished 0/500.
 - Candidates are now shuffled before the scan window is picked, so live proxies from healthy feeds (monosans, TheSpeedX, sunny9577) are reached in every run.
 
 # v0.5.383 (2026-11-07) · 1 commit
 
-## Auto Harvester: dead feed pruning, English UI, de-slopped
+## What Looks Different?
 
 - Pruned 3 dead/empty proxy feeds (MuRongPIG, KangProxy, stormsia), added TheSpeedX/PROXY-List (2.7k live). 12 feeds total, all verified reachable.
 - Page copy now English (was Indonesian). Removed the fake-terminal status box, icon clutter and the generic 3-step explainer card.
 
 # v0.5.382 (2026-11-07) · 1 commit
 
-## FEATURE+ — Auto Harvester
+## What's Added?
 
 - New dedicated page under FEATURE+ that auto-fills the proxy pool from 15 public free-proxy feeds.
 - Pipeline: parallel feed fetch (4s cap) -> sub-second TCP ping pre-check -> HTTP verification via Cloudflare trace (captures egress IP + location, drops duplicate egress so quota buckets stay distinct).
@@ -76,7 +76,7 @@
 
 # v0.5.378 (2026-11-07) · 1 commit
 
-## Remove Z.ai web cookie provider (`zai-web`)
+## What Was Deleted?
 
 - Removed the `zai-web` registry (`open-sse/providers/registry/zai-web.js`),
   its registry slot `p159`, and the provider logo `public/providers/zai-web.png`.
@@ -87,7 +87,7 @@
 
 # v0.5.377 (2026-11-07) · 1 commit
 
-## ZCode bonus start plan — visible claim + in-app Aliyun verification
+## What's Added?
 
 - The bonus banner now also shows for `zcode` / `zc` connections (previously only
   `glm`), and the bonus endpoint scans the whole ZCode family — connected ZCode
@@ -100,7 +100,7 @@
 
 # v0.5.376 (2026-11-06) · 1 commit
 
-## Live Requests Stream — model name only
+## What Looks Different?
 
 - The stream no longer prints the small provider/channel chip and resolved-model
   arrow under each model name — each row now shows just the model, matching the
@@ -108,7 +108,7 @@
 
 # v0.5.375 (2026-11-06) · 1 commit
 
-## ZCode provider parity (zcode seren)
+## What's Added?
 
 - Ported the full ZCode provider stack: `ZCodeExecutor` (GLM-5.3-Flash /
   GLM-5.3 / GLM-5.2 / GLM-5-Turbo, Bearer + ZCode JWT dual-lane), plan selection
@@ -225,7 +225,7 @@
 
 # v0.5.367 (2026-11-04) · 1 commit
 
-## Background loading-in-the-bell: all surfaces verified, stale tests fixed
+## What Was Fixed
 The bell now carries every long operation — batch testing, backup/import, bulk
 key imports, Codex/Grok accounts import, Qoder/Cline model imports and proxy
 import — while the operator clicks around and switches menus. The feature was
@@ -250,7 +250,7 @@ repo root, and a couple asserted removed patterns.
 
 # v0.5.366 (2026-11-04) · 1 commit
 
-## Changelog UI: composite category headings now render in colour
+## What Looks Different?
 The changelog modal painted every unrecognised category heading grey with a
 "help" icon instead of the usual coloured "WHAT'S …?" pill. Headings the fork
 writes like `Providers & Usage Fixes`, `Providers & UI`, `UI & Theme System`,
