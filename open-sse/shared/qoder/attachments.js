@@ -53,17 +53,6 @@ function stubText({ name, mime, bytes, reason }) {
   return `[file omitted: ${label}${size} — ${reason}]`;
 }
 
-export function buildMultipartFile(buffer, { fieldName = "file", fileName, mediaType } = {}) {
-  const boundary = `----9routerQoder${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
-  const filename = fileName || `upload.${mimeExt(mediaType)}`;
-  const head = Buffer.from(
-    `--${boundary}\r\nContent-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\nContent-Type: ${mediaType || "application/octet-stream"}\r\n\r\n`,
-  );
-  const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
-  const body = Buffer.concat([head, buffer, tail]);
-  return { boundary, body };
-}
-
 function extractUrlFromUploadResponse(json) {
   if (!json || typeof json !== "object") return null;
   const result = json.result && typeof json.result === "object" ? json.result : json;
@@ -83,14 +72,19 @@ function extractUrlFromUploadResponse(json) {
 }
 
 async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions, signal }) {
-  const requestId = uuidv4();
-  const url = `${qoderInferenceBase(credentials)}${`/algo${QODER_IMAGE_UPLOAD_SIG_PATH}`}?request_id=${requestId}`;
-  const { boundary, body } = buildMultipartFile(buffer, {
-    fileName: `image.${mimeExt(mediaType)}`,
-    mediaType: mediaType || "application/octet-stream",
-  });
+  // qodercli's real shape (verified against its embedded source):
+  //   PUT {inference}/algo/api/v2/image/upload?request_id=<uuid hex>
+  //   JSON body: { data: <base64>, mediaType }
+  // It is NOT multipart. A multipart body makes the gateway answer
+  // 403 {"code":"101","message":"Signature invalid"}, which looks like an auth
+  // failure but is really a body-shape rejection.
+  const requestId = uuidv4().replace(/-/g, "");
+  const url = `${qoderInferenceBase(credentials)}/algo${QODER_IMAGE_UPLOAD_SIG_PATH}?request_id=${requestId}`;
+  const payload = Buffer.from(
+    JSON.stringify({ data: buffer.toString("base64"), mediaType: mediaType || "image/png" }),
+  );
   const psd = credentials?.providerSpecificData || {};
-  const cosyHeaders = buildCosyHeaders(body, url, {
+  const cosyHeaders = buildCosyHeaders(payload, url, {
     userId: psd.userId,
     authToken: credentials.accessToken,
     name: credentials.displayName || "",
@@ -100,14 +94,14 @@ async function defaultUploadImage({ buffer, mediaType, credentials, proxyOptions
   const headers = {
     ...cosyHeaders,
     Accept: "application/json",
-    "Content-Type": `multipart/form-data; boundary=${boundary}`,
-    "Content-Length": String(body.length),
+    "Content-Type": "application/json",
+    "Content-Length": String(payload.length),
     "AI-CLIENT-TIMESTAMP": String(Math.floor(Date.now() / 1000)),
     "Accept-Encoding": "identity",
   };
   const res = await proxyAwareFetch(
     url,
-    { method: "PUT", headers, body, signal },
+    { method: "PUT", headers, body: payload, signal },
     proxyOptions,
   );
   if (!res.ok) {

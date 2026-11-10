@@ -26,7 +26,6 @@ import { canonicalizeQoderUsage } from "../../open-sse/shared/qoder/sse.js";
 import {
   rewriteQoderMessageAttachments,
   clearQoderUploadCache,
-  buildMultipartFile,
 } from "../../open-sse/shared/qoder/attachments.js";
 import { qoderInferenceBase } from "../../open-sse/shared/qoder/constants.js";
 
@@ -734,14 +733,5 @@ describe("rewriteQoderMessageAttachments", () => {
     expect(Buffer.byteLength(wire, "utf8")).toBeLessThan(4096);
   });
 
-  it("buildMultipartFile uses the file field name qodercli sends", () => {
-    const { boundary, body } = buildMultipartFile(Buffer.from("hi"), {
-      fileName: "image.png",
-      mediaType: "image/png",
-    });
-    const text = body.toString("latin1");
-    expect(text).toContain(`name="file"`);
-    expect(text).toContain("filename=\"image.png\"");
-    expect(text).toContain(`--${boundary}`);
-  });
+
 });
