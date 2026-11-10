@@ -5,7 +5,7 @@ export default {
   alias: "dai",
   uiAlias: "dai",
   display: {
-    name: "DeepAI (Free)",
+    name: "DeepAI Free",
     icon: "smart_toy",
     color: "#111827",
     textIcon: "DA",
