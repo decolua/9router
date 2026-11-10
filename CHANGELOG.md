@@ -1,3 +1,9 @@
+# v0.5.400 (2026-11-10) · 1 commit
+
+## What Looks Different?
+
+- The GitHub link in the header keeps its label on phones: Visit GitHub on small screens, Visit on GitHub from tablet width up, instead of an icon on its own.
+
 # v0.5.399 (2026-11-10) · 1 commit
 
 ## What's Added?
