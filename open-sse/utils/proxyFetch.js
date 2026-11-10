@@ -9,6 +9,14 @@ import {
   isFreshSocketReplayEnabled,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { ensureClaudeCliVersion, applyClaudeCliVersion } from "./claudeCliVersion.js";
+
+const CLAUDE_UA_PROBE = /claude-cli\/\d/;
+function hasClaudeCliHeader(headers) {
+  if (!headers) return false;
+  const values = headers instanceof Headers ? [...headers.values()] : Array.isArray(headers) ? headers.map((h) => h[1]) : Object.values(headers);
+  return values.some((v) => typeof v === "string" && CLAUDE_UA_PROBE.test(v));
+}
 
 const proxyDispatchers = new Map();
 const directDispatchers = new Map();
@@ -449,6 +457,11 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  // Keep the spoofed Claude Code version current (new models require a minimum CLI version).
+  if (hasClaudeCliHeader(options?.headers)) {
+    await ensureClaudeCliVersion(rawFetch);
+    options = { ...options, headers: applyClaudeCliVersion(options.headers) };
+  }
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers

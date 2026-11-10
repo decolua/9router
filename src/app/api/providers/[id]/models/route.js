@@ -187,15 +187,19 @@ const PROVIDER_MODELS_CONFIG = {
     authPrefix: "Bearer ",
     parseResponse: (data) => data.data || [],
   },
+  // OAuth (sk-ant-oat) token: Bearer + oauth beta header. Live list lets new
+  // Claude models show up without waiting for a 9router release.
   claude: {
-    url: "https://api.anthropic.com/v1/models",
+    url: "https://api.anthropic.com/v1/models?limit=1000",
     method: "GET",
     headers: {
       "Anthropic-Version": "2023-06-01",
+      "Anthropic-Beta": "oauth-2025-04-20",
       "Content-Type": "application/json"
     },
-    authHeader: "x-api-key",
-    parseResponse: (data) => data.data || []
+    authHeader: "Authorization",
+    authPrefix: "Bearer ",
+    parseResponse: (data) => (data.data || []).map((m) => ({ id: m.id, name: m.display_name || m.id }))
   },
   gemini: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
