@@ -91,7 +91,7 @@ export default function BulkEditKeys({ selectedCount, onApply, onClose }) {
   const rows = ["isActive", "limitKind", "tokenLimit", "dailyCostLimit", "requestLimit", "resetInterval", "rpmLimit", "tpmLimit", "allowedModels", "expiresAt"];
 
   return (
-    <Modal isOpen onClose={onClose} title={`Bulk edit ${selectedCount} key${selectedCount === 1 ? "" : "s"}`}>
+    <Modal isOpen onClose={onClose} title={`Edit ${selectedCount} key${selectedCount === 1 ? "" : "s"}`}>
       <div className="flex flex-col gap-3">
         {rows.map((name) => (
           <div key={name} className="flex items-start gap-3">

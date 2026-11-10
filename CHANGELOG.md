@@ -1,3 +1,9 @@
+# v0.5.397 (2026-11-10) · 1 commit
+
+## What Looks Different?
+
+- Selection action bars on Endpoint keys and Model Editor say Edit instead of Bulk edit, and the dialogs read Edit N keys or Edit N models.
+
 # v0.5.395 (2026-11-10) · 1 commit
 
 ## What's Added?

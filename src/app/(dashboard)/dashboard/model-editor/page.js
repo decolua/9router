@@ -348,7 +348,7 @@ function ModelStudioContent({ antiProbe = true }) {
               Clear
             </button>
             <Button size="sm" variant="primary" onClick={() => setShowBulkEdit(true)}>
-              Bulk edit
+              Edit
             </Button>
           </div>
         </div>
@@ -552,7 +552,7 @@ function BulkEditModels({ count, onApply, onClose }) {
   };
 
   return (
-    <Modal isOpen onClose={onClose} title={`Bulk edit ${count} model${count === 1 ? "" : "s"}`}>
+    <Modal isOpen onClose={onClose} title={`Edit ${count} model${count === 1 ? "" : "s"}`}>
       <div className="flex flex-col gap-3">
         {Object.keys(fields).map((name) => (
           <div key={name} className="flex items-start gap-3">

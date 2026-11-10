@@ -1601,7 +1601,7 @@ const scopedModelPatterns =
                 Clear
               </button>
               <Button size="sm" variant="primary" onClick={() => setShowBulkEdit(true)}>
-                Bulk edit
+                Edit
               </Button>
             </div>
           </div>
