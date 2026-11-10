@@ -803,7 +803,8 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       case "bai":
       case "muse":
       case "runcrate":
-      case "synthetic": {
+      case "synthetic":
+      case "uberllm": {
         const cfg = PROVIDERS[connection.provider];
         const res = await fetchWithConnectionProxy(cfg.validateUrl, { headers: { Authorization: `Bearer ${connection.apiKey}` } }, effectiveProxy);
         return { valid: res.ok, error: res.ok ? null : "Invalid API key" };
