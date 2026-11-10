@@ -144,6 +144,9 @@ Queries all panel models in parallel, then uses a Judge model to synthesize one 
 
 ---
 
+### System Prompt per Combo (optional)
+Each combo card has a **Prompt** button. The text you save there is appended to the system prompt of every request routed through that combo, for all strategies and all members (after the client's own system prompt, never replacing it). A nested combo inherits the outer combo's prompt and adds its own. Left empty, requests are sent unchanged.
+
 ## Cursor / Claude Default Combos
 
 Cursor and Claude Code send **unprefixed** model IDs (`composer-2.5`, `claude-opus-5`, `opus`), while 9Router routes with provider prefixes (`cu/composer-2.5`, `cc/claude-opus-5`). Default combo generators bridge that gap.

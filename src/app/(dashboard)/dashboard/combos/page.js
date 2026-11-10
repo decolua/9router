@@ -5,7 +5,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal, ComboPromptModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
@@ -343,8 +343,10 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
       // Prune to keep settings clean: default fallback with no extras = no entry.
+      // The system prompt applies to every strategy, so it survives the prune.
       if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
-        delete updated[comboName];
+        if (next.systemPrompt) updated[comboName] = { systemPrompt: next.systemPrompt };
+        else delete updated[comboName];
       } else {
         updated[comboName] = next;
       }
@@ -362,7 +364,9 @@ export default function CombosPage() {
       const updated = { ...comboStrategies };
       for (const combo of selectedCombos) {
         if (!strategy || strategy === "fallback") {
-          delete updated[combo.name];
+          const systemPrompt = updated[combo.name]?.systemPrompt;
+          if (systemPrompt) updated[combo.name] = { systemPrompt };
+          else delete updated[combo.name];
         } else {
           updated[combo.name] = {
             ...(updated[combo.name] || {}),
@@ -659,6 +663,8 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
   const [showRouterSelect, setShowRouterSelect] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const [showPromptModal, setShowPromptModal] = useState(false);
+  const hasSystemPrompt = !!strategy.systemPrompt;
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
@@ -801,7 +807,7 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             />
           </div>
 
-          <div className="grid grid-cols-3 gap-1 sm:flex">
+          <div className="grid grid-cols-4 gap-1 sm:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
               className="flex flex-col items-center rounded px-2 py-1 text-text-muted transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5"
@@ -811,6 +817,14 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 {copied === `combo-${combo.id}` ? "check" : "content_copy"}
               </span>
               <span className="text-[10px] leading-tight">Copy</span>
+            </button>
+            <button
+              onClick={() => setShowPromptModal(true)}
+              className={`flex flex-col items-center rounded px-2 py-1 transition-colors hover:bg-black/5 hover:text-primary dark:hover:bg-white/5 ${hasSystemPrompt ? "text-primary" : "text-text-muted"}`}
+              title={hasSystemPrompt ? "System prompt set for this combo" : "Add a system prompt for this combo"}
+            >
+              <span className="material-symbols-outlined text-[18px]">{hasSystemPrompt ? "chat" : "chat_add_on"}</span>
+              <span className="text-[10px] leading-tight">Prompt</span>
             </button>
             <button
               onClick={onEdit}
@@ -856,6 +870,17 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           kindFilter="systemone"
           addedModelValues={routerModel ? [routerModel] : []}
           closeOnSelect={true}
+        />
+      )}
+
+      {/* Per-combo system prompt */}
+      {showPromptModal && (
+        <ComboPromptModal
+          isOpen={showPromptModal}
+          onClose={() => setShowPromptModal(false)}
+          comboName={combo.name}
+          currentPrompt={strategy.systemPrompt}
+          onSave={onSetStrategy}
         />
       )}
 
