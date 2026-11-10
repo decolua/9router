@@ -118,9 +118,12 @@ export async function getStudioModels() {
 
 /** One studio model by callable name, or null. */
 export async function getStudioModel(callName) {
-  if (!callName || callName.includes("|") || callName.includes("/")) return null;
-  const value = await store().get(callName);
-  return value ? toModel(callName, value) : null;
+  const name = String(callName ?? "").trim();
+  // A callable name may carry one prefix (`anthropic/workhorse`); the legacy
+  // per-model override key stays excluded because it holds a `provider|model`.
+  if (!name || name.includes("|") || name.split("/").length > 2) return null;
+  const value = await store().get(name);
+  return value ? toModel(name, value) : null;
 }
 
 export async function setStudioModel({ callName, displayName, ownedBy, targetModel, targetLabel, contextWindow, systemPrompt, inputMultiplier, outputMultiplier, antiProbe }) {
