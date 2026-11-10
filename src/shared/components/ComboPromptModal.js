@@ -41,7 +41,7 @@ export default function ComboPromptModal({
           onChange={(e) => setPrompt(e.target.value)}
           maxLength={MAX_COMBO_PROMPT_CHARS}
           rows={8}
-          placeholder="e.g. Always answer in Indonesian. Keep answers short."
+          placeholder="e.g. Keep answers short. Ask before making destructive changes."
           className="w-full px-3 py-2 text-xs border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-y"
         />
         <div className="text-[10px] text-text-muted text-right">

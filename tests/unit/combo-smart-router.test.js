@@ -89,20 +89,20 @@ describe("System One Smart Combo Router", () => {
     });
 
     it("uses trimmed member descriptions when present, null otherwise", () => {
-      expect(buildChoiceCriteria(["oca-pro", "oca-deep", "oca-lite"], {
-        "oca-pro": "  everyday coding tasks  ",
-        "oca-deep": "",
-        "oca-lite": "   ",
+      expect(buildChoiceCriteria(["combo-pro", "combo-deep", "combo-lite"], {
+        "combo-pro": "  everyday coding tasks  ",
+        "combo-deep": "",
+        "combo-lite": "   ",
       })).toEqual({
-        "oca-pro": "everyday coding tasks",
-        "oca-deep": null,
-        "oca-lite": null,
+        "combo-pro": "everyday coding tasks",
+        "combo-deep": null,
+        "combo-lite": null,
       });
     });
 
     it("ignores description keys that are not combo members", () => {
-      const criteria = buildChoiceCriteria(["oca-pro"], { "oca-pro": "coding", "ghost": "nope", toString: "nope" });
-      expect(criteria).toEqual({ "oca-pro": "coding" });
+      const criteria = buildChoiceCriteria(["combo-pro"], { "combo-pro": "coding", "ghost": "nope", toString: "nope" });
+      expect(criteria).toEqual({ "combo-pro": "coding" });
       expect(buildChoiceCriteria(["toString", "constructor"], {})).toEqual({ toString: null, constructor: null });
     });
 
@@ -129,7 +129,7 @@ describe("System One Smart Combo Router", () => {
     });
 
     it("returns trimmed custom instructions, capped", () => {
-      expect(resolveRouteInstructions("  Pick oca-deep for hard tasks.  ")).toBe("Pick oca-deep for hard tasks.");
+      expect(resolveRouteInstructions("  Pick combo-deep for hard tasks.  ")).toBe("Pick combo-deep for hard tasks.");
       expect(resolveRouteInstructions("y".repeat(MAX_ROUTE_INSTRUCTIONS_CHARS + 100)).length).toBe(MAX_ROUTE_INSTRUCTIONS_CHARS);
     });
   });

@@ -136,7 +136,7 @@ Uses a **System One decision model** (configured under **Media Providers → Sys
   - **Strict Lock (1 task = 1 session)**: Evaluates System One once on the first turn, then locks that model for the entire session. Adds **0 ms latency** and **0 extra router calls** on follow-up turns, guaranteeing 100% prompt cache reuse.
   - **Per-Turn**: Evaluates System One on every turn independently without session stickiness.
   - **Custom Threshold**: Choose your own confidence threshold (50%–95%) required to trigger a model switch.
-- **Routing Rules (optional)**: In the Router Policy dialog you can set per-combo **router instructions** (the question/rubric System One answers) and a **description per member** (when to pick it). Useful when members are custom or combo names (e.g. `oca-pro`, `oca-deep`) the decision model cannot recognize on its own. Left empty, the default question is used and members are sent without descriptions.
+- **Routing Rules (optional)**: In the Router Policy dialog you can set per-combo **router instructions** (the question/rubric System One answers) and a **description per member** (when to pick it). Useful when members are custom or combo names (e.g. `combo-pro`, `combo-deep`) the decision model cannot recognize on its own. Left empty, the default question is used and members are sent without descriptions.
 - **Resilience**: If the active model rate-limits (429) or fails, the session lock is cleared and standard fallback to the next model executes immediately.
 
 ### 4. Fusion
