@@ -1,3 +1,9 @@
+# v0.5.402 (2026-11-10)
+
+## What Looks Different?
+
+- The custom model name field shows a prefixed example (`anthropic/claude-opus-5 or meta/llama/llama-4`) and its error text says any number of prefix segments is allowed, matching what the router now accepts.
+
 # v0.5.401 (2026-11-10)
 
 ## What Looks Different?

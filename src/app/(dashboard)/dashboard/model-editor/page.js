@@ -723,7 +723,7 @@ function StudioFormModal({
   const nameError = useMemo(() => {
     if (!callName) return "";
     if (!NAME_RE.test(callName))
-      return "Letters, numbers, dot, dash and underscore only, with an optional prefix (max 64 per part).";
+      return "Letters, numbers, dot, dash and underscore only, with any number of prefix segments (max 64 per part).";
     return "";
   }, [callName]);
 
@@ -861,7 +861,7 @@ function StudioFormModal({
             <Input
               value={callName}
               onChange={(e) => setCallName(e.target.value)}
-              placeholder="e.g. workhorse or anthropic/workhorse"
+              placeholder="e.g. anthropic/claude-opus-5 or meta/llama/llama-4"
               autoFocus
             />
             {nameError ? (

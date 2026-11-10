@@ -33,7 +33,7 @@ export async function GET() {
 
 async function validate({ callName, targetModel, previousName }) {
   if (!NAME_RE.test(callName)) {
-  return "Name must start with a letter or number and only use letters, numbers, dot, dash or underscore, with at most one optional prefix (max 64 per part).";
+  return "Name must start with a letter or number and only use letters, numbers, dot, dash or underscore, with any number of prefix segments (max 64 per part).";
   }
   if (!targetModel || !targetModel.trim()) {
   return "Pick the model this name should call.";
