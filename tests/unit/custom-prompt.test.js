@@ -69,7 +69,7 @@ describe("resolveComboPrompt", () => {
   });
 
   it("trims and caps a single prompt", () => {
-    expect(resolveComboPrompt("  Answer in Indonesian.  ")).toBe("Answer in Indonesian.");
+    expect(resolveComboPrompt("  Keep answers short.  ")).toBe("Keep answers short.");
     expect(resolveComboPrompt("x".repeat(MAX_COMBO_PROMPT_CHARS + 50)).length).toBe(MAX_COMBO_PROMPT_CHARS);
   });
 

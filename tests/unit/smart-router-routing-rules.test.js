@@ -18,14 +18,14 @@ vi.mock("open-sse/handlers/systemoneCore.js", () => ({
 const { resolveSmartChoice } = await import("../../src/sse/services/systemoneRouter.js");
 
 const body = { messages: [{ role: "user", content: "Refactor this module" }] };
-const models = ["oca-pro", "oca-deep"];
+const models = ["combo-pro", "combo-deep"];
 
 describe("resolveSmartChoice routing rules payload", () => {
   beforeEach(() => {
     handleSystemoneCore.mockReset();
     handleSystemoneCore.mockResolvedValue({
       success: true,
-      response: { json: async () => ({ answers: { route: { choice: "oca-deep", confidence: 0.9 } } }) },
+      response: { json: async () => ({ answers: { route: { choice: "combo-deep", confidence: 0.9 } } }) },
     });
   });
 
@@ -34,10 +34,10 @@ describe("resolveSmartChoice routing rules payload", () => {
       body,
       models,
       routerInstructions: "  Pick the cheapest member that can do the job.  ",
-      memberDescriptions: { "oca-deep": " hard multi-step reasoning ", "not-a-member": "ignored" },
+      memberDescriptions: { "combo-deep": " hard multi-step reasoning ", "not-a-member": "ignored" },
     });
 
-    expect(route.choice).toBe("oca-deep");
+    expect(route.choice).toBe("combo-deep");
     expect(handleSystemoneCore).toHaveBeenCalledTimes(1);
     expect(handleSystemoneCore.mock.calls[0][0].body).toEqual({
       model: "jev-1.13-free",
@@ -46,7 +46,7 @@ describe("resolveSmartChoice routing rules payload", () => {
         route: {
           type: "choice",
           instructions: "Pick the cheapest member that can do the job.",
-          criteria: { "oca-pro": null, "oca-deep": "hard multi-step reasoning" },
+          criteria: { "combo-pro": null, "combo-deep": "hard multi-step reasoning" },
         },
       },
     });
@@ -60,7 +60,7 @@ describe("resolveSmartChoice routing rules payload", () => {
         route: {
           type: "choice",
           instructions: "Which of these configured models is the most appropriate for this request?",
-          criteria: { "oca-pro": null, "oca-deep": null },
+          criteria: { "combo-pro": null, "combo-deep": null },
         },
       },
     });
@@ -69,7 +69,7 @@ describe("resolveSmartChoice routing rules payload", () => {
       {},
       { routerInstructions: undefined, memberDescriptions: undefined },
       { routerInstructions: "", memberDescriptions: {} },
-      { routerInstructions: "   ", memberDescriptions: { "oca-pro": "  " } },
+      { routerInstructions: "   ", memberDescriptions: { "combo-pro": "  " } },
     ];
     for (const extra of variants) {
       handleSystemoneCore.mockClear();
