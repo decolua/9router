@@ -349,6 +349,7 @@ export function isZeroContentResponse(data) {
  * @param {boolean} [options.sessionSticky=true] - Keep chosen model across session requests to retain prompt cache
  * @param {number} [options.confidenceThreshold=0.8] - Minimum confidence required for model switch (0-1)
  * @param {Function|null} [options.resolveSmartChoice=null] - Smart router resolver callback: (body, models) => Promise<{ choice, probabilities, confidence } | null>
+ * @param {Function|null} [options.onRouteAttempt=null] - Called before each member attempt with { route, confidence, attempt }; route is "routed" (router decision used), "kept" (session model kept), "default" (configured order) or null (non-smart strategy)
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -365,9 +366,14 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  onRouteAttempt = null,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
+  // How the first candidate was picked, for per-combo usage stats:
+  // "routed" (router decision used), "kept" (session model kept), "default" (configured order)
+  let routeOutcome = null;
+  let routeConfidence = null;
 
   if (comboStrategy === "smart") {
     const policy = (typeof smartPolicy === "string" ? smartPolicy : "smart").toLowerCase();
@@ -393,9 +399,11 @@ export async function handleComboChat({
       if (isStrict) {
         // Strict Lock: re-use sticky model without invoking System One (0ms, 0 extra tokens)
         rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+        routeOutcome = "kept";
         log.info("COMBO", `smart-router [strict] locked session "${sessionId}" → ${activeStickyModel}`);
       } else if (typeof resolveSmartChoice === "function") {
         // Smart Switch (Adaptive): check if the user's task drastically shifted
+        routeOutcome = "kept";
         try {
           const smartResult = await resolveSmartChoice(body, models);
           const newChoice = smartResult?.choice;
@@ -404,6 +412,8 @@ export async function handleComboChat({
           if (newChoice && newChoice !== activeStickyModel && models.includes(newChoice) && conf !== null && conf >= switchThreshold) {
             // Task changed with high confidence: switch model and update session
             rotatedModels = orderModelsByChoice(models, smartResult);
+            routeOutcome = "routed";
+            routeConfidence = conf;
             log.info("COMBO", `smart-router [smart-switch] task changed → switched from ${activeStickyModel} to ${newChoice} (confidence: ${conf} >= ${switchThreshold})`);
             if (sessionId) {
               setStickyComboModel(comboName, sessionId, newChoice);
@@ -421,9 +431,11 @@ export async function handleComboChat({
         }
       } else {
         rotatedModels = [activeStickyModel, ...models.filter((m) => m !== activeStickyModel)];
+        routeOutcome = "kept";
       }
     } else if (typeof resolveSmartChoice === "function") {
       // Turn 1 or per-turn: evaluate System One to select initial model
+      routeOutcome = "default";
       try {
         const smartResult = await resolveSmartChoice(body, models);
         const conf = typeof smartResult?.confidence === "number" ? smartResult.confidence : null;
@@ -433,6 +445,8 @@ export async function handleComboChat({
             log.info("COMBO", `smart-router confidence (${conf}) below threshold (${switchThreshold}), fallback to order: [${models.join(", ")}]`);
           } else {
             rotatedModels = orderModelsByChoice(models, smartResult);
+            routeOutcome = "routed";
+            routeConfidence = conf;
             log.info("COMBO", `smart-router selected ${smartResult.choice} (confidence: ${conf ?? "N/A"})`);
             if (!isPerTurn && sessionId) {
               setStickyComboModel(comboName, sessionId, smartResult.choice);
@@ -473,6 +487,9 @@ export async function handleComboChat({
     log.info("COMBO", `Trying model ${i + 1}/${rotatedModels.length}: ${modelStr}`);
 
     try {
+      if (typeof onRouteAttempt === "function") {
+        onRouteAttempt({ route: routeOutcome, confidence: routeConfidence, attempt: i });
+      }
       const result = await handleSingleModel(body, modelStr);
       
       // Success (2xx). A 2xx is necessary but NOT sufficient: Gemini aborts (e.g.

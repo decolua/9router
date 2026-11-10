@@ -52,6 +52,31 @@ function getLocalDateKey(timestamp) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+function comboStatsKey(combo, comboVia, model, provider) {
+  return `${combo || ""}|${comboVia || ""}|${model}|${provider || "unknown"}`;
+}
+
+const ROUTE_FIELDS = { routed: "routed", kept: "kept", default: "defaulted" };
+const ROUTE_COUNTERS = ["routed", "kept", "defaulted", "failover", "confidenceSum", "confidenceCount"];
+
+// Count how a combo picked the model for one request: router decision used,
+// session model kept, configured order, plus failover and router confidence.
+function addRouteCounters(bucket, { route, routeConfidence, failover }) {
+  const field = ROUTE_FIELDS[route];
+  if (field) bucket[field] = (bucket[field] || 0) + 1;
+  if (failover) bucket.failover = (bucket.failover || 0) + 1;
+  if (route === "routed" && typeof routeConfidence === "number" && Number.isFinite(routeConfidence)) {
+    bucket.confidenceSum = (bucket.confidenceSum || 0) + routeConfidence;
+    bucket.confidenceCount = (bucket.confidenceCount || 0) + 1;
+  }
+}
+
+function mergeRouteCounters(target, source) {
+  for (const f of ROUTE_COUNTERS) {
+    if (source[f]) target[f] = (target[f] || 0) + source[f];
+  }
+}
+
 function addToCounter(target, key, values) {
   if (!target[key]) target[key] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0 };
   target[key].requests += values.requests || 1;
@@ -80,6 +105,7 @@ function aggregateEntryToDay(day, entry) {
   day.byAccount ||= {};
   day.byApiKey ||= {};
   day.byEndpoint ||= {};
+  day.byCombo ||= {};
 
   if (entry.provider) addToCounter(day.byProvider, entry.provider, vals);
 
@@ -97,6 +123,13 @@ function aggregateEntryToDay(day, entry) {
   const endpoint = entry.endpoint || "Unknown";
   const epKey = `${endpoint}|${entry.model}|${entry.provider || "unknown"}`;
   addToCounter(day.byEndpoint, epKey, { ...vals, meta: { endpoint, rawModel: entry.model, provider: entry.provider } });
+
+  // combo "" = request sent directly to a model (no combo)
+  const combo = typeof entry.combo === "string" ? entry.combo : "";
+  const comboVia = typeof entry.comboVia === "string" ? entry.comboVia : "";
+  const comboKey = comboStatsKey(combo, comboVia, entry.model, entry.provider);
+  addToCounter(day.byCombo, comboKey, { ...vals, meta: { combo, comboVia, rawModel: entry.model, provider: entry.provider } });
+  addRouteCounters(day.byCombo[comboKey], entry);
 }
 
 function pushToRing(entry) {
@@ -286,7 +319,14 @@ export async function saveRequestUsage(entry) {
           entry.timestamp, entry.provider || null, entry.model || null,
           entry.connectionId || null, entry.apiKey || null, entry.endpoint || null,
           promptTokens, completionTokens, entry.cost || 0, entry.status || "ok",
-          stringifyJson(tokens), stringifyJson({}),
+          stringifyJson(tokens),
+          stringifyJson(entry.combo ? {
+            combo: entry.combo,
+            ...(entry.comboVia ? { comboVia: entry.comboVia } : {}),
+            ...(entry.route ? { route: entry.route } : {}),
+            ...(typeof entry.routeConfidence === "number" ? { routeConfidence: entry.routeConfidence } : {}),
+            ...(entry.failover ? { failover: true } : {}),
+          } : {}),
         ]
       );
 
@@ -294,7 +334,7 @@ export async function saveRequestUsage(entry) {
       const row = db.get(`SELECT data FROM usageDaily WHERE dateKey = ?`, [dateKey]);
       const day = row ? parseJson(row.data, {}) : {
         requests: 0, promptTokens: 0, completionTokens: 0, cost: 0,
-        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+        byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {}, byCombo: {},
       };
       aggregateEntryToDay(day, entry);
       db.run(`INSERT INTO usageDaily(dateKey, data) VALUES(?, ?) ON CONFLICT(dateKey) DO UPDATE SET data = excluded.data`, [dateKey, stringifyJson(day)]);
@@ -399,7 +439,7 @@ export async function getUsageStats(period = "all") {
   const stats = {
     totalRequests: 0,
     totalPromptTokens: 0, totalCompletionTokens: 0, totalCachedTokens: 0, totalCost: 0,
-    byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {},
+    byProvider: {}, byModel: {}, byAccount: {}, byApiKey: {}, byEndpoint: {}, byCombo: {},
     last10Minutes: [],
     pending: pendingRequests,
     activeRequests: [],
@@ -539,6 +579,20 @@ export async function getUsageStats(period = "all") {
         stats.byEndpoint[epKey].cost += ep.cost || 0;
         if (dateKey > (stats.byEndpoint[epKey].lastUsed || "")) stats.byEndpoint[epKey].lastUsed = dateKey;
       }
+
+      for (const [cbKey, cb] of Object.entries(day.byCombo || {})) {
+        const providerDisplayName = providerNodeNameMap[cb.provider] || cb.provider || "";
+        if (!stats.byCombo[cbKey]) {
+          stats.byCombo[cbKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, combo: cb.combo || "", comboVia: cb.comboVia || "", rawModel: cb.rawModel || "", provider: providerDisplayName, lastUsed: dateKey };
+        }
+        stats.byCombo[cbKey].requests += cb.requests || 0;
+        stats.byCombo[cbKey].promptTokens += cb.promptTokens || 0;
+        stats.byCombo[cbKey].completionTokens += cb.completionTokens || 0;
+        stats.byCombo[cbKey].cachedTokens += cb.cachedTokens || 0;
+        stats.byCombo[cbKey].cost += cb.cost || 0;
+        mergeRouteCounters(stats.byCombo[cbKey], cb);
+        if (dateKey > (stats.byCombo[cbKey].lastUsed || "")) stats.byCombo[cbKey].lastUsed = dateKey;
+      }
     }
 
     // Overlay precise lastUsed timestamps from history.
@@ -551,7 +605,7 @@ export async function getUsageStats(period = "all") {
       Date.now() - OVERLAY_WINDOW_MS
     );
     const histRows = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, meta FROM usageHistory WHERE timestamp >= ?`,
       [new Date(overlayCutoff).toISOString()]
     );
     for (const e of histRows) {
@@ -573,6 +627,10 @@ export async function getUsageStats(period = "all") {
       const endpoint = e.endpoint || "Unknown";
       const endpointKey = `${endpoint}|${e.model}|${e.provider || "unknown"}`;
       if (stats.byEndpoint[endpointKey] && new Date(ts) > new Date(stats.byEndpoint[endpointKey].lastUsed)) stats.byEndpoint[endpointKey].lastUsed = ts;
+
+      const em = parseJson(e.meta, {}) || {};
+      const cbKey = comboStatsKey(em.combo, em.comboVia, e.model, e.provider);
+      if (stats.byCombo[cbKey] && new Date(ts) > new Date(stats.byCombo[cbKey].lastUsed)) stats.byCombo[cbKey].lastUsed = ts;
     }
   } else {
     // 24h / today: live history
@@ -585,7 +643,7 @@ export async function getUsageStats(period = "all") {
       cutoff = new Date(Date.now() - PERIOD_MS["24h"]).toISOString();
     }
     const filtered = db.all(
-      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens FROM usageHistory WHERE timestamp >= ?`,
+      `SELECT timestamp, provider, model, connectionId, apiKey, endpoint, promptTokens, completionTokens, cost, tokens, meta FROM usageHistory WHERE timestamp >= ?`,
       [cutoff]
     );
 
@@ -665,6 +723,18 @@ export async function getUsageStats(period = "all") {
       const epe = stats.byEndpoint[epKey];
       epe.requests++; epe.promptTokens += promptTokens; epe.completionTokens += completionTokens; epe.cachedTokens += cachedTokens; epe.cost += entryCost;
       if (new Date(r.timestamp) > new Date(epe.lastUsed)) epe.lastUsed = r.timestamp;
+
+      const rm = parseJson(r.meta, {}) || {};
+      const combo = typeof rm.combo === "string" ? rm.combo : "";
+      const comboVia = typeof rm.comboVia === "string" ? rm.comboVia : "";
+      const cbKey = comboStatsKey(combo, comboVia, r.model, r.provider);
+      if (!stats.byCombo[cbKey]) {
+        stats.byCombo[cbKey] = { requests: 0, promptTokens: 0, completionTokens: 0, cachedTokens: 0, cost: 0, combo, comboVia, rawModel: r.model, provider: providerDisplayName, lastUsed: r.timestamp };
+      }
+      const cbe = stats.byCombo[cbKey];
+      cbe.requests++; cbe.promptTokens += promptTokens; cbe.completionTokens += completionTokens; cbe.cachedTokens += cachedTokens; cbe.cost += entryCost;
+      addRouteCounters(cbe, rm);
+      if (new Date(r.timestamp) > new Date(cbe.lastUsed)) cbe.lastUsed = r.timestamp;
     }
   }
 
