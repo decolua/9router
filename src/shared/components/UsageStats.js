@@ -115,12 +115,15 @@ function sortData(dataMap, pendingMap = {}, sortBy, sortOrder) {
     });
 }
 
+const DIRECT_COMBO_LABEL = "Direct (no combo)";
+
 function getGroupKey(item, keyField) {
   switch (keyField) {
     case "rawModel": return item.rawModel || "Unknown Model";
     case "accountName": return item.accountName || `Account ${item.connectionId?.slice(0, 8)}...` || "Unknown Account";
     case "keyName": return item.apiKeyMasked ? `${item.keyName} (${item.apiKeyMasked})` : item.keyName || "Unknown Key";
     case "endpoint": return item.endpoint || "Unknown Endpoint";
+    case "combo": return item.combo || DIRECT_COMBO_LABEL;
     default: return item[keyField] || "Unknown";
   }
 }
@@ -187,11 +190,20 @@ const ENDPOINT_COLUMNS = [
   { field: "lastUsed", label: "Last Used", align: "right" },
 ];
 
+const COMBO_COLUMNS = [
+  { field: "combo", label: "Combo" },
+  { field: "rawModel", label: "Model Served" },
+  { field: "provider", label: "Provider" },
+  { field: "requests", label: "Requests", align: "right" },
+  { field: "lastUsed", label: "Last Used", align: "right" },
+];
+
 const TABLE_OPTIONS = [
   { value: "model", label: "Usage by Model" },
   { value: "account", label: "Usage by Account" },
   { value: "apiKey", label: "Usage by API Key" },
   { value: "endpoint", label: "Usage by Endpoint" },
+  { value: "combo", label: "Usage by Combo" },
 ];
 
 const PERIODS = [
@@ -403,6 +415,46 @@ export default function UsageStats({ period: periodProp, setPeriod: setPeriodPro
               <td className="px-6 py-3">{item.rawModel}</td>
               <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
               <td className="px-6 py-3 text-right">{fmt(item.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
+            </>
+          ),
+        };
+      }
+      case "combo": {
+        const groupedData = groupDataByKey(sortData(stats.byCombo, {}, sortBy, sortOrder), "combo");
+        // Share = portion of the combo's requests that this model ended up serving
+        for (const group of groupedData) {
+          for (const item of group.items) {
+            item.share = group.summary.requests > 0 ? Math.round((item.requests / group.summary.requests) * 100) : 0;
+          }
+        }
+        return {
+          columns: COMBO_COLUMNS,
+          groupedData,
+          storageKey: "usage-stats:expanded-combos",
+          emptyMessage: "No combo usage recorded yet. Combo names are tracked from the moment this view was added.",
+          renderSummaryCells: (group) => (
+            <>
+              <td className="px-6 py-3 text-text-muted">—</td>
+              <td className="px-6 py-3 text-text-muted">—</td>
+              <td className="px-6 py-3 text-right">{fmt(group.summary.requests)}</td>
+              <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(group.summary.lastUsed)}</td>
+            </>
+          ),
+          renderDetailCells: (item) => (
+            <>
+              <td className="px-6 py-3 text-xs text-text-muted">{item.comboVia ? `via ${item.comboVia}` : ""}</td>
+              <td className="px-6 py-3 font-medium">{item.rawModel}</td>
+              <td className="px-6 py-3"><Badge variant="neutral" size="sm">{item.provider}</Badge></td>
+              <td className="px-6 py-3 text-right whitespace-nowrap">
+                <div className="flex items-center justify-end gap-2">
+                  <span>{fmt(item.requests)}</span>
+                  <span className="w-9 text-xs text-text-muted">{item.share}%</span>
+                  <span className="h-1.5 w-16 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+                    <span className="block h-full bg-primary" style={{ width: `${item.share}%` }} />
+                  </span>
+                </div>
+              </td>
               <td className="px-6 py-3 text-right text-text-muted whitespace-nowrap">{fmtTime(item.lastUsed)}</td>
             </>
           ),

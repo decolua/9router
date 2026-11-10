@@ -118,6 +118,8 @@ export async function handleChat(request, clientRawRequest = null) {
     const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
     // Per-combo system prompt, added to every member request of this combo
     const comboPrompt = resolveComboPrompt(comboStrategies[modelStr]?.systemPrompt);
+    // Tag the request with the combo it came through, for per-combo usage stats
+    const comboRawRequest = { ...clientRawRequest, combo: modelStr };
 
     if (comboStrategy === "fusion") {
       log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -125,10 +127,10 @@ export async function handleChat(request, clientRawRequest = null) {
         body,
         models: comboModels,
         handleSingleModel: (b, m, isPanel) => {
-          let cleanRawReq = clientRawRequest;
+          let cleanRawReq = comboRawRequest;
           if (isPanel && clientRawRequest) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-            cleanRawReq = { ...clientRawRequest, body: cleanBody };
+            cleanRawReq = { ...comboRawRequest, body: cleanBody };
           }
           return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null, comboPrompt);
         },
@@ -146,7 +148,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, comboPrompt),
+        (b, m) => handleSingleModelChat(b, m, comboRawRequest, request, apiKey, null, comboPrompt),
         adapterAdded
       ),
       log,
@@ -215,6 +217,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
       const adapterAdded = augmentedModels.filter((m) => !comboModels.includes(m));
       // Nested combo: inherit the outer combo's system prompt, then add its own
       const nestedPrompt = resolveComboPrompt(comboPrompt, comboStrategies[modelStr]?.systemPrompt);
+      // Keep the outermost combo as the usage owner; record this one as the nested hop
+      const nestedRawRequest = clientRawRequest?.combo
+        ? { ...clientRawRequest, comboVia: modelStr }
+        : { ...clientRawRequest, combo: modelStr };
 
       if (comboStrategy === "fusion") {
         log.info("CHAT", `Combo "${modelStr}" with ${comboModels.length} models (strategy: fusion)`);
@@ -222,10 +228,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
           body,
           models: comboModels,
           handleSingleModel: (b, m, isPanel) => {
-            let cleanRawReq = clientRawRequest;
+            let cleanRawReq = nestedRawRequest;
             if (isPanel && clientRawRequest) {
               const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
-              cleanRawReq = { ...clientRawRequest, body: cleanBody };
+              cleanRawReq = { ...nestedRawRequest, body: cleanBody };
             }
             return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null, nestedPrompt);
           },
@@ -245,7 +251,7 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         body,
         models: augmentedModels,
         handleSingleModel: withCapacityAdapterStripping(
-          (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, nestedPrompt),
+          (b, m) => handleSingleModelChat(b, m, nestedRawRequest, request, apiKey, null, nestedPrompt),
           adapterAdded
         ),
         log,
