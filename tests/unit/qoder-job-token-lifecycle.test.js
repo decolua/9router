@@ -12,6 +12,7 @@
 // stubs the global BEFORE (re)importing the module — the same pattern as
 // qoder-proxy-replay.test.js.
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { mockUndiciFetch } from "./helpers/mockUndiciFetch.js";
 
 const PAT = "pt-testpat0000000000000000";
 const JT_1 = "jt-first0000000000000000000";
@@ -38,12 +39,12 @@ function makeFetchMock() {
   return impl;
 }
 
-async function loadModules(fetchMock) {
+async function loadModules(fetchImpl) {
   vi.resetModules();
-  vi.stubGlobal("fetch", fetchMock);
+  const fetchMock = mockUndiciFetch(fetchImpl);
   const mod = await import("../../open-sse/services/qoderModels.js");
   const constants = await import("../../open-sse/shared/qoder/constants.js");
-  return { mod, constants };
+  return { mod, constants, fetchMock };
 }
 
 const creds = (overrides = {}) => ({

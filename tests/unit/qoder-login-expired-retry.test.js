@@ -3,6 +3,7 @@
 // the PAT, and retry once — not surface a transient-looking 403 that cools the
 // account for 2 minutes and fails identically on every client retry.
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { mockUndiciFetch } from "./helpers/mockUndiciFetch.js";
 
 const PAT = "pt-testpat0000000000000000";
 const JT_DEAD = "jt-dead00000000000000000000";
@@ -91,7 +92,7 @@ async function loadExecutor(fetchMock) {
   for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]) {
     vi.stubEnv(key, "");
   }
-  vi.stubGlobal("fetch", fetchMock);
+  const wrapped = mockUndiciFetch((...args) => fetchMock(...args));
   const { QoderExecutor } = await import("../../open-sse/executors/qoder.js");
   return new QoderExecutor();
 }

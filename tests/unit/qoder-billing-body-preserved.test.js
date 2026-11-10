@@ -3,6 +3,7 @@
 // body — so chatCore's parseUpstreamError saw "" and the client got a bare
 // "HTTP 403" instead of "Billing daily count exceeded".
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { mockUndiciFetch } from "./helpers/mockUndiciFetch.js";
 
 const PAT = "pt-testpat0000000000000000";
 const JT = "jt-live00000000000000000000";
@@ -39,7 +40,7 @@ async function loadExecutor(fetchMock) {
   for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy"]) {
     vi.stubEnv(key, "");
   }
-  vi.stubGlobal("fetch", fetchMock);
+  const wrapped = mockUndiciFetch((...args) => fetchMock(...args));
   const { QoderExecutor } = await import("../../open-sse/executors/qoder.js");
   return new QoderExecutor();
 }

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mockUndiciFetch } from "./helpers/mockUndiciFetch.js";
 
 vi.mock("../../open-sse/services/qoderModels.js", () => ({
   getQoderModelConfig: vi.fn(async () => ({ key: "auto", max_output_tokens: 32 })),
@@ -29,8 +30,10 @@ async function loadExecutor(fetchMock, useProxy = true) {
     vi.stubEnv(key, "");
   }
   if (useProxy) vi.stubEnv("HTTPS_PROXY", "http://proxy.test:3128");
-  // Exercise the real proxyAwareFetch: it captures fetch when imported.
-  vi.stubGlobal("fetch", fetchMock);
+  // Exercise the real proxyAwareFetch: upstream v0.5.116 routes through the
+  // undici package's own fetch, so mock that module (the wrapper delegates to
+  // the test's fetchMock, preserving its .mock state and dispatcher checks).
+  mockUndiciFetch((...args) => fetchMock(...args));
   const { QoderExecutor } = await import("../../open-sse/executors/qoder.js");
   return new QoderExecutor();
 }
@@ -81,7 +84,9 @@ describe("Qoder signed inference transport", () => {
     expect(result.response.ok).toBe(true);
     await result.response.text();
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(!!fetchMock.mock.calls[0][1].dispatcher).toBe(useProxy);
+    // Upstream v0.5.116 always routes through a dispatcher (proxy agent when a
+    // proxy is set, shared direct Agent otherwise) — presence, not identity.
+    expect(fetchMock.mock.calls[0][1].dispatcher).toBeDefined();
   });
 
   it("preserves caller cancellation without replaying the request", async () => {
