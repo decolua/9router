@@ -1,3 +1,9 @@
+# v0.5.398 (2026-11-10) · 1 commit
+
+## What's Added?
+
+- Edit dialog on Model Editor can now re-point the selected custom models to one target model, picked from the same model list the form uses. Leaving the new field off keeps every target as it is, and a pick that would loop back is rejected before anything is written.
+
 # v0.5.397 (2026-11-10) · 1 commit
 
 ## What Looks Different?

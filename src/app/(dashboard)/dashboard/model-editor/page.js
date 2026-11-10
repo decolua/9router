@@ -11,12 +11,14 @@ const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
 // Fields the bulk editor may write, and how each one reads to the operator.
 const MODEL_BULK_LABELS = {
+  targetModel: "Target model (what it routes to)",
   inputMultiplier: "Input multiplier (0 = none)",
   outputMultiplier: "Output multiplier (0 = none)",
   contextWindow: "Context window (0 = provider default)",
 };
 
 const MODEL_BULK_PLACEHOLDERS = {
+  targetModel: "Pick a model to route to",
   inputMultiplier: "e.g. 2",
   outputMultiplier: "e.g. 5",
   contextWindow: "e.g. 200000",
@@ -498,6 +500,8 @@ function ModelStudioContent({ antiProbe = true }) {
           count={selectedNames.size}
           onApply={handleBulkApply}
           onClose={() => setShowBulkEdit(false)}
+          activeProviders={activeProviders}
+          modelAliases={modelAliases}
         />
       )}
     </>
@@ -510,12 +514,14 @@ function ModelStudioContent({ antiProbe = true }) {
  * never rewrites what the user did not mean to change. Same shape as the API-key
  * bulk editor.
  */
-function BulkEditModels({ count, onApply, onClose }) {
+function BulkEditModels({ count, onApply, onClose, activeProviders = [], modelAliases = {} }) {
   const [fields, setFields] = useState({
+    targetModel: { on: false, value: "" },
     inputMultiplier: { on: false, value: "" },
     outputMultiplier: { on: false, value: "" },
     contextWindow: { on: false, value: "" },
   });
+  const [showPicker, setShowPicker] = useState(false);
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState("");
 
@@ -528,6 +534,15 @@ function BulkEditModels({ count, onApply, onClose }) {
     const patch = {};
     for (const [name, { on, value }] of Object.entries(fields)) {
       if (!on) continue;
+      if (name === "targetModel") {
+        const target = String(value || "").trim();
+        if (!target) {
+          setError("Pick a target model to route to");
+          return;
+        }
+        patch.targetModel = target;
+        continue;
+      }
       const n = Number(value);
       if (!Number.isFinite(n) || n < 0) {
         setError(`${MODEL_BULK_LABELS[name]} must be a number of 0 or more`);
@@ -567,18 +582,53 @@ function BulkEditModels({ count, onApply, onClose }) {
               <label className="text-sm font-medium text-text-main block mb-1">
                 {MODEL_BULK_LABELS[name]}
               </label>
-              <Input
-                type="number"
-                step="0.1"
-                min="0"
-                value={fields[name].value}
-                onChange={(e) => setValue(name, e.target.value)}
-                disabled={!fields[name].on}
-                placeholder={MODEL_BULK_PLACEHOLDERS[name]}
-              />
+              {name === "targetModel" ? (
+                <button
+                  type="button"
+                  onClick={() => fields.targetModel.on && setShowPicker(true)}
+                  disabled={!fields[name].on}
+                  className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-lg border text-left transition-colors ${fields[name].value
+                    ? "border-primary/40 bg-primary/5"
+                    : "border-dashed border-border hover:border-primary/50"
+                    } ${fields[name].on ? "" : "opacity-50 cursor-not-allowed"}`}
+                >
+                  <span className="min-w-0 flex-1 truncate font-mono text-sm text-text-main">
+                    {fields[name].value || MODEL_BULK_PLACEHOLDERS[name]}
+                  </span>
+                  <span className="material-symbols-outlined text-[18px] text-primary shrink-0">
+                    {fields[name].value ? "swap_horiz" : "search"}
+                  </span>
+                </button>
+              ) : (
+                <Input
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  value={fields[name].value}
+                  onChange={(e) => setValue(name, e.target.value)}
+                  disabled={!fields[name].on}
+                  placeholder={MODEL_BULK_PLACEHOLDERS[name]}
+                />
+              )}
             </div>
           </div>
         ))}
+
+        {showPicker && (
+          <ModelSelectModal
+            isOpen
+            onClose={() => setShowPicker(false)}
+            onSelect={(model) => {
+              if (!model?.value || model.isPlaceholder) return;
+              setFields((prev) => ({ ...prev, targetModel: { on: true, value: model.value } }));
+              setShowPicker(false);
+            }}
+            activeProviders={activeProviders}
+            modelAliases={modelAliases}
+            selectedModel={fields.targetModel.value}
+            showStudioTargets
+          />
+        )}
 
         {error && (
           <p className="text-xs text-red-500" role="alert">{error}</p>
@@ -601,6 +651,8 @@ BulkEditModels.propTypes = {
   count: PropTypes.number.isRequired,
   onApply: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
+  activeProviders: PropTypes.array,
+  modelAliases: PropTypes.object,
 };
 
 function StudioFormModal({

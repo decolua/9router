@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { getStudioModel, setStudioModel } from "@/lib/db/repos/modelEditorRepo.js";
+import { getStudioModel, getStudioModels, setStudioModel } from "@/lib/db/repos/modelEditorRepo.js";
+import { findStudioCycle } from "@/shared/utils/studioComboGuard.js";
 
 export const dynamic = "force-dynamic";
 
@@ -9,11 +10,10 @@ export const dynamic = "force-dynamic";
  * Editing twenty virtual models one at a time is how a multiplier ends up
  * half-applied, so the same field is written to every selected model in one
  * call. Only the fields that make sense in bulk are accepted: the callable name
- * IS the model id clients send, and the target decides which upstream answers,
- * so neither is re-pointed by a bulk action. Anything outside the whitelist is
- * rejected rather than ignored, so a typo does not look like it worked.
+ * IS the model id clients send, so it is never renamed by a bulk action, while
+ * the upstream target may be re-pointed for the whole selection at once.
  */
-const BULK_FIELDS = new Set(["inputMultiplier", "outputMultiplier", "contextWindow"]);
+const BULK_FIELDS = new Set(["inputMultiplier", "outputMultiplier", "contextWindow", "targetModel"]);
 
 function normalizePatch(patch) {
   if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
@@ -22,6 +22,13 @@ function normalizePatch(patch) {
   const clean = {};
   for (const [key, value] of Object.entries(patch)) {
     if (!BULK_FIELDS.has(key)) return { error: `Field "${key}" cannot be changed in bulk` };
+    if (key === "targetModel") {
+      const target = String(value ?? "").trim();
+      if (!target) return { error: "Target model cannot be empty" };
+      if (target.length > 200) return { error: "Target model is too long" };
+      clean.targetModel = target;
+      continue;
+    }
     const n = Number(value);
     if (!Number.isFinite(n) || n < 0) return { error: `${key} must be a number of 0 or more` };
     clean[key] = n;
@@ -49,6 +56,26 @@ export async function PATCH(request) {
   const parsed = normalizePatch(body?.patch);
   if (parsed.error) return NextResponse.json({ error: parsed.error }, { status: 400 });
 
+  let studioTargets = null;
+  if (parsed.patch.targetModel !== undefined) {
+    const all = await getStudioModels();
+    studioTargets = new Map(all.map((m) => [m.callName, m.targetModel]));
+    for (const name of names) {
+      const chain = findStudioCycle({
+        callName: name,
+        comboName: parsed.patch.targetModel,
+        combosByName: new Map(),
+        studioTargets,
+      });
+      if (chain) {
+        return NextResponse.json(
+          { error: `Routing ${name} to ${parsed.patch.targetModel} would loop: ${chain.join(" -> ")}` },
+          { status: 400 },
+        );
+      }
+    }
+  }
+
   const updated = [];
   const missing = [];
 
@@ -70,8 +97,10 @@ export async function PATCH(request) {
         callName: existing.callName,
         displayName: existing.displayName,
         ownedBy: existing.ownedBy,
-        targetModel: existing.targetModel,
-        targetLabel: existing.targetLabel,
+        targetModel: parsed.patch.targetModel !== undefined ? parsed.patch.targetModel : existing.targetModel,
+        // A re-pointed model shows the new target; leaving it alone keeps the
+        // label the operator originally picked.
+        targetLabel: parsed.patch.targetModel !== undefined ? parsed.patch.targetModel : existing.targetLabel,
         contextWindow: pick("contextWindow", Number(existing.contextWindow) || 0),
         systemPrompt: existing.systemPrompt,
         inputMultiplier: pick("inputMultiplier", existing.inputMultiplier),
