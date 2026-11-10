@@ -11,6 +11,10 @@ import {
 import {
   extractPromptState,
   buildChoiceCriteria,
+  resolveRouteInstructions,
+  DEFAULT_ROUTE_INSTRUCTIONS,
+  MAX_ROUTE_INSTRUCTIONS_CHARS,
+  MAX_MEMBER_DESCRIPTION_CHARS,
   parseSystemOneRouteAnswer,
   resetStickyComboStore,
 } from "../../open-sse/services/systemoneRouter.js";
@@ -82,6 +86,51 @@ describe("System One Smart Combo Router", () => {
         "cx/gpt-5-mini": null,
         "cc/claude-haiku-4": null,
       });
+    });
+
+    it("uses trimmed member descriptions when present, null otherwise", () => {
+      expect(buildChoiceCriteria(["combo-pro", "combo-deep", "combo-lite"], {
+        "combo-pro": "  everyday coding tasks  ",
+        "combo-deep": "",
+        "combo-lite": "   ",
+      })).toEqual({
+        "combo-pro": "everyday coding tasks",
+        "combo-deep": null,
+        "combo-lite": null,
+      });
+    });
+
+    it("ignores description keys that are not combo members", () => {
+      const criteria = buildChoiceCriteria(["combo-pro"], { "combo-pro": "coding", "ghost": "nope", toString: "nope" });
+      expect(criteria).toEqual({ "combo-pro": "coding" });
+      expect(buildChoiceCriteria(["toString", "constructor"], {})).toEqual({ toString: null, constructor: null });
+    });
+
+    it("ignores non-object descriptions and non-string values", () => {
+      const expected = { a: null, b: null };
+      for (const bad of [undefined, null, "text", 42, ["x", "y"], true]) {
+        expect(buildChoiceCriteria(["a", "b"], bad)).toEqual(expected);
+      }
+      expect(buildChoiceCriteria(["a", "b"], { a: 1, b: { x: 1 } })).toEqual(expected);
+    });
+
+    it("caps each description length", () => {
+      const criteria = buildChoiceCriteria(["a"], { a: "x".repeat(MAX_MEMBER_DESCRIPTION_CHARS + 500) });
+      expect(criteria.a.length).toBe(MAX_MEMBER_DESCRIPTION_CHARS);
+    });
+  });
+
+  describe("resolveRouteInstructions", () => {
+    it("returns the default question when nothing is configured", () => {
+      for (const empty of [undefined, null, "", "   ", 42, {}]) {
+        expect(resolveRouteInstructions(empty)).toBe(DEFAULT_ROUTE_INSTRUCTIONS);
+      }
+      expect(DEFAULT_ROUTE_INSTRUCTIONS).toBe("Which of these configured models is the most appropriate for this request?");
+    });
+
+    it("returns trimmed custom instructions, capped", () => {
+      expect(resolveRouteInstructions("  Pick combo-deep for hard tasks.  ")).toBe("Pick combo-deep for hard tasks.");
+      expect(resolveRouteInstructions("y".repeat(MAX_ROUTE_INSTRUCTIONS_CHARS + 100)).length).toBe(MAX_ROUTE_INSTRUCTIONS_CHARS);
     });
   });
 
