@@ -524,7 +524,7 @@ executor era's contract, so they failed against the current split.
 - **The model picker could still head a group with an id.** A provider missing from the static registry fell back to `{ name: providerId }`, so a compatible node still opened a `openai-compatible-chat-…` heading; the fallback runs through `resolveProviderName` and the quota card's title does too.
 - **Every successful log row pulsed as if it were pending.** The status column compared against uppercase (`OK`/`FAILED`) while the stored values are lowercase, so `ok` matched nothing and fell into the pending branch; the comparison folds case and the cell prints the status uppercased.
 
-# # v0.5.338 (2026-10-29) · 1 commit
+# v0.5.338 (2026-10-29) · 1 commit
 
 ## Fixes
 - **The activity heatmap fit a desktop card, not a phone.** 24 buckets of `14px + 3px gap` plus a 28px day gutter measure 441px, so on a 390px viewport 42 cells sat past the card edge with no scroll container to reach them. The block is one CSS grid now (`repeat(24, minmax(0, 14px))`), so cells shrink on a narrow screen instead of overflowing, and the hour ruler prints at 10px like the rest of the shell.
