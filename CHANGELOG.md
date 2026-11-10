@@ -1,8 +1,14 @@
+# v0.5.404 (2026-11-10)
+
+## What Looks Different?
+
+- The prefix switch on the model form is labeled Provider prefix, with copy that says what it does instead of what it imitates.
+
 # v0.5.403 (2026-11-10)
 
 ## What Looks Different?
 
-- The custom model name field takes a plain name again. The fake vendor prefix moved to its own "Fake provider prefix" switch under it: leave it off and the model is called by its plain name, turn it on and a `vendor/` input appears with the resulting model ID previewed next to it.
+- The custom model name field takes a plain name again. The vendor prefix moved to its own "Provider prefix" switch under it: leave it off and the model is called by its plain name, turn it on and a `vendor/` input appears with the resulting model ID previewed next to it.
 
 # v0.5.402 (2026-11-10)
 

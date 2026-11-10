@@ -8,7 +8,7 @@ import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioComboGuard";
 
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}(\/[a-zA-Z0-9][a-zA-Z0-9._-]{0,63})*$/;
-// The name box itself holds one segment; the fake provider prefix (its own
+// The name box itself holds one segment; the provider prefix (its own
 // toggle) holds any number, and the two are joined on submit.
 const SEGMENT_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 const PREFIX_RE = NAME_RE;
@@ -676,10 +676,10 @@ function StudioFormModal({
   // A duplicate opens with the source model's rules already filled in, so the
   // only thing left to decide is the new name.
   const source = editing || duplicating || null;
-  // The fake provider prefix is a separate concern from the model name, so it
-  // gets its own toggle and field instead of letting people type slashes into
-  // the name box. A stored name that already carries one opens with the toggle
-  // on and the prefix split out of it.
+  // The provider prefix is a separate concern from the model name, so it gets
+  // its own toggle and field instead of letting people type slashes into the
+  // name box. A stored name that already carries one opens with the toggle on
+  // and the prefix split out of it.
   const [namePrefix, setNamePrefix] = useState(() => {
     const stored = editing?.callName || duplicateName || "";
     const idx = stored.lastIndexOf("/");
@@ -905,10 +905,10 @@ function StudioFormModal({
           <div>
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <label className="block text-xs font-medium text-text-main">Fake provider prefix</label>
+                <label className="block text-xs font-medium text-text-main">Provider prefix</label>
                 <p className="text-[11px] text-text-muted mt-0.5">
-                  Calls this model as <code className="font-mono">vendor/model</code>, like it belongs to
-                  another vendor. Off by default: the model stays callable by its plain name.
+                  Clients call the model as <code className="font-mono">vendor/name</code> instead of plain{" "}
+                  <code className="font-mono">name</code>. The vendor is any label you choose.
                 </p>
               </div>
               <Toggle checked={prefixEnabled} onChange={setPrefixEnabled} />
@@ -934,7 +934,7 @@ function StudioFormModal({
                   <p className="text-[11px] text-red-500 mt-1">{prefixError}</p>
                 ) : (
                   <p className="text-[11px] text-text-muted mt-1">
-                    Any label works; it does not need to be a provider you connected.
+                    Free-form label; it does not need to be a provider you connected.
                   </p>
                 )}
               </div>
