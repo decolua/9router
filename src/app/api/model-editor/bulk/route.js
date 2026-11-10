@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getStudioModel, getStudioModels, setStudioModel } from "@/lib/db/repos/modelEditorRepo.js";
 import { findStudioCycle } from "@/shared/utils/studioComboGuard.js";
+import { normalizeTarget } from "@/lib/modelTargetNormalize.js";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +59,7 @@ export async function PATCH(request) {
 
   let studioTargets = null;
   if (parsed.patch.targetModel !== undefined) {
+    parsed.patch.targetModel = await normalizeTarget(parsed.patch.targetModel);
     const all = await getStudioModels();
     studioTargets = new Map(all.map((m) => [m.callName, m.targetModel]));
     for (const name of names) {

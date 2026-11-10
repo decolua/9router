@@ -6,8 +6,7 @@ import {
   deleteStudioModel,
 } from "@/lib/db/repos/modelEditorRepo.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
-import { getProviderNodes } from "@/lib/db/repos/nodesRepo.js";
-import { resolveProviderAlias } from "open-sse/services/model.js";
+import { normalizeTarget } from "@/lib/modelTargetNormalize.js";
 import { getModelAliases } from "@/lib/db/repos/aliasRepo.js";
 import { reconcileAllowedModels } from "@/lib/db/repos/apiKeysRepo.js";
 import { findStudioCycle, describeStudioCycle } from "@/shared/utils/studioComboGuard.js";
@@ -17,34 +16,9 @@ export const dynamic = "force-dynamic";
 const NAME_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/;
 
 /**
-  * A picked model arrives as `prefix/model` where prefix is either a built-in
-  * provider alias or a custom provider node prefix. Resolve the prefix to the
-  * provider id the router actually uses so the alias resolves on its own.
-  * A bare name that matches a combo or a studio model passes through as the
-  * combo/studio target; anything else bare is returned for the validator.
+  * Target normalization lives in a shared helper so the bulk editor resolves
+  * picks exactly like the create/edit form does.
   */
-async function normalizeTarget(targetModel) {
- if (!targetModel.includes("/")) {
-  try {
-   const { getComboByName } = await import("@/lib/db/repos/combosRepo.js");
-   if (await getComboByName(targetModel)) return targetModel;
-  } catch { /* combo lookup is best-effort */ }
-  // Chained pick: the name of another studio model resolves to its target.
-  const chained = await getStudioModel(targetModel);
-  if (chained) return chained.targetModel;
-  return targetModel;
- }
- const firstSlash = targetModel.indexOf("/");
- if (firstSlash <= 0) return targetModel;
- const prefix = targetModel.slice(0, firstSlash);
- const rest = targetModel.slice(firstSlash + 1);
- try {
-  const nodes = await getProviderNodes();
-  const matched = nodes.find((node) => node.prefix === prefix || node.id === prefix);
-  if (matched) return `${matched.id}/${rest}`;
- } catch { /* node lookup is best-effort */ }
- return `${resolveProviderAlias(prefix)}/${rest}`;
-}
 
 // GET /api/model-editor - list virtual (studio) models
 export async function GET() {
