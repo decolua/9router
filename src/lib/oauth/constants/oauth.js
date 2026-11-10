@@ -224,6 +224,17 @@ export const ZED_HOSTED_CONFIG = {
   oauthTimeoutMs: 600_000,
 };
 
+// Nous Research Portal — OAuth 2.0 Device Code flow (RFC 8628) + agent key minting
+export const NOUS_CONFIG = {
+  clientId: "hermes-cli",
+  portalBaseUrl: "https://portal.nousresearch.com",
+  deviceCodeUrl: "https://portal.nousresearch.com/api/oauth/device/code",
+  tokenUrl: "https://portal.nousresearch.com/api/oauth/token",
+  agentKeyUrl: "https://portal.nousresearch.com/api/oauth/agent-key",
+  inferenceBaseUrl: "https://inference-api.nousresearch.com/v1",
+  scope: "inference:invoke inference:mint_agent_key",
+};
+
 // OAuth timeout (5 minutes)
 export const OAUTH_TIMEOUT = 300000;
 
@@ -254,4 +265,5 @@ export const PROVIDERS = {
   WINDSURF: "windsurf",
   GLM: "glm",
   ZED: "zed",
+  NOUS: "nous",
 };

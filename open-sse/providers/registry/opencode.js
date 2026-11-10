@@ -19,8 +19,20 @@ export default {
     },
     forceStream: true,
     noAuth: true,
+    // Zen reasoning models reject multi-turn history whose assistant messages
+    // carry no reasoning_content (400 missing_required_parameter), and the
+    // response pipeline strips the field before it reaches the client, so the
+    // echo can never come from the client. Inject a placeholder instead.
+    reasoningInject: {
+      scope: "all",
+    },
     quirks: {
       forceAutoToolChoiceModels: ["muse-spark-1.3-contributor-free"],
+      // The free lane's MiMo route (OpenRouter-backed) streams thinking as
+      // `reasoning` + `reasoning_details[]`, not reasoning_content. stream.js lifts
+      // the alias into reasoning_content for OpenAI-shaped clients; every other
+      // model on the lane already emits reasoning_content, so the lift is a no-op.
+      reasoningAliasFields: true,
     },
   },
   models: [

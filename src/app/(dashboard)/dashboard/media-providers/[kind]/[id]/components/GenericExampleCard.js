@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Card } from "@/shared/components";
-import { MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
+import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS, getProviderAlias, resolveProviderId } from "@/shared/constants/providers";
 import { getModelsByProviderId, getModelKind } from "@/shared/constants/models";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { Row, KIND_EXAMPLE_CONFIG } from "./exampleShared";
@@ -41,6 +41,13 @@ export function GenericExampleCard({ providerId, kind }) {
   const kindConfig = MEDIA_PROVIDER_KINDS.find((k) => k.id === kind);
   const exConfig = KIND_EXAMPLE_CONFIG[kind];
   const safeExConfig = exConfig || {};
+  const formats = kind === "webFetch" ? AI_PROVIDERS[providerId]?.fetchConfig?.formats : null;
+  const hasFormats = Array.isArray(formats) && formats.length > 0;
+  const extraFields = (safeExConfig.extraFields || []).map((field) => (
+    field.key === "format" && hasFormats
+      ? { ...field, options: formats, default: formats.includes(field.default) ? field.default : formats[0] }
+      : field
+  ));
 
   // Get models for this kind (e.g., type="image")
   const kindModels = getModelsByProviderId(providerId).filter((m) => getModelKind(m) === kind);
@@ -58,7 +65,7 @@ export function GenericExampleCard({ providerId, kind }) {
   const [refImage, setRefImage] = useState("");
   const [maskImage, setMaskImage] = useState("");
   const [extraValues, setExtraValues] = useState(() =>
-    (safeExConfig.extraFields || []).reduce((acc, f) => { acc[f.key] = f.default ?? ""; return acc; }, {})
+    extraFields.reduce((acc, f) => { acc[f.key] = f.default ?? ""; return acc; }, {})
   );
   const [apiKey, setApiKey] = useState("");
   const [useTunnel, setUseTunnel] = useState(false);
@@ -112,7 +119,10 @@ export function GenericExampleCard({ providerId, kind }) {
   const maskImagePreviewSrc = toImagePreviewSrc(effectiveMaskImage);
 
   // Build request body with optional extra fields (only non-empty values)
-  const extraBodyFromFields = Object.entries(extraValues).reduce((acc, [k, v]) => {
+  const effectiveExtraValues = hasFormats && !formats.includes(extraValues.format)
+    ? { ...extraValues, format: extraFields.find((field) => field.key === "format")?.default }
+    : extraValues;
+  const extraBodyFromFields = Object.entries(effectiveExtraValues).reduce((acc, [k, v]) => {
     if (v === "" || v === null || v === undefined) return acc;
     if (typeof v === "number" && Number.isNaN(v)) return acc;
     acc[k] = v;
@@ -231,13 +241,21 @@ export function GenericExampleCard({ providerId, kind }) {
     if (Array.isArray(obj)) return obj.map(maskB64);
     const out = {};
     for (const [k, v] of Object.entries(obj)) {
-      out[k] = (k === "b64_json" && typeof v === "string" && v.length > 100)
-        ? `<${v.length} chars base64>`
-        : maskB64(v);
+      if (k === "b64_json" && typeof v === "string" && v.length > 100) {
+        out[k] = `<${v.length} chars base64>`;
+      } else if (typeof v === "string" && v.length > 100 && /^data:[^,]+,/.test(v)) {
+        out[k] = `<${v.length} chars data URI>`;
+      } else {
+        out[k] = maskB64(v);
+      }
     }
     return out;
   };
   const resultJson = result ? JSON.stringify(maskB64(result.data), null, 2) : "";
+  // Video preview: xAI/grok shape {video:{url}} or array shape {data:[{url}]}
+  const videoUrl = result
+    ? result.data?.video?.url || result.data?.data?.[0]?.url || null
+    : null;
 
   return (
     <Card>
@@ -433,13 +451,13 @@ export function GenericExampleCard({ providerId, kind }) {
         )}
 
         {/* Extra fields — for kinds without model concept (webSearch/webFetch), show all; otherwise filter by model.params */}
-        {(exConfig.extraFields || [])
+        {extraFields
           .filter((f) => kindModels.length === 0 || (Array.isArray(selectedModelObj?.params) && selectedModelObj.params.includes(f.key)))
           .map((f) => (
           <Row key={f.key} label={f.label}>
             {f.type === "select" ? (
               <select
-                value={extraValues[f.key] ?? ""}
+                value={effectiveExtraValues[f.key] ?? ""}
                 onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               >
@@ -455,6 +473,42 @@ export function GenericExampleCard({ providerId, kind }) {
                 onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
                 className="w-full px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
               />
+            ) : f.type === "image" ? (
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={extraValues[f.key] ?? ""}
+                  placeholder="https://… or click Upload"
+                  onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.value }))}
+                  className="flex-1 min-w-0 px-3 py-1.5 text-sm border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                />
+                <label className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 text-sm border border-border rounded-lg bg-background hover:bg-accent cursor-pointer transition-colors">
+                  <span className="material-symbols-outlined text-[16px]">upload</span>
+                  Upload
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = () => setExtraValues((s) => ({ ...s, [f.key]: String(reader.result || "") }));
+                      reader.readAsDataURL(file);
+                    }}
+                  />
+                </label>
+              </div>
+            ) : f.type === "boolean" ? (
+              <label className="inline-flex items-center gap-2 text-sm text-text-main">
+                <input
+                  type="checkbox"
+                  checked={extraValues[f.key] === true}
+                  onChange={(e) => setExtraValues((s) => ({ ...s, [f.key]: e.target.checked }))}
+                  className="size-4 accent-primary"
+                />
+                {extraValues[f.key] ? "Enabled" : "Disabled"}
+              </label>
             ) : (
               <input
                 type="number"
@@ -555,11 +609,8 @@ export function GenericExampleCard({ providerId, kind }) {
               </button>
             )}
           </div>
-          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">
-            {result ? resultJson : exConfig.defaultResponse}
-          </pre>
           {kind === "image" && (binaryImageUrl || result?.data?.data?.[0]) && (
-            <div className="mt-2">
+            <div className="mb-2">
               <div className="flex items-center justify-end mb-1.5">
                 <a
                   href={binaryImageUrl || (result?.data?.data?.[0]?.b64_json ? `data:image/png;base64,${result.data.data[0].b64_json}` : result?.data?.data?.[0]?.url || "")}
@@ -579,6 +630,28 @@ export function GenericExampleCard({ providerId, kind }) {
               />
             </div>
           )}
+          {kind === "video" && videoUrl && (
+            <div className="mb-2">
+              <div className="flex items-center justify-end mb-1.5">
+                <a
+                  href={videoUrl}
+                  download="video.mp4"
+                  className="inline-flex items-center gap-1 text-xs text-text-muted hover:text-primary transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[14px]">download</span>
+                  Download
+                </a>
+              </div>
+              <video
+                controls
+                src={videoUrl}
+                className="max-w-full rounded-lg border border-border"
+              />
+            </div>
+          )}
+          <pre className="bg-sidebar rounded-lg px-3 py-2.5 text-xs font-mono text-text-main overflow-x-auto whitespace-pre-wrap break-all opacity-70">
+            {result ? resultJson : exConfig.defaultResponse}
+          </pre>
         </div>
       </div>
     </Card>

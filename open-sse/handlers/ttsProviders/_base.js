@@ -12,6 +12,7 @@ export async function responseToBase64(res, defaultFormat = "mp3") {
   if (ctype.includes("wav")) format = "wav";
   else if (ctype.includes("mpeg") || ctype.includes("mp3")) format = "mp3";
   else if (ctype.includes("ogg")) format = "ogg";
+  else if (ctype.includes("pcm")) format = "pcm";
   return { base64: Buffer.from(buf).toString("base64"), format };
 }
 
