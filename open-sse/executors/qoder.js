@@ -49,6 +49,13 @@ import { encodeDataUri } from "../translator/concerns/image.js";
 const QODER_PEEK_BUDGET_MS = 6000;
 const QODER_WAIT_HEARTBEAT_MS = 10000;
 const QODER_PEEK_TIMEOUT = Symbol("qoder-peek-timeout");
+
+/** How long execute() waits for real headers before switching to a live stream. */
+function qoderHeadersBudgetMs() {
+  const raw = Number(process.env.QODER_HEADERS_BUDGET_MS);
+  if (Number.isFinite(raw) && raw >= 0) return raw;
+  return 5000;
+}
 import { buildCosyHeaders, deriveMachineId } from "../shared/qoder/cosy.js";
 import {
   computeQoderQueueDelayMs,
@@ -878,6 +885,107 @@ export class QoderExecutor extends BaseExecutor {
   // account got a 2-minute cooldown, the client retried into the same dead
   // token, and the loop repeated forever.
   async execute(params) {
+    const work = this._runWithTokenRecovery(params);
+    // A long prompt can keep upstream silent for tens of seconds. Streaming
+    // clients give up when they see zero bytes, so hand them a live SSE stream
+    // once the budget expires and let the real work finish behind it.
+    const budget = qoderHeadersBudgetMs();
+    if (params?.body?.stream !== true || budget <= 0) return work;
+
+    const outcome = await Promise.race([
+      work.then((r) => ({ kind: "result", value: r })).catch((err) => ({ kind: "error", err })),
+      new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({ kind: "timeout" }), budget);
+        timer.unref?.();
+      }),
+    ]);
+    if (outcome.kind !== "timeout") {
+      if (outcome.kind === "error") throw outcome.err;
+      return outcome.value;
+    }
+    return this._deferredSseResponse(work, params);
+  }
+
+  /**
+   * The stream handed back while `work` is still running: heartbeats now, the
+   * real frames when upstream answers, an SSE error if it refuses. Errors can no
+   * longer become an HTTP status here, which is the price of not going silent.
+   */
+  _deferredSseResponse(work, params) {
+    const encoder = new TextEncoder();
+    const signal = params?.signal;
+    return {
+      response: new Response(
+        new ReadableStream({
+          async start(controller) {
+            let closed = false;
+            const beat = () => {
+              if (closed) return;
+              try {
+                controller.enqueue(encoder.encode(": qoder-waiting\n\n"));
+              } catch {
+                closed = true;
+              }
+            };
+            beat();
+            const timer = setInterval(beat, QODER_WAIT_HEARTBEAT_MS);
+            timer.unref?.();
+            const stop = () => {
+              clearInterval(timer);
+              closed = true;
+            };
+            try {
+              const result = await work;
+              const resp = result?.response;
+              if (!resp || !resp.ok || !resp.body) {
+                const message = resp
+                  ? await resp.text().catch(() => `upstream status ${resp.status}`)
+                  : "qoder produced no response";
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ error: { message: String(message).slice(0, 500), code: resp?.status ?? null } })}\n\n`),
+                );
+                controller.enqueue(encoder.encode(SSE_DONE));
+                return;
+              }
+              const reader = resp.body.getReader();
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } catch (err) {
+              try {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ error: { message: err?.message || "qoder stream failed" } })}\n\n`),
+                );
+                controller.enqueue(encoder.encode(SSE_DONE));
+              } catch { /* client already gone */ }
+            } finally {
+              stop();
+              try { controller.close(); } catch { /* already closed */ }
+            }
+          },
+          cancel() {
+            try { signal?.abort?.(new Error("client cancelled")); } catch { /* ignore */ }
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        },
+      ),
+      url: "",
+      headers: {},
+      transformedBody: params?.body,
+    };
+  }
+
+  /** Token-recovery wrapper: one re-exchange and retry on Qoder code 105. */
+  async _runWithTokenRecovery(params) {
     const result = await this._executeAttempt(params);
     if (!(await this._isLoginExpiredResult(result))) return result;
 
