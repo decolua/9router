@@ -1,7 +1,7 @@
 /**
  * Search Provider Request Builders
  *
- * Builds HTTP request `{ url, init }` for 10 search providers.
+ * Builds HTTP request `{ url, init }` for the dedicated search providers.
  *
  * @typedef {Object} SearchProviderConfig
  * @property {string} id
@@ -445,6 +445,33 @@ function buildGlmSearchRequest(config, params) {
   };
 }
 
+// ── Keenable (keyless public tier) ──────────────────────────────────────
+// POST https://api.keenable.ai/v1/search/public { query, max_results, site?, exclude_domains?, published_after? }
+// Response: { results: [{ title, url, description, snippet, published_at }] }
+const KEENABLE_TIME_RANGE = { day: "1d", week: "7d", month: "1mo", year: "1y" };
+
+function buildKeenableRequest(config, params) {
+  const body = { query: params.query, max_results: params.maxResults };
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  if (includes.length > 1) throw new Error("Keenable search accepts one include domain");
+  if (includes.length === 1) body.site = includes[0];
+  if (excludes.length) body.exclude_domains = excludes;
+  const publishedAfter = KEENABLE_TIME_RANGE[params.timeRange];
+  if (publishedAfter) body.published_after = publishedAfter;
+  if (Number.isInteger(params.offset) && params.offset > 0) {
+    throw new Error("Keenable search does not support offset");
+  }
+  return {
+    // Fixed public endpoint: client baseUrl overrides are not honored.
+    url: config.baseUrl,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Keenable-Title": "9router" },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
 // ── Dispatcher ──────────────────────────────────────────────────────────
 
 const BUILDERS = {
@@ -462,6 +489,7 @@ const BUILDERS = {
   "tinyfish": buildTinyfishRequest,
   "ollama-search": buildOllamaSearchRequest,
   "glm": buildGlmSearchRequest,
+  "keenable": buildKeenableRequest,
 };
 
 /**
