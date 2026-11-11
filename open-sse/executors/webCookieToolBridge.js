@@ -312,6 +312,8 @@ export function parseToolCallReply(text) {
       // found must be the block the cleanup removes, or the word "tool_call"
       // leaks into the visible answer.
       .replace(/```\s*tool_call\s*[\s\S]*?```/g, "")
+      // A plain ```json fence carrying the same payload (no "tool_call" word).
+      .replace(/```\s*(?:json)?\s*\{\s*"name"[\s\S]*?```/g, "")
       // DeepAI answers with no fence at all: just "tool_call" on its own line
       // above the JSON payload, which the JSON fallback still recovers.
       .replace(/^[ \t]*tool_call[ \t]*\r?\n?/gm, "")
