@@ -283,6 +283,15 @@ describe("web-cookie tool bridge", () => {
     expect(r.content).not.toContain("tool_call");
   });
 
+  it("parses DeepAI's unfenced shape: tool_call word, then bare JSON", () => {
+    const r = parseToolCallReply(
+      'tool_call\n{"name": "run_command", "arguments": {"command": "ls /tmp"}}'
+    );
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0].name).toBe("run_command");
+    expect(r.content).not.toContain("tool_call");
+  });
+
   it("parses the marker style too", () => {
     const r = parseToolCallReply(
       'ok <<TOOL_CALL>> {"name": "read", "arguments": {"p": "a"}} <<TOOL_CALL>> done'
