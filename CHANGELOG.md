@@ -1,3 +1,11 @@
+# v0.5.417 (2026-11-11)
+
+## What Looks Different?
+
+- **Customizable Harvester Scan Limit & Feed Sources**: Removed the hardcoded 500-candidate cap on the Proxy Harvester:
+  - Added **Max Scan** control: operators can specify any scan budget (from 50 up to 50,000 candidate proxies, default 1,000). The harvester continuously scans through the 70,000+ available candidates until the target live proxy count is met or the max scan budget is reached.
+  - Added **Feeds** manager modal: view the 12 active built-in public proxy feeds, and add custom raw HTTP/HTTPS proxy list URLs to expand discovery sources.
+
 # v0.5.416 (2026-11-11)
 
 ## What Got Fixed?

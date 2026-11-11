@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import Link from "next/link";
-import { Badge, Button, Card, CardSkeleton, Input, PageShell } from "@/shared/components";
+import { Badge, Button, Card, CardSkeleton, Input, PageShell, Modal } from "@/shared/components";
 import { cn } from "@/shared/utils/cn";
 
 const LOOP_OPTIONS = [
@@ -28,7 +28,10 @@ export default function AutoHarvesterPage() {
   const [pools, setPools] = useState([]);
   const [loading, setLoading] = useState(true);
   const [target, setTarget] = useState(10);
+  const [maxScan, setMaxScan] = useState(1000);
   const [loop, setLoop] = useState(0);
+  const [customFeedsText, setCustomFeedsText] = useState("");
+  const [showFeedsModal, setShowFeedsModal] = useState(false);
   const [busy, setBusy] = useState(false);
   const timerRef = useRef(null);
 
@@ -38,9 +41,12 @@ export default function AutoHarvesterPage() {
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
+        if (data.maxCandidates && !maxScan) {
+          setMaxScan(data.maxCandidates);
+        }
       }
     } catch {}
-  }, []);
+  }, [maxScan]);
 
   const fetchPools = useCallback(async () => {
     try {
@@ -82,13 +88,20 @@ export default function AutoHarvesterPage() {
     }
   };
 
-  const start = () => send({ action: "start", target: Number(target) || 10, loopMinutes: Number(loop) || 0 });
+  const start = () => send({
+    action: "start",
+    target: Number(target) || 10,
+    maxCandidates: Number(maxScan) || 1000,
+    loopMinutes: Number(loop) || 0,
+    customFeeds: customFeedsText.split("\n").map((s) => s.trim()).filter((s) => s.startsWith("http")),
+  });
   const stop = () => send({ action: "stop" });
 
   const running = status?.running;
   const lastAdded = status?.lastAdded ?? 0;
   const lastTested = status?.lastTested ?? 0;
   const targetCount = status?.targetCount ?? target;
+  const maxCandidatesCount = status?.maxCandidates ?? maxScan;
 
   const harvestedPools = useMemo(() => {
     return pools.filter((p) => String(p.name || "").startsWith("FreeProxy"));
@@ -162,12 +175,27 @@ export default function AutoHarvesterPage() {
                 <input
                   type="number"
                   min="1"
-                  max="200"
+                  max="500"
                   value={target}
                   onChange={(e) => setTarget(e.target.value)}
                   disabled={running}
                   className="w-14 rounded border border-border bg-surface-2 px-1.5 py-0.5 text-center font-mono text-xs text-text-main focus:border-primary focus:outline-none disabled:opacity-40"
-                  title="Target number of working proxies"
+                  title="Target number of working proxies to collect"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1 text-xs">
+                <label className="text-text-muted font-mono whitespace-nowrap">Max Scan:</label>
+                <input
+                  type="number"
+                  min="50"
+                  max="50000"
+                  step="500"
+                  value={maxScan}
+                  onChange={(e) => setMaxScan(e.target.value)}
+                  disabled={running}
+                  className="w-16 rounded border border-border bg-surface-2 px-1.5 py-0.5 text-center font-mono text-xs text-text-main focus:border-primary focus:outline-none disabled:opacity-40"
+                  title="Maximum candidate proxies to scan before ending cycle"
                 />
               </div>
 
@@ -186,6 +214,16 @@ export default function AutoHarvesterPage() {
                   ))}
                 </select>
               </div>
+
+              <Button
+                size="sm"
+                variant="secondary"
+                icon="rss_feed"
+                onClick={() => setShowFeedsModal(true)}
+                title="Manage proxy candidate feed sources"
+              >
+                Feeds ({12 + (status?.customFeeds?.length || 0)})
+              </Button>
 
               {running ? (
                 <Button
@@ -313,6 +351,53 @@ export default function AutoHarvesterPage() {
           </Card>
         )}
       </div>
+
+      {/* Proxy Feeds Modal */}
+      <Modal
+        isOpen={showFeedsModal}
+        onClose={() => setShowFeedsModal(false)}
+        title="Proxy Feeds & Sources"
+        size="lg"
+        footer={
+          <Button onClick={() => setShowFeedsModal(false)}>
+            Done
+          </Button>
+        }
+      >
+        <div className="flex flex-col gap-4 text-xs">
+          <div>
+            <p className="text-sm font-semibold text-text-main">Custom Feed URLs</p>
+            <p className="text-text-muted mt-0.5">
+              Add your own raw HTTP/HTTPS proxy list URLs (one URL per line). The harvester will fetch and include them during discovery cycles.
+            </p>
+            <textarea
+              value={customFeedsText}
+              onChange={(e) => setCustomFeedsText(e.target.value)}
+              placeholder="https://example.com/proxies.txt&#10;https://raw.githubusercontent.com/user/repo/main/http.txt"
+              rows={4}
+              className="mt-2 w-full rounded-lg border border-border bg-surface-2 p-2.5 font-mono text-xs text-text-main focus:border-primary focus:outline-none resize-none"
+            />
+          </div>
+
+          <div className="pt-3 border-t border-border/50">
+            <p className="text-sm font-semibold text-text-main mb-2">Built-in Active Feeds (12)</p>
+            <div className="max-h-48 overflow-y-auto divide-y divide-border/30 rounded-lg border border-border bg-surface-2/40 p-2 font-mono text-[11px] text-text-muted">
+              <div>https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/proxmint/free-proxy-list/main/proxies/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt</div>
+              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt</div>
+            </div>
+          </div>
+        </div>
+      </Modal>
     </PageShell>
   );
 }

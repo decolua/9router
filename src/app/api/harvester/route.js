@@ -132,6 +132,8 @@ if (!global._nineHarvesterState) {
     running: false,
     loopIntervalMinutes: 0,
     targetCount: 5,
+    maxCandidates: 1000,
+    customFeeds: [],
     timer: null,
     lastRunAt: null,
     lastAdded: 0,
@@ -143,13 +145,19 @@ if (!global._nineHarvesterState) {
 
 const state = global._nineHarvesterState;
 
-async function fetchCandidates(target = 50) {
+async function fetchCandidates(target = 50, maxScan = 1000, customFeeds = []) {
   const candidates = new Set();
-  const candidateLimit = Math.max(500, target * 15);
+  const numericMax = Math.max(50, Math.min(Number(maxScan) || 1000, 50000));
+  const candidateLimit = Math.max(numericMax, target * 15);
+
+  const activeFeeds = [
+    ...HARVEST_FEEDS,
+    ...(Array.isArray(customFeeds) ? customFeeds : []).filter((u) => typeof u === "string" && u.startsWith("http")),
+  ];
 
   // Fetch all feeds in parallel with strict 4s timeout for maximum speed
   await Promise.allSettled(
-    HARVEST_FEEDS.map(async (url) => {
+    activeFeeds.map(async (url) => {
       try {
         const res = await fetch(url, {
           headers: { "User-Agent": "Mozilla/5.0" },
@@ -191,7 +199,7 @@ async function runWithPool(items, concurrency, fn, shouldStop) {
   await Promise.all(workers);
 }
 
-async function executeHarvestCycle(target = 5) {
+async function executeHarvestCycle(target = 5, maxScan = 1000, customFeeds = []) {
   if (state._inCycle) return;
   state._inCycle = true;
   state.lastRunAt = new Date().toISOString();
@@ -206,7 +214,7 @@ async function executeHarvestCycle(target = 5) {
       existingPools.map((p) => p.egressIp?.toLowerCase().trim()).filter(Boolean)
     );
 
-    const candidates = await fetchCandidates(target);
+    const candidates = await fetchCandidates(target, maxScan, customFeeds);
     const unadded = candidates.filter(
       (c) => !existingUrls.has(`http://${c}`) && !existingUrls.has(`https://${c}`)
     );
@@ -305,7 +313,7 @@ function scheduleNextLoop() {
     const ms = state.loopIntervalMinutes * 60 * 1000;
     state.timer = setInterval(() => {
       if (state.running) {
-        executeHarvestCycle(state.targetCount);
+        executeHarvestCycle(state.targetCount, state.maxCandidates, state.customFeeds);
       }
     }, ms);
   }
@@ -319,6 +327,9 @@ export async function GET() {
   return NextResponse.json({
     running: state.running,
     targetCount: state.targetCount,
+    maxCandidates: state.maxCandidates || 1000,
+    customFeeds: state.customFeeds || [],
+    builtInFeedsCount: HARVEST_FEEDS.length,
     loopIntervalMinutes: state.loopIntervalMinutes,
     lastRunAt: state.lastRunAt,
     lastAdded: state.lastAdded,
@@ -341,7 +352,7 @@ export async function POST(request) {
       body = {};
     }
 
-    const { action, target = 5, loopMinutes = 0 } = body;
+    const { action, target = 5, maxCandidates = 1000, loopMinutes = 0, customFeeds = [] } = body;
 
     if (action === "stop") {
       state.running = false;
@@ -356,24 +367,32 @@ export async function POST(request) {
     }
 
     // Configure and start
-    const numericTarget = Math.max(1, Math.min(Number(target) || 5, 200));
+    const numericTarget = Math.max(1, Math.min(Number(target) || 5, 500));
+    const numericMaxScan = Math.max(50, Math.min(Number(maxCandidates) || 1000, 50000));
     const numericLoop = Number(loopMinutes) >= 0 ? Number(loopMinutes) : 0;
+    const cleanFeeds = Array.isArray(customFeeds)
+      ? customFeeds.map((f) => String(f).trim()).filter((f) => f.startsWith("http"))
+      : (state.customFeeds || []);
 
     state.targetCount = numericTarget;
+    state.maxCandidates = numericMaxScan;
+    state.customFeeds = cleanFeeds;
     state.loopIntervalMinutes = numericLoop;
     state.running = true;
 
     scheduleNextLoop();
 
     // Trigger cycle in background asynchronously without blocking HTTP response
-    executeHarvestCycle(numericTarget);
+    executeHarvestCycle(numericTarget, numericMaxScan, cleanFeeds);
 
     return NextResponse.json({
       success: true,
       running: true,
       targetCount: numericTarget,
+      maxCandidates: numericMaxScan,
+      customFeedsCount: cleanFeeds.length,
       loopIntervalMinutes: numericLoop,
-      message: `Harvester started: Target ${numericTarget} proxies${numericLoop > 0 ? `, looping every ${numericLoop}m` : ""}. Running in background.`,
+      message: `Harvester started: Target ${numericTarget} proxies (scanning up to ${numericMaxScan} candidates)${numericLoop > 0 ? `, looping every ${numericLoop}m` : ""}. Running in background.`,
     });
   } catch (error) {
     console.error("Proxy harvest error:", error);
