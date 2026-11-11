@@ -1,6 +1,7 @@
 // OpenAI-compatible embeddings adapter (most providers)
 import { bearerAuth } from "./_base.js";
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { applyCustomHeaders } from "../../utils/customHeaders.js";
 
 // media-only providers without a registry file keep URL here; rest derive from registry media.embeddingConfig.baseUrl
 const ENDPOINTS = {
@@ -15,7 +16,9 @@ export default function createOpenAIEmbeddingAdapter(providerId) {
   return {
     buildUrl: () => embedUrl(providerId),
     buildHeaders: (creds) => {
-      return { "Content-Type": "application/json", ...bearerAuth(creds), ...(cfg.headers || {}) };
+      const headers = { "Content-Type": "application/json", ...bearerAuth(creds), ...(cfg.headers || {}) };
+      applyCustomHeaders(headers, creds?.providerSpecificData?.customHeaders || creds?.customHeaders, creds);
+      return headers;
     },
     buildBody: (model, { input, encoding_format, dimensions }) => {
       const body = { model, input };

@@ -5,6 +5,7 @@ import {
   updateProviderConnection,
   deleteProviderConnection,
 } from "@/models";
+import { parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 import { toProviderConnectionResponse, usesAwsCredentialForm } from "@/lib/providerConnectionResponse";
 
 function normalizeProxyConfig(body = {}) {
@@ -56,8 +57,8 @@ async function normalizeProxyPoolUpdate(proxyPoolIdInput) {
   return { hasProxyPoolField: true, proxyPoolId };
 }
 
-function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField) {
-  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField;
+function shouldMergeProviderSpecificData(existing, incoming, hasLegacyProxy, hasProxyPoolField, hasCustomHeadersField = false) {
+  return existing !== undefined || incoming !== undefined || hasLegacyProxy || hasProxyPoolField || hasCustomHeadersField;
 }
 
 // GET /api/providers/[id] - Get single connection
@@ -121,12 +122,15 @@ export async function PUT(request, { params }) {
     if (lastError !== undefined) updateData.lastError = lastError;
     if (lastErrorAt !== undefined) updateData.lastErrorAt = lastErrorAt;
 
+    const hasCustomHeaders = body.customHeaders !== undefined || providerSpecificData?.customHeaders !== undefined;
+
     if (
       shouldMergeProviderSpecificData(
         existing.providerSpecificData,
         providerSpecificData,
         proxyConfig.hasAnyProxyField,
-        proxyPoolResult.hasProxyPoolField
+        proxyPoolResult.hasProxyPoolField,
+        hasCustomHeaders
       )
     ) {
       const incomingProviderSpecificData = { ...(providerSpecificData || {}) };
@@ -142,6 +146,16 @@ export async function PUT(request, { params }) {
       };
       if (isAwsCredential && incomingProviderSpecificData.sessionToken === null) {
         delete updateData.providerSpecificData.sessionToken;
+      }
+
+      if (hasCustomHeaders) {
+        const rawHeaders = body.customHeaders !== undefined ? body.customHeaders : providerSpecificData?.customHeaders;
+        const parsed = parseCustomHeaders(rawHeaders);
+        if (parsed) {
+          updateData.providerSpecificData.customHeaders = parsed;
+        } else {
+          delete updateData.providerSpecificData.customHeaders;
+        }
       }
 
       if (proxyConfig.hasAnyProxyField) {

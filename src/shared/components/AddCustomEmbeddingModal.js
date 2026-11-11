@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Modal, Input, Button, Badge } from "@/shared/components";
+import { formatCustomHeaders, parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 
@@ -13,6 +14,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
     name: "",
     prefix: "",
     baseUrl: DEFAULT_BASE_URL,
+    customHeaders: "",
   });
   const [submitting, setSubmitting] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -30,9 +32,10 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
         name: node.name || "",
         prefix: node.prefix || "",
         baseUrl: node.baseUrl || DEFAULT_BASE_URL,
+        customHeaders: formatCustomHeaders(node.customHeaders),
       });
     } else {
-      setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL });
+      setFormData({ name: "", prefix: "", baseUrl: DEFAULT_BASE_URL, customHeaders: "" });
     }
   }, [isOpen, isEdit, node]);
 
@@ -46,6 +49,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        customHeaders: formData.customHeaders.trim() ? parseCustomHeaders(formData.customHeaders) : null,
       };
       if (!isEdit) payload.type = "custom-embedding";
 
@@ -77,6 +81,7 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
           apiKey: checkKey,
           type: "custom-embedding",
           modelId: checkModelId.trim() || undefined,
+          customHeaders: formData.customHeaders.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -131,6 +136,16 @@ export default function AddCustomEmbeddingModal({ isOpen, onClose, onCreated, on
           placeholder="https://api.voyageai.com/v1"
           hint="Most embedding APIs are OpenAI-compatible: Voyage, Cohere, Jina, Mistral, Together..."
         />
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-text-muted">Custom Headers (Optional)</label>
+          <textarea
+            className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[70px] focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder={'{\n  "HTTP-Referer": "https://example.com"\n}'}
+            value={formData.customHeaders}
+            onChange={(e) => setFormData({ ...formData, customHeaders: e.target.value })}
+          />
+          <span className="text-[11px] text-text-muted">Optional. JSON object or Key: Value per line. Supports &#123;&#123;API_KEY&#125;&#125; placeholder.</span>
+        </div>
         <Input
           label="API Key (for Check)"
           type="password"

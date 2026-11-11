@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import { formatCustomHeaders, parseCustomHeaders } from "open-sse/utils/customHeaders.js";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -10,6 +11,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
     prefix: "",
     apiType: "chat",
     baseUrl: "https://api.openai.com/v1",
+    customHeaders: "",
   });
   const [saving, setSaving] = useState(false);
   const [checkKey, setCheckKey] = useState("");
@@ -24,6 +26,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         prefix: node.prefix || "",
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
+        customHeaders: formatCustomHeaders(node.customHeaders),
       });
     }
   }, [node, isAnthropic]);
@@ -41,6 +44,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        customHeaders: formData.customHeaders.trim() ? parseCustomHeaders(formData.customHeaders) : null,
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
@@ -61,7 +65,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           baseUrl: formData.baseUrl,
           apiKey: checkKey,
           type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
-          modelId: checkModelId.trim() || undefined
+          modelId: checkModelId.trim() || undefined,
+          customHeaders: formData.customHeaders.trim() || undefined,
         }),
       });
       const data = await res.json();
@@ -107,6 +112,16 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-medium text-text-muted">Custom Headers (Optional)</label>
+          <textarea
+            className="w-full rounded border border-accent/30 bg-sidebar p-2 text-sm font-mono resize-y min-h-[70px] focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder={'{\n  "HTTP-Referer": "https://example.com"\n}'}
+            value={formData.customHeaders}
+            onChange={(e) => setFormData({ ...formData, customHeaders: e.target.value })}
+          />
+          <span className="text-[11px] text-text-muted">Optional. JSON object or Key: Value per line. Supports &#123;&#123;API_KEY&#125;&#125; placeholder.</span>
+        </div>
         <div className="flex gap-2">
           <Input
             label="API Key (for Check)"

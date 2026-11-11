@@ -1,4 +1,5 @@
 import { DefaultExecutor } from "./default.js";
+import { applyCustomHeaders } from "../utils/customHeaders.js";
 
 export class AzureExecutor extends DefaultExecutor {
   constructor() {
@@ -47,6 +48,8 @@ export class AzureExecutor extends DefaultExecutor {
     if (stream) {
       headers["Accept"] = "text/event-stream";
     }
+
+    applyCustomHeaders(headers, credentials?.providerSpecificData?.customHeaders || credentials?.customHeaders || this.config?.customHeaders, credentials);
 
     return headers;
   }
