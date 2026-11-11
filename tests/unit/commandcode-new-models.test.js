@@ -43,6 +43,13 @@ describe("Command Code new models: google/gemini-4-carbon and claude-fable-5-2",
     });
   });
 
+  it("prices gemini-4 models from the gemini-4 pattern, not the generic gemini one", () => {
+    const expected = { input: 2, output: 10, cached: 0.1, reasoning: 10, cache_creation: 0.1875 };
+    expect(getPricingForModel("commandcode", GEMINI_4_CARBON)).toEqual(expected);
+    expect(getPricingForModel("antigravity", "gemini-4-carbon-medium")).toEqual(expected);
+    expect(getPricingForModel("vertex", "gemini-4-argon")).toEqual(expected);
+  });
+
   it("prices claude-fable-5-2 at the Fable tier", () => {
     expect(getPricingForModel("commandcode", CLAUDE_FABLE_5_2)).toEqual({
       input: 8,
