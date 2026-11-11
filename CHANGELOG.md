@@ -1,3 +1,9 @@
+# v0.5.406 (2026-11-10)
+
+## What Got Fixed?
+
+- DeepAI Free no longer claims capabilities it does not have. Its endpoint is text-only: vision, web search and a native reasoning channel were advertised because the model names (claude-haiku-5-5, gpt-6-luna...) matched generic patterns, and reasoning parameters sent upstream are ignored. The catalog now reports text + tool calling only, so combos and capability routing stop sending image or search requests there.
+
 # v0.5.405 (2026-11-10)
 
 ## What Got Fixed?

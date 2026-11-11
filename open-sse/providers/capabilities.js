@@ -229,6 +229,18 @@ const DEVIN_CLI_GPT_CAPS = { vision: true, reasoning: true, search: true, thinki
  * Provider-specific capability overrides. Keyed by provider alias/id.
  */
 export const PROVIDER_CAPABILITIES = {
+  // DeepAI's chat endpoint is text-only form-encoded prose: it has no vision
+  // input, no grounding/search tool and no reasoning channel (reasoning params
+  // sent to it are ignored, verified against the upstream). Model-name
+  // patterns would otherwise advertise all three. Tool calling is real now -
+  // the executor bridges it - so tools stays true.
+  deepai: Object.fromEntries(
+    [
+      "deepseek-v4.1-flash", "claude-haiku-5-5", "gpt-6-luna", "qwen3.8-flash",
+      "glm-5.3-flash", "tencent-hy3", "gemma-4", "gpt-oss-120b",
+      "llama-3.3-70b-instruct", "llama-3.1-8b-instant", "standard",
+    ].map((id) => [id, { vision: false, search: false, reasoning: false, tools: true }])
+  ),
   // NVIDIA NIM is OpenAI-compatible → rejects MiniMax/GLM native `thinking` field.
   // Force openai reasoning_effort format for its reasoning models. #issue
   "nvidia": {
