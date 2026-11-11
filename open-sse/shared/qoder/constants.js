@@ -93,6 +93,16 @@ export function qoderJobTokenExchangeUrl(region) {
 }
 export const QODER_JOB_TOKEN_EXCHANGE_URL = qoderJobTokenExchangeUrl(QODER_REGION_INTL);
 
+// Job-token rotation (qodercli 1.1.85 uses this; the jobToken/exchange response
+// carries a rotating `refresh_token` of its own, `jrt-...`). POST with the
+// CURRENT jt- as Bearer + {refresh_token: <jrt-...>} answers a fresh jt- and a
+// fresh jrt-. This is NOT the device-flow `/api/v1/deviceToken/refresh`, which
+// only accepts `drt-` tokens.
+export function qoderJobTokenRefreshUrl(region) {
+  return `${qoderOpenApiBase(region)}/api/v1/jobToken/refresh`;
+}
+export const QODER_JOB_TOKEN_REFRESH_URL = qoderJobTokenRefreshUrl(QODER_REGION_INTL);
+
 // Inference endpoints (under /algo on the chat host, all COSY-signed)
 export const QODER_CHAT_SIG_PATH = "/api/v2/service/pro/sse/agent_chat_generation";
 export const QODER_CHAT_URL = `${QODER_CHAT_BASE}/algo${QODER_CHAT_SIG_PATH}?FetchKeys=llm_model_result&AgentId=agent_common`;
@@ -198,6 +208,14 @@ const QODER_STATIC_MODEL_CONFIG_BASE = Object.freeze({
   format: "openai",
   source: "system",
   url: "",
+  // The lite-plan roster states three selectable windows per slot; contextTier.js
+  // picks the smallest one that fits the prompt, so declaring them here lets an
+  // account without a live catalog still reach the widest window instead of
+  // being pinned to the ~180K default.
+  context_config: Object.freeze(["200K", "400K", "1M"]),
+  // Every static row is billed except `lite`, which the free tier serves on the
+  // COSY surface only — gRPC refuses it with `116 quota exceeded`.
+  is_free: false,
 });
 
 export const QODER_STATIC_MODEL_CONFIGS = Object.freeze({
@@ -228,6 +246,61 @@ export function getQoderStaticModelConfig(key) {
   const cfg = QODER_STATIC_MODEL_CONFIGS[key];
   return cfg ? { ...cfg, key } : null;
 }
+
+/**
+ * Copies a `model_config` for the chat body, minus its `source` field.
+ *
+ * Qoder routes the chat by that field: the catalog's `source:"system"` puts the
+ * request in the managed lane, which answers `10605 / queueType=p3` while that
+ * lane is busy, whereas the identical payload with the field omitted is served
+ * immediately (measured against a live account). `source` selects a lane, not a
+ * model — `model_config.key` already identifies the model — so dropping it
+ * changes nothing else: `max_input_tokens`, `is_reasoning` and `context_config`
+ * keep steering the request exactly as the IDE steers it. The X-Model-Source
+ * header keeps reporting the catalog's value.
+ */
+export function qoderChatModelConfig(modelConfig, { keepSource = false } = {}) {
+  if (modelConfig == null || typeof modelConfig !== "object") return modelConfig;
+  if (keepSource || !("source" in modelConfig)) return modelConfig;
+  const { source: _source, ...rest } = modelConfig;
+  return rest;
+}
+
+/**
+ * Model keys the free tier serves.
+ *
+ * The roster marks one slot as free (`lite`); everything else is billed. The
+ * live catalog does not state it, so the rule is kept here rather than inferred
+ * per request: gRPC refuses free-tier rows with `116 quota exceeded`, which
+ * makes getting this wrong a hard failure rather than a slow one.
+ */
+export const QODER_FREE_TIER_KEYS = Object.freeze(["lite"]);
+
+/** True when a model key or its catalog entry belongs to the free tier. */
+export function isQoderFreeTier(modelConfig, modelKey = "") {
+  if (modelConfig?.is_free === true) return true;
+  const key = String(modelKey || modelConfig?.key || "").trim();
+  return QODER_FREE_TIER_KEYS.includes(key);
+}
+
+/**
+ * Model-server gRPC hosts, one per deployment.
+ *
+ * The gRPC surface (`model.chat.ChatService/ChatCompletionStream`) is a separate
+ * transport from the COSY HTTP surface. It does not fix a hard body cap so much
+ * as remove the slowdown: measured against a live account with the same model, a
+ * 280K-character request answered in 5.1s over gRPC against 73s over COSY, and a
+ * 1.2M-character request answered in 16.3s where COSY had not answered after
+ * 300s. That is what makes the roster's 1M-token windows usable. Free-tier rows
+ * are refused here with `116 quota exceeded`, so they stay on COSY.
+ */
+export const QODER_GRPC_HOSTS = Object.freeze({
+  [QODER_REGION_INTL]: "api2.qoder.sh",
+  [QODER_REGION_CN]: "gateway.qoder.com.cn",
+});
+
+/** gRPC service path on the model-server host. */
+export const QODER_GRPC_SERVICE_PATH = "/model.chat.ChatService/ChatCompletionStream";
 
 // RSA public key for COSY encryption (extracted from Qoder IDE v0.9).
 // Matches the CLIProxyAPIPlus branch and live qodercli traffic.

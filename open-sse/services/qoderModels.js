@@ -31,10 +31,12 @@ import {
   QODER_CLIENT_TYPE,
   qoderRegionOf,
   qoderJobTokenExchangeUrl,
+  qoderJobTokenRefreshUrl,
   qoderUserInfoUrl,
   qoderInferenceBase,
   QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
+import { widestQoderContextWindow } from "../shared/qoder/contextTier.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1h, same as the Kiro catalog
@@ -50,8 +52,15 @@ export function isQoderPat(token) {
   return typeof token === "string" && token.startsWith(PAT_PREFIX);
 }
 
-/** @type {Map<string, { accessToken: string, userId: string, expiresAt: number }>} */
+/** @type {Map<string, { accessToken: string, jobRefreshToken: string, userId: string, expiresAt: number }>} */
 const patJobCache = new Map();
+
+/**
+ * In-flight PAT resolves keyed `region:pat` — concurrent callers share one
+ * exchange/rotation instead of racing N of them.
+ * @type {Map<string, Promise<{ accessToken: string, jobRefreshToken: string, userId: string, expiresAt: number }>>}
+ */
+const patInflight = new Map();
 
 /** @type {Map<string, { expiresAt: number, models: any[], rawConfigs: Map<string, object>, fetched: boolean }>} */
 const catalogCache = new Map();
@@ -92,6 +101,49 @@ async function exchangeJobToken(pat, proxyOptions = null, signal = null, region 
   const data = await res.json();
   if (!data.token) throw new Error("qoder PAT exchange returned no job token");
 
+  return parseJobTokenResponse(data);
+}
+
+/**
+ * Rotate a job token via /api/v1/jobToken/refresh (qodercli 1.1.85's surface):
+ * Bearer = the current jt-, body = {refresh_token: <jrt-...>}. Answers a fresh
+ * jt- AND a fresh jrt- (the refresh token rotates on every use). Falls back to
+ * a plain PAT re-exchange when no jrt- was captured — the PAT is the durable
+ * secret, so a lost jrt- costs one extra round-trip, never the session.
+ */
+async function refreshJobToken(pat, jobToken, jobRefreshToken, proxyOptions = null, signal = null, region = "intl") {
+  if (!jobRefreshToken) {
+    return exchangeJobToken(pat, proxyOptions, signal, region);
+  }
+  const res = await proxyAwareFetch(
+    qoderJobTokenRefreshUrl(region),
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        "User-Agent": "qodercli/1.0.0",
+        ...(jobToken ? { Authorization: `Bearer ${jobToken}` } : {}),
+      },
+      body: JSON.stringify({ refresh_token: jobRefreshToken }),
+      signal,
+    },
+    proxyOptions,
+  );
+  if (!res.ok) {
+    // A rejected rotation (expired jrt-, single-use token already consumed) is
+    // not fatal while the PAT still works — re-exchange from the PAT.
+    return exchangeJobToken(pat, proxyOptions, signal, region);
+  }
+  const data = await res.json().catch(() => null);
+  if (!data?.token) {
+    return exchangeJobToken(pat, proxyOptions, signal, region);
+  }
+  return parseJobTokenResponse(data);
+}
+
+/** Shared response parser for exchange/refresh — both answer the same shape. */
+function parseJobTokenResponse(data) {
   let expiresAt = Date.now() + PAT_DEFAULT_TTL_MS;
   if (data.expires_at) {
     const parsed = Date.parse(data.expires_at);
@@ -133,15 +185,59 @@ async function fetchUserIdForJobToken(jobToken, proxyOptions = null, signal = nu
  * Resolve a PAT to a job-token credential, cached per-PAT-per-region.
  */
 async function resolvePatCredential(pat, proxyOptions = null, signal = null, region = "intl") {
-  const cacheKey = `${region}:${pat}`;
-  const cached = patJobCache.get(cacheKey);
+  const key = `${region}:${pat}`;
+  const cached = patJobCache.get(key);
   if (cached && cached.expiresAt - Date.now() > PAT_REFRESH_BUFFER_MS) return cached;
 
-  const { jobToken, expiresAt } = await exchangeJobToken(pat, proxyOptions, signal, region);
-  const userId = await fetchUserIdForJobToken(jobToken, proxyOptions, signal, region);
-  const resolved = { accessToken: jobToken, userId, expiresAt };
-  patJobCache.set(cacheKey, resolved);
-  return resolved;
+  // Coalesce concurrent refreshes: parallel chat windows hitting a cold or
+  // invalidated entry must not fan out N exchanges for the same PAT.
+  const existing = patInflight.get(key);
+  if (existing) return existing;
+
+  const op = (async () => {
+    // Warm entry inside the refresh buffer, or a deliberately invalidated one:
+    // rotate via jrt- when we have it (1 round-trip), else re-exchange the PAT.
+    let tokens;
+    if (cached?.jobRefreshToken) {
+      try {
+        tokens = await refreshJobToken(pat, cached.accessToken, cached.jobRefreshToken, proxyOptions, signal, region);
+      } catch {
+        tokens = await exchangeJobToken(pat, proxyOptions, signal, region);
+      }
+    } else {
+      tokens = await exchangeJobToken(pat, proxyOptions, signal, region);
+    }
+    const userId = await fetchUserIdForJobToken(tokens.jobToken, proxyOptions, signal, region);
+    const resolved = { accessToken: tokens.jobToken, jobRefreshToken: tokens.jobRefreshToken, userId, expiresAt: tokens.expiresAt };
+    patJobCache.set(key, resolved);
+    return resolved;
+  })();
+  patInflight.set(key, op);
+  try {
+    return await op;
+  } finally {
+    patInflight.delete(key);
+  }
+}
+
+/**
+ * Drop the cached job token for a PAT connection so the next resolve performs
+ * a fresh exchange. Called when upstream rejects the cached jt- with
+ * 403/code 105 ("Login expired") — a server-side early invalidation the
+ * expiresAt bookkeeping cannot see.
+ */
+export function invalidateQoderJobToken(credentials) {
+  const pat = credentials?.apiKey || credentials?.accessToken;
+  if (!isQoderPat(pat)) return false;
+  const region = qoderRegionOf(credentials?.provider);
+  const key = `${region}:${pat}`;
+  const cached = patJobCache.get(key);
+  if (!cached) return false;
+  // Keep the jrt- so the next resolve rotates in ONE round-trip instead of a
+  // full PAT re-exchange (which also refreshes the userId lookup). Only the
+  // invalidated jt- is dropped.
+  patJobCache.set(key, { ...cached, accessToken: "", expiresAt: 0 });
+  return true;
 }
 
 /**
@@ -159,7 +255,10 @@ export async function resolveQoderCredentials(credentials, proxyOptions = null, 
     return {
       ...credentials,
       accessToken: resolved.accessToken,
-      apiKey: undefined,
+      // The PAT is a year-long secret; the job token is a 24h derivative.
+      // Dropping apiKey keeps the long-lived secret out of logs and out of any
+      // consumer that reads apiKey and skips accessToken.
+      apiKey: "",
       providerSpecificData: {
         authMethod: "pat",
         ...(credentials?.providerSpecificData || {}),
@@ -265,7 +364,10 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
     if (entry.enable === false) continue;
 
     const display = entry.display_name || key;
-    const ctx = Number(entry.max_input_tokens) || 131_072;
+    // Publish the widest selectable tier, not the tier the IDE currently has
+    // selected — a client that reads the selected one compacts at ~200K and
+    // never sends the long request this provider can actually carry.
+    const ctx = widestQoderContextWindow(entry) || 131_072;
     models.push({
       id: key,
       name: `${display}`,

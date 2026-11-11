@@ -31,6 +31,16 @@
 - **Runtime**: pass `--global=false` so npm hooks can't create stray global installs (#5443)
 - **Dedupe**: drop `tool_reference` blocks naming tools stripped by MCP dedupe (z.ai 400)
 
+# Unreleased
+
+## Features
+- **Qoder**: carry long context over the model-server gRPC surface (`model.chat.ChatService/ChatCompletionStream`) — the COSY surface does not refuse a large body, it stalls on one (280K characters: 73s; 1.2M: no answer after 300s, against 5.1s and 16.3s over gRPC for the same requests). Requests stay on COSY by default and are upgraded once the serialized body passes 200 KiB; free-tier rows keep COSY, and `@grpc/*` stay optional so an install without them is unaffected.
+- **Qoder**: publish `context_config` tiers on the static roster and state the free-tier rule explicitly, so tier selection and the transport split work without a live catalog.
+
+## Fixes
+- **Qoder**: publish the widest selectable context tier instead of the one the catalog reports as currently selected — every client was told ~200K (180K for the frontier pair) while the roster advertises 1M, so clients compacted at 200K and the long-context path was never used.
+- **Qoder**: omit `model_config.source` from the chat body — the catalog's `source:"system"` routes requests into the managed lane, which answers `10605/queueType=p3` for free models while the same payload without the field is served immediately.
+
 # v0.5.112 (2026-10-28)
 
 ## Features

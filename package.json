@@ -50,6 +50,8 @@
   },
   "optionalDependencies": {
     "@aws-sdk/credential-providers": "^3.1135.0",
+    "@grpc/grpc-js": "^1.14.7",
+    "@grpc/proto-loader": "^0.8.1",
     "ajv": "^8.17.1",
     "better-sqlite3": "^12.6.2",
     "ws": "^8.18.0"

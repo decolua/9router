@@ -33,11 +33,29 @@ import {
   QODER_CHAT_SIG_PATH,
   QODER_CONTEXT_TIER_ENV,
   getQoderStaticModelConfig,
+  qoderChatModelConfig,
   qoderInferenceBase,
+  qoderQuotaUsageUrl,
 } from "../shared/qoder/constants.js";
-import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials } from "../services/qoderModels.js";
+import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials, invalidateQoderJobToken } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
+
+// A 300K-token prompt can take ~40s before the model emits its first token. The
+// peek below waits for that first frame to turn upstream refusals into a real
+// HTTP status, but blocking on it leaves streaming clients with zero bytes and
+// they give up ("no response"). Peek with a budget, then keep the socket warm
+// with SSE comments until the first real chunk lands.
+const QODER_PEEK_BUDGET_MS = 6000;
+const QODER_WAIT_HEARTBEAT_MS = 10000;
+const QODER_PEEK_TIMEOUT = Symbol("qoder-peek-timeout");
+
+/** How long execute() waits for real headers before switching to a live stream. */
+function qoderHeadersBudgetMs() {
+  const raw = Number(process.env.QODER_HEADERS_BUDGET_MS);
+  if (Number.isFinite(raw) && raw >= 0) return raw;
+  return 5000;
+}
 import { buildCosyHeaders, deriveMachineId } from "../shared/qoder/cosy.js";
 import {
   computeQoderQueueDelayMs,
@@ -48,6 +66,7 @@ import {
   qoderQueueStatusUrl,
 } from "../shared/qoder/queue.js";
 import { createQoderSseCoalescer } from "../shared/qoder/sse.js";
+import { dispatchQoderGrpc, qoderBodyBytes, qoderTransportOverride, resolveQoderTransport } from "./qoder-grpc.js";
 import { rewriteQoderMessageAttachments } from "../shared/qoder/attachments.js";
 import { resolveQoderContextTier, applyQoderContextTier } from "../shared/qoder/contextTier.js";
 
@@ -237,35 +256,42 @@ function truncate(s, n) {
 }
 
 /**
- * Map the OpenAI-style request body into the exact shape Qoder expects.
+ * Resolves the live catalog entry for one model key, with the static roster as
+ * the last resort. Shared by the transport decision and the request builder so
+ * one dispatch never resolves the same key twice.
  */
-async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl" }) {
+async function resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region = "intl" }) {
+  const modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
+  if (modelConfig) return modelConfig;
+
+  // Try a forced refresh once before giving up — the cache may simply not be
+  // populated yet on first ever call for this credential.
+  const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
+  const retried = refreshed?.rawConfigs.get(qoderKey);
+  if (retried) return { ...retried, key: qoderKey };
+
+  // Last resort: a static block for models the per-account catalog omits.
+  // Sonus (smodel) / Cantus (cmodel) are the known cases — the chat endpoint
+  // accepts them even when /model/list never mentions them, so refusing here
+  // would make an available model look broken.
+  const staticConfig = getQoderStaticModelConfig(qoderKey);
+  if (!staticConfig) {
+    throw new Error(
+      `qoder: model_config for "${qoderKey}" not yet known (run a model list fetch or check upstream connectivity)`,
+    );
+  }
+  log?.info?.("QODER", `using static model_config for "${qoderKey}" (absent from the account catalog)`);
+  return staticConfig;
+}
+
+async function buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, uploadFn = null, region = "intl", modelConfig: preResolvedConfig = null }) {
   const qoderKey = String(model || "").replace(/^qoder\//, "");
 
-  // Fetch model config from dynamic API instead of relying on static QODER_MODEL_MAP.
-  // This allows support for new Qoder models (e.g., qmodel_latest) without code changes.
-  let modelConfig = await getQoderModelConfig(credentials, qoderKey, { log, proxyOptions, signal, region });
-  if (!modelConfig) {
-    // Try a forced refresh once before giving up — the cache may simply
-    // not be populated yet on first ever call for this credential.
-    const refreshed = await resolveQoderModels(credentials, { forceRefresh: true, log, proxyOptions, signal, region });
-    const retried = refreshed?.rawConfigs.get(qoderKey);
-    if (retried) {
-      modelConfig = { ...retried, key: qoderKey };
-    } else {
-      // Last resort: a static block for models the per-account catalog omits.
-      // Sonus (smodel) / Cantus (cmodel) are the known cases — the chat
-      // endpoint accepts them even when /model/list never mentions them, so
-      // refusing here would make an available model look broken.
-      modelConfig = getQoderStaticModelConfig(qoderKey);
-      if (!modelConfig) {
-        throw new Error(
-          `qoder: model_config for "${qoderKey}" not yet known (run a model list fetch or check upstream connectivity)`,
-        );
-      }
-      log?.info?.("QODER", `using static model_config for "${qoderKey}" (absent from the account catalog)`);
-    }
-  }
+  // The catalog entry carries the wire config the request must echo (window,
+  // reasoning flag, tier list). It is resolved here unless the caller already
+  // did so for the transport decision.
+  const modelConfig = preResolvedConfig
+    || await resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region });
 
   const incoming = Array.isArray(body.messages)
     ? body.messages.map((m) => {
@@ -291,6 +317,20 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
   }
 
   const { messages, systemText } = normalizeMessages(incoming);
+  // Images live in message content as image_url blocks (the CLI's own shape);
+  // their presence decides whether model_config keeps `source` (see below).
+  const hasImages = messages.some(
+    (m) =>
+      Array.isArray(m?.content) &&
+      m.content.some((b) => b && typeof b === "object" && b.type === OPENAI_BLOCK.IMAGE_URL),
+  );
+  // The catalog entry has no `source`, so a vision request must inject it:
+  // `source: "system"` marks the model as system-provided, and only then does
+  // the server actually read the image parts (verified: same payload with
+  // source -> "Red", without -> "NOIMAGE").
+  const chatModelConfig = hasImages
+    ? { ...qoderChatModelConfig(modelConfig, { keepSource: true }), source: modelConfig?.source || "system" }
+    : qoderChatModelConfig(modelConfig);
   const tools = body.tools;
   const isReasoning = !!modelConfig.is_reasoning;
   const maxOutputTokens = Number(modelConfig.max_output_tokens) || 0;
@@ -358,7 +398,16 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
         features: [],
         text: lastUser,
       },
-      model_config: modelConfig,
+      // Echoed without `source`: that field selects Qoder's managed lane, which
+      // parks the request with 10605/queueType=p3 while it is busy. The
+      // X-Model-Source header below still reports the catalog value.
+      //
+      // Exception: a request carrying images MUST keep `source`. Dropping it
+      // makes the server ignore the image parts entirely and answer as if no
+      // image was attached ("NOIMAGE"), which is how vision looked broken
+      // upstream. Verified against a live account: identical payload with
+      // source -> "Red", without -> "NOIMAGE".
+      model_config: chatModelConfig,
       business: {
         product: "cli",
         version: "1.0.0",
@@ -388,6 +437,122 @@ async function buildQoderRequestBody({ model, body, credentials, log, proxyOptio
  * insufficient_quota and locks the model for minutes, so a queued request used
  * to fail permanently instead of waiting ~30s. See shared/qoder/queue.js.
  */
+/**
+ * Upstream body for an auth-invalidated credential: {"code":"105","message":"Login expired"}.
+ * The gateway answers it with HTTP 403 whenever the jt-/dt- it was given is no
+ * longer accepted — server-side early invalidation the local expiresAt cannot
+ * see. Detected at any frame position so both the first-frame peek and the
+ * mid-stream envelope path recognise it.
+ */
+function isLoginExpiredFrame(inner, statusVal) {
+  if (statusVal === 401) return true;
+  if (!inner || typeof inner !== "string") return false;
+  if (statusVal === 403) {
+    try {
+      const parsed = JSON.parse(inner);
+      if (String(parsed?.code) === "105") return true;
+    } catch { /* not JSON */ }
+    return inner.toLowerCase().includes("login expired");
+  }
+  return false;
+}
+
+/**
+ * Enrich a billing-block error message with the account's live quota and the
+ * next daily-reset boundary. Upstream's `110` body carries no timestamp (the
+ * quota API's `expiresAt` is the *subscription* expiry, not the daily reset),
+ * so the reset time is computed: Qoder's billing day rolls at midnight UTC.
+ * Best-effort with a short timeout — a quota-fetch failure must never delay
+ * or fail the error response itself.
+ */
+/**
+ * Billing-block message enrichment.
+ *
+ * Upstream's `110` body carries no timestamp and the quota API exposes plan
+ * credits only — NOT the daily request count that `110` actually means. So the
+ * message must not imply credits caused the block; they are plan context. The
+ * reset line is an ESTIMATE (next midnight UTC, the only boundary observed so
+ * far) and is labelled as such.
+ *
+ * The quota read is cached for QUOTA_CACHE_TTL_MS: a billing block usually
+ * repeats for every request in the window, and re-fetching per request only
+ * adds latency to an already-failing path.
+ */
+const QUOTA_CACHE_TTL_MS = 60 * 1000;
+const quotaCache = new Map();
+
+async function fetchQoderQuota(credentials, region, log) {
+  const psd = credentials?.providerSpecificData || {};
+  const key = psd.userId || credentials?.connectionId || credentials?.accessToken || "anon";
+  const cached = quotaCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.body;
+
+  const token = credentials?.accessToken;
+  if (!token) return null;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort("timeout"), 4000);
+    let body = null;
+    try {
+      const res = await proxyAwareFetch(
+        qoderQuotaUsageUrl(region || "intl"),
+        {
+          method: "GET",
+          headers: {
+            Accept: "application/json",
+            "User-Agent": "qodercli/1.0.0",
+            // The quota endpoint is authenticated like every other openApi
+            // call: without the job/device token it answers 401 and the whole
+            // enrichment silently degrades to the bare upstream message.
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        },
+        null,
+      );
+      if (res.ok) body = await res.json().catch(() => null);
+    } finally {
+      clearTimeout(timer);
+    }
+    if (body) {
+      quotaCache.set(key, { body, expiresAt: Date.now() + QUOTA_CACHE_TTL_MS });
+      if (quotaCache.size > 100) {
+        const oldest = quotaCache.keys().next().value;
+        quotaCache.delete(oldest);
+      }
+    }
+    return body;
+  } catch (e) {
+    log?.debug?.("QODER", `quota fetch for error message failed: ${e?.message || e}`);
+    return null;
+  }
+}
+
+async function describeQoderDailyQuota(inner, credentials, region, log) {
+  const base = inner && typeof inner === "string" ? inner : "qoder billing block";
+  const body = await fetchQoderQuota(credentials, region, log);
+
+  const parts = [];
+  if (body) {
+    const uq = body.userQuota || {};
+    if (typeof uq.used === "number" && typeof uq.total === "number") {
+      parts.push(`${uq.used}/${uq.total} plan credits used`);
+    }
+    if (body.userType) parts.push(`plan ${body.userType}`);
+  }
+  const planClause = parts.length > 0 ? ` (${parts.join(", ")}; credits are not the limit here)` : "";
+
+  // Next midnight UTC — the only daily boundary observed so far. Explicitly an
+  // estimate: the real window may roll sooner (observed recovery inside ~1h).
+  const now = new Date();
+  const reset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1, 0, 0, 0));
+  const mins = Math.max(1, Math.round((reset.getTime() - now.getTime()) / 60000));
+  const span = mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m` : `${mins}m`;
+
+  return `${base}${planClause}; daily request window resets by ~${span} at the latest (est., ${reset.toISOString().replace("T", " ").slice(0, 16)} UTC)`;
+}
+
 function isBillingBlock(inner) {
   if (!inner || typeof inner !== "string") return false;
   const lowerMsg = inner.toLowerCase();
@@ -408,14 +573,35 @@ function isBillingBlock(inner) {
  * byte read so far (including the peeked line) so the caller can re-process
  * it and nothing is dropped from the stream.
  */
-async function peekFirstQoderFrame(reader, decoder) {
+async function peekFirstQoderFrame(reader, decoder, budgetMs = 0) {
   let consumed = "";
   let offset = 0;
   let upstreamDone = false;
+  const deadline = budgetMs > 0 ? Date.now() + budgetMs : 0;
   while (true) {
     let nl = consumed.indexOf("\n", offset);
     if (nl === -1 && !upstreamDone) {
-      const { done, value } = await reader.read();
+      let next;
+      if (deadline) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return { isError: false, consumed, upstreamDone, timedOut: true };
+        let timer;
+        const pending = reader.read();
+        const guard = new Promise((resolve) => {
+          timer = setTimeout(() => resolve(QODER_PEEK_TIMEOUT), remaining);
+          timer.unref?.();
+        });
+        next = await Promise.race([pending, guard]);
+        clearTimeout(timer);
+        if (next === QODER_PEEK_TIMEOUT) {
+          // The read is still in flight and owns the next chunk; hand it to the
+          // caller so the first frame is not dropped.
+          return { isError: false, consumed, upstreamDone, timedOut: true, pending };
+        }
+      } else {
+        next = await reader.read();
+      }
+      const { done, value } = next;
       upstreamDone = done;
       consumed += done ? decoder.decode() : decoder.decode(value, { stream: true });
       continue;
@@ -472,14 +658,17 @@ async function peekFirstQoderFrame(reader, decoder) {
  * error text as a successful completion. Billing blocks retain the existing
  * 403 mapping for quota/account fallback.
  */
-async function wrapQoderSSE(response, model, log = null) {
+async function wrapQoderSSE(response, model, log = null, describeBilling = null) {
   if (!response.ok || !response.body) return response;
 
   const decoder = new TextDecoder();
   const reader = response.body.getReader();
 
   // Detect errors before returning a successful streaming response.
-  const peek = await peekFirstQoderFrame(reader, decoder);
+  const peekBudget = Number(process.env.QODER_PEEK_BUDGET_MS) > 0
+    ? Number(process.env.QODER_PEEK_BUDGET_MS)
+    : QODER_PEEK_BUDGET_MS;
+  const peek = await peekFirstQoderFrame(reader, decoder, peekBudget);
   if (peek.isError) {
     await reader.cancel().catch(() => {});
     const status = peek.isBilling
@@ -504,7 +693,7 @@ async function wrapQoderSSE(response, model, log = null) {
   };
 
   // Process one already-extracted SSE line (no trailing newline).
-  const processLine = (line, controller) => {
+  const processLine = async (line, controller) => {
     const trimmed = line.replace(/\r$/, "").trim();
     if (!trimmed) return;
     if (!trimmed.startsWith("data:")) return;
@@ -535,9 +724,15 @@ async function wrapQoderSSE(response, model, log = null) {
         // parseSSEToOpenAIResponse understands chunk.error and turns it into a
         // non-200 result so chat.js locks the model and falls back. Streaming
         // clients receive a real SSE error instead of "[qoder error ...]" text.
+        let billingMessage = inner || `qoder billing block (${statusVal})`;
+        if (typeof describeBilling === "function") {
+          try {
+            billingMessage = await describeBilling(inner);
+          } catch { /* keep the plain upstream message */ }
+        }
         const errObj = JSON.stringify({
           error: {
-            message: inner || `qoder billing block (${statusVal})`,
+            message: billingMessage,
             code: "qoder_billing_block",
             status: 403,
             type: "quota_error",
@@ -570,13 +765,31 @@ async function wrapQoderSSE(response, model, log = null) {
     // Use start()+loop (not pull): a pull that buffers a partial line without
     // enqueueing would never be re-invoked, hanging consumers like .text().
     async start(controller) {
+      let heartbeat = null;
+      const stopHeartbeat = () => {
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+        }
+      };
+      if (peek.timedOut) {
+        const beat = () => {
+          try {
+            controller.enqueue(encoder.encode(": qoder-waiting\n\n"));
+          } catch {
+            stopHeartbeat();
+          }
+        };
+        beat();
+        heartbeat = setInterval(beat, QODER_WAIT_HEARTBEAT_MS);
+      }
       try {
         // Drain whatever the peek already pulled off the socket first.
         let nlSeed;
         while ((nlSeed = buffer.indexOf("\n")) !== -1) {
           const line = buffer.slice(0, nlSeed);
           buffer = buffer.slice(nlSeed + 1);
-          processLine(line, controller);
+          await processLine(line, controller);
           if (doneEmitted) {
             await reader.cancel().catch(() => {});
             controller.close();
@@ -587,17 +800,19 @@ async function wrapQoderSSE(response, model, log = null) {
           // Peek hit end-of-stream: flush any trailing partial line.
           buffer += decoder.decode();
           if (buffer.length > 0) {
-            processLine(buffer, controller);
+            await processLine(buffer, controller);
             buffer = "";
           }
         }
 
+        let pendingRead = peek.pending || null;
         while (!doneEmitted && !upstreamDrained) {
-          const { done, value } = await reader.read();
+          const { done, value } = pendingRead ? await pendingRead : await reader.read();
+          pendingRead = null;
           if (done) {
             buffer += decoder.decode();
             if (buffer.length > 0) {
-              processLine(buffer, controller);
+              await processLine(buffer, controller);
               buffer = "";
             }
             break;
@@ -608,7 +823,7 @@ async function wrapQoderSSE(response, model, log = null) {
           while ((nl = buffer.indexOf("\n")) !== -1) {
             const line = buffer.slice(0, nl);
             buffer = buffer.slice(nl + 1);
-            processLine(line, controller);
+            await processLine(line, controller);
             if (doneEmitted) {
               // Terminal frame received — drop upstream keepalive and end.
               await reader.cancel().catch(() => {});
@@ -620,6 +835,7 @@ async function wrapQoderSSE(response, model, log = null) {
       } catch {
         // fall through to terminal [DONE] + close
       } finally {
+        stopHeartbeat();
         if (!doneEmitted) {
           try {
             coalescer.flush(controller);
@@ -660,7 +876,152 @@ export class QoderExecutor extends BaseExecutor {
   //   - body encoded with QoderEncodeBody before signing
   //   - COSY headers built from the *encoded* body bytes
   //   - response stream re-wrapped from {statusCodeValue, body} to OpenAI SSE
-  async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
+  //
+  // Wraps _executeAttempt with a single login-expired recovery: when upstream
+  // rejects the cached job token (403/code 105 "Login expired" — a
+  // server-side early invalidation the local expiresAt bookkeeping cannot
+  // see), drop the cached jt- and retry once with a freshly exchanged one.
+  // Before this, an invalidated jt- was treated as a transient 403: the
+  // account got a 2-minute cooldown, the client retried into the same dead
+  // token, and the loop repeated forever.
+  async execute(params) {
+    const work = this._runWithTokenRecovery(params);
+    // A long prompt can keep upstream silent for tens of seconds. Streaming
+    // clients give up when they see zero bytes, so hand them a live SSE stream
+    // once the budget expires and let the real work finish behind it.
+    const budget = qoderHeadersBudgetMs();
+    if (params?.body?.stream !== true || budget <= 0) return work;
+
+    const outcome = await Promise.race([
+      work.then((r) => ({ kind: "result", value: r })).catch((err) => ({ kind: "error", err })),
+      new Promise((resolve) => {
+        const timer = setTimeout(() => resolve({ kind: "timeout" }), budget);
+        timer.unref?.();
+      }),
+    ]);
+    if (outcome.kind !== "timeout") {
+      if (outcome.kind === "error") throw outcome.err;
+      return outcome.value;
+    }
+    return this._deferredSseResponse(work, params);
+  }
+
+  /**
+   * The stream handed back while `work` is still running: heartbeats now, the
+   * real frames when upstream answers, an SSE error if it refuses. Errors can no
+   * longer become an HTTP status here, which is the price of not going silent.
+   */
+  _deferredSseResponse(work, params) {
+    const encoder = new TextEncoder();
+    const signal = params?.signal;
+    return {
+      response: new Response(
+        new ReadableStream({
+          async start(controller) {
+            let closed = false;
+            const beat = () => {
+              if (closed) return;
+              try {
+                controller.enqueue(encoder.encode(": qoder-waiting\n\n"));
+              } catch {
+                closed = true;
+              }
+            };
+            beat();
+            const timer = setInterval(beat, QODER_WAIT_HEARTBEAT_MS);
+            timer.unref?.();
+            const stop = () => {
+              clearInterval(timer);
+              closed = true;
+            };
+            try {
+              const result = await work;
+              const resp = result?.response;
+              if (!resp || !resp.ok || !resp.body) {
+                const message = resp
+                  ? await resp.text().catch(() => `upstream status ${resp.status}`)
+                  : "qoder produced no response";
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ error: { message: String(message).slice(0, 500), code: resp?.status ?? null } })}\n\n`),
+                );
+                controller.enqueue(encoder.encode(SSE_DONE));
+                return;
+              }
+              const reader = resp.body.getReader();
+              for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                controller.enqueue(value);
+              }
+            } catch (err) {
+              try {
+                controller.enqueue(
+                  encoder.encode(`data: ${JSON.stringify({ error: { message: err?.message || "qoder stream failed" } })}\n\n`),
+                );
+                controller.enqueue(encoder.encode(SSE_DONE));
+              } catch { /* client already gone */ }
+            } finally {
+              stop();
+              try { controller.close(); } catch { /* already closed */ }
+            }
+          },
+          cancel() {
+            try { signal?.abort?.(new Error("client cancelled")); } catch { /* ignore */ }
+          },
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache",
+            Connection: "keep-alive",
+          },
+        },
+      ),
+      url: "",
+      headers: {},
+      transformedBody: params?.body,
+    };
+  }
+
+  /** Token-recovery wrapper: one re-exchange and retry on Qoder code 105. */
+  async _runWithTokenRecovery(params) {
+    const result = await this._executeAttempt(params);
+    if (!(await this._isLoginExpiredResult(result))) return result;
+
+    const { log, credentials } = params;
+    log?.warn?.("QODER", "upstream rejected the job token (Login expired); re-exchanging and retrying once");
+    invalidateQoderJobToken(credentials);
+    try {
+      const retry = await this._executeAttempt(params);
+      return retry;
+    } catch (err) {
+      log?.warn?.("QODER", `retry after job-token re-exchange failed: ${err.message}`);
+      return result;
+    }
+  }
+
+  /**
+   * True when an executor result's response is the login-expired rejection:
+   * HTTP 403/401 whose body carries Qoder code 105 (or the literal message).
+   * Error responses from _executeAttempt are built from a JSON string, so the
+   * body is safe to read. Successful streams (Response.ok) never reach the
+   * body read.
+   */
+  async _isLoginExpiredResult(result) {
+    const resp = result?.response;
+    if (!resp || resp.ok) return false;
+    if (resp.status !== 403 && resp.status !== 401) return false;
+    // Read a CLONE: chatCore's parseUpstreamError consumes the original body
+    // later, and a Response body can only be read once. Reading the original
+    // here left the client-facing error with an empty body ("HTTP 403" with no
+    // upstream message) for every non-105 403 — billing blocks included.
+    let text = "";
+    try { text = await resp.clone().text(); } catch { return false; }
+    return isLoginExpiredFrame(text, resp.status);
+  }
+
+  async _executeAttempt({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     // PAT (pt-...) → exchange for short-lived job token + resolve userId so
     // downstream COSY signing + catalog fetch work. Device tokens (dt-...) and
     // job tokens (jt-...) skip this and are used directly.
@@ -699,10 +1060,58 @@ export class QoderExecutor extends BaseExecutor {
       return { response: fakeResp, url, headers: {}, transformedBody: body };
     }
 
-    let qoderKey;
+    // Transport selection. COSY is the default; a body above 200 KiB is upgraded
+    // to gRPC, which answers large requests in seconds where COSY takes minutes
+    // or never answers (measured: 280K chars 73s → 5.1s, 1.2M chars >300s →
+    // 16.3s). Free-tier rows stay on COSY (gRPC refuses them with 116), and any
+    // gRPC failure falls through to the COSY path below, so a request that works
+    // today cannot start failing.
+    const qoderKey = String(model || "").replace(/^qoder\//, "");
+    let modelConfig = null;
+    try {
+      modelConfig = await resolveQoderModelConfig({ qoderKey, credentials, log, proxyOptions, signal, region: this.region });
+    } catch (err) {
+      const fakeResp = new Response(
+        JSON.stringify({ error: { message: err.message } }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+      return { response: fakeResp, url, headers: {}, transformedBody: body };
+    }
+
+    const bodyBytes = qoderBodyBytes(body);
+    const transport = resolveQoderTransport(qoderTransportOverride(), modelConfig, bodyBytes, qoderKey);
+    if (transport === "grpc") {
+      log?.info?.("QODER", `dispatching ${qoderKey} over gRPC (body ${Math.round(bodyBytes / 1024)} KiB is past the 200 KiB HTTP threshold)`);
+      try {
+        return await dispatchQoderGrpc({
+          modelId: qoderKey,
+          body,
+          credentials,
+          region: this.region,
+          signal,
+          log,
+          userId: psd.userId,
+          machineId: psd.machineId || deriveMachineId(psd.userId),
+        });
+      } catch (err) {
+        // Missing @grpc/* (optional deps) or a client that cannot be built:
+        // the COSY path below still serves anything under its own cap.
+        log?.warn?.("QODER", `gRPC transport unavailable (${err.message}); falling back to COSY`);
+      }
+    }
+
     let payload;
     try {
-      ({ qoderKey, payload } = await buildQoderRequestBody({ model, body, credentials, log, proxyOptions, signal, region: this.region }));
+      ({ payload } = await buildQoderRequestBody({
+        model,
+        body,
+        credentials,
+        log,
+        proxyOptions,
+        signal,
+        region: this.region,
+        modelConfig,
+      }));
     } catch (err) {
       const fakeResp = new Response(
         JSON.stringify({ error: { message: err.message } }),
@@ -909,9 +1318,15 @@ export class QoderExecutor extends BaseExecutor {
           const status = peek.isBilling ? HTTP_STATUS.FORBIDDEN
             : Number.isInteger(peek.statusVal) && peek.statusVal >= 400 && peek.statusVal <= 599
               ? peek.statusVal : HTTP_STATUS.BAD_GATEWAY;
+          // Billing blocks get the live quota and the daily-reset boundary
+          // appended, so the client sees WHY and UNTIL WHEN instead of a bare
+          // "Billing daily count exceeded".
+          const message = peek.isBilling
+            ? await describeQoderDailyQuota(peek.message, credentials, this.region, log)
+            : peek.message || "qoder upstream error";
           return {
             response: new Response(
-              JSON.stringify({ error: { message: peek.message || "qoder upstream error", code: peek.statusVal } }),
+              JSON.stringify({ error: { message, code: peek.statusVal } }),
               { status, headers: { "Content-Type": "application/json" } },
             ),
             url: sent.url,
@@ -967,7 +1382,8 @@ export class QoderExecutor extends BaseExecutor {
           }),
           { status: sent.response.status, statusText: sent.response.statusText, headers: sent.response.headers },
         );
-        const wrapped = await wrapQoderSSE(reconstructed, label, log);
+        const wrapped = await wrapQoderSSE(reconstructed, label, log, (inner) =>
+          describeQoderDailyQuota(inner, credentials, this.region, log));
         return { response: wrapped, url: sent.url, headers: sent.headers, transformedBody: sent.transformedBody };
       }
 

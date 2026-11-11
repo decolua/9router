@@ -431,31 +431,42 @@ export const PROVIDER_CAPABILITIES = {
 // `qmodel_38max`), so the name heuristics in PATTERN_CAPABILITIES match none of
 // them — without this table every Qoder model is reported text-only and an
 // image sent by a client is replaced by a placeholder before it ever reaches
-// the model. Context/output limits mirror what /algo/api/v2/model/list reports.
+// the model.
+//
+// The window is the widest tier the roster advertises, not the tier the IDE has
+// selected: /algo/api/v2/model/list reports `max_input_tokens` as the currently
+// selected window (~200K) while `context_config` lists everything the slot can
+// select (200K / 400K / 1M). Publishing the selected tier makes every client
+// compact at 200K and never send a long request, which leaves the 1M window the
+// provider sells unreachable even though the transport carries it.
 PROVIDER_CAPABILITIES["qoder"] = {
   // Tier aliases resolve to a variable target upstream; keep them text-only and
-  // on the default window rather than guessing.
-  "auto":         { contextWindow: 200000, maxOutput: 32768 },
-  "efficient":    { contextWindow: 200000, maxOutput: 32768 },
-  "lite":         { contextWindow: 200000, maxOutput: 32768 },
+  // on the default output ceiling rather than guessing.
+  "auto":         { contextWindow: 1000000, maxOutput: 32768 },
+  "efficient":    { contextWindow: 1000000, maxOutput: 32768 },
+  // `fast` is the highspeed Kimi lane; the live catalog lists it but the roster
+  // this table mirrors never named it, so it fell through to the generic
+  // 200K default while every other slot published 1M.
+  "fast":         { vision: true, contextWindow: 1000000, maxOutput: 65536 },
+  "lite":         { contextWindow: 1000000, maxOutput: 32768 },
   // Concrete ids read images back, so they are vision-capable.
-  "ultimate":     { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "performance":  { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "qmodel_38max": { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "qmodel_latest":{ vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "qmodel":       { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "qfmodel":      { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "kmodel_latest":{ vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "kmodel":       { vision: true, contextWindow: 200000, maxOutput: 65536 },
-  "gmodel":       { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "gfmodel":      { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "dmodel":       { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "dfmodel":      { vision: true, reasoning: true, contextWindow: 200000, maxOutput: 65536 },
-  "mmodel":       { vision: true, contextWindow: 200000, maxOutput: 65536 },
+  "ultimate":     { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "performance":  { vision: true, contextWindow: 1000000, maxOutput: 65536 },
+  "qmodel_38max": { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "qmodel_latest":{ vision: true, contextWindow: 1000000, maxOutput: 65536 },
+  "qmodel":       { vision: true, contextWindow: 1000000, maxOutput: 65536 },
+  "qfmodel":      { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "kmodel_latest":{ vision: true, contextWindow: 1000000, maxOutput: 65536 },
+  "kmodel":       { vision: true, contextWindow: 1000000, maxOutput: 65536 },
+  "gmodel":       { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "gfmodel":      { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "dmodel":       { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "dfmodel":      { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "mmodel":       { vision: true, contextWindow: 1000000, maxOutput: 65536 },
   // Frontier reasoning pair; absent from many per-account catalogs, so they are
   // routed through a static model_config (see shared/qoder/constants.js).
-  "smodel":       { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
-  "cmodel":       { vision: true, reasoning: true, contextWindow: 180000, maxOutput: 65536 },
+  "smodel":       { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
+  "cmodel":       { vision: true, reasoning: true, contextWindow: 1000000, maxOutput: 65536 },
 };
 
 // Qoder CN serves the identical model catalog from the CN gateway, so it shares
