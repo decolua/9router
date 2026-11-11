@@ -702,6 +702,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         id: `${alias}/${model.id}`,
         object: "model",
         owned_by: alias,
+        name: resolveModelDisplayName(model.id, model.name),
       };
       if (caps) entry.capabilities = caps;
       if (Number.isFinite(caps?.contextWindow)) entry.context_length = caps.contextWindow;
@@ -730,6 +731,7 @@ export async function buildModelsList(kindFilter, options = {}) {
         id: `${alias}/${live.id}`,
         object: "model",
         owned_by: alias,
+        name: resolveModelDisplayName(live.id, live.name),
       };
       if (caps) entry.capabilities = caps;
       if (Number.isFinite(caps?.contextWindow)) entry.context_length = caps.contextWindow;
