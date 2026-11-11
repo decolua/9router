@@ -35,16 +35,33 @@ const OPENCODE_OVERLOAD_BASE_MS = 800;
 const OPENCODE_OVERLOAD_MAX_MS = 4000;
 const OPENCODE_OVERLOAD_RE = /overloaded/i;
 
-/** Transient free-lane 429 (load shedding), as opposed to FreeUsageLimitError. */
-async function isTransientOverload(response) {
-  if (!response || response.status !== 429) return false;
+/**
+ * Classify a gated free-lane rejection:
+ * - "overload": transient 429 load shedding, worth retrying.
+ * - "session":  any other 429 (FreeUsageLimitError) or 403, which can mean the
+ *               session id itself is spent or flagged.
+ * - null:       anything else.
+ */
+async function classifyRejection(response) {
+  const status = response?.status;
+  if (status !== 429 && status !== 403) return null;
+  if (status === 403) return "session";
   try {
     // The body is the response stream; clone it so a non-retryable 429 is still
     // delivered intact to the caller.
-    return OPENCODE_OVERLOAD_RE.test(await response.clone().text());
+    return OPENCODE_OVERLOAD_RE.test(await response.clone().text()) ? "overload" : "session";
   } catch {
-    return false;
+    return "session";
   }
+}
+
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const onAbort = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { signal?.removeEventListener?.("abort", onAbort); resolve(); }, ms);
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
 }
 
 function hasValidOpencodeVersion(ua) {
@@ -189,6 +206,25 @@ export function stableSessionId(credentials) {
   }
   stableOpencodeSessions.set(key, { sessionId, lastUsed: Date.now() });
   return sessionId;
+}
+
+// The memoized sessions above are never refreshed on failure, so once upstream
+// spends or flags one, every later request reuses it and fails the same way
+// until restart (#5559). Drop the rejected id so the next request mints a fresh
+// one. Match by value, not identity key: a concurrent request may already have
+// minted a replacement, which must survive.
+export function forgetOpencodeSession(sessionId) {
+  if (!sessionId) return false;
+  let removed = false;
+  for (const store of [stableOpencodeSessions, translatedOpencodeSessions]) {
+    for (const [key, entry] of store) {
+      if (entry.sessionId === sessionId) {
+        store.delete(key);
+        removed = true;
+      }
+    }
+  }
+  return removed;
 }
 
 function bodyHasSessionHints(body) {
@@ -446,15 +482,27 @@ export class OpenCodeExecutor extends BaseExecutor {
     // with backoff, and hand back every other response untouched.
     for (let attempt = 1; ; attempt++) {
       const result = await run();
-      if (attempt >= OPENCODE_OVERLOAD_ATTEMPTS || !(await isTransientOverload(result?.response))) {
+      const rejection = await classifyRejection(result?.response);
+      if (rejection === "session") {
+        // A client-supplied native session is not ours to replace; this only
+        // drops ids we minted, so the next request starts on a fresh one.
+        if (forgetOpencodeSession(credentials[SESSION_FIELD])) {
+          args.log?.debug?.("SESSION", `OpenCode ${result.response.status}: dropped cached session, next request re-mints`);
+        }
         return result;
       }
       // A disconnected client should not keep the retry loop (and the free lane)
       // busy for another ~20 s.
-      if (args.signal?.aborted) return result;
+      if (rejection !== "overload" || attempt >= OPENCODE_OVERLOAD_ATTEMPTS || args.signal?.aborted) {
+        return result;
+      }
+      // Release the discarded 429 instead of leaving its stream half-read.
+      result.response.body?.cancel?.().catch?.(() => {});
       args.log?.debug?.("RETRY", `OpenCode free lane overloaded, retry ${attempt}/${OPENCODE_OVERLOAD_ATTEMPTS - 1}`);
       const backoff = Math.min(OPENCODE_OVERLOAD_BASE_MS * attempt, OPENCODE_OVERLOAD_MAX_MS);
-      await new Promise((resolve) => setTimeout(resolve, backoff + Math.random() * 250));
+      await sleep(backoff + Math.random() * 250, args.signal);
+      // Aborted mid-backoff: surface it the way a disconnect during the fetch does.
+      if (args.signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
     }
   }
 

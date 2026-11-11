@@ -10,8 +10,8 @@ const { baseExecuteMock } = vi.hoisted(() => ({ baseExecuteMock: vi.fn() }));
 
 vi.mock("../../open-sse/executors/base.js", () => ({
   BaseExecutor: class {
-    async execute() {
-      return baseExecuteMock();
+    async execute(args) {
+      return baseExecuteMock(args);
     }
   },
 }));
@@ -20,7 +20,7 @@ vi.mock("../../open-sse/services/opencodeTlsClient.js", () => ({
   opencodeTlsFetch: vi.fn(),
 }));
 
-const { OpenCodeExecutor } = await import("../../open-sse/executors/opencode.js");
+const { OpenCodeExecutor, forgetOpencodeSession } = await import("../../open-sse/executors/opencode.js");
 
 const OVERLOAD = JSON.stringify({
   error: {
@@ -45,15 +45,15 @@ function upstream(status, body) {
   };
 }
 
-async function run(executor, log) {
+async function run(executor, log, credentials = {}) {
   const pending = executor.execute({
     model: "deepseek-v4.1-flash-free",
     body: { messages: [{ role: "user", content: "say OK" }] },
     stream: true,
-    credentials: {},
+    credentials,
     log,
   });
-  // Let every backoff timer fire (4 attempts max, well under a minute).
+  // Let every backoff timer fire (8 attempts, ~20 s of backoff).
   await vi.advanceTimersByTimeAsync(60_000);
   return pending;
 }
@@ -129,5 +129,130 @@ describe("OpenCodeExecutor overload retry", () => {
 
     expect(baseExecuteMock).toHaveBeenCalledTimes(1);
     expect(result.response.status).toBe(429);
+  });
+
+  it("aborts during backoff instead of sleeping out the schedule", async () => {
+    baseExecuteMock.mockResolvedValue(upstream(429, OVERLOAD));
+    const controller = new AbortController();
+
+    const pending = new OpenCodeExecutor("opencode", {}).execute({
+      model: "deepseek-v4.1-flash-free",
+      body: { messages: [{ role: "user", content: "say OK" }] },
+      stream: true,
+      credentials: {},
+      signal: controller.signal,
+    });
+    const settled = pending.then(() => "resolved", (e) => e.name);
+    await vi.advanceTimersByTimeAsync(100);
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(await settled).toBe("AbortError");
+    expect(baseExecuteMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+// #5559: a minted session that upstream has spent or flagged used to be reused
+// until restart. A non-transient rejection must drop it so the next request
+// re-mints, while overload retries keep the same session.
+describe("OpenCodeExecutor session invalidation", () => {
+  const sessionOf = (call) => call[0].credentials._opencodeSession;
+  // Unique identity per test so the module-level session cache does not leak.
+  let creds;
+  let n = 0;
+
+  beforeEach(() => {
+    baseExecuteMock.mockReset();
+    vi.useFakeTimers();
+    creds = { rawHeaders: { authorization: `Bearer test-${n++}` } };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reuses one stable session across successful requests", async () => {
+    baseExecuteMock.mockImplementation(async () => upstream(200, "data: ok\n\n"));
+    const executor = new OpenCodeExecutor("opencode", {});
+
+    await run(executor, undefined, creds);
+    await run(executor, undefined, creds);
+
+    const [a, b] = baseExecuteMock.mock.calls.map(sessionOf);
+    expect(a).toMatch(/^ses_/);
+    expect(b).toBe(a);
+  });
+
+  it.each([
+    ["429 FreeUsageLimitError", 429, FREE_USAGE],
+    ["403 FreeTierError", 403, '{"type":"error","error":{"type":"FreeTierError"}}'],
+  ])("drops the session after %s so the next request re-mints", async (_label, status, body) => {
+    baseExecuteMock
+      .mockResolvedValueOnce(upstream(status, body))
+      .mockResolvedValueOnce(upstream(200, "data: ok\n\n"));
+    const executor = new OpenCodeExecutor("opencode", {});
+
+    const first = await run(executor, undefined, creds);
+    expect(first.response.status).toBe(status);
+    await run(executor, undefined, creds);
+
+    const [a, b] = baseExecuteMock.mock.calls.map(sessionOf);
+    expect(b).toMatch(/^ses_/);
+    expect(b).not.toBe(a);
+  });
+
+  it("keeps the session through overload retries", async () => {
+    baseExecuteMock
+      .mockResolvedValueOnce(upstream(429, OVERLOAD))
+      .mockResolvedValueOnce(upstream(200, "data: ok\n\n"))
+      .mockResolvedValueOnce(upstream(200, "data: ok\n\n"));
+    const executor = new OpenCodeExecutor("opencode", {});
+
+    await run(executor, undefined, creds);
+    await run(executor, undefined, creds);
+
+    const sessions = baseExecuteMock.mock.calls.map(sessionOf);
+    expect(new Set(sessions).size).toBe(1);
+  });
+
+  it("drops a translated per-conversation session too", async () => {
+    baseExecuteMock
+      .mockResolvedValueOnce(upstream(429, FREE_USAGE))
+      .mockResolvedValueOnce(upstream(200, "data: ok\n\n"));
+    const executor = new OpenCodeExecutor("opencode", {});
+    const convo = { ...creds, rawHeaders: { ...creds.rawHeaders, "x-session-id": `conv-${n}` } };
+
+    const call = (c) => {
+      const p = executor.execute({
+        model: "deepseek-v4.1-flash-free",
+        body: { messages: [{ role: "user", content: "hi" }] },
+        stream: true,
+        credentials: c,
+        providerSessionId: `conv-${n}`,
+      });
+      return vi.advanceTimersByTimeAsync(60_000).then(() => p);
+    };
+    await call(convo);
+    await call(convo);
+
+    const [a, b] = baseExecuteMock.mock.calls.map(sessionOf);
+    expect(b).not.toBe(a);
+  });
+
+  it("never touches a client-supplied native session", async () => {
+    const native = "ses_0123456789abABCDEFGHIJKLMN";
+    baseExecuteMock.mockResolvedValue(upstream(429, FREE_USAGE));
+    const executor = new OpenCodeExecutor("opencode", {});
+    const c = { rawHeaders: { "x-opencode-session": native } };
+
+    await run(executor, undefined, c);
+    await run(executor, undefined, c);
+
+    expect(baseExecuteMock.mock.calls.map(sessionOf)).toEqual([native, native]);
+  });
+
+  it("forgetOpencodeSession ignores ids it never minted", () => {
+    expect(forgetOpencodeSession("ses_unknown")).toBe(false);
+    expect(forgetOpencodeSession(undefined)).toBe(false);
   });
 });
