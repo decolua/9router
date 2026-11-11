@@ -78,12 +78,14 @@ export async function createApiKey(name, machineId, options = {}) {
   // The mint prefix is an operator setting; read it here so every creation
   // path (endpoint page, CLI tools, sub-keys) gets it without each caller
   // having to know about it. A read failure falls back to "sk-".
-  let prefix = "sk-";
-  try {
-    const { getSettings } = await import("./settingsRepo.js");
-    prefix = normalizeKeyPrefix((await getSettings())?.apiKeyPrefix);
-  } catch { /* keep the default rather than failing the key creation */ }
-  const result = generateApiKeyWithMachine(machineId, prefix);
+  let prefix = options?.prefix ? normalizeKeyPrefix(options.prefix) : null;
+  if (!prefix) {
+    try {
+      const { getSettings } = await import("./settingsRepo.js");
+      prefix = normalizeKeyPrefix((await getSettings())?.apiKeyPrefix);
+    } catch { /* keep the default rather than failing the key creation */ }
+  }
+  const result = generateApiKeyWithMachine(machineId, prefix || "sk-");
   const now = new Date().toISOString();
   const apiKey = {
     id: uuidv4(),

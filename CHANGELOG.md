@@ -1,3 +1,9 @@
+# v0.5.410 (2026-11-11)
+
+## What Looks Different?
+
+- The **Key Prefix** setting has moved into the **Create API Key** modal. The main API Keys card remains clean and uncluttered without an inline prefix section interrupting the key list. Operators can configure or view the leading prefix directly alongside the key name and expiry when creating a key.
+
 # v0.5.409 (2026-11-11)
 
 ## What Looks Different?

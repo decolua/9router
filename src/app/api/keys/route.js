@@ -109,7 +109,9 @@ export async function POST(request) {
 
     const machineId = await getConsistentMachineId();
     const createdBy = ctx.session?.role === "apikey" ? ctx.session.apiKey : "dashboard";
+    const prefix = typeof body?.prefix === "string" ? body.prefix.trim() : null;
     const apiKey = await createApiKey(trimmedName, machineId, {
+      prefix,
       tokenLimit: tokenLimit !== undefined ? Number(tokenLimit) : 0,
       resetInterval: resetInterval || "never",
       allowedModels: allowedModels || "*",
@@ -123,6 +125,12 @@ export async function POST(request) {
       permissions: finalPermissions,
       createdBy,
     });
+    if (prefix) {
+      try {
+        const { updateSettings } = await import("@/lib/localDb");
+        await updateSettings({ apiKeyPrefix: prefix });
+      } catch {}
+    }
 
     // A credential appearing: record who minted it and exactly what it may do.
     try {

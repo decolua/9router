@@ -387,9 +387,7 @@ export default function APIPageClient({ machineId }) {
   const [requireApiKey, setRequireApiKey] = useState(false);
   // Prefix used for newly minted keys; existing keys keep their own.
   const [apiKeyPrefix, setApiKeyPrefix] = useState("sk-");
-  const [prefixSaving, setPrefixSaving] = useState(false);
-  const [prefixSaved, setPrefixSaved] = useState(false);
- const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
+  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
  const [authStatus, setAuthStatus] = useState(null);
  const [newKeyPermissions, setNewKeyPermissions] = useState({ ...EMPTY_PERMISSIONS });
  const [editPermissions, setEditPermissions] = useState({ ...EMPTY_PERMISSIONS });
@@ -610,22 +608,6 @@ const scopedModelPatterns =
       console.log("Error loading settings:", error);
     } finally {
       setTunnelChecking(false);
-    }
-  };
-
-  const handleApiKeyPrefix = async () => {
-    const value = String(apiKeyPrefix || "").trim();
-    setPrefixSaving(true);
-    try {
-      const updated = await useSettingsStore.getState().patchSettings({ apiKeyPrefix: value });
-      if (updated) {
-        setPrefixSaved(true);
-        setTimeout(() => setPrefixSaved(false), 2000);
-      }
-    } catch (error) {
-      console.log("Error updating apiKeyPrefix:", error);
-    } finally {
-      setPrefixSaving(false);
     }
   };
 
@@ -1125,6 +1107,7 @@ const scopedModelPatterns =
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newKeyName,
+          prefix: apiKeyPrefix ? apiKeyPrefix.trim() : undefined,
           limitKind: newKeyLimitKind,
           tokenLimit: newKeyLimitKind === "tokens" ? limitNum : 0,
           requestLimit: newKeyLimitKind === "requests" ? limitNum : 0,
@@ -1587,46 +1570,6 @@ const scopedModelPatterns =
         </div>
         )}
 
-        {!isApiKeyUser && (
-        <div className="pt-4 mt-4 border-t border-border/70">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl bg-surface-2/40 border border-border-subtle">
-            <div className="flex items-start gap-3 min-w-0 flex-1">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20 mt-0.5">
-                <span className="material-symbols-outlined text-[20px]">badge</span>
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <p className="font-medium text-sm">Key Prefix</p>
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface font-mono text-[11px] border border-border-subtle text-text-muted">
-                    Format: <span className="text-primary font-semibold">{String(apiKeyPrefix || "").trim() || "sk-"}</span><span>••••••••</span>
-                  </span>
-                </div>
-                <p className="text-xs text-text-muted mt-1 leading-relaxed">
-                  Controls the leading prefix minted onto newly created keys. Existing keys retain their issued prefix.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-              <Input
-                value={apiKeyPrefix}
-                onChange={(e) => setApiKeyPrefix(e.target.value)}
-                placeholder="sk-"
-                spellCheck={false}
-                className="w-28 font-mono text-sm"
-                aria-label="API key prefix"
-              />
-              <Button
-                size="sm"
-                onClick={handleApiKeyPrefix}
-                disabled={prefixSaving || !apiKeyPrefix.trim()}
-              >
-                {prefixSaving ? "Saving..." : prefixSaved ? "Saved" : "Save"}
-              </Button>
-            </div>
-          </div>
-        </div>
-        )}
-
         {!isApiKeyUser && isRemoteHost && !requireApiKey && (
           <div className="mb-4 -mt-2">
             <SecurityWarning message="Endpoint is exposed without an API key." />
@@ -1864,16 +1807,23 @@ const scopedModelPatterns =
             title="Identity"
             description="What you will see in the key list, and how long the key may live."
           >
-            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-2/60 border border-border-subtle text-xs">
-              <span className="text-text-muted">Key Prefix</span>
-              <span className="font-mono text-primary font-semibold">{apiKeyPrefix || "sk-"}</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Input
+                label="Key Name"
+                value={newKeyName}
+                onChange={(e) => setNewKeyName(e.target.value)}
+                placeholder="Production Key"
+              />
+              <Input
+                label="Key Prefix"
+                value={apiKeyPrefix}
+                onChange={(e) => setApiKeyPrefix(e.target.value)}
+                placeholder="sk-"
+                spellCheck={false}
+                className="font-mono"
+                hint={`Minted key: ${String(apiKeyPrefix || "").trim() || "sk-"}••••••••`}
+              />
             </div>
-            <Input
-              label="Key Name"
-              value={newKeyName}
-              onChange={(e) => setNewKeyName(e.target.value)}
-              placeholder="Production Key"
-            />
             <Input
               label="Expiry Date (optional)"
               type="datetime-local"
