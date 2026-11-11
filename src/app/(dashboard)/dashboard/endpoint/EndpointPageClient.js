@@ -385,8 +385,8 @@ export default function APIPageClient({ machineId }) {
   const [snippetLang, setSnippetLang] = useState("curl");
 
   const [requireApiKey, setRequireApiKey] = useState(false);
-  // Prefix used for newly minted keys; existing keys keep their own.
-  const [apiKeyPrefix, setApiKeyPrefix] = useState("sk-");
+  // Prefix used for newly minted keys; defaults to "sk-", input starts empty.
+  const [apiKeyPrefix, setApiKeyPrefix] = useState("");
   const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
  const [authStatus, setAuthStatus] = useState(null);
  const [newKeyPermissions, setNewKeyPermissions] = useState({ ...EMPTY_PERMISSIONS });
@@ -1080,6 +1080,7 @@ const scopedModelPatterns =
   const closeAddModal = () => {
     setShowAddModal(false);
     setNewKeyName("");
+    setApiKeyPrefix("");
   };
 
   const handleCreateKey = async () => {
@@ -1107,7 +1108,7 @@ const scopedModelPatterns =
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name: newKeyName,
-          prefix: apiKeyPrefix ? apiKeyPrefix.trim() : undefined,
+          prefix: apiKeyPrefix.trim() ? apiKeyPrefix.trim().replace(/[^a-zA-Z0-9]/g, "") : undefined,
           limitKind: newKeyLimitKind,
           tokenLimit: newKeyLimitKind === "tokens" ? limitNum : 0,
           requestLimit: newKeyLimitKind === "requests" ? limitNum : 0,
@@ -1894,11 +1895,11 @@ const scopedModelPatterns =
               <Input
                 label="Key Prefix"
                 value={apiKeyPrefix}
-                onChange={(e) => setApiKeyPrefix(e.target.value)}
+                onChange={(e) => setApiKeyPrefix(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
                 placeholder="sk-"
                 spellCheck={false}
                 className="font-mono"
-                hint={`Minted key: ${String(apiKeyPrefix || "").trim() || "sk-"}••••••••`}
+                hint={`Minted key: ${apiKeyPrefix ? `${apiKeyPrefix}-` : "sk-"}••••••••`}
               />
             </div>
             <Input

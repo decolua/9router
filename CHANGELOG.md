@@ -1,3 +1,9 @@
+# v0.5.415 (2026-11-11)
+
+## What Looks Different?
+
+- The **Key Prefix** input in the Create Key modal now starts empty by default with an `sk-` placeholder. Manual hyphens are disallowed—only alphanumeric characters (letters and numbers) can be entered, and the trailing hyphen `-` is automatically appended to the minted key prefix.
+
 # v0.5.414 (2026-11-11)
 
 ## What Looks Different?

@@ -40,14 +40,16 @@ export function generateApiKeyWithMachine(machineId, prefix = "sk-") {
 }
 
 /**
- * The prefix is operator-controlled, so it is clamped before use: a separator
- * must end it (keys split on "-"), and empty or whitespace-only input falls
- * back to the classic value.
+ * Normalizes an API key prefix:
+ * - Only alphanumeric characters [a-zA-Z0-9] are allowed in the prefix.
+ * - Hyphen "-" is automatically appended at the end.
+ * - Empty or whitespace-only input falls back to the default "sk-".
  */
 export function normalizeKeyPrefix(prefix) {
-  const value = String(prefix ?? "").trim().replace(/\s+/g, "");
-  if (!value) return "sk-";
-  return value.endsWith("-") ? value : `${value}-`;
+  if (!prefix) return "sk-";
+  const clean = String(prefix).trim().replace(/[^a-zA-Z0-9]/g, "");
+  if (!clean) return "sk-";
+  return `${clean}-`;
 }
 
 /**
