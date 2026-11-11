@@ -1,3 +1,9 @@
+# v0.5.414 (2026-11-11)
+
+## What Looks Different?
+
+- On mobile API key items, removed the text label beside the edit pencil icon so all action buttons remain compact, clean, and uniformly icon-only.
+
 # v0.5.413 (2026-11-11)
 
 ## What Looks Different?

@@ -1795,7 +1795,7 @@ const scopedModelPatterns =
                 </div>
 
                 {/* Mobile action bar */}
-                <div className="flex sm:hidden items-center justify-between pt-2 border-t border-border/20 text-text-muted">
+                <div className="flex sm:hidden items-center justify-end gap-1.5 pt-2 border-t border-border/20 text-text-muted">
                   <button
                     onClick={() => {
                       setEditingKey(key);
@@ -1818,10 +1818,10 @@ const scopedModelPatterns =
                       setEditPermissions(key.permissions || EMPTY_PERMISSIONS);
                     }}
                     disabled={isOwnKey(key)}
-                    className={cn("px-2.5 py-1.5 hover:bg-surface-2 rounded text-xs flex items-center gap-1 text-text-main", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
+                    className={cn("p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
+                    title="Edit key"
                   >
                     <span className="material-symbols-outlined text-[16px]">edit</span>
-                    Edit
                   </button>
                   <button
                     onClick={() => handleDuplicateKey(key)}
