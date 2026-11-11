@@ -1,4 +1,4 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish, keenable
 // Returns normalized shape across all providers
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 
@@ -142,6 +142,9 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     if (provider === "tinyfish") {
       return await runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
     }
+    if (provider === "keenable") {
+      return await runKeenable({ url, fmt, timeoutMs, maxCharacters, costPerQuery, startedAt, baseUrl: providerConfig?.baseUrl });
+    }
     return { success: false, status: 400, error: `Unsupported provider: ${provider}` };
   } catch (err) {
     log?.("fetch handler error:", err?.message || err);
@@ -172,6 +175,38 @@ async function runTinyfish({ url, fmt, timeoutMs, apiKey, maxCharacters, costPer
       ...buildData({ provider: "tinyfish", url, title: page.title, format: fmt, text, links: page.links,
         costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
       metadata: { author: page.author || null, published_at: page.published_date || null, language: page.language || null },
+    },
+  };
+}
+
+// Keenable keyless public fetch: GET /v1/fetch/public?url=...&max_chars=...
+// Response: { url, title, content, truncated, total_chars, author?, published_at? }
+async function runKeenable({ url, fmt, timeoutMs, maxCharacters, costPerQuery, startedAt, baseUrl }) {
+  if (fmt !== "markdown") return { success: false, status: 400, error: `Unsupported Keenable format: ${fmt}` };
+  const qp = new URLSearchParams({ url });
+  if (Number.isInteger(maxCharacters) && maxCharacters > 0) qp.set("max_chars", String(maxCharacters));
+  const upstreamStart = Date.now();
+  const r = await tryFetch(`${baseUrl || "https://api.keenable.ai/v1/fetch/public"}?${qp}`, {
+    method: "GET",
+    headers: { Accept: "application/json", "X-Keenable-Title": "9router" },
+  }, timeoutMs);
+  if (!r.ok) return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json, text: responseText } = await readJsonOrText(r.res);
+  if (!r.res.ok) {
+    const error = json?.message || json?.error || responseText?.slice(0, 500) || `Keenable error: ${r.res.status}`;
+    return { success: false, status: r.res.status, error };
+  }
+  if (!json || typeof json.content !== "string") {
+    return { success: false, status: 502, error: "Keenable returned no extractable content" };
+  }
+  const text = truncate(json.content, maxCharacters);
+  return {
+    success: true,
+    data: {
+      ...buildData({ provider: "keenable", url, title: json.title, format: fmt, text,
+        costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
+      metadata: { author: json.author || null, published_at: json.published_at || null, language: null },
     },
   };
 }
