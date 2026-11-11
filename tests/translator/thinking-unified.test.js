@@ -312,6 +312,16 @@ describe("OpenCode Free ids with no capabilities entry (#2690)", () => {
   it("still strips it for a model that has no entry at all (control)", () => {
     expect(apply("openai", "oc/no-such-model-xyz", bunny("high"), "oc").reasoning_effort).toBeUndefined();
   });
+
+  it("resolves an auto intent to a supported level instead of sending the literal auto", () => {
+    // "auto" is 9router's own intent (Claude adaptive thinking, reasoning_effort
+    // "auto"), not a level any OpenAI-shaped enum accepts: strict upstreams answer
+    // 400 invalid_reasoning_effort. The sibling formats already resolve it to a
+    // real level, so the generic OpenAI branches must too.
+    const body = { messages: [{ role: "user", content: "hi" }], thinking: { type: "adaptive" } };
+    expect(apply("openai", "oc/space-bunny-free", body, "oc").reasoning_effort).toBe("high");
+    expect(apply("openai-responses", "oc/space-bunny-free", body, "oc").reasoning_effort).toBe("high");
+  });
 });
 
 // Refs #3014. A multi-endpoint provider declares, per transports[] entry, the thinking shape that

@@ -174,6 +174,10 @@ function toLevel(cfg) {
 }
 
 function normalizeOpenAILevel(level, supportedLevels) {
+  // "auto" is a 9router intent (Claude adaptive thinking, reasoning_effort "auto"),
+  // not an OpenAI level: strict OpenAI-compatible upstreams reject the literal with
+  // 400 invalid_reasoning_effort. Resolve it to the level the sibling formats use.
+  if (level === "auto") return "high";
   if (level !== "max" && level !== "ultra") return level;
   if (supportedLevels?.includes(level)) return level;
   if (level === "ultra" && supportedLevels?.includes("max")) return "max";
