@@ -1,9 +1,13 @@
 # Unreleased
 
+## Features
+- **Claude**: add Claude Fable 5.2 ($8/$40) as the Fable flagship and advertise Claude Code 2.1.290, which Fable 5.2 requires
+
 ## Fixes
 - **Transport**: keep undici on 7.30.2 — undici 8 requires Node 22.19+, so 0.5.116 crashed every outbound `fetch` on older runtimes (`createZstdDecompress.bind` is undefined below Node 22.15). 7.30.2 carries the same security fixes and the stale-socket/happy-eyeballs transport work.
 - **Node floor**: declare `engines.node >= 20.18.1` in both packages (the root manifest had none, the CLI claimed `>=18`).
 - **SenseNova**: add `sensenova-intl` provider on `token.sensenova.ai` for international keys (the `.cn` host returns 401 Forbidden for them)
+- **Claude**: retire Fable 5.1 from the claude, GitHub Copilot and OpenCode Zen catalogs now that 5.2 replaces it; the capabilities and pricing rows stay so an existing `claude-fable-5-1` config still translates and bills correctly
 
 # v0.5.116 (2026-11-08)
 

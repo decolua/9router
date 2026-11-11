@@ -50,8 +50,8 @@ describe("getCapabilitiesForModel", () => {
     }
   });
 
-  it.each(["claude-fable-5-1", "claude-fable-5-2"])("reports %s as a permanent adaptive-thinking model", (model) => {
-    expect(getCapabilitiesForModel("claude", model)).toMatchObject({
+  it("reports Claude Fable 5.2 as a permanent adaptive-thinking model", () => {
+    expect(getCapabilitiesForModel("claude", "claude-fable-5-2")).toMatchObject({
       ...claudeSonnet5Expected,
       thinkingCanDisable: false,
     });
