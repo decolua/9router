@@ -92,8 +92,8 @@ describe("applyThinking per provider format", () => {
     expect(out.output_config).toEqual({ effort: "high" });
     expect(out.thinking).toBeUndefined();
   });
-  it("Fable 5.1 → effort without a redundant thinking switch", () => {
-    const out = apply("claude", "claude-fable-5-1", { reasoning_effort: "high" }, "claude");
+  it.each(["claude-fable-5-1", "claude-fable-5-2"])("%s → effort without a redundant thinking switch", (model) => {
+    const out = apply("claude", model, { reasoning_effort: "high" }, "claude");
     expect(out.output_config).toEqual({ effort: "high" });
     expect(out.thinking).toBeUndefined();
   });
