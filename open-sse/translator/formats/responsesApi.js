@@ -188,7 +188,9 @@ export function convertResponsesApiFormat(body) {
   delete result.include;
   delete result.prompt_cache_key;
   delete result.store;
-  delete result.reasoning;
+  // Keep reasoning intent available to the downstream format normalizer.
+  // Responses requests are converted to Chat shape before chatCore runs, but
+  // strict Responses upstreams still require reasoning.effort on re-encoding.
 
   return result;
 }
