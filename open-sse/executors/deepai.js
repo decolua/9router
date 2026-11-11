@@ -1,6 +1,15 @@
 import crypto from "node:crypto";
 import { BaseExecutor } from "./base.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import {
+  buildToolInstructions,
+  buildToolReminder,
+  emitToolCallChunks,
+  hasTools,
+  parseToolCallReply,
+  selectableTools,
+} from "./webCookieToolBridge.js";
+import { estimateInputTokens, estimateOutputTokens } from "../utils/usageTracking.js";
 
 const ENDPOINT = "https://api.deepai.org/hacking_is_a_serious_crime";
 const SIGNATURE_SALT = "hackers_become_a_little_stinkier_every_time_they_hack";
@@ -30,11 +39,38 @@ function contentToText(content) {
   return "";
 }
 
+/**
+ * Fold the request into DeepAI's chatHistory shape. A client that sent tools
+ * gets the shared tool protocol (schema, transcript turns, tail reminder)
+ * written into the first turn, and its assistant tool_calls / tool results are
+ * flattened to prose, because the upstream only understands user/assistant text.
+ */
 function buildChatHistory(body) {
   const messages = Array.isArray(body?.messages) ? body.messages : [];
+  const toolMode = hasTools(body);
+  let instructions = "";
+  let reminder = "";
+  if (toolMode) {
+    instructions = buildToolInstructions(body, "marker");
+    const { mode, forced } = selectableTools(body);
+    reminder = buildToolReminder("marker", { mode, forced });
+  }
   const history = [];
   const systemParts = [];
   for (const message of messages) {
+    if (message?.role === "tool") {
+      const text = contentToText(message?.content);
+      if (text) history.push({ role: "user", content: `<<TOOL_RESULT>> ${message.name || "tool"}: ${text} <<TOOL_RESULT>>` });
+      continue;
+    }
+    if (message?.role === "assistant" && Array.isArray(message.tool_calls) && message.tool_calls.length) {
+      const text = contentToText(message?.content);
+      const blocks = message.tool_calls
+        .map((tc) => `\`\`\`tool_call\n{"name": ${JSON.stringify(String(tc?.function?.name || ""))}, "arguments": ${tc?.function?.arguments || "{}"}}\n\`\`\``)
+        .join("\n");
+      history.push({ role: "assistant", content: text ? `${text}\n${blocks}` : blocks });
+      continue;
+    }
     const text = contentToText(message?.content);
     if (!text) continue;
     if (message.role === "system") {
@@ -44,6 +80,21 @@ function buildChatHistory(body) {
     if (message.role === "user" || message.role === "assistant") {
       history.push({ role: message.role, content: text });
     }
+  }
+  if (instructions) {
+    // The schema leads, the last turn re-anchors it: a long agent system prompt
+    // drowns a rule the model read 30 turns ago, so the reminder goes last.
+    if (history.length) history[0] = { ...history[0], content: `${instructions}\n\n${history[0].content}` };
+    else history.push({ role: "user", content: instructions });
+  }
+  if (reminder) {
+    for (let i = history.length - 1; i >= 0; i -= 1) {
+      if (history[i].role === "user") {
+        history[i] = { ...history[i], content: `${history[i].content}\n\n${reminder}` };
+        break;
+      }
+    }
+    if (history[history.length - 1]?.role !== "user") history.push({ role: "user", content: reminder });
   }
   if (systemParts.length && history.length) {
     const first = history[0];
@@ -55,25 +106,51 @@ function buildChatHistory(body) {
   return history;
 }
 
+function usageOf(body, content, calls = []) {
+  const outputLen = (content ? content.length : 0) +
+    (calls?.length ? JSON.stringify(calls).length : 0);
+  const promptTokens = estimateInputTokens(body);
+  const completionTokens = estimateOutputTokens(outputLen);
+  return {
+    prompt_tokens: promptTokens,
+    completion_tokens: completionTokens,
+    total_tokens: promptTokens + completionTokens,
+    estimated: true,
+  };
+}
+
 function chatId() {
   return `chatcmpl-${crypto.randomBytes(12).toString("hex")}`;
 }
 
-function streamResponse(text, model, id) {
+function streamResponse(text, model, id, options = {}) {
   const encoder = new TextEncoder();
   const created = Math.floor(Date.now() / 1000);
   const chunk = (payload) => encoder.encode(`data: ${JSON.stringify(payload)}\n\n`);
   const base = { id, object: "chat.completion.chunk", created, model };
+  const { content, calls } = options.toolMode
+    ? parseToolCallReply(text)
+    : { content: text, calls: [] };
+  const usage = usageOf(options.body, content, calls);
   const stream = new ReadableStream({
     start(controller) {
-      controller.enqueue(chunk({
-        ...base,
-        choices: [{ index: 0, delta: { role: "assistant", content: text }, finish_reason: null }],
-      }));
-      controller.enqueue(chunk({
-        ...base,
-        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-      }));
+      const push = (delta, finishReason) =>
+        controller.enqueue(chunk({
+          ...base,
+          choices: [{ index: 0, delta, ...(finishReason ? { finish_reason: finishReason } : {}) }],
+          ...(finishReason === "stop" ? { usage } : {}),
+        }));
+      push({ role: "assistant", content }, null);
+      let sentCalls = false;
+      if (calls.length) {
+        sentCalls = emitToolCallChunks(
+          (delta, finishReason) => push(delta, finishReason),
+          () => {},
+          calls
+        );
+      }
+      if (!sentCalls) push({}, "stop");
+      else push({}, null);
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
@@ -84,21 +161,31 @@ function streamResponse(text, model, id) {
   });
 }
 
-function jsonResponse(text, model, id) {
+function jsonResponse(text, model, id, options = {}) {
   const created = Math.floor(Date.now() / 1000);
-  const usage = {
-    prompt_tokens: 0,
-    completion_tokens: text.length,
-    total_tokens: text.length,
-  };
+  const { content, calls } = options.toolMode
+    ? parseToolCallReply(text)
+    : { content: text, calls: [] };
+  const message = { role: "assistant", content: content || null };
+  if (calls.length) {
+    message.tool_calls = calls.map((call) => ({
+      id: `call_${call.name}_${Date.now().toString(36)}`,
+      type: "function",
+      function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
+    }));
+  }
   return new Response(
     JSON.stringify({
       id,
       object: "chat.completion",
       created,
       model,
-      choices: [{ index: 0, message: { role: "assistant", content: text }, finish_reason: "stop" }],
-      usage,
+      choices: [{
+        index: 0,
+        message,
+        finish_reason: calls.length ? "tool_calls" : "stop",
+      }],
+      usage: usageOf(options.body, content, calls),
     }),
     { status: 200, headers: { "Content-Type": "application/json" } }
   );
@@ -164,8 +251,11 @@ export class DeepAIExecutor extends BaseExecutor {
     }
 
     const id = chatId();
+    const toolMode = hasTools(body);
     return {
-      response: stream ? streamResponse(text, model, id) : jsonResponse(text, model, id),
+      response: stream
+        ? streamResponse(text, model, id, { toolMode, body })
+        : jsonResponse(text, model, id, { toolMode, body }),
       url: ENDPOINT,
       headers,
       transformedBody: payload,

@@ -1,3 +1,10 @@
+# v0.5.405 (2026-11-10)
+
+## What Got Fixed?
+
+- **DeepAI Free tool calling works.** The endpoint is text-only, so a client that sent `tools` got prose back with `finish_reason: stop` and agents looped or gave up. The executor now folds the tool catalogue into the conversation (schema first, highest-priority reminder on the latest turn), flattens assistant `tool_calls` and `tool` results into readable turns, and parses the reply's tool_call block back into standard OpenAI `tool_calls` with `finish_reason: "tool_calls"` - streaming and non-streaming. Tool results round-trip, so a multi-step agent loop actually runs.
+- DeepAI usage numbers are estimated from real prompt/output size instead of `prompt_tokens: 0`.
+
 # v0.5.404 (2026-11-10)
 
 ## What Looks Different?
