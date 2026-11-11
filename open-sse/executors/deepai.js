@@ -39,6 +39,12 @@ function contentToText(content) {
   return "";
 }
 
+const TOOL_RESULT_MARKER = "<<TOOL_RESULT>>";
+
+function TOOL_RESULT_LINE(text, name) {
+  return `${TOOL_RESULT_MARKER} ${name || "tool"}: ${text} ${TOOL_RESULT_MARKER}`;
+}
+
 /**
  * Fold the request into DeepAI's chatHistory shape. A client that sent tools
  * gets the shared tool protocol (schema, transcript turns, tail reminder)
@@ -60,7 +66,7 @@ function buildChatHistory(body) {
   for (const message of messages) {
     if (message?.role === "tool") {
       const text = contentToText(message?.content);
-      if (text) history.push({ role: "user", content: `<<TOOL_RESULT>> ${message.name || "tool"}: ${text} <<TOOL_RESULT>>` });
+      if (text) history.push({ role: "user", content: `${TOOL_RESULT_LINE(text, message.name)}\n\nThis is the result of the tool call you just made. If it answers the request, reply with the final answer in plain text and no tool_call block; call a tool again only if something is still missing.` });
       continue;
     }
     if (message?.role === "assistant" && Array.isArray(message.tool_calls) && message.tool_calls.length) {
@@ -88,13 +94,18 @@ function buildChatHistory(body) {
     else history.push({ role: "user", content: instructions });
   }
   if (reminder) {
-    for (let i = history.length - 1; i >= 0; i -= 1) {
-      if (history[i].role === "user") {
-        history[i] = { ...history[i], content: `${history[i].content}\n\n${reminder}` };
-        break;
+    // A latest turn that is a tool result already ends with the stop condition;
+    // the "call a tool NOW" reminder after it would ask for the same call twice.
+    const lastIsToolResult = history[history.length - 1]?.content?.includes(TOOL_RESULT_MARKER);
+    if (!lastIsToolResult) {
+      for (let i = history.length - 1; i >= 0; i -= 1) {
+        if (history[i].role === "user") {
+          history[i] = { ...history[i], content: `${history[i].content}\n\n${reminder}` };
+          break;
+        }
       }
+      if (history[history.length - 1]?.role !== "user") history.push({ role: "user", content: reminder });
     }
-    if (history[history.length - 1]?.role !== "user") history.push({ role: "user", content: reminder });
   }
   if (systemParts.length && history.length) {
     const first = history[0];
