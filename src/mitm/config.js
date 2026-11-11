@@ -28,7 +28,7 @@ const URL_PATTERNS = {
   copilot: ["/chat/completions", "/v1/messages", "/responses"],
   // Legacy path form. Kiro IDE 1.0.228+ posts to `/` with x-amz-target instead —
   // see isChatRequest() for the header-based match.
-  kiro: ["/generateAssistantResponse"],
+  kiro: ["/generateAssistantResponse", "/responses"],
   cursor: ["/BidiAppend", "/RunSSE", "/RunPoll", "/Run"],
 };
 
@@ -43,7 +43,7 @@ function isChatRequest(tool, req) {
   if (patterns.some((p) => (req.url || "").includes(p))) return true;
   if (tool === "kiro") {
     const target = String(req.headers?.["x-amz-target"] || "");
-    return target.includes("GenerateAssistantResponse");
+    return target.includes("GenerateAssistantResponse") || target.includes("CreateResponse");
   }
   return false;
 }
