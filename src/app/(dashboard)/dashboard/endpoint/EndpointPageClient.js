@@ -1588,33 +1588,42 @@ const scopedModelPatterns =
         )}
 
         {!isApiKeyUser && (
-        <div className="flex flex-wrap items-start justify-between gap-3 pt-4 mt-4 border-t border-border">
-          <div className="min-w-0 flex-1">
-            <p className="font-medium">Key prefix</p>
-            <p className="text-sm text-text-muted">
-              Every key created from now on starts with this. Keys you already issued keep working and keep their own prefix.
-            </p>
+        <div className="pt-4 mt-4 border-t border-border/70">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 rounded-xl bg-surface-2/40 border border-border-subtle">
+            <div className="flex items-start gap-3 min-w-0 flex-1">
+              <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary border border-primary/20 mt-0.5">
+                <span className="material-symbols-outlined text-[20px]">badge</span>
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-medium text-sm">Key Prefix</p>
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-surface font-mono text-[11px] border border-border-subtle text-text-muted">
+                    Format: <span className="text-primary font-semibold">{String(apiKeyPrefix || "").trim() || "sk-"}</span><span>••••••••</span>
+                  </span>
+                </div>
+                <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                  Controls the leading prefix minted onto newly created keys. Existing keys retain their issued prefix.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+              <Input
+                value={apiKeyPrefix}
+                onChange={(e) => setApiKeyPrefix(e.target.value)}
+                placeholder="sk-"
+                spellCheck={false}
+                className="w-28 font-mono text-sm"
+                aria-label="API key prefix"
+              />
+              <Button
+                size="sm"
+                onClick={handleApiKeyPrefix}
+                disabled={prefixSaving || !apiKeyPrefix.trim()}
+              >
+                {prefixSaving ? "Saving..." : prefixSaved ? "Saved" : "Save"}
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
-            <Input
-              value={apiKeyPrefix}
-              onChange={(e) => setApiKeyPrefix(e.target.value)}
-              placeholder="sk-"
-              spellCheck={false}
-              className="w-36 font-mono"
-              aria-label="API key prefix"
-            />
-            <Button
-              size="sm"
-              onClick={handleApiKeyPrefix}
-              disabled={prefixSaving || !apiKeyPrefix.trim()}
-            >
-              {prefixSaving ? "Saving..." : prefixSaved ? "Saved" : "Save"}
-            </Button>
-          </div>
-          <p className="w-full text-[11px] text-text-muted font-mono">
-            Next key will read: {String(apiKeyPrefix || "").trim() || "sk-"}…machineId-keyId-crc
-          </p>
         </div>
         )}
 
@@ -1855,6 +1864,10 @@ const scopedModelPatterns =
             title="Identity"
             description="What you will see in the key list, and how long the key may live."
           >
+            <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-surface-2/60 border border-border-subtle text-xs">
+              <span className="text-text-muted">Key Prefix</span>
+              <span className="font-mono text-primary font-semibold">{apiKeyPrefix || "sk-"}</span>
+            </div>
             <Input
               label="Key Name"
               value={newKeyName}

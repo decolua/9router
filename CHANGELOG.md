@@ -1,3 +1,13 @@
+# v0.5.409 (2026-11-11)
+
+## What Looks Different?
+
+- The **Key Prefix** setting in the Endpoint page has been restyled into a dedicated control card with a badge icon, clean descriptive layout, and an inline visual token preview chip (`Format: prefix••••••••`). The Create API Key modal now also shows the active key prefix being minted.
+
+## What Got Fixed?
+
+- **OpenCode CLI Mode Singleton Daemon**: Instead of cold-booting `opencode run` one-shot per request (which took 15–20 seconds due to Bun runtime extraction and Git directory scanning), OpenCode CLI mode now leverages a persistent singleton daemon (`opencode serve`) running in an isolated workspace with session caching. Response latency drops to ~1.5s with zero 429 rate limit blocks and strict memory safety (~310 MB fixed RSS).
+
 # v0.5.408 (2026-11-11)
 
 ## What Looks Different?

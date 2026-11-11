@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import os from "os";
+import crypto from "crypto";
 import { spawn, execSync } from "child_process";
 import {
   hasTools,
@@ -13,6 +14,137 @@ const deadProxyUrls = new Set();
 let cachedResolvedBinary = null;
 let lastBinaryCheckTime = 0;
 const BINARY_CACHE_TTL_MS = 60000;
+
+// ── SINGLETON OPENCODE SERVE DAEMON ──────────────────────────────
+const DAEMON_PORT = process.env.OPENCODE_DAEMON_PORT || 8772;
+const DAEMON_URL = `http://127.0.0.1:${DAEMON_PORT}`;
+const DAEMON_WORKSPACE = "/tmp/opencode-workspace";
+let daemonProcess = null;
+let daemonStartingPromise = null;
+const sessionCache = new Map(); // cacheKey -> { sid, turns }
+
+async function checkDaemonHealthy() {
+  try {
+    const res = await fetch(`${DAEMON_URL}/global/health`, { signal: AbortSignal.timeout(800) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+export async function ensureOpencodeDaemon(opencodeBin) {
+  if (await checkDaemonHealthy()) return true;
+  if (daemonStartingPromise) return daemonStartingPromise;
+
+  daemonStartingPromise = (async () => {
+    try {
+      if (!fs.existsSync(DAEMON_WORKSPACE)) {
+        fs.mkdirSync(DAEMON_WORKSPACE, { recursive: true });
+      }
+      const gitDir = path.join(DAEMON_WORKSPACE, ".git");
+      if (!fs.existsSync(gitDir)) {
+        try { execSync("git init", { cwd: DAEMON_WORKSPACE, stdio: "ignore" }); } catch {}
+      }
+
+      const env = { ...process.env };
+      env.OPENCODE_DISABLE_AUTOUPDATE = "true";
+      env.OPENCODE_DISABLE_LSP_DOWNLOAD = "true";
+      env.OPENCODE_DISABLE_MODELS_FETCH = "true";
+
+      daemonProcess = spawn(opencodeBin, [
+        "serve",
+        "--port", String(DAEMON_PORT),
+        "--hostname", "127.0.0.1",
+      ], {
+        cwd: DAEMON_WORKSPACE,
+        env,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+
+      daemonProcess.on("exit", () => {
+        daemonProcess = null;
+        sessionCache.clear();
+      });
+
+      if (daemonProcess.pid) {
+        activeCliProcesses.add(daemonProcess);
+      }
+
+      for (let i = 0; i < 25; i++) {
+        await new Promise((r) => setTimeout(r, 200));
+        if (await checkDaemonHealthy()) {
+          return true;
+        }
+      }
+      return await checkDaemonHealthy();
+    } catch {
+      return false;
+    } finally {
+      daemonStartingPromise = null;
+    }
+  })();
+
+  return daemonStartingPromise;
+}
+
+async function callOpencodeDaemon({ model, prompt, systemPrompt, signal }) {
+  const healthy = await checkDaemonHealthy();
+  if (!healthy) throw new Error("Daemon is not reachable");
+
+  const cleanModel = String(model || "").replace(/^(opencode|oc)\//, "") || "deepseek-v4.1-flash-free";
+  const sysHash = systemPrompt ? crypto.createHash("md5").update(systemPrompt).digest("hex").slice(0, 8) : "default";
+  const cacheKey = `${cleanModel}:${sysHash}`;
+
+  let entry = sessionCache.get(cacheKey);
+  if (!entry || entry.turns >= 15) {
+    const sRes = await fetch(`${DAEMON_URL}/session`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+      signal,
+    });
+    if (!sRes.ok) throw new Error(`Failed to create daemon session: ${sRes.status}`);
+    const sData = await sRes.json();
+    entry = { sid: sData.id, turns: 0 };
+    sessionCache.set(cacheKey, entry);
+  }
+  entry.turns++;
+
+  const payload = {
+    model: { providerID: "opencode", modelID: cleanModel },
+    parts: [{ type: "text", text: prompt || "Hello" }],
+  };
+  if (systemPrompt) payload.system = systemPrompt;
+
+  const mRes = await fetch(`${DAEMON_URL}/session/${entry.sid}/message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    signal,
+  });
+
+  if (!mRes.ok) {
+    sessionCache.delete(cacheKey);
+    throw new Error(`Daemon message dispatch error: ${mRes.status}`);
+  }
+
+  const mData = await mRes.json();
+  let text = "";
+  let tokens = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+  for (const p of (mData.parts || [])) {
+    if (p.type === "text" && p.text) text += p.text;
+    if (p.type === "step-finish" && p.tokens) {
+      tokens = {
+        prompt_tokens: p.tokens.input || 0,
+        completion_tokens: p.tokens.output || 0,
+        total_tokens: p.tokens.total || ((p.tokens.input || 0) + (p.tokens.output || 0)),
+      };
+    }
+  }
+
+  return { text, tokens };
+}
 
 const activeCliProcesses = new Set();
 export function terminateCliProcess(child) {
@@ -422,7 +554,45 @@ export async function executeOpencodeCli({
 
   await acquireCliSlot(signal);
   try {
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // ── Fast path: Persistent singleton opencode serve daemon (<2s response, zero 429) ──
+    try {
+      const isDaemonReady = await ensureOpencodeDaemon(executable);
+      if (isDaemonReady) {
+        const clientHasTools = hasTools(body);
+        let systemPrompt = "";
+        if (clientHasTools) {
+          systemPrompt = buildToolSystemPrompt(body) || "";
+        } else {
+          const sysList = [];
+          if (body?.system) sysList.push(typeof body.system === "string" ? body.system : JSON.stringify(body.system));
+          if (Array.isArray(body?.messages)) {
+            for (const m of body.messages) {
+              if (m.role === "system" || m.role === "developer") {
+                const c = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map(x => x?.text || "").join("\n") : "";
+                if (c) sysList.push(c);
+              }
+            }
+          }
+          systemPrompt = sysList.join("\n\n");
+        }
+
+        const daemonRes = await callOpencodeDaemon({
+          model: rawModel,
+          prompt: promptText,
+          systemPrompt: systemPrompt || undefined,
+          signal,
+        });
+
+        if (daemonRes && daemonRes.text) {
+          finalResult = { success: true, text: daemonRes.text, tokens: daemonRes.tokens };
+        }
+      }
+    } catch (daemonErr) {
+      log?.debug?.(providerTag, `Daemon fast-path skipped, falling back to one-shot CLI: ${daemonErr.message}`);
+    }
+
+    if (!finalResult?.success) {
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const configuredProxy = proxyOptions?.connectionProxyEnabled ? proxyOptions.connectionProxyUrl : null;
     const candidateProxy = configuredProxy;
     if (candidateProxy && deadProxyUrls.has(candidateProxy)) {
@@ -543,6 +713,7 @@ export async function executeOpencodeCli({
       }
       await new Promise((r) => setTimeout(r, 600));
     }
+  }
   }
   } finally {
     releaseCliSlot();
