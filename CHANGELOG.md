@@ -1,3 +1,9 @@
+# v0.5.413 (2026-11-11)
+
+## What Looks Different?
+
+- Restored pure frosted glass backdrop blur across modals (`Modal`, `Create API Key`, `ChangelogModal`, `PricingModal`, `DonateModal`). The opaque dark black tint has been replaced with the standard theme scrim and `backdrop-blur-md`, allowing the background dashboard to blur smoothly and naturally without turning solid black.
+
 # v0.5.412 (2026-11-11)
 
 ## What Looks Different?

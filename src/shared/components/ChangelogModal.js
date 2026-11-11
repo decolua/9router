@@ -593,7 +593,7 @@ export default function ChangelogModal({ isOpen, onClose }) {
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 backdrop-blur-sm"
+        className="absolute inset-0 backdrop-blur-md"
         style={{ backgroundColor: "var(--color-scrim)" }}
         onClick={onClose}
       />

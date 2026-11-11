@@ -94,7 +94,7 @@ export default function PricingModal({ isOpen, onClose, onSave }) {
   const pricingFields = ["input", "output", "cached", "reasoning", "cache_creation"];
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center z-50 p-4" style={{ backgroundColor: "var(--color-scrim)" }}>
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4 backdrop-blur-md" style={{ backgroundColor: "var(--color-scrim)" }}>
       <div className="bg-bg-base border border-border rounded-lg shadow-xl max-w-6xl w-full max-h-[90vh] overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-4 border-b border-border flex items-center justify-between">

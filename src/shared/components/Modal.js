@@ -53,7 +53,7 @@ export default function Modal({
       {/* Overlay */}
       <div
         className="absolute inset-0 backdrop-blur-md chrome-enter-overlay"
-        style={{ backgroundColor: "rgba(0, 0, 0, 0.72)" }}
+        style={{ backgroundColor: "var(--color-scrim)" }}
         onClick={closeOnOverlay ? onClose : undefined}
       />
 
@@ -63,7 +63,7 @@ export default function Modal({
         aria-modal="true"
         aria-label={typeof title === "string" ? title : undefined}
         className={cn(
-          "relative w-full bg-surface dark:bg-[#121316]",
+          "relative w-full bg-surface",
           "border border-border-subtle",
           "rounded-[var(--r-card-lg)] shadow-[var(--elev-3)]",
           "chrome-enter-panel",
