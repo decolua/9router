@@ -295,7 +295,7 @@ export function isQoderFreeTier(modelConfig, modelKey = "") {
  * are refused here with `116 quota exceeded`, so they stay on COSY.
  */
 export const QODER_GRPC_HOSTS = Object.freeze({
-  [QODER_REGION_INTL]: "api2-v2.qoder.sh",
+  [QODER_REGION_INTL]: "api2.qoder.sh",
   [QODER_REGION_CN]: "gateway.qoder.com.cn",
 });
 

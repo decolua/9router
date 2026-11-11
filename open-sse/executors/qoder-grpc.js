@@ -503,6 +503,13 @@ export async function dispatchQoderGrpc({
     cleanup();
     const mapped = mapGrpcStatusToHttp(error?.code, error?.details || error?.message || "");
     log?.warn?.("QODER", `gRPC dispatch failed (${error?.code ?? "?"}: ${error?.details || error?.message}) → HTTP ${mapped.status}`);
+    // Transport-level failures (DNS, connection reset, deadline) are not the
+    // upstream refusing the request: the COSY path in the executor still serves
+    // it, so surface a throw and let the caller fall back instead of failing the
+    // client request with a 502 it cannot act on.
+    if (mapped.retryable) {
+      throw new Error(`Qoder gRPC: ${error?.details || error?.message || "transport failed"}`);
+    }
     return {
       response: new Response(
         JSON.stringify({

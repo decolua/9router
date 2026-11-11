@@ -21,6 +21,7 @@ import {
   translateGrpcChunk,
   valueToJson,
 } from "../../open-sse/executors/qoder-grpc.js";
+import { QODER_GRPC_HOSTS, QODER_REGION_CN, QODER_REGION_INTL } from "../../open-sse/shared/qoder/constants.js";
 
 const BILLED = { key: "dmodel", display_name: "DeepSeek-V4-Pro", is_free: false, max_input_tokens: 1_000_000 };
 const FREE = { key: "lite", display_name: "Lite", is_free: true };
@@ -280,6 +281,20 @@ describe("mapGrpcStatusToHttp", () => {
 
   it("maps an unknown status to a non-retryable 502", () => {
     expect(mapGrpcStatusToHttp(2, "unknown")).toEqual({ status: 502, retryable: false });
+  });
+});
+
+describe("gRPC host", () => {
+  // A dead host is worse than no gRPC: every long-context request paid a DNS
+  // failure first. `api2-v2.qoder.sh` never resolved (NXDOMAIN), while
+  // api1/api2/api3 all answer HTTP/2 with content-type: application/grpc.
+  it("points the intl region at a host that actually resolves", () => {
+    expect(QODER_GRPC_HOSTS[QODER_REGION_INTL]).toBe("api2.qoder.sh");
+    expect(QODER_GRPC_HOSTS[QODER_REGION_INTL]).not.toMatch(/-v2\./);
+  });
+
+  it("keeps the CN region on its own gateway", () => {
+    expect(QODER_GRPC_HOSTS[QODER_REGION_CN]).toBe("gateway.qoder.com.cn");
   });
 });
 
