@@ -80,7 +80,7 @@ export async function createApiKey(name, machineId, options = {}) {
   // having to know about it. A read failure falls back to "sk-".
   let prefix = "sk-";
   try {
-    const { getSettings } = await import("../settingsRepo.js");
+    const { getSettings } = await import("./settingsRepo.js");
     prefix = normalizeKeyPrefix((await getSettings())?.apiKeyPrefix);
   } catch { /* keep the default rather than failing the key creation */ }
   const result = generateApiKeyWithMachine(machineId, prefix);
