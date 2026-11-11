@@ -35,10 +35,9 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// Always fetch through the package's own undici instance: undici 8 rejects
-// dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
-// bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
-// option once we build our own Agents.
+// Always fetch through the package's own undici instance so fetch and the
+// Agents below come from the same copy — dispatcher options are only guaranteed
+// to match within one undici version.
 let undiciFetch = null;
 async function rawFetch(url, options) {
   undiciFetch ??= (await import("undici")).fetch;
@@ -275,8 +274,7 @@ const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
-// requestTls must stay TLS-options-only (undici 8 rejects connect-level options there
-// with UND_ERR_INVALID_ARG).
+// requestTls must stay TLS-options-only (connect-level options belong in `connect`).
 const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
