@@ -1276,5 +1276,13 @@
     "baseUrl": "https://internal.chatuncensored.ai",
     "format": "openai",
     "authType": "cookie"
+  },
+  "sensenova-intl": {
+    "baseUrl": "https://token.sensenova.ai/v1/chat/completions",
+    "validateUrl": "https://token.sensenova.ai/v1/models",
+    "quirks": {
+      "reasoningAliasFields": true
+    },
+    "format": "openai"
   }
 }

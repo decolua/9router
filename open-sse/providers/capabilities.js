@@ -466,6 +466,15 @@ PROVIDER_CAPABILITIES.dv = PROVIDER_CAPABILITIES["devin-cli"];
 PROVIDER_CAPABILITIES.devin = PROVIDER_CAPABILITIES["devin-cli"];
 // The global mcode site serves the same catalog — share the capability table.
 PROVIDER_CAPABILITIES["minimax-code-global"] = PROVIDER_CAPABILITIES["minimax-code"];
+// SenseNova intl: limits from token.sensenova.ai/v1/models (context_length 262144,
+// max_output_length 65536, text+image in, reasoning) — below the CN 1M window, so
+// scoped to the intl provider; CN entries keep their own values.
+const SENSENOVA_INTL_CHAT = { vision: true, reasoning: true, thinkingFormat: "openai", contextWindow: 262144, maxOutput: 65536 };
+PROVIDER_CAPABILITIES["sensenova-intl"] = {
+  "sensenova-6.8-flash": SENSENOVA_INTL_CHAT,
+  "sensenova-6.8-flash-lite": SENSENOVA_INTL_CHAT,
+  "sensenova-6.7-flash-lite": SENSENOVA_INTL_CHAT,
+};
 
 /**
  * Pattern fallback — glob (* = wildcard), matched case-insensitively and

@@ -3,6 +3,7 @@
 ## Fixes
 - **Transport**: keep undici on 7.30.2 — undici 8 requires Node 22.19+, so 0.5.116 crashed every outbound `fetch` on older runtimes (`createZstdDecompress.bind` is undefined below Node 22.15). 7.30.2 carries the same security fixes and the stale-socket/happy-eyeballs transport work.
 - **Node floor**: declare `engines.node >= 20.18.1` in both packages (the root manifest had none, the CLI claimed `>=18`).
+- **SenseNova**: add `sensenova-intl` provider on `token.sensenova.ai` for international keys (the `.cn` host returns 401 Forbidden for them)
 
 # v0.5.116 (2026-11-08)
 
