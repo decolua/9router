@@ -1,3 +1,9 @@
+# v0.5.412 (2026-11-11)
+
+## What Looks Different?
+
+- All models under the **DeepAI Free** provider (`dai/*`) now display the official green **FREE** badge/tag across the provider models list, combo model picker, and `/v1/models` API responses.
+
 # v0.5.411 (2026-11-11)
 
 ## What Looks Different?

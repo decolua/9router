@@ -645,6 +645,10 @@ export async function buildModelsList(kindFilter, options = {}) {
         const serviceCaps = capabilitiesFromServiceKind(customKind || liveKind);
         const caps = liveCaps || serviceCaps || (kind === LLM_KIND ? getCapabilitiesForModel(providerId, modelId) : null);
         if (caps) model.capabilities = caps;
+        if (isOpencodeFreeModel(modelId, outputAlias)) {
+          model.is_free = true;
+          model.isFree = true;
+        }
         // Token limits under the snake_case names the OpenAI/OpenRouter
         // convention uses. `capabilities.contextWindow` is camelCase and nested,
         // so clients matching context_length find nothing, fall back to guessing
@@ -711,6 +715,10 @@ export async function buildModelsList(kindFilter, options = {}) {
       if (caps) entry.capabilities = caps;
       if (Number.isFinite(caps?.contextWindow)) entry.context_length = caps.contextWindow;
       if (Number.isFinite(caps?.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
+      if (model.isFree || isOpencodeFreeModel(model.id, alias)) {
+        entry.is_free = true;
+        entry.isFree = true;
+      }
       models.push(entry);
     }
   }
@@ -743,6 +751,10 @@ export async function buildModelsList(kindFilter, options = {}) {
         entry.context_length = live.contextLength;
       }
       if (Number.isFinite(caps?.maxOutput)) entry.max_completion_tokens = caps.maxOutput;
+      if (live?.isFree || isOpencodeFreeModel(live.id, alias)) {
+        entry.is_free = true;
+        entry.isFree = true;
+      }
       models.push(entry);
     }
   }

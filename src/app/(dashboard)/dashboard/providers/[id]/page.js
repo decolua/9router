@@ -1431,7 +1431,7 @@ export default function ProviderDetailPage() {
         {/* Custom models first */}
         {customModelRows.map((model) => {
           const suggested = suggestedModels.find((s) => s.id === model.id);
-          const effectiveIsFree = suggested?.isFree !== undefined ? suggested.isFree : model.isFree;
+          const effectiveIsFree = suggested?.isFree !== undefined ? suggested.isFree : (model.isFree !== undefined ? model.isFree : (isFreeNoAuth || providerId === "deepai" || providerId === "dai"));
           return (
             <ModelRow
               key={`${model.source}-${model.fullModel}`}
@@ -1461,7 +1461,7 @@ export default function ProviderDetailPage() {
 
         {displayModels.map((model) => {
           const suggested = suggestedModels.find((s) => s.id === model.id);
-          const effectiveIsFree = suggested?.isFree !== undefined ? suggested.isFree : model.isFree;
+          const effectiveIsFree = suggested?.isFree !== undefined ? suggested.isFree : (model.isFree !== undefined ? model.isFree : (isFreeNoAuth || providerId === "deepai" || providerId === "dai"));
           const fullModel = `${providerStorageAlias}/${model.id}`;
           const oldFormatModel = `${providerId}/${model.id}`;
           const existingAlias = Object.entries(modelAliases).find(

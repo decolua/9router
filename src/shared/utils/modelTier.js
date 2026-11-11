@@ -11,10 +11,19 @@ export function isOpencodeFreeModel(model, providerId = "", explicitIsFree = und
   if (explicitIsFree === true) return true;
   if (explicitIsFree === false) return false;
 
+  const cleanPid = String(providerId || "").toLowerCase();
+  if (cleanPid === "deepai" || cleanPid === "dai" || cleanPid.startsWith("dai/") || cleanPid.startsWith("deepai/")) {
+    return true;
+  }
+
   const rawId = typeof model === "string" ? model : (model?.id || model?.value || model?.name || "");
   const lower = String(rawId).toLowerCase();
 
   if (typeof model === "object" && model !== null && model.isFree === true) {
+    return true;
+  }
+
+  if (lower.startsWith("dai/") || lower.startsWith("deepai/")) {
     return true;
   }
 
