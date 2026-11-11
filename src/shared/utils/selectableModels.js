@@ -1,3 +1,4 @@
+import { applyQoderModelNames } from "@/shared/utils/providerCustomModels";
 // Model-set resolution for dashboard callers that need "the models a user can
 // currently route to". The rules mirror ModelSelectModal's picker memo (kept in
 // sync by hand for now — adopting this module there is the follow-up that would
@@ -291,7 +292,7 @@ export function buildModelGroups({
         .map((m) => ({ id: m.id, name: m.name || m.id, value: `${alias}/${m.id}`, isCustom: true }));
 
       const merged = [
-        ...hardcodedModels.map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
+        ...applyQoderModelNames(hardcodedModels, customModelsSafe, alias).map((m) => ({ id: m.id, name: m.name, value: `${alias}/${m.id}`, kind: getModelKind(m) })),
         ...customAliasModels,
         ...customRegisteredModels,
       ];
