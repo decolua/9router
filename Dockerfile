@@ -69,29 +69,30 @@ ENV HOSTNAME=0.0.0.0
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV DATA_DIR=/app/data
 
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/static ./.next/static
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/custom-server.js ./custom-server.js
-COPY --from=builder /app/open-sse ./open-sse
+# --chown avoids a later `chown -R /app`, which copies every file into a new layer.
+COPY --from=builder --chown=node:node /app/public ./public
+COPY --from=builder --chown=node:node /app/.next/static ./.next/static
+COPY --from=builder --chown=node:node /app/.next/standalone ./
+COPY --from=builder --chown=node:node /app/custom-server.js ./custom-server.js
+COPY --from=builder --chown=node:node /app/open-sse ./open-sse
 # Next file tracing can omit sibling files; MITM runs server.js as a separate process.
-COPY --from=builder /app/src/mitm ./src/mitm
+COPY --from=builder --chown=node:node /app/src/mitm ./src/mitm
 # Standalone node_modules may omit deps only required by the MITM child process.
-COPY --from=builder /app/node_modules/node-forge ./node_modules/node-forge
-# Ensure `next` is available at runtime in case tracing did not include it.
-COPY --from=builder /app/node_modules/next ./node_modules/next
+COPY --from=builder --chown=node:node /app/node_modules/node-forge ./node_modules/node-forge
 # sql.js loads dist/sql-wasm.wasm by path at runtime; tracing only follows JS imports,
 # so the last-resort DB driver would abort with ENOENT on the missing binary.
-COPY --from=builder /app/node_modules/sql.js ./node_modules/sql.js
+COPY --from=builder --chown=node:node /app/node_modules/sql.js ./node_modules/sql.js
 # node-machine-id is createRequire-loaded at runtime; tracing omits it.
-COPY --from=builder /app/node_modules/node-machine-id ./node_modules/node-machine-id
+COPY --from=builder --chown=node:node /app/node_modules/node-machine-id ./node_modules/node-machine-id
 # wreq-js + playwright-core (and deps) are lazy-loaded at runtime and omitted by
 # tracing. See https://github.com/decolua/9router/issues/5245
-COPY --from=builder /opt/lazy-runtime/node_modules/. ./node_modules/
+COPY --from=builder --chown=node:node /opt/lazy-runtime/node_modules/. ./node_modules/
 
-RUN mkdir -p /app/data && chown -R node:node /app && \
-  mkdir -p /app/data-home && chown node:node /app/data-home && \
-  ln -sf /app/data-home /root/.9router 2>/dev/null || true
+# Only the /app inode needs chown here. Copied files already belong to node.
+# `chown -R` would duplicate the whole tree (~350MB) into this layer.
+RUN mkdir -p /app/data /app/data-home \
+  && chown node:node /app /app/data /app/data-home \
+  && ln -sf /app/data-home /root/.9router
 
 # Avoid a full distribution upgrade in the runtime image. It makes builds less
 # reproducible and is unrelated to installing the runtime entrypoint helper.
