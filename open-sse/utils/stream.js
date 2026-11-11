@@ -217,6 +217,10 @@ export function createSSEStream(options = {}) {
           let injectedUsage = false;
           let responsesTerminal = false;
           const payload = framePayload(trimmed);
+          // An upstream that already closed with the sentinel must not collect a
+          // second one from flush(): clients that stop reading at the first
+          // [DONE] never see the tail, and the duplicate reads like a protocol bug.
+          if (payload === SSE_DONE_DATA) streamDoneSent = true;
 
           if (payload !== null && payload !== SSE_DONE_DATA) {
             try {

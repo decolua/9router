@@ -6,6 +6,7 @@
 - A tool result now carries an explicit stop condition (answer in plain text when the result already answers the request), and the "call a tool now" reminder is not re-appended on a result turn, so a multi-step loop finishes instead of repeating the same call.
 - DeepAI usage numbers are estimated from real prompt/output size instead of `prompt_tokens: 0`, and the stream now closes with exactly one `data: [DONE]`.
 - Tool protocol uses the fenced `tool_call` format on DeepAI, the shape its models actually emit.
+- A passthrough stream that already ended with `data: [DONE]` no longer gets a second one appended at flush, for every provider that streams that way, not just DeepAI.
 
 # v0.5.404 (2026-11-10)
 
