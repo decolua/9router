@@ -704,6 +704,7 @@ export class OpenCodeExecutor extends BaseExecutor {
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
     };
+    if (lower["x-opencode-org-id"]) headers["x-opencode-org-id"] = lower["x-opencode-org-id"];
     if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     return headers;
   }

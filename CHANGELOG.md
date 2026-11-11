@@ -1,3 +1,13 @@
+# v0.5.408 (2026-11-11)
+
+## What Looks Different?
+
+- All models in the **DeepAI Free** provider catalog now have "Free" in their display names (for example, `DeepSeek V4.1 Flash Free`, `Claude Haiku 5.5 Free`, `GPT-6 Luna Free`), consistent with the naming style across other free-tier providers.
+
+## What Got Fixed?
+
+- OpenCode Free with a connected account no longer fails with `HTTP 403: {"type":"error","error":{"type":"permission_error","message":"Workspace selection is required"}}`. Account credentials from device sign-in now automatically resolve and attach the user's primary workspace ID via `x-opencode-org-id`.
+
 # v0.5.407 (2026-11-11)
 
 ## What Looks Different?

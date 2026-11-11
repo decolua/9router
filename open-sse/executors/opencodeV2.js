@@ -37,6 +37,7 @@ const MAX_TOOL_NAME_LEN = 128;
 const SESSION_HEADER = "x-opencode-session";
 const SESSION_FIELD = "_opencodeSession";
 const ACCOUNT_TOKEN_FIELD = "_opencodeAccountToken";
+const ACCOUNT_ORG_ID_FIELD = "_opencodeAccountOrgId";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
@@ -429,9 +430,12 @@ export class OpenCodeV2Executor extends BaseExecutor {
   async execute(args) {
     const credentials = this.prepareRequestCredentials(args);
     try {
-      const { getAccountToken } = await import("../../src/lib/opencodeAccount.js");
-      const accountToken = await getAccountToken();
-      if (accountToken) credentials[ACCOUNT_TOKEN_FIELD] = accountToken;
+      const { getAccountInfo } = await import("../../src/lib/opencodeAccount.js");
+      const account = await getAccountInfo();
+      if (account?.accessToken) {
+        credentials[ACCOUNT_TOKEN_FIELD] = account.accessToken;
+        if (account.orgId) credentials[ACCOUNT_ORG_ID_FIELD] = account.orgId;
+      }
     } catch {
       // No account store available: stay on the public key.
     }
@@ -479,6 +483,8 @@ export class OpenCodeV2Executor extends BaseExecutor {
     // signed in, so a stored account token keeps the free lane on its own quota
     // bucket instead of the public one.
     const accountToken = credentials?.[ACCOUNT_TOKEN_FIELD] || null;
+    const accountOrgId = credentials?.[ACCOUNT_ORG_ID_FIELD] || null;
+    const orgId = lower["x-opencode-org-id"] || accountOrgId || null;
     const headers = {
       "Content-Type": "application/json",
       "Authorization": accountToken ? `Bearer ${accountToken}` : "Bearer public",
@@ -491,6 +497,7 @@ export class OpenCodeV2Executor extends BaseExecutor {
       "x-opencode-project": lower["x-opencode-project"] || "global",
       "Accept": stream ? "text/event-stream" : "*/*",
     };
+    if (orgId) headers["x-opencode-org-id"] = orgId;
     if (url.endsWith("/messages")) headers["anthropic-version"] = ANTHROPIC_API_VERSION;
     return headers;
   }

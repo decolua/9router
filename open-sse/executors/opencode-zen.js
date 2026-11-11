@@ -277,6 +277,7 @@ export class OpenCodeZenExecutor extends DefaultExecutor {
     headers["User-Agent"] = hasValidOpencodeVersion(downstreamUa) ? downstreamUa : OPENCODE_UA;
     headers["x-opencode-client"] = lower["x-opencode-client"] || "desktop";
     headers["x-opencode-project"] = lower["x-opencode-project"] || "global";
+    if (lower["x-opencode-org-id"]) headers["x-opencode-org-id"] = lower["x-opencode-org-id"];
     const prepared = credentials?.[SESSION_FIELD];
     if (prepared) {
       headers[SESSION_HEADER] = prepared;
