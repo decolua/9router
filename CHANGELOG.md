@@ -1,3 +1,9 @@
+# v0.5.407 (2026-11-11)
+
+## What Looks Different?
+
+- The API Keys card on the Endpoint page has a **Key prefix** field. Whatever you type (sk-, 9r-, my-org-key, ...) becomes the start of every key created from then on, with a live preview of how the next key will read. Keys already issued keep their own prefix and keep working: validation looks the key up by exact match, so this only changes what gets minted. Empty input falls back to the classic sk-.
+
 # v0.5.406 (2026-11-10)
 
 ## What Got Fixed?

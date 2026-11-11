@@ -385,6 +385,10 @@ export default function APIPageClient({ machineId }) {
   const [snippetLang, setSnippetLang] = useState("curl");
 
   const [requireApiKey, setRequireApiKey] = useState(false);
+  // Prefix used for newly minted keys; existing keys keep their own.
+  const [apiKeyPrefix, setApiKeyPrefix] = useState("sk-");
+  const [prefixSaving, setPrefixSaving] = useState(false);
+  const [prefixSaved, setPrefixSaved] = useState(false);
  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
  const [authStatus, setAuthStatus] = useState(null);
  const [newKeyPermissions, setNewKeyPermissions] = useState({ ...EMPTY_PERMISSIONS });
@@ -582,6 +586,7 @@ const scopedModelPatterns =
       ]);
       if (settingsData) {
         setRequireApiKey(settingsData.requireApiKey || false);
+        setApiKeyPrefix(settingsData.apiKeyPrefix || "sk-");
         setRequireLogin(settingsData.requireLogin !== false);
         setHasPassword(settingsData.hasPassword || false);
         setTunnelDashboardAccess(settingsData.tunnelDashboardAccess || false);
@@ -605,6 +610,22 @@ const scopedModelPatterns =
       console.log("Error loading settings:", error);
     } finally {
       setTunnelChecking(false);
+    }
+  };
+
+  const handleApiKeyPrefix = async () => {
+    const value = String(apiKeyPrefix || "").trim();
+    setPrefixSaving(true);
+    try {
+      const updated = await useSettingsStore.getState().patchSettings({ apiKeyPrefix: value });
+      if (updated) {
+        setPrefixSaved(true);
+        setTimeout(() => setPrefixSaved(false), 2000);
+      }
+    } catch (error) {
+      console.log("Error updating apiKeyPrefix:", error);
+    } finally {
+      setPrefixSaving(false);
     }
   };
 
@@ -1563,6 +1584,37 @@ const scopedModelPatterns =
             className="flex-shrink-0"
             onChange={() => handleRequireApiKey(!requireApiKey)}
           />
+        </div>
+        )}
+
+        {!isApiKeyUser && (
+        <div className="flex flex-wrap items-start justify-between gap-3 pt-4 mt-4 border-t border-border">
+          <div className="min-w-0 flex-1">
+            <p className="font-medium">Key prefix</p>
+            <p className="text-sm text-text-muted">
+              Every key created from now on starts with this. Keys you already issued keep working and keep their own prefix.
+            </p>
+          </div>
+          <div className="flex flex-shrink-0 items-center gap-2">
+            <Input
+              value={apiKeyPrefix}
+              onChange={(e) => setApiKeyPrefix(e.target.value)}
+              placeholder="sk-"
+              spellCheck={false}
+              className="w-36 font-mono"
+              aria-label="API key prefix"
+            />
+            <Button
+              size="sm"
+              onClick={handleApiKeyPrefix}
+              disabled={prefixSaving || !apiKeyPrefix.trim()}
+            >
+              {prefixSaving ? "Saving..." : prefixSaved ? "Saved" : "Save"}
+            </Button>
+          </div>
+          <p className="w-full text-[11px] text-text-muted font-mono">
+            Next key will read: {String(apiKeyPrefix || "").trim() || "sk-"}…machineId-keyId-crc
+          </p>
         </div>
         )}
 

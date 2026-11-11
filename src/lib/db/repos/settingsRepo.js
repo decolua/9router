@@ -35,6 +35,10 @@ const DEFAULT_SETTINGS = {
   // same editor rather than each browser deciding for itself.
   antiProbeMetadata: true,
   requireApiKey: true,
+  // Prefix minted in front of every newly created API key ("sk-" by default).
+  // Validation is an exact database lookup, so changing this affects keys
+  // generated from now on; keys already issued keep working.
+  apiKeyPrefix: "sk-",
   // Site-wide theme locked strictly to glass across the entire UI.
   theme: "glass",
   tunnelDashboardAccess: true,

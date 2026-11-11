@@ -27,46 +27,63 @@ function generateCrc(machineId, keyId) {
 
 /**
  * Generate API key with machineId embedded
- * Format: sk-{machineId}-{keyId}-{crc8}
+ * Format: {prefix}{machineId}-{keyId}-{crc8}
  * @param {string} machineId - 16-char machine ID
+ * @param {string} [prefix] - configurable prefix, "sk-" by default
  * @returns {{ key: string, keyId: string }}
  */
-export function generateApiKeyWithMachine(machineId) {
+export function generateApiKeyWithMachine(machineId, prefix = "sk-") {
   const keyId = generateKeyId();
   const crc = generateCrc(machineId, keyId);
-  const key = `sk-${machineId}-${keyId}-${crc}`;
+  const key = `${normalizeKeyPrefix(prefix)}${machineId}-${keyId}-${crc}`;
   return { key, keyId };
+}
+
+/**
+ * The prefix is operator-controlled, so it is clamped before use: a separator
+ * must end it (keys split on "-"), and empty or whitespace-only input falls
+ * back to the classic value.
+ */
+export function normalizeKeyPrefix(prefix) {
+  const value = String(prefix ?? "").trim().replace(/\s+/g, "");
+  if (!value) return "sk-";
+  return value.endsWith("-") ? value : `${value}-`;
 }
 
 /**
  * Parse API key and extract machineId + keyId
  * Supports both formats:
- * - New: sk-{machineId}-{keyId}-{crc8}
+ * - New: {prefix}{machineId}-{keyId}-{crc8}
  * - Old: sk-{random8}
+ * The prefix is operator-configurable and may itself contain dashes, so the new
+ * format is read from the right (crc, keyId, machineId) rather than by position.
  * @param {string} apiKey
  * @returns {{ machineId: string, keyId: string, isNewFormat: boolean } | null}
  */
 export function parseApiKey(apiKey) {
-  if (!apiKey || !apiKey.startsWith("sk-")) return null;
+  const key = String(apiKey ?? "");
+  if (!key.includes("-")) return null;
 
-  const parts = apiKey.split("-");
-  
-  // New format: sk-{machineId}-{keyId}-{crc8} = 4 parts
-  if (parts.length === 4) {
-    const [, machineId, keyId, crc] = parts;
-    
-    // Validate CRC
-    const expectedCrc = generateCrc(machineId, keyId);
-    if (crc !== expectedCrc) return null;
-    
-    return { machineId, keyId, isNewFormat: true };
+  // Read the tail rather than counting from the front: whatever prefix the
+  // operator set (it may contain dashes), machineId is a 16-char hex segment
+  // sitting directly before keyId, then crc closes the key.
+  const parts = key.split("-");
+  if (parts.length >= 4) {
+    const crc = parts[parts.length - 1];
+    const keyId = parts[parts.length - 2];
+    const machineId = parts[parts.length - 3];
+    if (/^[0-9a-f]{16}$/.test(machineId) && crc.length === 8 && keyId) {
+      if (generateCrc(machineId, keyId) === crc) {
+        return { machineId, keyId, isNewFormat: true };
+      }
+    }
   }
-  
+
   // Old format: sk-{random8} = 2 parts
-  if (parts.length === 2) {
+  if (parts.length === 2 && parts[0] === "sk") {
     return { machineId: null, keyId: parts[1], isNewFormat: false };
   }
-  
+
   return null;
 }
 
