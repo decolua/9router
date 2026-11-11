@@ -404,8 +404,12 @@ function ensureArrayItems(obj) {
 function enforceTypeConstraints(obj) {
   if (!obj || typeof obj !== "object") return;
 
-  for (const value of Object.values(obj)) {
-    if (value && typeof value === "object") {
+  for (const [key, value] of Object.entries(obj)) {
+    if (!value || typeof value !== "object") continue;
+    // A properties map is keyed by parameter name: its values are schemas, the map is not.
+    if (key === "properties" && !Array.isArray(value)) {
+      for (const sub of Object.values(value)) enforceTypeConstraints(sub);
+    } else {
       enforceTypeConstraints(value);
     }
   }
