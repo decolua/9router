@@ -584,7 +584,8 @@ const scopedModelPatterns =
       ]);
       if (settingsData) {
         setRequireApiKey(settingsData.requireApiKey || false);
-        setApiKeyPrefix(settingsData.apiKeyPrefix || "sk-");
+        const savedPrefix = settingsData.apiKeyPrefix || "";
+        setApiKeyPrefix(savedPrefix && savedPrefix !== "sk-" ? savedPrefix.replace(/[^a-zA-Z0-9]/g, "") : "");
         setRequireLogin(settingsData.requireLogin !== false);
         setHasPassword(settingsData.hasPassword || false);
         setTunnelDashboardAccess(settingsData.tunnelDashboardAccess || false);
