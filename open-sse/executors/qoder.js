@@ -40,6 +40,15 @@ import {
 import { getQoderModelConfig, resolveQoderModels, isQoderPat, resolveQoderCredentials, invalidateQoderJobToken } from "../services/qoderModels.js";
 import { OPENAI_BLOCK, CLAUDE_BLOCK } from "../translator/schema/blocks.js";
 import { encodeDataUri } from "../translator/concerns/image.js";
+
+// A 300K-token prompt can take ~40s before the model emits its first token. The
+// peek below waits for that first frame to turn upstream refusals into a real
+// HTTP status, but blocking on it leaves streaming clients with zero bytes and
+// they give up ("no response"). Peek with a budget, then keep the socket warm
+// with SSE comments until the first real chunk lands.
+const QODER_PEEK_BUDGET_MS = 6000;
+const QODER_WAIT_HEARTBEAT_MS = 10000;
+const QODER_PEEK_TIMEOUT = Symbol("qoder-peek-timeout");
 import { buildCosyHeaders, deriveMachineId } from "../shared/qoder/cosy.js";
 import {
   computeQoderQueueDelayMs,
@@ -557,14 +566,35 @@ function isBillingBlock(inner) {
  * byte read so far (including the peeked line) so the caller can re-process
  * it and nothing is dropped from the stream.
  */
-async function peekFirstQoderFrame(reader, decoder) {
+async function peekFirstQoderFrame(reader, decoder, budgetMs = 0) {
   let consumed = "";
   let offset = 0;
   let upstreamDone = false;
+  const deadline = budgetMs > 0 ? Date.now() + budgetMs : 0;
   while (true) {
     let nl = consumed.indexOf("\n", offset);
     if (nl === -1 && !upstreamDone) {
-      const { done, value } = await reader.read();
+      let next;
+      if (deadline) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) return { isError: false, consumed, upstreamDone, timedOut: true };
+        let timer;
+        const pending = reader.read();
+        const guard = new Promise((resolve) => {
+          timer = setTimeout(() => resolve(QODER_PEEK_TIMEOUT), remaining);
+          timer.unref?.();
+        });
+        next = await Promise.race([pending, guard]);
+        clearTimeout(timer);
+        if (next === QODER_PEEK_TIMEOUT) {
+          // The read is still in flight and owns the next chunk; hand it to the
+          // caller so the first frame is not dropped.
+          return { isError: false, consumed, upstreamDone, timedOut: true, pending };
+        }
+      } else {
+        next = await reader.read();
+      }
+      const { done, value } = next;
       upstreamDone = done;
       consumed += done ? decoder.decode() : decoder.decode(value, { stream: true });
       continue;
@@ -628,7 +658,10 @@ async function wrapQoderSSE(response, model, log = null, describeBilling = null)
   const reader = response.body.getReader();
 
   // Detect errors before returning a successful streaming response.
-  const peek = await peekFirstQoderFrame(reader, decoder);
+  const peekBudget = Number(process.env.QODER_PEEK_BUDGET_MS) > 0
+    ? Number(process.env.QODER_PEEK_BUDGET_MS)
+    : QODER_PEEK_BUDGET_MS;
+  const peek = await peekFirstQoderFrame(reader, decoder, peekBudget);
   if (peek.isError) {
     await reader.cancel().catch(() => {});
     const status = peek.isBilling
@@ -725,6 +758,24 @@ async function wrapQoderSSE(response, model, log = null, describeBilling = null)
     // Use start()+loop (not pull): a pull that buffers a partial line without
     // enqueueing would never be re-invoked, hanging consumers like .text().
     async start(controller) {
+      let heartbeat = null;
+      const stopHeartbeat = () => {
+        if (heartbeat) {
+          clearInterval(heartbeat);
+          heartbeat = null;
+        }
+      };
+      if (peek.timedOut) {
+        const beat = () => {
+          try {
+            controller.enqueue(encoder.encode(": qoder-waiting\n\n"));
+          } catch {
+            stopHeartbeat();
+          }
+        };
+        beat();
+        heartbeat = setInterval(beat, QODER_WAIT_HEARTBEAT_MS);
+      }
       try {
         // Drain whatever the peek already pulled off the socket first.
         let nlSeed;
@@ -747,8 +798,10 @@ async function wrapQoderSSE(response, model, log = null, describeBilling = null)
           }
         }
 
+        let pendingRead = peek.pending || null;
         while (!doneEmitted && !upstreamDrained) {
-          const { done, value } = await reader.read();
+          const { done, value } = pendingRead ? await pendingRead : await reader.read();
+          pendingRead = null;
           if (done) {
             buffer += decoder.decode();
             if (buffer.length > 0) {
@@ -775,6 +828,7 @@ async function wrapQoderSSE(response, model, log = null, describeBilling = null)
       } catch {
         // fall through to terminal [DONE] + close
       } finally {
+        stopHeartbeat();
         if (!doneEmitted) {
           try {
             coalescer.flush(controller);
