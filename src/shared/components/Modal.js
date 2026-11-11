@@ -52,8 +52,8 @@ export default function Modal({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       {/* Overlay */}
       <div
-        className="absolute inset-0 backdrop-blur-[3px] chrome-enter-overlay"
-        style={{ backgroundColor: "var(--color-scrim)" }}
+        className="absolute inset-0 backdrop-blur-md chrome-enter-overlay"
+        style={{ backgroundColor: "rgba(0, 0, 0, 0.72)" }}
         onClick={closeOnOverlay ? onClose : undefined}
       />
 
@@ -63,13 +63,12 @@ export default function Modal({
         aria-modal="true"
         aria-label={typeof title === "string" ? title : undefined}
         className={cn(
-          "relative w-full bg-surface",
+          "relative w-full bg-surface dark:bg-[#121316]",
           "border border-border-subtle",
           "rounded-[var(--r-card-lg)] shadow-[var(--elev-3)]",
           "chrome-enter-panel",
-          // The panel owns the height budget so the body scrolls inside it; sizing the body
-          // with a magic calc instead let header + footer push the dialog past the viewport.
-          "flex max-h-[85vh] flex-col",
+          // The panel owns the height budget so the body scrolls inside it
+          "flex max-h-[92vh] sm:max-h-[85vh] flex-col",
           sizes[size] ?? sizes.md,
           className
         )}
@@ -112,7 +111,7 @@ export default function Modal({
         )}
 
         {/* Body */}
-        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-[var(--pad-surface)]">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto custom-scrollbar p-4 sm:p-6 pb-6">{children}</div>
 
         {/* Footer */}
         {footer && (

@@ -497,33 +497,34 @@ export default function ProvidersPage() {
           <h2 className="text-lg sm:text-xl font-semibold flex items-center gap-2 leading-tight">
             Custom Providers (OpenAI/Anthropic/MoonshotAI){" "}
           </h2>
-          <div className="grid grid-cols-1 gap-2 sm:flex sm:w-auto">
+          <div className="grid grid-cols-1 sm:flex sm:items-center gap-2 w-full sm:w-auto">
             <Button
               size="sm"
+              variant="secondary"
               icon="add"
               onClick={() => setShowAddAnthropicCompatibleModal(true)}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto text-xs"
             >
-              Add Anthropic Compatible
+              Anthropic Compatible
             </Button>
             <Button
               size="sm"
-              variant="white"
+              variant="secondary"
               icon="add"
               onClick={() => setShowAddCompatibleModal(true)}
-              className="w-full sm:w-auto"
+              className="w-full sm:w-auto text-xs"
             >
-              Add OpenAI Compatible
+              OpenAI Compatible
             </Button>
-              <Button
+            <Button
               size="sm"
               variant="secondary"
               icon="add"
               onClick={() => setShowAddMoonshotCompatibleModal(true)}
-              className="w-full sm:w-auto"
-              >
-              Add MoonshotAI Compatible
-              </Button>
+              className="w-full sm:w-auto text-xs"
+            >
+              MoonshotAI Compatible
+            </Button>
           </div>
         </div>
         {compatibleProviders.length === 0 &&

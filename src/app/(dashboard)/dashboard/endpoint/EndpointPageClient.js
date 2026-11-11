@@ -1627,89 +1627,104 @@ const scopedModelPatterns =
             {keys.map((key) => (
               <div
                 key={key.id}
-                className={`group flex flex-wrap items-start justify-between gap-3 py-3 border-b border-black/[0.03] dark:border-white/[0.03] last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
+                className={`group flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 py-3.5 border-b border-border/30 last:border-b-0 ${key.isActive === false ? "opacity-60" : ""}`}
               >
-                {!isApiKeyUser && (
-                  <input
-                    type="checkbox"
-                    checked={selectedKeyIds.has(key.id)}
-                    onChange={() => {
-                      setSelectedKeyIds((prev) => {
-                        const next = new Set(prev);
-                        if (next.has(key.id)) next.delete(key.id);
-                        else next.add(key.id);
-                        return next;
-                      });
-                    }}
-                    className="size-4 accent-brand-500 shrink-0 mt-0.5"
-                    aria-label={`Select ${key.name}`}
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate min-w-0">{key.name}</p>
-                  {creatorLabelFor(key) && (
-                    <p className="text-xs text-text-muted truncate min-w-0">{creatorLabelFor(key)}</p>
+                <div className="flex items-start gap-3 min-w-0 flex-1">
+                  {!isApiKeyUser && (
+                    <input
+                      type="checkbox"
+                      checked={selectedKeyIds.has(key.id)}
+                      onChange={() => {
+                        setSelectedKeyIds((prev) => {
+                          const next = new Set(prev);
+                          if (next.has(key.id)) next.delete(key.id);
+                          else next.add(key.id);
+                          return next;
+                        });
+                      }}
+                      className="size-4 accent-brand-500 shrink-0 mt-1"
+                      aria-label={`Select ${key.name}`}
+                    />
                   )}
-                  <div className="flex flex-wrap items-center gap-1.5 mt-1 min-w-0">
-                    <code className="text-xs text-text-muted font-mono break-all max-w-[200px] sm:max-w-xs min-w-0">
-                      {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
-                    </code>
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={() => toggleKeyVisibility(key.id)}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                        title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
-                      >
-                        <span className="material-symbols-outlined text-[14px]">
-                          {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between sm:justify-start gap-2">
+                      <p className="text-sm font-medium truncate min-w-0">{key.name}</p>
+                      {/* Mobile-only toggle aligned with title */}
+                      <div className="sm:hidden flex-shrink-0" title={key.isActive === false ? "Switch this key back on" : "Switch this key off"}>
+                        <Toggle
+                          size="sm"
+                          checked={key.isActive !== false}
+                          disabled={isOwnKey(key)}
+                          onChange={(nextActive) => handleToggleKeyActive(key, nextActive)}
+                        />
+                      </div>
+                    </div>
+                    {creatorLabelFor(key) && (
+                      <p className="text-xs text-text-muted truncate min-w-0">{creatorLabelFor(key)}</p>
+                    )}
+                    <div className="flex items-center gap-1.5 mt-1 min-w-0 max-w-full">
+                      <code className="text-xs text-text-muted font-mono truncate min-w-0 max-w-[200px] sm:max-w-md">
+                        {visibleKeys.has(key.id) ? key.key : maskKey(key.key)}
+                      </code>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => toggleKeyVisibility(key.id)}
+                          className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                          title={visibleKeys.has(key.id) ? "Hide key" : "Show key"}
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {visibleKeys.has(key.id) ? "visibility_off" : "visibility"}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => copy(key.key, key.id)}
+                          className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">
+                            {copied === key.id ? "check" : "content_copy"}
+                          </span>
+                        </button>
+                      </div>
+                    </div>
+                    <p className="text-xs text-text-muted mt-1">
+                      Created {new Date(key.createdAt).toLocaleDateString()}
+                    </p>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                      <LimitBadge entry={key} />
+                      {limitKindOf(key) !== "cost" && limitCapOf(key) > 0 && key.resetInterval && key.resetInterval !== "never" && (
+                        <ResetCountdown resetInterval={key.resetInterval} lastResetAt={key.lastResetAt} />
+                      )}
+                      <span className="text-xs max-w-full truncate px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium">
+                        Models: {key.allowedModels && key.allowedModels !== "*" ? key.allowedModels : "All"}
+                      </span>
+                      {(key.rpmLimit > 0 || key.tpmLimit > 0) && (
+                        <span className="text-xs max-w-full truncate px-2 py-0.5 rounded bg-purple-500/10 text-purple-500 font-medium">
+                          Rate: {key.rpmLimit > 0 ? `${key.rpmLimit} RPM` : ""}{key.rpmLimit > 0 && key.tpmLimit > 0 ? " · " : ""}{key.tpmLimit > 0 ? `${formatTokensNumber(key.tpmLimit)} TPM` : ""}
                         </span>
-                      </button>
-                      <button
-                        onClick={() => copy(key.key, key.id)}
-                        className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
-                      >
-                        <span className="material-symbols-outlined text-[14px]">
-                          {copied === key.id ? "check" : "content_copy"}
-                        </span>
-                      </button>
+                      )}
+                      {key.expiresAt && (() => {
+                        const expDate = new Date(key.expiresAt);
+                        const isExpired = expDate.getTime() < Date.now();
+                        return (
+                          <span className={`inline-flex items-center gap-1 text-xs max-w-full truncate px-2 py-0.5 rounded font-medium ${
+                            isExpired
+                              ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                              : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                          }`}>
+                            <span className="material-symbols-outlined text-[13px] leading-none">
+                              {isExpired ? "event_busy" : "timer"}
+                            </span>
+                            {isExpired ? "Expired: " : "Expires: "}
+                            {expDate.toLocaleDateString()} {expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2 overflow-hidden">
-                    <LimitBadge entry={key} />
-                    {limitKindOf(key) !== "cost" && limitCapOf(key) > 0 && key.resetInterval && key.resetInterval !== "never" && (
-                      <ResetCountdown resetInterval={key.resetInterval} lastResetAt={key.lastResetAt} />
-                    )}
-                    <span className="text-xs max-w-full truncate px-2 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium">
-                      Models: {key.allowedModels && key.allowedModels !== "*" ? key.allowedModels : "All"}
-                    </span>
-                    {(key.rpmLimit > 0 || key.tpmLimit > 0) && (
-                      <span className="text-xs max-w-full truncate px-2 py-0.5 rounded bg-purple-500/10 text-purple-500 font-medium">
-                        Rate: {key.rpmLimit > 0 ? `${key.rpmLimit} RPM` : ""}{key.rpmLimit > 0 && key.tpmLimit > 0 ? " · " : ""}{key.tpmLimit > 0 ? `${formatTokensNumber(key.tpmLimit)} TPM` : ""}
-                      </span>
-                    )}
-                    {key.expiresAt && (() => {
-                      const expDate = new Date(key.expiresAt);
-                      const isExpired = expDate.getTime() < Date.now();
-                      return (
-                        <span className={`inline-flex items-center gap-1 text-xs max-w-full truncate px-2 py-0.5 rounded font-medium ${
-                          isExpired
-                            ? "bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                            : "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
-                        }`}>
-                          <span className="material-symbols-outlined text-[13px] leading-none">
-                            {isExpired ? "event_busy" : "timer"}
-                          </span>
-                          {isExpired ? "Expired: " : "Expires: "}
-                          {expDate.toLocaleDateString()} {expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      );
-                    })()}
-                  </div>
                 </div>
-                <div className="flex-shrink-0 items-center gap-1.5">
+
+                {/* Desktop action row */}
+                <div className="hidden sm:flex flex-shrink-0 items-center gap-1.5">
                   <div
                     className="inline-flex items-center px-1"
                     title={key.isActive === false ? "Switch this key back on" : "Switch this key off"}
@@ -1776,6 +1791,68 @@ const scopedModelPatterns =
                     className={cn("p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all", isOwnKey(key) && "opacity-30 cursor-not-allowed")}
                   >
                     <span className="material-symbols-outlined text-[18px]">delete</span>
+                  </button>
+                </div>
+
+                {/* Mobile action bar */}
+                <div className="flex sm:hidden items-center justify-between pt-2 border-t border-border/20 text-text-muted">
+                  <button
+                    onClick={() => {
+                      setEditingKey(key);
+                      setEditName(key.name || "");
+                      const lim = limitCapOf(key) ? String(limitCapOf(key)) : "";
+                      setEditLimit(lim);
+                      setEditLimitKind(limitKindOf(key));
+                      const resVal = key.resetInterval || "never";
+                      if (["never", "5h", "7d", "14d", "30d"].includes(resVal)) {
+                        setEditReset(resVal);
+                        setEditCustomReset("");
+                      } else {
+                        setEditReset("custom");
+                        setEditCustomReset(resVal);
+                      }
+                      setEditAllowedModels(key.allowedModels || "*");
+                      setEditRpm(key.rpmLimit ? String(key.rpmLimit) : "");
+                      setEditTpm(key.tpmLimit ? String(key.tpmLimit) : "");
+                      setEditExpiresAt(key.expiresAt || "");
+                      setEditPermissions(key.permissions || EMPTY_PERMISSIONS);
+                    }}
+                    disabled={isOwnKey(key)}
+                    className={cn("px-2.5 py-1.5 hover:bg-surface-2 rounded text-xs flex items-center gap-1 text-text-main", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
+                  >
+                    <span className="material-symbols-outlined text-[16px]">edit</span>
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleDuplicateKey(key)}
+                    disabled={isOwnKey(key)}
+                    className={cn("p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
+                    title="Duplicate key"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">library_add</span>
+                  </button>
+                  <button
+                    onClick={() => handleManualResetUsage(key)}
+                    disabled={isOwnKey(key)}
+                    className={cn("p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all", isOwnKey(key) && "opacity-40 cursor-not-allowed")}
+                    title="Reset used tokens"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">restart_alt</span>
+                  </button>
+                  <button
+                    onClick={() => { setShowSnippetModal(key); setSnippetLang("curl"); }}
+                    className="p-1.5 hover:bg-surface-2 rounded text-text-muted hover:text-primary transition-all"
+                    title="Code snippet"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">code</span>
+                  </button>
+                  <button
+                    onClick={() => handleDeleteKey(key.id)}
+                    disabled={isOwnKey(key)}
+                    className={cn("p-1.5 hover:bg-red-500/10 rounded text-red-500 transition-all", isOwnKey(key) && "opacity-30 cursor-not-allowed")}
+                    title="Delete key"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">delete</span>
                   </button>
                 </div>
               </div>

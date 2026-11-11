@@ -1,3 +1,14 @@
+# v0.5.411 (2026-11-11)
+
+## What Looks Different?
+
+- **Multi-Device Responsive Polish**: Reflowed layout, spacing, and controls across phone (Android/iPhone), tablet, laptop, and desktop viewports:
+  - Header: Collapsed redundant desktop GitHub button on mobile (< md) and made the search input flexible, giving comfortable breathing room to notification and menu controls.
+  - Layout: Scaled outer content padding to `p-3.5 sm:p-6 lg:p-10`, recovering usable screen width on mobile viewports.
+  - Endpoint & API Keys: Reflowed API Key list items for mobile. Key tokens truncate cleanly instead of breaking into awkward vertical columns, and action icons collapse into a neat bottom action bar with finger-friendly tap targets on mobile while preserving the desktop row layout on wider screens.
+  - Modals: Increased overlay background opacity to eliminate bleed-through of bright background dashboard elements, and expanded modal max-height with generous bottom padding for smooth scrolling on small screens.
+  - Providers: Unified custom provider action button styles and converted them into a clean responsive row/grid.
+
 # v0.5.410 (2026-11-11)
 
 ## What Looks Different?
