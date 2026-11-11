@@ -201,11 +201,11 @@
     "baseUrl": "https://chatgpt.com/backend-api/codex/responses",
     "format": "openai-responses",
     "forceStream": true,
-    "cliVersion": "0.159.0",
+    "cliVersion": "0.167.1",
     "headers": {
       "originator": "codex_cli_rs",
-      "User-Agent": "codex_cli_rs/0.159.0",
-      "version": "0.159.0"
+      "User-Agent": "codex_cli_rs/0.167.1",
+      "version": "0.167.1"
     },
     "usage": {
       "url": "https://chatgpt.com/backend-api/wham/usage",
