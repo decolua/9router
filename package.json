@@ -1,6 +1,6 @@
 {
   "name": "9router-app",
-  "version": "0.5.112",
+  "version": "0.5.116",
   "description": "9Router web dashboard",
   "private": true,
   "scripts": {
@@ -46,7 +46,7 @@
     "recharts": "^3.7.0",
     "socks-proxy-agent": "^8.0.5",
     "sql.js": "^1.14.1",
-    "undici": "^7.30.1",
+    "undici": "^8.12.3",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"
   },
