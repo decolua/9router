@@ -57,9 +57,9 @@ function buildChatHistory(body) {
   let instructions = "";
   let reminder = "";
   if (toolMode) {
-    instructions = buildToolInstructions(body, "marker");
+    instructions = buildToolInstructions(body, "fenced");
     const { mode, forced } = selectableTools(body);
-    reminder = buildToolReminder("marker", { mode, forced });
+    reminder = buildToolReminder("fenced", { mode, forced });
   }
   const history = [];
   const systemParts = [];
@@ -149,7 +149,7 @@ function streamResponse(text, model, id, options = {}) {
         controller.enqueue(chunk({
           ...base,
           choices: [{ index: 0, delta, ...(finishReason ? { finish_reason: finishReason } : {}) }],
-          ...(finishReason === "stop" ? { usage } : {}),
+          ...(finishReason ? { usage } : {}),
         }));
       push({ role: "assistant", content }, null);
       let sentCalls = false;
@@ -161,7 +161,8 @@ function streamResponse(text, model, id, options = {}) {
         );
       }
       if (!sentCalls) push({}, "stop");
-      else push({}, null);
+      // emitToolCallChunks already closed the stream with finish_reason
+      // "tool_calls"; one [DONE] is the protocol.
       controller.enqueue(encoder.encode("data: [DONE]\n\n"));
       controller.close();
     },
