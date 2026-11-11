@@ -14,6 +14,7 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveClineModels, resolveClinepassModels } from "open-sse/services/clinepassModels.js";
 import { NOUS_MODELS_URL, normalizeNousModels } from "open-sse/services/nous.js";
+import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import codexProvider from "open-sse/providers/registry/codex.js";
 
 const GEMINI_CLI_MODELS_URL = "https://cloudcode-pa.googleapis.com/v1internal:fetchAvailableModels";
@@ -265,6 +266,18 @@ const PROVIDER_MODELS_CONFIG = {
   nous: {
     ...createOpenAIModelsConfig(NOUS_MODELS_URL),
     parseResponse: normalizeRoutedNousModels,
+  },
+  // CommandCode's catalog URL needs no auth, but the route's token guard above
+  // still requires a configured connection, so an empty key cannot enumerate it.
+  commandcode: {
+    customResolver: async () => {
+      const result = await resolveCommandCodeModels();
+      if (result?.models?.length) return { models: result.models };
+      return {
+        models: getStaticProviderModels("commandcode"),
+        warning: "CommandCode returned no live models; falling back to static catalog.",
+      };
+    },
   },
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
