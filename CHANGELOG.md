@@ -1,3 +1,15 @@
+# v0.5.416 (2026-11-11)
+
+## What Got Fixed?
+
+- **Proxy Harvester Freeze & Deadlock**: Fixed multiple critical bugs causing the auto-harvester daemon to stall and freeze indefinitely:
+  - Replaced graceful `await dispatcher.close()` with immediate `dispatcher.destroy()` in `probeProxy`, preventing hanging on half-open or unresponsive proxy tunnels.
+  - Used explicit `undiciFetch` with bound connect timeout (`connect: { timeout: timeoutMs }`) instead of Next.js's patched fetch.
+  - Added fallback timer to `tcpPrecheck` so dropped TCP SYN packets by remote firewalls immediately resolve as dead within 800ms.
+  - Replaced chunk-based `Promise.all` with a sliding worker pool (`runWithPool`), eliminating head-of-line blocking by slow straggler proxies.
+  - Reordered proxy feeds to prioritize high-yield active feeds (`monosans`, `sunny9577`, `vakhov`), discovering live proxies in seconds.
+  - Reset `_inCycle` state on manual stop so the worker can always be restarted cleanly.
+
 # v0.5.415 (2026-11-11)
 
 ## What Looks Different?
