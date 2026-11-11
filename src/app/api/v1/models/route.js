@@ -620,6 +620,13 @@ export async function buildModelsList(kindFilter, options = {}) {
         // Hidden behind a studio name: only the studio name is published.
         if (studioTargets.isStudioTarget([providerId, staticAlias, outputAlias], modelId)) continue;
 
+        const customName = customModelNameById.get(modelId);
+        const staticName = staticModelNameById.get(modelId);
+        const liveName = liveModelNameById.get(modelId);
+        const candidateName = (customName && customName !== modelId)
+          ? customName
+          : (liveName || staticName || customName);
+
         const model = {
           id: `${outputAlias}/${modelId}`,
           object: "model",
@@ -628,10 +635,7 @@ export async function buildModelsList(kindFilter, options = {}) {
           owned_by: customOwnedByById.get(modelId) || outputAlias,
           // Prefer the name the provider/custom entry published; ids with none
           // (combos, raw passthrough slugs) get a readable name derived from it.
-          name: resolveModelDisplayName(
-            modelId,
-            customModelNameById.get(modelId) || liveModelNameById.get(modelId) || staticModelNameById.get(modelId),
-          ),
+          name: resolveModelDisplayName(modelId, candidateName),
         };
         // Live-catalog resolvers (kiro/qoder/github/clinepass) mostly only return
         // { id, name } - no per-model capability data. Fall back to the same
