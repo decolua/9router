@@ -27,6 +27,43 @@ const SESSION_FIELD = "_opencodeSession";
 export const OPENCODE_SESSION_RE = /^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/;
 const BASE62_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 
+// Free-lane load shedding: total attempts (first try + retries) and backoff.
+// Live bursts last ~20 s (a request that kept failing for 8 s succeeded at 19 s),
+// so the schedule below covers 800+1600+2400+3200+4000*3 = ~20 s.
+const OPENCODE_OVERLOAD_ATTEMPTS = 8;
+const OPENCODE_OVERLOAD_BASE_MS = 800;
+const OPENCODE_OVERLOAD_MAX_MS = 4000;
+const OPENCODE_OVERLOAD_RE = /overloaded/i;
+
+/**
+ * Classify a gated free-lane rejection:
+ * - "overload": transient 429 load shedding, worth retrying.
+ * - "session":  any other 429 (FreeUsageLimitError) or 403, which can mean the
+ *               session id itself is spent or flagged.
+ * - null:       anything else.
+ */
+async function classifyRejection(response) {
+  const status = response?.status;
+  if (status !== 429 && status !== 403) return null;
+  if (status === 403) return "session";
+  try {
+    // The body is the response stream; clone it so a non-retryable 429 is still
+    // delivered intact to the caller.
+    return OPENCODE_OVERLOAD_RE.test(await response.clone().text()) ? "overload" : "session";
+  } catch {
+    return "session";
+  }
+}
+
+function sleep(ms, signal) {
+  return new Promise((resolve) => {
+    if (signal?.aborted) return resolve();
+    const onAbort = () => { clearTimeout(timer); resolve(); };
+    const timer = setTimeout(() => { signal?.removeEventListener?.("abort", onAbort); resolve(); }, ms);
+    signal?.addEventListener?.("abort", onAbort, { once: true });
+  });
+}
+
 function hasValidOpencodeVersion(ua) {
   const m = String(ua || "").match(/^opencode\/[a-z0-9-]+\/(\d+)\.\d+\.\d+\/[a-z0-9-]+$/i);
   return !!m && parseInt(m[1], 10) >= 2;
@@ -169,6 +206,25 @@ export function stableSessionId(credentials) {
   }
   stableOpencodeSessions.set(key, { sessionId, lastUsed: Date.now() });
   return sessionId;
+}
+
+// The memoized sessions above are never refreshed on failure, so once upstream
+// spends or flags one, every later request reuses it and fails the same way
+// until restart (#5559). Drop the rejected id so the next request mints a fresh
+// one. Match by value, not identity key: a concurrent request may already have
+// minted a replacement, which must survive.
+export function forgetOpencodeSession(sessionId) {
+  if (!sessionId) return false;
+  let removed = false;
+  for (const store of [stableOpencodeSessions, translatedOpencodeSessions]) {
+    for (const [key, entry] of store) {
+      if (entry.sessionId === sessionId) {
+        store.delete(key);
+        removed = true;
+      }
+    }
+  }
+  return removed;
 }
 
 function bodyHasSessionHints(body) {
@@ -405,19 +461,49 @@ export class OpenCodeExecutor extends BaseExecutor {
   // The free gate keys on the TLS ClientHello, so a native Node fetch is refused
   // no matter how faithful the body is. Route through the impersonating client
   // and keep proxy handling on the existing path (proxyAwareFetch delegates to
-  // `directFetch` when no proxy is configured). Fail-open: without wreq-js the
-  // request still goes out on native fetch instead of erroring here.
+  // `directFetch` when no proxy is configured, and passes the resolved proxy
+  // URL through when one is). Fail-open: without wreq-js the request still goes
+  // out on native fetch instead of erroring here.
   async execute(args) {
     const credentials = this.prepareRequestCredentials(args);
-    return super.execute({
-      ...args,
-      credentials,
-      directFetch: (url, options) => opencodeTlsFetch(url, {
-        method: options.method,
-        headers: options.headers,
-        body: options.body,
-      }, { signal: options.signal }),
-    });
+    const directFetch = (url, options, proxyUrl) => opencodeTlsFetch(url, {
+      method: options.method,
+      headers: options.headers,
+      body: options.body,
+    }, { signal: options.signal, proxyUrl });
+    // wreq-js tunnels the proxy itself; adapters that cannot must stay on undici.
+    directFetch.proxyCapable = true;
+    const run = () => super.execute({ ...args, credentials, directFetch });
+
+    // The free lane sheds load with 429 "The inference service is overloaded.
+    // Please try again later." even after the request passes the TLS gate, and
+    // the OpenCode CLI retries it. Match that behaviour here: inspect a clone of
+    // the body (a stream, so never read the original), retry transient overloads
+    // with backoff, and hand back every other response untouched.
+    for (let attempt = 1; ; attempt++) {
+      const result = await run();
+      const rejection = await classifyRejection(result?.response);
+      if (rejection === "session") {
+        // A client-supplied native session is not ours to replace; this only
+        // drops ids we minted, so the next request starts on a fresh one.
+        if (forgetOpencodeSession(credentials[SESSION_FIELD])) {
+          args.log?.debug?.("SESSION", `OpenCode ${result.response.status}: dropped cached session, next request re-mints`);
+        }
+        return result;
+      }
+      // A disconnected client should not keep the retry loop (and the free lane)
+      // busy for another ~20 s.
+      if (rejection !== "overload" || attempt >= OPENCODE_OVERLOAD_ATTEMPTS || args.signal?.aborted) {
+        return result;
+      }
+      // Release the discarded 429 instead of leaving its stream half-read.
+      result.response.body?.cancel?.().catch?.(() => {});
+      args.log?.debug?.("RETRY", `OpenCode free lane overloaded, retry ${attempt}/${OPENCODE_OVERLOAD_ATTEMPTS - 1}`);
+      const backoff = Math.min(OPENCODE_OVERLOAD_BASE_MS * attempt, OPENCODE_OVERLOAD_MAX_MS);
+      await sleep(backoff + Math.random() * 250, args.signal);
+      // Aborted mid-backoff: surface it the way a disconnect during the fetch does.
+      if (args.signal?.aborted) throw new DOMException("The operation was aborted.", "AbortError");
+    }
   }
 
   // Free tier moved from /zen/v1 to /inference/v1 (OpenCode v2); /zen/v1 now

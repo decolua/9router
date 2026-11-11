@@ -9,6 +9,14 @@ import {
   isFreshSocketReplayEnabled,
 } from "../config/runtimeConfig.js";
 import { dbg } from "./debugLog.js";
+import { ensureClaudeCliVersion, applyClaudeCliVersion } from "./claudeCliVersion.js";
+
+const CLAUDE_UA_PROBE = /claude-cli\/\d/;
+function hasClaudeCliHeader(headers) {
+  if (!headers) return false;
+  const values = headers instanceof Headers ? [...headers.values()] : Array.isArray(headers) ? headers.map((h) => h[1]) : Object.values(headers);
+  return values.some((v) => typeof v === "string" && CLAUDE_UA_PROBE.test(v));
+}
 
 const proxyDispatchers = new Map();
 const directDispatchers = new Map();
@@ -27,10 +35,9 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// Always fetch through the package's own undici instance: undici 8 rejects
-// dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
-// bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
-// option once we build our own Agents.
+// Always fetch through the package's own undici instance so fetch and the
+// Agents below come from the same copy — dispatcher options are only guaranteed
+// to match within one undici version.
 let undiciFetch = null;
 async function rawFetch(url, options) {
   undiciFetch ??= (await import("undici")).fetch;
@@ -163,6 +170,25 @@ function normalizeString(value) {
   return String(value).trim();
 }
 
+/** scheme://host:port only — never credentials. */
+function safeProxyHost(proxyUrl) {
+  try {
+    const parsed = new URL(String(proxyUrl));
+    return `${parsed.protocol}//${parsed.hostname}${parsed.port ? `:${parsed.port}` : ""}`;
+  } catch {
+    return "unparseable-proxy-url";
+  }
+}
+
+/** Destination host only, never the full URL (which may carry a query/path). */
+function safeTargetHost(url) {
+  try {
+    return new URL(typeof url === "string" ? url : url.toString()).host;
+  } catch {
+    return "unparseable-url";
+  }
+}
+
 /**
  * Resolve real IP using Google DNS (bypass system DNS)
  */
@@ -267,8 +293,7 @@ const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
-// requestTls must stay TLS-options-only (undici 8 rejects connect-level options there
-// with UND_ERR_INVALID_ARG).
+// requestTls must stay TLS-options-only (connect-level options belong in `connect`).
 const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
@@ -449,6 +474,13 @@ async function createBypassRequest(parsedUrl, realIP, options) {
 }
 
 export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
+  // Keep the spoofed Claude Code version current (new models require a minimum CLI version).
+  // Refresh in the background: the request uses the version already known, so an
+  // unreachable npm registry can never add latency to the chat path.
+  if (hasClaudeCliHeader(options?.headers)) {
+    void ensureClaudeCliVersion(rawFetch);
+    options = { ...options, headers: applyClaudeCliVersion(options.headers) };
+  }
   const targetUrl = typeof url === "string" ? url : url.toString();
 
   // Vercel relay: forward request via relay headers
@@ -470,6 +502,26 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
   const envProxyUrl = connectionProxyUrl ? null : normalizeProxyUrl(getEnvProxyUrl(targetUrl));
   const proxyUrl = connectionProxyUrl || envProxyUrl;
   const forceFreshSocket = proxyOptions?.forceFreshSocket === true || options?.forceFreshSocket === true;
+
+  // Protocol adapters that own their transport (wreq-js TLS impersonation)
+  // cannot use an undici dispatcher: they must drive the proxy themselves.
+  // Only adapters that declare `proxyCapable` opt in — any other adapter
+  // ignores the proxy URL and would leave over the direct interface, so they
+  // keep the undici path below.
+  if (proxyUrl && options?.directFetch?.proxyCapable === true) {
+    try {
+      const res = await options.directFetch(url, { ...options, proxyUrl }, proxyUrl);
+      // Reported only after the adapter that holds the tunnel returned.
+      const via = res?.headers?.get?.("x-9r-proxy-via");
+      dbg("PROXY", `PROXY ROUTING VERIFIED | ${safeTargetHost(targetUrl)} | transport=adapter | proxy=${via || safeProxyHost(proxyUrl)} | status=${res?.status}`);
+      return res;
+    } catch (err) {
+      if (proxyOptions?.strictProxy === true) {
+        throw new Error(`[ProxyFetch] Proxy required but failed (strictProxy=true): ${err.message}`);
+      }
+      throw err;
+    }
+  }
 
   // MITM DNS bypass: for known MITM-intercepted hosts, resolve real IP to avoid DNS spoof
   if (shouldBypassMitmDns(targetUrl)) {
