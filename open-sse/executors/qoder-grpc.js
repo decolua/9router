@@ -64,6 +64,11 @@ const REASONING_EFFORT = Object.freeze({
 
 let protoPathCache = null;
 let chatServiceCache = null;
+// After a transport-level failure (DNS, unimplemented method, reset) the host
+// will not start working again within the same minute; skip it for a while so
+// long requests do not pay that latency on every call.
+const grpcHostCooldownMs = 5 * 60 * 1000;
+const grpcHostDownUntil = new Map();
 
 /**
  * Which transport one dispatch uses.
@@ -318,6 +323,7 @@ export function mapGrpcStatusToHttp(code, details = "") {
   if (code === 16) return { status: 401, retryable: false };
   if (text.includes("413")) return { status: 413, retryable: false };
   if (code === 13 && /quota/i.test(text)) return { status: 429, retryable: false };
+  if (code === 12) return { status: 502, retryable: true }; // UNIMPLEMENTED: wrong host/path, COSY still serves it
   if (code === 14) return { status: 502, retryable: true };
   if (code === 4) return { status: 504, retryable: true };
   return { status: 502, retryable: false };
@@ -455,6 +461,9 @@ export async function dispatchQoderGrpc({
 }) {
   const host = QODER_GRPC_HOSTS[region] || QODER_GRPC_HOSTS[QODER_REGION_INTL];
   const url = `grpc://${host}${QODER_GRPC_SERVICE_PATH}`;
+  if ((grpcHostDownUntil.get(host) || 0) > Date.now()) {
+    throw new Error(`Qoder gRPC: ${host} is in cooldown after a transport failure`);
+  }
   const { ChatService, credentials: grpcCredentials, Metadata } = await loadChatService();
   const client = new ChatService(`${host}:443`, grpcCredentials.createSsl());
 
@@ -508,6 +517,7 @@ export async function dispatchQoderGrpc({
     // it, so surface a throw and let the caller fall back instead of failing the
     // client request with a 502 it cannot act on.
     if (mapped.retryable) {
+      grpcHostDownUntil.set(host, Date.now() + grpcHostCooldownMs);
       throw new Error(`Qoder gRPC: ${error?.details || error?.message || "transport failed"}`);
     }
     return {

@@ -279,6 +279,12 @@ describe("mapGrpcStatusToHttp", () => {
     expect(mapGrpcStatusToHttp(14, "unavailable")).toEqual({ status: 502, retryable: true });
   });
 
+  it("treats an unimplemented method as a transport failure so COSY takes over", () => {
+    // api1/api2/api3 all answer 12 for this path; failing the client request
+    // with a 502 is worse than answering it over the HTTP surface.
+    expect(mapGrpcStatusToHttp(12, "")).toEqual({ status: 502, retryable: true });
+  });
+
   it("maps an unknown status to a non-retryable 502", () => {
     expect(mapGrpcStatusToHttp(2, "unknown")).toEqual({ status: 502, retryable: false });
   });
