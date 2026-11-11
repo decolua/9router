@@ -20,6 +20,8 @@ import { resolveCursorModels } from "open-sse/services/cursorModels.js";
 import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { getNodeCustomHeaders } from "@/lib/providerNodeHeaders";
+import { applyCustomHeaders } from "open-sse/utils/customHeaders.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 
 // Qoder shares one live resolver across intl (qoder) and CN (qoder-cn); the
@@ -227,6 +229,8 @@ async function fetchCompatibleModelIds(connection) {
   } else {
     return [];
   }
+
+  applyCustomHeaders(headers, await getNodeCustomHeaders(connection.provider), connection, connection.provider);
 
   try {
     const controller = new AbortController();

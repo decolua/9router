@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createProviderNode, getProviderNodes } from "@/models";
 import { OPENAI_COMPATIBLE_PREFIX, ANTHROPIC_COMPATIBLE_PREFIX, CUSTOM_EMBEDDING_PREFIX } from "@/shared/constants/providers";
 import { generateId } from "@/shared/utils";
+import { normalizeCustomHeaders, toMaskedNode } from "open-sse/utils/customHeaders.js";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,8 @@ const CUSTOM_EMBEDDING_DEFAULTS = {
 export async function GET() {
   try {
     const nodes = await getProviderNodes();
-    return NextResponse.json({ nodes });
+    // Custom header values are secrets (gateway keys) — never returned raw
+    return NextResponse.json({ nodes: nodes.map(toMaskedNode) });
   } catch (error) {
     console.log("Error fetching provider nodes:", error);
     return NextResponse.json({ error: "Failed to fetch provider nodes" }, { status: 500 });
@@ -32,7 +34,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl, type } = body;
+    const { name, prefix, apiType, baseUrl, type, customHeaders } = body;
 
     if (!name?.trim()) {
       return NextResponse.json({ error: "Name is required" }, { status: 400 });
@@ -44,6 +46,16 @@ export async function POST(request) {
 
     // Determine type
     const nodeType = type || "openai-compatible";
+
+    // Custom outbound headers: compatible LLM nodes only
+    let normalizedHeaders = [];
+    if (nodeType === "openai-compatible" || nodeType === "anthropic-compatible") {
+      const result = normalizeCustomHeaders(customHeaders);
+      if (result.error) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      normalizedHeaders = result.headers;
+    }
 
     if (nodeType === "openai-compatible") {
       if (!apiType || !["chat", "responses"].includes(apiType)) {
@@ -57,8 +69,9 @@ export async function POST(request) {
         apiType,
         baseUrl: (baseUrl || OPENAI_COMPATIBLE_DEFAULTS.baseUrl).trim(),
         name: name.trim(),
+        customHeaders: normalizedHeaders,
       });
-      return NextResponse.json({ node }, { status: 201 });
+      return NextResponse.json({ node: toMaskedNode(node) }, { status: 201 });
     }
 
     if (nodeType === "custom-embedding") {
@@ -92,8 +105,9 @@ export async function POST(request) {
         prefix: prefix.trim(),
         baseUrl: sanitizedBaseUrl,
         name: name.trim(),
+        customHeaders: normalizedHeaders,
       });
-      return NextResponse.json({ node }, { status: 201 });
+      return NextResponse.json({ node: toMaskedNode(node) }, { status: 201 });
     }
 
     return NextResponse.json({ error: "Invalid provider node type" }, { status: 400 });

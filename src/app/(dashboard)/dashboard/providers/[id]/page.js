@@ -375,9 +375,12 @@ export default function ProviderDetailPage() {
         setProviderNode(data.node);
         await fetchConnections();
         setShowEditNodeModal(false);
+        return null;
       }
+      return { error: data.error || "Failed to update provider node" };
     } catch (error) {
       console.log("Error updating provider node:", error);
+      return { error: "Network error" };
     }
   };
 

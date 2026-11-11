@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getProviderNodeById } from "@/models";
+import { applyCustomHeaders } from "open-sse/utils/customHeaders.js";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { resolveOllamaLocalHost, resolveXiaomiTokenplanBaseUrl, PROVIDERS } from "open-sse/config/providers.js";
@@ -116,7 +117,7 @@ export async function POST(request) {
         }
         const modelsUrl = `${node.baseUrl?.replace(/\/$/, "")}/models`;
         const res = await fetch(modelsUrl, {
-          headers: { "Authorization": `Bearer ${apiKey}` },
+          headers: applyCustomHeaders({ "Authorization": `Bearer ${apiKey}` }, node.customHeaders, { apiKey }, provider),
         });
         isValid = res.ok;
         return NextResponse.json({
@@ -172,12 +173,12 @@ export async function POST(request) {
 
         const res = await fetch(messagesUrl, {
           method: "POST",
-          headers: {
+          headers: applyCustomHeaders({
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
             "Authorization": `Bearer ${apiKey}`,
-          },
+          }, node.customHeaders, { apiKey }, provider),
           body: JSON.stringify({
             model,
             max_tokens: 1,

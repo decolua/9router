@@ -6,6 +6,8 @@ import { getDefaultModel } from "open-sse/config/providerModels.js";
 import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
+import { applyCustomHeaders } from "open-sse/utils/customHeaders.js";
+import { getNodeCustomHeaders } from "@/lib/providerNodeHeaders";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { GROK_CLI_PAGER_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import {
@@ -526,8 +528,10 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
     const modelsBase = connection.providerSpecificData?.baseUrl;
     if (!modelsBase) return { valid: false, error: "Missing base URL" };
     try {
+      const headers = applyCustomHeaders({ "Authorization": `Bearer ${connection.apiKey}` },
+        await getNodeCustomHeaders(connection.provider), connection, connection.provider);
       const res = await fetchWithConnectionProxy(`${modelsBase.replace(/\/$/, "")}/models`, {
-        headers: { "Authorization": `Bearer ${connection.apiKey}` },
+        headers,
       }, effectiveProxy);
       return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
     } catch (err) {
@@ -545,12 +549,12 @@ async function testApiKeyConnection(connection, effectiveProxy = null) {
       const model = connection.defaultModel || "claude-3-haiku-20240307";
       const res = await fetchWithConnectionProxy(messagesUrl, {
         method: "POST",
-        headers: {
+        headers: applyCustomHeaders({
           "x-api-key": connection.apiKey,
           "anthropic-version": "2023-06-01",
           "content-type": "application/json",
           "Authorization": `Bearer ${connection.apiKey}`,
-        },
+        }, await getNodeCustomHeaders(connection.provider), connection, connection.provider),
         body: JSON.stringify({
           model,
           max_tokens: 1,

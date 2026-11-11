@@ -9,6 +9,7 @@ import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { injectReasoningContent } from "../utils/reasoningContentInjector.js";
 import { stripUnsupportedParams } from "../translator/concerns/paramSupport.js";
 import { extractClaudeSessionIdFromUserId } from "../utils/claudeCloaking.js";
+import { applyCustomHeaders } from "../utils/customHeaders.js";
 
 // Auth header descriptors — derived from registry transport.auth, fallback to hardcoded defaults.
 const BEARER = { combined: true, header: "Authorization", scheme: "bearer" };
@@ -272,6 +273,10 @@ export class DefaultExecutor extends BaseExecutor {
     }
 
     if (stream) headers["Accept"] = "text/event-stream";
+
+    // User-defined node headers go last so they win over auth/defaults (compatible nodes only;
+    // re-validated here, denylisted/invalid entries skipped).
+    applyCustomHeaders(headers, credentials?.customHeaders, credentials, this.provider);
     return headers;
   }
 

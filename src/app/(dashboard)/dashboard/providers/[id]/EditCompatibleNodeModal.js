@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Button, Badge, Input, Modal, Select } from "@/shared/components";
+import CustomHeadersEditor, { rowsFromNode, rowsToPayload, validateRows } from "../components/CustomHeadersEditor";
 
 export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose, isAnthropic }) {
   const [formData, setFormData] = useState({
@@ -16,6 +17,8 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [headerRows, setHeaderRows] = useState([]);
+  const [saveError, setSaveError] = useState(null);
 
   useEffect(() => {
     if (node) {
@@ -25,6 +28,9 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
         apiType: node.apiType || "chat",
         baseUrl: node.baseUrl || (isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"),
       });
+      // Server only ever returns masked values; rows keep stored values unless re-typed
+      setHeaderRows(rowsFromNode(node.customHeaders));
+      setSaveError(null);
     }
   }, [node, isAnthropic]);
 
@@ -35,17 +41,21 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    if (validateRows(headerRows)) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const payload = {
         name: formData.name,
         prefix: formData.prefix,
         baseUrl: formData.baseUrl,
+        customHeaders: rowsToPayload(headerRows),
       };
       if (!isAnthropic) {
         payload.apiType = formData.apiType;
       }
-      await onSave(payload);
+      const result = await onSave(payload);
+      if (result?.error) setSaveError(result.error);
     } finally {
       setSaving(false);
     }
@@ -61,7 +71,9 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           baseUrl: formData.baseUrl,
           apiKey: checkKey,
           type: isAnthropic ? "anthropic-compatible" : "openai-compatible",
-          modelId: checkModelId.trim() || undefined
+          modelId: checkModelId.trim() || undefined,
+          customHeaders: rowsToPayload(headerRows),
+          nodeId: node.id,
         }),
       });
       const data = await res.json();
@@ -107,6 +119,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
           placeholder={isAnthropic ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"}
           hint={`Use the base URL (ending in /v1) for your ${isAnthropic ? "Anthropic" : "OpenAI"}-compatible API.`}
         />
+        <CustomHeadersEditor rows={headerRows} onChange={setHeaderRows} />
         <div className="flex gap-2">
           <Input
             label="API Key (for Check)"
@@ -116,7 +129,7 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
             className="flex-1"
           />
           <div className="pt-6">
-            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim()} variant="secondary">
+            <Button onClick={handleValidate} disabled={!checkKey || validating || !formData.baseUrl.trim() || !!validateRows(headerRows)} variant="secondary">
               {validating ? "Checking..." : "Check"}
             </Button>
           </div>
@@ -133,8 +146,9 @@ export default function EditCompatibleNodeModal({ isOpen, node, onSave, onClose,
             {validationResult === "success" ? "Valid" : "Invalid"}
           </Badge>
         )}
+        {saveError && <p className="text-sm text-red-500">{saveError}</p>}
         <div className="flex gap-2">
-          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || saving}>
+          <Button onClick={handleSubmit} fullWidth disabled={!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim() || !!validateRows(headerRows) || saving}>
             {saving ? "Saving..." : "Save"}
           </Button>
           <Button onClick={onClose} variant="ghost" fullWidth>
@@ -154,6 +168,7 @@ EditCompatibleNodeModal.propTypes = {
     prefix: PropTypes.string,
     apiType: PropTypes.string,
     baseUrl: PropTypes.string,
+    customHeaders: PropTypes.arrayOf(PropTypes.shape({ name: PropTypes.string, value: PropTypes.string })),
   }),
   onSave: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
