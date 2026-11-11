@@ -9,5 +9,5 @@ export const GROK_CLI_PAGER_USER_AGENT = `grok-pager/${GROK_CLI_VERSION} grok-sh
 
 export function supportsGrokCliReasoningEffort(model) {
   // ponytail: unknown models omit effort until live metadata reaches dispatch.
-  return /^grok-4\.5(?:$|-)/.test(String(model || ""));
+  return /^grok-4\.[567](?:$|-)/.test(String(model || ""));
 }
