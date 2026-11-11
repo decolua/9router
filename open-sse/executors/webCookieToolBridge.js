@@ -268,7 +268,9 @@ function markerCandidates(text) {
 
 function fenceCandidates(text) {
   const out = [];
-  const re = new RegExp(`${FENCE_OPEN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*([\\s\\S]*?)${FENCE_CLOSE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "g");
+  // Models often break the line between the fence and the word: "```\ntool_call"
+  // instead of "```tool_call". Both shapes are the same block.
+  const re = /```\s*tool_call\s*([\s\S]*?)```/g;
   for (const m of text.matchAll(re)) out.push(m[1]);
   const loose = text.match(/```(?:json)?\s*([\s\S]*?"name"[\s\S]*?)```/g) || [];
   for (const block of loose) {
@@ -306,7 +308,10 @@ export function parseToolCallReply(text) {
   if (calls.length) {
     content = content
       .split(MARKER).join("\n")
-      .replace(/```tool_call\s*[\s\S]*?```/g, "")
+      // Same newline tolerance as the candidate scan: the block the parser
+      // found must be the block the cleanup removes, or the word "tool_call"
+      // leaks into the visible answer.
+      .replace(/```\s*tool_call\s*[\s\S]*?```/g, "")
       .replace(/\{\s*"name"\s*:\s*"[^"]*"[\s\S]*?\}\s*$/g, "")
       .trim();
   }
