@@ -100,6 +100,30 @@ export function generateMachineId() {
 }
 
 /**
+ * Machine id derived deterministically from the Qoder user id.
+ *
+ * qodercli generates one machine id per install and reuses it for every request
+ * (including queue-status polls and model-queue replays); the server tracks
+ * per-client queue state by it. Connections that predate machine-id persistence
+ * (PAT connections) have none stored, so falling back to a random uuid made each
+ * request look like a brand-new device — and a new device starts at the back of
+ * the queue again. Deriving it from the user id keeps it stable without needing
+ * extra storage.
+ */
+export function deriveMachineId(seed) {
+  if (!seed) return generateMachineId();
+  const h = crypto.createHash("sha256").update(`qoder-machine\0${seed}`).digest("hex");
+  // Format as a UUID so it is indistinguishable from a generated machine id.
+  return [
+    h.slice(0, 8),
+    h.slice(8, 12),
+    `5${h.slice(13, 16)}`,
+    `a${h.slice(17, 20)}`,
+    h.slice(20, 32),
+  ].join("-");
+}
+
+/**
  * Build the full Cosy-* header set for a single Qoder request.
  *
  * @param {Buffer|Uint8Array|string} body  The exact bytes that will be sent.

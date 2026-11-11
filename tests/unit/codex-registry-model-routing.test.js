@@ -40,6 +40,18 @@ describe("Codex registry — ghost models removed (#4202)", () => {
   it("gpt-5.4-image is removed", () => {
     expect(codexSrc).not.toMatch(/id:\s*"gpt-5\.4-image"/);
   });
+
+  it("gpt-5.5 is removed", () => {
+    expect(codexSrc).not.toMatch(/id:\s*"gpt-5\.5"/);
+  });
+
+  it("gpt-5.5-image is removed", () => {
+    expect(codexSrc).not.toMatch(/id:\s*"gpt-5\.5-image"/);
+  });
+
+  it("gpt-5.3-image is removed", () => {
+    expect(codexSrc).not.toMatch(/id:\s*"gpt-5\.3-image"/);
+  });
 });
 
 describe("Codex registry — new models added (#4202)", () => {
@@ -53,8 +65,8 @@ describe("Codex registry — new models added (#4202)", () => {
 });
 
 describe("Codex registry — still-live models kept (#4202 regression guard)", () => {
-  it("gpt-5.5 still present", () => {
-    expect(codexSrc).toContain('"gpt-5.5"');
+  it("gpt-5.6-sol still present", () => {
+    expect(codexSrc).toContain('"gpt-5.6-sol"');
   });
 
   it("gpt-5.6-terra still present", () => {
