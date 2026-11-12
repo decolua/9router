@@ -118,4 +118,47 @@ describe("completion payload shaping", () => {
       "safetySettings",
     );
   });
+
+  it("always includes is_error on Anthropic tool_result blocks (Zed serde requires it)", async () => {
+    // cloud.zed.dev parses provider_request with Zed's Anthropic types where
+    // ToolResult.is_error is a required bool — omitting it yields:
+    //   400 failed to parse Anthropic request: missing field `is_error`
+    resolveZedModels.mockResolvedValue(catalogFor([
+      ["claude-sonnet-5-5", { provider: "anthropic" }],
+    ]));
+    const captured = {};
+    mockCatalogFetch(captured);
+    const executor = makeExecutor();
+
+    await executor.execute({
+      model: "claude-sonnet-5-5",
+      body: {
+        messages: [
+          { role: "user", content: "list" },
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{
+              id: "call_1",
+              type: "function",
+              function: { name: "list_dir", arguments: "{}" },
+            }],
+          },
+          { role: "tool", tool_call_id: "call_1", content: "src/\nREADME.md" },
+        ],
+      },
+      stream: true,
+      credentials: {},
+    });
+
+    expect(captured.body.provider).toBe("anthropic");
+    const toolResults = (captured.body.provider_request.messages || [])
+      .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+      .filter((b) => b.type === "tool_result");
+    expect(toolResults.length).toBeGreaterThan(0);
+    for (const block of toolResults) {
+      expect(Object.prototype.hasOwnProperty.call(block, "is_error")).toBe(true);
+      expect(typeof block.is_error).toBe("boolean");
+    }
+  });
 });

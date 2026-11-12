@@ -810,6 +810,22 @@ export function parseQuotaData(provider, data) {
         }
         break;
 
+      case "clinepass":
+        // five_hour / weekly / monthly percentUsed windows from
+        // /api/v1/users/me/plan/usage-limits. remainingPercentage only.
+        if (data.quotas) {
+          Object.entries(data.quotas).forEach(([name, quota]) => {
+            normalizedQuotas.push({
+              name,
+              used: quota.used || 0,
+              total: quota.total || 0,
+              resetAt: quota.resetAt || null,
+              remainingPercentage: quota.remainingPercentage,
+            });
+          });
+        }
+        break;
+
       case "zed":
         // Edit predictions + optional hosted model_requests; unlimited uses remainingPercentage.
         if (data.quotas) {
