@@ -164,3 +164,28 @@ describe("chatCore provider session forwarding", () => {
     }
   });
 });
+
+describe("OpenCode Go GPT temperature", () => {
+  it("drops temperature from the /responses body for gpt-6-luna", () => {
+    const executor = getExecutor("opencode-go");
+    const out = executor.transformRequest("gpt-6-luna", {
+      model: "gpt-6-luna",
+      input: [{ type: "message", role: "user", content: [{ type: "input_text", text: "hi" }] }],
+      temperature: 0.2,
+    }, true, makeCredentials({ runtimeTransport: TRANSPORTS[2] }));
+
+    expect(out.temperature).toBeUndefined();
+    expect(out.input).toHaveLength(1);
+  });
+
+  it("keeps temperature on chat models", () => {
+    const executor = getExecutor("opencode-go");
+    const out = executor.transformRequest("glm-5.3-flash", {
+      model: "glm-5.3-flash",
+      messages: [{ role: "user", content: "hi" }],
+      temperature: 0.2,
+    }, true, makeCredentials());
+
+    expect(out.temperature).toBe(0.2);
+  });
+});

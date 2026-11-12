@@ -56,6 +56,12 @@ const STRIP_RULES = [
   // against /inference/go/openai/v1/chat/completions with one key: 12/12 structured calls 400,
   // 4/4 identical calls without the field 200.
   { provider: "opencode-go", match: /^deepseek/i, drop: ["response_format"] },
+  // OpenCode Go's GPT family (gpt-6-luna, gpt-5.6-luna) goes to /responses, which
+  // rejects any `temperature` with HTTP 400 "Unsupported parameter: 'temperature' is
+  // not supported with this model.". OpenAI-compatible clients send it by default
+  // (e.g. 0.2), so the model fails and a combo falls through to its next entry.
+  // The Codex executor already drops it for the same models.
+  { provider: "opencode-go", match: /^gpt-/i, drop: ["temperature"] },
   // Current OpenAI models (gpt-5.x / gpt-6.x) reject `max_tokens` with HTTP 400
   // ("Use 'max_completion_tokens' instead"). Clients send `max_tokens`, so rename it.
   { provider: "openai", renameParams: { max_tokens: "max_completion_tokens" } },
