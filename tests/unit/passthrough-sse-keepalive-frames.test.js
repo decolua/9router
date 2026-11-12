@@ -107,9 +107,9 @@ describe("passthrough payload-less SSE frame suppression", () => {
     expect(out).not.toMatch(/^id:/m);
     // No event may flush with empty data (the Hermes crash class).
     const payloads = decodeOpenAiSdkStyle(out);
-    // 4 chunks + upstream [DONE] + flush()'s sentinel duplicate (pre-existing
-    // passthrough behavior; the SDK stops consuming at the first [DONE]).
-    expect(payloads).toHaveLength(6);
+    // 4 chunks + exactly one [DONE]: the upstream sentinel is forwarded and
+    // flush() must not append a duplicate once it has been seen (#5592).
+    expect(payloads).toHaveLength(5);
     expect(payloads[0].choices[0].delta.content).toBe("Hello");
     expect(payloads[4]).toBe("[DONE]");
   });
