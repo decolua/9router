@@ -1,3 +1,7 @@
+# Unreleased
+
+## Fixes
+- **Kiro**: identify as Kiro IDE 1.4.154 on inference, model catalog, usage, profile lookup and API-key validation — Kiro's client-version gate rejected the old `kiro-ide/1.0.0` / `KiroIDE-0.10.32` identities with "This version of Kiro is no longer supported" (#5613). All callers now share one identity builder, so they cannot drift apart again.
 # v0.5.119 (2026-11-11)
 
 ## Features
