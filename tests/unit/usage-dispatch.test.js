@@ -20,7 +20,7 @@ const SUPPORTED = [
   "github", "gemini-cli", "antigravity", "claude", "codex", "kiro",
   "qoder", "qoder-cn", "iflow", "ollama", "glm", "glm-cn",
   "minimax", "minimax-cn", "minimax-code", "minimax-code-global", "vercel-ai-gateway", "grok-cli", "kimi",
-  "deepseek", "opencode-go", "zed", "commandcode",
+  "deepseek", "opencode-go", "zed", "commandcode", "synthetic",
 ];
 
 // The first case imports the usage-provider graph, which exceeds the 5s default under
