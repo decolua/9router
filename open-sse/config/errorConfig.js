@@ -28,6 +28,16 @@ export const DEFAULT_ERROR_MESSAGES = {
   504: "Gateway timeout"
 };
 
+// In-band error sent when a 2xx upstream stream delivers no payload at all (the
+// status line is already committed, so the client gets an error frame instead).
+// `claudeType` is the Anthropic error type used for /v1/messages clients.
+export const EMPTY_STREAM_ERROR = {
+  message: "Upstream returned an empty stream — no content was produced. The provider connection may be unauthenticated or unavailable.",
+  type: "upstream_empty_response",
+  code: "empty_stream",
+  claudeType: "api_error",
+};
+
 // Exponential backoff config for rate limits
 export const BACKOFF_CONFIG = {
   base: 2000,
