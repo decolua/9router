@@ -156,10 +156,20 @@ export async function createProviderConnection(data) {
 
     let existing = null;
     if (data.authType === "oauth" && data.email) {
+      const incomingEmail = String(data.email).trim().toLowerCase();
       const incomingUsername = data.providerSpecificData?.username;
       const incomingWs = data.providerSpecificData?.chatgptAccountId;
       existing = all.find(c => {
-        if (c.authType !== "oauth" || c.email !== data.email) return false;
+        if (c.authType !== "oauth") return false;
+
+        const existingEmail = typeof c.email === "string" ? c.email.trim().toLowerCase() : "";
+        // Older builds stored the OAuth email in `name` and left `email` empty.
+        // Match those rows so a re-login repairs the original connection instead
+        // of spawning a new "Account N" row on every attempt.
+        const legacyName = !existingEmail && typeof c.name === "string" ? c.name.trim().toLowerCase() : "";
+        const sameIdentity = existingEmail === incomingEmail
+          || (legacyName === incomingEmail && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(incomingEmail));
+        if (!sameIdentity) return false;
 
         // Codex/OpenAI can issue multiple OAuth grants for the same email.
         // Refresh tokens are rotated single-use; collapsing a new login onto an
@@ -169,6 +179,15 @@ export async function createProviderConnection(data) {
         if (data.provider === "codex") {
           const existingWs = c.providerSpecificData?.chatgptAccountId;
           return !!incomingWs && !!existingWs && incomingWs === existingWs;
+        }
+
+        // Claude tokens carry the account UUID. When both sides have it, it is
+        // the strongest identity and must agree (one email can hold several
+        // Claude accounts).
+        const incomingClaudeAccountId = data.providerSpecificData?.claudeAccountId;
+        const existingClaudeAccountId = c.providerSpecificData?.claudeAccountId;
+        if (incomingClaudeAccountId && existingClaudeAccountId) {
+          return incomingClaudeAccountId === existingClaudeAccountId;
         }
 
         // Workspace providers use workspace ID when both sides have it
@@ -209,7 +228,19 @@ export async function createProviderConnection(data) {
         err.existingName = existing.name;
         throw err;
       }
-      const normalized = resetHealthStateOnActivation(existing, data);
+      // Fresh credentials for a quarantined row are the repair action: re-enable
+      // it so it can be selected again. OAuth logins are explicit; API-key
+      // imports only reactivate after the caller validated the key.
+      const freshCredentials = !!(data.apiKey || data.accessToken || data.refreshToken);
+      const claimsActive = data.testStatus === "active"
+        || data.authType === "oauth"
+        || data.authType === "access_token";
+      const reauthorized = existing.testStatus === "reauth_required"
+        && freshCredentials
+        && claimsActive
+        ? { ...data, isActive: true, testStatus: "active" }
+        : data;
+      const normalized = resetHealthStateOnActivation(existing, reauthorized);
       const merged = { ...existing, ...normalized, updatedAt: now };
       upsert(db, merged);
       result = merged;
@@ -267,7 +298,16 @@ export async function updateProviderConnection(id, data) {
     const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
     if (!row) { result = null; return; }
     const existing = rowToConn(row);
-    const normalized = resetHealthStateOnActivation(existing, data);
+    // The edit dialog validates the replacement key/token and only then sends
+    // testStatus "active". Use that as the repair signal; a proxy/name edit
+    // must not silently put a quarantined row back into rotation.
+    const freshCredentials = !!(data.apiKey || data.accessToken || data.refreshToken);
+    const reauthorized = existing.testStatus === "reauth_required"
+      && data.testStatus === "active"
+      && freshCredentials
+      ? { ...data, isActive: true }
+      : data;
+    const normalized = resetHealthStateOnActivation(existing, reauthorized);
     const merged = { ...existing, ...normalized, updatedAt: new Date().toISOString() };
     upsert(db, merged);
     if (data.priority !== undefined) reorderInTx(db, existing.provider);

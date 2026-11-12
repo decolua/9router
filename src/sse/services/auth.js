@@ -11,6 +11,90 @@ let selectionMutex = Promise.resolve();
 
 const GITHUB_MONTHLY_USAGE_LIMIT = "you've reached your additional usage limit for your plan";
 
+// A rejected credential needs a user action, not another retry. OAuth/access-
+// token connections are quarantined on a 401; API-key connections only when
+// the provider explicitly says the key itself is invalid, so unrelated 401s
+// keep the normal cooldown path.
+const API_KEY_REAUTH_MARKERS = [
+  "invalid api key",
+  "invalid_api_key",
+  "incorrect api key",
+  "api key not valid",
+  "api key is invalid",
+  "api key is not valid",
+  "api key has expired",
+  "please pass a valid api key",
+  "invalid x-api-key",
+  "invalid key",
+  "key is invalid",
+  "key not valid",
+  "unauthorized: invalid key",
+  "invalid token",
+  "token is invalid",
+];
+
+const OAUTH_REAUTH_MARKERS = [
+  "invalid_grant",
+  "invalid_token",
+  "token_expired",
+  "token expired",
+  "token has expired",
+  "token has been revoked",
+  "token revoked",
+  "refresh_token",
+  "invalidated oauth token",
+  "authentication token has been invalidated",
+  "could not validate your token",
+  "account_session_expired",
+  "account_auth_invalidated",
+  "app_session_terminated",
+  "invalid authentication credentials",
+  "unauthenticated",
+  "bad credentials",
+  "session expired",
+  "session has expired",
+  "security token included in the request is invalid",
+  "reconnect the account",
+  "sign in again",
+  "re-authorize",
+];
+
+const API_KEY_AUTH_TYPES = new Set(["apikey", "api_key"]);
+
+function includesAny(text, markers) {
+  return markers.some((marker) => text.includes(marker));
+}
+
+function getConnectionAuthType(conn) {
+  if (conn?.authType) return conn.authType;
+  // Legacy rows: a key-pool entry has apiKey, an OAuth entry has tokens.
+  if (conn?.apiKey) return "apikey";
+  if (conn?.refreshToken || conn?.accessToken) return "oauth";
+  return null;
+}
+
+function isPermanentAuthFailure(conn, status, errorText) {
+  if (!conn) return false;
+  const authType = getConnectionAuthType(conn);
+  if (!authType) return false;
+  const code = Number(status);
+  const message = (typeof errorText === "string" ? errorText : JSON.stringify(errorText || "")).toLowerCase();
+
+  if (API_KEY_AUTH_TYPES.has(authType)) {
+    if (![400, 401, 403].includes(code)) return false;
+    return includesAny(message, API_KEY_REAUTH_MARKERS);
+  }
+
+  if (authType === "oauth" || authType === "access_token") {
+    // The access token was rejected. A refresh already had its chance, so only
+    // a fresh login/token can repair this connection.
+    if (code === 401) return true;
+    if (code === 403) return includesAny(message, OAUTH_REAUTH_MARKERS);
+  }
+
+  return false;
+}
+
 function githubMonthlyResetMs(status, errorText, provider) {
   if (resolveProviderId(provider) !== "github" || Number(status) !== 402) return null;
   if (!String(errorText || "").toLowerCase().includes(GITHUB_MONTHLY_USAGE_LIMIT)) return null;
@@ -249,6 +333,21 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   const connections = await getProviderConnections({ provider });
   const conn = connections.find(c => c.id === connectionId);
   const backoffLevel = conn?.backoffLevel || 0;
+  const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
+
+  if (isPermanentAuthFailure(conn, status, errorText)) {
+    await updateProviderConnection(connectionId, {
+      isActive: false,
+      testStatus: "reauth_required",
+      lastError: reason,
+      errorCode: status,
+      lastErrorAt: new Date().toISOString(),
+      backoffLevel: 0,
+    });
+    const connName = conn?.displayName || conn?.name || conn?.email || connectionId.slice(0, 8);
+    log.warn("AUTH", `${connName} requires re-authentication [${status}]`);
+    return { shouldFallback: true, cooldownMs: 0 };
+  }
 
   // GitHub premium-request exhaustion is account-wide until the next UTC month.
   const githubResetAtMs = githubMonthlyResetMs(status, errorText, provider);
@@ -271,7 +370,6 @@ export async function markAccountUnavailable(connectionId, status, errorText, pr
   }
   if (!shouldFallback) return { shouldFallback: false, cooldownMs: 0 };
 
-  const reason = typeof errorText === "string" ? errorText.slice(0, 200) : "Provider error";
   const lockUpdate = buildModelLockUpdate(githubResetAtMs ? null : model, cooldownMs);
 
   await updateProviderConnection(connectionId, {
