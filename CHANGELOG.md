@@ -1,3 +1,10 @@
+# v0.5.418 (2026-11-11)
+
+## What Looks Different?
+
+- Focused the Custom Proxy Feeds modal solely on operator input (removed the internal built-in feeds list section).
+- Expanded built-in feed catalog from 12 to 24 verified active public proxy repositories (adding Litport, Databay, Komutan, TuanMinPay, Moleway, VPSLab, Stormsia, MuRongPIG, and Zevtyardt), pulling from a pool of over 70,000+ proxy candidates.
+
 # v0.5.417 (2026-11-11)
 
 ## What Looks Different?

@@ -220,9 +220,9 @@ export default function AutoHarvesterPage() {
                 variant="secondary"
                 icon="rss_feed"
                 onClick={() => setShowFeedsModal(true)}
-                title="Manage proxy candidate feed sources"
+                title="Configure custom proxy feeds"
               >
-                Feeds ({12 + (status?.customFeeds?.length || 0)})
+                Custom Feeds{status?.customFeeds?.length ? ` (${status.customFeeds.length})` : ""}
               </Button>
 
               {running ? (
@@ -356,45 +356,27 @@ export default function AutoHarvesterPage() {
       <Modal
         isOpen={showFeedsModal}
         onClose={() => setShowFeedsModal(false)}
-        title="Proxy Feeds & Sources"
-        size="lg"
+        title="Custom Proxy Feeds"
+        size="md"
         footer={
           <Button onClick={() => setShowFeedsModal(false)}>
             Done
           </Button>
         }
       >
-        <div className="flex flex-col gap-4 text-xs">
+        <div className="flex flex-col gap-3 text-xs">
           <div>
             <p className="text-sm font-semibold text-text-main">Custom Feed URLs</p>
-            <p className="text-text-muted mt-0.5">
-              Add your own raw HTTP/HTTPS proxy list URLs (one URL per line). The harvester will fetch and include them during discovery cycles.
+            <p className="text-text-muted mt-1 leading-relaxed">
+              Add your own raw HTTP or HTTPS proxy list URLs (one URL per line). The harvester will fetch candidates from them alongside the global feed pool.
             </p>
             <textarea
               value={customFeedsText}
               onChange={(e) => setCustomFeedsText(e.target.value)}
               placeholder="https://example.com/proxies.txt&#10;https://raw.githubusercontent.com/user/repo/main/http.txt"
-              rows={4}
-              className="mt-2 w-full rounded-lg border border-border bg-surface-2 p-2.5 font-mono text-xs text-text-main focus:border-primary focus:outline-none resize-none"
+              rows={6}
+              className="mt-3 w-full rounded-lg border border-border bg-surface-2 p-3 font-mono text-xs text-text-main focus:border-primary focus:outline-none resize-none"
             />
-          </div>
-
-          <div className="pt-3 border-t border-border/50">
-            <p className="text-sm font-semibold text-text-main mb-2">Built-in Active Feeds (12)</p>
-            <div className="max-h-48 overflow-y-auto divide-y divide-border/30 rounded-lg border border-border bg-surface-2/40 p-2 font-mono text-[11px] text-text-muted">
-              <div>https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/sunny9577/proxy-scraper/master/generated/http_proxies.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/vakhov/fresh-proxy-list/master/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/TheSpeedX/SOCKS-List/master/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/proxmint/free-proxy-list/main/proxies/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/master/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/prxchk/proxy-list/main/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/ErcinDedeoglu/proxies/main/proxies/http.txt</div>
-              <div className="pt-1.5 mt-1.5">https://raw.githubusercontent.com/roosterkid/openproxylist/main/HTTPS_RAW.txt</div>
-            </div>
           </div>
         </div>
       </Modal>
