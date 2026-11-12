@@ -1,6 +1,6 @@
 /**
  * Command Code request identity — mirrors buildCommandAuthHeaders() of the
- * official CLI (command-code@1.88.0). Static headers live in the provider
+ * official CLI (command-code@1.88.5). Static headers live in the provider
  * registry; this module adds the per-process / per-session ones:
  *
  *  - x-project-slug: the CLI sends slugify(process.cwd()) (@sindresorhus/slugify).
