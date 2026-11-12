@@ -8,8 +8,10 @@ import { buildAbortedResponsesTerminalBytes } from "../../utils/responsesStreamH
 import { buildStreamErrorBytes } from "../../utils/streamHelpers.js";
 import { buildRequestDetail, extractRequestConfig, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { saveRequestDetail } from "@/lib/usageDb.js";
-import { SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
+import { SSE_DONE, SSE_HEADERS_CORS as SSE_HEADERS } from "../../utils/sseConstants.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
+import { sseChunk } from "../../utils/sse.js";
+import { createErrorResult } from "../../utils/error.js";
 
 // Codex returns Responses API SSE → which client format to translate INTO, by request sourceFormat.
 // Gemini-family all map to ANTIGRAVITY decoder; unknown sources fall back to OPENAI.
@@ -49,14 +51,6 @@ function buildTransformStream({ provider, sourceFormat, targetFormat, userAgent,
  * Handle streaming response — pipe provider SSE through transform stream to client.
  */
 export async function handleStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, userAgent, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, pxpipe, reqTag, log, credentials }) {
-  if (onRequestSuccess) {
-    Promise.resolve()
-      .then(onRequestSuccess)
-      .catch(err => {
-        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
-      });
-  }
-
   // When upstream returns HTML/text instead of SSE (e.g. Cloudflare 5xx error
   // page), piping it through the SSE transform stream causes Next.js
   // "failed to pipe response" and crashes the chat router. Read the body,
@@ -65,6 +59,37 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
   // and clamped so untrusted upstream text never reaches the client verbatim
   // (the UI may render error.message as HTML).
   const upstreamContentType = (providerResponse.headers.get('content-type') || '').toLowerCase();
+  // Some Chat Completions providers ignore stream:true. Frame their completion
+  // as deltas before the existing translation, usage, and cancellation pipeline.
+  if (upstreamContentType.includes("application/json")) {
+    try {
+      const completion = await providerResponse.json();
+      streamController?.signal?.throwIfAborted();
+      if (targetFormat !== FORMATS.OPENAI || completion?.error || !completion?.choices?.length ||
+          !completion.choices.every(choice => choice?.message && typeof choice.message === "object")) {
+        throw new Error("Expected an OpenAI Chat Completions response");
+      }
+      const chunk = {
+        ...completion,
+        object: "chat.completion.chunk",
+        choices: completion.choices.map(({ message, ...choice }) => ({
+          ...choice,
+          delta: {
+            ...message,
+            ...(message.tool_calls ? { tool_calls: message.tool_calls.map((call, index) => ({ ...call, index })) } : {}),
+          },
+        })),
+      };
+      const headers = new Headers(providerResponse.headers);
+      headers.set("content-type", "text/event-stream");
+      headers.delete("content-length");
+      providerResponse = new Response(sseChunk(chunk) + SSE_DONE, { headers });
+    } catch (error) {
+      streamController?.handleError?.(error);
+      return createErrorResult(error.name === "AbortError" ? 499 : HTTP_STATUS.BAD_GATEWAY,
+        error.name === "AbortError" ? "Request aborted" : "Invalid JSON completion for streaming request");
+    }
+  }
   if (upstreamContentType && !upstreamContentType.includes('text/event-stream') && !upstreamContentType.includes('application/json')) {
     const bodyText = await providerResponse.text().catch(() => '');
     const titleMatch = bodyText.match(/<title>([^<]+)<\/title>/i);
@@ -82,6 +107,14 @@ export async function handleStreamingResponse({ providerResponse, provider, mode
         headers: { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' },
       }),
     };
+  }
+
+  if (onRequestSuccess) {
+    Promise.resolve()
+      .then(onRequestSuccess)
+      .catch(err => {
+        console.error("[ChatCore] onRequestSuccess failed:", err?.message || err);
+      });
   }
 
   const transformStream = buildTransformStream({ provider, sourceFormat, targetFormat, userAgent, reqLogger, toolNameMap, customToolNames, model, connectionId, body, onStreamComplete, apiKey, credentials });
