@@ -61,7 +61,7 @@ describe("buildCommandCodeHeaders", () => {
     expect(h).toEqual({
       "Content-Type": "application/json",
       "User-Agent": "cli",
-      "x-command-code-version": "1.88.0",
+      "x-command-code-version": "1.88.5",
       "x-cli-environment": "production",
       "x-cli-surface": "cli",
       "x-taste-learning": "false",
