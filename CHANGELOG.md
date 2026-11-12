@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Usage**: add provider reset-card inventory, expiry details, confirmation, and recovery to Quota Tracker using shared reset controls.
+
 # v0.5.119 (2026-11-11)
 
 ## Features
