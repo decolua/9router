@@ -43,6 +43,13 @@ const CLAUDE_NO_XHIGH = ["none", "low", "medium", "high", "max"];
 const PATTERN_THINKING = [
   // Gemini 4 (Argon) rejects "minimal" with 400 — LOW is the floor; cannot disable thinking.
   { pattern: "*gemini-4*", levels: ["low", "medium", "high"] },
+  // Tiered Gemini 3.8/3.7/3.6 flash serve low|medium|high only — "minimal" 400s
+  // ("Thinking level MINIMAL is not supported for this model"); cannot disable.
+  // The gemini-level format default (L.gemini) carries "minimal" for original
+  // gemini-3 models, which do have that tier.
+  { pattern: "*gemini-3.8*", levels: ["low", "medium", "high"] },
+  { pattern: "*gemini-3.7*", levels: ["low", "medium", "high"] },
+  { pattern: "*gemini-3.6*", levels: ["low", "medium", "high"] },
   { pattern: "*claude*4.6*", levels: CLAUDE_NO_XHIGH },
   { pattern: "*claude*4-6*", levels: CLAUDE_NO_XHIGH },
   { provider: "codex", pattern: "*gpt-6*", levels: CODEX_GPT_5_6_LEVELS },
