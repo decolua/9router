@@ -8,6 +8,10 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
     process.env = { ...savedEnv };
     delete process.env.FETCH_KEEPALIVE_TIMEOUT_MS;
     delete process.env.FETCH_FRESH_RETRY;
+    delete process.env.NINEROUTER_TLS_ECDH_CURVE;
+    delete process.env.STRICT_SSL;
+    delete process.env.NO_PROXY;
+    delete process.env.no_proxy;
     delete process.env.HTTPS_PROXY;
     delete process.env.https_proxy;
     delete process.env.HTTP_PROXY;
@@ -34,6 +38,98 @@ describe("undici keep-alive dead-socket protection & fresh-socket retry", () => 
       keepAliveTimeout: 1,
       keepAliveMaxTimeout: 1,
     });
+  });
+
+  function mockUndiciDispatchers(fetchMock = vi.fn()) {
+    const Agent = vi.fn(function (options) { this.options = options; });
+    const ProxyAgent = vi.fn(function (options) { this.options = options; });
+    vi.doMock("undici", async () => {
+      const actual = await vi.importActual("undici");
+      return { ...actual, Agent, ProxyAgent, fetch: fetchMock };
+    });
+    return { Agent, ProxyAgent, fetchMock };
+  }
+
+  it.each([undefined, "X25519"])("uses default auto or explicit %s curves for direct and fresh-retry agents without changing TLS verification", async (curveOverride) => {
+    if (curveOverride) process.env.NINEROUTER_TLS_ECDH_CURVE = curveOverride;
+    const { Agent } = mockUndiciDispatchers();
+    const { getDirectDispatcher, getFreshRetryDispatcher } = await import("../../open-sse/utils/proxyFetch.js");
+
+    const direct = await getDirectDispatcher();
+    const fresh = await getFreshRetryDispatcher();
+    const insecureDirect = await getDirectDispatcher(true);
+    const insecureFresh = await getFreshRetryDispatcher(true);
+    const secureConnect = {
+      autoSelectFamily: true,
+      autoSelectFamilyAttemptTimeout: 250,
+      ecdhCurve: curveOverride || "auto",
+    };
+
+    expect(Agent).toHaveBeenCalledTimes(4);
+    expect(direct.options.connect).toEqual(secureConnect);
+    expect(fresh.options.connect).toEqual(secureConnect);
+    expect(direct.options.connect).not.toHaveProperty("rejectUnauthorized");
+    expect(fresh.options.connect).not.toHaveProperty("rejectUnauthorized");
+    expect(insecureDirect.options.connect).toEqual({ ...secureConnect, rejectUnauthorized: false });
+    expect(insecureFresh.options.connect).toEqual({ ...secureConnect, rejectUnauthorized: false });
+    expect(direct.options.keepAliveTimeout).toBe(4_000);
+    expect(fresh.options.keepAliveTimeout).toBe(1);
+    expect(await getDirectDispatcher()).toBe(direct);
+    expect(await getFreshRetryDispatcher()).toBe(fresh);
+    expect(insecureDirect).not.toBe(direct);
+    expect(insecureFresh).not.toBe(fresh);
+  });
+
+  it.each([undefined, "X25519"])("uses default auto or explicit %s curves in proxy requestTls and preserves the existing certificate fallback", async (curveOverride) => {
+    if (curveOverride) process.env.NINEROUTER_TLS_ECDH_CURVE = curveOverride;
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } }))
+      .mockResolvedValueOnce({ status: 200, ok: true });
+    const { ProxyAgent, Agent } = mockUndiciDispatchers(fetchMock);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    try {
+      const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+      const res = await proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/token", {}, {
+        enabled: true,
+        url: "http://127.0.0.1:7890",
+        strictProxy: true,
+      });
+
+      expect(res.status).toBe(200);
+      expect(ProxyAgent).toHaveBeenCalledTimes(2);
+      expect(Agent).not.toHaveBeenCalled();
+      const [secure, insecure] = fetchMock.mock.calls.map(([, options]) => options.dispatcher);
+      expect(secure.options).toEqual({
+        uri: "http://127.0.0.1:7890",
+        connect: { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 },
+        requestTls: { ecdhCurve: curveOverride || "auto" },
+      });
+      expect(secure.options.requestTls).not.toHaveProperty("rejectUnauthorized");
+      expect(insecure.options).toEqual({
+        ...secure.options,
+        requestTls: { ecdhCurve: curveOverride || "auto", rejectUnauthorized: false },
+      });
+      expect(insecure).not.toBe(secure);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it.each(["option", "true", "1"])("does not disable certificate verification when strict TLS is enabled via %s", async (strictMode) => {
+    if (strictMode !== "option") process.env.STRICT_SSL = strictMode;
+    const certError = Object.assign(new Error("fetch failed"), { cause: { code: "SELF_SIGNED_CERT_IN_CHAIN" } });
+    const fetchMock = vi.fn().mockRejectedValue(certError);
+    const { Agent } = mockUndiciDispatchers(fetchMock);
+    const { proxyAwareFetch } = await import("../../open-sse/utils/proxyFetch.js");
+
+    await expect(proxyAwareFetch("https://oidc.us-east-1.amazonaws.com/token", {
+      strictTls: strictMode === "option",
+    })).rejects.toBe(certError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(Agent).toHaveBeenCalledTimes(1);
+    expect(Agent.mock.calls[0][0].connect.ecdhCurve).toBe("auto");
+    expect(Agent.mock.calls[0][0].connect).not.toHaveProperty("rejectUnauthorized");
   });
 
   it("creates distinct shared direct and fresh-retry dispatchers", async () => {
