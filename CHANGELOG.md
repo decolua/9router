@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Translator**: resolve an `auto` thinking intent to `high` on the generic OpenAI and OpenAI Responses branches instead of writing the literal `reasoning_effort: "auto"` to the wire — strict OpenAI-compatible upstreams reject it with `400 invalid_reasoning_effort`, and every sibling format (claude-adaptive, gemini, kimi, commandcode) already resolved it
+
 # v0.5.119 (2026-11-11)
 
 ## Features
