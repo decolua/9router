@@ -5,7 +5,7 @@ import { getCapabilitiesForModel } from "../../open-sse/providers/capabilities.j
 import { stripModelContextMarker } from "../../open-sse/utils/modelMarkers.js";
 import { checkFallbackError } from "../../open-sse/services/accountFallback.js";
 
-for (const id of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]) {
+for (const id of ["gpt-6-astra", "gpt-6-sol", "gpt-6-luna", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-6.1-sol", "gpt-6.1-terra"]) {
   const extended = `${id}[1m]`;
   assert.equal(codex.models.find((model) => model.id === extended)?.upstreamModelId, id);
   assert.equal(getModelUpstreamId("cx", extended), id);
