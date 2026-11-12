@@ -18,24 +18,36 @@ export async function createSqlJsAdapter(filePath) {
   // Schema is created/synced by migrate.js after adapter init
 
   let dirty = false;
+  let dirtySince = 0;
   let saveTimer = null;
   const SAVE_DEBOUNCE_MS = 100;
+  // Upper bound on how long a dirty image may stay unsaved. The debounce
+  // coalesces bursts, but writes arriving faster than SAVE_DEBOUNCE_MS would
+  // re-arm it forever; this caps the crash-loss window.
+  const SAVE_MAX_WAIT_MS = 1000;
 
   function persist() {
     const data = db.export();
     fs.writeFileSync(filePath, Buffer.from(data));
     dirty = false;
+    dirtySince = 0;
   }
 
   function scheduleSave() {
     dirty = true;
-    if (saveTimer) clearTimeout(saveTimer);
+    const now = Date.now();
+    if (!dirtySince) dirtySince = now;
+    clearTimeout(saveTimer);
+    // Trailing debounce, clamped so the oldest unsaved write is never older
+    // than SAVE_MAX_WAIT_MS (sustained sub-debounce traffic still flushes).
+    const elapsed = now - dirtySince;
+    const delay = Math.max(0, Math.min(SAVE_DEBOUNCE_MS, SAVE_MAX_WAIT_MS - elapsed));
     saveTimer = setTimeout(() => {
       saveTimer = null;
       if (dirty) {
         try { persist(); } catch (e) { console.error("[sqljs] save failed:", e); }
       }
-    }, SAVE_DEBOUNCE_MS);
+    }, delay);
   }
 
   function paramsObj(params) {
