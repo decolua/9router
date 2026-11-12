@@ -6,8 +6,8 @@ import { HTTP_STATUS } from "../config/runtimeConfig.js";
 import { resolveSessionId, toNumericSessionId } from "../utils/sessionManager.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
 import { cleanJSONSchemaForAntigravity, normalizeGeminiContents } from "../translator/formats/gemini.js";
-import { DEFAULT_THINKING_AG_SIGNATURE } from "../config/defaultThinkingSignature.js";
-import { getGeminiThoughtSignatureSync } from "../services/thoughtSignatureStore.js";
+import { DEFAULT_THINKING_AG_SIGNATURE, DEFAULT_THINKING_GEMINI_CLI_SIGNATURE } from "../config/defaultThinkingSignature.js";
+import { getGeminiThoughtSignatureSync, signatureFamily } from "../services/thoughtSignatureStore.js";
 
 // Sanitize function name: Gemini requires [a-zA-Z_][a-zA-Z0-9_.:\-]{0,63}
 function sanitizeFunctionName(name) {
@@ -248,11 +248,15 @@ export class AntigravityExecutor extends BaseExecutor {
       // don't persist thoughtSignature in their history, so backfill from cache or default signature.
       // In parallel function calls, only the first call needs a signature; siblings stay unsigned.
       let firstFunctionCallSeen = false;
+      const targetModel = body.model || model;
+      const defaultSig = signatureFamily(targetModel) === "claude"
+        ? DEFAULT_THINKING_AG_SIGNATURE
+        : DEFAULT_THINKING_GEMINI_CLI_SIGNATURE;
       const modifiedParts = parts?.map(p => {
         if (!p.functionCall) return p;
         const callId = p.functionCall.id;
-        const cachedSig = callId ? getGeminiThoughtSignatureSync(callId, sessionId, body.model || model) : null;
-        const callSig = p.thoughtSignature || cachedSig || (!firstFunctionCallSeen ? DEFAULT_THINKING_AG_SIGNATURE : undefined);
+        const cachedSig = callId ? getGeminiThoughtSignatureSync(callId, sessionId, targetModel) : null;
+        const callSig = p.thoughtSignature || cachedSig || (!firstFunctionCallSeen ? defaultSig : undefined);
         firstFunctionCallSeen = true;
         if (callSig) {
           return { ...p, thoughtSignature: callSig };

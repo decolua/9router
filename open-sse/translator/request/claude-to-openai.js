@@ -238,10 +238,13 @@ function convertClaudeMessage(msg, opts = {}) {
             resultContent = JSON.stringify(block.content);
           }
 
+          const isError = Boolean(block.is_error || block.status === "error");
+
           toolResults.push({
             role: ROLE.TOOL,
             tool_call_id: block.tool_use_id,
-            content: resultContent
+            content: resultContent,
+            ...(isError ? { is_error: true } : {})
           });
           // The OpenAI tool role is text-only, so a screenshot or any other image a
           // tool returned would otherwise vanish. Hand it to the model in the user
