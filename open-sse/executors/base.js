@@ -137,7 +137,13 @@ export class BaseExecutor {
       // Abort if upstream doesn't return response headers within connection timeout
       const connectCtrl = new AbortController();
       const timeoutMs = this.config?.timeoutMs || FETCH_CONNECT_TIMEOUT_MS;
-      const connectTimer = setTimeout(() => connectCtrl.abort(new Error("fetch connect timeout")), timeoutMs);
+      // Tracked explicitly: aborting with a reason makes fetch reject with that
+      // reason, whose name is "Error" — error.name cannot identify this path.
+      let connectTimedOut = false;
+      const connectTimer = setTimeout(() => {
+        connectTimedOut = true;
+        connectCtrl.abort(new Error("fetch connect timeout"));
+      }, timeoutMs);
       const mergedSignal = signal ? AbortSignal.any([signal, connectCtrl.signal]) : connectCtrl.signal;
 
       try {
@@ -178,8 +184,14 @@ export class BaseExecutor {
       } catch (error) {
         clearTimeout(connectTimer);
         lastError = error;
-        const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
+        // A caller abort (client disconnect, stream teardown) is not a provider
+        // failure: never retry it or walk fallback URLs for a client that has
+        // already left. Keyed on the signal, not error.name — an abort with a
+        // custom reason rejects with an "Error".
+        const isCallerAbort = signal?.aborted === true;
+        const isConnectTimeout = connectTimedOut && !isCallerAbort;
         dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
+        if (isCallerAbort) throw error;
         // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
         if (error.name === "AbortError" && !isConnectTimeout) throw error;
 
