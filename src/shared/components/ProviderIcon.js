@@ -20,11 +20,15 @@ export default function ProviderIcon({
   className = "",
   fallbackText = "?",
   fallbackColor,
+  fallbackSrc,
 }) {
-  const effectiveSrc = resolveSrc(src, providerId);
-  const [errored, setErrored] = useState(false);
+  const primarySrc = resolveSrc(src, providerId);
+  // 0 = primary image, 1 = fallbackSrc image, 2 = text
+  const [stage, setStage] = useState(0);
+  const effectiveSrc =
+    stage === 0 && primarySrc ? primarySrc : stage <= 1 && fallbackSrc ? fallbackSrc : null;
 
-  if (!effectiveSrc || errored) {
+  if (!effectiveSrc) {
     return (
       <span
         className={`inline-flex items-center justify-center font-bold rounded-lg ${className}`.trim()}
@@ -52,8 +56,8 @@ export default function ProviderIcon({
       onError={() => {
         const m = effectiveSrc.match(/^\/providers\/([^/]+)\.png$/i);
         if (m) markProviderIconMissing(m[1]);
-        if (providerId) markProviderIconMissing(providerId);
-        setErrored(true);
+        if (providerId && effectiveSrc === primarySrc) markProviderIconMissing(providerId);
+        setStage(effectiveSrc === primarySrc && fallbackSrc ? 1 : 2);
       }}
     />
   );
@@ -67,4 +71,5 @@ ProviderIcon.propTypes = {
   className: PropTypes.string,
   fallbackText: PropTypes.string,
   fallbackColor: PropTypes.string,
+  fallbackSrc: PropTypes.string,
 };
