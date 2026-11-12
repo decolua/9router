@@ -1,0 +1,42 @@
+name: GitBook PR Build Check
+
+on:
+  pull_request:
+    paths:
+      - "gitbook/**"
+      - ".github/workflows/gitbook-pr.yml"
+  push:
+    branches: [main, master]
+    paths:
+      - "gitbook/**"
+      - ".github/workflows/gitbook-pr.yml"
+
+concurrency:
+  group: gitbook-pr-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: gitbook
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Install deps
+        run: npm install --no-audit --no-fund
+
+      - name: Build static export
+        run: npm run build
+        env:
+          NODE_ENV: production
+          NEXT_PUBLIC_BASE_PATH: ""

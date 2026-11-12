@@ -1,3 +1,11 @@
+# Agent/worktree metadata
+.claude
+**/.claude
+.continue
+**/.continue
+.playwright-mcp
+**/.playwright-mcp
+
 # VCS
 .git
 **/.git
