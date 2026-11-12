@@ -73,6 +73,8 @@ Result: Never stop coding, minimal cost + 20-40% token savings via RTK
 
 ## ⚡ Quick Start
 
+[![Deploy on Railway](https://railway.com/button.svg)](https://railway.com/template/yedjju)
+
 **1. Install globally:**
 
 ```bash
