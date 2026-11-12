@@ -125,7 +125,14 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
       if (targetFormat !== FORMATS.OPENAI) {
         const fromOpenAI = requestRegistry.get(`${FORMATS.OPENAI}:${targetFormat}`);
         if (fromOpenAI) {
+          const prev = result;
           result = fromOpenAI(model, result, stream, credentials);
+          // Preserve internal metadata (_customToolNames, etc.) across multi-hop translation
+          if (result && typeof result === "object" && prev) {
+            for (const k in prev) {
+              if (k.startsWith("_") && result[k] === undefined) result[k] = prev[k];
+            }
+          }
         }
       }
     }

@@ -21,8 +21,8 @@ export const UNSUPPORTED_SCHEMA_CONSTRAINTS = [
   "default", "examples",
   // JSON Schema meta keywords
   "$schema", "$defs", "definitions", "const", "$ref", "$comment",
-  // Annotation keywords (rejected by Gemini/Antigravity - e.g. MCP tool schemas set these)
-  "deprecated", "readOnly", "writeOnly",
+  // Annotation keywords (rejected by Gemini/Antigravity - e.g. MCP / Codex tool schemas set these)
+  "deprecated", "readOnly", "writeOnly", "encrypted",
   // Object validation keywords (not supported)
   "additionalProperties", "propertyNames", "patternProperties", "enumDescriptions",
   // Complex schema keywords (handled by flattenAnyOfOneOf/mergeAllOf)
@@ -156,7 +156,7 @@ export function generateProjectId() {
 
 // Helper: Remove unsupported keywords recursively from object/array
 // Also strips all vendor extension fields (x- prefixed) not supported by Gemini
-function removeUnsupportedKeywords(obj, keywords) {
+function removeUnsupportedKeywords(obj, keywords, inPropertiesMap = false) {
   if (!obj || typeof obj !== "object") return;
 
   if (Array.isArray(obj)) {
@@ -167,14 +167,16 @@ function removeUnsupportedKeywords(obj, keywords) {
   }
 
   for (const key of Object.keys(obj)) {
-    if (keywords.includes(key) || key.startsWith("x-")) {
+    // Never delete property definitions inside a `properties` dictionary even if their name
+    // matches an unsupported schema keyword (e.g. parameter named "encrypted" or "deprecated").
+    if (!inPropertiesMap && (keywords.includes(key) || key.startsWith("x-"))) {
       delete obj[key];
       continue;
     }
 
     const value = obj[key];
     if (value && typeof value === "object") {
-      removeUnsupportedKeywords(value, keywords);
+      removeUnsupportedKeywords(value, keywords, key === "properties");
     }
   }
 }
