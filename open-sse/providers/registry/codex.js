@@ -43,6 +43,7 @@ export default {
     cliVersion: CODEX_CLI_VERSION,
     headers: {
       originator: "codex_cli_rs",
+      "OpenAI-Beta": "responses=experimental",
       "User-Agent": `codex_cli_rs/${CODEX_CLI_VERSION}`,
       version: CODEX_CLI_VERSION,
     },

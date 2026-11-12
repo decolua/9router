@@ -204,6 +204,7 @@
     "cliVersion": "0.167.1",
     "headers": {
       "originator": "codex_cli_rs",
+      "OpenAI-Beta": "responses=experimental",
       "User-Agent": "codex_cli_rs/0.167.1",
       "version": "0.167.1"
     },
