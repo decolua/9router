@@ -13,6 +13,7 @@ import {
   coerceResponsesOutput,
 } from "../formats/responsesApi.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
+import { createNamespaceToolBridge } from "../concerns/responsesNamespaces.js";
 
 const MAX_TOOL_NAME_LEN = 128;
 
@@ -35,11 +36,18 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   let pendingToolResults = [];
   let pendingReasoning = "";
   let pendingReasoningEncrypted = "";
-  const additionalTools = [];
   const customToolNames = new Set();
 
   const inputItems = normalizeResponsesInput(body.input);
   if (!inputItems) return body;
+
+  const responseTools = [
+    ...(Array.isArray(body.tools) ? body.tools : []),
+    ...inputItems
+      .filter(item => item?.type === RESPONSES_ITEM.ADDITIONAL_TOOLS)
+      .flatMap(item => Array.isArray(item.tools) ? item.tools : []),
+  ];
+  const { flattenedTools, namespaceToolMap, flattenName } = createNamespaceToolBridge(responseTools, inputItems);
 
   // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
   const extractReasoningText = (item) => {
@@ -62,6 +70,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   };
 
   for (const item of inputItems) {
+    if (!item || typeof item !== "object") continue;
     // Determine item type - Droid CLI sends role-based items without 'type' field
     // Fallback: if no type but has role property, treat as message
     const itemType = item.type || (item.role ? RESPONSES_ITEM.MESSAGE : null);
@@ -113,7 +122,8 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       }
       // Skip items with empty/missing name — Codex/OpenAI reject nameless tool calls (#444)
       if (!item.name || typeof item.name !== "string" || item.name.trim() === "") continue;
-      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(item.name);
+      const name = flattenName(item.namespace, item.name);
+      if (itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL) customToolNames.add(name);
       const toolInput = itemType === RESPONSES_ITEM.CUSTOM_TOOL_CALL
         ? { input: typeof item.input === "string" ? item.input : JSON.stringify(item.input ?? "") }
         : item.arguments;
@@ -121,7 +131,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         id: item.call_id,
         type: OPENAI_BLOCK.FUNCTION,
         function: {
-          name: item.name,
+          name,
           arguments: typeof toolInput === "string" ? toolInput : JSON.stringify(toolInput ?? {})
         }
       });
@@ -146,9 +156,7 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
         content: typeof item.output === "string" ? item.output : JSON.stringify(item.output)
       });
     }
-    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) {
-      if (Array.isArray(item.tools)) additionalTools.push(...item.tools);
-    }
+    else if (itemType === RESPONSES_ITEM.ADDITIONAL_TOOLS) continue;
     else if (itemType === RESPONSES_ITEM.REASONING) {
       // Buffer reasoning text; attached to next assistant message/function_call.
       // Also stash encrypted_content so a later openai→responses hop can restore
@@ -178,13 +186,10 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   // explicit `name` field and cannot be represented as Chat Completions function declarations.
   // Filter them out to avoid sending nameless functionDeclarations to downstream providers
   // such as Gemini, which strictly validates function names.
-  const responseTools = [
-    ...(Array.isArray(body.tools) ? body.tools : []),
-    ...additionalTools,
-  ];
   if (responseTools.length > 0) {
-    result.tools = responseTools
+    result.tools = flattenedTools
       .map(tool => {
+        if (!tool || (tool.type && ![OPENAI_BLOCK.FUNCTION, "custom"].includes(tool.type))) return null;
         // Already in Chat Completions format: { type: "function", function: { name, ... } }
         if (tool.function) return tool;
         // Responses API function/custom tool: { type, name, description, parameters|format }.
@@ -230,6 +235,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       .filter(Boolean);
   }
   if (customToolNames.size > 0) result._customToolNames = [...customToolNames];
+  if (namespaceToolMap.size > 0) result._namespaceToolMap = namespaceToolMap;
+
+  if (body.tool_choice?.type === OPENAI_BLOCK.FUNCTION) {
+    const choiceName = body.tool_choice.name || body.tool_choice.function?.name;
+    result.tool_choice = {
+      type: OPENAI_BLOCK.FUNCTION,
+      function: { name: flattenName(body.tool_choice.namespace, choiceName) },
+    };
+  }
 
   // Cleanup Responses API specific fields
   // Map Responses-only max_output_tokens to Chat max_tokens (avoid leaking unknown field upstream)
