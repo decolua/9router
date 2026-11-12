@@ -219,12 +219,8 @@ export function createSSEStream(options = {}) {
           let injectedUsage = false;
           let responsesTerminal = false;
 
-          // The upstream's own terminator: forwarded verbatim below, and latched
-          // here so flush() does not append a second one (the documented contract
-          // is exactly one `data: [DONE]`, not two).
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
-            streamDoneSent = true;
-          }
+          // Upstream already sent the sentinel; flush() must not append a second one.
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
@@ -555,13 +551,12 @@ export function createSSEStream(options = {}) {
         if (remaining) buffer += remaining;
 
         if (mode === STREAM_MODE.PASSTHROUGH) {
-          if (buffer) {
-            // A terminator that arrived without its trailing newline is still
-            // forwarded here; latch it so the block below does not append a
-            // second one.
-            if (buffer.startsWith("data:") && buffer.slice(5).trim() === "[DONE]") {
-              streamDoneSent = true;
-            }
+          // An unterminated trailing "data: [DONE]" is the upstream sentinel: don't
+          // forward it raw (it would glue onto the properly framed one appended
+          // below, #5592).
+          const tail = buffer.trim();
+          const tailIsDone = tail.startsWith("data:") && tail.slice(5).trim() === "[DONE]";
+          if (!tailIsDone && buffer) {
             let output = buffer;
             if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);

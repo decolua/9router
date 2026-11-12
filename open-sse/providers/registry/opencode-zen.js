@@ -37,7 +37,6 @@ export default {
   models: [
     // Claude (messages)
     { id: "claude-fable-5", name: "Claude Fable 5", supportedFormats: ["claude"] },
-    { id: "claude-fable-5-1", name: "Claude Fable 5.1", supportedFormats: ["claude"] },
     { id: "claude-opus-5", name: "Claude Opus 5", supportedFormats: ["claude"] },
     { id: "claude-opus-4-8", name: "Claude Opus 4.8", supportedFormats: ["claude"] },
     { id: "claude-opus-4-7", name: "Claude Opus 4.7", supportedFormats: ["claude"] },
