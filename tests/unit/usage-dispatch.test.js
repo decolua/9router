@@ -11,11 +11,15 @@ vi.mock("../../open-sse/utils/proxyFetch.js", () => ({
   })),
 }));
 
+// Spy handler: the dispatch ctx must carry authType so lease-mode handlers can see it.
+const mcode = vi.hoisted(() => ({ getMiniMaxCodeUsage: vi.fn(async () => ({ ok: true })) }));
+vi.mock("../../open-sse/services/minimaxCodeUsage.js", () => mcode);
+
 const load = () => import("../../open-sse/services/usage.js");
 const SUPPORTED = [
   "github", "gemini-cli", "antigravity", "claude", "codex", "kiro",
   "qoder", "qoder-cn", "iflow", "ollama", "glm", "glm-cn",
-  "minimax", "minimax-cn", "vercel-ai-gateway", "grok-cli", "kimi",
+  "minimax", "minimax-cn", "minimax-code", "minimax-code-global", "vercel-ai-gateway", "grok-cli", "kimi",
   "deepseek", "opencode-go", "zed", "commandcode",
 ];
 
@@ -38,5 +42,13 @@ describe("usage dispatch", { timeout: 20_000 }, () => {
       expect(res, `${provider} routed`).toBeTypeOf("object");
       expect(res?.message).not.toBe(`Usage API not implemented for ${provider}`);
     }
+  });
+
+  it("routes authType through to the handler (lease connections rely on it)", async () => {
+    const { getUsageForProvider } = await load();
+    await getUsageForProvider({ provider: "minimax-code", authType: "mcode-lease" });
+    expect(mcode.getMiniMaxCodeUsage).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: "minimax-code", authType: "mcode-lease" }),
+    );
   });
 });
