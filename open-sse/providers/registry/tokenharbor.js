@@ -14,7 +14,7 @@ export default {
     textIcon: "TH",
     website: "https://tokenharbor.ai",
     notice: {
-      text: "OpenAI-compatible aggregator. One API key reaches every model, billed per-token from a prepaid wallet. Model ids are bare (e.g. claude-opus-5.5, gpt-6-astra, deepseek-v4.1-flash:free) and are fetched live from the provider.",
+      text: "OpenAI-compatible aggregator. One API key reaches every model, billed per-token from a prepaid wallet. Model ids are bare (e.g. claude-opus-5.5, gpt-6-astra, qwen3.8-flash:free) and are fetched live from the provider.",
       apiKeyUrl: "https://tokenharbor.ai/dashboard",
     },
   },
@@ -41,8 +41,13 @@ export default {
     { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
     { id: "gpt-6-astra", name: "GPT-6 Astra" },
     { id: "gpt-6-sol", name: "GPT-6 Sol" },
-    { id: "deepseek-v4.1-flash:free", name: "DeepSeek V4.1 Flash (Free)" },
     { id: "grok-4.7", name: "Grok 4.7" },
+    // Free tier — the set Token Harbor rotates most, hence the seeds.
+    { id: "mimo-v2.6-flash:free", name: "MiMo V2.6 Flash (Free)" },
+    { id: "mimo-v2.5:free", name: "MiMo V2.5 (Free)" },
+    { id: "qwen3.8-flash:free", name: "Qwen 3.8 Flash (Free)" },
+    { id: "deepseek-v4.1-flash:free", name: "DeepSeek V4.1 Flash (Free)" },
+    { id: "deepseek-v4-flash:free", name: "DeepSeek V4 Flash (Free)" },
   ],
   modelsFetcher: { url: "https://tokenharbor.ai/v1/models", type: "openai" },
   passthroughModels: true,
