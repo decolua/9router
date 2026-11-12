@@ -40,6 +40,8 @@ export default function HeaderMenu({ onLogout }) {
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [updateStatusText, setUpdateStatusText] = useState("");
+  const [updateError, setUpdateError] = useState(null);
   const { toggleTheme, isDark } = useTheme();
   const menuRef = useRef(null);
 
@@ -116,24 +118,66 @@ export default function HeaderMenu({ onLogout }) {
       
       <ConfirmModal
         isOpen={updateOpen}
-        onClose={() => { if (!isUpdating) setUpdateOpen(false); }}
-        onConfirm={async () => {
-          if (isUpdating) return;
-          setIsUpdating(true);
-          try {
-            await fetch("/api/auto-update", { method: "POST" });
-            setTimeout(() => {
-              window.location.reload();
-            }, 60000); // Automatically reload after 1 minute
-          } catch (e) {
-            setIsUpdating(false);
+        onClose={() => {
+          if (!isUpdating) {
+            setUpdateOpen(false);
+            setUpdateError(null);
+            setUpdateStatusText("");
           }
         }}
-        title="Update 9Router"
-        message={isUpdating ? "Updating in background... Please wait ~1 to 3 minutes. The page will reload automatically when done." : "This will automatically pull the latest master branch and rebuild the Docker container in the background. Are you sure?"}
-        confirmText={isUpdating ? "Updating..." : "Start Update"}
-        cancelText={isUpdating ? "" : "Cancel"}
-        variant="primary"
+        onConfirm={async () => {
+          if (isUpdating) return;
+          if (updateError) {
+            setUpdateError(null);
+            setUpdateOpen(false);
+            return;
+          }
+          setIsUpdating(true);
+          setUpdateError(null);
+          setUpdateStatusText("Memulai proses update di latar belakang...");
+          try {
+            await fetch("/api/auto-update", { method: "POST" });
+            const startTime = Date.now();
+            const pollTimer = setInterval(async () => {
+              try {
+                const res = await fetch("/api/auto-update");
+                if (res.ok) {
+                  const data = await res.json();
+                  if (data.status === "updating" || data.status === "building") {
+                    setUpdateStatusText(data.message || "Sedang memproses pembaruan...");
+                  } else if (data.status === "conflict" || data.status === "error") {
+                    clearInterval(pollTimer);
+                    setIsUpdating(false);
+                    setUpdateError(data.message || "Pembaruan gagal dijalankan.");
+                  } else if (data.status === "success") {
+                    clearInterval(pollTimer);
+                    setUpdateStatusText("Pembaruan selesai! Memuat ulang...");
+                    setTimeout(() => window.location.reload(), 2000);
+                  }
+                }
+              } catch {}
+              if (Date.now() - startTime > 300000) {
+                clearInterval(pollTimer);
+                setIsUpdating(false);
+                setUpdateError("Batas waktu update (5 menit) terlampaui.");
+              }
+            }, 2500);
+          } catch (e) {
+            setIsUpdating(false);
+            setUpdateError("Gagal menghubungi server: " + e.message);
+          }
+        }}
+        title={updateError ? "Pembaruan Gagal" : "Update 9Router"}
+        message={
+          updateError
+            ? updateError
+            : isUpdating
+              ? updateStatusText || "Memperbarui kode dan container Docker di latar belakang... Mohon tunggu."
+              : "Tindakan ini akan menarik branch master terbaru dan melakukan build container Docker di latar belakang secara otomatis. Lanjutkan?"
+        }
+        confirmText={updateError ? "Tutup" : isUpdating ? "Memproses..." : "Mulai Update"}
+        cancelText={isUpdating || updateError ? "" : "Batal"}
+        variant={updateError ? "danger" : "primary"}
         loading={isUpdating}
       />
 

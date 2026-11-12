@@ -270,3 +270,30 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Branch `vnot-production` siap di-build).
 - **Catatan untuk AI selanjutnya (Handoff Note):** Model `gemini-3.1-flash-lite` dan `gemini-embedding-2` kini aktif di registry bawaan. Rebuild container akan mengekspos model-model ini secara langsung di dashboard. Bind mount `./data:/app/data` tetap terjaga utuh.
+
+### 2026-11-12 — Upstream Sync to v0.5.119 (incl. v0.5.116) & Auto-Update Polling / Feedback
+- **Tugas:** 
+  1. Menjawab pertanyaan pengguna mengapa tombol "Update" di UI tidak berfungsi saat ada pembaruan v0.5.116.
+  2. Melakukan sinkronisasi pembaruan resmi upstream (v0.5.116 hingga v0.5.119 commit `54a88d04`).
+  3. Menyelesaikan akar masalah tombol "Update" agar transparan terhadap status dan error proses di latar belakang.
+- **Akar Masalah Tombol Update:**
+  1. Saat tombol "Update" ditekan di antarmuka Web (`HeaderMenu` atau `Sidebar`), Next.js memanggil `POST /api/auto-update` yang meneruskan pemicu ke Python Webhook (`100.70.118.53:9099`).
+  2. Webhook segera mengembalikan status HTTP 200 ke browser dan menjalankan skrip di background thread (`git checkout master`, `git fetch origin master`, `git checkout vnot-production`, `git merge master`).
+  3. Namun, perintah `git merge master` mengalami **Merge Conflict** pada file `src/app/(dashboard)/dashboard/providers/[id]/AddApiKeyModal.js` karena upstream menambahkan fitur CLI auto-import CommandCode pada baris yang sama dengan fitur kustom Cloudflare Agreement.
+  4. Karena terjadi konflik, skrip `webhook.py` secara otomatis mengeksekusi `git merge --abort` dan `exit 1` demi melindungi integritas cabang produksi dari kerusakan kode.
+  5. Sayangnya, frontend hanya menggunakan `setTimeout` statis selama 60 detik lalu me-reload halaman tanpa memantau status atau pesan error, sehingga pengguna merasa tombol Update tidak berjalan padahal proses pembaruan sengaja dibatalkan oleh skrip proteksi konflik.
+- **Penyelesaian:**
+  1. Menyelesaikan konflik git pada `src/app/(dashboard)/dashboard/providers/[id]/AddApiKeyModal.js` secara manual dengan menggabungkan kedua fungsionalitas (CommandCode CLI detection + Cloudflare Terms Agreement).
+  2. Menggabungkan upstream `master` (v0.5.119 / v0.5.116) ke dalam `vnot-production`.
+  3. Meningkatkan `webhook.py`: menambahkan pencatatan status terstruktur ke `/home/vnot/docker/9router/data/update-status.json` (`updating`, `building`, `conflict`, `error`, `success`).
+  4. Menambahkan endpoint `GET /api/auto-update` di Next.js untuk membaca status dari file `/app/data/update-status.json`.
+  5. Memperbarui `HeaderMenu.js` dan `Sidebar.js`: mengganti timer buta dengan sistem polling status dinamis setiap 2.5 detik. Jika terjadi error atau konflik, modal menampilkan pesan error spesifik dan daftar file yang konflik alih-alih me-reload tanpa hasil.
+- **File yang diubah/dibuat:**
+  - `/home/vnot/utils/9router-updater/webhook.py`
+  - `src/app/api/auto-update/route.js`
+  - `src/shared/components/HeaderMenu.js`
+  - `src/shared/components/Sidebar.js`
+  - `src/app/(dashboard)/dashboard/providers/[id]/AddApiKeyModal.js` (conflict resolved)
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Branch `vnot-production` siap di-build ke container).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Upstream v0.5.119 telah terintegrasi di `vnot-production`. Service `9router-updater.service` telah diperbarui dan di-restart. Bind mount `./data:/app/data` tetap terjaga utuh.

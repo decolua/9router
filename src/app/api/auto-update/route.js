@@ -1,4 +1,19 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
+
+export async function GET() {
+  try {
+    const statusFile = path.join(process.cwd(), 'data', 'update-status.json');
+    if (fs.existsSync(statusFile)) {
+      const content = fs.readFileSync(statusFile, 'utf8');
+      return NextResponse.json(JSON.parse(content));
+    }
+    return NextResponse.json({ status: 'idle' });
+  } catch (error) {
+    return NextResponse.json({ status: 'error', error: error.message }, { status: 500 });
+  }
+}
 
 export async function POST(req) {
   try {
