@@ -285,10 +285,10 @@ function resolveConnectionProxyUrl(targetUrl, proxyOptions) {
   return normalizeProxyUrl(proxyUrlRaw);
 }
 
-// ISP DPI (VN → api.anthropic.com) RSTs Node's default TLS ClientHello curve
-// list; a single curve rewrites the fingerprint enough to pass. Empirically:
-// default agent = ECONNRESET 100%, X25519 = through 100%.
-const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
+// Use Node/OpenSSL's default curve negotiation for upstream compatibility.
+// Networks that require a specific curve can opt in via NINEROUTER_TLS_ECDH_CURVE
+// (for example, X25519); forcing it globally can cause AWS OIDC TLS resets.
+const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "auto";
 
 // autoSelectFamilyAttemptTimeout = happy eyeballs (RFC 8305): race both address
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
@@ -346,8 +346,8 @@ export function getFreshRetryDispatcher(insecure = false) {
 
 /**
  * Create proxy or direct dispatcher lazily (undici-compatible).
- * Always returns a dispatcher — the direct path needs the custom Agent too,
- * otherwise the default global agent's ClientHello gets RST-ed by DPI.
+ * Always returns a dispatcher so direct requests also use our keep-alive,
+ * happy-eyeballs, and explicit TLS curve override settings.
  */
 async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false) {
   const normalized = normalizeProxyUrl(proxyUrl);
