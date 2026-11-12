@@ -5,7 +5,7 @@ export function usesAwsCredentialForm(provider) {
 }
 
 export function toProviderConnectionResponse(connection) {
-  const { apiKey, accessToken, refreshToken, idToken, ...safe } = connection;
+  const { apiKey, accessToken, refreshToken, idToken, miniMaxResetPending, ...safe } = connection;
 
   if (!usesAwsCredentialForm(connection.provider) || !connection.providerSpecificData) {
     return safe;

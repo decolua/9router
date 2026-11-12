@@ -6,9 +6,13 @@
 // Signing (account API only — the chat and coding_plan/remains endpoints are
 // plain Bearer): the request carries mcode query params, a `yy` md5 over
 // path+query, body and now, and `x-signature` md5(ts + secret [+ body]).
+//
+// Reset cards ("Full reset") live at the bottom of this file: international
+// only (minimax-code-global), plain Bearer against the platform host.
 
 import { createHash } from "node:crypto";
 import { getLeaseToken, isLeaseConnection } from "./minimaxCodeLease.js";
+import { proxyAwareFetch } from "../utils/proxyFetch.js";
 
 const SIGN_SECRET = "I*7Cf%WZ#S&%1RlZJ&C2";
 
@@ -247,11 +251,22 @@ export async function getMiniMaxCodeUsage(connection) {
       quotas["Plan"] = { name: "Plan", used: 0, total: 0, resetAt: null, message: m.hasTokenPlan === false ? "Free account (no M Plan)" : "No usage data returned" };
     }
 
+    // Reset-card inventory rides along best-effort (international OAuth
+    // only): failure omits the key; quotas never depend on it.
+    let resetCards;
+    if (connection.provider === RESET_CARD_PROVIDER && connection.authType === "oauth") {
+      try {
+        const inventory = await getMiniMaxResetCards(access, connection.provider, connection.proxyOptions);
+        resetCards = { availableCount: inventory.availableCount, cards: inventory.cards.map(({ cardId, type, expiresAt, createdAt }) => ({ cardId, type, expiresAt, createdAt })) };
+      } catch { /* best-effort by design */ }
+    }
+
     return {
       quotas,
       plan: m.hasTokenPlan ? (m.tier ? `M Plan ${m.tier}` : "M Plan") : "Free",
       ...(m.expiresAt > 0 ? { planExpiresAt: new Date(m.expiresAt < 1e12 ? m.expiresAt * 1000 : m.expiresAt).toISOString() } : {}),
       user: who?.email || who?.name || str(connection.providerSpecificData || {}, "realUserID") || userID || null,
+      ...(resetCards ? { resetCards } : {}),
     };
   } catch (e) {
     if (e instanceof AccountRefused) {
@@ -261,4 +276,268 @@ export async function getMiniMaxCodeUsage(connection) {
     }
     return { message: e?.message ?? String(e) };
   }
+}
+
+// Reset cards use plain Bearer OAuth, not account signing. The CN host is unverified.
+
+const RESET_CARD_PROVIDER = "minimax-code-global";
+const RESET_AUTH_CODES = new Set([1004, 1011, 1024]);
+const RESET_PAGE_SIZE = 5;
+// ponytail: 500 cards/events per read; raise the cap or use keyset pagination for larger inventories.
+const RESET_MAX_PAGES = 100;
+const RESET_TOTAL_MAX = 10000;
+const RESET_FLOWS_WINDOW_MS = 30 * 86400000;
+const RESET_PAGE_TIMEOUT_MS = 15000; // per page (and the single redemption POST)
+const RESET_READ_TIMEOUT_MS = 30000; // entire paginated read, not per page
+// ECMAScript date range is |ms| <= 8.64e15; beyond it Date.toISOString throws.
+const MAX_EPOCH_MS = 8_640_000_000_000_000;
+const RESET_OUTCOMES = new Set(["SUCCESS", "REPLAYED", "EXPIRED", "NOT_FOUND", "RETRYABLE_FAIL", "LOCK_BUSY"]);
+const RESET_OUTCOME_MESSAGES = {
+  SUCCESS: "Rate limits were reset.",
+  REPLAYED: "This reset card was already used.",
+  EXPIRED: "The reset card has expired — refresh the inventory.",
+  NOT_FOUND: "The reset card no longer exists — refresh the inventory.",
+  RETRYABLE_FAIL: "MiniMax refused the reset; try again later.",
+  LOCK_BUSY: "MiniMax is busy; try again shortly.",
+};
+
+function resetCardError(message, status) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+const resetCardHeaders = (accessToken) => ({
+  Authorization: `Bearer ${accessToken}`,
+  Accept: "application/json",
+  "Content-Type": "application/json",
+});
+
+function resetCardSite(provider, accessToken, action) {
+  if (!accessToken) throw resetCardError(`No MiniMax access token available for ${action}; please re-authorize the connection.`, 401);
+  if (provider !== RESET_CARD_PROVIDER) {
+    throw resetCardError(`MiniMax reset cards are only available for the international (${RESET_CARD_PROVIDER}) connection.`, 400);
+  }
+  return SITES[RESET_CARD_PROVIDER];
+}
+
+/** `status_code` must be exactly the number 0; missing, boolean, or string
+ * status codes are invalid. Auth codes 1004/1011/1024 map to 401. */
+function readResetEnvelope(payload, action) {
+  const br = obj(payload?.base_resp);
+  if (!br || typeof br.status_code !== "number") throw resetCardError(`MiniMax ${action} response was invalid (missing status).`, 502);
+  if (br.status_code === 0) return payload;
+  if (RESET_AUTH_CODES.has(br.status_code)) throw resetCardError(`MiniMax sign-in expired; sign in again (${action}, code ${br.status_code}).`, 401);
+  throw resetCardError(`MiniMax rejected the ${action} request (code ${br.status_code}).`, 502);
+}
+
+/** Per-page 15s inside the whole-read deadline. AbortSignal.any when the
+ * runtime has it (Node 22+); otherwise the shared deadline alone. */
+const pageSignal = (deadline) => (
+  typeof AbortSignal.any === "function"
+    ? AbortSignal.any([deadline, AbortSignal.timeout(RESET_PAGE_TIMEOUT_MS)])
+    : deadline
+);
+
+/** One strictly validated GET page. Any failure throws a read error. The
+ * `deadline` signal spans the entire paginated read that owns this page. */
+async function resetCardReadPage(site, path, query, accessToken, proxyOptions, action, deadline) {
+  const url = `${site.platform}${path}?${new URLSearchParams(query).toString()}`;
+  let response;
+  try {
+    response = await proxyAwareFetch(url, {
+      method: "GET",
+      headers: resetCardHeaders(accessToken),
+      // Reads must not fall back either: a TLS-retried or redirect-followed
+      // response could be a forged inventory whose card identities are then
+      // POSTed verbatim.
+      strictTls: true,
+      redirect: "error",
+      signal: pageSignal(deadline),
+    }, proxyOptions);
+  } catch {
+    throw resetCardError(`MiniMax ${action} request failed (network).`, 502);
+  }
+  if (response.status === 401 || response.status === 403) {
+    throw resetCardError(`MiniMax sign-in was refused for ${action} (HTTP ${response.status}).`, response.status);
+  }
+  if (response.status >= 400 && response.status < 500) {
+    // Preserve upstream 4xx verbatim for the route layer.
+    throw resetCardError(`MiniMax ${action} request failed (HTTP ${response.status}).`, response.status);
+  }
+  if (!response.ok) throw resetCardError(`MiniMax ${action} upstream error (HTTP ${response.status}).`, 502);
+  let payload;
+  try {
+    payload = JSON.parse(await response.text());
+  } catch {
+    throw resetCardError(`MiniMax ${action} response was not JSON.`, 502);
+  }
+  if (!obj(payload)) throw resetCardError(`MiniMax ${action} response was invalid.`, 502);
+  return readResetEnvelope(payload, action);
+}
+
+/** card_id/source_type/out_biz_no must be non-blank strings (values are
+ * server identities and are preserved verbatim — trim is a blank check
+ * only); expire_time must be a positive integer epoch-ms within the
+ * representable Date range. create_time is not validated — it only feeds the
+ * display-only createdAt. */
+function validResetCardEntry(card) {
+  return obj(card)
+    && ["card_id", "source_type", "out_biz_no"].every((k) => typeof card[k] === "string" && card[k].trim())
+    && Number.isInteger(card.expire_time)
+    && card.expire_time > 0
+    && card.expire_time <= MAX_EPOCH_MS;
+}
+
+/** ISO string for a positive representable epoch-ms number, else null. */
+const isoOrNull = (v) => {
+  const t = num(v);
+  return t > 0 && t <= MAX_EPOCH_MS ? new Date(t).toISOString() : null;
+};
+
+const validResetTotal = (total) => Number.isInteger(total) && total >= 0 && total <= RESET_TOTAL_MAX;
+
+/** Available cards, earliest expiry first; incomplete pagination fails closed. */
+export async function getMiniMaxResetCards(accessToken, provider, proxyOptions = null) {
+  const site = resetCardSite(provider, accessToken, "reset cards");
+  const deadline = AbortSignal.timeout(RESET_READ_TIMEOUT_MS);
+  const byId = new Map();
+  let page = 1;
+  for (;;) {
+    const payload = await resetCardReadPage(
+      site, "/backend/account/reset_card/list",
+      { page, size: RESET_PAGE_SIZE }, accessToken, proxyOptions, "reset cards", deadline,
+    );
+    const entries = "cards" in payload ? payload.cards : [];
+    if (!validResetTotal(payload.total) || !Array.isArray(entries)) {
+      throw resetCardError("MiniMax reset-card list was invalid.", 502);
+    }
+    const before = byId.size;
+    for (const card of entries) {
+      if (!validResetCardEntry(card)) throw resetCardError("MiniMax reset-card list was invalid.", 502);
+      byId.set(card.card_id, card);
+    }
+    if (byId.size >= payload.total) break;
+    if (!entries.length || byId.size === before || page >= RESET_MAX_PAGES) {
+      throw resetCardError("MiniMax reset-card list was incomplete; refresh again.", 502);
+    }
+    page += 1;
+  }
+  const now = Date.now();
+  const cards = [...byId.values()]
+    .filter((c) => c.expire_time > now)
+    .sort((a, b) => a.expire_time - b.expire_time)
+    .map((c) => ({
+      cardId: c.card_id,
+      source_type: c.source_type,
+      out_biz_no: c.out_biz_no,
+      type: "FULL",
+      expiresAt: new Date(c.expire_time).toISOString(),
+      createdAt: isoOrNull(c.create_time),
+    }));
+  return { availableCount: cards.length, cards };
+}
+
+/** Unknown outcomes remain uncertain; the caller must reconcile before an explicit retry. */
+export async function redeemMiniMaxResetCard(accessToken, provider, card, proxyOptions = null) {
+  const site = resetCardSite(provider, accessToken, "reset redemption");
+  const identity = (k) => (typeof card?.[k] === "string" && card[k].trim() ? card[k] : null);
+  const sourceType = identity("source_type");
+  const outBizNo = identity("out_biz_no");
+  const cardId = identity("cardId") || identity("card_id");
+  const expiryMs = num(card?.expire_time) ?? (typeof card?.expiresAt === "string" ? Date.parse(card.expiresAt) : NaN);
+  if (!cardId || !sourceType || !outBizNo || !Number.isInteger(expiryMs) || expiryMs <= 0 || expiryMs > MAX_EPOCH_MS) {
+    return { ok: false, alreadyUsed: false, uncertain: false, attempted: false, status: 400, code: "invalid_card", message: "Invalid reset card identity or expiry." };
+  }
+  if (expiryMs <= Date.now()) {
+    return { ok: false, alreadyUsed: false, uncertain: false, attempted: false, status: 409, code: "EXPIRED", message: RESET_OUTCOME_MESSAGES.EXPIRED };
+  }
+
+  let response = null;
+  let text = null;
+  try {
+    response = await proxyAwareFetch(`${site.platform}/backend/account/reset_card/use`, {
+      method: "POST",
+      headers: resetCardHeaders(accessToken),
+      body: JSON.stringify({ source_type: sourceType, out_biz_no: outBizNo }),
+      signal: AbortSignal.timeout(RESET_PAGE_TIMEOUT_MS),
+      strictTls: true,
+      forceFreshSocket: true,
+      redirect: "error",
+    }, { ...(proxyOptions || {}), strictProxy: true });
+    text = await response.text();
+  } catch {
+    // One attempt only — timeout, redirect, TLS, or proxy refusal included.
+    return { ok: false, alreadyUsed: false, uncertain: true, status: 502, code: null, message: "Reset outcome is not confirmed (network failure)." };
+  }
+
+  const unconfirmed = (message) => ({ ok: false, alreadyUsed: false, uncertain: true, status: 502, code: null, message });
+  if (response.status === 401 || response.status === 403) {
+    // No auto-refresh replay from here; the route may re-call explicitly
+    // after a forced refresh and reconcile via flows.
+    return unconfirmed(`Reset outcome is not confirmed (sign-in refused, HTTP ${response.status}).`);
+  }
+  if (!response.ok) return unconfirmed(`Reset outcome is not confirmed (HTTP ${response.status}).`);
+  let payload;
+  try {
+    payload = JSON.parse(text);
+  } catch {
+    return unconfirmed("Reset outcome is not confirmed (invalid response).");
+  }
+  const br = obj(payload?.base_resp);
+  if (!br || typeof br.status_code !== "number" || br.status_code !== 0) {
+    return unconfirmed(br && typeof br.status_code === "number"
+      ? `Reset outcome is not confirmed (code ${br.status_code}).`
+      : "Reset outcome is not confirmed (invalid status).");
+  }
+  const outcome = payload.outcome;
+  if (typeof outcome !== "string" || !RESET_OUTCOMES.has(outcome)) {
+    return unconfirmed("Reset outcome is not confirmed.");
+  }
+  return {
+    ok: outcome === "SUCCESS",
+    alreadyUsed: outcome === "REPLAYED",
+    uncertain: outcome === "LOCK_BUSY",
+    status: outcome === "LOCK_BUSY" ? 502 : outcome === "SUCCESS" || outcome === "REPLAYED" ? 200 : 409,
+    code: outcome,
+    message: outcome === "LOCK_BUSY" ? "Reset is being processed; refresh to check history before retrying the same card." : RESET_OUTCOME_MESSAGES[outcome],
+  };
+}
+
+/** Last 30 days of card events; only an exact cardId/USE match confirms redemption. */
+export async function getMiniMaxResetCardFlows(accessToken, provider, proxyOptions = null) {
+  const site = resetCardSite(provider, accessToken, "reset history");
+  const since = Date.now() - RESET_FLOWS_WINDOW_MS; // one cutoff for every page
+  const deadline = AbortSignal.timeout(RESET_READ_TIMEOUT_MS);
+  const flows = [];
+  const seen = new Set();
+  let page = 1;
+  for (;;) {
+    const payload = await resetCardReadPage(
+      site, "/backend/account/reset_card/flows",
+      { page, size: RESET_PAGE_SIZE, create_time: since },
+      accessToken, proxyOptions, "reset history", deadline,
+    );
+    const entries = "flows" in payload ? payload.flows : [];
+    if (!validResetTotal(payload.total) || !Array.isArray(entries)) {
+      throw resetCardError("MiniMax reset history was invalid.", 502);
+    }
+    const before = seen.size;
+    for (const flow of entries) {
+      if (!obj(flow)) throw resetCardError("MiniMax reset history was invalid.", 502);
+      seen.add(`${flow.card_id}\u0000${flow.event_type}\u0000${num(flow.create_time)}`);
+      flows.push({
+        cardId: typeof flow.card_id === "string" ? flow.card_id : null,
+        eventType: typeof flow.event_type === "string" ? flow.event_type : null,
+        createdAt: isoOrNull(flow.create_time),
+      });
+    }
+    if (flows.length >= payload.total) break;
+    if (!entries.length || seen.size === before) {
+      throw resetCardError("MiniMax reset history was incomplete.", 502);
+    }
+    if (page >= RESET_MAX_PAGES) throw resetCardError("MiniMax reset history was too large.", 502);
+    page += 1;
+  }
+  return flows;
 }
