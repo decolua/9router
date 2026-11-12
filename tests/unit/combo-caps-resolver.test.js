@@ -3,10 +3,15 @@ import { describe, expect, it } from "vitest";
 import { aggregateComboCapabilities, getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 
 // A combo's limits are the conservative aggregate of its members: ctx = min,
-// maxOutput = max. Resolving those members needs the synced model catalog, which
-// is server-only (it reads a file), so the browser bundle falls back to the
-// generic patterns. The dashboard computed its badges there and under-reported:
-// /v1/models and pi-settings (both server-side) said 1M while the badge said 200k.
+// maxOutput = min. A combo routes each request to a single member, so the
+// ceiling it can guarantee is the weakest member's; taking the max advertised
+// output the router could not deliver (and disagreed with the min-of-seats
+// `max_completion_tokens` published by /v1/models).
+//
+// Resolving those members needs the synced model catalog, which is server-only
+// (it reads a file), so the browser bundle falls back to the generic patterns.
+// The dashboard computed its badges there and under-reported: /v1/models and
+// pi-settings (both server-side) said 1M while the badge said 200k.
 //
 // resolveCaps lets a caller hand in the server's answer. It must only override
 // what it carries — the local tables still own tools/pdf/audio/video/thinking*.
@@ -47,7 +52,11 @@ describe("aggregateComboCapabilities: resolveCaps override", () => {
     // Feeding a *smaller* value for one member must pull the aggregate down.
     const smaller = aggregateComboCapabilities(models, null, (id) => (id === "glm-cn/glm-5.3" ? { ...GLM53_FED, contextWindow: 64_000 } : null));
     expect(smaller.contextWindow).toBe(64_000);
-    expect(caps.maxOutput).toBe(384_000); // max across members, from deepseek
+    // maxOutput is conservative too: glm-5.3 fed 131_072 pulls the aggregate
+    // below deepseek's 384_000, because the router may pick that member.
+    expect(caps.maxOutput).toBe(131_072);
+    const bigger = aggregateComboCapabilities(models, null, (id) => (id === "glm-cn/glm-5.3" ? { ...GLM53_FED, maxOutput: 512_000 } : null));
+    expect(bigger.maxOutput).toBe(384_000); // deepseek's 384_000 is the smaller one
   });
 
   it("passes the resolver into nested combos", () => {
