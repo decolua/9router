@@ -733,14 +733,25 @@ export class KiroExecutor extends BaseExecutor {
     };
     const parsedToolInput = (tool) => {
       if (!tool.inputKind) throw new Error("Kiro tool call is missing input");
-      if (tool.inputKind === "object") return tool.inputObject;
-      try {
-        const input = JSON.parse(tool.inputChunks.join(""));
-        if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("not an object");
-        return input;
-      } catch (error) {
-        throw new Error(`Kiro tool input must be valid object JSON (${error.message})`);
+      let input;
+      if (tool.inputKind === "object") {
+        input = tool.inputObject;
+      } else {
+        try {
+          input = JSON.parse(tool.inputChunks.join(""));
+          if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("not an object");
+        } catch (error) {
+          throw new Error(`Kiro tool input must be valid object JSON (${error.message})`);
+        }
       }
+      
+      // Unwrap {"calls": [{...}]} wrapper when present (Kiro sometimes wraps tool_call this way)
+      if (tool.name === "tool_call" && input.calls && Array.isArray(input.calls) && input.calls.length > 0) {
+        console.log("Unwrapping tool_call from calls array");
+        input = input.calls[0];
+      }
+      
+      return input;
     };
     const emitTools = (controller) => {
       for (const tool of state.tools.values()) {
