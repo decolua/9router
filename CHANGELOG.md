@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Synthetic**: add Synthetic (`syn`) — OpenAI-compatible upstream on `api.synthetic.new` with the always-on `hf:` models as a static fallback, model passthrough, live model discovery, and a usage tracker reading `GET /v2/quotas`. Key validation goes through `/v2/quotas` because the public `/openai/v1/models` answers 200 for any key
+
 # v0.5.119 (2026-11-11)
 
 ## Features
