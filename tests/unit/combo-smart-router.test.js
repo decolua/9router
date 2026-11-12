@@ -11,6 +11,10 @@ import {
 import {
   extractPromptState,
   buildChoiceCriteria,
+  resolveRouteInstructions,
+  DEFAULT_ROUTE_INSTRUCTIONS,
+  MAX_ROUTE_INSTRUCTIONS_CHARS,
+  MAX_MEMBER_DESCRIPTION_CHARS,
   parseSystemOneRouteAnswer,
   resetStickyComboStore,
 } from "../../open-sse/services/systemoneRouter.js";
@@ -82,6 +86,51 @@ describe("System One Smart Combo Router", () => {
         "cx/gpt-5-mini": null,
         "cc/claude-haiku-4": null,
       });
+    });
+
+    it("uses trimmed member descriptions when present, null otherwise", () => {
+      expect(buildChoiceCriteria(["combo-pro", "combo-deep", "combo-lite"], {
+        "combo-pro": "  everyday coding tasks  ",
+        "combo-deep": "",
+        "combo-lite": "   ",
+      })).toEqual({
+        "combo-pro": "everyday coding tasks",
+        "combo-deep": null,
+        "combo-lite": null,
+      });
+    });
+
+    it("ignores description keys that are not combo members", () => {
+      const criteria = buildChoiceCriteria(["combo-pro"], { "combo-pro": "coding", "ghost": "nope", toString: "nope" });
+      expect(criteria).toEqual({ "combo-pro": "coding" });
+      expect(buildChoiceCriteria(["toString", "constructor"], {})).toEqual({ toString: null, constructor: null });
+    });
+
+    it("ignores non-object descriptions and non-string values", () => {
+      const expected = { a: null, b: null };
+      for (const bad of [undefined, null, "text", 42, ["x", "y"], true]) {
+        expect(buildChoiceCriteria(["a", "b"], bad)).toEqual(expected);
+      }
+      expect(buildChoiceCriteria(["a", "b"], { a: 1, b: { x: 1 } })).toEqual(expected);
+    });
+
+    it("caps each description length", () => {
+      const criteria = buildChoiceCriteria(["a"], { a: "x".repeat(MAX_MEMBER_DESCRIPTION_CHARS + 500) });
+      expect(criteria.a.length).toBe(MAX_MEMBER_DESCRIPTION_CHARS);
+    });
+  });
+
+  describe("resolveRouteInstructions", () => {
+    it("returns the default question when nothing is configured", () => {
+      for (const empty of [undefined, null, "", "   ", 42, {}]) {
+        expect(resolveRouteInstructions(empty)).toBe(DEFAULT_ROUTE_INSTRUCTIONS);
+      }
+      expect(DEFAULT_ROUTE_INSTRUCTIONS).toBe("Which of these configured models is the most appropriate for this request?");
+    });
+
+    it("returns trimmed custom instructions, capped", () => {
+      expect(resolveRouteInstructions("  Pick combo-deep for hard tasks.  ")).toBe("Pick combo-deep for hard tasks.");
+      expect(resolveRouteInstructions("y".repeat(MAX_ROUTE_INSTRUCTIONS_CHARS + 100)).length).toBe(MAX_ROUTE_INSTRUCTIONS_CHARS);
     });
   });
 
@@ -204,6 +253,31 @@ describe("System One Smart Combo Router", () => {
       expect(res2.ok).toBe(true);
       expect(resolveSmartChoice).toHaveBeenCalledTimes(1); // Still 1! Kept sticky!
       expect(calls[1]).toBe("ds/deepseek-v4");
+    });
+
+    it("reports the routing outcome of each attempt through onRouteAttempt", async () => {
+      const seen = [];
+      let current = null;
+      const handleSingleModel = vi.fn(async (_body, model) => {
+        seen.push({ model, ...current });
+        return model === "ds/deepseek-v4" ? errResponse(503, "Service Unavailable") : okResponse("ok");
+      });
+      const common = { models: ["cx/gpt-5-mini", "ds/deepseek-v4"], handleSingleModel, log, comboStrategy: "smart", sessionSticky: false, onRouteAttempt: (route) => { current = route; } };
+
+      // Router decision used, first choice fails -> second attempt carries the same outcome
+      await handleComboChat({ ...common, body: { messages: [{ role: "user", content: "a" }] }, comboName: "stats-1",
+        resolveSmartChoice: async () => ({ choice: "ds/deepseek-v4", confidence: 0.9 }) });
+      // Below threshold -> configured order
+      await handleComboChat({ ...common, body: { messages: [{ role: "user", content: "b" }] }, comboName: "stats-2",
+        resolveSmartChoice: async () => ({ choice: "ds/deepseek-v4", confidence: 0.5 }) });
+
+      expect(seen).toEqual([
+        { model: "ds/deepseek-v4", route: "routed", confidence: 0.9, attempt: 0 },
+        { model: "cx/gpt-5-mini", route: "routed", confidence: 0.9, attempt: 1 },
+        { model: "cx/gpt-5-mini", route: "default", confidence: null, attempt: 0 },
+      ]);
+      // handleSingleModel keeps its (body, model) contract
+      expect(handleSingleModel.mock.calls.every((call) => call.length === 2)).toBe(true);
     });
 
     it("fails open to default order if System One evaluation fails or times out", async () => {

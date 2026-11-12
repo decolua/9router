@@ -9,6 +9,9 @@ export const DEFAULT_SYSTEMONE_TIMEOUT_MS = 8000;
 export const MAX_STATE_CHARS = 2000;
 export const MAX_STICKY_SESSIONS = 5000;
 export const STICKY_SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+export const DEFAULT_ROUTE_INSTRUCTIONS = "Which of these configured models is the most appropriate for this request?";
+export const MAX_ROUTE_INSTRUCTIONS_CHARS = 4000;
+export const MAX_MEMBER_DESCRIPTION_CHARS = 1000;
 
 /**
  * In-memory session stickiness store for smart-routed combos.
@@ -77,21 +80,41 @@ function extractTextFromContent(content) {
 
 /**
  * Build choice criteria dictionary for System One from an array of models.
- * Criteria keys are the model names; values are null so System One uses its
- * native knowledge of models without manual descriptions.
+ * Criteria keys are the model names. A value is the member's routing description
+ * when one is configured, otherwise null so System One uses its native knowledge
+ * of the model.
  *
  * @param {string[]} models - Array of model IDs in the combo
- * @returns {Record<string, null>} Criteria map
+ * @param {Record<string, string>} [descriptions] - Optional per-member "when to pick" text
+ * @returns {Record<string, string|null>} Criteria map
  */
-export function buildChoiceCriteria(models) {
+export function buildChoiceCriteria(models, descriptions) {
   const criteria = {};
   if (!Array.isArray(models)) return criteria;
+  const hasDescriptions = descriptions && typeof descriptions === "object" && !Array.isArray(descriptions);
   for (const m of models) {
     if (typeof m === "string" && m.trim().length > 0) {
-      criteria[m.trim()] = null;
+      const key = m.trim();
+      const raw = hasDescriptions && Object.prototype.hasOwnProperty.call(descriptions, key)
+        ? descriptions[key]
+        : null;
+      const text = typeof raw === "string" ? raw.trim().slice(0, MAX_MEMBER_DESCRIPTION_CHARS) : "";
+      criteria[key] = text || null;
     }
   }
   return criteria;
+}
+
+/**
+ * Resolve the question System One answers for a combo: the custom routing
+ * instructions when configured, otherwise the default question.
+ *
+ * @param {string} [instructions] - Per-combo router instructions
+ * @returns {string} Instructions text
+ */
+export function resolveRouteInstructions(instructions) {
+  const text = typeof instructions === "string" ? instructions.trim().slice(0, MAX_ROUTE_INSTRUCTIONS_CHARS) : "";
+  return text || DEFAULT_ROUTE_INSTRUCTIONS;
 }
 
 /**
