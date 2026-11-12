@@ -16,6 +16,7 @@ export default {
   transport: {
     baseUrl: "https://api.mistral.ai/v1/chat/completions",
     validateUrl: "https://api.mistral.ai/v1/models",
+    thinkingFormat: "openai",
     quirks: {
       dropClientMetadata: true,
     },

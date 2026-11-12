@@ -1,7 +1,7 @@
 import { translateResponse, initState } from "../translator/index.js";
 import { FORMATS } from "../translator/formats.js";
 import { PROVIDERS } from "../config/providers.js";
-import { liftReasoningAliases } from "../translator/concerns/reasoning.js";
+import { liftReasoningAliases, normalizeMistralContent } from "../translator/concerns/reasoning.js";
 import { trackPendingRequest, appendRequestLog } from "@/lib/usageDb.js";
 import { extractUsage, mergeUsage, hasValidUsage, estimateUsage, logUsage, addBufferToUsage, filterUsageForFormat, COLORS } from "./usageTracking.js";
 import { parseSSELine, hasValuableContent, fixInvalidId, formatSSE, ensureStreamToolCallIds } from "./streamHelpers.js";
@@ -186,6 +186,11 @@ export function createSSEStream(options = {}) {
             try {
               let parsed = JSON.parse(trimmed.slice(5).trim());
 
+              let mistralNormalized = false;
+              if (provider === "mistral") for (const choice of parsed.choices || []) {
+                const normalized = normalizeMistralContent(choice.delta);
+                if (normalized !== choice.delta) { choice.delta = normalized; mistralNormalized = true; }
+              }
               const idFixed = fixInvalidId(parsed);
 
               // A fragment that opens a new tool-call index without an id breaks
@@ -207,7 +212,7 @@ export function createSSEStream(options = {}) {
               }
 
               // Ensure OpenAI-required fields are present on streaming chunks (Letta compat)
-              let fieldsInjected = false;
+              let fieldsInjected = mistralNormalized;
               if (parsed.choices !== undefined) {
                 if (!parsed.object) { parsed.object = "chat.completion.chunk"; fieldsInjected = true; }
                 if (!parsed.created) { parsed.created = Math.floor(Date.now() / 1000); fieldsInjected = true; }
@@ -322,6 +327,9 @@ export function createSSEStream(options = {}) {
 
         const parsed = parseSSELine(trimmed, targetFormat);
         if (!parsed) continue;
+        if (provider === "mistral") for (const choice of parsed.choices || []) {
+          if (choice.delta) choice.delta = normalizeMistralContent(choice.delta);
+        }
 
         // Responses API same-format passthrough: preserve event framing + track terminal state
         const isOpenAIResponsesStream = targetFormat === FORMATS.OPENAI_RESPONSES;
@@ -487,7 +495,14 @@ export function createSSEStream(options = {}) {
           const tailIsDone = tail.startsWith("data:") && tail.slice(5).trim() === "[DONE]";
           if (!tailIsDone && buffer) {
             let output = buffer;
-            if (buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
+            if (provider === "mistral" && buffer.startsWith("data:") && buffer.slice(5).trim() !== "[DONE]") {
+              try {
+                const parsed = JSON.parse(buffer.slice(5).trim());
+                for (const choice of parsed.choices || []) if (choice.delta) choice.delta = normalizeMistralContent(choice.delta);
+                output = `data: ${JSON.stringify(parsed)}\n\n`;
+              } catch { /* Preserve malformed trailing data unchanged. */ }
+            }
+            if (output === buffer && buffer.startsWith("data:") && !buffer.startsWith("data: ")) {
               output = "data: " + buffer.slice(5);
             }
             reqLogger?.appendConvertedChunk?.(output);
@@ -521,6 +536,9 @@ export function createSSEStream(options = {}) {
           // counts — so it has to go through.
           const isDoneSentinel = parsed?.done && targetFormat !== FORMATS.OLLAMA;
           if (parsed && !isDoneSentinel) {
+            if (provider === "mistral") for (const choice of parsed.choices || []) {
+              if (choice.delta) choice.delta = normalizeMistralContent(choice.delta);
+            }
             // Same accumulation the transform loop does, so finalizeStream() can
             // log a tail chunk's tokens instead of falling back to null.
             const extracted = extractUsage(parsed);
