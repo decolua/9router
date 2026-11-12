@@ -7,12 +7,31 @@ import PropTypes from "prop-types";
 import { Badge, Toggle, Tooltip } from "@/shared/components";
 import CooldownTimer from "./CooldownTimer";
 
-export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
+export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst, isLast, onMoveUp, onMoveDown, onToggleActive, onUpdateProxy, onUpdateQuotaLockout, onEdit, onDelete, oneByOneStatus = null, autoPing = null }) {
   const [showProxyDropdown, setShowProxyDropdown] = useState(false);
   const [updatingProxy, setUpdatingProxy] = useState(false);
   const proxyDropdownRef = useRef(null);
   const proxyBtnRef = useRef(null);
   const [proxyDropdownStyle, setProxyDropdownStyle] = useState(null);
+
+  // Issue #5359: quota lockout status + manual reactivation scheduling
+  const quotaLockout = connection.quotaLockout?.status ? connection.quotaLockout : null;
+  const quotaActive = quotaLockout && (quotaLockout.reactivateAt === null || new Date(quotaLockout.reactivateAt).getTime() > Date.now());
+  const [quotaInput, setQuotaInput] = useState(quotaLockout?.reactivateAt ? new Date(quotaLockout.reactivateAt).toISOString().slice(0, 16) : "");
+  const [savingQuota, setSavingQuota] = useState(false);
+  const formatCountdown = (iso) => {
+    const diff = Math.max(0, new Date(iso).getTime() - Date.now());
+    const totalSec = Math.floor(diff / 1000);
+    const d = Math.floor(totalSec / 86400);
+    const h = Math.floor((totalSec % 86400) / 3600);
+    const m = Math.floor((totalSec % 3600) / 60);
+    return [d ? `${d}d` : null, h ? `${h}h` : null, `${m}m`].filter(Boolean).join(" ");
+  };
+  const saveQuota = async (payload) => {
+    if (!onUpdateQuotaLockout) return;
+    setSavingQuota(true);
+    try { await onUpdateQuotaLockout(payload); } finally { setSavingQuota(false); }
+  };
 
   const proxyPoolMap = new Map((proxyPools || []).map((pool) => [pool.id, pool]));
   const boundProxyPoolId = connection.providerSpecificData?.proxyPoolId || null;
@@ -237,7 +256,27 @@ export default function ConnectionRow({ connection, proxyPools, isOAuth, isFirst
                 {getOneByOneLabel()}
               </Badge>
             )}
+            {quotaActive && (
+              <Badge variant="error" size="sm" title={quotaLockout.message || "Quota exhausted"}>
+                Quota exhausted — disabled until {quotaLockout.reactivateAt ? `${quotaLockout.reactivateAt} (${formatCountdown(quotaLockout.reactivateAt)})` : "manual re-enable"}
+              </Badge>
+            )}
           </div>
+          {quotaActive && onUpdateQuotaLockout && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-xs text-text-muted">{quotaLockout.source === "manual" ? "Manual schedule" : "Auto-detected reset"}</span>
+              <input
+                type="datetime-local"
+                value={quotaInput}
+                onChange={(e) => setQuotaInput(e.target.value)}
+                className="rounded border border-border bg-transparent px-1.5 py-0.5 text-xs"
+                aria-label="Reactivate quota-locked account at"
+              />
+              <button disabled={savingQuota || !quotaInput} onClick={() => saveQuota({ reactivateAt: new Date(quotaInput).toISOString() })} className="rounded border px-1.5 py-0.5 text-xs hover:bg-sidebar disabled:opacity-50">Schedule</button>
+              <button disabled={savingQuota} onClick={() => saveQuota({ reactivateAt: null })} className="rounded border px-1.5 py-0.5 text-xs hover:bg-sidebar disabled:opacity-50">Suspend indefinitely</button>
+              <button disabled={savingQuota} onClick={() => saveQuota(null)} className="rounded border px-1.5 py-0.5 text-xs hover:bg-sidebar disabled:opacity-50">Reactivate now</button>
+            </div>
+          )}
           {hasAnyProxy && (
             <div className="mt-1 flex items-center gap-2 flex-wrap">
               <span className="max-w-full truncate text-[11px] text-text-muted sm:max-w-[420px]" title={proxyDisplayText}>
