@@ -836,12 +836,20 @@ function ApiKeyProviderCard({
     compatible: "Compatible",
   };
 
-  const getIconPath = () => {
+  // Generic icon for compatible nodes; null for regular providers
+  const getCompatibleIconPath = () => {
     if (isCompatible && provider.apiType)
       return provider.apiType === "responses"
         ? "/providers/oai-r.png"
         : "/providers/oai-cc.png";
     if (isAnthropicCompatible) return "/providers/anthropic-m.png";
+    return null;
+  };
+  const compatibleIconPath = getCompatibleIconPath();
+
+  // Compatible nodes try /providers/<node id>.png first, then the generic icon
+  const getIconPath = () => {
+    if (compatibleIconPath) return getProviderIconSrc(provider.id) || compatibleIconPath;
     return getProviderIconSrc(provider.id);
   };
 
@@ -861,6 +869,7 @@ function ApiKeyProviderCard({
             >
               <ProviderIcon
                 src={getIconPath()}
+                fallbackSrc={compatibleIconPath || undefined}
                 alt={provider.name}
                 size={30}
                 className="object-contain rounded-lg max-w-[30px] max-h-[30px]"
