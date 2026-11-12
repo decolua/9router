@@ -740,6 +740,8 @@ export default function ProfilePage() {
   };
 
   const observabilityEnabled = settings.enableObservability === true;
+  const requestLogsEnvConfigured = settings.requestLogsEnvConfigured === true;
+  const requestLogsEnvEnabled = settings.enableRequestLogs === true;
 
   const handleShutdown = async () => {
     setIsShuttingDown(true);
@@ -1610,13 +1612,15 @@ export default function ProfilePage() {
             <div className="flex-1 min-w-0">
               <p className="font-medium text-sm sm:text-base">Enable Observability</p>
               <p className="text-xs sm:text-sm text-text-muted">
-                Record request details for inspection in the logs view
+                {requestLogsEnvConfigured
+                  ? `Controlled by ENABLE_REQUEST_LOGS=${requestLogsEnvEnabled ? "true" : "false"} (restart required)`
+                  : "Record request details for inspection in the logs view"}
               </p>
             </div>
             <Toggle
-              checked={observabilityEnabled}
+              checked={requestLogsEnvConfigured ? requestLogsEnvEnabled : observabilityEnabled}
               onChange={updateObservabilityEnabled}
-              disabled={loading}
+              disabled={loading || requestLogsEnvConfigured}
             />
           </div>
         </Card>

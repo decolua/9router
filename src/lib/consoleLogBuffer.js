@@ -1,5 +1,6 @@
 import { EventEmitter } from "events";
 import { CONSOLE_LOG_CONFIG } from "@/shared/constants/config.js";
+import { isRequestLoggingEnabled } from "open-sse/utils/requestLogging.js";
 
 const consoleLevels = ["log", "info", "warn", "error", "debug"];
 
@@ -86,6 +87,10 @@ export function initConsoleLogCapture() {
   for (const level of consoleLevels) {
     state.originals[level] = console[level];
     console[level] = (...args) => {
+      // An explicit ENABLE_REQUEST_LOGS=false is a deployment-wide console
+      // switch. Leave the original method untouched when logging is disabled.
+      // This applies to all captured levels, including operational warnings.
+      if (!isRequestLoggingEnabled()) return;
       appendLine(toLogLine(level, args));
       state.originals[level](...args);
     };

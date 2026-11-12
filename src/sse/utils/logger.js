@@ -1,5 +1,7 @@
 // Logger utility for cloud
 
+import { isRequestLoggingEnabled } from "open-sse/utils/requestLogging.js";
+
 const LOG_LEVELS = {
   DEBUG: 0,
   INFO: 1,
@@ -34,12 +36,14 @@ export function tagForSession(seed) {
 
 // Print one correlated line: [time] tag symbol message
 export function line(tag, symbol, message) {
+  if (!isRequestLoggingEnabled()) return;
   if (LEVEL > LOG_LEVELS.INFO) return;
   console.log(`[${formatTime()}] ${tag} ${symbol} ${message}`);
 }
 
-// Like line() but always printed regardless of LOG_LEVEL (errors must never be hidden)
+// Like line() but always printed regardless of LOG_LEVEL when request logging is enabled
 export function errorLine(tag, symbol, message) {
+  if (!isRequestLoggingEnabled()) return;
   console.log(`[${formatTime()}] ${tag} ${symbol} ${message}`);
 }
 
@@ -67,6 +71,7 @@ function formatData(data) {
 }
 
 export function debug(tag, message, data) {
+  if (!isRequestLoggingEnabled()) return;
   if (LEVEL <= LOG_LEVELS.DEBUG) {
     const dataStr = data ? ` ${formatData(data)}` : "";
     console.log(`[${formatTime()}] 🔍 [${tag}] ${message}${dataStr}`);
@@ -74,6 +79,7 @@ export function debug(tag, message, data) {
 }
 
 export function info(tag, message, data) {
+  if (!isRequestLoggingEnabled()) return;
   if (LEVEL <= LOG_LEVELS.INFO) {
     const dataStr = data ? ` ${formatData(data)}` : "";
     console.log(`[${formatTime()}] ℹ️  [${tag}] ${message}${dataStr}`);
@@ -81,6 +87,7 @@ export function info(tag, message, data) {
 }
 
 export function warn(tag, message, data) {
+  if (!isRequestLoggingEnabled()) return;
   if (LEVEL <= LOG_LEVELS.WARN) {
     const dataStr = data ? ` ${formatData(data)}` : "";
     console.warn(`[${formatTime()}] ⚠️  [${tag}] ${message}${dataStr}`);
@@ -88,6 +95,7 @@ export function warn(tag, message, data) {
 }
 
 export function error(tag, message, data) {
+  if (!isRequestLoggingEnabled()) return;
   if (LEVEL <= LOG_LEVELS.ERROR) {
     const dataStr = data ? ` ${formatData(data)}` : "";
     console.log(`[${formatTime()}] ❌ [${tag}] ${message}${dataStr}`);
@@ -95,17 +103,20 @@ export function error(tag, message, data) {
 }
 
 export function request(method, path, extra) {
+  if (!isRequestLoggingEnabled()) return;
   const dataStr = extra ? ` ${formatData(extra)}` : "";
   console.log(`\x1b[36m[${formatTime()}] 📥 ${method} ${path}${dataStr}\x1b[0m`);
 }
 
 export function response(status, duration, extra) {
+  if (!isRequestLoggingEnabled()) return;
   const icon = status < 400 ? "📤" : "💥";
   const dataStr = extra ? ` ${formatData(extra)}` : "";
   console.log(`[${formatTime()}] ${icon} ${status} (${duration}ms)${dataStr}`);
 }
 
 export function stream(event, data) {
+  if (!isRequestLoggingEnabled()) return;
   const dataStr = data ? ` ${formatData(data)}` : "";
   console.log(`[${formatTime()}] 🌊 [STREAM] ${event}${dataStr}`);
 }

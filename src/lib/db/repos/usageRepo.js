@@ -2,6 +2,7 @@ import { EventEmitter } from "events";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
 import { getMeta, setMeta } from "../helpers/metaStore.js";
+import { isRequestLoggingEnabled } from "open-sse/utils/requestLogging.js";
 
 function maskApiKey(key) {
   if (!key || typeof key !== "string") return null;
@@ -152,6 +153,10 @@ async function calculateCost(provider, model, tokens) {
 }
 
 export function trackPendingRequest(model, provider, connectionId, started, error = false) {
+  // When request logging is explicitly disabled, do not populate the in-memory
+  // live-activity tracker: getActiveRequests/getUsageStats stay empty and the
+  // SSE "pending" push goes silent, so the dashboard topology animation is idle.
+  if (!isRequestLoggingEnabled()) return;
   const modelKey = provider ? `${model} (${provider})` : model;
   const timerKey = `${connectionId}|${modelKey}`;
 
@@ -241,6 +246,7 @@ export async function getActiveRequests() {
 }
 
 export async function saveRequestUsage(entry) {
+  if (!isRequestLoggingEnabled()) return;
   try {
     const db = await getAdapter();
 
