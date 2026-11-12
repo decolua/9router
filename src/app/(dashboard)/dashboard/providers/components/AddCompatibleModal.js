@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { Badge, Button, Input, Modal, Select } from "@/shared/components";
+import CustomHeadersEditor, { rowsToPayload, validateRows } from "./CustomHeadersEditor";
 
 const VARIANT_CONFIG = {
   openai: {
@@ -49,6 +50,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
   const [checkModelId, setCheckModelId] = useState("");
   const [validating, setValidating] = useState(false);
   const [validationResult, setValidationResult] = useState(null);
+  const [headerRows, setHeaderRows] = useState([]);
+  const [submitError, setSubmitError] = useState(null);
 
   // openai: reset baseUrl when apiType changes; anthropic: reset checks when opened
   useEffect(() => {
@@ -63,6 +66,8 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
 
   const handleSubmit = async () => {
     if (!formData.name.trim() || !formData.prefix.trim() || !formData.baseUrl.trim()) return;
+    if (validateRows(headerRows)) return;
+    setSubmitError(null);
     setSubmitting(true);
     try {
       const res = await fetch("/api/provider-nodes", {
@@ -74,6 +79,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           ...(config.hasApiType ? { apiType: formData.apiType } : {}),
           baseUrl: formData.baseUrl,
           type: config.type,
+          customHeaders: rowsToPayload(headerRows),
         }),
       });
       const data = await res.json();
@@ -82,6 +88,9 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         setFormData(initialFormData());
         setCheckKey("");
         setValidationResult(null);
+        setHeaderRows([]);
+      } else {
+        setSubmitError(data.error || `Failed to create ${config.errorLabel} node`);
       }
     } catch (error) {
       console.log(`Error creating ${config.errorLabel} node:`, error);
@@ -101,6 +110,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           apiKey: checkKey,
           type: config.type,
           modelId: checkModelId.trim() || undefined,
+          customHeaders: rowsToPayload(headerRows),
         }),
       });
       const data = await res.json();
@@ -165,6 +175,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           placeholder={config.defaultBaseUrl}
           hint={config.baseUrlHint}
         />
+        <CustomHeadersEditor rows={headerRows} onChange={setHeaderRows} />
         <Input
           label="API Key (for Check)"
           type="password"
@@ -181,7 +192,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
           <Button
             onClick={handleValidate}
-            disabled={!checkKey || validating || !formData.baseUrl.trim()}
+            disabled={!checkKey || validating || !formData.baseUrl.trim() || !!validateRows(headerRows)}
             variant="secondary"
             className="w-full sm:w-auto"
           >
@@ -189,6 +200,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
           </Button>
           {renderValidationResult()}
         </div>
+        {submitError && <p className="text-sm text-red-500">{submitError}</p>}
         <div className="flex flex-col gap-2 sm:flex-row">
           <Button
             onClick={handleSubmit}
@@ -197,6 +209,7 @@ function AddCompatibleModal({ variant, isOpen, onClose, onCreated }) {
               !formData.name.trim() ||
               !formData.prefix.trim() ||
               !formData.baseUrl.trim() ||
+              !!validateRows(headerRows) ||
               submitting
             }
           >

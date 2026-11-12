@@ -21,6 +21,8 @@ import { resolveZedModels } from "open-sse/shared/zedAuth.js";
 import { resolveCommandCodeModels } from "open-sse/services/commandcodeModels.js";
 import { updateProviderCredentials } from "@/sse/services/tokenRefresh";
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { getNodeCustomHeaders } from "@/lib/providerNodeHeaders";
+import { applyCustomHeaders } from "open-sse/utils/customHeaders.js";
 import { capabilitiesFromServiceKind, getCapabilitiesForModel, aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
 import { getThinkingLevels } from "open-sse/providers/thinkingLevels.js";
 
@@ -236,6 +238,8 @@ async function fetchCompatibleModelIds(connection) {
   } else {
     return [];
   }
+
+  applyCustomHeaders(headers, await getNodeCustomHeaders(connection.provider), connection, connection.provider);
 
   try {
     const controller = new AbortController();

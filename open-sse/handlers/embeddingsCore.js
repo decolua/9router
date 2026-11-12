@@ -37,7 +37,7 @@ export async function handleEmbeddingsCore({
     );
   }
 
-  const ctx = { input };
+  const ctx = { input, provider };
   // buildUrl/buildHeaders/buildBody were called bare. An adapter that rejects a
   // misconfigured connection — selfhosted-embedding throws when no baseUrl is set
   // rather than silently falling back to api.openai.com — would have escaped this

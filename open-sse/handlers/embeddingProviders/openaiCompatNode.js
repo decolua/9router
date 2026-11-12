@@ -1,5 +1,6 @@
 // Custom node providers (openai-compatible-* / custom-embedding-*) — baseUrl from credentials
 import createOpenAIEmbeddingAdapter from "./openai.js";
+import { applyCustomHeaders } from "../../utils/customHeaders.js";
 
 const baseAdapter = createOpenAIEmbeddingAdapter("openai");
 
@@ -10,4 +11,6 @@ export default {
     const baseUrl = rawBaseUrl.replace(/\/$/, "").replace(/\/embeddings$/, "");
     return `${baseUrl}/embeddings`;
   },
+  // Node custom headers (openai-compatible-* only; custom-embedding-* is a no-op)
+  buildHeaders: (creds, ctx) => applyCustomHeaders(baseAdapter.buildHeaders(creds, ctx), creds?.customHeaders, creds, ctx?.provider),
 };

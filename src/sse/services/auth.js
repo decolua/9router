@@ -3,6 +3,7 @@ import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/con
 import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
+import { getNodeCustomHeaders } from "@/lib/providerNodeHeaders";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
 import * as log from "../utils/logger.js";
 
@@ -200,6 +201,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     }
 
     const resolvedProxy = await resolveConnectionProxyConfig(connection.providerSpecificData || {});
+    // Node-level custom headers (compatible nodes only) — kept off providerSpecificData so
+    // token-refresh persistence never writes them onto the connection.
+    const customHeaders = await getNodeCustomHeaders(providerId);
 
     return {
       authType: connection.authType,
@@ -223,6 +227,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
         strictProxy: resolvedProxy.strictProxy === true,
       },
       connectionId: connection.id,
+      ...(customHeaders.length ? { customHeaders } : {}),
       // Include current status for optimization check
       testStatus: connection.testStatus,
       lastError: connection.lastError,

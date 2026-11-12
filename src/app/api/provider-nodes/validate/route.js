@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { assertPublicUrl } from "@/shared/utils/ssrfGuard.js";
 import { isLocalRequest } from "@/dashboardGuard";
+import { getProviderNodeById } from "@/models";
+import { applyHeaderList, resolveCustomHeadersForSave } from "open-sse/utils/customHeaders.js";
+
+const HEADER_NODE_TYPES = new Set(["openai-compatible", "anthropic-compatible"]);
 
 // Fetch with timeout wrapper
 const fetchWithTimeout = (url, options, timeout = 10000) => {
@@ -55,11 +59,28 @@ const getChatErrorMessage = (status) => {
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { baseUrl, apiKey, type, modelId } = body;
+    const { baseUrl, apiKey, type, modelId, customHeaders, nodeId } = body;
 
     if (!baseUrl || !apiKey) {
       return NextResponse.json({ error: "Base URL and API key required" }, { status: 400 });
     }
+
+    // Custom headers from the (unsaved) modal, validated with the same rules as save.
+    // The edit modal only holds masked values: `nodeId` lets those resolve to the stored ones.
+    let headerList = [];
+    if (HEADER_NODE_TYPES.has(type || "openai-compatible")) {
+      let stored = [];
+      if (typeof nodeId === "string" && nodeId) {
+        const node = await getProviderNodeById(nodeId);
+        if (node && HEADER_NODE_TYPES.has(node.type)) stored = node.customHeaders || [];
+      }
+      const result = resolveCustomHeadersForSave(customHeaders ?? [], stored);
+      if (result.error) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      headerList = result.headers;
+    }
+    const withCustom = (headers) => applyHeaderList(headers, headerList, { apiKey });
 
     // Validate URL format
     if (!isValidUrl(baseUrl)) {
@@ -115,11 +136,11 @@ export async function POST(request) {
       const modelsUrl = `${normalizedBase}/models`;
       const res = await fetchWithTimeout(modelsUrl, {
         method: "GET",
-        headers: {
+        headers: withCustom({
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
           "Authorization": `Bearer ${apiKey}`
-        }
+        })
       });
 
       if (res.ok) return NextResponse.json({ valid: true });
@@ -133,12 +154,12 @@ export async function POST(request) {
       if (modelId) {
         const chatRes = await fetchWithTimeout(`${normalizedBase}/chat/completions`, {
           method: "POST",
-          headers: {
+          headers: withCustom({
             "Authorization": `Bearer ${apiKey}`,
             "Content-Type": "application/json",
             "x-api-key": apiKey,
             "anthropic-version": "2023-06-01"
-          },
+          }),
           body: JSON.stringify({
             model: modelId,
             messages: [{ role: "user", content: "ping" }],
@@ -161,7 +182,7 @@ export async function POST(request) {
     // OpenAI Compatible Validation (Default)
     const modelsUrl = `${baseUrl.replace(/\/$/, "")}/models`;
     const res = await fetchWithTimeout(modelsUrl, {
-      headers: { "Authorization": `Bearer ${apiKey}` },
+      headers: withCustom({ "Authorization": `Bearer ${apiKey}` }),
     });
 
     if (res.ok) return NextResponse.json({ valid: true });
@@ -175,10 +196,10 @@ export async function POST(request) {
     if (modelId) {
       const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
-        headers: {
+        headers: withCustom({
           "Authorization": `Bearer ${apiKey}`,
           "Content-Type": "application/json"
-        },
+        }),
         body: JSON.stringify({
           model: modelId,
           messages: [{ role: "user", content: "ping" }],

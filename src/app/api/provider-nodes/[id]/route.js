@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { resolveCustomHeadersForSave, toMaskedNode } from "open-sse/utils/customHeaders.js";
 import { deleteProviderConnectionsByProvider, deleteProviderNode, getProviderConnections, getProviderNodeById, updateProviderConnection, updateProviderNode } from "@/models";
 
 // PUT /api/provider-nodes/[id] - Update provider node
@@ -6,7 +7,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { name, prefix, apiType, baseUrl } = body;
+    const { name, prefix, apiType, baseUrl, customHeaders } = body;
     const node = await getProviderNodeById(id);
 
     if (!node) {
@@ -58,6 +59,17 @@ export async function PUT(request, { params }) {
       updates.apiType = apiType;
     }
 
+    // Custom outbound headers (compatible LLM nodes only). Stored on the node and
+    // resolved per request — never copied onto connections. Masked values keep
+    // the stored value; omitting the field keeps the whole list unchanged.
+    if (node.type === "openai-compatible" || node.type === "anthropic-compatible") {
+      const result = resolveCustomHeadersForSave(customHeaders, node.customHeaders);
+      if (result.error) {
+        return NextResponse.json({ error: result.error }, { status: 400 });
+      }
+      updates.customHeaders = result.headers;
+    }
+
     const updated = await updateProviderNode(id, updates);
 
     const connections = await getProviderConnections({ provider: id });
@@ -73,7 +85,7 @@ export async function PUT(request, { params }) {
       })
     )));
 
-    return NextResponse.json({ node: updated });
+    return NextResponse.json({ node: toMaskedNode(updated) });
   } catch (error) {
     console.log("Error updating provider node:", error);
     return NextResponse.json({ error: "Failed to update provider node" }, { status: 500 });
