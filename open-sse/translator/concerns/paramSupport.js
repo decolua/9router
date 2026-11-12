@@ -33,7 +33,20 @@ const STRIP_RULES = [
   // NVIDIA NIM treats `reasoning` and `reasoning_content` as aliases for one
   // field; sending both makes its deserializer report a duplicate field. Keep
   // the OpenAI canonical spelling on assistant history.
-  { provider: "nvidia", renameMessageFields: { reasoning: "reasoning_content" } },
+  // Also strip unsupported client metadata, Anthropic beta, thinking budget, and OpenAI extra params.
+  {
+    provider: "nvidia",
+    drop: [
+      "client_metadata",
+      "prompt_cache_key",
+      "service_tier",
+      "anthropic_beta",
+      "thinking_budget",
+      "user_id",
+      "custom_field",
+    ],
+    renameMessageFields: { reasoning: "reasoning_content" },
+  },
   // OpenCode Go's relay rejects `response_format` for its deepseek family with HTTP
   // 400 — both json_schema and json_object — while glm / kimi / mimo / minimax /
   // qwen / grok / gpt on the same relay accept it. The rejection body is either a
