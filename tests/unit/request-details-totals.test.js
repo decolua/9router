@@ -137,4 +137,51 @@ describe("getRequestDetailsTotals", () => {
       latencyTtftMs: 0,
     });
   });
+
+  // Live rows disagree on the cache field name: Anthropic-style lanes store
+  // cache_read_input_tokens, Alibaba stores cached_tokens (and nothing under the
+  // read name). Reading only one hid half the providers behind a "—".
+  it("sums cached tokens stored under either field name", async () => {
+    adapter.run(`DELETE FROM requestDetails`);
+    // Anthropic-style row: cache_read_input_tokens only.
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      ["c1", "2026-11-12T01:00:00.000Z", "claude", "m", null, "success",
+        JSON.stringify({ tokens: { prompt_tokens: 100, cache_read_input_tokens: 1000, completion_tokens: 10 } })]
+    );
+    // Alibaba-style row: cached_tokens only, completion under completion_tokens.
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      ["c2", "2026-11-12T02:00:00.000Z", "alitp-intl", "m", null, "success",
+        JSON.stringify({ tokens: { prompt_tokens: 400, cached_tokens: 244103, prompt_tokens_details: { cached_tokens: 244103 }, completion_tokens: 20 } })]
+    );
+    // A row carrying both names must not be counted twice (COALESCE, not sum).
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      ["c3", "2026-11-12T03:00:00.000Z", "mixed", "m", null, "success",
+        JSON.stringify({ tokens: { prompt_tokens: 500, cache_read_input_tokens: 700, cached_tokens: 700, completion_tokens: 30 } })]
+    );
+
+    const totals = await db.getRequestDetailsTotals({});
+
+    expect(totals).toMatchObject({
+      requests: 3,
+      cachedTokens: 1000 + 244103 + 700,
+      inputTokens: 1000,
+      outputTokens: 60,
+    });
+  });
+
+  it("falls back to output_tokens when completion_tokens is absent", async () => {
+    adapter.run(`DELETE FROM requestDetails`);
+    adapter.run(
+      `INSERT INTO requestDetails(id, timestamp, provider, model, connectionId, status, data) VALUES(?, ?, ?, ?, ?, ?, ?)`,
+      ["o1", "2026-11-12T01:00:00.000Z", "claude", "m", null, "success",
+        JSON.stringify({ tokens: { prompt_tokens: 100, output_tokens: 42 } })]
+    );
+
+    const totals = await db.getRequestDetailsTotals({});
+
+    expect(totals).toMatchObject({ requests: 1, outputTokens: 42 });
+  });
 });

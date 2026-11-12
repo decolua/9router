@@ -177,8 +177,14 @@ function buildDetailWhere(filter = {}) {
 // because the table only shows one page at a time while the user reads the
 // footer as "the whole window". json_extract keeps this in SQLite in a single
 // pass; the detail blob is already JSON, so no extra parsing happens in JS.
-// `cache_read_input_tokens` is the field the streaming handlers actually store
-// (the OpenAI-style `cached_tokens` name only appears in some raw payloads).
+//
+// WHY both cache field names are summed: providers disagree. Measured on live
+// rows — Anthropic-style lanes (opendesign-go, claude) store
+// `cache_read_input_tokens` and never `cached_tokens`, while Alibaba Token Plan
+// stores `cached_tokens` (mirrored under prompt_tokens_details) and never
+// `cache_read_input_tokens`. Reading only one name reported 0 for the other
+// half of the providers. COALESCE keeps a row that carries both from being
+// counted twice, matching getCachedTokens() in the dashboard's tokenDisplay.js.
 export async function getRequestDetailsTotals(filter = {}) {
   try {
     const db = await getAdapter();
@@ -186,9 +192,18 @@ export async function getRequestDetailsTotals(filter = {}) {
     const row = db.get(
       `SELECT COUNT(*) AS requests,
         SUM(CAST(json_extract(data,'$.tokens.prompt_tokens') AS INTEGER)) AS input_tokens,
-        SUM(CAST(json_extract(data,'$.tokens.cache_read_input_tokens') AS INTEGER)) AS cached_tokens,
-        SUM(CAST(json_extract(data,'$.tokens.cache_creation_input_tokens') AS INTEGER)) AS cache_creation_tokens,
-        SUM(CAST(json_extract(data,'$.tokens.completion_tokens') AS INTEGER)) AS output_tokens,
+        SUM(CAST(COALESCE(
+          json_extract(data,'$.tokens.cache_read_input_tokens'),
+          json_extract(data,'$.tokens.cached_tokens')
+        ) AS INTEGER)) AS cached_tokens,
+        SUM(CAST(COALESCE(
+          json_extract(data,'$.tokens.cache_creation_input_tokens'),
+          json_extract(data,'$.tokens.prompt_tokens_details.cache_creation_input_tokens')
+        ) AS INTEGER)) AS cache_creation_tokens,
+        SUM(CAST(COALESCE(
+          json_extract(data,'$.tokens.completion_tokens'),
+          json_extract(data,'$.tokens.output_tokens')
+        ) AS INTEGER)) AS output_tokens,
         SUM(CAST(json_extract(data,'$.latency.total') AS INTEGER)) AS latency_total,
         SUM(CAST(json_extract(data,'$.latency.ttft') AS INTEGER)) AS latency_ttft
       FROM requestDetails ${where}`,
