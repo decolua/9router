@@ -107,6 +107,18 @@ describe("buildStreamErrorBytes", () => {
     expect(out).not.toContain("[DONE]");
     expect(jsonOf(out)).toMatchObject({ type: "error", error: { message: "stream stall timeout" } });
   });
+
+  // Claude Code retries a mid-stream error event only when its type is
+  // overloaded_error (the type Anthropic itself uses for transient failures);
+  // server_error is treated as fatal. Message stays human-readable.
+  it("uses overloaded_error for Claude clients so Claude Code retries", () => {
+    const out = textOf(buildStreamErrorBytes(504, "upstream connection lost", FORMATS.CLAUDE));
+
+    expect(jsonOf(out)).toEqual({
+      type: "error",
+      error: { type: "overloaded_error", message: "upstream connection lost", code: "gateway_timeout" },
+    });
+  });
 });
 
 // The wiring, not just the frame builder: the watchdog must hand its reason to
@@ -138,5 +150,31 @@ describe("stall abort through pipeWithDisconnect", () => {
     expect(seen).toBe("stream stall timeout");
     expect(text).toContain('"stream stall timeout"');
     expect(text).toContain("data: [DONE]");
+  });
+});
+
+// The reported case: upstream socket dies mid-stream (no stall), Claude client.
+describe("upstream cut through pipeWithDisconnect (Claude client)", () => {
+  it("sends event: error with overloaded_error and the original message", async () => {
+    const ctrl = createStreamController({ provider: "claude", model: "test" });
+    const upstream = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("event: ping\ndata: {}\n\n"));
+        controller.error(new Error("terminated"));
+      },
+    });
+
+    const out = pipeWithDisconnect(
+      { body: upstream },
+      new TransformStream(),
+      ctrl,
+      (message) => buildStreamErrorBytes(504, message, FORMATS.CLAUDE)
+    );
+
+    const text = await readAll(out);
+    const frame = JSON.parse(text.slice(text.indexOf("event: error")).match(/\{.*\}/s)[0]);
+    expect(frame.type).toBe("error");
+    expect(frame.error.type).toBe("overloaded_error");
+    expect(frame.error.message).toBe("upstream connection lost");
   });
 });
