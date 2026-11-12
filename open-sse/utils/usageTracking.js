@@ -320,9 +320,28 @@ export function extractUsage(chunk) {
 // message_delta has the real cumulative output (input/cache absent). Max keeps
 // the meaningful value from each without clobbering. Idempotent for other
 // providers that emit a single complete usage object.
+//
+// An estimate (estimateUsage(), flagged `estimated:true`) is a placeholder,
+// never a floor: a real upstream report replaces it outright, and a late
+// estimate never overwrites real usage. Max-merge only applies between partial
+// REAL reports — otherwise the persisted prompt_tokens became
+// max(estimate, real), inflated whenever the estimate exceeded reality.
 export function mergeUsage(prev, next) {
   if (!prev) return next || null;
   if (!next) return prev;
+  if (!!prev.estimated !== !!next.estimated) {
+    if (next.estimated) return prev; // a late estimate never overwrites real usage
+    // prev was the estimate; the real report may omit total_tokens. Recompute
+    // from the real counts instead of keeping the estimate's inflated total.
+    if (prev.total_tokens !== undefined && next.total_tokens === undefined) {
+      const prompt = next.prompt_tokens ?? next.input_tokens;
+      const completion = next.completion_tokens ?? next.output_tokens;
+      if (Number.isFinite(prompt) && Number.isFinite(completion)) {
+        return { ...next, total_tokens: prompt + completion };
+      }
+    }
+    return next;
+  }
   const merged = { ...prev };
   for (const [k, v] of Object.entries(next)) {
     // typeof NaN === "number" — guard with Number.isFinite so one malformed
