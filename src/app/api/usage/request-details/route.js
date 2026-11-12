@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getRequestDetails } from "@/lib/usageDb";
+import { getRequestDetails, getRequestDetailsTotals } from "@/lib/usageDb";
 
 /**
  * GET /api/usage/request-details
@@ -48,6 +48,12 @@ export async function GET(request) {
     
     const result = await getRequestDetails(filter);
 
+    // Totals run over the full filtered set, not just this page, so the footer
+    // answers "what did this provider/account/window cost in total" while the
+    // table still pages. A null total means the aggregate itself failed; the
+    // table must keep working, so the footer simply stays hidden.
+    const totals = await getRequestDetailsTotals(filter);
+
     // Redact conversation payloads: the stored details include full request
     // bodies (user prompts, tool calls) and provider responses. Returning them
     // wholesale lets any dashboard-authenticated user (or, if requireLogin is
@@ -63,7 +69,7 @@ export async function GET(request) {
       return redacted;
     });
 
-    return NextResponse.json({ ...result, details: redactedDetails });
+    return NextResponse.json({ ...result, totals, details: redactedDetails });
   } catch (error) {
     console.error("[API] Failed to get request details:", error);
     return NextResponse.json(

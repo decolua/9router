@@ -52,6 +52,22 @@ function getProviderName(providerId, cache) {
   return providerConfig?.name || providerId;
 }
 
+// Milliseconds summed over thousands of requests reach hours, which reads as an
+// unreadable integer; seconds are truncated (never rounded) so a value one
+// second short of an hour cannot print "60m".
+function formatDuration(ms) {
+  const total = Number(ms) || 0;
+  if (total <= 0) return "0s";
+  if (total < 60 * 1000) return `${Math.floor(total / 1000)}s`;
+
+  const totalSeconds = Math.floor(total / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+
+  if (hours < 1) return `${minutes}m`;
+  return `${hours}h ${minutes}m`;
+}
+
 function CollapsibleSection({ title, children, defaultOpen = false, icon = null }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
   
@@ -96,8 +112,16 @@ export default function RequestDetailsTab() {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [providers, setProviders] = useState([]);
   const [providerNameCache, setProviderNameCache] = useState(null);
+  // Accounts for the Account dropdown, scoped to the selected provider.
+  const [connections, setConnections] = useState([]);
+  // Aggregate over the whole filtered window (not just this page). Null when
+  // the server could not compute it, which hides the footer row entirely.
+  const [totals, setTotals] = useState(null);
   const [filters, setFilters] = useState({
     provider: "",
+    // connectionId identifies the exact credential row, so two accounts under
+    // one provider can be told apart; "" means all accounts.
+    connectionId: "",
     startDate: "",
     endDate: ""
   });
@@ -115,14 +139,33 @@ export default function RequestDetailsTab() {
     }
   }, []);
 
+  // Account list follows the provider filter so the dropdown never offers an
+  // account whose rows the table cannot show.
+  const fetchConnections = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (filters.provider) params.append("provider", filters.provider);
+      const res = await fetch(`/api/usage/connections?${params}`);
+      const data = await res.json();
+      setConnections(data.connections || []);
+    } catch (error) {
+      console.error("Failed to fetch usage connections:", error);
+      setConnections([]);
+    }
+  }, [filters.provider]);
+
   const fetchDetails = useCallback(async () => {
     setLoading(true);
+    // Drop the previous totals immediately: leaving them on screen would pair
+    // the old filter's aggregate with the new filter's rows while in flight.
+    setTotals(null);
     try {
       const params = new URLSearchParams({
         page: pagination.page.toString(),
         pageSize: pagination.pageSize.toString()
       });
       if (filters.provider) params.append("provider", filters.provider);
+      if (filters.connectionId) params.append("connectionId", filters.connectionId);
       if (filters.startDate) params.append("startDate", filters.startDate);
       if (filters.endDate) params.append("endDate", filters.endDate);
 
@@ -130,6 +173,7 @@ export default function RequestDetailsTab() {
       const data = await res.json();
 
       setDetails(data.details || []);
+      setTotals(data.totals ?? null);
       setPagination(prev => ({ ...prev, ...data.pagination }));
     } catch (error) {
       console.error("Failed to fetch request details:", error);
@@ -143,8 +187,16 @@ export default function RequestDetailsTab() {
   }, [fetchProviders]);
 
   useEffect(() => {
+    fetchConnections();
+  }, [fetchConnections]);
+
+  useEffect(() => {
     fetchDetails();
   }, [fetchDetails]);
+
+  // Label for the account currently filtered on, shown under the TOTAL row's
+  // provider cell so "$X for this provider" is unambiguous about which login.
+  const selectedConnection = connections.find((connection) => connection.id === filters.connectionId) || null;
 
   const handleViewDetail = (detail) => {
     setSelectedDetail(detail);
@@ -160,19 +212,24 @@ export default function RequestDetailsTab() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ provider: "", startDate: "", endDate: "" });
+    setFilters({ provider: "", connectionId: "", startDate: "", endDate: "" });
   };
 
   return (
     <div className="flex min-w-0 flex-col gap-6">
       <Card padding="md">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="provider-filter" className="text-sm font-medium text-text-main">Provider</label>
             <select
               id="provider-filter"
               value={filters.provider}
-              onChange={(e) => setFilters({ ...filters, provider: e.target.value })}
+              onChange={(e) => {
+                // Switching provider invalidates any chosen account: the old
+                // connectionId belongs to a provider the table no longer shows,
+                // so keeping it would filter every row away.
+                setFilters((prev) => ({ ...prev, provider: e.target.value, connectionId: "" }));
+              }}
               className={cn(
                 "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
                 "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
@@ -189,6 +246,38 @@ export default function RequestDetailsTab() {
             </select>
           </div>
           
+          <div className="flex min-w-0 flex-col gap-2">
+            <label htmlFor="account-filter" className="text-sm font-medium text-text-main">Account</label>
+            <select
+              id="account-filter"
+              value={filters.connectionId}
+              onChange={(e) => setFilters({ ...filters, connectionId: e.target.value })}
+              className={cn(
+                "h-9 px-3 rounded-lg border border-black/10 dark:border-white/10 bg-surface",
+                "text-sm text-text-main focus:outline-none focus:ring-2 focus:ring-primary/20",
+                "w-full min-w-0 cursor-pointer"
+              )}
+              style={{ colorScheme: 'auto' }}
+            >
+              <option value="">All Accounts</option>
+              {connections.map((connection, index) => {
+                // Two accounts can share a name (same email re-added under a
+                // different provider, or duplicate API-key labels). Suffix the
+                // provider only on the colliding entries so the dropdown stays
+                // readable in the common case but never shows two identical
+                // options the user cannot tell apart.
+                const duplicated = connections.some(
+                  (other, otherIndex) => otherIndex !== index && other.name === connection.name
+                );
+                return (
+                  <option key={connection.id} value={connection.id}>
+                    {duplicated ? `${connection.name} (${connection.provider})` : connection.name}
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+
           <div className="flex min-w-0 flex-col gap-2">
             <label htmlFor="start-date-filter" className="text-sm font-medium text-text-main">Start Date</label>
             <input
@@ -248,6 +337,47 @@ export default function RequestDetailsTab() {
               </tr>
             </thead>
             <tbody>
+              {/* Footer first: this row summarises EVERY page of the current
+                  filter, so it sits above the paged rows rather than below them
+                  where it would look like "this page's total". */}
+              {totals && !loading && (
+                <tr
+                  className="border-y border-primary/30 bg-primary/10 font-semibold"
+                  title={`Sum over all ${totals.requests} requests matching the current filters, every page — not just this page.`}
+                >
+                  <td className="p-4 text-sm">
+                    <span className="font-bold text-primary">TOTAL</span>
+                    <span className="ml-1 text-xs font-normal text-text-muted">
+                      {totals.requests.toLocaleString()} requests · all pages
+                    </span>
+                  </td>
+                  <td className="p-4 text-sm font-normal text-text-muted">(all models)</td>
+                  <td className="p-4 text-sm font-normal text-text-muted">
+                    {filters.provider ? getProviderName(filters.provider, providerNameCache) : "(all providers)"}
+                    {filters.connectionId && selectedConnection && (
+                      <span className="block text-xs text-text-muted">{selectedConnection.name}</span>
+                    )}
+                  </td>
+                  <td className="p-4 text-right text-sm font-mono">{totals.inputTokens.toLocaleString()}</td>
+                  <td className="p-4 text-right text-sm font-mono">
+                    {totals.cachedTokens > 0 ? totals.cachedTokens.toLocaleString() : "—"}
+                  </td>
+                  <td className="p-4 text-right text-sm font-mono">
+                    {totals.cacheCreationTokens > 0 ? totals.cacheCreationTokens.toLocaleString() : "—"}
+                  </td>
+                  <td className="p-4 text-right text-sm font-mono">{totals.outputTokens.toLocaleString()}</td>
+                  <td className="p-4 text-sm">
+                    <div>{formatDuration(totals.latencyTotalMs)}</div>
+                    {totals.requests > 0 && (
+                      <div className="text-xs font-normal text-text-muted">
+                        avg TTFT {formatDuration(totals.latencyTtftMs / totals.requests)} · avg total{" "}
+                        {formatDuration(totals.latencyTotalMs / totals.requests)}
+                      </div>
+                    )}
+                  </td>
+                  <td className="p-4" />
+                </tr>
+              )}
               {loading ? (
                 <tr>
                   <td colSpan="7" className="p-8 text-center text-text-muted">
