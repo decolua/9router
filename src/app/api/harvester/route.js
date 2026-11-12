@@ -267,7 +267,7 @@ async function executeHarvestCycle(target = 5, maxScan = 1000, customFeeds = [])
             if (egressIp) existingEgressIps.add(egressIp);
 
             const locSuffix = result.loc ? `-[${result.loc}]` : "";
-            const name = `FreeProxy-${hostPort.replace(":", "_")}${locSuffix}`;
+            const name = `seren-${hostPort.replace(":", "_")}${locSuffix}`;
             await createProxyPool({
               name,
               proxyUrl,

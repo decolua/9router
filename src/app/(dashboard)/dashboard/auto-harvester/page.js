@@ -104,7 +104,10 @@ export default function AutoHarvesterPage() {
   const maxCandidatesCount = status?.maxCandidates ?? maxScan;
 
   const harvestedPools = useMemo(() => {
-    return pools.filter((p) => String(p.name || "").startsWith("FreeProxy"));
+    return pools.filter((p) => {
+      const n = String(p.name || "");
+      return n.startsWith("seren-") || n.startsWith("FreeProxy-");
+    });
   }, [pools]);
 
   const activeHarvested = useMemo(() => {

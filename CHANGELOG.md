@@ -1,3 +1,9 @@
+# v0.5.419 (2026-11-11)
+
+## What Looks Different?
+
+- Harvested proxy pools are now formatted with the `seren-` prefix (e.g. `seren-<ip>_<port>-[<loc>]`) instead of `FreeProxy-`.
+
 # v0.5.418 (2026-11-11)
 
 ## What Looks Different?
