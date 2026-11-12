@@ -16,6 +16,8 @@ const ICON_ALIASES = {
   "muse-web": "muse",
   "gemini-web": "gemini",
   "chatgpt-web": "openai",
+  // OpenDesign Go is the subscription lane of the same OpenDesign brand mark
+  "opendesign-go": "opendesign",
 };
 
 // Runtime only — first 404 remembers id for the whole session
