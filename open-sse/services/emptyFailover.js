@@ -122,6 +122,49 @@ export function inspectSSELine(line) {
   return { content, finishReason };
 }
 
+// A forced-streaming member answering a client that did not ask to stream can hand the combo a
+// whole JSON document (chat.completion, a Responses `response` object or an Anthropic message)
+// labelled text/event-stream, sometimes followed by a glued "data: [DONE]". No line of that body
+// starts with "data:", so the SSE scan sees nothing and a real answer is judged empty: every
+// member is skipped and the last one wins. Read the document instead, with the same content rule
+// (answer text and tool calls count; reasoning does not).
+export function inspectJsonBody(text) {
+  const t = typeof text === "string" ? text.trim() : "";
+  const end = t.lastIndexOf("}");
+  if (!t.startsWith("{") || end < 0) return { content: false, finishReason: null };
+  let doc;
+  try { doc = JSON.parse(t.slice(0, end + 1)); } catch { return { content: false, finishReason: null }; }
+  if (!doc || typeof doc !== "object") return { content: false, finishReason: null };
+
+  if (Array.isArray(doc.choices)) {
+    let content = false, finishReason = null;
+    for (const choice of doc.choices) {
+      if (deltaHasClientContent(choice?.message || choice?.delta || {})) content = true;
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
+    }
+    return { content, finishReason };
+  }
+  const response = doc.object === "response" ? doc : (doc.response?.object === "response" ? doc.response : null);
+  if (response) {
+    const content = (response.output || []).some((item) =>
+      RESPONSES_TOOL_ITEMS.has(item?.type)
+      || (item?.type === RESPONSES_ITEM.MESSAGE
+        && (item.content || []).some((part) => nonEmptyString(part?.text))));
+    let finishReason = null;
+    if (response.status === RESPONSES_STATUS.COMPLETED) finishReason = OPENAI_FINISH.STOP;
+    else if (response.status === RESPONSES_STATUS.INCOMPLETE) {
+      finishReason = RESPONSES_INCOMPLETE_FINISH[response.incomplete_details?.reason] || RESPONSES_STATUS.INCOMPLETE;
+    } else if (response.status === RESPONSES_STATUS.FAILED) finishReason = RESPONSES_STATUS.FAILED;
+    return { content, finishReason };
+  }
+  if (doc.type === "message" && Array.isArray(doc.content)) {
+    const content = doc.content.some((b) =>
+      b?.type === CLAUDE_BLOCK.TOOL_USE || (b?.type === CLAUDE_BLOCK.TEXT && nonEmptyString(b.text)));
+    return { content, finishReason: doc.stop_reason ? toOpenAIFinish(doc.stop_reason, FORMATS.CLAUDE) : null };
+  }
+  return { content: false, finishReason: null };
+}
+
 // Scan the COMPLETE lines of a decoded SSE buffer and update the running decision.
 // The trailing fragment (a line still being received) is not parsed — it is returned in
 // `state.pending` for the caller to prepend to the next chunk. `sawContent` latches true.
@@ -184,6 +227,15 @@ export async function peekStreamForContent(body, { deadlineMs = EMPTY_PEEK_DEADL
     pendingRead = null;
     if (done) {
       if (textBuf) scanSSEBuffer(textBuf + "\n", state); // final line without a trailing newline
+      if (!state.sawContent) {
+        // Not SSE after all: a complete JSON document behind an event-stream content type.
+        const whole = headChunks.map((c) => decoder.decode(c, { stream: true })).join("") + decoder.decode();
+        if (whole.trimStart().startsWith("{")) {
+          const info = inspectJsonBody(whole);
+          if (info.content) state.sawContent = true;
+          if (info.finishReason) state.finishReason = info.finishReason;
+        }
+      }
       return settle({ outcome: state.sawContent ? "content" : "empty", timedOut: false, head: headChunks, reader, pendingRead: null, finishReason: state.finishReason });
     }
     headChunks.push(value);
