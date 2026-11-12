@@ -1,5 +1,9 @@
 import { ROLE } from "../schema/index.js";
 
+// Joins separately streamed reasoning parts (e.g. Responses summary parts) so
+// they read as paragraphs instead of running together mid-sentence.
+export const REASONING_PART_SEPARATOR = "\n\n";
+
 // Build OpenAI delta carrying reasoning_content (optional leading assistant role)
 export function reasoningDelta(text, withRole = false) {
   return withRole
