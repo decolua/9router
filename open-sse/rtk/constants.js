@@ -10,6 +10,9 @@ export const DEDUP_LINE_MAX = 2000;            // dedupLog truncation cap
 
 // Rust pipe_cmd.rs parity caps
 export const GREP_PER_FILE_MAX = 10;           // match rust: matches.iter().take(10)
+// autodetect: share of non-empty lines that must be "path:line:content" hits
+// before the content is treated as grep output (a clear majority, not ANY line)
+export const GREP_MIN_HIT_RATIO = 0.6;
 export const FIND_PER_DIR_MAX = 10;            // match rust: files.iter().take(10)
 export const FIND_TOTAL_DIR_MAX = 20;          // match rust: dirs.iter().take(20)
 

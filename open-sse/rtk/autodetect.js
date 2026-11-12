@@ -1,12 +1,12 @@
 // Port of auto_detect_filter (rtk/src/cmds/system/pipe_cmd.rs:132-188) + JS extras
 // Detection order: git-log → git-diff → git-status → build-output → grep → find → tree → ls → search-list
 //                  → read-numbered → dedup-log → smart-truncate → null
-import { DETECT_WINDOW, READ_NUMBERED_MIN_HIT_RATIO, SMART_TRUNCATE_MIN_LINES } from "./constants.js";
+import { DETECT_WINDOW, GREP_MIN_HIT_RATIO, READ_NUMBERED_MIN_HIT_RATIO, SMART_TRUNCATE_MIN_LINES } from "./constants.js";
 import { gitDiff } from "./filters/gitDiff.js";
 import { gitStatus } from "./filters/gitStatus.js";
 import { gitLog } from "./filters/gitLog.js";
 import { buildOutput } from "./filters/buildOutput.js";
-import { grep } from "./filters/grep.js";
+import { grep, parseGrepLine } from "./filters/grep.js";
 import { find } from "./filters/find.js";
 import { dedupLog } from "./filters/dedupLog.js";
 import { ls } from "./filters/ls.js";
@@ -41,9 +41,14 @@ export function autoDetectFilter(text) {
   const lines = head.split("\n");
   const nonEmpty = lines.filter(l => l.trim().length > 0);
 
-  // Rust grep rule: first 5 non-empty lines, ANY matches "file:number:content"
-  const first5 = nonEmpty.slice(0, 5);
-  if (first5.some(isGrepLine)) return grep;
+  // Grep rule: a clear majority of non-empty lines must be real
+  // "path:line:content" hits. The old ANY-of-first-5 rule matched timestamped
+  // log lines ("2026-11-10 12:30:45 INFO ...") and let the grep filter delete
+  // every line that was not shaped like a hit.
+  if (nonEmpty.length > 0) {
+    const grepHits = nonEmpty.filter(line => parseGrepLine(line) !== null).length;
+    if (grepHits / nonEmpty.length >= GREP_MIN_HIT_RATIO) return grep;
+  }
 
   // Rust find rule: ALL non-empty lines path-like (no ':'), >=3 lines
   if (nonEmpty.length >= 3 && nonEmpty.every(isPathLike)) return find;
@@ -69,16 +74,6 @@ export function autoDetectFilter(text) {
   if (text.split("\n").length >= SMART_TRUNCATE_MIN_LINES) return smartTruncate;
 
   return null;
-}
-
-function isGrepLine(line) {
-  // Rust: splitn(3, ':') → parts.len()==3 && parts[1].parse::<usize>().is_ok()
-  const first = line.indexOf(":");
-  if (first === -1) return false;
-  const second = line.indexOf(":", first + 1);
-  if (second === -1) return false;
-  const lineno = line.slice(first + 1, second);
-  return /^\d+$/.test(lineno);
 }
 
 function isPathLike(line) {
