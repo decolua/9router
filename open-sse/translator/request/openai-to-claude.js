@@ -105,7 +105,7 @@ export function openaiToClaudeRequest(model, body, stream) {
         for (let j = message.content.length - 1; j >= 0; j--) {
           const block = message.content[j];
           if (validBlockTypes.includes(block.type)) {
-            block.cache_control = { type: "ephemeral" };
+            block.cache_control = { type: "ephemeral", ttl: "1h" };
             break;
           }
         }
