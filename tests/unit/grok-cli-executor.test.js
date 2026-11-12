@@ -53,9 +53,8 @@ describe("grok-cli registry", () => {
   });
 
   it("maps effort virtual models to upstream grok-4.5", () => {
-    expect(getModelUpstreamId("gcli", "grok-4.5-high")).toBe("grok-4.5");
-    expect(getModelUpstreamId("gcli", "grok-4.5-medium")).toBe("grok-4.5");
-    expect(getModelUpstreamId("gcli", "grok-4.5-low")).toBe("grok-4.5");
+    // Effort-suffixed ids are no longer listed; the executor strips the suffix generically.
+    expect(getModelUpstreamId("gcli", "grok-4.5")).toBe("grok-4.5");
     expect(getModelUpstreamId("gcli", "grok-4.5")).toBe("grok-4.5");
   });
 });
