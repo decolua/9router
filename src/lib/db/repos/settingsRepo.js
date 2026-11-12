@@ -67,6 +67,13 @@ const DEFAULT_SETTINGS = {
   pxpipeTimeoutMs: 15000,
   // Per-provider user header overrides applied at dispatch: { [providerId]: { headers: {..} } }
   providerOverrides: {},
+  // Daily auto check-in. OPT-IN — default false because it spends upstream quota on
+  // the user's behalf (see src/shared/services/checkinScheduler.js). `providers`
+  // selects which provider ids to run; empty = every provider with an implementation.
+  autoCheckin: {
+    enabled: false,
+    providers: {},
+  },
 };
 
 async function readRaw() {
