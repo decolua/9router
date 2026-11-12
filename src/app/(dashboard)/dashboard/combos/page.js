@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -54,6 +55,28 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
+const isEmptyStrategyValue = (value) => {
+  if (value == null) return true;
+  if (typeof value === "string") return value.trim() === "";
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+};
+
+// Drops default-valued keys one at a time so setting a combo back to the default
+// strategy keeps its weights, judge, and fusion tuning. The entry goes only when
+// nothing non-default survives.
+function pruneStrategyEntry(entry) {
+  const next = { ...entry };
+  if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+    delete next.fallbackStrategy;
+  }
+  if (isEmptyStrategyValue(next.weights)) delete next.weights;
+  if (isEmptyStrategyValue(next.judgeModel)) delete next.judgeModel;
+  if (isEmptyStrategyValue(next.fusionTuning)) delete next.fusionTuning;
+  return Object.keys(next).length > 0 ? next : null;
+}
+
 function getPolicyBadgeLabel(strategy = {}) {
   const policy = strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart");
   if (policy === "strict") return "Strict Lock";
@@ -80,6 +103,7 @@ export default function CombosPage() {
   const [selectedIds, setSelectedIds] = useState([]);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [strategyError, setStrategyError] = useState("");
   const { copied, copy } = useCopyToClipboard();
 
   useEffect(() => {
@@ -269,11 +293,15 @@ export default function CombosPage() {
   };
 
   const persistComboStrategies = async (updated) => {
-    await fetch("/api/settings", {
+    const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comboStrategies: updated }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || `Save failed (${res.status})`);
+    }
     setComboStrategies(updated);
   };
 
@@ -336,22 +364,26 @@ export default function CombosPage() {
     });
   };
 
-  // Merge a per-combo strategy patch into settings.comboStrategies. Passing an empty
-  // patch (strategy back to default "fallback") drops the entry entirely.
+  // Resolves null on a saved strategy, or the failure message. Returning rather
+  // than throwing keeps the click handlers free of unhandled rejections, and the
+  // weights modal gets the same message to show next to its Save button.
   const handleSetComboStrategy = async (comboName, patch) => {
-    try {
-      const updated = { ...comboStrategies };
-      const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
-        delete updated[comboName];
-      } else {
-        updated[comboName] = next;
-      }
+    const updated = { ...comboStrategies };
+    const next = pruneStrategyEntry({
+      ...(updated[comboName] || {}),
+      ...patch,
+    });
+    if (next) updated[comboName] = next;
+    else delete updated[comboName];
 
+    try {
       await persistComboStrategies(updated);
+      setStrategyError("");
+      return null;
     } catch (error) {
-      console.log("Error updating combo strategy:", error);
+      const message = error?.message || "Could not save the combo strategy.";
+      setStrategyError(message);
+      return message;
     }
   };
 
@@ -361,14 +393,13 @@ export default function CombosPage() {
     try {
       const updated = { ...comboStrategies };
       for (const combo of selectedCombos) {
-        if (!strategy || strategy === "fallback") {
-          delete updated[combo.name];
-        } else {
-          updated[combo.name] = {
-            ...(updated[combo.name] || {}),
-            fallbackStrategy: strategy,
-          };
-        }
+        const rest = { ...(updated[combo.name] || {}) };
+        delete rest.fallbackStrategy;
+        const next = pruneStrategyEntry(
+          strategy === "fallback" ? rest : { ...rest, fallbackStrategy: strategy }
+        );
+        if (next) updated[combo.name] = next;
+        else delete updated[combo.name];
       }
       await persistComboStrategies(updated);
     } catch (error) {
@@ -390,6 +421,23 @@ export default function CombosPage() {
 
   return (
     <div className="flex min-w-0 flex-col gap-6 px-1 sm:px-0">
+      {strategyError && (
+        <div
+          role="alert"
+          className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/5 px-3 py-2 text-xs text-red-700 dark:text-red-400"
+        >
+          <span className="material-symbols-outlined text-[16px]">error</span>
+          <span className="min-w-0 flex-1">{strategyError}</span>
+          <button
+            type="button"
+            onClick={() => setStrategyError("")}
+            className="rounded p-0.5 hover:bg-red-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-500/40"
+            aria-label="Dismiss save error"
+          >
+            <span className="material-symbols-outlined text-[14px]">close</span>
+          </button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
@@ -654,16 +702,62 @@ function getRouterModelStatus(routerModel, activeProviders) {
 
   return { ready: false, label: "Not configured", providerId };
 }
+// Weighted models lead, so the three chips shown are the ones carrying a weight.
+function ModelChips({ models, weights, comboByName, getCaps }) {
+  if (models.length === 0) {
+    return <span className="text-xs text-text-muted italic">No models</span>;
+  }
+  const isTuned = (model) => typeof weights[model] === "number" && weights[model] !== 1;
+  const ordered = [...models.filter(isTuned), ...models.filter((model) => !isTuned(model))];
+  const shown = ordered.slice(0, 3);
+  const hiddenTuned = ordered.slice(3).filter(isTuned).length;
+  const hidden = ordered.length - shown.length;
+
+  return (
+    <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+      {shown.map((model) => (
+        <code key={model} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
+          <span>{model}</span>
+          <CapacityBadges caps={
+            comboByName[model]
+              ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
+              : getCaps?.(model)
+          } />
+          {isTuned(model) && (
+            <span
+              className="text-[11px] font-semibold text-brand-700 dark:text-brand-300"
+              aria-label={
+                weights[model] === 0
+                  ? `${model}: fallback only, excluded from rotation`
+                  : `${model}: weight ${weights[model]}`
+              }
+            >
+              {weights[model] === 0 ? "off" : `×${weights[model]}`}
+            </span>
+          )}
+        </code>
+      ))}
+      {hidden > 0 && (
+        <span className="text-[10px] text-text-muted">
+          +{hidden} more{hiddenTuned > 0 ? ` · ${hiddenTuned} weighted` : ""}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
   const [showJudgeSelect, setShowJudgeSelect] = useState(false);
+  const [showWeights, setShowWeights] = useState(false);
   const [showRouterSelect, setShowRouterSelect] = useState(false);
   const [showPolicyModal, setShowPolicyModal] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
+  const weights = strategy.weights || {};
   const routerModel = strategy.routerModel || "";
   const isFusion = current === "fusion";
   const isSmart = current === "smart";
+  const canWeight = current === "round-robin" && combo.models.length > 1;
   // The synced catalog is server-only, so resolving here would fall back to the
   // generic patterns and under-report the limits. getCaps carries the server's
   // answer for /api/models.
@@ -688,25 +782,23 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           </div>
           <div className="min-w-0 flex-1">
             <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
-            <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
-              {combo.models.length === 0 ? (
-                <span className="text-xs text-text-muted italic">No models</span>
-              ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={
-                      comboByName[model]
-                        ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
-                        : getCaps?.(model)
-                    } />
-                  </code>
-                ))
-              )}
-              {combo.models.length > 3 && (
-                <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
-              )}
-            </div>
+            <ModelChips
+              models={combo.models}
+              weights={weights}
+              comboByName={comboByName}
+              getCaps={getCaps}
+            />
+            {!canWeight && Object.keys(weights).length > 0 && (
+              <button
+                type="button"
+                onClick={() => onSetStrategy({ weights: {} })}
+                className="mt-1 inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-1 text-[11px] text-text-muted transition-colors hover:border-red-500/40 hover:text-red-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 dark:hover:text-red-400 dark:focus-visible:ring-brand-300"
+                title="These weights stay stored for round-robin. Clear them."
+              >
+                <span className="material-symbols-outlined text-[12px]">monitor_weight</span>
+                <span>Weights saved for round-robin · clear</span>
+              </button>
+            )}
             {comboCaps && (
               <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
                 <span>ctx {fmtK(comboCaps.contextWindow)}</span>
@@ -798,8 +890,20 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               value={current}
               onChange={(e) => onSetStrategy({ fallbackStrategy: e.target.value })}
               selectClassName="py-1.5 text-xs"
+              aria-label={`Routing strategy for ${combo.name}`}
             />
           </div>
+
+          {canWeight && (
+            <button
+              onClick={() => setShowWeights(true)}
+              className="inline-flex items-center justify-center gap-1 rounded-[8px] border border-border px-2 py-1.5 text-xs text-text-muted transition-colors hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+              title="Set per-model round-robin weights"
+            >
+              <span className="material-symbols-outlined text-[16px]">monitor_weight</span>
+              <span>Weights</span>
+            </button>
+          )}
 
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
@@ -831,6 +935,16 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
           </div>
         </div>
       </div>
+
+      {showWeights && (
+        <WeightsModal
+          isOpen={showWeights}
+          models={combo.models}
+          weights={weights}
+          onClose={() => setShowWeights(false)}
+          onSave={(next) => onSetStrategy({ weights: next })}
+        />
+      )}
 
       {/* Judge model picker (single-select; combo members make natural judges too) */}
       {showJudgeSelect && (
@@ -871,6 +985,152 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
         />
       )}
     </Card>
+  );
+}
+
+const MAX_WEIGHT = 1000;
+
+// Matches the server's coercion: Number(), then floor and clamp to 0..1000, with
+// anything non-numeric falling back to 1. parseInt would read "1e3" as 1 and
+// preview a share the gateway would not honour. A blank field means weight 1 here
+// and 0 on the server, so `onBlur` normalises it to "1" before it can be saved.
+function parseWeight(raw) {
+  const text = String(raw ?? "").trim();
+  if (text === "") return 1;
+  const parsed = Number(text);
+  return Number.isFinite(parsed) ? Math.min(MAX_WEIGHT, Math.max(0, Math.floor(parsed))) : 1;
+}
+
+// Largest-remainder rounding. Independent Math.round per row can total 99 or 101,
+// which makes the share column look wrong exactly where it is the guarantee.
+function sharesFor(weights) {
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  if (total <= 0) return weights.map(() => 0);
+  const exact = weights.map((weight) => (weight / total) * 100);
+  const floored = exact.map((value) => Math.floor(value));
+  let leftover = 100 - floored.reduce((sum, value) => sum + value, 0);
+  const order = exact
+    .map((value, index) => ({ index, remainder: value - floored[index] }))
+    .sort((a, b) => b.remainder - a.remainder);
+  const shares = [...floored];
+  for (const { index } of order) {
+    if (leftover <= 0) break;
+    shares[index] += 1;
+    leftover -= 1;
+  }
+  return shares;
+}
+function WeightsModal({ isOpen, models, weights, onClose, onSave }) {
+  const [draft, setDraft] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const valueFor = (model) => (model in draft ? draft[model] : String(weights[model] ?? 1));
+
+  const parsed = models.map((model) => [model, parseWeight(valueFor(model))]);
+  const total = parsed.reduce((sum, [, weight]) => sum + weight, 0);
+  const shares = sharesFor(parsed.map(([, weight]) => weight));
+
+  const handleClose = () => {
+    setDraft({});
+    setError("");
+    onClose();
+  };
+
+  const handleSave = async () => {
+    const next = {};
+    for (const [model, weight] of parsed) {
+      if (weight !== 1) next[model] = weight;
+    }
+    setSaving(true);
+    setError("");
+    const failure = await onSave(next);
+    setSaving(false);
+    if (failure) {
+      setError(failure);
+      return;
+    }
+    setDraft({});
+    onClose();
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onClose={handleClose}
+      title="Round-robin weights"
+      size="md"
+      footer={
+        <>
+          <Button variant="ghost" size="sm" onClick={() => setDraft(Object.fromEntries(models.map((m) => [m, "1"])))} disabled={saving}>
+            All to 1
+          </Button>
+          <Button variant="ghost" size="sm" onClick={handleClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={handleSave} loading={saving} disabled={total === 0}>
+            Save
+          </Button>
+        </>
+      }
+    >
+      <p className="mb-3 text-xs text-text-muted">
+        The percentage is the share of requests each model serves. A weight of{" "}
+        <span className="font-medium text-text-main">0</span> keeps the model out of rotation but leaves it as a
+        last-resort fallback.
+      </p>
+      {total === 0 && (
+        <p role="alert" className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/5 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+          Every model is at 0, so nothing would rotate. Give at least one model a weight above 0.
+        </p>
+      )}
+      {error && (
+        <p role="alert" className="mb-3 rounded-lg border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-xs text-red-600 dark:text-red-400">
+          {error}
+        </p>
+      )}
+      <div className="flex flex-col gap-2">
+        {models.map((model, index) => {
+          const weight = parsed[index][1];
+          const share = shares[index];
+          return (
+            <div key={model} className="flex items-center gap-3">
+              <code className="min-w-0 flex-1 truncate font-mono text-xs text-text-muted" title={model}>
+                {model}
+              </code>
+              <input
+                type="number"
+                min={0}
+                max={MAX_WEIGHT}
+                step={1}
+                aria-label={`Weight for ${model}`}
+                aria-describedby="weights-help"
+                className="w-20 rounded-[8px] border border-border bg-surface-2 px-2 py-1 text-right text-xs text-text-main focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-700 dark:focus-visible:ring-brand-300"
+                value={valueFor(model)}
+                onChange={(e) => setDraft((prev) => ({ ...prev, [model]: e.target.value }))}
+                onBlur={(e) => setDraft((prev) => ({ ...prev, [model]: String(parseWeight(e.target.value)) }))}
+              />
+              <span className="w-16 shrink-0 text-right text-[11px] tabular-nums text-text-muted">
+                {weight === 0 ? (
+                  <span className="font-medium text-amber-700 dark:text-amber-400">fallback</span>
+                ) : share < 1 ? (
+                  "<1%"
+                ) : (
+                  `${share}%`
+                )}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+      <p aria-live="polite" className="mt-3 text-[11px] text-text-muted">
+        <span id="weights-help">
+          Requests rotate by these shares in a fixed smooth cycle, not at random.
+        </span>{" "}
+        Total weight {total}.
+      </p>
+
+    </Modal>
   );
 }
 
