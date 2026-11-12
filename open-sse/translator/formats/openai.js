@@ -1,5 +1,6 @@
 // OpenAI helper functions for translator
 import { ROLE, OPENAI_BLOCK, CLAUDE_BLOCK, VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES } from "../schema/index.js";
+import { repairPartialToolResponses } from "../concerns/toolCall.js";
 
 // Re-export valid-type lists (moved to schema/blocks.js) to keep existing importers working.
 export { VALID_OPENAI_CONTENT_TYPES, VALID_OPENAI_MESSAGE_TYPES };
@@ -76,6 +77,13 @@ export function filterToOpenAIFormat(body, opts = {}) {
     }
     return true;
   });
+
+  // OpenAI rejects an assistant tool_calls turn whose ids are not all answered
+  // by the immediately following tool messages. The pre-translation repair
+  // (concerns/toolCall.js fixMissingToolResponses) only triggers when NO id of
+  // the batch is answered, so a partially answered parallel batch is repaired
+  // here, on the final OpenAI-shaped body.
+  repairPartialToolResponses(body);
 
   // Remove empty tools array (some providers like QWEN reject it)
   if (body.tools && Array.isArray(body.tools) && body.tools.length === 0) {

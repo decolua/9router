@@ -11,6 +11,7 @@ import { ensureStreamToolCallIds } from "../utils/streamHelpers.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
 import { ROLE, GEMINI_ROLE } from "./schema/roles.js";
+import { RESPONSES_ITEM } from "./schema/blocks.js";
 
 // Registry for translators. Lazy-init guards against circular-import order:
 // translator modules call register() (side-effect) before this module's body runs.
@@ -51,6 +52,28 @@ function stripContentTypes(body, stripList = []) {
   }
 }
 
+// OpenAI's `developer` role is a system turn. Only the OpenAI target normalizes
+// it (formats/openai.js filterToOpenAIFormat); every other format has just
+// system/user/assistant, so left alone the per-target translator drops the turn.
+// Normalize once, on the source body, before any translator runs — chat
+// `messages` and Responses-API `input` items alike.
+const DEVELOPER_ROLE_TARGETS = new Set([FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, FORMATS.CODEX]);
+
+function normalizeDeveloperRole(body) {
+  const rename = (item) => {
+    if (item?.role === ROLE.DEVELOPER) item.role = ROLE.SYSTEM;
+  };
+  if (Array.isArray(body?.messages)) body.messages.forEach(rename);
+  if (Array.isArray(body?.input)) {
+    // Message-shaped items only: Responses Lite `additional_tools` prefixes also
+    // carry role:"developer" and must keep their shape for the Responses
+    // translator (typeless items with a role are messages, Droid CLI style).
+    body.input.forEach((item) => {
+      if (item?.type === RESPONSES_ITEM.MESSAGE || (!item?.type && item?.role)) rename(item);
+    });
+  }
+}
+
 // Role the client's conversation actually ended on, in the source format's own
 // shape — not every source uses messages[] (Gemini/Antigravity: contents[],
 // Responses/Codex: input[]). Only an explicit trailing model/assistant turn is
@@ -71,6 +94,11 @@ export function translateRequest(sourceFormat, targetFormat, model, body, stream
   let result = body;
   // Role the client actually ended on, before any translator drops an emptied turn.
   const clientLastRole = detectClientLastRole(body);
+
+  // Targets without a `developer` role get it as a system turn. Target OpenAI keeps
+  // its existing handling in filterToOpenAIFormat; the Responses API targets
+  // (openai-responses, codex) speak `developer` natively and must receive it as-is.
+  if (!DEVELOPER_ROLE_TARGETS.has(targetFormat)) normalizeDeveloperRole(result);
 
   // Strip explicit content types (opt-in via strip[] in PROVIDER_MODELS entry)
   stripContentTypes(result, stripList);

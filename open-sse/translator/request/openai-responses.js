@@ -25,6 +25,26 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   const result = { ...body };
   result.messages = [];
 
+  // Responses API's forced-function tool_choice is flat: {type:"function", name}.
+  // Chat Completions nests the name under `function`, and the Claude leg only
+  // recognizes the nested shape (request/openai-to-claude.js), so normalize the
+  // flat form here — this direction is the only one that converts Responses
+  // input to chat. When the TARGET is the Responses API/Codex the body never
+  // reaches this translator and the flat form stays native.
+  if (
+    result.tool_choice
+    && typeof result.tool_choice === "object"
+    && result.tool_choice.type === OPENAI_BLOCK.FUNCTION
+    && !result.tool_choice.function
+    && typeof result.tool_choice.name === "string"
+    && result.tool_choice.name
+  ) {
+    result.tool_choice = {
+      type: OPENAI_BLOCK.FUNCTION,
+      function: { name: result.tool_choice.name },
+    };
+  }
+
   // Convert instructions to system message
   if (body.instructions) {
     result.messages.push({ role: ROLE.SYSTEM, content: body.instructions });
