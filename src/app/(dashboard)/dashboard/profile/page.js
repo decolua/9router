@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useSyncExternalStore } from "react";
 import { Card, Button, Toggle, Input } from "@/shared/components";
 import Modal, { ConfirmModal } from "@/shared/components/Modal";
 import LanguageSwitcher from "@/shared/components/LanguageSwitcher";
@@ -19,9 +19,17 @@ function getLocaleFromCookie() {
   return normalizeLocale(value);
 }
 
+const subscribeToNothing = () => () => {};
+
 export default function ProfilePage() {
   const { theme, setTheme, isDark } = useTheme();
-  const [locale, setLocale] = useState(() => getLocaleFromCookie());
+  // The server cannot see the locale cookie here, so it renders "en". Reading the
+  // cookie in a useState initializer made the client's first render differ (the
+  // flag below) and React reported a hydration mismatch for every non-English
+  // user. useSyncExternalStore hydrates with the server value, then switches.
+  const cookieLocale = useSyncExternalStore(subscribeToNothing, getLocaleFromCookie, () => "en");
+  const [chosenLocale, setLocale] = useState(null);
+  const locale = chosenLocale ?? cookieLocale;
   const [langOpen, setLangOpen] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
   const [isShuttingDown, setIsShuttingDown] = useState(false);
