@@ -1,0 +1,72 @@
+name: SceneForge Cerebrium B200 (validate / manual deploy)
+on:
+  push:
+    branches: [sceneforge-cerebrium-b200]
+    paths:
+      - 'sceneforge-cerebrium/**'
+      - '.github/workflows/sceneforge-cerebrium-b200.yml'
+  pull_request:
+    paths:
+      - 'sceneforge-cerebrium/**'
+      - '.github/workflows/sceneforge-cerebrium-b200.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sceneforge-b200-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: sceneforge-cerebrium
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install -q 'fastapi>=0.115,<1' 'pydantic>=2,<3'
+      - name: Validate worker and GPU profile
+        run: |
+          python -m unittest discover -s tests -v
+          python -m py_compile main.py contract.py
+          python - <<'PY'
+          import tomllib
+          with open('cerebrium.toml','rb') as fh:
+              c=tomllib.load(fh)['cerebrium']
+          assert c['hardware']['compute']=='BLACKWELL_B200'
+          assert c['deployment']['disable_auth'] is False
+          assert c['scaling']['min_replicas']==0
+          print('Cerebrium configuration OK')
+          PY
+  deploy:
+    needs: validate
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: sceneforge-cerebrium
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify provider credential setup
+        env:
+          CEREBRIUM_SERVICE_ACCOUNT_TOKEN: ${{ secrets.CEREBRIUM_SERVICE_ACCOUNT_TOKEN }}
+          CEREBRIUM_PROJECT_ID: ${{ vars.CEREBRIUM_PROJECT_ID }}
+        run: |
+          test -n "$CEREBRIUM_SERVICE_ACCOUNT_TOKEN" || { echo 'Missing GitHub secret CEREBRIUM_SERVICE_ACCOUNT_TOKEN'; exit 1; }
+          test -n "$CEREBRIUM_PROJECT_ID" || { echo 'Missing GitHub variable CEREBRIUM_PROJECT_ID'; exit 1; }
+          case "$CEREBRIUM_PROJECT_ID" in p-*) ;; *) echo 'Invalid project ID'; exit 1;; esac
+      - name: Deploy billable B200 worker
+        env:
+          CEREBRIUM_SERVICE_ACCOUNT_TOKEN: ${{ secrets.CEREBRIUM_SERVICE_ACCOUNT_TOKEN }}
+          CEREBRIUM_PROJECT_ID: ${{ vars.CEREBRIUM_PROJECT_ID }}
+        run: |
+          python -m pip install -U cerebrium
+          cerebrium projects set "$CEREBRIUM_PROJECT_ID"
+          cerebrium deploy -y

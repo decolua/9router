@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: agent01-gpu}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata: {name: model-cache, namespace: agent01-gpu}
+spec:
+  accessModes: [ReadWriteOnce]
+  resources: {requests: {storage: 1Ti}}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: qwen3-235b, namespace: agent01-gpu}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app: qwen3-235b}}
+  template:
+    metadata: {labels: {app: qwen3-235b}}
+    spec:
+      # Must be scheduled only on appropriately equipped, user-funded NVIDIA GPU nodes
+      nodeSelector: {accelerator: nvidia-8gpu}
+      containers:
+        - name: vllm
+          image: vllm/vllm-openai:latest
+          args: ["--model","Qwen/Qwen3-235B-A22B-Instruct-2507","--tensor-parallel-size","8","--max-model-len","32768","--api-key","$(VLLM_API_KEY)"]
+          env:
+            - name: VLLM_API_KEY
+              valueFrom: {secretKeyRef: {name: vllm-auth, key: api_key}}
+          resources:
+            requests: {nvidia.com/gpu: 8, memory: 256Gi, cpu: "24"}
+            limits: {nvidia.com/gpu: 8, memory: 512Gi, cpu: "64"}
+          ports: [{containerPort: 8000, name: http}]
+          volumeMounts: [{name: model-cache, mountPath: /root/.cache/huggingface}]
+          startupProbe: {tcpSocket: {port: 8000}, failureThreshold: 120, periodSeconds: 10}
+          readinessProbe: {httpGet: {path: /health, port: 8000}, periodSeconds: 15}
+      volumes: [{name: model-cache, persistentVolumeClaim: {claimName: model-cache}}]
+---
+apiVersion: v1
+kind: Service
+metadata: {name: qwen3-235b, namespace: agent01-gpu}
+spec:
+  selector: {app: qwen3-235b}
+  ports: [{port: 8000, targetPort: 8000}]
+  type: ClusterIP
+# No public ingress. Provide user-owned authenticated HTTPS ingress separately, only after securing the backend.

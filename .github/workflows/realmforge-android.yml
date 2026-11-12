@@ -1,0 +1,42 @@
+name: RealmForge Studio Android APK
+on:
+  push:
+    paths:
+      - 'realmforge/android-studio/**'
+      - '.github/workflows/realmforge-android.yml'
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: realmforge/android-studio
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+      - name: Install Android SDK 35
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --install "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Build APK
+        run: gradle :app:assembleDebug --no-daemon --stacktrace
+      - name: Validate APK archive
+        run: |
+          unzip -t app/build/outputs/apk/debug/app-debug.apk | tail -1
+          test -s app/build/outputs/apk/debug/app-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RealmForge-Studio-debug-APK
+          path: realmforge/android-studio/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

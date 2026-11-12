@@ -1,0 +1,65 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#070916">
+<title>Operations Portal | NexusRemote</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/experience.css"><script src="/site.js" defer></script><script src="/portal-extras.js" defer></script></head>
+<body data-page="portal">
+<header class="nav-wrap"><nav class="nav container" aria-label="Workspace navigation"><a class="brand" href="/"><span class="logo"><span>N</span></span>NEXUS<em>REMOTE</em></a>
+<div class="nav-links" id="navLinks"><a href="/" data-tab="home">Overview</a><a href="/apply" data-tab="apply">Applications</a><a href="/portal" data-tab="worker" aria-current="page">My workspace</a></div>
+<div class="nav-actions"><span id="roleBadge" class="pill">Authorizing…</span><button id="logoutButton" class="btn btn-quiet">Sign out ↗</button><button class="btn menu-button" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">☰</button></div></nav></header>
+<main class="container"><div id="portalLoading" class="glass" style="padding:32px;margin-top:40px"><h2>Opening your private workspace…</h2><p>Checking your secure session.</p></div>
+<div id="portalShell" class="portal-frame hidden">
+<aside class="glass sidebar" aria-label="Portal navigation">
+<div class="title">OPERATIONS</div><a href="#overview" class="active" data-panel="overview">◈ &nbsp; Overview</a><a href="#applications" id="sidebarApps" data-panel="applications">◎ &nbsp; Candidates</a><a href="#income" id="sidebarIncome" data-panel="income">▥ &nbsp; Verified payments</a><a href="#integrations" id="sidebarIntegrations" data-panel="integrations">⌘ &nbsp; Integrations</a><div class="end"><button id="refreshButton">↻ &nbsp; Refresh data</button><a href="/" data-tab="home">← &nbsp; Public website</a><a href="/login?role=owner" data-tab="owner" class="hidden">Owner login</a></div>
+</aside>
+<section class="portal-main">
+<div class="portal-heading"><div><div class="eyebrow" id="portalGreeting">Private operations</div><h1 id="portalTitle">Command center</h1><p id="portalSubtitle">Showing verified platform records only.</p></div><button class="btn btn-primary" id="refreshTop">↻ Refresh</button></div>
+<div id="portalError" class="notice hidden" role="status" aria-live="polite"></div>
+<div class="portal-stats" id="metrics">
+<div class="glass metric"><span class="label">Candidate applications</span><strong id="metricApplications">—</strong><small>Private records</small></div>
+<div class="glass metric"><span class="label">Portal approved</span><strong id="metricApproved">—</strong><small>Human authorization</small></div>
+<div class="glass metric"><span class="label">Verified paid events</span><strong id="metricPayments">—</strong><small>Stripe signature required</small></div>
+<div class="glass metric"><span class="label">Recorded gross</span><strong id="metricGross">—</strong><small id="grossNote">Not a bank balance</small></div>
+</div>
+<div id="ownerPanels" class="hidden">
+<section class="glass portal-card" id="overview"><div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px"><h2 style="margin:0">Operations at a glance</h2><span class="pill good" id="lastSync">Live backend</span></div>
+<p style="font-size:13px">A connected view of your five divisions. All hiring and owner actions require authorization; zero or unavailable figures are shown honestly.</p>
+<div class="status-list" id="overviewStatus">
+<div class="status-item"><strong>Applicant intake</strong><small>Private storage</small></div><div class="status-item"><strong>Payment verification</strong><small>Only signed webhooks count</small></div><div class="status-item"><strong>Recruitment communications</strong><small>Must use a verified business email</small></div><div class="status-item"><strong>Campaign calls</strong><small>Authorized dialer required</small></div>
+</div></section>
+<section class="glass portal-card" id="applications"><div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2 style="margin:0">Candidate applications</h2><span class="pill">Division B · Human review</span></div><p style="font-size:12px">Approval creates a portal invitation only. It does not create paid work or a dialer account. Share invitation codes securely, never in public chats.</p>
+<div class="table-scroll"><table><thead><tr><th>Candidate</th><th>Readiness</th><th>Submitted</th><th>State</th><th>Review</th></tr></thead><tbody id="applicantsBody"><tr><td colspan="5">Loading private candidates…</td></tr></tbody></table></div><div id="approvalResult" class="notice hidden" aria-live="polite"></div>
+</section>
+
+<section class="glass portal-card" id="candidateExplorer">
+<div class="row" style="align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px"><h2 style="margin:0">Recruitment intelligence</h2><span class="pill">Owner-only tools</span></div>
+<p style="font-size:12px">Find candidates already present in your secure review queue. Export only for authorized hiring administration; never use this information for unsolicited advertising.</p>
+<div class="form-grid">
+<label>Search candidates<input id="candidateSearch" class="field" placeholder="Name, email, worker ID…" type="search" autocomplete="off"></label>
+<label>Filter review state<select id="candidateStatus" class="field"><option value="all">All applications</option><option value="approved">Approved portal access</option><option value="pending">Awaiting review</option></select></label>
+</div>
+<div class="row" style="gap:10px;flex-wrap:wrap;margin-top:12px">
+<button type="button" class="btn" id="candidateExport">Export reviewed applications ↓</button><span id="candidateFilterCount" style="font-size:12px;color:#a7c8da">Filters operate on your private review table.</span>
+</div>
+</section>
+<section class="glass portal-card" id="activityFeed">
+<div class="row" style="justify-content:space-between;flex-wrap:wrap;gap:12px;align-items:center"><h2 style="margin:0">Verified activity timeline</h2><span class="pill good">No synthetic metrics</span></div>
+<p style="font-size:12px">Recent applications and Stripe-verified events. Empty states mean the platform has no records to show.</p>
+<div class="status-list" id="activityItems"><div class="empty">Load the dashboard to see recent verified activity.</div></div>
+</section>
+<section class="glass portal-card" id="income"><div class="row" style="justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap"><h2 style="margin:0">Verified payments</h2><span class="pill">Division E · Treasurer</span></div><p style="font-size:12px">Payment records appear only after Stripe sends an authentic signed paid event. Gross receipts are not your personal income, commission entitlement or bank payout.</p>
+<div class="table-scroll"><table><thead><tr><th>Worker ID</th><th>Campaign</th><th>Amount</th><th>Recorded</th><th>Payout</th></tr></thead><tbody id="paymentsBody"><tr><td colspan="5">Loading verified events…</td></tr></tbody></table></div></section>
+<section class="glass portal-card" id="privacy-requests"><h2>Candidate data requests</h2><p style="font-size:12px">These requests require identity verification and manual action before disclosure or deletion.</p><div class="table-scroll"><table><thead><tr><th>Email</th><th>Request</th><th>Reference</th><th>Submitted</th></tr></thead><tbody id="privacyBody"><tr><td colspan="4">No requests loaded.</td></tr></tbody></table></div></section>
+<section class="glass portal-card" id="integrations"><h2>Integration health</h2><p style="font-size:12px">Provider access is not silently assumed. Connections show a clear inactive state until the relevant keys, consent and testing are complete.</p><div class="status-list" id="integrationItems"></div>
+<div class="notice warning" style="margin-top:17px">Stripe sandbox access, a host deployment, and private application storage do not automatically enable live billing, WhatsApp delivery or cloud dialing.</div></section>
+</div>
+<div id="workerPanels" class="hidden">
+<section class="glass portal-card" id="workerOverview"><div class="eyebrow">Division C · Worker onboarding</div><h2>Your workspace is ready to view</h2>
+<p>Your private invitation confirms portal approval only. It is not a job offer, a live campaign assignment or permission to dial without authorization.</p><div class="status-list" id="workerStatus"></div></section>
+<section class="glass portal-card"><h2>Call operations</h2><p>The live cloud dialer is not connected. When a legitimate campaign has been verified, an administrator will arrange access through the approved provider. No simulated calls or earnings are displayed here.</p>
+<button class="btn" disabled>Dialer unavailable until provisioned</button></section>
+<section class="glass portal-card"><h2>Financial activity</h2><p id="workerMoney">No verified payment events are attributed to this worker.</p><div class="notice">Attributed customer receipts are not a worker's payable earnings. The employment or contractor agreement determines any compensation.</div></section>
+</div>
+<div class="notice" style="margin-top:18px">Candidate data is private. This dashboard is not a bank account, payroll processor or unreviewed hiring engine.</div>
+</section>
+</div></main>
+<footer class="footer"><div class="container"><span>© NexusRemote · Secure operations</span><span><a href="/privacy">Privacy &amp; data rights</a> · <a href="/">Public home</a></span></div></footer>
+</body></html>

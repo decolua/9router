@@ -1,0 +1,27 @@
+name: BTU GPU Worker Unit Tests
+on:
+  pull_request:
+    paths:
+      - 'btu-worker/**'
+      - '.github/workflows/btu-worker-tests.yml'
+  push:
+    paths:
+      - 'btu-worker/**'
+      - '.github/workflows/btu-worker-tests.yml'
+  workflow_dispatch:
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y ffmpeg
+      - name: Compile and test without GPU or credentials
+        run: |
+          python -m compileall -q btu-worker
+          python -m unittest discover -s btu-worker/tests -v

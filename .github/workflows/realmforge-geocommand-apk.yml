@@ -1,0 +1,36 @@
+name: Build RealmForge GeoCommand APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [realmforge-geocommand-android]
+    paths:
+      - 'RealmForgeGeoCommand/**'
+      - '.github/workflows/realmforge-geocommand-apk.yml'
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: RealmForgeGeoCommand
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Compile APK
+        run: gradle --no-daemon :app:assembleDebug
+      - name: Publish APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: RealmForge-GeoCommand-debug-APK
+          path: RealmForgeGeoCommand/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error

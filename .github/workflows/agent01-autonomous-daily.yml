@@ -1,0 +1,34 @@
+name: Agent 01 — free daily inference
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '16 5 * * *'
+  push:
+    paths:
+      - '.github/workflows/agent01-autonomous-daily.yml'
+      - 'agent01-omniroute/daily-agent.mjs'
+      - 'agent01-omniroute/package.json'
+permissions:
+  contents: read
+jobs:
+  free-agent-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: agent01-omniroute
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Install isolated free local inference runtime
+        run: npm install --no-audit --no-fund
+      - name: Run actual open-source model inference
+        run: npm run check
+      - name: Retain non-sensitive output report
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent01-daily-report
+          path: agent01-omniroute/agent01-daily-report.md
+          retention-days: 7

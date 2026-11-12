@@ -1,0 +1,120 @@
+{
+  "project": "The Demon God's Awakening — Episode 2",
+  "format": "9:16",
+  "width": 1080,
+  "height": 1920,
+  "fps": 24,
+  "estimated_duration_seconds": 90,
+  "continuity": "Original approved youthful male Demon God identity must match the user's original reference image precisely: same face, hair, proportions and armor, with exactly EIGHT black feathered wings. Never replace with a generic fantasy character. Photorealistic dark fantasy aesthetic; consistent outfit and environment. The two Heaven sentinels each have six feathered wings.",
+  "render_status": "NOT_RENDERED",
+  "shots": [
+    {
+      "id": 1,
+      "file": "renders/shot_01.mp4",
+      "duration_seconds": 8,
+      "preferred_open_model": "wan-2.2",
+      "prompt": "An aerial camera descends through an ash storm onto the Obsidian Citadel; lava and blue fire underline fortress spires.",
+      "audio": "Deep sub-bass rumble and distant storm."
+    },
+    {
+      "id": 2,
+      "file": "renders/shot_02.mp4",
+      "duration_seconds": 7,
+      "preferred_open_model": "hunyuanvideo",
+      "prompt": "Interior: a chained rune-carved black gate shivers; hot gold cracks and chains strain.",
+      "audio": "Stone grind, chain tension."
+    },
+    {
+      "id": 3,
+      "file": "renders/shot_03.mp4",
+      "duration_seconds": 8,
+      "preferred_open_model": "framepack",
+      "prompt": "Youthful ancient male Demon God awakens on an obsidian throne; long black hair; gold-black eyes open; intricately engraved black royal armor. Maintain the exact approved original character identity and exactly eight black feathered wings; do not redesign or substitute his face, armor or hair.",
+      "audio": "Heartbeat, ember ignition.",
+      "character_reference": "local://projects/character_reference.png",
+      "wings": 8
+    },
+    {
+      "id": 4,
+      "file": "renders/shot_04.mp4",
+      "duration_seconds": 8,
+      "preferred_open_model": "wan-2.2",
+      "prompt": "The Demon God stands, his cloak settles with real weight, and he walks toward the huge sealed doors. Maintain the exact approved original character identity and exactly eight black feathered wings; do not redesign or substitute his face, armor or hair.",
+      "audio": "Footsteps across stone.",
+      "character_reference": "local://projects/character_reference.png",
+      "wings": 8
+    },
+    {
+      "id": 5,
+      "file": "renders/shot_05.mp4",
+      "duration_seconds": 7,
+      "preferred_open_model": "ltx-video",
+      "prompt": "His hands touch the gate. Ancient doors swing outward, revealing the scarlet-lit demon kingdoms. Maintain the exact approved original character identity and exactly eight black feathered wings; do not redesign or substitute his face, armor or hair.",
+      "audio": "Metal bass impact and roaring atmosphere.",
+      "character_reference": "local://projects/character_reference.png",
+      "wings": 8
+    },
+    {
+      "id": 6,
+      "file": "renders/shot_06.mp4",
+      "duration_seconds": 8,
+      "preferred_open_model": "open-sora",
+      "prompt": "Red magical pressure surges over infernal cities, twisting smoke and banners; panoramic reaction.",
+      "audio": "Distant roar and falling rubble."
+    },
+    {
+      "id": 7,
+      "file": "renders/shot_07.mp4",
+      "duration_seconds": 7,
+      "preferred_open_model": "wan-2.2",
+      "prompt": "Demon generals kneel in terror and wonder under a crimson sky; preserve the original architectural designs.",
+      "audio": "Armored knees strike stone."
+    },
+    {
+      "id": 8,
+      "file": "renders/shot_08.mp4",
+      "duration_seconds": 8,
+      "preferred_open_model": "hunyuanvideo",
+      "prompt": "Heaven's marble towers tremble; golden light fractures the cloudscape as a warning bell tolls.",
+      "audio": "Single cracked celestial bell."
+    },
+    {
+      "id": 9,
+      "file": "renders/shot_09.mp4",
+      "duration_seconds": 7,
+      "preferred_open_model": "ltx-video",
+      "prompt": "Two six-winged angel sentinels turn with unfamiliar dread in their eyes; realistic feather movement.",
+      "audio": "Feather rustle, rushing wind."
+    },
+    {
+      "id": 10,
+      "file": "renders/shot_10.mp4",
+      "duration_seconds": 7,
+      "preferred_open_model": "framepack",
+      "prompt": "Closeup of the archangel's stunned expression; glimmering tears and tiny gold light motes in slow motion.",
+      "audio": "Suspended silence."
+    },
+    {
+      "id": 11,
+      "file": "renders/shot_11.mp4",
+      "duration_seconds": 8,
+      "preferred_open_model": "wan-2.2",
+      "prompt": "Back in the demon realm, the God lifts a hand; immense obsidian stones rise into orbit beneath a bent horizon. Maintain the exact approved original character identity and exactly eight black feathered wings; do not redesign or substitute his face, armor or hair.",
+      "audio": "Gravity hum crescendo.",
+      "character_reference": "local://projects/character_reference.png",
+      "wings": 8
+    },
+    {
+      "id": 12,
+      "file": "renders/shot_12.mp4",
+      "duration_seconds": 7,
+      "preferred_open_model": "ltx-video",
+      "prompt": "Tight cinematic portrait of the Demon God, gold-black eyes burning, speaking with restrained certainty: 'Let the heavens remember my name.' Maintain the exact approved original character identity and exactly eight black feathered wings; do not redesign or substitute his face, armor or hair.",
+      "audio": "Male voice dialogue, distant thunder.",
+      "character_reference": "local://projects/character_reference.png",
+      "wings": 8
+    }
+  ],
+  "original_character_reference": "local://projects/character_reference.png",
+  "protagonist_wings": 8
+}

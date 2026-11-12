@@ -1,0 +1,8 @@
+wan22_api.json
+bindings.json
+assets/
+renders/
+*.sqlite3
+*.sqlite3-*
+*.partial
+__pycache__/

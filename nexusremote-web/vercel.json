@@ -1,0 +1,53 @@
+{
+  "version": 2,
+  "rewrites": [
+    {
+      "source": "/login",
+      "destination": "/login.html"
+    },
+    {
+      "source": "/apply",
+      "destination": "/apply.html"
+    },
+    {
+      "source": "/portal",
+      "destination": "/portal.html"
+    },
+    {
+      "source": "/privacy",
+      "destination": "/privacy.html"
+    }
+  ],
+  "functions": {
+    "api/apply.js": {
+      "maxDuration": 30
+    },
+    "api/worker.js": {
+      "maxDuration": 20
+    },
+    "api/admin.js": {
+      "maxDuration": 30
+    },
+    "api/stripe.js": {
+      "maxDuration": 30
+    },
+    "api/session.js": {
+      "maxDuration": 30
+    },
+    "api/portal.js": {
+      "maxDuration": 30
+    },
+    "api/privacy.js": {
+      "maxDuration": 30
+    },
+    "api/mcp.js": {
+      "maxDuration": 30
+    },
+    "api/health.js": {
+      "maxDuration": 10
+    },
+    "api/opportunities.js": {
+      "maxDuration": 25
+    }
+  }
+}

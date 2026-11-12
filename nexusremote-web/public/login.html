@@ -1,0 +1,38 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#070916"><meta name="robots" content="noindex">
+<title>Sign in | NexusRemote</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/experience.css"><script src="/site.js" defer></script></head>
+<body data-page="login">
+<header class="nav-wrap"><nav class="nav container" aria-label="Primary navigation">
+<a href="/" class="brand"><span class="logo"><span>N</span></span>NEXUS<em>REMOTE</em></a>
+<div class="nav-links" id="navLinks"><a href="/" data-tab="home">Overview</a><a href="/#spiral">3D network</a><a href="/#opportunities">Find work</a><a href="/apply" data-tab="apply">Apply</a><a href="/login?role=worker" data-tab="worker" aria-current="page">Worker portal</a></div>
+<div class="nav-actions"><a class="btn btn-quiet" href="/login?role=owner" data-tab="owner">Owner access</a><a class="btn btn-primary" href="/apply">Apply now ↗</a><button class="btn menu-button" id="navToggle" aria-label="Toggle navigation" aria-expanded="false">☰</button></div>
+</nav></header>
+<main class="container">
+<div class="auth-layout">
+<aside class="auth-aside"><span class="eyebrow">One network. Every opportunity.</span>
+<h1>Welcome<br><span class="gradient-text">back to your</span><br>workspace.</h1>
+<p>Your private NexusRemote hub for recruitment coordination, secure onboarding and evidence-based performance reporting.</p>
+<ul><li>Private, encrypted session cookies</li><li>Role-based owner and worker access</li><li>No unverified calls or fabricated payouts</li><li>One connected five-division workflow</li></ul>
+<div class="glass" style="padding:20px;max-width:425px"><div class="row"><span class="proof-dot"></span><strong style="font-size:12px">Your credentials stay yours.</strong></div><p style="font-size:12px;margin:9px 0 0">Do not share invitation tokens or owner access keys in public messages. We never request payments to activate worker accounts.</p></div>
+</aside>
+<section class="glass auth-card" aria-label="Secure sign in">
+<div class="eyebrow">Protected access</div><h2>Sign in to NexusRemote</h2><p>Choose your role to continue.</p>
+<div class="segment" role="tablist" aria-label="Choose account type">
+<button id="chooseWorker" role="tab" aria-selected="true" aria-controls="workerFields" type="button">Worker</button>
+<button id="chooseOwner" role="tab" aria-selected="false" aria-controls="ownerFields" type="button">Owner / Admin</button>
+</div>
+<form id="loginForm" autocomplete="off">
+<div id="workerFields" role="tabpanel" aria-labelledby="chooseWorker">
+<label for="agentId">Worker identification</label><input class="field mono" id="agentId" name="agentId" type="text" maxlength="11" placeholder="NX-XXXXXXXX" autocapitalize="characters" autocomplete="off">
+<label for="workerSecret">Private invitation token</label><input class="field" id="workerSecret" name="workerToken" type="password" placeholder="Your one-time portal invitation" autocomplete="off">
+</div>
+<div id="ownerFields" class="hidden" role="tabpanel" aria-labelledby="chooseOwner">
+<label for="ownerSecret">Owner access token</label><input class="field" id="ownerSecret" name="ownerToken" type="password" placeholder="Enter private owner key" autocomplete="off">
+<div class="notice" style="margin-top:15px">Owner access requires your previously configured private Vercel admin token. No default username or password is embedded.</div>
+</div>
+<div id="loginMessage" class="notice hidden" role="status" aria-live="polite"></div>
+<div class="form-actions"><button id="loginSubmit" class="btn btn-primary wide" type="submit">Secure sign in <span aria-hidden="true">→</span></button></div>
+</form><div class="reflect-line"></div><p class="callout" style="margin:0">Don't have an invitation? <a href="/apply">Submit an application</a> for human review.</p>
+</section></div>
+</main><footer class="footer"><div class="container"><span>© NexusRemote · Private workforce infrastructure</span><span><a href="/privacy">Privacy</a> &nbsp; · &nbsp; <a href="/">Return home</a></span></div></footer>
+</body></html>
