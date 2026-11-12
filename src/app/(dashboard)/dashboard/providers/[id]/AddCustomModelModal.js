@@ -10,6 +10,7 @@ const defaultCaps = () => Object.fromEntries(Object.keys(CAPACITY_META).map((key
 export default function AddCustomModelModal({ isOpen, providerAlias, providerDisplayAlias, onSave, onClose }) {
   const [modelId, setModelId] = useState("");
   const [caps, setCaps] = useState(defaultCaps);
+  const [modelType, setModelType] = useState("llm");
   const [testStatus, setTestStatus] = useState(null); // null | "testing" | "ok" | "error"
   const [testError, setTestError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -18,7 +19,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
 
   // Reset state when modal opens
   useEffect(() => {
-    if (isOpen) { setModelId(""); setCaps(defaultCaps()); setTransport(""); setTestStatus(null); setTestError(""); }
+    if (isOpen) { setModelId(""); setCaps(defaultCaps()); setModelType("llm"); setTransport(""); setTestStatus(null); setTestError(""); }
   }, [isOpen]);
 
   // Strip provider's own alias prefix (e.g. "cc/model" -> "model" for cc provider)
@@ -36,7 +37,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
       const res = await fetch("/api/models/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: `${providerAlias}/${cleanId}` }),
+        body: JSON.stringify({ model: `${providerAlias}/${cleanId}`, kind: modelType }),
       });
       const data = await res.json();
       setTestStatus(data.ok ? "ok" : "error");
@@ -52,9 +53,7 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
     if (!cleanId || saving) return;
     setSaving(true);
     try {
-      // caps.stt is UI-only; the parent save flow derives the model type from
-      // it and forwards the pinned transport (null unless the caller picked one).
-      await onSave(cleanId, caps, caps.stt ? transport : null);
+      await onSave(cleanId, modelType, modelType === "llm" ? caps : undefined, modelType === "stt" ? transport : null);
     } finally {
       setSaving(false);
     }
@@ -67,6 +66,25 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add Custom Model">
       <div className="flex flex-col gap-4">
+        <Select
+          label="Model type"
+          value={modelType}
+          options={[
+            { value: "llm", label: "Chat / LLM" },
+            { value: "stt", label: "Speech to text (STT)" },
+          ]}
+          onChange={(e) => {
+            setModelType(e.target.value);
+            setCaps(defaultCaps());
+            setTransport("");
+            setTestStatus(null);
+            setTestError("");
+          }}
+          disabled={saving || testStatus === "testing"}
+          hint={modelType === "llm"
+            ? "Chat models appear in this provider's Available Models."
+            : "Audio transcription models use /v1/audio/transcriptions."}
+        />
         <div>
           <label className="text-sm font-medium mb-1.5 block">Model ID</label>
           <div className="flex gap-2">
@@ -94,47 +112,34 @@ export default function AddCustomModelModal({ isOpen, providerAlias, providerDis
           </p>
         </div>
 
-        <div>
-          <label className="text-sm font-medium mb-1.5 block">Capabilities</label>
-          <div className="flex flex-wrap gap-4">
-            {Object.entries(CAPACITY_META).map(([key, meta]) => (
-              <Toggle
-                key={key}
-                checked={!!caps[key]}
-                onChange={(v) => setCaps((prev) => ({ ...prev, [key]: v }))}
-                label={meta.label}
-                description={meta.desc}
-                size="sm"
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* STT is a model TYPE, not a chat capability: the save flow turns this
-            flag into type "stt" (the API honours a transport only on stt
-            records). The select pins the realtime dispatch marker persisted
-            with the model; the whitelist is the shared STT_TRANSPORT_META. */}
-        <div>
-          <Toggle
-            checked={!!caps.stt}
-            onChange={(v) => { setCaps((prev) => ({ ...prev, stt: v })); if (!v) setTransport(""); }}
-            label="Speech to text"
-            description="Transcribes audio via /v1/audio/transcriptions"
-            size="sm"
-          />
-          {caps.stt && (
-            <div className="mt-3">
-              <Select
-                label="Transport"
-                value={transport}
-                onChange={(e) => setTransport(e.target.value)}
-                placeholder="Provider default (REST)"
-                options={STT_TRANSPORTS.map((t) => ({ value: t, label: STT_TRANSPORT_META[t].label }))}
-                hint="Realtime transport marker for the STT dispatcher. Empty keeps the provider's REST format."
-              />
+        {modelType === "llm" && (
+          <div>
+            <label className="text-sm font-medium mb-1.5 block">Capabilities</label>
+            <div className="flex flex-wrap gap-4">
+              {Object.entries(CAPACITY_META).map(([key, meta]) => (
+                <Toggle
+                  key={key}
+                  checked={!!caps[key]}
+                  onChange={(v) => setCaps((prev) => ({ ...prev, [key]: v }))}
+                  label={meta.label}
+                  description={meta.desc}
+                  size="sm"
+                />
+              ))}
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {modelType === "stt" && (
+          <Select
+            label="Transport"
+            value={transport}
+            onChange={(e) => setTransport(e.target.value)}
+            placeholder="Provider default (REST)"
+            options={STT_TRANSPORTS.map((t) => ({ value: t, label: STT_TRANSPORT_META[t].label }))}
+            hint="Realtime transport marker for the STT dispatcher. Empty keeps the provider's REST format."
+          />
+        )}
 
         {/* Test result */}
         {testStatus === "ok" && (
