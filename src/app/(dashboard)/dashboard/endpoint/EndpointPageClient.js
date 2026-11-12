@@ -19,6 +19,7 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
+import KeyAccountPins from "./components/KeyAccountPins";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1067,6 +1068,10 @@ export default function APIPageClient({ machineId }) {
                         handleUpdateKeyAccess(key.id, { restricted: true, allow: key.access?.allow || [] });
                       }
                     })}
+                  />
+                  <KeyAccountPins
+                    apiKey={key}
+                    onChange={(access) => handleUpdateKeyAccess(key.id, access)}
                   />
                 </div>
                 <div className="flex items-center gap-2 shrink-0 pt-0.5">
