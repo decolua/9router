@@ -294,7 +294,14 @@ const TLS_ECDH_CURVE = process.env.NINEROUTER_TLS_ECDH_CURVE || "X25519";
 // families, fall over in 250ms — replaces the old global ipv4first flag, which fixed
 // one broken-family network by breaking the other (see claude-code#20240).
 // requestTls must stay TLS-options-only (connect-level options belong in `connect`).
-const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: 250 };
+// 250ms per address was too tight for Cloudflare edges seen from VN: a TLS connect to
+// amr-link.open-design.ai measured p50 ~440ms, so 10/40 attempts died with ETIMEDOUT after
+// ~0.5s (UND_ERR_CONNECT_TIMEOUT long before the 10s connect budget). 2000ms → 40/40.
+// Env NINEROUTER_CONNECT_ATTEMPT_TIMEOUT_MS overrides.
+const CONNECT_ATTEMPT_TIMEOUT_MS = Number(process.env.NINEROUTER_CONNECT_ATTEMPT_TIMEOUT_MS) > 0
+  ? Number(process.env.NINEROUTER_CONNECT_ATTEMPT_TIMEOUT_MS)
+  : 2000;
+const EYEBALLS_CONNECT = { autoSelectFamily: true, autoSelectFamilyAttemptTimeout: CONNECT_ATTEMPT_TIMEOUT_MS };
 function buildConnectOptions(insecure) {
   return { ...EYEBALLS_CONNECT, ecdhCurve: TLS_ECDH_CURVE, ...(insecure ? { rejectUnauthorized: false } : {}) };
 }
@@ -305,7 +312,7 @@ function evictOldest(cacheMap) {
   }
 }
 
-async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout) {
+async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout, allowH2 = undefined) {
   const cached = directDispatchers.get(key);
   if (cached) return cached;
   const { Agent } = await import("undici");
@@ -314,6 +321,12 @@ async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAlive
     connect: buildConnectOptions(insecure),
     keepAliveTimeout,
     keepAliveMaxTimeout,
+    // undici 8 negotiates HTTP/2 by default. Against edges that multiplex every
+    // concurrent stream onto one h2 session this turns concurrency into
+    // NGHTTP2_ENHANCE_YOUR_CALM / RST_STREAM storms, which surface as 502s and
+    // then lock the account. Hosts that need it can pin HTTP/1.1 (see
+    // isHttp2DisabledForUrl); undefined keeps undici's own default.
+    ...(allowH2 === undefined ? {} : { allowH2 }),
   });
   directDispatchers.set(key, agent);
   return agent;
@@ -324,10 +337,10 @@ async function getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAlive
  * reusing idle sockets that upstream edges (NVIDIA NIM, Cloudflare) silently
  * dropped without sending a TCP RST.
  */
-export function getDirectDispatcher(insecure = false) {
+export function getDirectDispatcher(insecure = false, http1Only = false) {
   const { keepAliveTimeout, keepAliveMaxTimeout } = resolveKeepAliveTimeouts();
-  const key = `direct::${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}`;
-  return getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout);
+  const key = `direct::${insecure ? "insecure" : "secure"}::${keepAliveTimeout}::${keepAliveMaxTimeout}::${http1Only ? "h1" : "h2"}`;
+  return getOrCreateDirectAgent(key, insecure, keepAliveTimeout, keepAliveMaxTimeout, http1Only ? false : undefined);
 }
 
 /**
@@ -335,12 +348,16 @@ export function getDirectDispatcher(insecure = false) {
  * TCP/TLS connection after a poisoned pooled socket or a connect timeout.
  */
 export function getFreshRetryDispatcher(insecure = false) {
-  const key = `fresh::${insecure ? "insecure" : "secure"}`;
+  const key = `fresh::${insecure ? "insecure" : "secure"}::h1`;
+  // A fresh socket after a poisoned pool is the retry path for hosts that
+  // already forced HTTP/1.1; negotiating h2 again here would re-enter the same
+  // session-storm that made the first attempt fail.
   return getOrCreateDirectAgent(
     key,
     insecure,
     FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
-    FRESH_RETRY_KEEPALIVE_TIMEOUT_MS
+    FRESH_RETRY_KEEPALIVE_TIMEOUT_MS,
+    false
   );
 }
 
@@ -349,10 +366,35 @@ export function getFreshRetryDispatcher(insecure = false) {
  * Always returns a dispatcher — the direct path needs the custom Agent too,
  * otherwise the default global agent's ClientHello gets RST-ed by DPI.
  */
-async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false) {
+// Hosts whose edge chokes on multiplexed HTTP/2 (see allowH2 above). Env
+// NINEROUTER_HTTP2_DISABLED_HOSTS is a comma list; `*` disables h2 everywhere,
+// `none` opts out entirely.
+const DEFAULT_HTTP2_DISABLED_HOSTS = "amr-link.open-design.ai";
+function parseHostList(value) {
+  return String(value || "")
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+const HTTP2_DISABLED_HOSTS = parseHostList(process.env.NINEROUTER_HTTP2_DISABLED_HOSTS ?? DEFAULT_HTTP2_DISABLED_HOSTS);
+
+/** True when this URL's host must be pinned to HTTP/1.1. */
+export function isHttp2DisabledForUrl(url) {
+  if (HTTP2_DISABLED_HOSTS.includes("none")) return false;
+  if (HTTP2_DISABLED_HOSTS.includes("*")) return true;
+  let host;
+  try {
+    host = new URL(typeof url === "string" ? url : url.toString()).hostname.toLowerCase();
+  } catch {
+    return false;
+  }
+  return HTTP2_DISABLED_HOSTS.some((entry) => host === entry || host.endsWith(`.${entry}`));
+}
+
+async function getDispatcher(proxyUrl, insecure = false, forceFreshSocket = false, http1Only = false) {
   const normalized = normalizeProxyUrl(proxyUrl);
   if (!normalized) {
-    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure);
+    return forceFreshSocket ? getFreshRetryDispatcher(insecure) : getDirectDispatcher(insecure, http1Only);
   }
 
   const key = `${normalized}::${insecure ? "insecure" : "secure"}`;
@@ -382,7 +424,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
     // Protocol adapters may need Node's HTTP/1 transport on the direct path.
     // Keep proxy/no-proxy resolution and strict-proxy enforcement here.
     if (!proxyUrl && options.directFetch) return await options.directFetch(url, options);
-    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket);
+    const dispatcher = await getDispatcher(proxyUrl, false, forceFreshSocket, isHttp2DisabledForUrl(url));
     return await rawFetch(url, { ...options, dispatcher });
   } catch (err) {
     const isStrictSsl = options.strictTls === true || process.env.STRICT_SSL === "true" || process.env.STRICT_SSL === "1";
@@ -392,7 +434,7 @@ async function fetchWithTlsFallback(url, options, proxyUrl, forceFreshSocket = f
       }
       // ponytail: in-memory insecure agent fallback for self-signed MITM corporate/antivirus certs
       console.warn(`[ProxyFetch] TLS cert verification failed (${err.cause?.code || err.code}), retrying with insecure TLS: ${url}`);
-      const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket);
+      const insecureDispatcher = await getDispatcher(proxyUrl, true, forceFreshSocket, isHttp2DisabledForUrl(url));
       return await rawFetch(url, { ...options, dispatcher: insecureDispatcher });
     }
 
