@@ -215,8 +215,11 @@ async function codexQuickSetup(port) {
     return;
   }
 
-  // Get model selection
-  const model = await selectModelFromList("Select Codex Model", "cx/claude-sonnet-4-5-20250929", { excludeCombos: true });
+  // Use GPT-6.1 Sol when the selector is confirmed without a different choice.
+  const model = await selectModelFromList("Select Codex Model", "", {
+    excludeCombos: true,
+    defaultModel: "cx/gpt-6.1-sol",
+  });
   if (!model) return;
 
   const result = await api.applyCliToolSettings("codex", { baseUrl: endpoint, apiKey, model });

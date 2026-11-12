@@ -108,11 +108,11 @@ async function getAvailableModelsGrouped() {
  * Display model list and prompt for selection with provider grouping & search
  * @param {string} title - Title to display
  * @param {string} currentValue - Current selected value (optional)
- * @param {Object} options - { excludeCombos?: boolean }
+ * @param {Object} options - { excludeCombos?: boolean, defaultModel?: string }
  * @returns {Promise<string|null>} Selected model ID or null if cancelled
  */
 async function selectModelFromList(title, currentValue = "", options = {}) {
-  const { excludeCombos = false } = options;
+  const { excludeCombos = false, defaultModel: requestedDefaultModel = "" } = options;
   const { combos: rawCombos, groups } = await getAvailableModelsGrouped();
   const combos = excludeCombos ? [] : rawCombos;
 
@@ -139,6 +139,9 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
     ...combos,
     ...Object.values(groups).flat()
   ];
+  const defaultModel = typeof requestedDefaultModel === "string" && allModelsList.includes(requestedDefaultModel)
+    ? requestedDefaultModel
+    : "";
 
   // Build category list
   const categories = [];
@@ -173,6 +176,8 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
     console.log("=".repeat(50));
     if (currentValue) {
       console.log(`Current: ${currentValue}\n`);
+    } else if (defaultModel) {
+      console.log(`Default: ${defaultModel}\n`);
     } else {
       console.log();
     }
@@ -234,8 +239,8 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
 
       const input = await prompt("Enter choice (number / s / m / 0): ");
       const trimmed = input.trim();
-      if (!trimmed || trimmed === "0") return null;
-
+      if (trimmed === "0") return null;
+      if (!trimmed) return defaultModel || null;
       const lower = trimmed.toLowerCase();
       if (lower === "s") {
         const q = await prompt("Enter search keyword: ");
@@ -257,6 +262,11 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
     }
 
     // Multiple categories view
+    if (currentValue) {
+      console.log(`Current: ${currentValue}\n`);
+    } else if (defaultModel) {
+      console.log(`Default: ${defaultModel}\n`);
+    }
     console.log("[Providers & Groups]");
     categories.forEach((cat, i) => {
       console.log(`  ${i + 1}. ${cat.name} (${cat.models.length} models)`);
@@ -270,9 +280,8 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
     const input = await prompt("Enter choice (number / keyword / s / m): ");
     const trimmed = input.trim();
 
-    if (!trimmed || trimmed === "0") {
-      return null;
-    }
+    if (trimmed === "0") return null;
+    if (!trimmed) return defaultModel || null;
 
     const lower = trimmed.toLowerCase();
     if (lower === "s") {
@@ -302,6 +311,8 @@ async function selectModelFromList(title, currentValue = "", options = {}) {
         console.log("=".repeat(50));
         if (currentValue) {
           console.log(`Current: ${currentValue}\n`);
+        } else if (defaultModel) {
+          console.log(`Default: ${defaultModel}\n`);
         } else {
           console.log();
         }

@@ -10,7 +10,10 @@
 //   • the synced catalog — modalities keyed by model, limits keyed by provider
 //     + model, refreshed from models.dev in the background. It reads a file, so
 //     the server installs it via setCatalogSource(); this module stays free of
-//     node:fs because the dashboard bundles it into the browser too.
+//     node:fs because the dashboard bundles it into the browser too. The sync
+//     builder (src/lib/modelCatalog/sync.js) detaches it while it resolves, so
+//     a delta is measured against the tables alone and not against the file it
+//     is about to replace.
 //   • visionPatterns.js — name-based vision detection, last resort so a model
 //     nobody has catalogued yet still accepts images.
 // Modalities only ever turn a capability ON. Limits from the catalog overlay
@@ -56,7 +59,7 @@ export const DEFAULT_CAPABILITIES = {
   tools: true,          // function / tool calling
   reasoning: false,     // thinking / reasoning
   // thinking wire format (only meaningful when reasoning:true). null → derive from transport.format.
-  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|deepseek|kimi|minimax|hunyuan|step|nous
+  // enum: openai|claude-adaptive|claude-budget|gemini-level|gemini-budget|zai|qwen|qwen-effort|deepseek|kimi|minimax|hunyuan|step|nous
   thinkingFormat: null,
   thinkingCanDisable: true,  // false → model cannot turn thinking off (clamp to min instead of disable)
   thinkingRange: null,       // { min, max } for budget formats; null = no clamp
@@ -584,6 +587,36 @@ export const PATTERN_CAPABILITIES = [
   { pattern: "*grok*",          caps: { vision: true, reasoning: true, search: true, thinkingFormat: "openai", contextWindow: 256000 } },
 
   // ── Qwen (3.5+ = native vision/video; coder & max = text-only; QwQ = thinking-only) ─
+  // Qwen 3.8 (Sep 2026) — its rows MUST stay above the generic *qwen*vl* /
+  // *qwen*omni* / *qwen*coder* / *qwen*max* rows (first-match-wins):
+  // qwen3.8-max, qwen3.8-omni-flash & co would otherwise inherit the
+  // legacy-format rows written for the 3.5–3.7 lines. The 27B/2.4t rows also
+  // keep the family off the text-only *qwen* catch-all (image-blind 27B).
+  // Qwen 3.8 moved thinking control to the official OpenAI-style
+  // `reasoning_effort` param — the legacy `enable_thinking`/`thinking_budget`
+  // (qwen format) is superseded. The model-level enum is none | xhigh
+  // (default) | medium | low: "high"/"minimal"/"auto" 400 ("Unexpected
+  // reasoning effort", probed live on hetzner Inference), so the dedicated
+  // qwen-effort format clamps instead of sending them verbatim.
+  // omni-flash: audio + video per the vendor listings; limits kept at the
+  // *qwen*omni* values (only format and precedence change here).
+  { pattern: "*qwen3.8*omni*",  caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 65536 } },
+  // 27B: the models.dev listings for this weight agree on 262144 context AND
+  // 262144 output (hetzner, nebius, ovhcloud, evroc, wandb) — both limits are
+  // the full window, not the 65536 the older 3.5/3.6-27b vendor entries carry.
+  // Image input only (video on some hosts, so not advertised).
+  // 2.4T-A95B: text-only on every listing — deliberately kept off vision.
+  // API line (flash/max/others): 1M window, image + video, 131072 out
+  // (qwen3.8-max per the alibaba vendor listing: image/video/pdf at 1M/131072).
+  // flash-next is the open-weight preview, NOT on that 1M window: every
+  // models.dev listing (amd, requesty + @eu, tensorx, vultr) caps it at 262144
+  // context. Output 131072 per the canonical page and the amd/vultr lanes
+  // (requesty allows the full window, tensorx 64000 — the generic 131072 sits
+  // between them and matches the AMD hardware lane this weight targets).
+  { pattern: "*qwen3.8*27b*",   caps: { vision: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 262144 } },
+  { pattern: "*qwen3.8*2.4t*",  caps: { reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 65536 } },
+  { pattern: "*qwen3.8*flash*next*", caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 262144, maxOutput: 131072 } },
+  { pattern: "*qwen3.8*",       caps: { vision: true, videoInput: true, reasoning: true, thinkingFormat: "qwen-effort", contextWindow: 1000000, maxOutput: 131072 } },
   { pattern: "*qwen*vl*",       caps: { vision: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144 } },
   { pattern: "*qwen*omni*",     caps: { vision: true, audioInput: true, videoInput: true, reasoning: true, thinkingFormat: "qwen", contextWindow: 262144, maxOutput: 65536 } },
   { pattern: "*qwen*coder*",    caps: { reasoning: true, thinkingFormat: "qwen", contextWindow: 1000000 } },
@@ -767,7 +800,12 @@ export function setCatalogSource(source) {
   if (typeof globalThis !== "undefined") globalThis.__9rCatalogSource = source;
 }
 
-function getCatalogSource() {
+/**
+ * The installed catalog reader, or null when none is.
+ * @returns {{ getModalities: (provider: string, model: string) => object|null,
+ *             getLimits: (provider: string, model: string) => object|null } | null} source
+ */
+export function getCatalogSource() {
   if (typeof globalThis === "undefined") return catalogSource;
   return globalThis.__9rCatalogSource || null;
 }
