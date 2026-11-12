@@ -62,6 +62,9 @@ export const ERROR_RULES = [
   // Intl gateway blocks affect the account/IP, so let the connection back off.
   { provider: "codebuddy-intl", text: "request illegal", backoff: true },
   { provider: "codebuddy-intl", text: "conversation id missing", backoff: true },
+  // NVIDIA NIM returns 400 with "degraded" when specific model cluster is unhealthy.
+  // Lock only the degraded model (modelScoped: true) without locking the API key.
+  { provider: "nvidia", text: "degraded", cooldownMs: 15 * 60 * 1000, modelScoped: true },
   { text: "no credentials",           cooldownMs: COOLDOWN.long },
   { text: "request not allowed",      cooldownMs: COOLDOWN.short },
   { text: "improperly formed request", cooldownMs: COOLDOWN.long },

@@ -99,7 +99,7 @@ export async function handleImageGenerationCore({
   let requestBody;
 
   try {
-    url = adapter.buildUrl(model, credentials);
+    url = adapter.buildUrl(model, credentials, body);
     requestBody = await adapter.buildBody(model, body);
     headers = adapter.buildHeaders(credentials, requestBody, model, body);
   } catch (error) {
@@ -143,7 +143,7 @@ export async function handleImageGenerationCore({
       try {
         const retryBody = await adapter.buildBody(model, body);
         const retryHeaders = adapter.buildHeaders(credentials, retryBody, model, body);
-        const retryUrl = adapter.buildUrl(model, credentials);
+        const retryUrl = adapter.buildUrl(model, credentials, body);
         providerResponse = await fetch(retryUrl, {
           method: "POST",
           headers: retryHeaders,
@@ -154,6 +154,27 @@ export async function handleImageGenerationCore({
       }
     } else {
       log?.warn?.("TOKEN", `${provider.toUpperCase()} | refresh failed`);
+    }
+  }
+
+  // Adapter may rewrite a rejected request once, before the failure locks the account
+  if (!providerResponse.ok && adapter.buildFallbackBody) {
+    const errorText = await providerResponse.clone().text().catch(() => "");
+    const fallbackBody = adapter.buildFallbackBody(requestBody, providerResponse.status, errorText);
+    if (fallbackBody) {
+      log?.warn?.("IMAGE", `${provider.toUpperCase()} | ${model} | retrying with fallback request`);
+      try {
+        const fallbackHeaders = adapter.buildHeaders(credentials, fallbackBody, model, body);
+        providerResponse = await fetch(url, {
+          method: "POST",
+          headers: fallbackHeaders,
+          body: serializeRequestBody(fallbackBody),
+        });
+        requestBody = fallbackBody;
+        headers = fallbackHeaders;
+      } catch {
+        log?.warn?.("IMAGE", `${provider.toUpperCase()} | fallback request failed`);
+      }
     }
   }
 
