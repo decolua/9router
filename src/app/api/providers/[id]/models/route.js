@@ -581,7 +581,7 @@ export async function GET(request, { params }) {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${connection.apiKey}`,
+          ...(connection.apiKey ? { "Authorization": `Bearer ${connection.apiKey}` } : {}),
         },
       });
 
@@ -620,9 +620,8 @@ export async function GET(request, { params }) {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": connection.apiKey,
+          ...(connection.apiKey ? { "x-api-key": connection.apiKey, "Authorization": `Bearer ${connection.apiKey}` } : {}),
           "anthropic-version": "2023-06-01",
-          "Authorization": `Bearer ${connection.apiKey}`
         },
       });
 

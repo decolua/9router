@@ -209,7 +209,7 @@ function inferKindFromUnknownModelId(modelId) {
 }
 
 async function fetchCompatibleModelIds(connection) {
-  if (!connection?.apiKey) return [];
+  if (!connection) return [];
 
   const baseUrl = typeof connection?.providerSpecificData?.baseUrl === "string"
     ? connection.providerSpecificData.baseUrl.trim().replace(/\/$/, "")
@@ -223,16 +223,16 @@ async function fetchCompatibleModelIds(connection) {
   };
 
   if (isOpenAICompatibleProvider(connection.provider)) {
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    if (connection.apiKey) headers.Authorization = `Bearer ${connection.apiKey}`;
   } else if (isAnthropicCompatibleProvider(connection.provider)) {
     if (url.endsWith("/messages/models")) {
       url = url.slice(0, -9);
     } else if (url.endsWith("/messages")) {
       url = `${url.slice(0, -9)}/models`;
     }
-    headers["x-api-key"] = connection.apiKey;
+    if (connection.apiKey) headers["x-api-key"] = connection.apiKey;
     headers["anthropic-version"] = "2023-06-01";
-    headers.Authorization = `Bearer ${connection.apiKey}`;
+    if (connection.apiKey) headers.Authorization = `Bearer ${connection.apiKey}`;
   } else {
     return [];
   }
