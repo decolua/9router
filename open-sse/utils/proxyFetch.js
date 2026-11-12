@@ -39,8 +39,19 @@ export function isStaleSocketError(error) {
 // Agents below come from the same copy — dispatcher options are only guaranteed
 // to match within one undici version.
 let undiciFetch = null;
+let undiciFormData = null;
 async function rawFetch(url, options) {
   undiciFetch ??= (await import("undici")).fetch;
+  if (options?.body && typeof options.body.append === "function" && typeof options.body.entries === "function") {
+    // Node's global FormData is a different class than the undici package's.
+    // Handing it to undici's fetch makes the body serialize as text/plain
+    // instead of multipart/form-data (issue #5525), so rebuild the body with
+    // the undici FormData class before dispatching.
+    undiciFormData ??= (await import("undici")).FormData;
+    const rebuilt = new undiciFormData();
+    for (const [key, value] of options.body.entries()) rebuilt.append(key, value);
+    options = { ...options, body: rebuilt };
+  }
   return undiciFetch(url, options);
 }
 
