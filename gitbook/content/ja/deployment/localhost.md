@@ -159,6 +159,6 @@ cp -r ~/.9router.backup ~/.9router
 
 ## 🔗 次のステップ
 
-- [プロバイダーを接続](/providers/subscription.md)
-- [コンボを作成](/features/combos.md)
-- [CLIツールとの統合](/integration/cursor.md)
+- [プロバイダーを接続](../providers/subscription.md)
+- [コンボを作成](../features/combos.md)
+- [CLIツールとの統合](../integration/cursor.md)

@@ -32,17 +32,17 @@ Model: 任意 9Router 模型(cc/*, cx/*, glm/*, 等)
 ## 可用模型
 
 ### Claude 模型(Anthropic)
-- `cc/claude-opus-4-5-20251101`
-- `cc/claude-sonnet-4-20250514`
-- `cc/claude-haiku-4-20250514`
+- `cc/claude-opus-5-5`
+- `cc/claude-sonnet-5-5`
+- `cc/claude-haiku-4-5-20251001`
 
 ### DeepSeek 模型
-- `cx/deepseek-chat`
-- `cx/deepseek-reasoner`
+- `deepseek/deepseek-chat`
+- `deepseek/deepseek-reasoner`
 
 ### GLM 模型(Zhipu AI)
-- `glm/glm-4-plus`
-- `glm/glm-4-flash`
+- `glm/glm-4.7`
+- `glm/glm-4.7-flash`
 
 ## 集成示例
 
@@ -57,7 +57,7 @@ client = OpenAI(
 )
 
 response = client.chat.completions.create(
-    model="cc/claude-sonnet-4-20250514",
+    model="cc/claude-sonnet-5-5",
     messages=[
         {"role": "user", "content": "Hello, how are you?"}
     ]
@@ -77,7 +77,7 @@ const client = new OpenAI({
 });
 
 const response = await client.chat.completions.create({
-  model: "cc/claude-sonnet-4-20250514",
+  model: "cc/claude-sonnet-5-5",
   messages: [
     { role: "user", content: "Hello, how are you?" }
   ]
@@ -93,7 +93,7 @@ curl http://localhost:20128/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key-from-dashboard" \
   -d '{
-    "model": "cc/claude-sonnet-4-20250514",
+    "model": "cc/claude-sonnet-5-5",
     "messages": [
       {"role": "user", "content": "Hello, how are you?"}
     ]
@@ -116,7 +116,7 @@ Authorization: Bearer your-api-key-from-dashboard
 **Body:**
 ```json
 {
-  "model": "cc/claude-sonnet-4-20250514",
+  "model": "cc/claude-sonnet-5-5",
   "messages": [
     {"role": "user", "content": "Hello, how are you?"}
   ],
@@ -132,7 +132,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain.schema import HumanMessage
 
 llm = ChatOpenAI(
-    model_name="cc/claude-sonnet-4-20250514",
+    model_name="cc/claude-sonnet-5-5",
     openai_api_key="your-api-key-from-dashboard",
     openai_api_base="http://localhost:20128/v1",
     temperature=0.7
@@ -149,7 +149,7 @@ print(response.content)
 from llama_index.llms import OpenAI
 
 llm = OpenAI(
-    model="cc/claude-sonnet-4-20250514",
+    model="cc/claude-sonnet-5-5",
     api_key="your-api-key-from-dashboard",
     api_base="http://localhost:20128/v1"
 )
@@ -169,7 +169,7 @@ import json
 openai.api_key = "your-api-key-from-dashboard"
 openai.api_base = "http://localhost:20128/v1"
 
-def process_batch(prompts, model="cx/deepseek-chat"):
+def process_batch(prompts, model="deepseek/deepseek-chat"):
     results = []
     for prompt in prompts:
         response = openai.ChatCompletion.create(
@@ -204,7 +204,7 @@ const client = new OpenAI({
 
 async function streamResponse(prompt) {
   const stream = await client.chat.completions.create({
-    model: "cc/claude-sonnet-4-20250514",
+    model: "cc/claude-sonnet-5-5",
     messages: [{ role: "user", content: prompt }],
     stream: true
   });
@@ -229,9 +229,9 @@ client = OpenAI(
 )
 
 models = [
-    "cc/claude-sonnet-4-20250514",
-    "cx/deepseek-chat",
-    "glm/glm-4-plus"
+    "cc/claude-sonnet-5-5",
+    "deepseek/deepseek-chat",
+    "glm/glm-4.7"
 ]
 
 prompt = "Explain quantum computing in simple terms"
@@ -255,7 +255,7 @@ for model in models:
 # .env file
 ROUTER_API_KEY=your-api-key-from-dashboard
 ROUTER_BASE_URL=http://localhost:20128/v1
-ROUTER_MODEL=cc/claude-sonnet-4-20250514
+ROUTER_MODEL=cc/claude-sonnet-5-5
 ```
 
 ```python
@@ -280,7 +280,7 @@ client = OpenAI(
 
 try:
     response = client.chat.completions.create(
-        model="cc/claude-sonnet-4-20250514",
+        model="cc/claude-sonnet-5-5",
         messages=[{"role": "user", "content": "Hello"}]
     )
     print(response.choices[0].message.content)
@@ -303,7 +303,7 @@ def chat_with_retry(prompt, max_retries=3):
     for attempt in range(max_retries):
         try:
             response = client.chat.completions.create(
-                model="cc/claude-sonnet-4-20250514",
+                model="cc/claude-sonnet-5-5",
                 messages=[{"role": "user", "content": prompt}]
             )
             return response.choices[0].message.content
@@ -348,7 +348,7 @@ Error: Invalid API key
 
 **问题:** 404 Model not found
 ```
-Error: Model 'cc/claude-opus' not found
+Error: Model 'cc/claude-opus-5-5' not found
 ```
 
 **方案:**
@@ -411,6 +411,4 @@ Error: Rate limit exceeded
 
 - [配置 Cursor](cursor.md) 进行 IDE 集成
 - [设置 Continue](continue.md) 用于 VSCode
-- [探索 CLI 用法](../cli/basic-usage.md)
-- [了解模型选择](../models/overview.md)
-- [API 参考](../api/reference.md)
+- [API 参考](../../docs/api-reference.md)

@@ -37,8 +37,8 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 **目標**: サブスクリプションクォータ切れ時の超低価格バックアップ (ChatGPT APIより約90%安い)。
 
 **Tier 3: 無料 (緊急時)**
-- iFlow (8モデル)
-- Qwen (3モデル)
+- iFlow (15モデル)
+- Qwenモデル(iFlow経由)
 - Kiro (Claude無料)
 
 **目標**: 無制限コーディング用のゼロコストフォールバック。
@@ -52,13 +52,13 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 ### シナリオ1: サブスクリプションクォータ消費
 
 ```
-ユーザーリクエスト → cc/claude-opus-4-5
+ユーザーリクエスト → cc/claude-opus-5-5
                ↓ クォータ消費 (5時間制限到達)
                自動切替 → glm/glm-4.7
                ↓ 日次クォータ消費
                自動切替 → minimax/MiniMax-M2.1
                ↓ 5時間クォータ消費
-               自動切替 → if/kimi-k2-thinking (無料)
+               自動切替 → if/kimi-k2 (無料)
                ↓
                レスポンス配信 ✅
 ```
@@ -68,7 +68,7 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 ### シナリオ2: レート制限
 
 ```
-ユーザーリクエスト → cx/gpt-5.2-codex
+ユーザーリクエスト → cx/gpt-6.1-sol
                ↓ レート制限 (リクエストが多すぎ)
                自動切替 → glm/glm-4.7
                ↓
@@ -78,7 +78,7 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 ### シナリオ3: プロバイダー利用不可
 
 ```
-ユーザーリクエスト → cc/claude-opus-4-5
+ユーザーリクエスト → cc/claude-opus-5-5
                ↓ プロバイダーエラー (503)
                自動切替 → 次の利用可能なモデル
                ↓
@@ -98,11 +98,11 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
 
 ### 優先順位の例
 
-`cc/claude-opus-4-5` へのリクエストの場合:
+`cc/claude-opus-5-5` へのリクエストの場合:
 
 ```
 1. Claude Codeクォータを確認
-   ✅ 利用可 → cc/claude-opus-4-5を使用
+   ✅ 利用可 → cc/claude-opus-5-5を使用
    ❌ 消費 → ステップ2へ
 
 2. フォールバック階層を確認 (設定されている場合)
@@ -110,7 +110,7 @@ Request → 9Router → Tier 1を確認 (サブスクリプション)
    ❌ 消費 → ステップ3へ
 
 3. 無料階層を確認
-   ✅ iFlow利用可 → if/kimi-k2-thinkingを使用
+   ✅ iFlow利用可 → if/kimi-k2を使用
    ❌ すべて消費 → クォータエラーを返す
 ```
 
@@ -151,7 +151,7 @@ Dashboard → Settings → Fallback Priority
 ```
 Tier 1: Gemini CLI → Claude Code → Codex
 Tier 2: MiniMax → GLM → Kimi
-Tier 3: iFlow → Kiro → Qwen
+Tier 3: iFlow → Kiro
 ```
 
 **4. クォータリセット通知**
@@ -170,14 +170,14 @@ Dashboard → Settings → Notifications
 
 **セットアップ:**
 ```
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 Fallback: 自動 (デフォルト3階層)
 ```
 
 **動作:**
 ```
 朝 (新鮮なクォータ):
-  Request → cc/claude-opus-4-5 ✅
+  Request → cc/claude-opus-5-5 ✅
 
 午後 (クォータ消費):
   Request → glm/glm-4.7 ✅ (自動切替)
@@ -186,7 +186,7 @@ Fallback: 自動 (デフォルト3階層)
   Request → minimax/MiniMax-M2.1 ✅ (自動切替)
 
 深夜 (すべての有料クォータ切れ):
-  Request → if/kimi-k2-thinking ✅ (無料階層)
+  Request → if/kimi-k2 ✅ (無料階層)
 ```
 
 **コスト**: 月$5〜10の追加料金 (主にサブスクリプションでカバー)。
@@ -208,7 +208,7 @@ Dashboard → Settings:
   コスト: $1.50/日
 
 16日 (予算到達):
-  Requests → if/kimi-k2-thinking (無料階層)
+  Requests → if/kimi-k2 (無料階層)
   コスト: $0
 
 翌月 (予算リセット):
@@ -228,7 +228,7 @@ Dashboard → Settings:
 
 **動作:**
 ```
-Request → cc/claude-opus-4-5
+Request → cc/claude-opus-5-5
   ✅ クォータ利用可 → 成功
   ❌ クォータ消費 → エラーを返す (フォールバックなし)
 ```
@@ -239,8 +239,8 @@ Request → cc/claude-opus-4-5
 
 **セットアップ:**
 ```
-Model: if/kimi-k2-thinking
-Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
+Model: if/kimi-k2
+Fallback: if/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **動作:**
@@ -266,7 +266,7 @@ Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 
 **コンボ例:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 2. コストに最適化
@@ -280,7 +280,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 
 **コンボ例:**
 ```
-gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
+gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 3. 品質に最適化
@@ -294,7 +294,7 @@ gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 
 **コンボ例:**
 ```
-cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
+cc/claude-opus-5-5 → cx/gpt-6.1-sol → glm/glm-4.7
 ```
 
 ### 4. 24時間可用性
@@ -308,7 +308,7 @@ cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 
 **コンボ例:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2
 ```
 
 **結果**: クォータ切れにならない、いつでもコーディング。
@@ -326,7 +326,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 | **Gemini CLI** | 日次 (1K) + 月次 (18万) | 一日中使用 |
 | **GLM-4.7** | 毎日午前10時 | 夕方使用、翌朝リセット |
 | **MiniMax M2.1** | 5時間ローリング | いつでも使用、ローリングウィンドウを追跡 |
-| **iFlow/Qwen/Kiro** | 制限なし | 緊急時バックアップ |
+| **iFlow/Kiro** | 制限なし | 緊急時バックアップ |
 
 **日課の例:**
 ```

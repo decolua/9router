@@ -1,12 +1,14 @@
 // Public API barrel — all DB functions
 import { getAdapter } from "./driver.js";
 import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
+import { stampInsert, stampUpsertConflict } from "../federation/stamp.js";
 import { keyAccessFromColumns, keyAccessToColumns, validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 
 // Settings
 export {
   getSettings, updateSettings, isCloudEnabled, getCloudUrl, exportSettings,
+  requireApiKeyPinnedBy,
 } from "./repos/settingsRepo.js";
 
 // Provider connections
@@ -74,23 +76,30 @@ export async function exportDb() {
   const db = await getAdapter();
   const { exportSettings } = await import("./repos/settingsRepo.js");
 
+  // Tombstone filter only where the column exists: tables created before the
+  // federation migration (or by partial legacy fixtures) have no `deleted`
+  // column and cannot hold tombstones, so the plain SELECT is already honest.
+  const hasDeletedCol = (table) => db.all(`PRAGMA table_info(${table})`).some((c) => c.name === "deleted");
+  const rep = (table) => (hasDeletedCol(table) ? `SELECT * FROM ${table} WHERE (deleted = 0 OR deleted IS NULL)` : `SELECT * FROM ${table}`);
+
   const out = {
     settings: await exportSettings(),
-    providerConnections: db.all(`SELECT * FROM providerConnections`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    providerNodes: db.all(`SELECT * FROM providerNodes`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    proxyPools: db.all(`SELECT * FROM proxyPools`).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt })),
-    apiKeys: db.all(`SELECT * FROM apiKeys`).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt, access: keyAccessFromColumns(r.accessRestricted, r.accessAllow) })),
-    combos: db.all(`SELECT * FROM combos`).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt })),
+    providerConnections: db.all(rep("providerConnections")).map((r) => ({ ...parseJson(r.data, {}), id: r.id, provider: r.provider, authType: r.authType, name: r.name, email: r.email, priority: r.priority, isActive: r.isActive === 1, createdAt: r.createdAt, updatedAt: r.updatedAt, federation_version: r.federation_version ?? 0, updated_at: r.updated_at ?? null, deleted: r.deleted ?? 0 })),
+    providerNodes: db.all(rep("providerNodes")).map((r) => ({ ...parseJson(r.data, {}), id: r.id, type: r.type, name: r.name, createdAt: r.createdAt, updatedAt: r.updatedAt, federation_version: r.federation_version ?? 0, updated_at: r.updated_at ?? null, deleted: r.deleted ?? 0 })),
+    proxyPools: db.all(rep("proxyPools")).map((r) => ({ ...parseJson(r.data, {}), id: r.id, isActive: r.isActive === 1, testStatus: r.testStatus, createdAt: r.createdAt, updatedAt: r.updatedAt, federation_version: r.federation_version ?? 0, updated_at: r.updated_at ?? null, deleted: r.deleted ?? 0 })),
+    apiKeys: db.all(rep("apiKeys")).map((r) => ({ id: r.id, key: r.key, name: r.name, machineId: r.machineId, isActive: r.isActive === 1, createdAt: r.createdAt, federation_version: r.federation_version ?? 0, updated_at: r.updated_at ?? null, deleted: r.deleted ?? 0, access: keyAccessFromColumns(r.accessRestricted, r.accessAllow) })),
+    combos: db.all(rep("combos")).map((r) => ({ id: r.id, name: r.name, kind: r.kind, models: parseJson(r.models, []), createdAt: r.createdAt, updatedAt: r.updatedAt, federation_version: r.federation_version ?? 0, updated_at: r.updated_at ?? null, deleted: r.deleted ?? 0 })),
     modelAliases: {},
     customModels: [],
     mitmAlias: {},
     pricing: {},
   };
 
-  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'`)) out.modelAliases[r.key] = parseJson(r.value);
-  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'`)) out.customModels.push(parseJson(r.value));
-  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'`)) out.mitmAlias[r.key] = parseJson(r.value);
-  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'`)) out.pricing[r.key] = parseJson(r.value);
+  const kvDel = hasDeletedCol("kv") ? ` AND (deleted = 0 OR deleted IS NULL)` : "";
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'modelAliases'${kvDel}`)) out.modelAliases[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'customModels'${kvDel}`)) out.customModels.push(parseJson(r.value));
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'mitmAlias'${kvDel}`)) out.mitmAlias[r.key] = parseJson(r.value);
+  for (const r of db.all(`SELECT key, value FROM kv WHERE scope = 'pricing'${kvDel}`)) out.pricing[r.key] = parseJson(r.value);
 
   return out;
 }
@@ -113,7 +122,23 @@ export async function importDb(payload) {
 
     // Settings
     if (payload.settings) {
-      db.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(payload.settings)]);
+      // FED-022: stamp the restore seed so the settings row is delta-visible
+      // (unstamped federation_version = NULL is excluded by `federation_version > since`).
+      // On a pre-FED-001 schema the stamp columns do not exist yet; restore
+      // plainly — the federation migration stamps on its next boot.
+      const settingsCols = new Set(db.all(`PRAGMA table_info(settings)`).map((c) => c.name));
+      if (settingsCols.has("federation_version")) {
+        const s = stampInsert(db);
+        db.run(
+          `INSERT INTO settings(id, data${s.cols}) VALUES(1, ?${s.placeholders}) ON CONFLICT(id) DO UPDATE SET data = excluded.data${stampUpsertConflict()}`,
+          [stringifyJson(payload.settings), ...s.params]
+        );
+      } else {
+        db.run(
+          `INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`,
+          [stringifyJson(payload.settings)]
+        );
+      }
     }
 
     for (const c of payload.providerConnections || []) {

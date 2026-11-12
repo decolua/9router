@@ -43,8 +43,8 @@ echo $OPENAI_API_KEY
 
 | ID del modelo | Descripción |
 |----------|-------------|
-| `cx/gpt-5.2-codex` | GPT-5.2 Codex - Última versión |
-| `cx/gpt-5.1-codex-max` | GPT-5.1 Codex Max - Contexto extendido |
+| `cx/gpt-6.1-sol` | GPT-5.2 Codex - Última versión |
+| `cx/gpt-6-sol` | GPT-5.1 Codex Max - Contexto extendido |
 
 ## Ejemplos de uso
 
@@ -52,22 +52,22 @@ echo $OPENAI_API_KEY
 
 ```bash
 # Usar GPT-5.2 Codex
-codex --model cx/gpt-5.2-codex "Write a function to sort an array"
+codex --model cx/gpt-6.1-sol "Write a function to sort an array"
 
 # Usar GPT-5.1 Codex Max
-codex --model cx/gpt-5.1-codex-max "Explain this complex algorithm"
+codex --model cx/gpt-6-sol "Explain this complex algorithm"
 ```
 
 ### Generación de código
 
 ```bash
-codex --model cx/gpt-5.2-codex "Create a REST API endpoint for user authentication"
+codex --model cx/gpt-6.1-sol "Create a REST API endpoint for user authentication"
 ```
 
 ### Explicación de código
 
 ```bash
-codex --model cx/gpt-5.1-codex-max "Explain what this code does: $(cat myfile.js)"
+codex --model cx/gpt-6-sol "Explain what this code does: $(cat myfile.js)"
 ```
 
 ## Archivo de configuración
@@ -78,7 +78,7 @@ También puedes configurar Codex CLI usando un archivo de configuración. Crea o
 {
   "baseUrl": "http://localhost:20128/v1",
   "apiKey": "your-9router-api-key",
-  "defaultModel": "cx/gpt-5.2-codex"
+  "defaultModel": "cx/gpt-6.1-sol"
 }
 ```
 
@@ -132,5 +132,5 @@ Habilita el modo debug para ver logs detallados de request/response:
 
 ```bash
 export CODEX_DEBUG=true
-codex --model cx/gpt-5.2-codex "Your prompt"
+codex --model cx/gpt-6.1-sol "Your prompt"
 ```

@@ -16,14 +16,24 @@ function getDataDir() {
   if (!configured) return defaultDir();
   try {
     fs.mkdirSync(configured, { recursive: true });
-    return configured;
   } catch (e) {
     if (e?.code === "EACCES" || e?.code === "EPERM") {
-      console.warn(`[DATA_DIR] '${configured}' not writable → fallback ~/.${APP_NAME}`);
-      return defaultDir();
+      throw new Error(
+        `DATA_DIR '${configured}' could not be created (${e.code}: ${e.message}). ` +
+        `Create the directory or choose a writable DATA_DIR.`
+      );
     }
     throw e;
   }
+  try {
+    fs.accessSync(configured, fs.constants.W_OK);
+  } catch (e) {
+    throw new Error(
+      `DATA_DIR '${configured}' is not writable (${e.code ?? "EACCES"}: ${e.message}). ` +
+      `Create the directory or choose a writable DATA_DIR.`
+    );
+  }
+  return configured;
 }
 
 const DATA_DIR = getDataDir();

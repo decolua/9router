@@ -18,11 +18,15 @@ From the `tests/` directory:
 npm test
 ```
 
-Or run vitest directly with npx:
+Or run the pinned tests-local vitest directly:
 
 ```bash
-npx vitest run --reporter=verbose --config ./vitest.config.js
+./node_modules/.bin/vitest run --reporter=verbose --config ./vitest.config.js
 ```
+
+`tests/` is its own npm package, so the one-time prerequisite for any of these
+commands is the Setup install above (`cd tests && npm install`) — that is what
+puts vitest in `tests/node_modules`.
 
 ## Test Files
 

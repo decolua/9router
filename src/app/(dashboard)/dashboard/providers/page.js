@@ -25,7 +25,7 @@ import { useNotificationStore } from "@/store/notificationStore";
 import { useHeaderSearchStore } from "@/store/headerSearchStore";
 import ModelAvailabilityBadge from "./components/ModelAvailabilityBadge";
 import AddCompatibleModal from "./components/AddCompatibleModal";
-import { STATUS_FILTER_OPTIONS, matchesStatusFilter } from "./utils";
+import { STATUS_FILTER_OPTIONS, matchesStatusFilter, vendorClientOnlyLabel } from "./utils";
 
 function getStatusDisplay(connected, error, errorCode) {
   const parts = [];
@@ -214,8 +214,8 @@ export default function ProvidersPage() {
     return { connected, error, total, errorCode, errorTime, allDisabled };
   };
 
-  const matchStatus = (stats, isNoAuth) =>
-    matchesStatusFilter(statusFilter, stats, isNoAuth);
+  const matchStatus = (stats, isNoAuth, requiresVendorClient) =>
+    matchesStatusFilter(statusFilter, stats, isNoAuth, requiresVendorClient);
 
   // Toggle all connections for a provider on/off. authType may be a single
   // string or an array (kiro counts oauth + api_key/apikey together).
@@ -311,7 +311,7 @@ export default function ProvidersPage() {
       ([key, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
-        matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
+        matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth, info.requiresVendorClient),
     ),
     "oauth",
   );
@@ -320,7 +320,7 @@ export default function ProvidersPage() {
       ([key, info]) =>
         !info.hidden &&
         matchSearch(info.name) &&
-        matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
+        matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth, info.requiresVendorClient),
     )
     .sort(([, a], [, b]) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0));
   // Free Tier cards may be oauth-only (e.g. kimchi) or dual-auth, so count via
@@ -332,7 +332,7 @@ export default function ProvidersPage() {
         !info.hidden &&
         matchSearch(info.name) &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
-        matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth),
+        matchStatus(getProviderStats(key, dualAuthTypes(info, key)), info.noAuth, info.requiresVendorClient),
     )
     .sort(([ka, a], [kb, b]) => {
       const pa = a.priority ?? 999;
@@ -352,7 +352,7 @@ export default function ProvidersPage() {
         !info.hidden &&
         (info.serviceKinds ?? ["llm"]).includes("llm") &&
         matchSearch(info.name) &&
-        matchStatus(getProviderStats(key, "apikey"), info.noAuth),
+        matchStatus(getProviderStats(key, "apikey"), info.noAuth, info.requiresVendorClient),
     )
     .sort(([ka, a], [kb, b]) => {
       const ca = getProviderStats(ka, "apikey").total > 0 ? 0 : 1;
@@ -703,6 +703,7 @@ export default function ProvidersPage() {
 function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
   const { connected, error, errorCode, errorTime, allDisabled } = stats;
   const isNoAuth = !!provider.noAuth;
+  const requiresVendorClient = !!provider.requiresVendorClient;
 
   const dotColors = {
     free: "bg-green-500",
@@ -754,6 +755,12 @@ function ProviderCard({ providerId, provider, stats, authType, onToggle }) {
                       Disabled
                     </span>
                   </Badge>
+                ) : isNoAuth && requiresVendorClient ? (
+                  // Not "Ready": this provider's free tier only answers its own
+                  // client, so a connection must be configured before it works.
+                  <Badge variant="warning" size="sm">
+                    {vendorClientOnlyLabel(provider.name)}
+                  </Badge>
                 ) : isNoAuth ? (
                   <Badge variant="success" size="sm" dot>Ready</Badge>
                 ) : (
@@ -799,6 +806,8 @@ ProviderCard.propTypes = {
     name: PropTypes.string.isRequired,
     color: PropTypes.string,
     textIcon: PropTypes.string,
+    noAuth: PropTypes.bool,
+    requiresVendorClient: PropTypes.bool,
   }).isRequired,
   stats: PropTypes.shape({
     connected: PropTypes.number,

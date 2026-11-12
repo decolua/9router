@@ -1,18 +1,123 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
-import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
+import { fromOpenAIFinish } from "../../translator/concerns/finishReason.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
 import { createErrorResult } from "../../utils/error.js";
 import { upstreamResponseHeaders } from "../../utils/upstreamHeaders.js";
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
-import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
-import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
+import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, resolveUsage, responseContentLength, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
+import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
+
+function parseToolArguments(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Canonicalize the message key that carries a thinking model's reasoning.
+ *
+ * `reasoning_content` is the OpenAI-community convention (what every SDK-style
+ * consumer reads), but some OpenAI-compatible upstreams — and aggregators
+ * relaying for them — answer a non-streaming chat completion with the thinking
+ * block under a nonstandard `message.reasoning` key instead. It is per ROUTE,
+ * not per model: the same model on the same key returns one key through one
+ * upstream account/peering and the other through another (measured 2026-10-16
+ * on opencode-go `glm-5.3-flash`, whose upstream ids flip shape
+ * `chatcmpl_<hex>` vs `<timestamp><hex>` at the same moment). A body that needs
+ * no format translation is passed through verbatim, so the nonstandard key
+ * reached the client untouched and a consumer reading `reasoning_content` saw a
+ * reasoning-only turn as an empty completion (`content: ""`,
+ * `finish_reason: "length"`) — the exact failure this normalizes away.
+ *
+ * Runs at the single non-stream JSON exit, before translation and before the
+ * strip logic, so EVERY route (direct provider, account fallback, upstream
+ * relayer) and EVERY client format (Chat Completions, Responses, Claude,
+ * Gemini) sees exactly one reasoning key.
+ *
+ * Only a non-empty string payload is moved: a structured (object/array)
+ * `reasoning` value is a provider-specific detail payload, not the reasoning
+ * text, and is left in place rather than coerced into a shape the convention
+ * does not define.
+ *
+ * @param {object} responseBody - chat.completion-shaped body (mutated in place)
+ * @returns {object} the same body, with reasoning surfaced under `reasoning_content` only
+ */
+export function normalizeReasoningKey(responseBody) {
+  if (!responseBody || !Array.isArray(responseBody.choices)) return responseBody;
+  for (const choice of responseBody.choices) {
+    const message = choice?.message;
+    if (!message || typeof message !== "object") continue;
+    if (!Object.prototype.hasOwnProperty.call(message, "reasoning")) continue;
+    const nonStandard = message.reasoning;
+    if (typeof nonStandard === "string" && nonStandard.length > 0) {
+      delete message.reasoning;
+      if (typeof message.reasoning_content !== "string" || message.reasoning_content.length === 0) {
+        message.reasoning_content = nonStandard;
+      }
+    } else if (nonStandard == null || nonStandard === "") {
+      // Nil/empty placeholder: nothing to surface, and the nonstandard key must not ship.
+      delete message.reasoning;
+    }
+  }
+  return responseBody;
+}
+
+function openAICompletionToClaudeMessage(responseBody) {
+  if (!responseBody?.choices?.[0]) return responseBody;
+  const choice = responseBody.choices[0];
+  const message = choice.message || {};
+  const content = [];
+
+  // `message.reasoning` is the nonstandard spelling some upstreams emit; accept it
+  // here too (mirrors openAICompletionToResponses) so a direct caller of
+  // translateNonStreamingResponse normalizes as well as the handler exit does.
+  const reasoning = message.reasoning_content
+    || message.provider_specific_fields?.reasoning_content
+    || (typeof message.reasoning === "string" ? message.reasoning : "")
+    || "";
+  if (reasoning) {
+    content.push({ type: "thinking", thinking: reasoning });
+  }
+  if (typeof message.content === "string" && message.content.length > 0) {
+    content.push({ type: "text", text: message.content });
+  }
+  for (const toolCall of message.tool_calls || []) {
+    const fn = toolCall.function || {};
+    content.push({
+      type: "tool_use",
+      id: toolCall.id || `toolu_${Date.now()}_${content.length}`,
+      name: fn.name || toolCall.name || "",
+      input: parseToolArguments(fn.arguments || toolCall.arguments),
+    });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "" });
+
+  const usage = responseBody.usage || {};
+  return {
+    id: String(responseBody.id || `msg_${Date.now()}`).replace(/^chatcmpl-/, ""),
+    type: "message",
+    role: "assistant",
+    model: responseBody.model || "unknown",
+    content,
+    stop_reason: fromOpenAIFinish(choice.finish_reason, FORMATS.CLAUDE),
+    stop_sequence: null,
+    usage: {
+      input_tokens: usage.prompt_tokens || usage.input_tokens || 0,
+      output_tokens: usage.completion_tokens || usage.output_tokens || 0,
+    },
+  };
+}
 
 /**
  * Convert an OpenAI Chat Completions non-streaming response body into the
@@ -92,9 +197,9 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
- * Translate non-streaming response body from provider format → OpenAI format.
+ * Translate a non-streaming upstream body into OpenAI shape.
  */
-export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+function translateUpstreamResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
   if (targetFormat === sourceFormat) return responseBody;
   // Provider responded in OpenAI Chat Completions shape but the client speaks
   // Responses API — convert so tool_calls/text surface as Responses `output`.
@@ -232,6 +337,37 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 }
 
 /**
+ * Adapt a translated body to the CLIENT's format — applied ONCE, at the single
+ * exit of `translateNonStreamingResponse`, after every upstream branch.
+ *
+ * The branches above all produce OpenAI `chat.completion` bodies whenever the
+ * upstream answers in OpenAI-ish shape (Ollama via `ollamaBodyToOpenAI`,
+ * Gemini/Antigravity/Gemini-CLI/Vertex built inline). A Claude-format client
+ * (`POST /v1/messages`, the format `detectFormatByEndpoint()` assigns) reads
+ * `content[]`, never `choices[]`: handing it a chat.completion body is a silent
+ * HTTP 200 with no assistant content rather than an error. Patching the
+ * conversion into each upstream branch is how that hole reappears the next time
+ * a branch is added, so it lives here instead.
+ *
+ * Only an OpenAI-shaped result is converted (`choices[]` or
+ * `object:"chat.completion"`), so a body an upstream already returned in
+ * Anthropic shape — or one this function already converted — passes through
+ * untouched.
+ */
+function toClientFormat(body, sourceFormat) {
+  if (sourceFormat !== FORMATS.CLAUDE) return body;
+  const isOpenAIShaped = Array.isArray(body?.choices) || body?.object === "chat.completion";
+  return isOpenAIShaped ? openAICompletionToClaudeMessage(body) : body;
+}
+
+export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {
+  return toClientFormat(
+    translateUpstreamResponse(responseBody, targetFormat, sourceFormat, customToolNames),
+    sourceFormat
+  );
+}
+
+/**
  * Handle non-streaming response from provider.
  */
 export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
@@ -282,9 +418,25 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // Decloak tool_use names once on raw Claude body, before any translation (INPUT side)
   responseBody = decloakToolNames(responseBody, toolNameMap);
 
-  const usage = extractUsageFromResponse(responseBody);
+  // Canonicalize the thinking key BEFORE translation and before the
+  // reasoning_content strip below: the same thinking model surfaces its reasoning
+  // under `reasoning` through one upstream route and `reasoning_content` through
+  // another, and a non-translated body would otherwise ship the nonstandard key
+  // verbatim (see normalizeReasoningKey).
+  responseBody = normalizeReasoningKey(responseBody);
+
+  const upstreamUsage = extractUsageFromResponse(responseBody);
+  const contentLength = responseContentLength(responseBody);
+  // The usage this request is logged and recorded with: the upstream's own
+  // counts when it reports them, otherwise an ESTIMATE (marked `estimated`) —
+  // a native Ollama non-streaming body carries its counts on the TOP LEVEL and
+  // has no `usage` object at all, so without the fallback a successful
+  // completion recorded nothing and the "📊 DONE" line read "IN 0 · OUT 0"
+  // (DF-9ROUTER-26). One resolution feeds the log line AND the DB row, so the
+  // two can never disagree.
+  const usage = resolveUsage({ tokens: upstreamUsage, body, contentLength });
   appendLog({ tokens: usage, status: "200 OK" });
-  saveUsageStats({ provider, model, tokens: usage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true });
+  saveUsageStats({ provider, model, tokens: upstreamUsage, connectionId, apiKey, endpoint: clientRawRequest?.endpoint, silent: true, body, contentLength });
   if (log?.line) log.line(reqTag, "📊", formatDoneLine({ usage, latency: { total: Date.now() - requestStartTime } }));
 
   const translatedResponse = needsTranslation(targetFormat, sourceFormat)

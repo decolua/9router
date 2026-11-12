@@ -22,7 +22,7 @@ export async function PUT(request, { params }) {
   try {
     const { id } = await params;
     const body = await request.json();
-    const { isActive, access } = body;
+    const { isActive, name, access } = body;
 
     const existing = await getApiKeyById(id);
     if (!existing) {
@@ -30,11 +30,27 @@ export async function PUT(request, { params }) {
     }
 
     const updateData = {};
+    // R3-01: honor `name` (rename) instead of silently ignoring it — a 200
+    // that changes nothing misleads raw-API integrators. Empty/blank names
+    // are rejected (matches POST /api/keys which requires a name).
+    if (name !== undefined) {
+      if (typeof name !== "string" || name.trim() === "") {
+        return NextResponse.json({ error: "Name must be a non-empty string" }, { status: 400 });
+      }
+      updateData.name = name;
+    }
     if (isActive !== undefined) updateData.isActive = isActive;
     if (access !== undefined) {
       const checked = validateKeyAccessInput(access);
       if (!checked.ok) return NextResponse.json({ error: checked.error }, { status: 400 });
       updateData.access = checked.value;
+    }
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json(
+        { error: "Nothing to update: provide `name` and/or `isActive`" },
+        { status: 400 }
+      );
     }
 
     const updated = await updateApiKey(id, updateData);

@@ -66,6 +66,19 @@ Default (`response_format=json`):
 `verbose_json` adds `language`, `duration`, `segments[]` with timestamps.
 `srt` / `vtt` return subtitle text.
 
+## MIME handling (magic-byte sniffing)
+
+Whisper-compatible clients often stream raw audio without useful MIME metadata —
+curl sends `application/octet-stream` by default for extension-less filenames,
+which Gemini rejects with `Unsupported MIME type`. The server therefore sniffs
+the audio container from the file's leading magic bytes and overrides whatever
+content type the client declared. Automatically detected formats: **WAV
+(`RIFF…WAVE`), MP3 (`ID3` or MPEG frame sync), OGG (`OggS`), FLAC (`fLaC`),
+WebM (EBML)**. If nothing sniffs, a client-declared `audio/*` type is used
+as-is; otherwise the server falls back to the filename extension and, failing
+that, returns a documented error. No special flags are needed — send the file
+exactly as before.
+
 ## Provider quirks
 
 | Provider | `model` format | Notes |

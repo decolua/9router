@@ -7,8 +7,25 @@
 **/.vscode
 
 # Dependencies and build output
+# QA-9ROUTER-33 — bare `node_modules`/`.next-cli-build` only match the CONTEXT
+# ROOT in docker's ignore matcher; nested copies (tests/node_modules 67M,
+# cli/node_modules) and the 960M Next CLI build cache still entered the
+# context (measured transfer 935 MiB → 1.14GB live). `**/` forms cover every
+# depth. npm ci reinstalls deps in the builder, so no node_modules is needed.
 node_modules
+**/node_modules
+.next-cli-build
+**/.next-cli-build
 .next
+# Local VFS/cache artifacts (dagger.db 106K, .vfs 1.1M) and fleet state —
+# never part of the app.
+.vfs
+dagger.db*
+# Docker never applies .gitignore's .git rule itself; .git is 80M here.
+.git
+.coding-hermes
+.gitreins
+.hermes
 out
 build
 dist

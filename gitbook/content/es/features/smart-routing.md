@@ -37,8 +37,8 @@ Solicitud → 9Router → Verificar Nivel 1 (Suscripción)
 **Objetivo**: Respaldo ultra-barato cuando se agota la cuota de suscripción (~90% más barato que ChatGPT API).
 
 **Nivel 3: GRATIS (Emergencia)**
-- iFlow (8 modelos)
-- Qwen (3 modelos)
+- iFlow (15 modelos)
+- Modelos Qwen (vía iFlow)
 - Kiro (Claude GRATIS)
 
 **Objetivo**: Fallback de cero costo para codificación ilimitada.
@@ -52,13 +52,13 @@ Solicitud → 9Router → Verificar Nivel 1 (Suscripción)
 ### Escenario 1: Cuota de suscripción agotada
 
 ```
-Solicitud del usuario → cc/claude-opus-4-5
+Solicitud del usuario → cc/claude-opus-5-5
                        ↓ cuota agotada (límite de 5 horas alcanzado)
                        Cambio automático → glm/glm-4.7
                        ↓ cuota diaria agotada
                        Cambio automático → minimax/MiniMax-M2.1
                        ↓ cuota de 5 horas agotada
-                       Cambio automático → if/kimi-k2-thinking (GRATIS)
+                       Cambio automático → if/kimi-k2 (GRATIS)
                        ↓
                        Respuesta entregada ✅
 ```
@@ -68,7 +68,7 @@ Solicitud del usuario → cc/claude-opus-4-5
 ### Escenario 2: Rate limiting
 
 ```
-Solicitud del usuario → cx/gpt-5.2-codex
+Solicitud del usuario → cx/gpt-6.1-sol
                        ↓ rate limited (demasiadas solicitudes)
                        Cambio automático → glm/glm-4.7
                        ↓
@@ -78,7 +78,7 @@ Solicitud del usuario → cx/gpt-5.2-codex
 ### Escenario 3: Proveedor no disponible
 
 ```
-Solicitud del usuario → cc/claude-opus-4-5
+Solicitud del usuario → cc/claude-opus-5-5
                        ↓ error del proveedor (503)
                        Cambio automático → siguiente modelo disponible
                        ↓
@@ -98,11 +98,11 @@ Solicitud del usuario → cc/claude-opus-4-5
 
 ### Ejemplo de orden de prioridad
 
-Para una solicitud a `cc/claude-opus-4-5`:
+Para una solicitud a `cc/claude-opus-5-5`:
 
 ```
 1. Verificar cuota de Claude Code
-   ✅ Disponible → Usa cc/claude-opus-4-5
+   ✅ Disponible → Usa cc/claude-opus-5-5
    ❌ Agotada → Continúa al paso 2
 
 2. Verificar nivel de fallback (si está configurado)
@@ -110,7 +110,7 @@ Para una solicitud a `cc/claude-opus-4-5`:
    ❌ Agotada → Continúa al paso 3
 
 3. Verificar nivel gratis
-   ✅ iFlow disponible → Usa if/kimi-k2-thinking
+   ✅ iFlow disponible → Usa if/kimi-k2
    ❌ Todo agotado → Devuelve error de cuota
 ```
 
@@ -151,7 +151,7 @@ Ejemplo de orden personalizado:
 ```
 Nivel 1: Gemini CLI → Claude Code → Codex
 Nivel 2: MiniMax → GLM → Kimi
-Nivel 3: iFlow → Kiro → Qwen
+Nivel 3: iFlow → Kiro
 ```
 
 **4. Notificaciones de reinicio de cuota**
@@ -170,14 +170,14 @@ Dashboard → Settings → Notifications
 
 **Configuración:**
 ```
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 Fallback: Auto (3 niveles por defecto)
 ```
 
 **Comportamiento:**
 ```
 Mañana (cuota fresca):
-  Solicitud → cc/claude-opus-4-5 ✅
+  Solicitud → cc/claude-opus-5-5 ✅
 
 Tarde (cuota agotada):
   Solicitud → glm/glm-4.7 ✅ (cambio automático)
@@ -186,7 +186,7 @@ Noche (cuota de GLM agotada):
   Solicitud → minimax/MiniMax-M2.1 ✅ (cambio automático)
 
 Madrugada (toda la cuota de pago agotada):
-  Solicitud → if/kimi-k2-thinking ✅ (nivel gratis)
+  Solicitud → if/kimi-k2 ✅ (nivel gratis)
 ```
 
 **Costo**: ~$5-10/mes extra (en su mayoría cubierto por la suscripción).
@@ -208,7 +208,7 @@ Día 1-15 (dentro del presupuesto):
   Costo: $1.50/día
 
 Día 16 (presupuesto alcanzado):
-  Solicitudes → if/kimi-k2-thinking (nivel gratis)
+  Solicitudes → if/kimi-k2 (nivel gratis)
   Costo: $0
 
 Mes siguiente (presupuesto se reinicia):
@@ -228,7 +228,7 @@ Dashboard → Settings:
 
 **Comportamiento:**
 ```
-Solicitud → cc/claude-opus-4-5
+Solicitud → cc/claude-opus-5-5
   ✅ Cuota disponible → Éxito
   ❌ Cuota agotada → Devuelve error (sin fallback)
 ```
@@ -239,8 +239,8 @@ Solicitud → cc/claude-opus-4-5
 
 **Configuración:**
 ```
-Model: if/kimi-k2-thinking
-Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
+Model: if/kimi-k2
+Fallback: if/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **Comportamiento:**
@@ -266,7 +266,7 @@ Estrategia:
 
 **Ejemplo de combo:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 2. Optimiza por costo
@@ -280,7 +280,7 @@ Estrategia:
 
 **Ejemplo de combo:**
 ```
-gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
+gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 3. Optimiza por calidad
@@ -294,7 +294,7 @@ Estrategia:
 
 **Ejemplo de combo:**
 ```
-cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
+cc/claude-opus-5-5 → cx/gpt-6.1-sol → glm/glm-4.7
 ```
 
 ### 4. Disponibilidad 24/7
@@ -308,7 +308,7 @@ Estrategia:
 
 **Ejemplo de combo:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2
 ```
 
 **Resultado**: Nunca te quedas sin cuota, codifica en cualquier momento.
@@ -326,7 +326,7 @@ Planifica tu uso según los tiempos de reinicio de cuota:
 | **Gemini CLI** | Diario (1K) + Mensual (180K) | Usar durante el día |
 | **GLM-4.7** | Diario 10:00 AM | Usar en la noche, se reinicia al día siguiente |
 | **MiniMax M2.1** | Rolling 5 horas | Usar cuando sea, rastrea ventana rolling |
-| **iFlow/Qwen/Kiro** | Sin límite | Respaldo de emergencia |
+| **iFlow/Kiro** | Sin límite | Respaldo de emergencia |
 
 **Ejemplo de rutina diaria:**
 ```

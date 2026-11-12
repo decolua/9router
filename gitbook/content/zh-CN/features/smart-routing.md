@@ -37,8 +37,8 @@
 **目标**:订阅配额用完后的超低价备用(比 ChatGPT API 便宜 ~90%)。
 
 **第 3 层:免费(应急)**
-- iFlow(8 个模型)
-- Qwen(3 个模型)
+- iFlow(15 个模型)
+- Qwen 模型(通过 iFlow)
 - Kiro(Claude 免费)
 
 **目标**:零成本回退,实现无限编码。
@@ -52,13 +52,13 @@
 ### 场景 1:订阅配额耗尽
 
 ```
-用户请求 → cc/claude-opus-4-5
+用户请求 → cc/claude-opus-5-5
            ↓ 配额耗尽(达到 5 小时限制)
            自动切换 → glm/glm-4.7
            ↓ 每日配额耗尽
            自动切换 → minimax/MiniMax-M2.1
            ↓ 5 小时配额耗尽
-           自动切换 → if/kimi-k2-thinking (免费)
+           自动切换 → if/kimi-k2 (免费)
            ↓
            响应已送达 ✅
 ```
@@ -68,7 +68,7 @@
 ### 场景 2:速率限制
 
 ```
-用户请求 → cx/gpt-5.2-codex
+用户请求 → cx/gpt-6.1-sol
            ↓ 速率受限(请求过多)
            自动切换 → glm/glm-4.7
            ↓
@@ -78,7 +78,7 @@
 ### 场景 3:提供商不可用
 
 ```
-用户请求 → cc/claude-opus-4-5
+用户请求 → cc/claude-opus-5-5
            ↓ 提供商错误(503)
            自动切换 → 下一个可用模型
            ↓
@@ -98,11 +98,11 @@
 
 ### 优先级示例
 
-对 `cc/claude-opus-4-5` 的请求:
+对 `cc/claude-opus-5-5` 的请求:
 
 ```
 1. 检查 Claude Code 配额
-   ✅ 可用 → 使用 cc/claude-opus-4-5
+   ✅ 可用 → 使用 cc/claude-opus-5-5
    ❌ 耗尽 → 继续步骤 2
 
 2. 检查回退层(若已配置)
@@ -110,7 +110,7 @@
    ❌ 耗尽 → 继续步骤 3
 
 3. 检查免费层
-   ✅ iFlow 可用 → 使用 if/kimi-k2-thinking
+   ✅ iFlow 可用 → 使用 if/kimi-k2
    ❌ 全部耗尽 → 返回配额错误
 ```
 
@@ -151,7 +151,7 @@
 ```
 第 1 层: Gemini CLI → Claude Code → Codex
 第 2 层: MiniMax → GLM → Kimi
-第 3 层: iFlow → Kiro → Qwen
+第 3 层: iFlow → Kiro
 ```
 
 **4. 配额重置通知**
@@ -170,14 +170,14 @@
 
 **设置:**
 ```
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 Fallback: 自动(默认 3 层)
 ```
 
 **行为:**
 ```
 早上(全新配额):
-  请求 → cc/claude-opus-4-5 ✅
+  请求 → cc/claude-opus-5-5 ✅
 
 下午(配额耗尽):
   请求 → glm/glm-4.7 ✅ (自动切换)
@@ -186,7 +186,7 @@ Fallback: 自动(默认 3 层)
   请求 → minimax/MiniMax-M2.1 ✅ (自动切换)
 
 深夜(付费配额全部耗尽):
-  请求 → if/kimi-k2-thinking ✅ (免费层)
+  请求 → if/kimi-k2 ✅ (免费层)
 ```
 
 **成本**:额外约 $5-10/月(大部分由订阅覆盖)。
@@ -208,7 +208,7 @@ Fallback: 自动(默认 3 层)
   成本: $1.50/天
 
 第 16 日(达到预算):
-  请求 → if/kimi-k2-thinking (免费层)
+  请求 → if/kimi-k2 (免费层)
   成本: $0
 
 下月(预算重置):
@@ -228,7 +228,7 @@ Fallback: 自动(默认 3 层)
 
 **行为:**
 ```
-请求 → cc/claude-opus-4-5
+请求 → cc/claude-opus-5-5
   ✅ 配额可用 → 成功
   ❌ 配额耗尽 → 返回错误(无回退)
 ```
@@ -239,8 +239,8 @@ Fallback: 自动(默认 3 层)
 
 **设置:**
 ```
-Model: if/kimi-k2-thinking
-Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
+Model: if/kimi-k2
+Fallback: if/qwen3-coder-plus → kr/claude-sonnet-4.5
 ```
 
 **行为:**
@@ -266,7 +266,7 @@ Fallback: qw/qwen3-coder-plus → kr/claude-sonnet-4.5
 
 **示例组合:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 2. 成本优化
@@ -280,7 +280,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → if/kimi-k2-thinking
 
 **示例组合:**
 ```
-gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
+gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2
 ```
 
 ### 3. 质量优先
@@ -294,7 +294,7 @@ gc/gemini-3-flash-preview → glm/glm-4.7 → if/kimi-k2-thinking
 
 **示例组合:**
 ```
-cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
+cc/claude-opus-5-5 → cx/gpt-6.1-sol → glm/glm-4.7
 ```
 
 ### 4. 24/7 可用性
@@ -308,7 +308,7 @@ cc/claude-opus-4-5 → cx/gpt-5.2-codex → glm/glm-4.7
 
 **示例组合:**
 ```
-cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-thinking
+cc/claude-opus-5-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2
 ```
 
 **结果**:永不耗尽配额,随时编码。
@@ -326,7 +326,7 @@ cc/claude-opus-4-5 → glm/glm-4.7 → minimax/MiniMax-M2.1 → if/kimi-k2-think
 | **Gemini CLI** | 每日(1K)+ 每月(180K) | 全天均匀使用 |
 | **GLM-4.7** | 每日 10:00 AM | 晚上使用,次日上午重置 |
 | **MiniMax M2.1** | 5 小时滚动 | 任意时间用,跟踪滚动窗口 |
-| **iFlow/Qwen/Kiro** | 无限制 | 应急备用 |
+| **iFlow/Kiro** | 无限制 | 应急备用 |
 
 **日常安排示例:**
 ```

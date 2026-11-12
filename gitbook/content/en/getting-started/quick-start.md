@@ -12,7 +12,7 @@ Get 9Router running in 5 minutes and start routing AI requests intelligently.
 npm install -g 9router
 ```
 
-**Requirements:** Node.js 20+ ([Installation details](getting-started/installation.md))
+**Requirements:** Node.js 20+ ([Installation details](../installation.md))
 
 ### 2. Start
 
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 1. Click "Connect Claude Code"
 2. Login with your Claude account
 3. Authorize 9Router
-4. ✅ Done! Use model: `cc/claude-opus-4-5-20251101`
+4. ✅ Done! Use model: `cc/claude-opus-5-5`
 
 #### Option B: API Key (Cheap Providers)
 
@@ -65,7 +65,7 @@ Dashboard → Providers → Add API Key
 
 #### Option C: Free Providers (No Cost)
 
-**Best for:** iFlow, Qwen, Kiro
+**Best for:** iFlow, Kiro
 
 ```
 Dashboard → Providers → Connect [Free Provider]
@@ -77,7 +77,7 @@ Dashboard → Providers → Connect [Free Provider]
 1. Click "Connect iFlow"
 2. Login with iFlow account
 3. Authorize
-4. ✅ Done! Use 8 models: `if/kimi-k2-thinking`, `if/qwen3-coder-plus`, etc.
+4. ✅ Done! Use 15 models: `if/kimi-k2`, `if/qwen3-coder-plus`, etc.
 
 ---
 
@@ -91,7 +91,7 @@ Point your coding tool to 9Router:
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [from 9router dashboard]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### Claude Desktop
@@ -111,7 +111,7 @@ Edit `~/.claude/config.json`:
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [from dashboard]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
 ### Codex CLI
@@ -134,9 +134,9 @@ Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-5-20251101 (Subscription primary)
+  1. cc/claude-opus-5-5 (Subscription primary)
   2. glm/glm-4.7 (Cheap backup, $0.6/1M)
-  3. if/kimi-k2-thinking (Free fallback)
+  3. if/kimi-k2 (Free fallback)
 
 Use in CLI: premium-coding
 ```
@@ -154,21 +154,21 @@ Use in CLI: premium-coding
 ### Subscription Models (Maximize First)
 
 **Claude Code (`cc/`)** - Pro/Max subscription:
-- `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
-- `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
+- `cc/claude-opus-5-5` - Claude Opus 5.5
+- `cc/claude-sonnet-5-5` - Claude Sonnet 5.5
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Plus/Pro subscription:
-- `cx/gpt-5.2-codex` - GPT 5.2 Codex
-- `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
+- `cx/gpt-6.1-sol` - GPT 6.1 Sol
+- `cx/gpt-6-sol` - GPT 6 Sol
 
 **Gemini CLI (`gc/`)** - FREE 180K/month:
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - Subscription:
-- `gh/gpt-5` - GPT-5
-- `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
+- `gh/gpt-5.4` - GPT-5.4
+- `gh/claude-sonnet-4.5` - Claude Sonnet 4.5
 
 ### Cheap Models (Backup)
 
@@ -183,17 +183,13 @@ Use in CLI: premium-coding
 
 ### FREE Models (Emergency)
 
-**iFlow (`if/`)** - 8 models FREE:
-- `if/kimi-k2-thinking` - Kimi K2 Thinking
+**iFlow (`if/`)** - 15 models FREE:
+- `if/kimi-k2` - Kimi K2
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
-**Qwen (`qw/`)** - 3 models FREE:
-- `qw/qwen3-coder-plus` - Qwen3 Coder Plus
-- `qw/qwen3-coder-flash` - Qwen3 Coder Flash
-
-**Kiro (`kr/`)** - 2 models FREE:
+**Kiro (`kr/`)** - 48 FREE models:
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 
@@ -233,10 +229,10 @@ Daily routine:
 
 ## Next Steps
 
-- [Installation Details](getting-started/installation.md) - Requirements, troubleshooting
-- [Features](features/) - Explore quota tracking, combos, deployment
-- [FAQ](faq.md) - Common questions and answers
-- [Troubleshooting](troubleshooting.md) - Fix common issues
+- [Installation Details](../installation.md) - Requirements, troubleshooting
+- [Features](../features/) - Explore quota tracking, combos, deployment
+- [FAQ](../faq.md) - Common questions and answers
+- [Troubleshooting](../troubleshooting.md) - Fix common issues
 
 ---
 

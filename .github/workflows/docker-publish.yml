@@ -93,12 +93,17 @@ jobs:
           const rootVersion = require("./package.json").version;
           const cliVersion = require("./cli/package.json").version;
 
-          if (rootVersion !== version) {
+          // Federation fork: the package.json version field deliberately tracks the
+          // upstream-mirror tag line (docs/RELEASE-UPSTREAM-FLOW.md), so federation-line
+          // tags (v0.6.0-federation.N) skip the version equality check instead of
+          // being forced to bump the mirror field.
+          const isFederationLine = version.includes("federation.");
+          if (!isFederationLine && rootVersion !== version) {
             console.error(`package.json version ${rootVersion} does not match tag ${tag}`);
             process.exit(1);
           }
 
-          if (cliVersion !== version) {
+          if (!isFederationLine && cliVersion !== version) {
             console.error(`cli/package.json version ${cliVersion} does not match tag ${tag}`);
             process.exit(1);
           }

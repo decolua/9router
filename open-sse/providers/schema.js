@@ -15,6 +15,7 @@ import { DEFAULT_RETRY_CONFIG, FETCH_CONNECT_TIMEOUT_MS } from "../config/runtim
  * @property {string[]}[authModes]    Allowed auth modes when provider supports both.
  * @property {boolean} [hasOAuth]     Provider exposes an OAuth flow.
  * @property {boolean} [noAuth]       Provider needs no credentials (local/free).
+ * @property {boolean} [requiresVendorClient] Credentialless path only works from the vendor's own client (unusable from this process).
  * @property {Object}  [display]      UI: {name,icon,color,textIcon,website,notice,deprecated,deprecationNotice,kindNotice,mediaPriority}.
  * @property {Object}  [transport]    Runtime HTTP config (see TransportConfig below). Builds PROVIDERS[id].
  * @property {Object}  [oauth]        OAuth flow config (see OAuthConfig). Builds PROVIDER_OAUTH[id].

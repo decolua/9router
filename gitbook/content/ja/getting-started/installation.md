@@ -156,7 +156,7 @@ curl http://localhost:20128/v1/models \
   "object": "list",
   "data": [
     {
-      "id": "cc/claude-opus-4-5-20251101",
+      "id": "cc/claude-opus-5-5",
       "object": "model",
       "created": 1234567890,
       "owned_by": "claude-code"
@@ -172,7 +172,7 @@ curl http://localhost:20128/v1/chat/completions \
   -H "Authorization: Bearer your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "cc/claude-opus-4-5-20251101",
+    "model": "cc/claude-opus-5-5",
     "messages": [
       {"role": "user", "content": "Hello!"}
     ]
@@ -465,7 +465,7 @@ nano ~/.bashrc  # または ~/.zshrc
 
 ## 次のステップ
 
-- [スタートガイド](../getting-started.md) - プロバイダーを接続してコーディング開始
+- [スタートガイド](../getting-started/quick-start.md) - プロバイダーを接続してコーディング開始
 - [機能](../features/) - クォータトラッキング、コンボ、デプロイを確認
 - [トラブルシューティング](../troubleshooting.md) - 一般的な問題の修正
 

@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { getAdapter } from "../driver.js";
 import { parseJson, stringifyJson } from "../helpers/jsonCol.js";
+import { nowIso, stampInsert, stampUpsertConflict, stampUpdate, stampDelete, NOT_DELETED } from "../../federation/stamp.js";
 
 const OPTIONAL_FIELDS = [
   "displayName", "email", "globalPriority", "defaultModel",
@@ -67,14 +68,15 @@ function connToRow(c) {
 
 function upsert(db, c) {
   const r = connToRow(c);
+  const s = stampInsert(db);
   db.run(
-    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt)
-     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO providerConnections(id, provider, authType, name, email, priority, isActive, data, createdAt, updatedAt${s.cols})
+     VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?${s.placeholders})
      ON CONFLICT(id) DO UPDATE SET
-       provider=excluded.provider, authType=excluded.authType, name=excluded.name,
-       email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
-       data=excluded.data, updatedAt=excluded.updatedAt`,
-    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt]
+      provider=excluded.provider, authType=excluded.authType, name=excluded.name,
+      email=excluded.email, priority=excluded.priority, isActive=excluded.isActive,
+      data=excluded.data, updatedAt=excluded.updatedAt${stampUpsertConflict()}`,
+    [r.id, r.provider, r.authType, r.name, r.email, r.priority, r.isActive, r.data, r.createdAt, r.updatedAt, ...s.params]
   );
 }
 
@@ -91,7 +93,7 @@ function deriveConnectionName(data, fallbackName) {
 
 export async function getProviderConnections(filter = {}) {
   const db = await getAdapter();
-  const where = [];
+  const where = [NOT_DELETED];
   const params = [];
   if (filter.provider) { where.push("provider = ?"); params.push(filter.provider); }
   if (filter.isActive !== undefined) { where.push("isActive = ?"); params.push(filter.isActive ? 1 : 0); }
@@ -104,7 +106,7 @@ export async function getProviderConnections(filter = {}) {
 
 export async function getProviderConnectionById(id) {
   const db = await getAdapter();
-  const row = db.get(`SELECT * FROM providerConnections WHERE id = ?`, [id]);
+  const row = db.get(`SELECT * FROM providerConnections WHERE id = ? AND ${NOT_DELETED}`, [id]);
   return rowToConn(row);
 }
 
@@ -118,7 +120,7 @@ export async function getProviderConnectionById(id) {
 // identical with or without the rewrite. Skipping it there is what makes
 // import O(1) per key instead of O(pool) — see createProviderConnection.
 function reorderInTx(db, providerId) {
-  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [providerId]).map(rowToConn);
+  const list = db.all(`SELECT * FROM providerConnections WHERE provider = ? AND ${NOT_DELETED}`, [providerId]).map(rowToConn);
   list.sort((a, b) => {
     const pDiff = (a.priority || 0) - (b.priority || 0);
     if (pDiff !== 0) return pDiff;
@@ -127,7 +129,8 @@ function reorderInTx(db, providerId) {
   list.forEach((c, i) => {
     const want = i + 1;
     if ((c.priority || 0) !== want) {
-      db.run(`UPDATE providerConnections SET priority = ? WHERE id = ?`, [want, c.id]);
+      const u = stampUpdate(db);
+      db.run(`UPDATE providerConnections SET priority = ?${u.set} WHERE id = ?`, [want, ...u.params, c.id]);
     }
   });
 }
@@ -143,13 +146,17 @@ export async function createProviderConnection(data) {
     // (O(pool) per key — the other half of the import cost in #4311). The oauth
     // branch below still scans, because its identity rules compare fields
     // inside providerSpecificData and have no single-column equivalent.
+    //
+    // Federation fork: every scan here additionally carries NOT_DELETED so
+    // soft-deleted rows can never resurface through name dedupe (the fork's
+    // other scans in this repo filter the same way).
     const isApikey = data.authType === "apikey" && !!data.name;
     const all = isApikey
       ? db.all(
-          `SELECT * FROM providerConnections WHERE provider = ? AND authType = ? AND name = ?`,
+          `SELECT * FROM providerConnections WHERE provider = ? AND authType = ? AND name = ? AND ${NOT_DELETED}`,
           [data.provider, "apikey", data.name]
         ).map(rowToConn)
-      : db.all(`SELECT * FROM providerConnections WHERE provider = ?`, [data.provider]).map(rowToConn);
+      : db.all(`SELECT * FROM providerConnections WHERE provider = ? AND ${NOT_DELETED}`, [data.provider]).map(rowToConn);
     const poolSize = isApikey
       ? db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [data.provider])?.n ?? all.length
       : all.length;
@@ -282,7 +289,8 @@ export async function deleteProviderConnection(id) {
   db.transaction(() => {
     const row = db.get(`SELECT provider FROM providerConnections WHERE id = ?`, [id]);
     if (!row) return;
-    db.run(`DELETE FROM providerConnections WHERE id = ?`, [id]);
+    const d = stampDelete(db);
+    db.run(`UPDATE providerConnections SET ${d.set} WHERE id = ?`, [...d.params, id]);
     reorderInTx(db, row.provider);
     ok = true;
   });
@@ -292,7 +300,8 @@ export async function deleteProviderConnection(id) {
 export async function deleteProviderConnectionsByProvider(providerId) {
   const db = await getAdapter();
   const before = db.get(`SELECT COUNT(*) AS n FROM providerConnections WHERE provider = ?`, [providerId]);
-  db.run(`DELETE FROM providerConnections WHERE provider = ?`, [providerId]);
+  const d = stampDelete(db);
+  db.run(`UPDATE providerConnections SET ${d.set} WHERE provider = ?`, [...d.params, providerId]);
   return before?.n || 0;
 }
 

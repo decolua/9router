@@ -54,9 +54,9 @@ https://9router.com
    - Ingresar manualmente el nombre del modelo desde tu configuración de 9Router
 
 2. Nombres comunes de modelos:
-   - `gpt-4`
    - `gpt-4o`
-   - `claude-opus-4-5`
+   - `gpt-4o`
+   - `claude-opus-5-5`
    - `claude-sonnet-4-5`
    - `gemini-2.0-flash`
 
@@ -81,9 +81,9 @@ Puedes usar cualquier modelo configurado en tu dashboard de 9Router. Ejemplos co
 
 | Nombre del modelo | Proveedor | Descripción |
 |------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
+| `gpt-4o` | OpenAI | GPT-4 Turbo |
 | `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| `claude-opus-5-5` | Anthropic | Claude Opus 5.5 |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
 | `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
 
@@ -135,7 +135,7 @@ Puedes usar cualquier modelo configurado en tu dashboard de 9Router. Ejemplos co
 1. Verifica que el nombre del modelo coincida exactamente con tu configuración de 9Router
 2. Verifica que la conexión del proveedor esté activa en el dashboard de 9Router
 3. Asegúrate de que el modelo esté disponible en tus proveedores conectados
-4. Intenta usar el nombre completo del modelo (ej. `openai/gpt-4` en lugar de `gpt-4`)
+4. Intenta usar el nombre completo del modelo (ej. `openai/gpt-4o` en lugar de `gpt-4o`)
 
 ### Cline no responde
 

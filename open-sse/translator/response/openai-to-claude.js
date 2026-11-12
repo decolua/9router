@@ -1,6 +1,6 @@
 import { register } from "../index.js";
 import { FORMATS } from "../formats.js";
-import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK } from "../schema/index.js";
+import { ROLE, CLAUDE_BLOCK, MODEL_FALLBACK, OPENAI_FINISH } from "../schema/index.js";
 import { fromOpenAIFinish } from "../concerns/finishReason.js";
 import { extractReasoningText } from "../concerns/reasoning.js";
 
@@ -67,9 +67,68 @@ function stopTextBlock(state, results) {
   state.textBlockStarted = false;
 }
 
+// Emit the Claude terminal sequence for the current message: close open
+// thinking/text blocks, flush each open tool call's buffered (sanitized) args +
+// content_block_stop, then message_delta (stop_reason) + message_stop.
+//
+// Shared by the two ways a message can end:
+//   - the upstream sent a finish_reason chunk (the normal case), and
+//   - the upstream closed the connection without one (flush call with chunk=null).
+// The latch makes the terminal exactly-once per message, so the flush path can
+// never append a second message_stop after a real finish.
+function emitClaudeTerminal(state, results) {
+  if (state.claudeTerminalSent) return;
+  state.claudeTerminalSent = true;
+
+  stopThinkingBlock(state, results);
+  stopTextBlock(state, results);
+
+  for (const [idx, toolInfo] of state.toolCalls) {
+    // Emit buffered + sanitized args as single delta before stop
+    const buffered = state.toolArgBuffers?.get(idx);
+    if (buffered) {
+      const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
+      results.push({
+        type: "content_block_delta",
+        index: toolInfo.blockIndex,
+        delta: { type: "input_json_delta", partial_json: sanitized }
+      });
+    }
+    results.push({
+      type: "content_block_stop",
+      index: toolInfo.blockIndex
+    });
+  }
+
+  // Use tracked usage (will be estimated in stream.js if not valid)
+  const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
+  // state.finishReason is set by the finish_reason path; a stream that closed
+  // without one has no upstream reason to report, so fall back to the OpenAI
+  // default ("stop" → end_turn) rather than inventing a truncation.
+  results.push({
+    type: "message_delta",
+    delta: { stop_reason: convertFinishReason(state.finishReason || OPENAI_FINISH.STOP) },
+    usage: finalUsage
+  });
+  results.push({ type: "message_stop" });
+}
+
 // Convert OpenAI stream chunk to Claude format
 export function openaiToClaudeResponse(chunk, state) {
-  if (!chunk || !chunk.choices?.[0]) return null;
+  // Flush invocation (stream.js translates one final null chunk after the
+  // upstream body ends). A chat-native upstream may close without ever sending
+  // a finish_reason, which used to leave a Claude client with 0 message_stop and
+  // 0 [DONE] — it hangs until timeout. Terminate the message here instead.
+  // Only for a message that actually started: with no message_start on the wire
+  // there is nothing to close, and a message_delta without it is malformed.
+  if (!chunk) {
+    if (!state.messageStartSent) return null;
+    const results = [];
+    emitClaudeTerminal(state, results);
+    return results.length > 0 ? results : null;
+  }
+
+  if (!chunk.choices?.[0]) return null;
 
   const results = [];
   const choice = chunk.choices[0];
@@ -223,37 +282,10 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Finish
   if (choice.finish_reason) {
-    stopThinkingBlock(state, results);
-    stopTextBlock(state, results);
-
-    for (const [idx, toolInfo] of state.toolCalls) {
-      // Emit buffered + sanitized args as single delta before stop
-      const buffered = state.toolArgBuffers?.get(idx);
-      if (buffered) {
-        const sanitized = sanitizeToolArgs(toolInfo.name, buffered);
-        results.push({
-          type: "content_block_delta",
-          index: toolInfo.blockIndex,
-          delta: { type: "input_json_delta", partial_json: sanitized }
-        });
-      }
-      results.push({
-        type: "content_block_stop",
-        index: toolInfo.blockIndex
-      });
-    }
-
-    // Mark finish for later usage injection in stream.js
+    // Mark finish first for later usage injection in stream.js, then emit the
+    // terminal (the helper latches so the flush call cannot repeat it).
     state.finishReason = choice.finish_reason;
-
-    // Use tracked usage (will be estimated in stream.js if not valid)
-    const finalUsage = state.usage || { input_tokens: 0, output_tokens: 0 };
-    results.push({
-      type: "message_delta",
-      delta: { stop_reason: convertFinishReason(choice.finish_reason) },
-      usage: finalUsage
-    });
-    results.push({ type: "message_stop" });
+    emitClaudeTerminal(state, results);
   }
 
   return results.length > 0 ? results : null;

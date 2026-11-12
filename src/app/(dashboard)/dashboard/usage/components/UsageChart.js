@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import {
   AreaChart,
@@ -39,24 +39,24 @@ export default function UsageChart({ period = "7d" }) {
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState("tokens");
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/usage/chart?period=${period}`);
-      if (res.ok) {
-        const json = await res.json();
-        setData(json);
-      }
-    } catch (e) {
-      console.error("Failed to fetch chart data:", e);
-    } finally {
-      setLoading(false);
-    }
-  }, [period]);
-
+  // Stale-response guard: clicking periods quickly must never let a slow
+  // response for an OLD period overwrite the chart for the NEW one.
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    let ignore = false;
+    queueMicrotask(() => {
+      if (!ignore) setLoading(true);
+    });
+    fetch(`/api/usage/chart?period=${period}`)
+      .then((res) => res.ok ? res.json() : null)
+      .then((json) => {
+        if (json && !ignore) setData(json);
+      })
+      .catch((e) => console.error("Failed to fetch chart data:", e))
+      .finally(() => {
+        if (!ignore) setLoading(false);
+      });
+    return () => { ignore = true; };
+  }, [period]);
 
   const cfg = VIEW_CONFIG[viewMode];
   const hasData = data.some((d) => (d[cfg.dataKey] || 0) > 0);

@@ -396,11 +396,19 @@ export function formatUsage(inputTokens, outputTokens, targetFormat) {
  * @param {string} targetFormat - Target format from FORMATS constant
  */
 export function estimateUsage(body, contentLength, targetFormat = FORMATS.OPENAI) {
-  return formatUsage(
+  const estimated = formatUsage(
     estimateInputTokens(body),
     estimateOutputTokens(contentLength),
     targetFormat
   );
+  // `estimateOutputTokens()` floors at 1 so a real (if tiny) answer is never
+  // charged as zero output — but that must not turn an EMPTY completion into
+  // invented output traffic. A response that produced no content at all is
+  // recorded with completion_tokens 0, so callers can tell "no answer" from
+  // "not reported" (the output_tokens-0 row is still a row, which is the
+  // DF-9ROUTER-33 contract: a served request is never silently dropped).
+  if (!(contentLength > 0)) estimated.completion_tokens = 0;
+  return estimated;
 }
 
 /**

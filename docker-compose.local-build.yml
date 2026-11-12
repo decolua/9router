@@ -1,0 +1,33 @@
+# QA-9ROUTER-8 — local-build fallback for hosts that cannot pull the
+# third-party images this stack depends on (`decolua/9router`,
+# `ghcr.io/chopratejas/headroom`). Measured on a clean/rootless agent:
+# `docker compose up -d --build` failed while pulling from those namespaces,
+# which left the only documented deployment path unusable there.
+#
+# This file is an OVERRIDE, not a replacement. Apply it ON TOP of
+# docker-compose.yml so every port, volume, env and wiring field keeps coming
+# from the base file and the default (published-image) deployment is
+# untouched:
+#
+#   # 9router built from this checkout; headroom image still pulled when needed
+#   docker compose -f docker-compose.yml -f docker-compose.local-build.yml up -d --build
+#
+#   # clean/rootless host, no third-party pulls at all (headroom sidecar
+#   # omitted — it is optional at runtime, see DOCKER.md)
+#   docker compose -f docker-compose.yml -f docker-compose.local-build.yml \
+#     up -d --build --no-deps 9router
+#
+# The local `image:` tag is deliberately NOT `decolua/9router:latest`: a local
+# build must never overwrite the published tag in the local image cache. Set
+# `NINEROUTER_LOCAL_IMAGE` to pick a different local tag.
+#
+# Headroom has no local build in this repository (it is a third-party project),
+# so its fallback is the documented no-headroom run above: leave the dashboard
+# Token Saver toggle off (9router only contacts HEADROOM_URL when the toggle is
+# enabled) until the headroom image can be pulled.
+services:
+  9router:
+    image: ${NINEROUTER_LOCAL_IMAGE:-9router:local}
+    build:
+      context: .
+      dockerfile: Dockerfile

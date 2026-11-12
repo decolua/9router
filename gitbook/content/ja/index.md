@@ -18,7 +18,7 @@
 
 **価値を最大化するために:**
 - ✅ **サブスクリプションを最大限活用** - Claude Code、Codex、Geminiのクォータを余すことなく追跡・利用
-- ✅ **無料で利用可能** - CLI経由でiFlow、Qwen、Kiroモデルにアクセス
+- ✅ **無料で利用可能** - CLI経由でiFlow、Kiroモデルにアクセス
 - ✅ **超低価格バックアップ** - GLM(100万あたり$0.6)、MiniMax M2.1(100万あたり$0.20)
 - ✅ **スマートフォールバック** - サブスクリプション → 低価格 → 無料へ自動切替
 
@@ -35,7 +35,7 @@ Tier 1 (サブスクリプション): Claude Code → Codex → Gemini
   ↓ クォータ消費
 Tier 2 (低価格): GLM-4.7 → MiniMax M2.1 → Kimi
   ↓ 予算上限
-Tier 3 (無料): iFlow → Qwen → Kiro
+Tier 3 (無料): iFlow → Kiro
 
 → 自動切替、ダウンタイムゼロ!
 ```
@@ -93,7 +93,7 @@ MiniMax経由で200万: $0.40
 
 他がすべてクォータ制限に達した時の緊急バックアップ:
 
-- **iFlow**: 8モデル(Kimi K2、Qwen3 Coder Plus、GLM 4.7、MiniMax M2)
+- **iFlow**: 15モデル(Kimi K2、Qwen3 Coder Plus、GLM 4.7、DeepSeek R1)
 - **Qwen**: 3モデル(Qwen3 Coder Plus/Flash、Vision)
 - **Kiro**: Claude Sonnet 4.5、Haiku 4.5(AWS Builder ID)
 
@@ -118,10 +118,10 @@ npm install -g 9router
 ```
 Endpoint: http://localhost:20128/v1
 API Key: [ダッシュボードから取得]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
-[→ 完全なスタートガイド](getting-started.md)
+[→ 完全なスタートガイド](getting-started/quick-start.md)
 
 ---
 
@@ -152,7 +152,7 @@ Model: cc/claude-opus-4-5-20251101
 
 ## 次は?
 
-- [スタートガイド](getting-started.md) - 5分でインストールと設定
+- [スタートガイド](getting-started/quick-start.md) - 5分でインストールと設定
 - [インストールガイド](getting-started/installation.md) - 詳細なセットアップ手順
 - [機能](features/) - すべての機能を確認
 - [FAQ](faq.md) - よくある質問

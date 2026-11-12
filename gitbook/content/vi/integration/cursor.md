@@ -51,7 +51,7 @@ https://9router.com
 
 1. Click nút **View All Models**
 2. Click **Add Custom Model**
-3. Nhập tên model từ cấu hình 9Router (ví dụ: `gpt-4`, `claude-opus-4-5`, v.v.)
+3. Nhập tên model từ cấu hình 9Router (ví dụ: `gpt-4o`, `claude-opus-5-5`, v.v.)
 4. Click **Add**
 
 ### 6. Chọn Model
@@ -68,7 +68,7 @@ Cursor settings của bạn nên trông như sau:
 OpenAI API: ✓ Enabled
 Base URL: https://9router.com
 API Key: sk-9router-xxxxxxxxxxxxx
-Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
+Custom Models: gpt-4o, claude-opus-5-5, gemini-2.0-flash
 ```
 
 ## Model có sẵn
@@ -77,9 +77,9 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 
 | Tên Model | Provider | Mô tả |
 |------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
+| `gpt-4o` | OpenAI | GPT-4 Turbo |
 | `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| `claude-opus-5-5` | Anthropic | Claude Opus 5.5 |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
 | `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
 
@@ -119,7 +119,7 @@ Bạn có thể dùng bất kỳ model nào đã cấu hình trong 9Router dashb
 1. Xác minh tên model khớp chính xác với cấu hình 9Router
 2. Kiểm tra kết nối provider đang hoạt động trong 9Router dashboard
 3. Đảm bảo model có sẵn trong các provider đã kết nối
-4. Thử dùng tên model đầy đủ (ví dụ: `openai/gpt-4` thay vì `gpt-4`)
+4. Thử dùng tên model đầy đủ (ví dụ: `openai/gpt-4o` thay vì `gpt-4o`)
 
 ### Lỗi Connection
 

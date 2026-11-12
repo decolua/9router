@@ -24,7 +24,7 @@
 2. **使用组合回退:**
    ```
    仪表盘 → 组合 → 创建回退链
-   示例: cc/claude-opus → glm/glm-4.7 → if/kimi-k2
+   示例: cc/claude-opus-5-5 → glm/glm-4.7 → if/kimi-k2
    ```
 
 3. **验证提供商连接:**
@@ -59,7 +59,7 @@
 3. **添加回退组合:**
    ```
    仪表盘 → 组合 → 添加备用模型
-   主力: cc/claude-opus (订阅)
+   主力: cc/claude-opus-5-5 (订阅)
    备用: glm/glm-4.7 (低价)
    应急: if/kimi-k2 (免费)
    ```
@@ -110,15 +110,15 @@
 
 2. **切换到更便宜的模型:**
    ```
-   替换: cc/claude-opus ($20-100/月 订阅)
+   替换: cc/claude-opus-5-5 ($20-100/月 订阅)
    为: glm/glm-4.7 (每 1M tokens $0.6)
        minimax/MiniMax-M2.1 (每 1M tokens $0.20)
    ```
 
 3. **使用免费层:**
    ```
-   if/kimi-k2-thinking (免费)
-   qw/qwen3-coder-plus (免费)
+   if/kimi-k2 (免费)
+   if/qwen3-coder-plus (免费)
    kr/claude-sonnet-4.5 (免费)
    gc/gemini-3-flash-preview (每月免费 180K)
    ```
@@ -235,8 +235,8 @@
 
 2. **检查模型 ID 格式:**
    ```
-   正确: cc/claude-opus-4-5-20251101
-   错误: claude-opus-4-5-20251101
+   正确: cc/claude-opus-5-5
+   错误: claude-opus-5-5
    
    格式: [provider-prefix]/[model-name]
    ```
@@ -273,15 +273,15 @@
 
 2. **切换到更快的模型:**
    ```
-   快速: cc/claude-haiku-4-5 (Haiku 比 Opus 快)
+   快速: cc/claude-haiku-4-5-20251001 (Haiku 比 Opus 快)
          gc/gemini-3-flash-preview
-         qw/qwen3-coder-flash
+         if/qwen3-32b
    ```
 
 3. **使用流式响应:**
    ```json
    {
-     "model": "cc/claude-opus-4-5",
+     "model": "cc/claude-opus-5-5",
      "messages": [...],
      "stream": true
    }

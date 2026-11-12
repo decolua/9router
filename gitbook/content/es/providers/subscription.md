@@ -8,8 +8,8 @@ Maximiza tus suscripciones de IA existentes con seguimiento inteligente de cuota
 
 Los proveedores del nivel de suscripción son tu opción **principal** - ya estás pagando por ellos, así que obtén el valor completo:
 
-- ✅ **Claude Code** (Pro/Max) - Claude 4.5 Opus/Sonnet/Haiku
-- ✅ **OpenAI Codex** (Plus/Pro) - GPT 5.2 Codex, GPT 5.1 Codex Max
+- ✅ **Claude Code** (Pro/Max) - Claude Opus 5.5/Sonnet 5.5/Haiku 4.5
+- ✅ **OpenAI Codex** (Plus/Pro) - GPT 6.1 Sol, GPT 6 Sol
 - ✅ **Gemini CLI** (¡Nivel GRATIS!) - 180K completados/mes
 - ✅ **GitHub Copilot** - GPT-5, Claude 4.5, Gemini 3
 - ✅ **Antigravity** (Google) - Gemini 3 Pro, Claude Sonnet 4.5
@@ -46,8 +46,8 @@ Los proveedores del nivel de suscripción son tu opción **principal** - ya est�
 **Paso 3: Usar en CLI**
 
 ```
-Model: cc/claude-opus-4-5-20251101
-       cc/claude-sonnet-4-5-20250929
+Model: cc/claude-opus-5-5
+       cc/claude-sonnet-5-5
        cc/claude-haiku-4-5-20251001
 ```
 
@@ -55,8 +55,8 @@ Model: cc/claude-opus-4-5-20251101
 
 | ID del modelo | Descripción | Ideal para |
 |----------|-------------|----------|
-| `cc/claude-opus-4-5-20251101` | Claude 4.5 Opus | Tareas complejas, arquitectura |
-| `cc/claude-sonnet-4-5-20250929` | Claude 4.5 Sonnet | Velocidad/calidad equilibrada |
+| `cc/claude-opus-5-5` | Claude Opus 5.5 | Tareas complejas, arquitectura |
+| `cc/claude-sonnet-5-5` | Claude Sonnet 5.5 | Velocidad/calidad equilibrada |
 | `cc/claude-haiku-4-5-20251001` | Claude 4.5 Haiku | Respuestas rápidas |
 
 ### Pro Tips
@@ -74,8 +74,8 @@ Model: cc/claude-opus-4-5-20251101
 
 | Plan | Costo mensual | Reinicio de cuota | Modelos |
 |------|--------------|-------------|--------|
-| Plus | $20 | 5 horas + semanal | GPT 5.2, GPT 5.1 |
-| Pro | $200 | 5 horas + semanal | GPT 5.2 Codex, GPT 5.1 Max |
+| Plus | $20 | 5 horas + semanal | GPT 6.1 Sol, GPT 5.6 |
+| Pro | $200 | 5 horas + semanal | GPT 6.1 Sol, GPT 6 Sol |
 
 ### Configuración
 
@@ -96,20 +96,20 @@ Model: cc/claude-opus-4-5-20251101
 **Paso 3: Usar en CLI**
 
 ```
-Model: cx/gpt-5.2-codex
-       cx/gpt-5.1-codex-max
-       cx/gpt-5.2
-       cx/gpt-5.1-codex
+Model: cx/gpt-6.1-sol
+       cx/gpt-6-sol
+       cx/gpt-5.5
+       cx/gpt-5.6-sol
 ```
 
 ### Modelos disponibles
 
 | ID del modelo | Descripción | Ideal para |
 |----------|-------------|----------|
-| `cx/gpt-5.2-codex` | GPT 5.2 Codex | Último modelo de codificación |
-| `cx/gpt-5.1-codex-max` | GPT 5.1 Codex Max | Contexto máximo |
-| `cx/gpt-5.2` | GPT 5.2 | Tareas generales |
-| `cx/gpt-5.1-codex` | GPT 5.1 Codex | Codificación estable |
+| `cx/gpt-6.1-sol` | GPT 6.1 Sol | Último modelo de codificación |
+| `cx/gpt-6-sol` | GPT 6 Sol | Contexto máximo |
+| `cx/gpt-5.5` | GPT 5.5 | Tareas generales |
+| `cx/gpt-5.6-sol` | GPT 5.6 Sol | Codificación estable |
 
 ### Pro Tips
 
@@ -200,20 +200,20 @@ Model: gc/gemini-3-flash-preview
 **Paso 3: Usar en CLI**
 
 ```
-Model: gh/gpt-5
-       gh/gpt-5.1-codex-max
-       gh/claude-4.5-sonnet
-       gh/gemini-3-pro
+Model: gh/gpt-5.4
+       gh/gpt-5.3-codex
+       gh/claude-sonnet-4.5
+       gh/gemini-3.1-pro-preview
 ```
 
 ### Modelos disponibles
 
 | ID del modelo | Descripción | Ideal para |
 |----------|-------------|----------|
-| `gh/gpt-5` | GPT-5 | Último modelo de OpenAI |
-| `gh/gpt-5.1-codex-max` | GPT-5.1 Codex Max | Contexto máximo |
-| `gh/claude-4.5-sonnet` | Claude 4.5 Sonnet | Calidad de Anthropic |
-| `gh/gemini-3-pro` | Gemini 3 Pro | Calidad de Google |
+| `gh/gpt-5.4` | GPT-5.4 | Último modelo de OpenAI |
+| `gh/gpt-5.3-codex` | GPT-5.3 Codex | Contexto máximo |
+| `gh/claude-sonnet-4.5` | Claude Sonnet 4.5 | Calidad de Anthropic |
+| `gh/gemini-3.1-pro-preview` | Gemini 3.1 Pro | Calidad de Google |
 
 ### Pro Tips
 
@@ -250,18 +250,18 @@ Model: gh/gpt-5
 **Paso 3: Usar en CLI**
 
 ```
-Model: ag/gemini-3-pro-high
-       ag/claude-sonnet-4-5
-       ag/claude-opus-4-5-thinking
+Model: ag/gemini-3.1-pro-high
+       ag/claude-sonnet-5-5
+       ag/claude-opus-5-5-high
 ```
 
 ### Modelos disponibles
 
 | ID del modelo | Descripción | Ideal para |
 |----------|-------------|----------|
-| `ag/gemini-3-pro-high` | Gemini 3 Pro High | Respuestas de alta calidad |
-| `ag/claude-sonnet-4-5` | Claude Sonnet 4.5 | Calidad de Anthropic |
-| `ag/claude-opus-4-5-thinking` | Claude Opus 4.5 Thinking | Razonamiento complejo |
+| `ag/gemini-3.1-pro-high` | Gemini 3.1 Pro High | Respuestas de alta calidad |
+| `ag/claude-sonnet-5-5` | Claude Sonnet 5.5 | Calidad de Anthropic |
+| `ag/claude-opus-5-5-high` | Claude Opus 5.5 High | Razonamiento complejo |
 
 ### Pro Tips
 
@@ -293,7 +293,7 @@ Model: ag/gemini-3-pro-high
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [desde el dashboard de 9router]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### Crear combo (Recomendado)
@@ -304,8 +304,8 @@ Dashboard → Combos → Create New
 Name: premium-coding
 Models:
   1. gc/gemini-3-flash-preview (GRATIS, usar primero)
-  2. cc/claude-opus-4-5-20251101 (Suscripción)
-  3. cx/gpt-5.2-codex (Respaldo de suscripción)
+  2. cc/claude-opus-5-5 (Suscripción)
+  3. cx/gpt-6.1-sol (Respaldo de suscripción)
 
 Usar en CLI: premium-coding
 ```
@@ -357,9 +357,9 @@ Prioridad:
 ```
 Ejemplo de combo:
 1. gc/gemini-3-flash-preview (GRATIS principal)
-2. cc/claude-opus-4-5 (Tareas complejas)
+2. cc/claude-opus-5-5 (Tareas complejas)
 3. glm/glm-4.7 (Respaldo barato)
-4. if/kimi-k2-thinking (Fallback GRATIS)
+4. if/kimi-k2 (Fallback GRATIS)
 ```
 
 ### 4. Optimiza por tiempo
@@ -392,8 +392,8 @@ Madrugada: Nivel barato/gratis
 
 **Solución:**
 - Cuota de suscripción agotada
-- Agrega fallback: `cc/claude-opus → glm/glm-4.7`
-- Usa el nivel gratis: `if/kimi-k2-thinking`
+- Agrega fallback: `cc/claude-opus-5-5 → glm/glm-4.7`
+- Usa el nivel gratis: `if/kimi-k2`
 
 ---
 

@@ -266,10 +266,10 @@ Dashboard → Combos → Create New
 
 Name: cheap-backup
 Models:
-  1. cc/claude-opus-4-5 (Subscription primary)
+  1. cc/claude-opus-5-5 (Subscription primary)
   2. glm/glm-4.7 (Cheap backup, daily reset)
   3. minimax/MiniMax-M2.1 (Cheapest fallback)
-  4. if/kimi-k2-thinking (FREE emergency)
+  4. if/kimi-k2 (FREE emergency)
 
 Use in CLI: cheap-backup
 ```
@@ -406,10 +406,10 @@ Coding Plan: 3× quota (same price!)
 
 ```
 Combo:
-1. gc/gemini-3-flash (FREE primary)
+1. gc/gemini-3-flash-preview (FREE primary)
 2. glm/glm-4.7 (cheap backup)
 3. minimax/MiniMax-M2.1 (cheapest)
-4. if/kimi-k2-thinking (FREE emergency)
+4. if/kimi-k2 (FREE emergency)
 
 Result: Minimize costs, maximize uptime
 ```

@@ -19,8 +19,8 @@ Tích hợp 9Router với Claude Code CLI để định tuyến request API Anth
 export ANTHROPIC_BASE_URL="http://localhost:20128/v1"
 
 # Optional: Set default models for aliases
-export ANTHROPIC_DEFAULT_OPUS_MODEL="cc/claude-opus-4-5-20251101"
-export ANTHROPIC_DEFAULT_SONNET_MODEL="cc/claude-sonnet-4-5-20250929"
+export ANTHROPIC_DEFAULT_OPUS_MODEL="cc/claude-opus-5-5"
+export ANTHROPIC_DEFAULT_SONNET_MODEL="cc/claude-sonnet-5-5"
 export ANTHROPIC_DEFAULT_HAIKU_MODEL="cc/claude-haiku-4-5-20251001"
 ```
 
@@ -66,7 +66,7 @@ claude --model haiku "Quick code review"
 ### Dùng Full Model Names
 
 ```bash
-claude --model cc/claude-opus-4-5-20251101 "Your prompt here"
+claude --model cc/claude-opus-5-5 "Your prompt here"
 ```
 
 ## File Settings

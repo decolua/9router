@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { spawn } from "child_process";
-import { DATA_DIR } from "@/lib/dataDir.js";
+import { DATA_DIR } from "@/lib/dataDir.mjs";
 import { findHeadroomBinary, findPython310, HEADROOM_COMPRESSION_EXTRAS, EXTRA_MARKERS, getInstalledHeadroomExtras } from "./detect.js";
 
 const HEADROOM_DIR = path.join(DATA_DIR, "headroom");

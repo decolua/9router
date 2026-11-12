@@ -51,6 +51,11 @@ source/*
 .cursor/*
 docs/*
 !docs/ARCHITECTURE.md
+!docs/FEDERATION.md
+!docs/specs/
+!docs/*.md
+!docs/dogfood/
+!docs/integrations/
 test/*
 open-sse/test/*
 RM.vn.md
@@ -60,7 +65,6 @@ PUBLIC.md
 Thanks.md
 PUBLIC.en.md
 PR/*
-package-lock.json
 
 
 #Ignore vscode AI rules
@@ -87,9 +91,16 @@ graphify-out/*
 .PR/
 .next-analyze/*
 
-# Kiro local workspace state
+# Local tooling DBs / caches (never commit)
+dagger.db*
+.vfs/
+.coding-hermes/board/board.db
+.gitreins/history/
+.gitreins/usage.jsonl
+# Kiro local workspace state (upstream v0.5.69)
 .kiro/
-9router-*
+# CLI pack artifact at repo root (npm pack output); anchored so skills/9router-* stay tracked
+/9router-*
 
 # Local sensitive / temp files
 .engine-token.txt
@@ -101,4 +112,6 @@ graphify-out/*
 .start-dev.ps1
 start-dev-silent.cjs
 debug.log
+.gitreins/logs/
+.gitreins/*.lock
 .scratch/

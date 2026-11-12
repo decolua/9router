@@ -51,7 +51,7 @@ https://9router.com
 
 1. 点击 **View All Models** 按钮
 2. 点击 **Add Custom Model**
-3. 输入 9Router 配置中的模型名(例如 `gpt-4`、`claude-opus-4-5` 等)
+3. 输入 9Router 配置中的模型名(例如 `gpt-4o`、`claude-opus-5-5` 等)
 4. 点击 **Add**
 
 ### 6. 选择模型
@@ -68,7 +68,7 @@ https://9router.com
 OpenAI API: ✓ 已启用
 Base URL: https://9router.com
 API Key: sk-9router-xxxxxxxxxxxxx
-Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
+Custom Models: gpt-4o, claude-opus-5-5, gemini-2.0-flash
 ```
 
 ## 可用模型
@@ -77,9 +77,9 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 | 模型名 | 提供商 | 描述 |
 |------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
+| `gpt-4o` | OpenAI | GPT-4 Turbo |
 | `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| `claude-opus-5-5` | Anthropic | Claude Opus 5.5 |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
 | `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
 
@@ -119,7 +119,7 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 1. 确认模型名与 9Router 配置完全一致
 2. 检查 9Router 仪表盘中提供商连接是否激活
 3. 确认连接的提供商中包含该模型
-4. 尝试使用完整模型名(例如用 `openai/gpt-4` 代替 `gpt-4`)
+4. 尝试使用完整模型名(例如用 `openai/gpt-4o` 代替 `gpt-4o`)
 
 ### 连接问题
 

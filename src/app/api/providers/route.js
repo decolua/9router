@@ -10,8 +10,59 @@ import { APIKEY_PROVIDERS } from "@/shared/constants/config";
 import { AI_PROVIDERS, FREE_TIER_PROVIDERS, WEB_COOKIE_PROVIDERS, isOpenAICompatibleProvider, isAnthropicCompatibleProvider, isCustomEmbeddingProvider } from "@/shared/constants/providers";
 import { normalizeProviderId, normalizeProviderSpecificData } from "@/lib/providerNormalization";
 import { toProviderConnectionResponse } from "@/lib/providerConnectionResponse";
+import {
+  OPENAI_COMPATIBLE_PREFIX,
+  ANTHROPIC_COMPATIBLE_PREFIX,
+  CUSTOM_EMBEDDING_PREFIX,
+} from "@/shared/constants/providers";
 
 export const dynamic = "force-dynamic";
+
+// Resolve a compatible-node value that may be EITHER the generated node id
+// (openai-compatible-chat-<uuid>) or one of the user-facing prefix forms —
+// the bare user prefix ("pfx") or the kind-qualified one ("openai-compatible-pfx"),
+// the same shape prefixed model URLs use. Automation users naturally send the
+// prefix form, but the original code SELECTed by id only and 404'd a bare
+// "node not found" (DF-9ROUTER-63). Order: exact id first (backward
+// compatible), then prefix match among nodes of this kind.
+const COMPATIBLE_NODE_KINDS = [
+  { prefix: OPENAI_COMPATIBLE_PREFIX, type: "openai-compatible" },
+  { prefix: ANTHROPIC_COMPATIBLE_PREFIX, type: "anthropic-compatible" },
+  { prefix: CUSTOM_EMBEDDING_PREFIX, type: "custom-embedding" },
+];
+
+async function resolveCompatibleNode(rawValue, kindPrefix) {
+  const value = typeof rawValue === "string" ? rawValue.trim() : "";
+  if (!value) return null;
+
+  // 1. Exact node id — the historical contract, unchanged.
+  const direct = await getProviderNodeById(value);
+  if (direct) return direct;
+
+  const kind = COMPATIBLE_NODE_KINDS.find((k) => k.prefix === kindPrefix);
+
+  // 2. Prefix forms. A prefix match must hit a node of the matching kind, so
+  //    an id-shaped miss can never alias onto an unrelated node's prefix.
+  const candidates = new Set();
+  candidates.add(value.startsWith(kindPrefix) ? value.slice(kindPrefix.length) : value);
+  candidates.add(value);
+
+  const nodes = await getProviderNodes();
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    const match = nodes.find((n) => n.prefix === candidate && (!kind || n.type === kind.type));
+    if (match) return match;
+  }
+  return null;
+}
+
+function compatibleNodeNotFoundMessage(kindPrefix) {
+  return (
+    `Compatible node not found. The provider value must be either the generated node id ` +
+    `(as returned by POST /api/provider-nodes) or the node's user-chosen prefix — ` +
+    `both "<prefix>" and "${kindPrefix}<prefix>" forms are accepted. List nodes at GET /api/provider-nodes.`
+  );
+}
 
 function normalizeProxyConfig(body = {}) {
   const enabled = body?.connectionProxyEnabled === true;
@@ -130,11 +181,15 @@ export async function POST(request) {
 
     // Compatible LLM nodes support multiple API-key connections (key pool); runtime
     // rotates/fails over via getProviderCredentials. Embedding nodes stay single-connection.
+    // A prefix-form provider value is rewritten to the node id: every downstream
+    // consumer (chat provider resolution, credential lookup) keys on the id.
+    let connectionProvider = provider;
     if (isOpenAICompatibleProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = await resolveCompatibleNode(provider, OPENAI_COMPATIBLE_PREFIX);
       if (!node) {
-        return NextResponse.json({ error: "OpenAI Compatible node not found" }, { status: 404 });
+        return NextResponse.json({ error: compatibleNodeNotFoundMessage(OPENAI_COMPATIBLE_PREFIX) }, { status: 404 });
       }
+      connectionProvider = node.id;
       providerSpecificData = {
         prefix: node.prefix,
         apiType: node.apiType,
@@ -142,20 +197,22 @@ export async function POST(request) {
         nodeName: node.name,
       };
     } else if (isAnthropicCompatibleProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = await resolveCompatibleNode(provider, ANTHROPIC_COMPATIBLE_PREFIX);
       if (!node) {
-        return NextResponse.json({ error: "Anthropic Compatible node not found" }, { status: 404 });
+        return NextResponse.json({ error: compatibleNodeNotFoundMessage(ANTHROPIC_COMPATIBLE_PREFIX) }, { status: 404 });
       }
+      connectionProvider = node.id;
       providerSpecificData = {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
         nodeName: node.name,
       };
     } else if (isCustomEmbeddingProvider(provider)) {
-      const node = await getProviderNodeById(provider);
+      const node = await resolveCompatibleNode(provider, CUSTOM_EMBEDDING_PREFIX);
       if (!node) {
-        return NextResponse.json({ error: "Custom Embedding node not found" }, { status: 404 });
+        return NextResponse.json({ error: compatibleNodeNotFoundMessage(CUSTOM_EMBEDDING_PREFIX) }, { status: 404 });
       }
+      connectionProvider = node.id;
       providerSpecificData = {
         prefix: node.prefix,
         baseUrl: node.baseUrl,
@@ -175,7 +232,7 @@ export async function POST(request) {
     }
 
     const newConnection = await createProviderConnection({
-      provider,
+      provider: connectionProvider,
       authType: isWebCookieProvider ? "cookie" : "apikey",
       name: connectionName,
       apiKey: apiKey || "",

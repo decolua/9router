@@ -37,17 +37,17 @@ API Key: your-api-key-from-dashboard
 从可用的 9Router 模型中选择:
 
 **Claude 模型:**
-- `cc/claude-opus-4-5-20251101` - 最强
-- `cc/claude-sonnet-4-20250514` - 平衡
-- `cc/claude-haiku-4-20250514` - 快速
+- `cc/claude-opus-5-5` - 最强
+- `cc/claude-sonnet-5-5` - 平衡
+- `cc/claude-haiku-4-5-20251001` - 快速
 
 **DeepSeek 模型:**
-- `cx/deepseek-chat` - 通用
-- `cx/deepseek-reasoner` - 复杂推理
+- `deepseek/deepseek-chat` - 通用
+- `deepseek/deepseek-reasoner` - 复杂推理
 
 **GLM 模型:**
-- `glm/glm-4-plus` - 高级
-- `glm/glm-4-flash` - 快速响应
+- `glm/glm-4.7` - 高级
+- `glm/glm-4.7-flash` - 快速响应
 
 ### 4. 测试连接
 
@@ -62,26 +62,26 @@ Hello! Can you confirm you're connected through 9Router?
 ### 基础聊天
 ```
 向 Roo 提问: "Explain quantum computing in simple terms"
-模型: cc/claude-sonnet-4-20250514
+模型: cc/claude-sonnet-5-5
 ```
 
 ### 代码生成
 ```
 向 Roo 提问: "Write a Python function to calculate Fibonacci numbers"
-模型: cx/deepseek-chat
+模型: deepseek/deepseek-chat
 ```
 
 ### 复杂推理
 ```
 向 Roo 提问: "Analyze the trade-offs between microservices and monolithic architecture"
-模型: cx/deepseek-reasoner
+模型: deepseek/deepseek-reasoner
 ```
 
 ## 模型选择建议
 
-- **快速任务**:使用 `cc/claude-haiku-4-20250514` 或 `glm/glm-4-flash`
-- **均衡性能**:使用 `cc/claude-sonnet-4-20250514` 或 `cx/deepseek-chat`
-- **复杂推理**:使用 `cc/claude-opus-4-5-20251101` 或 `cx/deepseek-reasoner`
+- **快速任务**:使用 `cc/claude-haiku-4-5-20251001` 或 `glm/glm-4.7-flash`
+- **均衡性能**:使用 `cc/claude-sonnet-5-5` 或 `deepseek/deepseek-chat`
+- **复杂推理**:使用 `cc/claude-opus-5-5` 或 `deepseek/deepseek-reasoner`
 - **成本优化**:使用 DeepSeek 或 GLM 模型
 
 ## 故障排除
@@ -108,9 +108,9 @@ Hello! Can you confirm you're connected through 9Router?
 可在 Roo 设置中为常用模型创建快捷别名:
 
 ```
-别名: "fast" → cc/claude-haiku-4-20250514
-别名: "smart" → cc/claude-opus-4-5-20251101
-别名: "code" → cx/deepseek-chat
+别名: "fast" → cc/claude-haiku-4-5-20251001
+别名: "smart" → cc/claude-opus-5-5
+别名: "code" → deepseek/deepseek-chat
 ```
 
 ### 多个配置文件
@@ -124,4 +124,3 @@ Hello! Can you confirm you're connected through 9Router?
 
 - [配置 Cursor](cursor.md) 进行 IDE 集成
 - [设置 Continue](continue.md) 用于 VSCode
-- [探索 CLI 用法](../cli/basic-usage.md)

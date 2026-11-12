@@ -116,6 +116,9 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     for (const m of ["openai/model-a", "openai/model-b", "openai/gpt-4o"]) {
       const r = await chat(m, "sk-combo");
       expect(r.status).toBe(403);
+      const body = await r.json();
+      expect(body.error.type).toBe("permission_error");
+      expect(body.error.code).toBe("permission_error");
     }
     expect(mocks.getProviderCredentials).not.toHaveBeenCalled();
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
@@ -213,7 +216,11 @@ describe("/v1/models routes filter by key", () => {
   it("unrestricted sees the full catalog; restricted keys see only their entries", async () => {
     const all = await list("sk-open");
     expect(all).toContain("Main");
-    const someModel = all.find((id) => id.startsWith("openai/"));
+    // Federation note (DF-9ROUTER-2): with zero connections the fresh-install
+    // catalog is credentialless-only — credential-required static entries
+    // (openai/*) are intentionally absent, so the filter is exercised on the
+    // models that ARE listed (the combo + a credentialless static id).
+    const someModel = all.find((id) => id.includes("/"));
     expect(someModel).toBeTruthy();
     fx.keys["sk-mix"] = { id: "x", name: "mix", isActive: true, access: { restricted: true, allow: ["Main", someModel.toUpperCase()] } };
     expect(await list("sk-mix")).toEqual(["Main", someModel]);
@@ -224,7 +231,12 @@ describe("/v1/models routes filter by key", () => {
   it("/v1/models/{kind} and single-model lookup are filtered too", async () => {
     const kind = async (k, path) => modelsKindRoute.GET(new Request(`http://localhost/v1/models/${path.join("/")}`, { headers: auth(k) }), { params: Promise.resolve({ model: path }) });
     const emb = await (await kind("sk-open", ["embedding"])).json();
-    expect(emb.data.length).toBeGreaterThan(0);
+    // Federation note: the credentialless-only fresh-install catalog carries
+    // no embedding models, so the kind list is legitimately empty for any key
+    // (upstream's >0 assertion relied on credential-required openai/*
+    // embedding ids, which DF-9ROUTER-2 honestly omits with zero
+    // connections). Filtering still must not LEAK anything to a restricted
+    // key, and the unrestricted answer is the full (here: empty) catalog.
     expect((await (await kind("sk-empty", ["embedding"])).json()).data).toEqual([]);
     const all = (await (await modelsRoute.GET(new Request("http://localhost/v1/models"))).json()).data;
     const one = all.find((m) => m.owned_by !== "combo").id;

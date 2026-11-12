@@ -156,7 +156,7 @@ curl http://localhost:20128/v1/models \
   "object": "list",
   "data": [
     {
-      "id": "cc/claude-opus-4-5-20251101",
+      "id": "cc/claude-opus-5-5",
       "object": "model",
       "created": 1234567890,
       "owned_by": "claude-code"
@@ -172,7 +172,7 @@ curl http://localhost:20128/v1/chat/completions \
   -H "Authorization: Bearer your-api-key" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "cc/claude-opus-4-5-20251101",
+    "model": "cc/claude-opus-5-5",
     "messages": [
       {"role": "user", "content": "Hello!"}
     ]
@@ -465,7 +465,7 @@ nano ~/.bashrc  # o ~/.zshrc
 
 ## Próximos pasos
 
-- [Guía para empezar](../getting-started.md) - Conecta proveedores y comienza a codificar
+- [Guía para empezar](../getting-started/quick-start.md) - Conecta proveedores y comienza a codificar
 - [Características](../features/) - Explora seguimiento de cuota, combos, despliegue
 - [Solución de problemas](../troubleshooting.md) - Resuelve problemas comunes
 

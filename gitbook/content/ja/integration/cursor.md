@@ -51,7 +51,7 @@ https://9router.com
 
 1. **View All Models** ボタンをクリック
 2. **Add Custom Model** をクリック
-3. 9Router設定からモデル名を入力 (例: `gpt-4`、`claude-opus-4-5` など)
+3. 9Router設定からモデル名を入力 (例: `gpt-4o`、`claude-opus-5-5` など)
 4. **Add** をクリック
 
 ### 6. モデルを選択
@@ -68,7 +68,7 @@ Cursor設定は次のようになります:
 OpenAI API: ✓ Enabled
 Base URL: https://9router.com
 API Key: sk-9router-xxxxxxxxxxxxx
-Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
+Custom Models: gpt-4o, claude-opus-5-5, gemini-2.0-flash
 ```
 
 ## 利用可能なモデル
@@ -77,9 +77,9 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 
 | モデル名 | プロバイダー | 説明 |
 |------------|----------|-------------|
-| `gpt-4` | OpenAI | GPT-4 Turbo |
+| `gpt-4o` | OpenAI | GPT-4 Turbo |
 | `gpt-4o` | OpenAI | GPT-4 Optimized |
-| `claude-opus-4-5` | Anthropic | Claude Opus 4.5 |
+| `claude-opus-5-5` | Anthropic | Claude Opus 5.5 |
 | `claude-sonnet-4-5` | Anthropic | Claude Sonnet 4.5 |
 | `gemini-2.0-flash` | Google | Gemini 2.0 Flash |
 
@@ -119,7 +119,7 @@ Custom Models: gpt-4, claude-opus-4-5, gemini-2.0-flash
 1. モデル名が9Router設定と正確に一致するか確認
 2. 9Routerダッシュボードでプロバイダー接続がアクティブか確認
 3. 接続されたプロバイダーでモデルが利用可能か確認
-4. フルモデル名を使用してみる (例: `gpt-4` の代わりに `openai/gpt-4`)
+4. フルモデル名を使用してみる (例: `gpt-4o` の代わりに `openai/gpt-4o`)
 
 ### 接続の問題
 

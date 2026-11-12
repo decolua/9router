@@ -7,6 +7,7 @@ import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
 import { stringifyJson } from "./helpers/jsonCol.js";
+import { stampInsert, stampUpsertConflict } from "../federation/stamp.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
 const MIGRATED_MARKER = path.join(DB_DIR, ".migrated-from-json");
@@ -113,7 +114,13 @@ function importLegacyMain(adapter, data) {
   if (!data || typeof data !== "object") return;
 
   if (data.settings) {
-    adapter.run(`INSERT INTO settings(id, data) VALUES(1, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data`, [stringifyJson(data.settings)]);
+    // FED-022: stamp the seed so the settings row is delta-visible
+    // (unstamped federation_version = NULL is excluded by `federation_version > since`).
+    const s = stampInsert(adapter);
+    adapter.run(
+      `INSERT INTO settings(id, data${s.cols}) VALUES(1, ?${s.placeholders}) ON CONFLICT(id) DO UPDATE SET data = excluded.data${stampUpsertConflict()}`,
+      [stringifyJson(data.settings), ...s.params]
+    );
   }
 
   importWithAssertion(adapter, "providerConnections", data.providerConnections || [], (c) => {

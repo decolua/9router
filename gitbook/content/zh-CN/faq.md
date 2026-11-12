@@ -42,7 +42,7 @@
 **目标:** 比 ChatGPT API(每 1M $20)便宜 90%!
 
 ### 第 3 层:免费(应急)
-- **iFlow**:8 个免费模型(Kimi K2、Qwen3、GLM、MiniMax...)
+- **iFlow**:15 个免费模型(Kimi K2、Qwen3、GLM、DeepSeek...)
 - **Qwen**:3 个免费模型(Qwen3 Coder Plus/Flash、Vision)
 - **Kiro**:2 个免费模型(Claude Sonnet 4.5、Haiku 4.5)
 
@@ -56,8 +56,8 @@
 
 **可用的免费层提供商:**
 - **Gemini CLI** - 每月 180K 次补全(免费 Google 账户)
-- **iFlow** - 8 个无限模型(免费 OAuth)
-- **Qwen** - 3 个无限模型(免费 OAuth)
+- **iFlow** - 15 个无限模型(免费 OAuth)
+- **Qwen 模型** - 通过 iFlow 无限使用(免费 OAuth)
 - **Kiro** - Claude Sonnet/Haiku(免费 AWS Builder ID)
 
 **只用免费层提供商,就可以永久免费编码!**
@@ -71,9 +71,9 @@
 ## 支持哪些提供商?
 
 ### 订阅型提供商
-- **Claude Code**(Pro/Max)- Claude 4.5 Opus/Sonnet/Haiku
-- **OpenAI Codex**(Plus/Pro)- GPT 5.2 Codex、GPT 5.1 Codex Max
-- **Gemini CLI**(免费)- Gemini 3 Flash/Pro、2.5 Pro/Flash
+- **Claude Code**(Pro/Max)- Claude Opus 5.5/Sonnet 5.5/Haiku 4.5
+- **OpenAI Codex**(Plus/Pro)- GPT 6.1 Sol、GPT 6 Sol
+- **Gemini CLI**(免费)- Gemini 3 Flash/Pro Preview、2.5 Pro/Flash
 - **GitHub Copilot** - GPT-5、Claude 4.5、Gemini 3
 - **Antigravity**(Google)- Gemini 3 Pro、Claude Sonnet 4.5
 
@@ -84,7 +84,7 @@
 - **OpenRouter** - 透传到任意 OpenRouter 模型
 
 ### 免费提供商
-- **iFlow** - 8 个模型(Kimi K2、Qwen3、GLM、MiniMax、DeepSeek...)
+- **iFlow** - 15 个模型(Kimi K2、Qwen3、GLM、DeepSeek...)
 - **Qwen** - 3 个模型(Qwen3 Coder Plus/Flash、Vision)
 - **Kiro** - 2 个模型(Claude Sonnet 4.5、Haiku 4.5)
 
@@ -102,7 +102,7 @@
 
 ```
 示例组合: "premium-coding"
-1. cc/claude-opus-4-5(订阅主力)
+1. cc/claude-opus-5-5(订阅主力)
 2. glm/glm-4.7(低价备用)
 3. if/kimi-k2(免费应急)
 
@@ -166,7 +166,7 @@
 Cursor Settings → Models → Advanced:
   OpenAI API Base URL: https://9router.com/v1
   OpenAI API Key: [从仪表盘获取]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 **替代方案:** 在 VPS 上自托管,使用公开域名:

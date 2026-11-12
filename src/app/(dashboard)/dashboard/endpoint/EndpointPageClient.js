@@ -18,6 +18,8 @@ import EndpointRow from "./components/EndpointRow";
 import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
+import { useNotificationStore } from "@/store/notificationStore";
+import { submitCreateKey } from "@/shared/utils/keyFeedback";
 import KeyAccessControls from "./components/KeyAccessControls";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
@@ -26,8 +28,14 @@ export default function APIPageClient({ machineId }) {
   const [newKeyName, setNewKeyName] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
+  const notify = useNotificationStore();
+  // DF-9ROUTER-41: single-flight guard so a double-click on Create cannot
+  // POST /api/keys twice (duplicate keys). Mirrors requireApiKeyInFlight.
+  const createKeyInFlight = useRef(false);
 
   const [requireApiKey, setRequireApiKey] = useState(false);
+  const [requireApiKeyPinnedBy, setRequireApiKeyPinnedBy] = useState(null);
+  const requireApiKeyInFlight = useRef(false);
   const [requireLogin, setRequireLogin] = useState(true);
   const [hasPassword, setHasPassword] = useState(true);
  const [tunnelDashboardAccess, setTunnelDashboardAccess] = useState(false);
@@ -202,6 +210,7 @@ export default function APIPageClient({ machineId }) {
       ]);
       if (settingsData) {
         setRequireApiKey(settingsData.requireApiKey || false);
+        setRequireApiKeyPinnedBy(settingsData.requireApiKeyPinnedBy || null);
         setRequireLogin(settingsData.requireLogin !== false);
         setHasPassword(settingsData.hasPassword || false);
         setTunnelDashboardAccess(settingsData.tunnelDashboardAccess || false);
@@ -238,11 +247,19 @@ export default function APIPageClient({ machineId }) {
   };
 
   const handleRequireApiKey = async (value) => {
+    // DF-9ROUTER-38: env-pinned values are display-only — never PATCH.
+    if (requireApiKeyPinnedBy) return;
+    // Serialize submissions: one PATCH at a time, so rapid clicks can never
+    // fire overlapping true/false requests that race the stored value.
+    if (requireApiKeyInFlight.current) return;
+    requireApiKeyInFlight.current = true;
     try {
       const updated = await useSettingsStore.getState().patchSettings({ requireApiKey: value });
       if (updated) setRequireApiKey(value);
     } catch (error) {
       console.log("Error updating requireApiKey:", error);
+    } finally {
+      requireApiKeyInFlight.current = false;
     }
   };
 
@@ -618,23 +635,18 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
-    try {
-      const res = await fetch("/api/keys", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
-      });
-      const data = await res.json();
-
-      if (res.ok) {
-        setCreatedKey(data.key);
+    await submitCreateKey({
+      guard: createKeyInFlight,
+      name: newKeyName,
+      onCreated: async (data) => {
+        setCreatedKey(data?.key || true);
         await fetchData();
         setNewKeyName("");
         setShowAddModal(false);
-      }
-    } catch (error) {
-      console.log("Error creating key:", error);
-    }
+        notify.success("API key created");
+      },
+      onError: (message) => notify.error(message),
+    });
   };
 
   const handleDeleteKey = async (id) => {
@@ -987,16 +999,26 @@ export default function APIPageClient({ machineId }) {
           </Button>
         </div>
 
-        <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+        {/* DF-9ROUTER-41: the Require API key switch is a primary security
+            control — it sits directly under the card header (sticky) so it
+            stays reachable at short viewports (780x493) instead of clipping
+            below the fold after the key list. Behavior unchanged. */}
+        <div className="sticky top-0 z-10 -mx-4 px-4 py-3 mb-4 bg-bg/95 backdrop-blur-sm border-b border-border flex items-center justify-between">
           <div>
             <p className="font-medium">Require API key</p>
             <p className="text-sm text-text-muted">
               Requests without a valid key will be rejected
             </p>
+            {requireApiKeyPinnedBy && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                Pinned by {requireApiKeyPinnedBy} in .env — remove it there to control this from the UI
+              </p>
+            )}
           </div>
           <Toggle
             checked={requireApiKey}
             onChange={() => handleRequireApiKey(!requireApiKey)}
+            disabled={!!requireApiKeyPinnedBy}
           />
         </div>
 

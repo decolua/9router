@@ -12,7 +12,7 @@ Pon en marcha 9Router en 5 minutos y comienza a enrutar solicitudes de IA de for
 npm install -g 9router
 ```
 
-**Requisitos:** Node.js 20+ ([Detalles de instalación](getting-started/installation.md))
+**Requisitos:** Node.js 20+ ([Detalles de instalación](../installation.md))
 
 ### 2. Iniciar
 
@@ -44,7 +44,7 @@ Dashboard → Providers → Connect [Provider]
 1. Clic en "Connect Claude Code"
 2. Inicia sesión con tu cuenta de Claude
 3. Autoriza 9Router
-4. ✅ ¡Listo! Usa el modelo: `cc/claude-opus-4-5-20251101`
+4. ✅ ¡Listo! Usa el modelo: `cc/claude-opus-5-5`
 
 #### Opción B: API Key (Proveedores baratos)
 
@@ -65,7 +65,7 @@ Dashboard → Providers → Add API Key
 
 #### Opción C: Proveedores gratis (Sin costo)
 
-**Ideal para:** iFlow, Qwen, Kiro
+**Ideal para:** iFlow, Kiro
 
 ```
 Dashboard → Providers → Connect [Free Provider]
@@ -77,7 +77,7 @@ Dashboard → Providers → Connect [Free Provider]
 1. Clic en "Connect iFlow"
 2. Inicia sesión con tu cuenta de iFlow
 3. Autoriza
-4. ✅ ¡Listo! Usa 8 modelos: `if/kimi-k2-thinking`, `if/qwen3-coder-plus`, etc.
+4. ✅ ¡Listo! Usa 15 modelos: `if/kimi-k2`, `if/qwen3-coder-plus`, etc.
 
 ---
 
@@ -91,7 +91,7 @@ Apunta tu herramienta de codificación a 9Router:
 Settings → Models → Advanced:
   OpenAI API Base URL: http://localhost:20128/v1
   OpenAI API Key: [desde el dashboard de 9router]
-  Model: cc/claude-opus-4-5-20251101
+  Model: cc/claude-opus-5-5
 ```
 
 ### Claude Desktop
@@ -111,7 +111,7 @@ Edita `~/.claude/config.json`:
 Provider: OpenAI Compatible
 Base URL: http://localhost:20128/v1
 API Key: [desde el dashboard]
-Model: cc/claude-opus-4-5-20251101
+Model: cc/claude-opus-5-5
 ```
 
 ### Codex CLI
@@ -134,9 +134,9 @@ Dashboard → Combos → Create New
 
 Name: premium-coding
 Models:
-  1. cc/claude-opus-4-5-20251101 (Suscripción principal)
+  1. cc/claude-opus-5-5 (Suscripción principal)
   2. glm/glm-4.7 (Respaldo barato, $0.6/1M)
-  3. if/kimi-k2-thinking (Fallback gratis)
+  3. if/kimi-k2 (Fallback gratis)
 
 Usar en CLI: premium-coding
 ```
@@ -154,21 +154,21 @@ Usar en CLI: premium-coding
 ### Modelos de suscripción (Maximiza primero)
 
 **Claude Code (`cc/`)** - Suscripción Pro/Max:
-- `cc/claude-opus-4-5-20251101` - Claude 4.5 Opus
-- `cc/claude-sonnet-4-5-20250929` - Claude 4.5 Sonnet
+- `cc/claude-opus-5-5` - Claude Opus 5.5
+- `cc/claude-sonnet-5-5` - Claude Sonnet 5.5
 - `cc/claude-haiku-4-5-20251001` - Claude 4.5 Haiku
 
 **Codex (`cx/`)** - Suscripción Plus/Pro:
-- `cx/gpt-5.2-codex` - GPT 5.2 Codex
-- `cx/gpt-5.1-codex-max` - GPT 5.1 Codex Max
+- `cx/gpt-6.1-sol` - GPT 6.1 Sol
+- `cx/gpt-6-sol` - GPT 6 Sol
 
 **Gemini CLI (`gc/`)** - GRATIS 180K/mes:
 - `gc/gemini-3-flash-preview` - Gemini 3 Flash Preview
 - `gc/gemini-2.5-pro` - Gemini 2.5 Pro
 
 **GitHub Copilot (`gh/`)** - Suscripción:
-- `gh/gpt-5` - GPT-5
-- `gh/claude-4.5-sonnet` - Claude 4.5 Sonnet
+- `gh/gpt-5.4` - GPT-5.4
+- `gh/claude-sonnet-4.5` - Claude Sonnet 4.5
 
 ### Modelos baratos (Respaldo)
 
@@ -183,17 +183,13 @@ Usar en CLI: premium-coding
 
 ### Modelos GRATIS (Emergencia)
 
-**iFlow (`if/`)** - 8 modelos GRATIS:
-- `if/kimi-k2-thinking` - Kimi K2 Thinking
+**iFlow (`if/`)** - 15 modelos GRATIS:
+- `if/kimi-k2` - Kimi K2
 - `if/qwen3-coder-plus` - Qwen3 Coder Plus
 - `if/glm-4.7` - GLM 4.7
 - `if/deepseek-r1` - DeepSeek R1
 
-**Qwen (`qw/`)** - 3 modelos GRATIS:
-- `qw/qwen3-coder-plus` - Qwen3 Coder Plus
-- `qw/qwen3-coder-flash` - Qwen3 Coder Flash
-
-**Kiro (`kr/`)** - 2 modelos GRATIS:
+**Kiro (`kr/`)** - 48 modelos GRATIS:
 - `kr/claude-sonnet-4.5` - Claude Sonnet 4.5
 - `kr/claude-haiku-4.5` - Claude Haiku 4.5
 
@@ -233,10 +229,10 @@ Rutina diaria:
 
 ## Próximos pasos
 
-- [Detalles de instalación](getting-started/installation.md) - Requisitos, troubleshooting
-- [Características](features/) - Explora seguimiento de cuota, combos, despliegue
-- [FAQ](faq.md) - Preguntas y respuestas comunes
-- [Troubleshooting](troubleshooting.md) - Soluciona problemas comunes
+- [Detalles de instalación](../installation.md) - Requisitos, troubleshooting
+- [Características](../features/) - Explora seguimiento de cuota, combos, despliegue
+- [FAQ](../faq.md) - Preguntas y respuestas comunes
+- [Troubleshooting](../troubleshooting.md) - Soluciona problemas comunes
 
 ---
 
