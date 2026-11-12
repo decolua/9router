@@ -1,6 +1,7 @@
 # v0.5.119 (2026-11-11)
 
 ## Features
+- **Synthetic**: add Synthetic (`syn`) — OpenAI-compatible upstream on `api.synthetic.new` with the always-on `hf:` models as a static fallback, model passthrough, live model discovery, and a usage tracker reading `GET /v2/quotas`
 - **Claude**: add Claude Fable 5.2 ($8/$40) as the Fable flagship and `claude-haiku-5-5` ($0.10/$0.50, 1M/128K); the advertised Claude Code version now auto-tracks the latest npm release (floor 2.1.322, pin with `CLAUDE_CLI_VERSION`), and the dashboard lists live models through the OAuth bearer
 - **Antigravity**: add Gemini 4 Carbon in low/medium/high tiers plus a bare alias resolving to medium, and track the tiers in the usage quota list
 - **CommandCode**: add `google/gemini-4-carbon` and `claude-fable-5-2`, and resolve the model list from the CLI's live catalog (`GET /provider/v1/models?view=client`) in the dashboard and `GET /v1/models`
@@ -31,6 +32,10 @@
 - **Quota**: catch a Claude reset missed between auto-ping ticks and retry it after the failure cooldown
 - **Routing**: route bare `claude-*` ids to Claude OAuth when no anthropic connection is active
 - **Usage**: display Claude `output_tokens` in request details instead of 0
+- **Synthetic**: validate keys through `/v2/quotas` (the public `/openai/v1/models` answers 200 for any Bearer value, so a revoked key was stored as valid) and route the Test button through `validateUrl` instead of answering "Provider test not supported"
+- **Xiaomi Token Plan**: replace the retired catalog (`mimo-v2.5-pro/flash`, `mimo-v2-pro`, `mimo-v2-omni`, `mimo-v2-tts` and the `mimo-v2.5-pro-claude` alias) with `mimo-v2.6-pro`, `mimo-v2.6-flash`, `mimo-v2.5-asr` and the three TTS variants, whose ids resolve upstream
+- **Usage**: show usage for a MiniMax Code desktop lease connection (`authType: "mcode-lease"`) in Provider Limits and the usage route, and forward `authType` through the dispatch so lease mode is detected instead of answering "Usage API not implemented"
+- **Dashboard**: replace the custom model capability toggle with an explicit Model type selector (Chat / LLM by default) — enabling Speech to text no longer flips a chat model to STT and drops it from Available Models (#5602)
 - **UI**: link explicit input ids to their labels
 
 # v0.5.116 (2026-11-08)
