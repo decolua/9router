@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import QuotaTable from "./QuotaTable";
+import OpenDesignKeyButton from "./OpenDesignKeyButton";
 import Toggle from "@/shared/components/Toggle";
 import Tooltip from "@/shared/components/Tooltip";
 import {
@@ -1129,6 +1130,15 @@ export default function ProviderLimits() {
           const resetCreditCount = getCodexResetCreditCount(quota);
           const isResettingLimit = resettingLimitId === conn.id;
           const rowBusy = deletingId === conn.id || togglingId === conn.id || isResettingLimit;
+          // opendesign-go needs a Control Key (vela_ctrl_...) that only the user
+          // can mint through the vendor's browser approval; offer the button
+          // exactly when the card is telling them that key is missing.
+          const needsOpenDesignKey =
+            conn.provider === "opendesign-go" &&
+            !error &&
+            typeof quota?.message === "string" &&
+            (quota.message.includes("chưa cấu hình Control Key") ||
+              quota.message.toLowerCase().includes("control key"));
           const rawQuotas = quota?.quotas || [];
           const visibleQuotas = filterQuotasByVisibility(conn.provider, rawQuotas, quotaVisibility);
           const hiddenQuotaRows = getHiddenQuotaRows(conn.provider, rawQuotas, quotaVisibility);
@@ -1372,6 +1382,13 @@ export default function ProviderLimits() {
                 ) : quota?.message ? (
                   <div className="text-center py-5">
                     <p className="text-xs text-text-muted">{quota.message}</p>
+                  {needsOpenDesignKey && (
+                    <OpenDesignKeyButton
+                      connectionId={conn.id}
+                      onDone={() => refreshProvider(conn.id, conn.provider)}
+                      className="mx-auto mt-2 max-w-sm text-left"
+                    />
+                  )}
                   </div>
                 ) : (
                   <QuotaTable
