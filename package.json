@@ -3,6 +3,9 @@
   "version": "0.5.116",
   "description": "9Router web dashboard",
   "private": true,
+  "engines": {
+    "node": ">=20.18.1"
+  },
   "scripts": {
     "router": "node --env-file=.env .next/standalone/custom-server.js",
     "router:rebuild": "port=$(node --env-file=.env -p 'process.env.PORT || 3000'); if command -v lsof >/dev/null 2>&1 && lsof -tiTCP:\"$port\" -sTCP:LISTEN >/dev/null 2>&1; then echo \"Port $port is already in use; stop the running process before rebuilding.\" >&2; exit 1; fi; rm -rf .next && npm run build && mkdir -p .next/standalone/.next && cp -R .next/static .next/standalone/.next/static && if [ -d public ]; then cp -R public .next/standalone/public; fi && npm run router",
@@ -46,7 +49,7 @@
     "recharts": "^3.7.0",
     "socks-proxy-agent": "^8.0.5",
     "sql.js": "^1.14.1",
-    "undici": "^8.12.3",
+    "undici": "^7.30.2",
     "uuid": "^13.0.0",
     "zustand": "^5.0.10"
   },
