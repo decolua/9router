@@ -491,9 +491,15 @@ export function calculateCostFromTokens(tokens, pricing) {
   }
 
   const outputTokens = tokens.completion_tokens || tokens.output_tokens || 0;
-  cost += outputTokens * (pricing.output / 1000000);
-
   const reasoningTokens = tokens.reasoning_tokens || 0;
+  // OpenAI chat/Responses report reasoning_tokens as a SUBSET of completion
+  // tokens (the usage extractor marks it); Gemini's thoughtsTokenCount is
+  // separate and carries no marker. Charge each token once: the non-reasoning
+  // remainder at the output rate, the reasoning slice at the reasoning rate.
+  const reasoningIncluded = tokens.reasoning_included_in_output === 1 || tokens.reasoning_included_in_output === true;
+  const billedOutputTokens = reasoningIncluded ? Math.max(0, outputTokens - reasoningTokens) : outputTokens;
+  cost += billedOutputTokens * (pricing.output / 1000000);
+
   if (reasoningTokens > 0) {
     cost += reasoningTokens * ((pricing.reasoning || pricing.output) / 1000000);
   }
