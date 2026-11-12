@@ -159,19 +159,60 @@ export async function saveRequestDetail(detail) {
   }
 }
 
-export async function getRequestDetails(filter = {}) {
-  const db = await getAdapter();
+// SQL for the WHERE clause shared by the page query and the totals query, so
+// the footer never summarizes a different filter than the table above it.
+function buildDetailWhere(filter = {}) {
   const conds = [];
   const params = [];
-
   if (filter.provider) { conds.push("provider = ?"); params.push(filter.provider); }
   if (filter.model) { conds.push("model = ?"); params.push(filter.model); }
   if (filter.connectionId) { conds.push("connectionId = ?"); params.push(filter.connectionId); }
   if (filter.status) { conds.push("status = ?"); params.push(filter.status); }
   if (filter.startDate) { conds.push("timestamp >= ?"); params.push(new Date(filter.startDate).toISOString()); }
   if (filter.endDate) { conds.push("timestamp <= ?"); params.push(new Date(filter.endDate).toISOString()); }
+  return { where: conds.length ? `WHERE ${conds.join(" AND ")}` : "", params };
+}
 
-  const where = conds.length ? `WHERE ${conds.join(" AND ")}` : "";
+// Aggregate over every row that matches the filter — not just the visible page,
+// because the table only shows one page at a time while the user reads the
+// footer as "the whole window". json_extract keeps this in SQLite in a single
+// pass; the detail blob is already JSON, so no extra parsing happens in JS.
+// `cache_read_input_tokens` is the field the streaming handlers actually store
+// (the OpenAI-style `cached_tokens` name only appears in some raw payloads).
+export async function getRequestDetailsTotals(filter = {}) {
+  try {
+    const db = await getAdapter();
+    const { where, params } = buildDetailWhere(filter);
+    const row = db.get(
+      `SELECT COUNT(*) AS requests,
+        SUM(CAST(json_extract(data,'$.tokens.prompt_tokens') AS INTEGER)) AS input_tokens,
+        SUM(CAST(json_extract(data,'$.tokens.cache_read_input_tokens') AS INTEGER)) AS cached_tokens,
+        SUM(CAST(json_extract(data,'$.tokens.cache_creation_input_tokens') AS INTEGER)) AS cache_creation_tokens,
+        SUM(CAST(json_extract(data,'$.tokens.completion_tokens') AS INTEGER)) AS output_tokens,
+        SUM(CAST(json_extract(data,'$.latency.total') AS INTEGER)) AS latency_total,
+        SUM(CAST(json_extract(data,'$.latency.ttft') AS INTEGER)) AS latency_ttft
+      FROM requestDetails ${where}`,
+      params
+    );
+    return {
+      requests: Number(row?.requests) || 0,
+      inputTokens: Number(row?.input_tokens) || 0,
+      cachedTokens: Number(row?.cached_tokens) || 0,
+      cacheCreationTokens: Number(row?.cache_creation_tokens) || 0,
+      outputTokens: Number(row?.output_tokens) || 0,
+      latencyTotalMs: Number(row?.latency_total) || 0,
+      latencyTtftMs: Number(row?.latency_ttft) || 0,
+    };
+  } catch (e) {
+    // Totals are a reading aid; a JSON1-less build must not break the table.
+    console.error("[requestDetailsRepo] Totals query failed:", e);
+    return null;
+  }
+}
+
+export async function getRequestDetails(filter = {}) {
+  const db = await getAdapter();
+  const { where, params } = buildDetailWhere(filter);
   const cntRow = db.get(`SELECT COUNT(*) as c FROM requestDetails ${where}`, params);
   const totalItems = cntRow ? cntRow.c : 0;
 
