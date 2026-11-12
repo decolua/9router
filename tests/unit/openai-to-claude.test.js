@@ -123,6 +123,99 @@ describe("openaiToClaudeRequest", () => {
     });
   });
 
+  describe("tool schema normalization", () => {
+    it("unwraps custom tools and normalizes Draft 2020-12 numeric keywords", () => {
+      const body = {
+        messages: [{ role: "user", content: "Use the custom tool" }],
+        tools: [{
+          type: "custom",
+          custom: {
+            name: "example_tool",
+            description: "Example custom tool",
+            input_schema: {
+              type: "object",
+              minProperties: "1",
+              properties: {
+                value: {
+                  type: "string",
+                  minLength: "1",
+                  maxLength: "200",
+                  nullable: false
+                },
+                scores: {
+                  type: "array",
+                  minItems: "1",
+                  maxItems: "5",
+                  items: {
+                    type: "number",
+                    minimum: "0",
+                    maximum: "10",
+                    multipleOf: "0.5",
+                    optional: true
+                  }
+                }
+              }
+            }
+          }
+        }]
+      };
+
+      const result = openaiToClaudeRequest("claude-opus-5-5", body, false);
+
+      expect(result.tools).toHaveLength(1);
+      expect(result.tools[0]).toMatchObject({
+        name: "example_tool",
+        description: "Example custom tool",
+        input_schema: {
+          type: "object",
+          minProperties: 1,
+          properties: {
+            value: {
+              type: "string",
+              minLength: 1,
+              maxLength: 200
+            },
+            scores: {
+              type: "array",
+              minItems: 1,
+              maxItems: 5,
+              items: {
+                type: "number",
+                minimum: 0,
+                maximum: 10,
+                multipleOf: 0.5
+              }
+            }
+          }
+        }
+      });
+      expect(result.tools[0].input_schema.properties.value).not.toHaveProperty("nullable");
+      expect(result.tools[0].input_schema.properties.scores.items).not.toHaveProperty("optional");
+    });
+
+    it("preserves already-valid numeric schema values", () => {
+      const body = {
+        messages: [{ role: "user", content: "Use the tool" }],
+        tools: [{
+          type: "function",
+          function: {
+            name: "number_tool",
+            parameters: {
+              type: "object",
+              properties: {
+                value: { type: "number", minimum: 0, maximum: 10 }
+              }
+            }
+          }
+        }]
+      };
+
+      const result = openaiToClaudeRequest("claude-opus-5-5", body, false);
+      expect(result.tools[0].input_schema.properties.value.minimum).toBe(0);
+      expect(result.tools[0].input_schema.properties.value.maximum).toBe(10);
+    });
+  });
+
   describe("tool_choice handling", () => {
     const baseBody = {
       messages: [{ role: "user", content: "add a todo" }],
