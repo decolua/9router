@@ -18,6 +18,11 @@ function githubMonthlyResetMs(status, errorText, provider) {
   return Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1);
 }
 
+function isKindDisabledForConnection(connection, serviceKind) {
+  const disabledKinds = connection.providerSpecificData?.disabledKinds;
+  return !!serviceKind && Array.isArray(disabledKinds) && disabledKinds.includes(serviceKind);
+}
+
 /**
  * Get provider credentials from localDb
  * Filters out unavailable accounts and returns the selected account based on strategy
@@ -32,6 +37,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
   const requestedModel = options?.requestedModel || model;
+  const serviceKind = options?.serviceKind || null;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -71,7 +77,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    // A connection switched off for one media kind stays active for every other kind.
+    const connections = (await getProviderConnections({ provider: providerId, isActive: true }))
+      .filter((c) => !isKindDisabledForConnection(c, serviceKind));
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {

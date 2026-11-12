@@ -158,7 +158,7 @@ export async function handleVideoCreate(request, action) {
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { preferredConnectionId, serviceKind: "video" });
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

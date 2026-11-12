@@ -71,6 +71,9 @@ export const APIKEY_PROVIDERS = byCategory("apikey");
 export const WEB_COOKIE_PROVIDERS = byCategory("webCookie");
 
 // Media provider kinds — each kind maps to a route and endpoint config
+// Media kinds whose handlers honor a per-connection on/off switch (providerSpecificData.disabledKinds).
+export const CONNECTION_SCOPED_MEDIA_KINDS = new Set(["embedding", "image", "tts", "stt", "webSearch", "webFetch", "video"]);
+
 export const MEDIA_PROVIDER_KINDS = [
   { id: "embedding",   label: "Embedding",      icon: "data_array",        endpoint: { method: "POST", path: "/v1/embeddings" } },
   { id: "image",       label: "Text to Image",  icon: "brush",             endpoint: { method: "POST", path: "/v1/images/generations" } },
