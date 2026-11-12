@@ -143,6 +143,17 @@ function resolveFormat(targetFormat, model, provider) {
   if (transportFmt) return transportFmt;
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
+  // A user-added OpenAI-compatible node on the Responses wire (api.openai.com/v1/responses and
+  // clones) has no transport/provider declaration. The model's Chat-wire "openai" format would
+  // emit a top-level reasoning_effort, which /v1/responses rejects with 400 ("moved to
+  // reasoning.effort"); nest it instead.
+  if (targetFormat === "openai-responses" && isOpenAICompatibleNode(provider)) {
+    const nodeCaps = getCapabilitiesForModel(provider, model);
+    const fmt = nodeCaps.thinkingFormat && !NATIVE_ONLY_FORMATS.has(nodeCaps.thinkingFormat)
+      ? nodeCaps.thinkingFormat
+      : "openai";
+    return fmt === "openai" ? "openai-responses" : fmt;
+  }
   const caps = getCapabilitiesForModel(provider, model);
   const isOpenAIWire = targetFormat === "openai" || targetFormat === "openai-responses";
   if (caps.thinkingFormat && !(isOpenAIWire && NATIVE_ONLY_FORMATS.has(caps.thinkingFormat))) {
