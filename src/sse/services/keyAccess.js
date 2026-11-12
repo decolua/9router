@@ -80,6 +80,28 @@ export async function getKeyAccessContext(request) {
   };
 }
 
+/**
+ * Account pins of the request's key for one provider, as a Set of connection
+ * ids, or null when the request is not pinned for that provider (no key,
+ * unknown key, or a key with no pins for it) — i.e. today's behaviour.
+ *
+ * Independent of the restrict/allow list: pins decide WHICH ACCOUNT serves a
+ * provider, the allow list decides WHICH MODELS the key may call. Pass the
+ * result to getProviderCredentials({ allowedConnectionIds }); that is a hard
+ * filter, so retries/fallback never leave the pinned set, and a pinned provider
+ * whose accounts are all gone fails closed (no credentials) instead of
+ * silently falling back to another account.
+ */
+export async function getKeyAllowedConnections(request, provider) {
+  const apiKey = extractClientApiKey(request);
+  if (!apiKey || !provider) return null;
+  const record = await getApiKeyByKey(apiKey);
+  const pins = record?.access?.connections;
+  if (!pins) return null;
+  const ids = pins[lower(resolveProviderId(provider))] || pins[lower(provider)];
+  return ids?.length ? new Set(ids) : null;
+}
+
 // Resolve the allow list once per request: combo names, resolved model ids,
 // and resolved provider ids (for provider-as-model kinds).
 async function getAllowSets(ctx) {

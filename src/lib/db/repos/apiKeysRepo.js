@@ -12,7 +12,7 @@ function rowToKey(row) {
     machineId: row.machineId,
     isActive: row.isActive === 1 || row.isActive === true,
     createdAt: row.createdAt,
-    access: keyAccessFromColumns(row.accessRestricted, row.accessAllow),
+    access: keyAccessFromColumns(row.accessRestricted, row.accessAllow, row.accessConnections),
   };
 }
 
@@ -64,11 +64,15 @@ export async function updateApiKey(id, data) {
   db.transaction(() => {
     const row = db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]);
     if (!row) return;
-    const merged = { ...rowToKey(row), ...data };
+    const current = rowToKey(row);
+    const merged = { ...current, ...data };
+    // Shallow-merge access so a caller that does not mention `connections`
+    // (e.g. the restrict toggle) never wipes the key's account pins.
+    if (data.access) merged.access = { ...current.access, ...data.access };
     const cols = keyAccessToColumns(merged.access);
     db.run(
-      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ? WHERE id = ?`,
-      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, id]
+      `UPDATE apiKeys SET key = ?, name = ?, machineId = ?, isActive = ?, accessRestricted = ?, accessAllow = ?, accessConnections = ? WHERE id = ?`,
+      [merged.key, merged.name, merged.machineId, merged.isActive ? 1 : 0, cols.accessRestricted, cols.accessAllow, cols.accessConnections, id]
     );
     result = rowToKey(db.get(`SELECT * FROM apiKeys WHERE id = ?`, [id]));
   });

@@ -26,7 +26,7 @@ import * as log from "../utils/logger.js";
 import { updateProviderCredentials, checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
-import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
+import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels, getKeyAllowedConnections } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
 
 /**
@@ -275,9 +275,11 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
   let lastError = null;
   let lastStatus = null;
   let lastHeaders = null;
+  // Accounts this API key is pinned to for the provider (null = any account).
+  const allowedConnectionIds = await getKeyAllowedConnections(request, provider);
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model });
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, { requestedModel: requestedModel || model, allowedConnectionIds });
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {
@@ -288,8 +290,10 @@ async function handleSingleModelChat(body, modelStr, clientRawRequest = null, re
         return unavailableResponse(status, `[${provider}/${model}] ${errorMsg}`, credentials.retryAfter, credentials.retryAfterHuman, lastHeaders);
       }
       if (excludeConnectionIds.size === 0) {
-        log.warn("AUTH", `No active credentials for provider: ${provider}`);
-        return errorResponse(HTTP_STATUS.NOT_FOUND, `No active credentials for provider: ${provider}`);
+        log.warn("AUTH", `No active credentials for provider: ${provider}${allowedConnectionIds ? " (API key pinned to specific accounts)" : ""}`);
+        return errorResponse(HTTP_STATUS.NOT_FOUND, allowedConnectionIds
+          ? `No active credentials for provider: ${provider} among the accounts this API key is pinned to`
+          : `No active credentials for provider: ${provider}`);
       }
       log.warn("CHAT", "No more accounts available", { provider });
       return errorResponse(lastStatus || HTTP_STATUS.SERVICE_UNAVAILABLE, lastError || "All accounts unavailable", lastHeaders);

@@ -216,9 +216,9 @@ describe("helpers: storage + validation", () => {
     expect(helpers.keyAccessFromColumns(1, '[" a ", "A", "", 3, "b"]')).toEqual({ restricted: true, allow: ["a", "b"] });
   });
   it("access -> columns", () => {
-    expect(helpers.keyAccessToColumns(undefined)).toEqual({ accessRestricted: 0, accessAllow: "[]" });
-    expect(helpers.keyAccessToColumns({ restricted: true, allow: ["x", "X"] })).toEqual({ accessRestricted: 1, accessAllow: '["x"]' });
-    expect(helpers.keyAccessToColumns({ restricted: false, allow: ["x"] })).toEqual({ accessRestricted: 0, accessAllow: "[]" });
+    expect(helpers.keyAccessToColumns(undefined)).toEqual({ accessRestricted: 0, accessAllow: "[]", accessConnections: null });
+    expect(helpers.keyAccessToColumns({ restricted: true, allow: ["x", "X"] })).toEqual({ accessRestricted: 1, accessAllow: '["x"]', accessConnections: null });
+    expect(helpers.keyAccessToColumns({ restricted: false, allow: ["x"] })).toEqual({ accessRestricted: 0, accessAllow: "[]", accessConnections: null });
   });
   it("input validation rejects rather than repairs", () => {
     const v = helpers.validateKeyAccessInput;

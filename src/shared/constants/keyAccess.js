@@ -7,6 +7,10 @@
 export const KEY_ACCESS_MAX_ENTRIES = 200;
 export const KEY_ACCESS_MAX_ENTRY_LENGTH = 256;
 
+// Upper bounds for one key's account pins ({ providerId: connectionId[] }).
+export const KEY_ACCESS_MAX_PINNED_PROVIDERS = 100;
+export const KEY_ACCESS_MAX_PINNED_PER_PROVIDER = 100;
+
 // Every key — new, migrated, or restored from a backup without the field — is
 // unrestricted unless explicitly switched to restricted.
 export const KEY_ACCESS_UNRESTRICTED = Object.freeze({ restricted: false, allow: Object.freeze([]) });

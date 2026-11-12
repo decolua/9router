@@ -24,6 +24,7 @@ function githubMonthlyResetMs(status, errorText, provider) {
  * @param {string} provider - Provider name
  * @param {Set<string>|string|null} excludeConnectionIds - Connection ID(s) to exclude (for retry with next account)
  * @param {string|null} model - Model name for per-model rate limit filtering
+ * @param {object} [options] - { preferredConnectionId, requestedModel, allowedConnectionIds: Set<string>|null }
  */
 export async function getProviderCredentials(provider, excludeConnectionIds = null, model = null, options = {}) {
   // Normalize to Set for consistent handling
@@ -31,6 +32,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
+  // Set<string>|null — connection ids the calling API key is pinned to (see keyAccess.getKeyAllowedConnections).
+  const allowedConnectionIds = options?.allowedConnectionIds instanceof Set ? options.allowedConnectionIds : null;
   const requestedModel = options?.requestedModel || model;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
@@ -71,7 +74,13 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
       };
     }
 
-    const connections = await getProviderConnections({ provider: providerId, isActive: true });
+    let connections = await getProviderConnections({ provider: providerId, isActive: true });
+    // Per-API-key account pinning: a hard filter applied before any selection
+    // (preferred connection, strategy, fallback), so nothing can leave the set.
+    if (allowedConnectionIds) {
+      connections = connections.filter((c) => allowedConnectionIds.has(c.id));
+      log.debug("AUTH", `${provider} | key pinned to ${allowedConnectionIds.size} account(s), ${connections.length} active`);
+    }
     log.debug("AUTH", `${provider} | total connections: ${connections.length}, excludeIds: ${excludeSet.size > 0 ? [...excludeSet].join(",") : "none"}, model: ${model || "any"}`);
 
     if (connections.length === 0) {
