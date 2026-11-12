@@ -1,6 +1,7 @@
 // Tool call helper functions for translator
 
 import { FORMATS } from "../formats.js";
+import { SYNTHETIC_TOOL_RESULT_TEXT } from "../formats/claude.js";
 
 // Anthropic tool_use.id must match: ^[a-zA-Z0-9_-]+$
 const TOOL_ID_PATTERN = /^[a-zA-Z0-9_-]+$/;
@@ -98,7 +99,15 @@ export function getToolCallIds(msg) {
   return ids;
 }
 
-// Check if user message has tool_result for given ids (OpenAI format: role=tool, Claude format: tool_result in content)
+// Check if user message has tool_result for given ids (OpenAI format: role=tool,
+// Claude format: tool_result in content)
+//
+// ANY-id by design: this is the *trigger* for fixMissingToolResponses below ("did
+// this batch get any reply at all?"), and it has exactly that one call site. A
+// partially answered parallel batch ([A,B] with a result for A only) stays
+// "answered" here; on the OpenAI leg, per-id completeness is enforced on the
+// final translated shape by repairPartialToolResponses below. Tightening this
+// predicate would change the payload contract of every non-kiro target at once.
 export function hasToolResults(msg, toolCallIds) {
   if (!msg || !toolCallIds.length) return false;
 
@@ -150,6 +159,55 @@ export function fixMissingToolResponses(body) {
   }
 
   body.messages = newMessages;
+  return body;
+}
+
+// Repair a *partially* answered parallel batch on the OpenAI leg: insert one
+// placeholder tool reply per unanswered call id, after the contiguous run of
+// tool messages that follows the assistant turn and before the next non-tool
+// message. OpenAI-compatible upstreams reject an assistant `tool_calls` turn
+// with any unanswered id, and fixMissingToolResponses above cannot see it (its
+// hasToolResults trigger is ANY-id by design — see the comment there).
+//
+// Scoped to bodies that are already OpenAI chat: formats/openai.js
+// filterToOpenAIFormat calls this only when the TARGET is OpenAI; other formats
+// have their own shapes.
+export function repairPartialToolResponses(body) {
+  if (!body.messages || !Array.isArray(body.messages)) return body;
+
+  for (let i = 0; i < body.messages.length; i++) {
+    const msg = body.messages[i];
+    if (msg.role !== "assistant" || !Array.isArray(msg.tool_calls) || msg.tool_calls.length === 0) continue;
+
+    // A trailing assistant turn is a prefill, not a dangling call.
+    if (i === body.messages.length - 1) continue;
+
+    const callIds = msg.tool_calls.map(tc => tc.id).filter(Boolean);
+    if (callIds.length === 0) continue;
+
+    // Only the tool messages immediately following this assistant turn belong
+    // to it; anything else ends the run.
+    const answered = new Set();
+    let insertPosition = i + 1;
+    for (let j = i + 1; j < body.messages.length; j++) {
+      const next = body.messages[j];
+      if (next.role !== "tool" || !next.tool_call_id) break;
+      answered.add(next.tool_call_id);
+      insertPosition = j + 1;
+    }
+
+    const missingIds = [...new Set(callIds.filter(id => !answered.has(id)))];
+    if (missingIds.length === 0) continue;
+
+    const placeholders = missingIds.map(id => ({
+      role: "tool",
+      tool_call_id: id,
+      content: SYNTHETIC_TOOL_RESULT_TEXT,
+    }));
+    body.messages.splice(insertPosition, 0, ...placeholders);
+    i = insertPosition + placeholders.length - 1;
+  }
+
   return body;
 }
 
