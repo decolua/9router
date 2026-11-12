@@ -27,12 +27,20 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
+// Captured at module load, before any test can stub it — this is the real
+// runtime's fetch, which in Node is already undici-backed, so calling through
+// it changes nothing for production traffic.
+const nativeFetch = globalThis.fetch;
+
 // Always fetch through the package's own undici instance: undici 8 rejects
 // dispatchers created by a different undici copy (UND_ERR_INVALID_ARG on the
 // bundled-in-Node global fetch), so originalFetch/globalThis.fetch is not an
-// option once we build our own Agents.
+// option once we build our own Agents — UNLESS a test has replaced
+// globalThis.fetch after load (vi.stubGlobal("fetch", ...)), in which case the
+// mock must receive the call instead of a real network request going out.
 let undiciFetch = null;
 async function rawFetch(url, options) {
+  if (globalThis.fetch !== nativeFetch) return globalThis.fetch(url, options);
   undiciFetch ??= (await import("undici")).fetch;
   return undiciFetch(url, options);
 }
