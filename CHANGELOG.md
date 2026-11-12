@@ -1,3 +1,8 @@
+# Unreleased
+
+## Fixes
+- **Kiro**: identify as Kiro IDE 1.4.154 on inference, model catalog, usage, profile lookup and API-key validation — Kiro's client-version gate rejected the old `kiro-ide/1.0.0` / `KiroIDE-0.10.32` identities with "This version of Kiro is no longer supported" (#5613). All callers now share one identity builder, so they cannot drift apart again.
+- **Transport**: offer `X25519:prime256v1:secp384r1` in the TLS handshake instead of X25519 alone — AWS OIDC reset X25519-only handshakes, so adding a Kiro IAM Identity Center / Builder ID account failed with "fetch failed" (#5613). X25519 stays first; `NINEROUTER_TLS_ECDH_CURVE` still overrides the list.
 # v0.5.119 (2026-11-11)
 
 ## Features
