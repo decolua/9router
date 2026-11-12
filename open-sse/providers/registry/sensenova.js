@@ -21,6 +21,7 @@ export default {
     validateUrl: "https://token.sensenova.cn/v1/models",
   },
   models: [
+    { id: "sensenova-6.8-flash", name: "SenseNova 6.8 Flash" },
     { id: "sensenova-6.8-flash-lite", name: "SenseNova 6.8 Flash Lite" },
     {
       id: "sensenova-u1.5-lite",
@@ -36,8 +37,9 @@ export default {
       capabilities: ["text2img"],
       params: ["n", "size", "output_format", "response_format", "watermark", "prompt_extend"],
     },
-    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
     { id: "deepseek-flash", name: "DeepSeek V4.1 Flash" },
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "glm-5.3", name: "GLM-5.3" },
     { id: "glm-5.2", name: "GLM-5.2" },
     { id: "kimi-k3", name: "Kimi K3" },
   ],

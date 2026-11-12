@@ -146,3 +146,13 @@ tests/unit/mimo-free.live.test.js :: MiMo Free anti-abuse gate (live) chat WITH 
 # which is not part of this repository.
 tests/unit/db-benchmark.test.js :: <suite failed to load>
 tests/unit/embeddings.cloud.test.js :: <suite failed to load>
+
+# Added 2026-11-12, confirmed pre-existing during upstream v0.5.116 sync: the disposable
+# node:22-bookworm test container has no ffmpeg binary (codexSttAudio.js spawns it directly).
+# Zero code diff on tests/unit/codex-stt-transport.test.js / open-sse/handlers/codexSttAudio.js
+# between pre-sync fork master and v0.5.116 confirms this is a test-harness gap, not a
+# regression from the sync. Production's Docker image bundles ffmpeg; this container doesn't.
+tests/unit/codex-stt-transport.test.js :: converts real stereo 48k WAV to mono24k PCM16 and removes temporary files
+tests/unit/codex-stt-transport.test.js :: rejects malformed and overlong audio and cleans up
+tests/unit/codex-stt-transport.test.js :: sends only the converted file and projects upstream metadata out of the response through a local relay
+tests/unit/codex-stt-persisted-refresh.test.js :: uses the real persisted refresh service before sending expired-account OAuth audio
