@@ -8,6 +8,7 @@ import { normalizeThinkingConfig } from "../services/provider.js";
 import { applyThinking, captureThinking } from "./concerns/thinkingUnified.js";
 import { captureSessionId } from "../utils/sessionManager.js";
 import { ensureStreamToolCallIds } from "../utils/streamHelpers.js";
+import { normalizeDsmlChunks } from "./concerns/dsml.js";
 import { AntigravityExecutor } from "../executors/antigravity.js";
 import { PROVIDERS } from "../providers/index.js";
 import { ROLE, GEMINI_ROLE } from "./schema/roles.js";
@@ -195,7 +196,10 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
       if (!state.streamToolCallIds) state.streamToolCallIds = new Map();
       ensureStreamToolCallIds(chunk, state.streamToolCallIds);
     }
-    return [restoreToolNames(decloakStreamChunk(chunk, state?.toolNameMap), state?.toolNameMap)];
+    return restoreToolNames(
+      normalizeDsmlChunks([decloakStreamChunk(chunk, state?.toolNameMap)], state),
+      state?.toolNameMap
+    );
   }
 
   let results = [chunk];
@@ -224,6 +228,12 @@ export function translateResponse(targetFormat, sourceFormat, chunk, state) {
       }
     }
   }
+
+  // DeepSeek-family upstreams may emit tool calls as DSML text. Rewrite them
+  // into native tool_calls while the chunks are still OpenAI-shaped, so every
+  // downstream target format benefits. No-op when no DSML is present.
+  results = normalizeDsmlChunks(results, state);
+  if (openaiResults) openaiResults = results;
 
   // Step 2: openai -> source (if source is not openai)
   if (sourceFormat !== FORMATS.OPENAI) {
