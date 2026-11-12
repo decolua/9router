@@ -34,7 +34,7 @@ describe("ocg/muse-spark-1.3-contributor catalog", () => {
     expect(pickTransport(PROVIDER, "openai", "opencode-go", MODEL)).toBeNull();
     expect(pickTransport(PROVIDER, "claude", "opencode-go", MODEL)).toBeNull();
     expect(pickTransport(PROVIDER, "openai-responses", "opencode-go", MODEL)?.baseUrl)
-      .toBe("https://opencode.ai/zen/go/v1/responses");
+      .toBe("https://opencode.ai/inference/go/openai/v1/responses");
   });
 
   it("advertises reasoning via the shared muse-spark pattern", () => {
@@ -50,36 +50,36 @@ describe("ocg/muse-spark-1.3-contributor catalog", () => {
 describe("OpenCodeGoExecutor routing + sanitization", () => {
   it("routes gpt-5.6-luna to /responses", () => {
     const ex = new OpenCodeGoExecutor();
-    expect(ex.buildUrl("gpt-5.6-luna")).toBe("https://opencode.ai/zen/go/v1/responses");
+    expect(ex.buildUrl("gpt-5.6-luna")).toBe("https://opencode.ai/inference/go/openai/v1/responses");
     expect(ex.buildUrl("gpt-5.6-luna(high)", true, 0, {
-      runtimeTransport: { baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
-    })).toBe("https://opencode.ai/zen/go/v1/responses");
+      runtimeTransport: { baseUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions" },
+    })).toBe("https://opencode.ai/inference/go/openai/v1/responses");
   });
 
   it("routes every responses-only registry model (grok-4.6) to /responses", () => {
     const ex = new OpenCodeGoExecutor();
-    expect(ex.buildUrl("grok-4.6")).toBe("https://opencode.ai/zen/go/v1/responses");
+    expect(ex.buildUrl("grok-4.6")).toBe("https://opencode.ai/inference/go/openai/v1/responses");
     expect(ex.buildUrl("grok-4.6(high)", true, 0, {
-      runtimeTransport: { baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
-    })).toBe("https://opencode.ai/zen/go/v1/responses");
+      runtimeTransport: { baseUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions" },
+    })).toBe("https://opencode.ai/inference/go/openai/v1/responses");
   });
 
   it("is wired for opencode-go and routes muse-spark to /responses", () => {
     expect(getExecutor("opencode-go")).toBeInstanceOf(OpenCodeGoExecutor);
     const ex = new OpenCodeGoExecutor();
-    expect(ex.buildUrl(MODEL)).toBe("https://opencode.ai/zen/go/v1/responses");
+    expect(ex.buildUrl(MODEL)).toBe("https://opencode.ai/inference/go/openai/v1/responses");
     // Even a stale runtimeTransport must not drag muse-spark onto chat/messages
     expect(ex.buildUrl(MODEL, true, 0, {
-      runtimeTransport: { baseUrl: "https://opencode.ai/zen/go/v1/chat/completions" },
-    })).toBe("https://opencode.ai/zen/go/v1/responses");
+      runtimeTransport: { baseUrl: "https://opencode.ai/inference/go/openai/v1/chat/completions" },
+    })).toBe("https://opencode.ai/inference/go/openai/v1/responses");
   });
 
   it("leaves non-muse models on the default/runtime transport", () => {
     const ex = new OpenCodeGoExecutor();
-    expect(ex.buildUrl("kimi-k2.6")).toBe("https://opencode.ai/zen/go/v1/chat/completions");
+    expect(ex.buildUrl("kimi-k2.6")).toBe("https://opencode.ai/inference/go/openai/v1/chat/completions");
     expect(ex.buildUrl("minimax-m3", true, 0, {
-      runtimeTransport: { baseUrl: "https://opencode.ai/zen/go/v1/messages" },
-    })).toBe("https://opencode.ai/zen/go/v1/messages");
+      runtimeTransport: { baseUrl: "https://opencode.ai/inference/go/anthropic/v1/messages" },
+    })).toBe("https://opencode.ai/inference/go/anthropic/v1/messages");
   });
 
   it("normalizes caps + reasoning and coerces tool items exactly once", () => {

@@ -190,4 +190,126 @@ describe("Antigravity dashboard normalization with weekly quotas", () => {
     expect(quotas).toHaveLength(1);
     expect(quotas[0].name).toBe("Gemini (Flash / Pro)");
   });
+
+  it("shows Gemini 4 Argon (Weekly) separately and does not contaminate Gemini (Flash / Pro) when Argon is used", () => {
+    const proPlanWithArgon = {
+      quotas: {
+        "gemini-4-argon-high": {
+          used: 570,
+          total: 1000,
+          resetAt: "2026-11-04T20:20:52.000Z",
+          remainingPercentage: 43,
+          displayName: "Gemini 4 Argon (High)",
+        },
+        "gemini-4-argon-low": {
+          used: 570,
+          total: 1000,
+          resetAt: "2026-11-04T20:20:52.000Z",
+          remainingPercentage: 43,
+          displayName: "Gemini 4 Argon (Low)",
+        },
+        "gemini-3.8-flash-high": {
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-04T17:23:23.000Z",
+          remainingPercentage: 100,
+          displayName: "Gemini 3.8 Flash (High)",
+        },
+        "gemini-3.1-flash-image": {
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-04T17:23:23.000Z",
+          remainingPercentage: 100,
+          displayName: "Gemini 3.1 Flash Image",
+        },
+        gemini_session: {
+          displayName: "Gemini (5h)",
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-04T17:23:23.000Z",
+          remainingPercentage: 100,
+        },
+        gemini_weekly: {
+          displayName: "Gemini (Weekly)",
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-11T11:41:28.000Z",
+          remainingPercentage: 100,
+        },
+        gemini_argon_weekly: {
+          displayName: "Gemini 4 Argon (Weekly)",
+          used: 570,
+          total: 1000,
+          resetAt: "2026-11-04T20:20:52.000Z",
+          remainingPercentage: 43,
+        },
+        claude_gpt_session: {
+          displayName: "Claude & GPT (5h)",
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-04T17:23:23.000Z",
+          remainingPercentage: 100,
+        },
+        claude_gpt_weekly: {
+          displayName: "Claude & GPT (Weekly)",
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-11T11:56:58.000Z",
+          remainingPercentage: 100,
+        },
+      },
+    };
+
+    const quotas = parseQuotaData("antigravity", proPlanWithArgon);
+    const names = quotas.map((q) => q.name);
+
+    expect(names).toContain("Gemini (5h)");
+    expect(names).toContain("Claude & GPT (5h)");
+    expect(names).toContain("Gemini 3.1 Flash Image");
+    expect(names).toContain("Gemini (Weekly)");
+    expect(names).toContain("Gemini 4 Argon (Weekly)");
+    expect(names).toContain("Claude & GPT (Weekly)");
+    expect(quotas).toHaveLength(6);
+
+    const argonWeekly = quotas.find((q) => q.modelKey === "gemini_argon_weekly");
+    expect(argonWeekly).toMatchObject({
+      name: "Gemini 4 Argon (Weekly)",
+      used: 570,
+      total: 1000,
+      remainingPercentage: 43,
+      resetAt: "2026-11-04T20:20:52.000Z",
+    });
+  });
+
+  it("falls back to per-model Gemini 4 Argon quota when summary endpoint is unavailable", () => {
+    const fallbackWithArgon = {
+      quotas: {
+        "gemini-4-argon-high": {
+          used: 570,
+          total: 1000,
+          resetAt: "2026-11-04T20:20:52.000Z",
+          remainingPercentage: 43,
+          displayName: "Gemini 4 Argon (High)",
+        },
+        "gemini-3.8-flash-high": {
+          used: 0,
+          total: 1000,
+          resetAt: "2026-11-04T17:23:23.000Z",
+          remainingPercentage: 100,
+          displayName: "Gemini 3.8 Flash (High)",
+        },
+      },
+    };
+
+    const quotas = parseQuotaData("antigravity", fallbackWithArgon);
+    expect(quotas.map((q) => q.modelKey)).toEqual(["gemini_argon", "gemini"]);
+    expect(quotas[0]).toMatchObject({
+      name: "Gemini 4 Argon",
+      remainingPercentage: 43,
+    });
+    expect(quotas[1]).toMatchObject({
+      name: "Gemini (Flash / Pro)",
+      remainingPercentage: 100,
+    });
+  });
 });

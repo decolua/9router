@@ -61,7 +61,9 @@ const USAGE_EXTRACTORS = {
   commandcode(raw) {
     const input = n(raw.inputTokens), output = n(raw.outputTokens);
     const total = typeof raw.totalTokens === "number" ? raw.totalTokens : input + output;
-    return { promptTokens: input, completionTokens: output, totalTokens: total };
+    const cached = n(raw.inputTokenDetails?.cacheReadTokens);
+    const cacheCreate = n(raw.inputTokenDetails?.cacheWriteTokens);
+    return { promptTokens: input, completionTokens: output, totalTokens: total, cachedTokens: cached, cacheCreationTokens: cacheCreate };
   },
 };
 
