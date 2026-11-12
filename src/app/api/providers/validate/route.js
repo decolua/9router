@@ -417,6 +417,7 @@ export async function POST(request) {
         case "chutes":
         case "runcrate":
         case "synthetic":
+        case "uberllm":
         case "xiaomi-mimo":
         case "xiaomi-tokenplan":
         case "nvidia": {
