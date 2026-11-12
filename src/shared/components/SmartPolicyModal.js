@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import Modal from "./Modal";
 import Button from "./Button";
 import Badge from "./Badge";
+import { MAX_ROUTE_INSTRUCTIONS_CHARS, MAX_MEMBER_DESCRIPTION_CHARS } from "open-sse/services/systemoneRouter.js";
 
 const QUICK_THRESHOLDS = [60, 70, 75, 80, 85, 90];
 
@@ -13,10 +14,23 @@ export default function SmartPolicyModal({
   comboName,
   currentPolicy = "smart",
   currentThreshold = 80,
+  members,
+  currentInstructions = "",
+  currentDescriptions,
   onSave,
 }) {
   const [selectedPolicy, setSelectedPolicy] = useState("smart");
   const [threshold, setThreshold] = useState(80);
+  const [instructions, setInstructions] = useState("");
+  const [descriptions, setDescriptions] = useState({});
+
+  const memberNames = [...new Set(
+    (Array.isArray(members) ? members : [])
+      .filter((m) => typeof m === "string" && m.trim())
+      .map((m) => m.trim())
+  )];
+  // Callers may pass a fresh object each render: key the reset on content, not identity.
+  const descriptionsKey = JSON.stringify(currentDescriptions || {});
 
   useEffect(() => {
     if (isOpen) {
@@ -27,8 +41,11 @@ export default function SmartPolicyModal({
       setSelectedPolicy(initialPolicy);
       const parsedThresh = Math.round((currentThreshold || 0.8) * (currentThreshold <= 1 ? 100 : 1));
       setThreshold(parsedThresh || 80);
+      setInstructions(typeof currentInstructions === "string" ? currentInstructions : "");
+      const parsed = JSON.parse(descriptionsKey);
+      setDescriptions(parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {});
     }
-  }, [isOpen, currentPolicy, currentThreshold]);
+  }, [isOpen, currentPolicy, currentThreshold, currentInstructions, descriptionsKey]);
 
   const handleSave = () => {
     const finalThreshold = selectedPolicy === "custom"
@@ -37,10 +54,20 @@ export default function SmartPolicyModal({
         ? 0.8
         : 0;
 
+    // Drop empty descriptions and members no longer in the combo. Empty values are
+    // saved as undefined so the keys are omitted from the stored settings.
+    const cleanDescriptions = {};
+    for (const name of memberNames) {
+      const text = typeof descriptions[name] === "string" ? descriptions[name].trim() : "";
+      if (text) cleanDescriptions[name] = text;
+    }
+
     onSave({
       smartPolicy: selectedPolicy,
       sessionSticky: selectedPolicy !== "per-turn",
       confidenceThreshold: finalThreshold,
+      routerInstructions: instructions.trim() || undefined,
+      memberDescriptions: Object.keys(cleanDescriptions).length > 0 ? cleanDescriptions : undefined,
     });
     onClose();
   };
@@ -183,6 +210,50 @@ export default function SmartPolicyModal({
               </div>
             );
           })}
+        </div>
+
+        {/* Routing Rules (optional) */}
+        <div className="flex flex-col gap-2.5 rounded-xl border border-border/60 p-3">
+          <div>
+            <span className="text-sm font-medium text-text-main">Routing rules</span>
+            <span className="text-[10px] text-text-muted ml-1.5">Optional</span>
+            <p className="text-xs text-text-muted mt-1 leading-relaxed">
+              Tell System One how to choose. Leave empty to use the default question and the model names only.
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-text-muted">Router instructions</label>
+            <textarea
+              value={instructions}
+              onChange={(e) => setInstructions(e.target.value)}
+              maxLength={MAX_ROUTE_INSTRUCTIONS_CHARS}
+              rows={3}
+              placeholder="Which of these configured models is the most appropriate for this request?"
+              className="w-full px-3 py-2 text-xs border border-border rounded-lg bg-background focus:outline-none focus:border-primary resize-y"
+            />
+          </div>
+
+          {memberNames.length > 0 && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium text-text-muted">When to pick each member</label>
+              {memberNames.map((name) => (
+                <div key={name} className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2">
+                  <code className="text-[11px] font-mono text-text-main truncate sm:w-40 shrink-0" title={name}>
+                    {name}
+                  </code>
+                  <input
+                    type="text"
+                    value={descriptions[name] || ""}
+                    onChange={(e) => setDescriptions((prev) => ({ ...prev, [name]: e.target.value }))}
+                    maxLength={MAX_MEMBER_DESCRIPTION_CHARS}
+                    placeholder="e.g. complex multi-step reasoning, long code changes"
+                    className="w-full px-3 py-1.5 text-xs border border-border rounded-lg bg-background focus:outline-none focus:border-primary"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Prompt Cache Benefit Callout */}

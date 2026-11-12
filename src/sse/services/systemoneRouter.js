@@ -7,6 +7,7 @@ import {
   DEFAULT_SYSTEMONE_TIMEOUT_MS,
   extractPromptState,
   buildChoiceCriteria,
+  resolveRouteInstructions,
   parseSystemOneRouteAnswer,
 } from "open-sse/services/systemoneRouter.js";
 
@@ -22,6 +23,8 @@ import {
  * @param {object} opts.body - Client request body
  * @param {string[]} opts.models - Combo model candidate array
  * @param {string} [opts.routerModel] - System One router model (defaults to oc/jev-1.13-free)
+ * @param {string} [opts.routerInstructions] - Per-combo question/rubric (defaults to the generic question)
+ * @param {Record<string, string>} [opts.memberDescriptions] - Per-member "when to pick" descriptions
  * @param {object} [opts.log] - Logger
  * @param {number} [opts.timeoutMs=DEFAULT_SYSTEMONE_TIMEOUT_MS] - Hard ceiling for router evaluation
  * @returns {Promise<{ choice: string, confidence: number|null, probabilities: Record<string, number>|null } | null>}
@@ -30,6 +33,8 @@ export async function resolveSmartChoice({
   body,
   models,
   routerModel = DEFAULT_SYSTEMONE_ROUTER_MODEL,
+  routerInstructions,
+  memberDescriptions,
   log,
   timeoutMs = DEFAULT_SYSTEMONE_TIMEOUT_MS,
 }) {
@@ -45,7 +50,7 @@ export async function resolveSmartChoice({
     return null;
   }
 
-  const criteria = buildChoiceCriteria(models);
+  const criteria = buildChoiceCriteria(models, memberDescriptions);
   if (Object.keys(criteria).length === 0) return null;
 
   try {
@@ -69,7 +74,7 @@ export async function resolveSmartChoice({
       questions: {
         route: {
           type: "choice",
-          instructions: "Which of these configured models is the most appropriate for this request?",
+          instructions: resolveRouteInstructions(routerInstructions),
           criteria,
         },
       },
