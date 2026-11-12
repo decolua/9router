@@ -1,6 +1,16 @@
-// CodeBuddy international (codebuddy.ai) — mirrors codebuddy-cn registry shape,
-// swapping the Tencent CN domain for the .ai endpoint set. All OAuth/plugin URLs
-// use the /v2/plugin prefix with platform=ide (CN uses platform=CLI).
+// WorkBuddy AI international (workbuddy.ai) — mirrors codebuddy-cn registry
+// shape, swapping the Tencent CN domain for the .ai endpoint set. All
+// OAuth/plugin URLs use the /v2/plugin prefix with platform=ide (CN uses
+// platform=CLI).
+//
+// The identity headers below are the ones the official 5.8.4 desktop client
+// puts on POST /v2/chat/completions. Chat goes out through the client's
+// bundled CLI sub-process, whose env sets CLIENT_INFO_PLATFORM/IDE_TYPE to
+// "WorkBuddy" while applicationName still resolves to "workbuddy-ai" from
+// product.json — hence the mixed-case UA (`WorkBuddy/<ver> workbuddy-ai/<ver>
+// CLI/<cli>`). The Electron main process sends a different, all-lowercase UA on
+// its side channels (msg-center / conversations); that one does not belong on
+// chat requests.
 export default {
   id: "codebuddy-intl",
   alias: "cbai",
@@ -21,15 +31,21 @@ export default {
   hasOAuth: true,
   transport: {
     // Chat gateway is OpenAI-compatible SSE (same /v2/chat/completions path as CN).
-    baseUrl: "https://www.codebuddy.ai/v2/chat/completions",
+    baseUrl: "https://www.workbuddy.ai/v2/chat/completions",
     forceStream: true,
     // CodeBuddy intl speaks the same unified OpenAI reasoning_effort shape as CN.
     thinkingFormat: "openai",
     headers: {
-      "User-Agent": "IDE/2.108.1 CodeBuddy/2.108.1",
+      "User-Agent": "WorkBuddy/5.8.4 workbuddy-ai/5.8.4 CLI/2.161.0",
       "X-Product": "SaaS",
-      "X-IDE-Type": "IDE",
-      "X-IDE-Name": "IDE",
+      "X-IDE-Type": "WorkBuddy",
+      "X-IDE-Name": "WorkBuddy",
+      "X-IDE-Version": "5.8.4",
+      "X-Private-Data": "true",
+      "X-Agent-Intent": "craft",
+      "X-Agent-Purpose": "conversation",
+      "X-Agent-Type": "main",
+      "X-Domain": "www.workbuddy.ai",
       "x-requested-with": "XMLHttpRequest",
       "x-codebuddy-request": "1",
     },
@@ -43,7 +59,7 @@ export default {
     },
     // Intl billing endpoint mirrors CN shape (data.Response.Data.Accounts[]).
     usage: {
-      url: "https://www.codebuddy.ai/v2/billing/meter/get-user-resource",
+      url: "https://www.workbuddy.ai/v2/billing/meter/get-user-resource",
     },
   },
   // Same model lineup exposed by the CN gateway — intl backend is the same catalog.
