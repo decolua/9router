@@ -8,6 +8,7 @@
 //   - Scribe params (timestamps_granularity, tag_audio_events) ride the body only
 //     when the client sends them; out-of-range granularity is dropped;
 //   - diarize and num_speakers are mutually exclusive upstream — diarize wins;
+//   - JSON preserves word/character timings when explicitly requested;
 //   - response_format maps to Scribe additional_formats: json → envelope,
 //     text → plain body, srt/vtt → the subtitle render verbatim, verbose_json →
 //     envelope + words + real segments (never synthesized);
@@ -221,6 +222,61 @@ describe("response_format mapping", () => {
     const result = await run({ formData: mkFormData({ response_format: "json" }) });
     expect(calls[0].opts.body.get("additional_formats")).toBeNull();
     await expect(result.response.json()).resolves.toEqual({ text: "hello from scribe" });
+  });
+
+  it.each([
+    ["json", "word"],
+    ["json", "character"],
+    [undefined, "word"],
+    [undefined, "character"],
+  ])("JSON (%s) preserves requested %s timings without an extra export", async (responseFormat, granularity) => {
+    const words = [{
+      text: "مرحبا",
+      type: "word",
+      start: 0,
+      end: 0.5,
+      speaker_id: "speaker_0",
+      ...(granularity === "character" ? {
+        characters: [{ text: "م", start: 0, end: 0.1 }],
+      } : {}),
+    }];
+    const transcript = { ...TRANSCRIPT, text: "مرحبا", words };
+    const calls = stubFetch(transcript);
+    const result = await run({ formData: mkFormData({
+      timestamps_granularity: granularity,
+      ...(responseFormat ? { response_format: responseFormat } : {}),
+    }) });
+
+    expect(result.success).toBe(true);
+    expect(calls).toHaveLength(1);
+    expect(field(calls, "timestamps_granularity")).toBe(granularity);
+    expect(calls[0].opts.body.get("additional_formats")).toBeNull();
+    await expect(result.response.json()).resolves.toEqual({ text: transcript.text, words });
+  });
+
+  it.each(["none", "sentence"])("keeps the text-only JSON envelope for granularity %s", async (granularity) => {
+    stubFetch();
+    const result = await run({ formData: mkFormData({ timestamps_granularity: granularity }) });
+    await expect(result.response.json()).resolves.toEqual({ text: TRANSCRIPT.text });
+  });
+
+  it("preserves an empty word list when timings were requested", async () => {
+    stubFetch({ text: "", words: [] });
+    const result = await run({ formData: mkFormData({ timestamps_granularity: "word" }) });
+    await expect(result.response.json()).resolves.toEqual({ text: "", words: [] });
+  });
+
+  it("does not fabricate timings when the provider omits words", async () => {
+    stubFetch({ text: TRANSCRIPT.text });
+    const result = await run({ formData: mkFormData({ timestamps_granularity: "word" }) });
+    await expect(result.response.json()).resolves.toEqual({ text: TRANSCRIPT.text });
+  });
+
+  it("keeps text responses plain even when timestamps were requested", async () => {
+    stubFetch();
+    const result = await run({ formData: mkFormData({ response_format: "text", timestamps_granularity: "character" }) });
+    expect(result.response.headers.get("Content-Type")).toContain("text/plain");
+    await expect(result.response.text()).resolves.toBe(TRANSCRIPT.text);
   });
 
   it("text returns a plain-text body", async () => {
