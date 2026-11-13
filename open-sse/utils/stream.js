@@ -492,6 +492,9 @@ export function createSSEStream(options = {}) {
                 continue;
               }
               if (released.trimmed.startsWith("data:") && released.trimmed.slice(5).trim() !== "[DONE]") continue;
+              // Mark the sentinel as sent the moment the raw "data: [DONE]" line is
+              // seen, before any further chunk processing — flush() must not append
+              // a second one when upstream already sent it (#5592).
               if (released.trimmed === "data: [DONE]") markDoneSent();
               queueGuardedOutput(controller, releasedLine.startsWith("data:") && !releasedLine.startsWith("data: ")
                 ? `data: ${releasedLine.slice(5)}\n`
@@ -762,7 +765,16 @@ export function createSSEStream(options = {}) {
             if (releasedEvents === null) return;
             for (const released of releasedEvents) {
               const { parsed, rawChanged } = processReleasedRecord(controller, released);
-              queueGuardedOutput(controller, rawChanged ? serializeRecord(released, parsed) : replayRawRecord(released));
+              // An unterminated trailing "data: [DONE]" (buffer never saw a closing
+              // "\n\n") is the upstream sentinel: replaying it raw would be missing
+              // the blank-line terminator strict SSE clients require, and/or glue
+              // onto the properly framed one appended below (#5592).
+              // processReleasedRecord already ran markDoneSent() for this trimmed
+              // value, so emit the correctly terminated form instead of the raw bytes.
+              const isUnterminatedDone = released.trimmed === "data: [DONE]" && !/\r?\n\r?\n$/.test(released.record || "");
+              queueGuardedOutput(controller, isUnterminatedDone
+                ? "data: [DONE]\n\n"
+                : (rawChanged ? serializeRecord(released, parsed) : replayRawRecord(released)));
             }
           }
           const releasedEvents = finishToolResponse(controller);
