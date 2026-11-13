@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import initSqlJs from "sql.js";
 import { PRAGMA_SQL } from "../schema.js";
 
@@ -21,9 +22,51 @@ export async function createSqlJsAdapter(filePath) {
   let saveTimer = null;
   const SAVE_DEBOUNCE_MS = 100;
 
+  let persistSeq = 0;
+
+  /**
+   * Publish the database atomically: full image to a temp file in the SAME
+   * directory, fsync, then rename over the target.
+   *
+   * sql.js has no incremental write path — every save rewrites the whole image —
+   * and `writeFileSync` opens with O_TRUNC, so the previous version was destroyed
+   * before the new one was written. For the length of that write the file on disk
+   * was 0 bytes and then partial, which is a window that grows with the database
+   * and recurs on every save. Two consequences:
+   *
+   *   - a crash or power loss mid-write left no usable database at all, not a
+   *     stale one — sql.js is the fallback driver that always works, so this is
+   *     the driver users without build tools run on;
+   *   - another process reading the file (a backup job, `sqlite3`) saw a truncated
+   *     image and reported corruption, which the SQLite locking protocol does not
+   *     cover here because sql.js writes through the filesystem, not through SQLite.
+   *
+   * The temp file is deliberately a sibling: `rename()` is only atomic within a
+   * filesystem, so a temp in os.tmpdir() could land on another device.
+   */
   function persist() {
     const data = db.export();
-    fs.writeFileSync(filePath, Buffer.from(data));
+    const dir = path.dirname(filePath);
+    const tmpPath = path.join(dir, `.${path.basename(filePath)}.tmp-${process.pid}-${persistSeq++}`);
+
+    let fd;
+    try {
+      fd = fs.openSync(tmpPath, "w");
+      fs.writeFileSync(fd, Buffer.from(data));
+      fs.fsyncSync(fd);
+    } catch (err) {
+      if (fd !== undefined) { try { fs.closeSync(fd); } catch { /* already closed */ } }
+      try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
+      throw err;
+    }
+    fs.closeSync(fd);
+
+    try {
+      fs.renameSync(tmpPath, filePath);
+    } catch (err) {
+      try { fs.unlinkSync(tmpPath); } catch { /* nothing to clean up */ }
+      throw err;
+    }
     dirty = false;
   }
 
