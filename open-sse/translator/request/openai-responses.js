@@ -17,10 +17,50 @@ import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM } from "../schema/index.js";
 const MAX_TOOL_NAME_LEN = 128;
 
 /**
+ * Chat Completions requires every role:"tool" message to directly follow an
+ * assistant message whose tool_calls[].id matches its tool_call_id. Responses-API
+ * stateless continuations (previous_response_id + input carrying only
+ * function_call_output) drop the originating function_call, so the naive
+ * translation yields orphan tool messages → upstream 400 (issue #11). Insert a
+ * synthetic assistant tool_calls pair for each unmatched tool result. Upstream
+ * accepts an arbitrary tool name here; the pairing is what it validates.
+ */
+function repairOrphanToolMessages(messages) {
+  if (!Array.isArray(messages)) return messages;
+  const knownCallIds = new Set();
+  const out = [];
+  for (const msg of messages) {
+    if (msg && msg.role === ROLE.ASSISTANT && Array.isArray(msg.tool_calls)) {
+      for (const tc of msg.tool_calls) {
+        if (tc && tc.id) knownCallIds.add(tc.id);
+      }
+      out.push(msg);
+    } else if (msg && msg.role === ROLE.TOOL && msg.tool_call_id && !knownCallIds.has(msg.tool_call_id)) {
+      out.push({
+        role: ROLE.ASSISTANT,
+        content: null,
+        tool_calls: [{
+          id: msg.tool_call_id,
+          type: OPENAI_BLOCK.FUNCTION,
+          function: { name: "unknown_tool", arguments: "{}" }
+        }]
+      });
+      knownCallIds.add(msg.tool_call_id);
+      out.push(msg);
+    } else {
+      out.push(msg);
+    }
+  }
+  return out;
+}
+
+/**
  * Convert OpenAI Responses API request to OpenAI Chat Completions format
  */
 export function openaiResponsesToOpenAIRequest(model, body, stream, credentials) {
-  if (!body.input) return body;
+  if (!body.input) {
+    return body;
+  }
 
   const result = { ...body };
   result.messages = [];
@@ -39,7 +79,9 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
   const customToolNames = new Set();
 
   const inputItems = normalizeResponsesInput(body.input);
-  if (!inputItems) return body;
+  if (!inputItems) {
+    return body;
+  }
 
   // Extract reasoning text from summary[].text (encrypted_content is continuity-only)
   const extractReasoningText = (item) => {
@@ -172,6 +214,15 @@ export function openaiResponsesToOpenAIRequest(model, body, stream, credentials)
       result.messages.push(tr);
     }
   }
+
+  // Chat Completions requires every role:"tool" message to directly follow an
+  // assistant message whose tool_calls[].id matches its tool_call_id (#11).
+  // Responses-API stateless continuations (previous_response_id + input with
+  // only function_call_output items) carry tool results without the originating
+  // function_call, so the naive translation produces orphan tool messages and
+  // upstream 400s. Synthesize the missing assistant tool_calls pair — upstream
+  // accepts an arbitrary tool name here, the pair only needs to exist.
+  result.messages = repairOrphanToolMessages(result.messages);
 
   // Convert tools format.
   // Responses API supports "hosted" tools (e.g. { type: "request_user_input" }) that carry no
