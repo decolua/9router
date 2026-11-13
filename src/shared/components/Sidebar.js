@@ -50,6 +50,8 @@ export default function Sidebar({ onClose }) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [shutdownCountdown, setShutdownCountdown] = useState(0);
   const [enableTranslator, setEnableTranslator] = useState(false);
+  const [show9Remote, setShow9Remote] = useState(true);
+  const [show9English, setShow9English] = useState(true);
   const { copied, copy } = useCopyToClipboard(2000);
 
   const INSTALL_CMD = UPDATER_CONFIG.installCmdLatest;
@@ -57,6 +59,8 @@ export default function Sidebar({ onClose }) {
   useEffect(() => {
     useSettingsStore.getState().fetchSettings().then((data) => {
       if (data?.enableTranslator) setEnableTranslator(true);
+      if (data?.show9Remote === false) setShow9Remote(false);
+      if (data?.show9English === false) setShow9English(false);
     });
   }, []);
 
@@ -295,6 +299,7 @@ export default function Sidebar({ onClose }) {
             })}
 
             {/* Remote */}
+            {show9Remote && (
             <a
               href="https://9remote.cc"
               target="_blank"
@@ -313,8 +318,10 @@ export default function Sidebar({ onClose }) {
                 HOT
               </span>
             </a>
+            )}
 
             {/* 9English */}
+            {show9English && (
             <a
               href="https://9english.net/"
               target="_blank"
@@ -330,6 +337,7 @@ export default function Sidebar({ onClose }) {
               </span>
               <span className="text-[13px] font-medium">9English</span>
             </a>
+            )}
 
             {/* Settings */}
             <Link

@@ -22,11 +22,18 @@ export async function GET() {
     
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
-    
-    return NextResponse.json({ 
-      ...safeSettings, 
+    // Promo buttons in the sidebar (9Remote / 9English) — hide with
+    // NINEROUTER_HIDE_PROMOS=true or hide each via *_9REMOTE / *_9ENGLISH.
+    const hidePromos = process.env.NINEROUTER_HIDE_PROMOS === "true";
+    const show9Remote = !hidePromos && process.env.NINEROUTER_HIDE_9REMOTE !== "true";
+    const show9English = !hidePromos && process.env.NINEROUTER_HIDE_9ENGLISH !== "true";
+
+    return NextResponse.json({
+      ...safeSettings,
       enableRequestLogs,
       enableTranslator,
+      show9Remote,
+      show9English,
       hasPassword: !!password
     }, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
