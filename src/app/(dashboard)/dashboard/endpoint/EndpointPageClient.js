@@ -19,11 +19,19 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
+import KeyBudgetFields, { budgetFormFromKey, budgetPayloadFromForm, budgetFormError } from "./components/KeyBudgetFields";
+import KeyLimitsSummary from "./components/KeyLimitsSummary";
+import KeyUsageModal from "./components/KeyUsageModal";
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyBudget, setNewKeyBudget] = useState(budgetFormFromKey);
+  const [usageKey, setUsageKey] = useState(null);
+  const [limitsKey, setLimitsKey] = useState(null);
+  const [limitsForm, setLimitsForm] = useState(null);
+  const [limitsError, setLimitsError] = useState(null);
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -615,22 +623,27 @@ export default function APIPageClient({ machineId }) {
     }
   };
 
+  const closeAddModal = () => {
+    setShowAddModal(false);
+    setNewKeyName("");
+    setNewKeyBudget(budgetFormFromKey());
+  };
+
   const handleCreateKey = async () => {
-    if (!newKeyName.trim()) return;
+    if (!newKeyName.trim() || budgetFormError(newKeyBudget)) return;
 
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, ...budgetPayloadFromForm(newKeyBudget) }),
       });
       const data = await res.json();
 
       if (res.ok) {
         setCreatedKey(data.key);
         await fetchData();
-        setNewKeyName("");
-        setShowAddModal(false);
+        closeAddModal();
       }
     } catch (error) {
       console.log("Error creating key:", error);
@@ -691,6 +704,32 @@ export default function APIPageClient({ machineId }) {
       }
     } catch (error) {
       console.log("Error updating key access:", error);
+    }
+  };
+
+  const openLimits = (key) => {
+    setUsageKey(null);
+    setLimitsKey(key);
+    setLimitsForm(budgetFormFromKey(key));
+    setLimitsError(null);
+  };
+
+  // Save a key's expiry + budgets from the Edit limits modal, then refetch for fresh spend.
+  const handleSaveLimits = async () => {
+    const invalid = budgetFormError(limitsForm);
+    if (invalid) return setLimitsError(invalid);
+    try {
+      const res = await fetch(`/api/keys/${limitsKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(budgetPayloadFromForm(limitsForm)),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return setLimitsError(data.error || `HTTP ${res.status}`);
+      setLimitsKey(null);
+      await fetchData();
+    } catch (error) {
+      setLimitsError(error.message);
     }
   };
 
@@ -1068,8 +1107,25 @@ export default function APIPageClient({ machineId }) {
                       }
                     })}
                   />
+                  <KeyLimitsSummary apiKey={key} />
                 </div>
-                <div className="flex items-center gap-2 shrink-0 pt-0.5">
+                <div className="flex items-center gap-1 shrink-0 pt-0.5">
+                  <button
+                    onClick={() => setUsageKey(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Usage report"
+                    aria-label={`Usage report for ${key.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">monitoring</span>
+                  </button>
+                  <button
+                    onClick={() => openLimits(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-primary transition-all"
+                    title="Budgets & expiry"
+                    aria-label={`Budgets and expiry for ${key.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">tune</span>
+                  </button>
                   <Toggle
                     size="sm"
                     checked={key.isActive ?? true}
@@ -1106,10 +1162,8 @@ export default function APIPageClient({ machineId }) {
       <Modal
         isOpen={showAddModal}
         title="Create API Key"
-        onClose={() => {
-          setShowAddModal(false);
-          setNewKeyName("");
-        }}
+        size="lg"
+        onClose={closeAddModal}
       >
         <div className="flex flex-col gap-4">
           <Input
@@ -1118,22 +1172,42 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <div className="border-t border-border pt-4">
+            <KeyBudgetFields value={newKeyBudget} onChange={setNewKeyBudget} />
+          </div>
+          {budgetFormError(newKeyBudget) && <p className="text-xs text-red-500">{budgetFormError(newKeyBudget)}</p>}
           <div className="flex gap-2">
-            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
+            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim() || !!budgetFormError(newKeyBudget)}>
               Create
             </Button>
-            <Button
-              onClick={() => {
-                setShowAddModal(false);
-                setNewKeyName("");
-              }}
-              variant="ghost"
-              fullWidth
-            >
+            <Button onClick={closeAddModal} variant="ghost" fullWidth>
               Cancel
             </Button>
           </div>
         </div>
+      </Modal>
+
+      {usageKey && (
+        <KeyUsageModal apiKey={usageKey} onClose={() => setUsageKey(null)} onEditLimits={() => openLimits(usageKey)} />
+      )}
+
+      {/* Edit budgets & expiry */}
+      <Modal
+        isOpen={!!limitsKey}
+        title={`Budgets & expiry · ${limitsKey?.name || ""}`}
+        size="lg"
+        onClose={() => setLimitsKey(null)}
+      >
+        {limitsForm && (
+          <div className="flex flex-col gap-4">
+            <KeyBudgetFields value={limitsForm} onChange={(v) => { setLimitsForm(v); setLimitsError(null); }} />
+            {limitsError && <p className="text-xs text-red-500">{limitsError}</p>}
+            <div className="flex gap-2">
+              <Button onClick={handleSaveLimits} fullWidth>Save</Button>
+              <Button onClick={() => setLimitsKey(null)} variant="ghost" fullWidth>Cancel</Button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Created Key Modal */}
