@@ -1,18 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSettings } from "@/lib/localDb";
 import { startHeadroomProxy } from "@/lib/headroom/process";
-import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl } from "@/lib/headroom/detect";
+import { DEFAULT_HEADROOM_URL, isLoopbackHeadroomUrl, parsePortFromUrl } from "@/lib/headroom/detect";
 
 export const dynamic = "force-dynamic";
-
-function parsePortFromUrl(url) {
-  try {
-    const u = new URL(url);
-    const p = parseInt(u.port, 10);
-    if (p > 0 && p < 65536) return p;
-  } catch { /* ignore, fall through to default */ }
-  return null;
-}
 
 export async function POST() {
   try {
@@ -21,7 +12,7 @@ export async function POST() {
     if (!isLoopbackHeadroomUrl(url)) {
       return NextResponse.json({ error: "External Headroom proxies must be started outside 9Router", code: "EXTERNAL_PROXY" }, { status: 400 });
     }
-    const port = parsePortFromUrl(url) || 8787;
+    const port = parsePortFromUrl(url);
     const result = await startHeadroomProxy({
       port,
       codeAware: settings.headroomCodeAware === true,
