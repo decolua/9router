@@ -27,6 +27,15 @@ product
 .DS_Store
 *.pem
 
+# local backups
+/backup/
+
+# Local Windows launchers / tray icon (not part of upstream)
+/9router.ico
+/start-9router.cmd
+/start-9router-hidden.vbs
+/stop-9router.cmd
+
 # debug
 npm-debug.log*
 yarn-debug.log*

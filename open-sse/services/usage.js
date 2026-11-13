@@ -25,6 +25,7 @@ import { getClinepassUsage } from "./usage/clinepass.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
+import { getCustomCreditsUsage, isCustomQuotaProvider } from "./usage/customCredits.js";
 import { getSyntheticUsage } from "./usage/synthetic.js";
 import {
   getIflowUsage,
@@ -90,6 +91,17 @@ export async function getUsageForProvider(connection, proxyOptions = null, optio
     ...(providerSpecificData || {}),
     ...(projectId ? { projectId } : {}),
   };
+
+  // Compatible providers use the standard /credits endpoint configured on the node.
+  if (isCustomQuotaProvider(provider)) {
+    return await getCustomCreditsUsage({
+      provider,
+      apiKey,
+      providerSpecificData,
+      proxyOptions,
+      force: options.force === true,
+    });
+  }
 
   const handler = USAGE_HANDLERS[provider];
   if (!handler) return { message: `Usage API not implemented for ${provider}` };

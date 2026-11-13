@@ -125,8 +125,8 @@ function claudeGrantStatus(grant) {
   return grant.useRequiresLimit ? "at limit only" : "unavailable";
 }
 
-function providerLabel(providerId) {
-  return AI_PROVIDERS[providerId]?.name || providerId;
+function providerLabel(providerId, connection) {
+  return connection?.providerSpecificData?.nodeName || AI_PROVIDERS[providerId]?.name || providerId;
 }
 
 function formatCreditDate(value) {
@@ -1155,7 +1155,7 @@ export default function ProviderLimits() {
                     </div>
                     <div className="min-w-0">
                       <h3 className="text-sm font-semibold text-text-primary truncate">
-                        {providerLabel(conn.provider)}
+                        {providerLabel(conn.provider, conn)}
                       </h3>
                       {getConnectionLabel(conn) ? (
                         <p className="text-xs text-text-muted truncate">
