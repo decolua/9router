@@ -8,6 +8,7 @@ import {
   isAnthropicCompatibleProvider,
   isOpenAICompatibleProvider,
 } from "@/shared/constants/providers";
+import { isLeaseConnection } from "open-sse/services/minimaxCodeLease.js";
 
 const SAFE_FIELDS = [
   "id", "provider", "authType", "name", "email", "displayName",
@@ -57,7 +58,7 @@ function isUsageEligible(connection, nodeById) {
     return nodeById.get(connection.provider)?.quotaEnabled === true;
   }
   return USAGE_SUPPORTED_PROVIDERS.includes(connection.provider) && (
-    connection.authType === "oauth" || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
+    connection.authType === "oauth" || isLeaseConnection(connection) || USAGE_APIKEY_PROVIDERS.includes(connection.provider)
   );
 }
 

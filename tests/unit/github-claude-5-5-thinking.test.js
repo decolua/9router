@@ -145,7 +145,7 @@ describe("Always-on adaptive models keep a requested thinking display (#5236)", 
   });
 
   it("Claude keeps the adaptive switch to carry the display", () => {
-    const body = applyThinking("claude", "claude-fable-5-1", { messages: [] }, "claude", summarized);
+    const body = applyThinking("claude", "claude-fable-5-2", { messages: [] }, "claude", summarized);
     expect(body.thinking).toEqual({ type: "adaptive", display: "summarized" });
     expect(body.output_config).toEqual({ effort: "high" });
   });
