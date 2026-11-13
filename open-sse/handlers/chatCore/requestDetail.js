@@ -110,6 +110,13 @@ export function formatDoneLine({ usage, latency }) {
     if (cacheRead) parts.push(`↻${cacheRead}`);
     if (cacheCreate) parts.push(`+${cacheCreate}`);
     inStr += ` (CACHE ${parts.join(" ")})`;
+    // Reuse ratio needs the cache-inclusive prompt total (Claude reports prompt_tokens
+    // exclusive of cache), so canonicalize rather than dividing by raw inTok.
+    if (cacheRead) {
+      const canonical = canonicalizeUsage(u);
+      const denom = canonical?.prompt_tokens || inTok;
+      if (denom > 0) inStr += ` ${((cacheRead / denom) * 100).toFixed(1)}% reused`;
+    }
   }
   const ttftStr = latency?.ttft ? ` · TTFT ${latency.ttft}ms` : "";
   return `DONE ${latency?.total ?? 0}ms${ttftStr} · ${inStr} · OUT ${outTok}`;
