@@ -118,7 +118,7 @@ export function openaiToClaudeResponse(chunk, state) {
         chunk.extend_fields?.traceId ||
         `msg_${Date.now()}`;
     }
-    state.model = chunk.model || MODEL_FALLBACK;
+    state.model = state.responseModel || chunk.model || MODEL_FALLBACK;
     state.nextBlockIndex = 0;
     results.push({
       type: "message_start",
