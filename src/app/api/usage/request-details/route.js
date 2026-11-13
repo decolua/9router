@@ -53,15 +53,25 @@ export async function GET(request) {
     // wholesale lets any dashboard-authenticated user (or, if requireLogin is
     // disabled, anyone) read every user's conversation history. Keep the
     // metadata (model, tokens, latency, status) but drop message content.
-    const redactedDetails = (result.details || []).map((d) => {
-      const redacted = { ...d };
-      for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
-        if (redacted[key] !== undefined) {
-          redacted[key] = { redacted: true };
-        }
-      }
-      return redacted;
-    });
+    //
+    // Escape hatch for debugging on single-user/self-hosted installs:
+    // ENABLE_PROMPT_LOGGING=true returns the stored payloads verbatim — the
+    // same opt-in pattern as REQUEST_LOG_FULL_HEADERS for the request logger.
+    // Auth headers are never at risk either way: sanitizeHeaders() strips
+    // them before the SQLite write (requestDetailsRepo.js), so unredacting
+    // cannot expose provider credentials.
+    const promptLoggingEnabled = process.env.ENABLE_PROMPT_LOGGING === "true";
+    const redactedDetails = promptLoggingEnabled
+      ? result.details || []
+      : (result.details || []).map((d) => {
+          const redacted = { ...d };
+          for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
+            if (redacted[key] !== undefined) {
+              redacted[key] = { redacted: true };
+            }
+          }
+          return redacted;
+        });
 
     return NextResponse.json({ ...result, details: redactedDetails });
   } catch (error) {

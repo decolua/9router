@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 
 // Mirror the redaction logic from src/app/api/usage/request-details/route.js
 // so we can test it in isolation.
-function redactDetails(details) {
+function redactDetails(details, promptLoggingEnabled = false) {
+  if (promptLoggingEnabled) return details || [];
   return (details || []).map((d) => {
     const redacted = { ...d };
     for (const key of ["request", "providerRequest", "providerResponse", "response"]) {
@@ -50,5 +51,22 @@ describe("request-details redaction", () => {
     expect(out.id).toBe("x");
     expect(out.status).toBe("error");
     expect(out.latency).toEqual({ total: 100 });
+  });
+
+  // ENABLE_PROMPT_LOGGING=true escape hatch (#4728, #4812)
+  it("returns payloads verbatim when prompt logging is enabled", () => {
+    const details = [{
+      id: "abc",
+      request: { messages: [{ role: "user", content: "secret prompt" }] },
+      providerResponse: { choices: [{ message: { content: "secret answer" } }] },
+    }];
+    const out = redactDetails(details, true)[0];
+    expect(out.request).toEqual({ messages: [{ role: "user", content: "secret prompt" }] });
+    expect(out.providerResponse).toEqual({ choices: [{ message: { content: "secret answer" } }] });
+  });
+
+  it("prompt logging enabled still tolerates empty details", () => {
+    expect(redactDetails([], true)).toEqual([]);
+    expect(redactDetails(null, true)).toEqual([]);
   });
 });
