@@ -12,14 +12,26 @@ const SETTINGS_RESPONSE_HEADERS = {
 };
 
 // Secrets must never be mass-assigned from request body (CWE-915)
-const PROTECTED_SETTING_KEYS = ["password", "mitmSudoEncrypted"];
+// mfaSecret / mfaBackupCodes / mfaEnabled are managed exclusively by the
+// /api/auth/mfa/* routes (which require the current password + a valid code).
+// Allowing them through here would let any authenticated session silently
+// disable the second factor or swap in an attacker-controlled secret.
+const PROTECTED_SETTING_KEYS = [
+  "password",
+  "mitmSudoEncrypted",
+  "mfaEnabled",
+  "mfaSecret",
+  "mfaBackupCodes",
+];
 
 export async function GET() {
   try {
     const settings = await getSettings();
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, mfaSecret, mfaBackupCodes, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
-    
+    safeSettings.mfaEnabled = settings.mfaEnabled === true;
+    safeSettings.mfaBackupCodesRemaining = Array.isArray(mfaBackupCodes) ? mfaBackupCodes.length : 0;
+
     const enableRequestLogs = process.env.ENABLE_REQUEST_LOGS === "true";
     const enableTranslator = process.env.ENABLE_TRANSLATOR === "true";
     
@@ -108,8 +120,10 @@ export async function PATCH(request) {
         .catch((error) => console.warn("[AutoPing] settings update failed:", error.message));
     }
 
-    const { password, oidcClientSecret, ...safeSettings } = settings;
+    const { password, oidcClientSecret, mfaSecret, mfaBackupCodes, ...safeSettings } = settings;
     safeSettings.oidcConfigured = !!(safeSettings.oidcIssuerUrl && safeSettings.oidcClientId && oidcClientSecret);
+    safeSettings.mfaEnabled = settings.mfaEnabled === true;
+    safeSettings.mfaBackupCodesRemaining = Array.isArray(mfaBackupCodes) ? mfaBackupCodes.length : 0;
     return NextResponse.json(safeSettings, { headers: SETTINGS_RESPONSE_HEADERS });
   } catch (error) {
     console.log("Error updating settings:", error);

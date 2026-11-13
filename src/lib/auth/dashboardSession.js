@@ -8,6 +8,10 @@ import { getSettings } from "@/lib/localDb";
 
 const DEFAULT_PASSWORD = "123456";
 const SESSION_MAX_AGE_SEC = 24 * 60 * 60;
+// Short-lived cookie issued between "password accepted" and "MFA satisfied".
+export const MFA_PENDING_COOKIE = "mfa_pending";
+const MFA_PENDING_MAX_AGE_SEC = 5 * 60;
+const MFA_PENDING_SCOPE = "mfa_pending";
 
 function loadJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
@@ -31,7 +35,9 @@ export function shouldUseSecureCookie(request) {
 }
 
 export async function createDashboardAuthToken(claims = {}) {
-  return new SignJWT({ authenticated: true, ...claims })
+  // `authenticated` and `scope` are set last so caller-supplied claims can
+  // never downgrade a session token into something the verifier mis-reads.
+  return new SignJWT({ ...claims, authenticated: true, scope: "dashboard" })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("24h")
@@ -41,8 +47,12 @@ export async function createDashboardAuthToken(claims = {}) {
 export async function verifyDashboardAuthToken(token) {
   if (!token) return false;
   try {
-    await jwtVerify(token, SECRET);
-    return true;
+    const { payload } = await jwtVerify(token, SECRET);
+    // An MFA-pending token proves only the first factor. Treating it as a
+    // session would make the second factor bypassable by reusing the
+    // intermediate cookie, so it is rejected everywhere a session is expected.
+    if (payload?.scope === MFA_PENDING_SCOPE) return false;
+    return payload?.authenticated === true;
   } catch {
     return false;
   }
@@ -52,10 +62,53 @@ export async function getDashboardAuthSession(token) {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, SECRET);
+    if (payload?.scope === MFA_PENDING_SCOPE) return null;
+    if (payload?.authenticated !== true) return null;
     return payload;
   } catch {
     return null;
   }
+}
+
+/**
+ * Issue the intermediate token for a session that has passed the password
+ * check but still owes a TOTP/backup code. Deliberately carries no
+ * `authenticated` claim.
+ */
+export async function createMfaPendingToken(claims = {}) {
+  return new SignJWT({ ...claims, scope: MFA_PENDING_SCOPE })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${MFA_PENDING_MAX_AGE_SEC}s`)
+    .sign(SECRET);
+}
+
+/** Verify an MFA-pending token. Returns its payload or null. */
+export async function getMfaPendingSession(token) {
+  if (!token) return null;
+  try {
+    const { payload } = await jwtVerify(token, SECRET);
+    if (payload?.scope !== MFA_PENDING_SCOPE) return null;
+    if (payload?.authenticated === true) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+export async function setMfaPendingCookie(cookieStore, request, claims = {}) {
+  const token = await createMfaPendingToken(claims);
+  cookieStore.set(MFA_PENDING_COOKIE, token, {
+    httpOnly: true,
+    secure: shouldUseSecureCookie(request),
+    sameSite: "lax",
+    path: "/",
+    maxAge: MFA_PENDING_MAX_AGE_SEC,
+  });
+}
+
+export function clearMfaPendingCookie(cookieStore) {
+  cookieStore.delete(MFA_PENDING_COOKIE);
 }
 
 export async function setDashboardAuthCookie(cookieStore, request, claims = {}) {
