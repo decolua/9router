@@ -37,6 +37,7 @@ const getLocaleInfo = (locale) => {
     "tr": { name: "Türkçe", flag: "🇹🇷" },
     "uk": { name: "Українська", flag: "🇺🇦" },
     "tl": { name: "Tagalog", flag: "🇵🇭" },
+    "ms": { name: "Bahasa Melayu", flag: "🇲🇾" },
     "id": { name: "Indonesia", flag: "🇮🇩" },
     "th": { name: "ไทย", flag: "🇹🇭" },
     "km": { name: "ខ្មែរ", flag: "🇰🇭" },
