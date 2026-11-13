@@ -116,6 +116,7 @@ export async function handleSystemone(request) {
 
     const result = await handleSystemoneCore({
       body,
+      routingPolicy: settings.providerOverrides?.openrouter?.routing,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
       log,

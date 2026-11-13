@@ -2,6 +2,7 @@ import { getModelInfo } from "../services/model.js";
 import { getProviderCredentials } from "../services/auth.js";
 import { checkAndRefreshToken } from "../services/tokenRefresh.js";
 import { handleSystemoneCore } from "open-sse/handlers/systemoneCore.js";
+import { getSettings } from "@/lib/localDb";
 import {
   DEFAULT_SYSTEMONE_ROUTER_MODEL,
   DEFAULT_SYSTEMONE_TIMEOUT_MS,
@@ -63,6 +64,9 @@ export async function resolveSmartChoice({
     }
 
     const refreshedCredentials = await checkAndRefreshToken(provider, credentials);
+    const routingPolicy = provider === "openrouter"
+      ? (await getSettings()).providerOverrides?.openrouter?.routing
+      : undefined;
     const systemoneBody = {
       model,
       state,
@@ -84,6 +88,7 @@ export async function resolveSmartChoice({
       body: systemoneBody,
       modelInfo: { provider, model },
       credentials: refreshedCredentials,
+      routingPolicy,
       log,
       onRequestSuccess: () => {},
     });

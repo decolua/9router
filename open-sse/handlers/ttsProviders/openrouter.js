@@ -1,10 +1,11 @@
 // OpenRouter TTS — via chat completions + audio modality (SSE stream)
 import { PROVIDER_MEDIA } from "../../providers/index.js";
+import { applyOpenRouterRouting } from "../../services/openrouterRouting.js";
 
 const TTS_CFG = PROVIDER_MEDIA["openrouter"]?.ttsConfig || {};
 
 export default {
-  async synthesize(text, model, credentials) {
+  async synthesize(text, model, credentials, responseFormat, { provider, routingPolicy } = {}) {
     if (!credentials?.apiKey) throw new Error("No OpenRouter API key configured");
 
     // model format: "tts-model/voice" e.g. "openai/gpt-4o-mini-tts/alloy"
@@ -24,6 +25,7 @@ export default {
       voice = model;
     }
 
+    const preferences = applyOpenRouterRouting({ model: ttsModel, provider }, routingPolicy, "completion").provider;
     const res = await fetch(TTS_CFG.baseUrl, {
       method: "POST",
       headers: {
@@ -33,6 +35,7 @@ export default {
       },
       body: JSON.stringify({
         model: ttsModel,
+        ...(preferences !== undefined ? { provider: preferences } : {}),
         modalities: ["text", "audio"],
         audio: { voice, format: "wav" },
         stream: true,

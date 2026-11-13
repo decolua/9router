@@ -14,6 +14,7 @@ import { HTTP_STATUS, TOKEN_SAVER_HEADER } from "../config/runtimeConfig.js";
 import { handleBypassRequest } from "../utils/bypassHandler.js";
 import { trackPendingRequest, appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
 import { getExecutor } from "../executors/index.js";
+import { applyOpenRouterRouting } from "../services/openrouterRouting.js";
 import { supportsGrokCliReasoningEffort } from "../config/grokCli.js";
 import { buildRequestDetail, extractRequestConfig } from "./chatCore/requestDetail.js";
 import { handleForcedSSEToJson } from "./chatCore/sseToJsonHandler.js";
@@ -385,6 +386,20 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   if (proxyOptions.connectionProxyEnabled && proxyOptions.connectionNoProxy) {
     const connectionName = credentials?.connectionName || credentials?.connectionId || "unknown";
     log?.debug?.("PROXY", `${provider.toUpperCase()} | ${model} | conn=${connectionName} | no_proxy=${proxyOptions.connectionNoProxy}`);
+  }
+
+  if (provider === "openrouter") {
+    try {
+      // Read preferences from the source: Messages/Gemini translation can drop them.
+      translatedBody = applyOpenRouterRouting(
+        { ...translatedBody, ...(body.provider !== undefined ? { provider: body.provider } : {}) },
+        providerOverrides?.routing,
+        "completion",
+      );
+    } catch (error) {
+      trackPendingRequest(model, provider, connectionId, false, true);
+      return createErrorResult(HTTP_STATUS.BAD_REQUEST, error.message);
+    }
   }
 
   // Execute request
