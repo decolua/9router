@@ -53,7 +53,14 @@ export async function getPricingForModel(provider, model) {
   const userPricing = await getUserPricing();
   if (provider && userPricing[provider]?.[model]) return userPricing[provider][model];
   const { getPricingForModel: resolveConst } = await import("open-sse/providers/pricing.js");
-  return resolveConst(provider, model);
+  // Usage rows keep the effort-annotated id ("gpt-6.1-sol(xhigh)"); resolving it as-is
+  // misses the base model's exact entry and falls through to a broader glob or to
+  // null ($0). Price the variant at its base model's rate.
+  const { stripThinkingSuffix } = await import("open-sse/translator/concerns/thinkingUnified.js");
+  const base = stripThinkingSuffix(model);
+  if (base === model) return resolveConst(provider, model);
+  if (provider && userPricing[provider]?.[base]) return userPricing[provider][base];
+  return resolveConst(provider, base);
 }
 
 // Atomic merge inside transaction (per-provider read-modify-write)
