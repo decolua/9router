@@ -18,9 +18,9 @@
     "build": "node scripts/build-cli.js",
     "build:tray-arm64": "node scripts/buildTrayArm64.js",
     "pack:cli": "npm run build && npm pack --pack-destination ..",
-    "publish:cli": "npm run build && npm publish",
+    "publish:cli": "npm publish",
     "postinstall": "node hooks/postinstall.js",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "node ../scripts/release.js --check && npm run build"
   },
   "dependencies": {
     "enquirer": "^2.4.1",
