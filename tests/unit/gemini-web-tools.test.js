@@ -292,6 +292,14 @@ describe("web-cookie tool bridge", () => {
     expect(r.content).not.toContain("tool_call");
   });
 
+  it("parses shorthand inline tool_call tool=name, arg=val format", () => {
+    const r = parseToolCallReply('tool_call tool=sh, cmd="echo \'Hello World\'"');
+    expect(r.calls).toHaveLength(1);
+    expect(r.calls[0].name).toBe("sh");
+    expect(r.calls[0].arguments.cmd).toBe("echo 'Hello World'");
+    expect(r.content).not.toContain("tool_call");
+  });
+
   it("parses the marker style too", () => {
     const r = parseToolCallReply(
       'ok <<TOOL_CALL>> {"name": "read", "arguments": {"p": "a"}} <<TOOL_CALL>> done'

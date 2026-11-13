@@ -1,3 +1,12 @@
+# v0.5.420 (2026-11-11)
+
+## What Looks Different?
+
+- Full OpenAI tool calling support for DeepAI (`dai/*`):
+  - Added robust parser for shorthand inline tool call patterns emitted by DeepAI (e.g. `tool_call tool=<name>, <args>`) converting them directly into standard OpenAI `tool_calls` schemas.
+  - Adjusted stream and JSON response handling to follow official OpenAI protocol conventions (suppressing redundant content text when emitting `tool_calls` chunks).
+  - Fine-tuned system instruction reminders so conversational greetings and simple code examples do not aggressively trigger shell execution calls.
+
 # v0.5.419 (2026-11-11)
 
 ## What Looks Different?

@@ -5,6 +5,7 @@ import {
   buildToolInstructions,
   buildToolReminder,
   emitToolCallChunks,
+  generateToolCallId,
   hasTools,
   parseToolCallReply,
   selectableTools,
@@ -151,14 +152,21 @@ function streamResponse(text, model, id, options = {}) {
           choices: [{ index: 0, delta, ...(finishReason ? { finish_reason: finishReason } : {}) }],
           ...(finishReason ? { usage } : {}),
         }));
-      push({ role: "assistant", content }, null);
-      let sentCalls = false;
       if (calls.length) {
+        // In OpenAI protocol, when tool_calls are present, the initial content delta
+        // is typically null or only preceding non-tool thought text.
+        if (content) {
+          push({ role: "assistant", content }, null);
+        } else {
+          push({ role: "assistant" }, null);
+        }
         sentCalls = emitToolCallChunks(
           (delta, finishReason) => push(delta, finishReason),
           () => {},
           calls
         );
+      } else {
+        push({ role: "assistant", content }, null);
       }
       if (!sentCalls) push({}, "stop");
       // emitToolCallChunks already closed the stream with finish_reason
@@ -181,7 +189,7 @@ function jsonResponse(text, model, id, options = {}) {
   const message = { role: "assistant", content: content || null };
   if (calls.length) {
     message.tool_calls = calls.map((call) => ({
-      id: `call_${call.name}_${Date.now().toString(36)}`,
+      id: generateToolCallId(),
       type: "function",
       function: { name: call.name, arguments: JSON.stringify(call.arguments ?? {}) },
     }));

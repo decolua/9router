@@ -162,12 +162,11 @@ export function buildToolReminder(style = "marker", options = {}) {
       ? "This turn is FORCED: the client set tool_choice to require a tool. Emit one tool_call block and nothing else - answering in prose is a protocol violation."
       : "";
   const lines = [
-    "[System instruction - highest priority]: To run a command or read a file you MUST output a tool_call block - this is the ONLY execution channel. A code block is NOT executed, it is only shown to the user; never use one to run anything, and never claim you lack tools.",
-    "Act, do not explain: when the request needs a tool, your reply is ONE tool_call block and nothing else - do not list the commands you 'would' run, do not add prose. Emit several blocks only when the user asks for several independent things at once (one block per call, nothing else); when the steps depend on each other, do the FIRST one now and you will be called again with its result.",
-    "Know when to STOP: once a tool result shows a step succeeded (for example it exited with code 0, even with no printed output), that step is DONE - do not run it again and do not retry the same thing a different way. When the whole request is accomplished, stop calling tools and reply with a short final answer instead of another tool_call.",
-    "Example of a correct turn - user asks \"list the files here and tell me the size of README.md\", you reply with exactly one block and nothing else:",
+    "[System instruction - highest priority]: You are an assistant with access to tools. For conversational replies or general questions that do not need tools, reply in plain prose. A code block is NOT executed.",
+    "When a tool IS needed to run a command or query data: you MUST output a tool_call block using valid JSON arguments. Never output 'tool_call tool=...' shorthand; always output valid JSON format.",
+    "Format:",
     exampleBlock(style),
-    "(In your block use one of the real tool names listed above with its own arguments.) When the request needs a tool, emit the tool_call block now.",
+    "Available tools are defined in the schema above.",
   ];
   if (forcedLine) lines.push(forcedLine);
   return lines.join("\n");
@@ -280,6 +279,23 @@ function fenceCandidates(text) {
   return out;
 }
 
+function parseKvArguments(str) {
+  const args = {};
+  if (!str || typeof str !== "string") return args;
+  const trimmed = str.trim();
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try { return JSON.parse(trimmed); } catch {}
+  }
+  const regex = /([a-zA-Z0-9_]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^,\s]+))/g;
+  let match;
+  while ((match = regex.exec(trimmed)) !== null) {
+    const key = match[1];
+    const val = match[2] !== undefined ? match[2] : (match[3] !== undefined ? match[3] : match[4]);
+    args[key] = val;
+  }
+  return args;
+}
+
 /**
  * Recover tool calls from a model reply.
  * Returns { content, calls } where content is the visible text with the fence
@@ -304,6 +320,20 @@ export function parseToolCallReply(text) {
     }
   }
 
+  // Fallback: check for shorthand inline patterns common in DeepAI / LLMs:
+  // e.g. "tool_call tool=sh, cmd=\"echo 'Hello World'\""
+  // or "tool_call: sh(cmd=\"echo 'Hello World'\")"
+  if (!calls.length) {
+    const kvMatch = raw.match(/tool_call\s+(?:tool=)?([a-zA-Z0-9_\-\.]+)[,\s]+(.*)/i)
+      || raw.match(/tool_call\s*[:=\s]\s*([a-zA-Z0-9_\-\.]+)[,\s]+(.*)/i);
+    if (kvMatch) {
+      const toolName = kvMatch[1].trim();
+      const rawArgs = kvMatch[2].trim();
+      const args = parseKvArguments(rawArgs);
+      calls.push({ name: toolName, arguments: args });
+    }
+  }
+
   let content = raw;
   if (calls.length) {
     content = content
@@ -314,6 +344,9 @@ export function parseToolCallReply(text) {
       .replace(/```\s*tool_call\s*[\s\S]*?```/g, "")
       // A plain ```json fence carrying the same payload (no "tool_call" word).
       .replace(/```\s*(?:json)?\s*\{\s*"name"[\s\S]*?```/g, "")
+      // Shorthand inline tool_call lines
+      .replace(/^[ \t]*tool_call\s+(?:tool=)?[a-zA-Z0-9_\-\.]+.*$/gim, "")
+      .replace(/^[ \t]*tool_call\s*[:=].*$/gim, "")
       // DeepAI answers with no fence at all: just "tool_call" on its own line
       // above the JSON payload, which the JSON fallback still recovers.
       .replace(/^[ \t]*tool_call[ \t]*\r?\n?/gm, "")
