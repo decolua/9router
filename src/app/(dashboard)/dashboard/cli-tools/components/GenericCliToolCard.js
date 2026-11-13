@@ -230,7 +230,10 @@ export default function GenericCliToolCard({
     if (tool.id === "pi") {
       if (!selectedModels.includes(model.value)) {
         setSelectedModels((prev) => [...prev, model.value]);
-        setModelCaps((prev) => ({ ...prev, [model.value]: prev[model.value] || capsFromModelInfo(modelInfo[model.value]) }));
+        // /api/models knows nothing about live-catalog-only models (commandcode,
+        // cursor…), so the picker hands over the caps its rows carry.
+        const info = { ...model.caps, ...modelInfo[model.value] };
+        setModelCaps((prev) => ({ ...prev, [model.value]: prev[model.value] || capsFromModelInfo(info) }));
       }
     } else {
       setSelectedModel(model.value);
