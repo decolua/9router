@@ -45,9 +45,16 @@ const nativeFetch = globalThis.fetch;
 // to match within one undici version — UNLESS a test has replaced
 // globalThis.fetch after load (vi.stubGlobal("fetch", ...)), in which case the
 // mock must receive the call instead of a real network request going out.
+// This module patches globalThis.fetch to patchedFetch below (idempotency
+// guard further down), so in normal production operation globalThis.fetch
+// IS patchedFetch, not nativeFetch — comparing only against nativeFetch would
+// make every call recurse back into proxyAwareFetch(url, options, null),
+// dropping proxyOptions and silently defeating strictProxy/proxy routing.
+// patchedFetch is a hoisted function declaration, so it's safe to reference
+// here even though it's defined later in this file.
 let undiciFetch = null;
 async function rawFetch(url, options) {
-  if (globalThis.fetch !== nativeFetch) return globalThis.fetch(url, options);
+  if (globalThis.fetch !== nativeFetch && globalThis.fetch !== patchedFetch) return globalThis.fetch(url, options);
   undiciFetch ??= (await import("undici")).fetch;
   return undiciFetch(url, options);
 }
