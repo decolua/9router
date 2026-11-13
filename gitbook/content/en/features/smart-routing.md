@@ -87,6 +87,46 @@ User request → cc/claude-opus-4-5
 
 ---
 
+## Account Pinning per Request
+
+When a provider has multiple connected accounts (e.g. several Antigravity or Codex accounts), 9Router normally picks one automatically (fill-first or round-robin, see [Configuration Options](#configuration-options)). Chat requests can opt into **pinning** a specific account with the `x-connection-id` header — the same opt-in already supported by the image and video endpoints:
+
+```bash
+curl https://your-9router/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "x-connection-id: <providerConnection id>" \
+  -d '{
+    "model": "antigravity/gemini-3.8-flash-medium",
+    "messages": [{"role": "user", "content": "hi"}]
+  }'
+```
+
+How pinning behaves:
+
+- **Priority, not exclusivity.** The pinned account is tried first. If it is unavailable — rate-limited, out of quota, or erroring — the request automatically falls back to the other accounts of the same provider, exactly like unpinned traffic.
+- **Where to find the id.** Open the provider's page in the dashboard and click the `xxxxxxxx…` ID chip next to any connection to copy its connection id, or call `GET /api/providers`.
+- **Safe by default.** Omit the header and nothing changes. An unknown, inactive, or already-exhausted id is ignored and routing proceeds normally.
+- **Works across chat paths.** Single-model requests, combos, fusion, and capacity-adapter fallbacks all honor the header, because pinning is applied at the account-selection layer — orthogonal to per-API-key access control, which gates models, not accounts.
+
+**Multi-agent teams:** give each agent its own `x-connection-id` so it burns its "own" account first and only borrows the shared pool when that account is exhausted.
+
+**Claude Code (CLI & VS Code extension):** custom headers are set via the `ANTHROPIC_CUSTOM_HEADERS` environment variable. Add it to the `env` block of `~/.claude/settings.json` (project-level `.claude/settings.json` overrides it — handy for pinning different accounts per project/agent):
+
+```json
+{
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://your-9router/v1",
+    "ANTHROPIC_AUTH_TOKEN": "sk-...",
+    "ANTHROPIC_CUSTOM_HEADERS": "x-connection-id: <providerConnection id>",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "antigravity/gemini-3.8-flash-medium"
+  }
+}
+```
+
+Multiple headers are comma-separated: `"Name1:Value1,Name2:Value2"`.
+
+---
+
 ## Model Selection Logic
 
 9Router selects the best model based on:

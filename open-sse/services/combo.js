@@ -153,6 +153,10 @@ export function detectRequiredCapabilities(body) {
       if (fmime) addByMime(fmime);
       else required.add("pdf");
     }
+    // Claude tool_result blocks can carry images in their nested content[];
+    // the claude→openai translator turns those into image_url parts, so they
+    // must count toward the request's required capabilities too.
+    if (t === "tool_result" && Array.isArray(b.content)) for (const c of b.content) scanBlock(c);
     // gemini parts: inlineData/fileData carry a mime
     addByMime(b.inlineData?.mimeType || b.fileData?.mimeType);
   };
