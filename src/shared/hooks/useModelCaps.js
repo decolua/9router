@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getCapabilitiesForModel, pickClientCaps } from "open-sse/providers/capabilities.js";
 import { ALIAS_TO_ID } from "@/shared/constants/providers";
 
 // Module cache: one /api/models fetch shared by every useModelCaps instance.
@@ -50,14 +50,9 @@ export function resolveCaps(byFull, byId, key) {
   if (byId[bare]) return byId[bare];
   const alias = key.includes("/") ? key.slice(0, key.indexOf("/")) : null;
   const provider = alias ? (ALIAS_TO_ID[alias] || alias) : null;
-  const c = getCapabilitiesForModel(provider, bare);
-  return {
-    vision: c.vision,
-    search: c.search,
-    reasoning: c.reasoning,
-    contextWindow: c.contextWindow,
-    maxOutput: c.maxOutput,
-  };
+  // Same subset the /api/models payload carries (pickClientCaps) — the two
+  // paths must agree or a model's modalities flip depending on fetch order.
+  return pickClientCaps(getCapabilitiesForModel(provider, bare));
 }
 
 export function useModelCaps() {
