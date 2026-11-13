@@ -297,3 +297,33 @@
   - `docs/SDP.md`
 - **Status saat ini:** Selesai (Branch `vnot-production` siap di-build ke container).
 - **Catatan untuk AI selanjutnya (Handoff Note):** Upstream v0.5.119 telah terintegrasi di `vnot-production`. Service `9router-updater.service` telah diperbarui dan di-restart. Bind mount `./data:/app/data` tetap terjaga utuh.
+
+### 2026-11-13 — Fix Update Button 5-Minute Timeout & Version Manifest Sync (v0.5.119)
+- **Tugas:**
+  1. Menyelidiki dan memperbaiki error pada tombol "Update": modal popup "Pembaruan Gagal: Batas waktu update (5 menit) terlampaui."
+  2. Menyelidiki mengapa notifikasi "↑ New version available: v0.5.119" terus muncul di antarmuka web.
+  3. Menyelesaikan sinkronisasi versi, perizinan direktori status, dan melakukan rebuild container produksi.
+- **Akar Masalah:**
+  1. **Permission Denied pada `data/update-status.json`:** Direktori bind mount `./data` dimiliki oleh pengguna container (`100999:100999`) dengan hak akses `755`. Ketika tombol "Update" ditekan, `webhook.py` (yang berjalan sebagai user host `vnot` / UID 1000) mencoba menulis status pembaruan ke `data/update-status.json`, tetapi gagal dengan error `[Errno 13] Permission denied`.
+  2. **Timeout Polling Frontend:** Karena file status gagal ditulis, endpoint `GET /api/auto-update` selalu merespons dengan `{"status": "idle"}`. Loop polling frontend pada `Sidebar.js` dan `HeaderMenu.js` mengabaikan status `idle` dan terus menunggu status aktif (`updating`/`building`/`success`) hingga mencapai batas waktu keamanan 300 detik (5 menit). Setelah 5 menit, muncul modal error: `"Batas waktu update (5 menit) terlampaui."`. Sebenarnya proses git merge dan build Docker di latar belakang selesai hanya dalam beberapa detik, namun frontend tidak pernah menerima sinyal selesai.
+  3. **Upstream Root `package.json` Tertinggal di 0.5.116:** Pada rilis v0.5.119 upstream (commit `1855aa44`), pembuat repositori memperbarui versi pada `cli/package.json` ke `0.5.119` dan mempublikasikannya ke npm, tetapi lupa memperbarui versi pada root `package.json` (tetap `"0.5.116"`). Akibatnya, Next.js yang membaca root `package.json` selalu membandingkan `0.5.116` vs `0.5.119`, menghasilkan `hasUpdate: true` secara permanen.
+- **Penyelesaian:**
+  1. **Perbaikan Hak Akses Host & Kontainer:**
+     - Menjalankan `sudo chmod 777 /home/vnot/docker/9router/data`.
+     - Memperbarui `/entrypoint.sh` di dalam `Dockerfile` agar selalu mengeksekusi `chmod 777 /app/data 2>/dev/null` saat kontainer dijalankan ulang.
+     - Memperbarui `webhook.py` agar fungsi `write_status()` secara otomatis memulihkan hak akses dengan `sudo chmod 777` jika menangkap `PermissionError`, serta menyetel file status ke `0o666`.
+     - Me-restart `9router-updater.service`.
+  2. **Pembersihan State Stale Polling:**
+     - Memperbarui `src/app/api/auto-update/route.js` untuk memeriksa timestamp status; status terminal yang lebih tua dari 2 menit secara otomatis dianggap `idle` untuk mencegah loop polling membaca status kadaluarsa.
+  3. **Sinkronisasi Versi:**
+     - Memperbarui root `package.json` ke `"version": "0.5.119"`.
+     - Memperbarui `src/app/api/version/route.js` agar membandingkan `pkg.version` dan `cliPkg.version`, mengambil nilai versi tertinggi sehingga tidak akan terjebak jika upstream kembali lupa menaikkan salah satu manifest.
+- **File yang diubah/dibuat:**
+  - `package.json`
+  - `Dockerfile`
+  - `src/app/api/version/route.js`
+  - `src/app/api/auto-update/route.js`
+  - `/home/vnot/utils/9router-updater/webhook.py`
+  - `docs/SDP.md`
+- **Status saat ini:** Selesai (Rebuilding container & verifikasi API).
+- **Catatan untuk AI selanjutnya (Handoff Note):** Root manifest `package.json` dan `cli/package.json` kini keduanya di versi `0.5.119`. Endpoint `/api/version` sekarang tahan terhadap inkonsistensi versi upstream. Volume `./data:/app/data` tetap utuh.

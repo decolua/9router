@@ -7,7 +7,12 @@ export async function GET() {
     const statusFile = path.join(process.cwd(), 'data', 'update-status.json');
     if (fs.existsSync(statusFile)) {
       const content = fs.readFileSync(statusFile, 'utf8');
-      return NextResponse.json(JSON.parse(content));
+      const data = JSON.parse(content);
+      // Treat terminal states older than 2 minutes as idle
+      if ((data.status === 'success' || data.status === 'error' || data.status === 'conflict') && data.timestamp && (Date.now() - data.timestamp > 120000)) {
+        return NextResponse.json({ status: 'idle' });
+      }
+      return NextResponse.json(data);
     }
     return NextResponse.json({ status: 'idle' });
   } catch (error) {
