@@ -98,6 +98,11 @@ export class BaseExecutor {
   }
 
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null, providerOverrides = null, directFetch = null }) {
+    if (signal?.aborted) {
+      const abortErr = new Error("aborted");
+      abortErr.name = "AbortError";
+      throw abortErr;
+    }
     const fallbackCount = this.getFallbackCount();
     let lastError = null;
     let lastStatus = 0;
@@ -110,6 +115,7 @@ export class BaseExecutor {
     // Schedule retry via retryConfig[statusKey]. Returns true when caller should `urlIndex--; continue`
     // response (optional) lets a subclass hook compute a dynamic delay (e.g. antigravity Retry-After).
     const tryRetry = async (urlIndex, statusKey, reason, response = null) => {
+      if (signal?.aborted) return false;
       const { attempts, delayMs } = resolveRetryEntry(retryConfig[statusKey]);
       if (attempts <= 0 || retryAttemptsByUrl[urlIndex] >= attempts) return false;
       // Hook: subclass may derive delay from the response (headers/body). null → skip retry, use fallback.
@@ -121,7 +127,37 @@ export class BaseExecutor {
       }
       retryAttemptsByUrl[urlIndex]++;
       log?.debug?.("RETRY", `${reason} retry ${retryAttemptsByUrl[urlIndex]}/${attempts} after ${waitMs / 1000}s`);
-      await new Promise(resolve => setTimeout(resolve, waitMs));
+
+      // Abort-aware backoff wait with clean listener removal on all termination paths
+      await new Promise((resolve, reject) => {
+        if (signal?.aborted) {
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          return reject(err);
+        }
+        let timer = null;
+        let onAbort = null;
+        const cleanup = () => {
+          if (timer) { clearTimeout(timer); timer = null; }
+          if (signal && onAbort) {
+            try { signal.removeEventListener("abort", onAbort); } catch {}
+            onAbort = null;
+          }
+        };
+        onAbort = () => {
+          cleanup();
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        };
+        timer = setTimeout(() => {
+          cleanup();
+          resolve();
+        }, waitMs);
+        if (signal) {
+          signal.addEventListener("abort", onAbort, { once: true });
+        }
+      });
       return true;
     };
 
@@ -181,7 +217,12 @@ export class BaseExecutor {
         const isConnectTimeout = connectCtrl.signal.aborted && error.name === "AbortError";
         dbg("FETCH", `${this.provider.toUpperCase()} ✖ ${error.name}: ${error.message}${isConnectTimeout ? " (connect timeout)" : ""}`);
         // Connect timeout is internal — convert to retryable network error, don't propagate AbortError
-        if (error.name === "AbortError" && !isConnectTimeout) throw error;
+        const isClientAbort = (signal?.aborted || error.name === "AbortError" || error.cause?.name === "AbortError") && !isConnectTimeout;
+        if (isClientAbort) {
+          const abortErr = new Error("aborted");
+          abortErr.name = "AbortError";
+          throw abortErr;
+        }
 
         // Map network/fetch exceptions to 502 retry config; force a fresh socket on retry
         // so a silently-dropped keep-alive socket is never reused from the pool.
