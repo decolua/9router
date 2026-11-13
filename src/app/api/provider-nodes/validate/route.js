@@ -166,13 +166,14 @@ export async function POST(request) {
 
     if (res.ok) return NextResponse.json({ valid: true });
 
-    // Auth errors - no point trying chat fallback
-    if (res.status === 401 || res.status === 403) {
+    // Some compatible providers protect or omit /models. If the user supplied a
+    // model ID, validate the endpoint that will actually be used instead.
+    if ((res.status === 401 || res.status === 403) && !modelId?.trim()) {
       return NextResponse.json({ valid: false, error: "API key unauthorized" });
     }
 
     // Fallback: try chat/completions if modelId provided
-    if (modelId) {
+    if (modelId?.trim()) {
       const chatRes = await fetchWithTimeout(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
         method: "POST",
         headers: {
@@ -180,7 +181,7 @@ export async function POST(request) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: modelId,
+          model: modelId.trim(),
           messages: [{ role: "user", content: "ping" }],
           max_tokens: 1
         })
