@@ -27,6 +27,11 @@ export default {
     },
     // Non-stream chat completions come back wrapped in {"success":true,"data":{...}}
     quirks: { clineEnvelope: true },
+    // Dashboard quota: five_hour / weekly / monthly percentUsed windows.
+    // Accepts ClinePass API keys and WorkOS OAuth (Bearer workos:<JWT>).
+    usage: {
+      url: "https://api.cline.bot/api/v1/users/me/plan/usage-limits",
+    },
     auth: {
       combined: true,
       header: "Authorization",
@@ -58,5 +63,10 @@ export default {
   thinkingConfig: {
     options: ["auto", "on", "off"],
     defaultMode: "auto",
+  },
+  features: {
+    usage: true,
+    // API-key connections use the same usage-limits endpoint (plain Bearer).
+    usageApikey: true,
   },
 };
