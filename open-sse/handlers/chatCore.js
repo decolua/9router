@@ -28,19 +28,19 @@ import { injectCustomPrompt } from "../rtk/customPrompt.js";
 import { compressMessages, formatRtkLog } from "../rtk/index.js";
 import { compressWithHeadroom, formatHeadroomLog, formatHeadroomSizeLog, isHeadroomPhantomSavings } from "../rtk/headroom.js";
 import { compressWithPxpipe } from "../rtk/pxpipe.js";
+import {
+  normalizeTtlMs,
+  normalizeMaxSizeBytes,
+  buildResponseCacheKey,
+  getResponseCacheSync,
+  createResponseFromCache,
+} from "../rtk/fsCache.js";
 import { getCapabilitiesForModel } from "../providers/capabilities.js";
 import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
 
-/**
- * Core chat handler - shared between SSE and Worker
- * @param {object} options.body - Request body
- * @param {object} options.modelInfo - { provider, model }
- * @param {object} options.credentials - Provider credentials
- * @param {string} options.sourceFormatOverride - Override detected source format (e.g. "openai-responses")
- */
 /**
  * Remove translator-internal continuity fields from the outbound upstream
  * body. The Responses→Chat request translator stashes reasoning
@@ -61,7 +61,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, blockCacheEnabled, responseCacheEnabled, fsCacheTtlHours, fsCacheMaxSizeMb, sourceFormatOverride, providerThinking, providerOverrides }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -82,38 +82,17 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   const alias = PROVIDER_ID_TO_ALIAS[provider] || provider;
   const modelTargetFormat = getModelTargetFormat(alias, model);
-  // Multi-endpoint providers: pick transport matching sourceFormat → zero translation.
-  // Per-model guard: only use the transport when the model declares support for that
-  // sourceFormat — opencode-go models differ in endpoint support (kimi/glm only do
-  // /chat/completions), so without this guard a claude-format request would wrongly
-  // route kimi to /messages.
   const modelSupportedFormats = getModelSupportedFormats(alias, model);
   const runtimeTransport = resolveTransport(provider, sourceFormat);
-  // Per-model guard: when a model declares supportedFormats, only use the
-  // sourceFormat-matched transport if that format is declared (opencode-go models
-  // differ — kimi/glm only do /chat/completions). Undeclared models keep the
-  // upstream default (use the transport), preserving behavior for glm/deepseek/...
-  // When the client's wire format is NOT among the model's supportedFormats, fall
-  // back to the transport for the model's declared targetFormat so the URL always
-  // matches the translated body. Without this, a Responses-only model (e.g. Muse
-  // Spark: supportedFormats ["openai-responses"]) requested by an OpenAI client is
-  // translated to the Responses body (`input`) yet POSTed to the default Chat
-  // Completions URL, and upstream rejects it: "unknown parameter `input`".
   const modelTargetTransport = modelTargetFormat ? resolveTransport(provider, modelTargetFormat) : null;
   const useTransport = (!modelSupportedFormats || modelSupportedFormats.includes(sourceFormat))
     ? runtimeTransport
     : modelTargetTransport;
-  // A source-format-matched endpoint keeps the request lossless. Prefer it
-  // over a model-level targetFormat, which is only the fallback for clients
-  // whose wire format has no supported transport (for example MiniMax-M3:
-  // OpenAI clients should stay on /chat/completions; other clients can fall
-  // back to its declared Claude target).
   const targetFormat = useTransport?.format || modelTargetFormat || getTargetFormat(provider, credentials);
   if (useTransport && credentials) credentials.runtimeTransport = useTransport;
   const stripList = getModelStrip(alias, model);
 
   // Inject provider-level thinking config override (only if client hasn't set)
-  // on/off → extended type (body.thinking), none/low/medium/high → effort type (body.reasoning_effort)
   if (providerThinking?.mode && providerThinking.mode !== "auto") {
     const mode = providerThinking.mode;
     if (mode === "on" && !body.thinking) {
@@ -130,13 +109,18 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Per-request opt-out: client can bypass all token savers via header
   const tokenSaverEnabled = clientRawRequest?.headers?.[TOKEN_SAVER_HEADER]?.toLowerCase() !== "off";
+  const fsCacheTtlMs = normalizeTtlMs(fsCacheTtlHours);
+  const fsCacheMaxBytes = normalizeMaxSizeBytes(fsCacheMaxSizeMb);
+  const rtkCacheOpts = tokenSaverEnabled && blockCacheEnabled
+    ? { blockCacheEnabled: true, ttlMs: fsCacheTtlMs, maxSizeBytes: fsCacheMaxBytes }
+    : null;
 
   // Cursor's translator rewrites tool_result into user text, so RTK must run on
   // the source body before translation. Every other pair translates the tool
   // shapes 1:1 — keep the post-translate pass there so those providers are
   // untouched (and a retry never re-compresses an already-compressed body).
   const preTranslateRtk = provider === "cursor"
-    ? compressMessages(body, tokenSaverEnabled && rtkEnabled)
+    ? compressMessages(body, tokenSaverEnabled && rtkEnabled, rtkCacheOpts)
     : null;
   const preTranslateRtkLine = formatRtkLog(preTranslateRtk);
   if (preTranslateRtkLine) console.log(preTranslateRtkLine);
@@ -152,14 +136,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stream = false;
   }
 
-  // DeepSeek-TUI: interactive TUI panel sends stream:true and needs SSE.
-  // Non-interactive mode (-p flag) sends without stream and can't parse SSE.
-  // Only force non-streaming when client didn't explicitly request it.
   const detectedTool = detectClientTool(clientRawRequest?.headers || {}, body);
   if (detectedTool === "deepseek-tui" && body.stream !== true) stream = false;
 
-  // Check client Accept header preference for non-streaming requests
-  // This fixes AI SDK compatibility where clients send Accept: application/json
   const acceptHeader = clientRawRequest?.headers?.accept || "";
   const clientPrefersJson = acceptHeader.includes("application/json");
   const clientPrefersSSE = acceptHeader.includes("text/event-stream");
@@ -172,12 +151,9 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   reqLogger.logRawRequest(body);
   log?.debug?.("FORMAT", `${sourceFormat} → ${targetFormat} | stream=${stream}`);
 
-  // Native passthrough: CLI tool and provider are the same ecosystem
-  // Skip all translation/normalization — only model and Bearer are swapped
   const clientTool = detectClientTool(clientRawRequest?.headers || {}, body);
   const passthrough = isNativePassthrough(clientTool, provider);
 
-  // Expose raw client headers to translators/executors for session-id resolution
   if (credentials) credentials.rawHeaders = clientRawRequest?.headers || {};
 
   // Auto-strip media blocks the model can't read (vision/audio/pdf) before translation.
@@ -186,7 +162,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (stripUnsupportedModalities(body, sourceFormat, caps)) {
       log?.debug?.("MODALITY", `stripped unsupported media for ${provider}/${model}`);
     }
-    // Convert remote image URLs to base64 for targets that can't fetch URLs.
     try {
       const n = await prefetchRemoteImages(body, sourceFormat, targetFormat, { signal: undefined });
       if (n > 0) log?.debug?.("MODALITY", `prefetched ${n} remote image(s) for ${targetFormat}`);
@@ -211,7 +186,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
         delete translatedBody.reasoning_effort;
       }
     }
-    // Normalize newer Cowork/CC beta shapes (adaptive thinking, mid-conversation system) the API rejects
     if (clientTool === "claude") normalizeClaudePassthrough(translatedBody, translatedBody.model);
   } else {
     translatedBody = translateRequest(sourceFormat, targetFormat, upstreamModel, body, stream, credentials, provider, reqLogger, stripList, connectionId, clientTool);
@@ -227,8 +201,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stripContinuityFields(translatedBody);
   }
 
-  // Tool normalization: MCP-equivalent built-in dedup (Claude clients) + same-name
-  // dedup for DeepSeek models (upstream rejects duplicate tool names on all endpoints).
   if (Array.isArray(translatedBody.tools)) {
     const { tools: deduped, stripped } = dedupeTools(translatedBody.tools, { clientTool, model, messages: translatedBody.messages });
     if (stripped.length > 0) {
@@ -237,11 +209,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     }
   }
 
-  // Token savers: applied at the final body just before dispatch
-  // Covers both passthrough (source shape) and translated (target shape) flows
   const finalFormat = passthrough ? sourceFormat : targetFormat;
 
-  // Request line: one correlated summary (fmt + thinking + counts + account)
   if (log?.line) {
     const clientModel = clientRawRequest?.body?.model || `${provider}/${model}`;
     const msgN = translatedBody.messages?.length || translatedBody.input?.length || translatedBody.contents?.length || body.messages?.length || body.input?.length || 0;
@@ -262,28 +231,32 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     log.line(reqTag, "▶", parts.join(" · "));
   }
 
-  // TTS models don't support tool messages/function calling
   if (getModelType(alias, model) === "tts" && translatedBody.messages) {
     translatedBody.messages = translatedBody.messages.filter(msg => msg.role !== "tool");
     delete translatedBody.tools;
   }
 
-  // Claude tool schema requires `type` to be explicitly set; strict gateways (e.g., MiniMax)
-  // reject legacy payloads that omit it with HTTP 400. Default to "custom" when missing.
-  // Provider-scoped via quirks (shouldDefaultClaudeToolType): only gateways that declare
-  // requireClaudeToolType get the explicit type. Applying it unconditionally breaks
-  // Claude-format endpoints that only accept the legacy typeless tool shape — DeepSeek's
-  // Anthropic-compatible endpoint 400s with "unknown variant `custom`" (#3905).
   if (shouldDefaultClaudeToolType(provider, finalFormat, translatedBody.tools, PROVIDERS)) {
     translatedBody.tools = defaultClaudeToolType(translatedBody.tools);
   }
 
-  // RTK: compress tool_result content. Skipped when already done pre-translate.
-  const rtkStats = preTranslateRtk || compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled);
+  // RTK: compress tool_result content (+ raw filesystem Block Cache when enabled). Skipped when already done pre-translate.
+  const rtkStats = preTranslateRtk || compressMessages(translatedBody, tokenSaverEnabled && rtkEnabled, rtkCacheOpts);
 
-  // Headroom: optional external proxy compression; fail open if proxy is absent.
+  // Headroom: optional external proxy compression (+ raw filesystem Block Cache reuse across turns).
   const headroomDiagnostics = {};
-  const headroomStats = await compressWithHeadroom(translatedBody, { enabled: tokenSaverEnabled && headroomEnabled, url: headroomUrl, model: upstreamModel, format: finalFormat, compressUserMessages: headroomCompressUserMessages, timeoutMs: headroomTimeoutMs, diagnostics: headroomDiagnostics });
+  const headroomStats = await compressWithHeadroom(translatedBody, {
+    enabled: tokenSaverEnabled && headroomEnabled,
+    url: headroomUrl,
+    model: upstreamModel,
+    format: finalFormat,
+    compressUserMessages: headroomCompressUserMessages,
+    timeoutMs: headroomTimeoutMs,
+    diagnostics: headroomDiagnostics,
+    blockCacheEnabled: tokenSaverEnabled && blockCacheEnabled,
+    ttlMs: fsCacheTtlMs,
+    maxSizeBytes: fsCacheMaxBytes,
+  });
   const headroomLine = formatHeadroomLog(headroomStats);
   const headroomSizeLine = formatHeadroomSizeLog(headroomDiagnostics);
   if (headroomLine) {
@@ -297,6 +270,8 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   const xf = [];
 
   if (rtkStats?.hits?.length) xf.push(`RTK:${rtkStats.hits.length}`);
+  const totalBlockCacheHits = (rtkStats?.cacheHits || 0) + (headroomStats?.blockCacheHits || 0);
+  if (totalBlockCacheHits > 0) xf.push(`BLOCKCACHE:${totalBlockCacheHits}`);
 
   // Caveman: inject terse-style system prompt
   if (tokenSaverEnabled && cavemanEnabled && cavemanLevel) {
@@ -334,6 +309,60 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // system/tools/messages, and a stale anchor costs a full prefix rewrite.
   if (passthrough && clientTool === "claude") anchorClaudeCache(translatedBody);
 
+  // Full Response Cache (Raw Filesystem): check before calling upstream executor
+  const clientExpectsStream = Boolean(stream && (clientRequestedStreaming || (providerRequiresStreaming && providerResponseFormatIsSame(sourceFormat, targetFormat))));
+  const responseCacheKey = tokenSaverEnabled && responseCacheEnabled
+    ? buildResponseCacheKey({
+        provider,
+        model: translatedBody.model || upstreamModel,
+        sourceFormat,
+        stream: clientRequestedStreaming,
+        body: translatedBody,
+      })
+    : null;
+
+  if (responseCacheKey) {
+    const cachedEntry = getResponseCacheSync(responseCacheKey, { ttlMs: fsCacheTtlMs });
+    if (cachedEntry) {
+      const savedTokens = cachedEntry.savedTokens || 0;
+      if (log?.line) {
+        log.line(reqTag, "⚡", `RESPONSE CACHE HIT · ${provider}/${model} · saved ~${savedTokens} tok · ${Date.now() - requestStartTime}ms`);
+      }
+      if (onRequestSuccess) {
+        Promise.resolve().then(onRequestSuccess).catch(() => {});
+      }
+      appendRequestLog({
+        model,
+        provider,
+        connectionId,
+        tokens: cachedEntry.usage || { prompt_tokens: 0, completion_tokens: 0 },
+        status: "200 CACHE",
+      }).catch(() => {});
+      saveRequestDetail(buildRequestDetail({
+        provider,
+        model,
+        connectionId,
+        latency: { ttft: 0, total: Date.now() - requestStartTime },
+        tokens: cachedEntry.usage || { prompt_tokens: 0, completion_tokens: 0 },
+        request: extractRequestConfig(body, stream),
+        providerRequest: translatedBody || null,
+        providerResponse: "[Served from Raw Filesystem Response Cache]",
+        response: {
+          content: cachedEntry.stream ? "[Cached SSE stream replay]" : cachedEntry.bodyText?.slice(0, 4000) || null,
+          thinking: null,
+          type: cachedEntry.stream ? "streaming-cache" : "json-cache",
+        },
+        pxpipe: pxpipeSummary,
+        status: "success",
+      }, { endpoint: clientRawRequest?.endpoint || null })).catch(() => {});
+
+      return {
+        success: true,
+        response: createResponseFromCache(cachedEntry),
+      };
+    }
+  }
+
   const executor = getExecutor(provider);
   trackPendingRequest(model, provider, connectionId, true);
   appendRequestLog({ model, provider, connectionId, status: "PENDING" }).catch(() => { });
@@ -355,8 +384,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     connectionProxyUrl: credentials?.providerSpecificData?.connectionProxyUrl || "",
     connectionNoProxy: credentials?.providerSpecificData?.connectionNoProxy || "",
     vercelRelayUrl: credentials?.providerSpecificData?.vercelRelayUrl || "",
-    // Strict pools must never silently fall back to a direct connection —
-    // honored on the Cursor AgentService h2 path and in proxyFetch (#4333).
     proxyPoolId: credentials?.providerSpecificData?.connectionProxyPoolId || null,
     strictProxy: credentials?.providerSpecificData?.strictProxy === true,
   };
@@ -389,8 +416,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
 
   // Execute request
   let providerResponse, providerUrl, providerHeaders, finalBody;
-  // Most executors return their registry format. Cursor AgentService is an
-  // exception: it is decoded by the executor into OpenAI-compatible output.
   let providerResponseFormat = targetFormat;
   try {
     const result = await executor.execute({
@@ -443,10 +468,6 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Handle 401/403 - try token refresh (skip for noAuth providers)
   if (!executor.noAuth && (providerResponse.status === HTTP_STATUS.UNAUTHORIZED || providerResponse.status === HTTP_STATUS.FORBIDDEN)) {
     try {
-      // Mutate credentials after each successful refresh: rotating refresh_token
-      // providers (xAI/grok-cli) issue a new RT on every refresh; without this,
-      // refreshWithRetry's 2nd/3rd attempt reuses the already-consumed RT →
-      // invalid_grant → auth_failed retryable=false.
       const newCredentials = await refreshWithRetry(async () => {
         const result = await executor.refreshCredentials(credentials, log);
         if (result?.refreshToken && result.refreshToken !== credentials.refreshToken) {
@@ -513,14 +534,14 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     return createErrorResult(statusCode, errMsg, resetsAtMs, upstreamResponseHeaders(providerResponse.headers));
   }
 
-  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log };
+  const responseCacheContext = responseCacheKey
+    ? { key: responseCacheKey, maxSizeBytes: fsCacheMaxBytes }
+    : null;
+
+  const sharedCtx = { provider, model, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, pxpipe: pxpipeSummary, reqTag, log, responseCacheContext };
   const appendLog = (extra) => appendRequestLog({ model, provider, connectionId, ...extra }).catch(() => { });
   const trackDone = () => trackPendingRequest(model, provider, connectionId, false);
 
-  // Provider forced streaming but client wants JSON. The Responses wire always
-  // streams upstream (openaiToOpenAIResponsesRequest pins stream:true), so a
-  // non-stream OpenAI/native client behind a Responses upstream must also take
-  // this path — handleForcedSSEToJson returns null when the body is not SSE.
   if (!clientRequestedStreaming && (providerRequiresStreaming || providerResponseFormat === FORMATS.OPENAI_RESPONSES)) {
     const result = await handleForcedSSEToJson({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, customToolNames, toolNameMap, trackDone, appendLog });
     if (result) { streamController.handleComplete(); return result; }
@@ -536,6 +557,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
   // Streaming response
   const { onStreamComplete, streamDetailId } = buildOnStreamComplete({ ...sharedCtx });
   return handleStreamingResponse({ ...sharedCtx, providerResponse, sourceFormat, targetFormat: providerResponseFormat, userAgent, reqLogger, toolNameMap, customToolNames, streamController, onStreamComplete, streamDetailId, credentials });
+}
+
+function providerResponseFormatIsSame(sourceFormat, targetFormat) {
+  return sourceFormat === targetFormat;
 }
 
 export function isTokenExpiringSoon(expiresAt, bufferMs = 5 * 60 * 1000) {

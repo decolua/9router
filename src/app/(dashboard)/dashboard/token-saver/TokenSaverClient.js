@@ -10,6 +10,13 @@ import {
   PONYTAIL_LEVELS,
 } from "../endpoint/endpointConstants";
 
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 export default function TokenSaverClient() {
   const [rtkEnabled, setRtkEnabledState] = useState(true);
   const [headroomEnabled, setHeadroomEnabled] = useState(false);
@@ -47,6 +54,20 @@ export default function TokenSaverClient() {
   const [ponytailLevel, setPonytailLevel] = useState("full");
   const [customPromptEnabled, setCustomPromptEnabled] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
+  const [blockCacheEnabled, setBlockCacheEnabled] = useState(false);
+  const [responseCacheEnabled, setResponseCacheEnabled] = useState(false);
+  const [fsCacheTtlHours, setFsCacheTtlHours] = useState(24);
+  const [fsCacheMaxSizeMb, setFsCacheMaxSizeMb] = useState(500);
+  const [fsCacheStatus, setFsCacheStatus] = useState({
+    cacheDir: "",
+    blocks: { entries: 0, sizeBytes: 0, hits: 0, misses: 0, bytesSaved: 0, estTokensSaved: 0 },
+    responses: { entries: 0, sizeBytes: 0, hits: 0, misses: 0, tokensSaved: 0 },
+    totalEntries: 0,
+    totalSizeBytes: 0,
+    loading: true,
+  });
+  const [fsCacheActionLoading, setFsCacheActionLoading] = useState(false);
+  const [showFsCacheModal, setShowFsCacheModal] = useState(false);
   const [pxpipeEnabled, setPxpipeEnabled] = useState(false);
   const [pxpipeMinChars, setPxpipeMinChars] = useState(25000);
   const [pxpipeStatus, setPxpipeStatus] = useState({
@@ -92,6 +113,68 @@ export default function TokenSaverClient() {
     } catch (error) {
       console.log("Error updating setting:", error);
     }
+  };
+
+  const refreshFsCacheStatus = useCallback(async () => {
+    setFsCacheStatus((s) => ({ ...s, loading: true }));
+    try {
+      const res = await fetch("/api/token-cache", {
+        headers: { "Cache-Control": "no-store" },
+      });
+      if (!res.ok) throw new Error("Failed to load cache status");
+      const data = await res.json();
+      setFsCacheStatus({ ...data, loading: false });
+    } catch {
+      setFsCacheStatus((s) => ({ ...s, loading: false }));
+    }
+  }, []);
+
+  const handleClearFsCache = useCallback(
+    async (scope = "all") => {
+      setFsCacheActionLoading(true);
+      try {
+        const res = await fetch("/api/token-cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "clear", scope }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setFsCacheStatus({ ...data, loading: false });
+        }
+      } catch (e) {
+        console.log("Error clearing token cache:", e);
+      } finally {
+        setFsCacheActionLoading(false);
+      }
+    },
+    []
+  );
+
+  const handleBlockCacheEnabled = (value) => {
+    setBlockCacheEnabled(value);
+    patchSetting({ blockCacheEnabled: value });
+    refreshFsCacheStatus();
+  };
+
+  const handleResponseCacheEnabled = (value) => {
+    setResponseCacheEnabled(value);
+    patchSetting({ responseCacheEnabled: value });
+    refreshFsCacheStatus();
+  };
+
+  const handleFsCacheTtlBlur = () => {
+    const raw = Math.round(Number(fsCacheTtlHours));
+    const next = Number.isFinite(raw) && raw > 0 ? raw : 24;
+    setFsCacheTtlHours(next);
+    patchSetting({ fsCacheTtlHours: next });
+  };
+
+  const handleFsCacheMaxSizeBlur = () => {
+    const raw = Math.round(Number(fsCacheMaxSizeMb));
+    const next = Number.isFinite(raw) && raw > 0 ? raw : 500;
+    setFsCacheMaxSizeMb(next);
+    patchSetting({ fsCacheMaxSizeMb: next });
   };
 
   const handleRtkEnabled = async (value) => {
@@ -295,7 +378,6 @@ export default function TokenSaverClient() {
 
   const handleInstallExtras = useCallback(() => {
     if (pendingExtras.length === 0) return;
-    // Warn about the heavy ~1GB torch download before installing [ml].
     if (pendingExtras.includes("ml")) {
       setExtrasConfirm({
         title: "Install [ml]",
@@ -319,8 +401,6 @@ export default function TokenSaverClient() {
     });
   }, [removeExtraConfirmed]);
 
-  // Toggle an extra's active state (persist setting), then restart the proxy so
-  // the new --code-aware / --disable-kompress flags take effect.
   const toggleExtraActive = useCallback(async (extra, value) => {
     setExtrasActionError("");
     if (extra === "code") setCodeAware(value);
@@ -443,16 +523,20 @@ export default function TokenSaverClient() {
           setPonytailLevel(data.ponytailLevel || "full");
           setCustomPromptEnabled(!!data.customPromptEnabled);
           setCustomPrompt(data.customPrompt || "");
+          setBlockCacheEnabled(!!data.blockCacheEnabled);
+          setResponseCacheEnabled(!!data.responseCacheEnabled);
+          if (typeof data.fsCacheTtlHours === "number") setFsCacheTtlHours(data.fsCacheTtlHours);
+          if (typeof data.fsCacheMaxSizeMb === "number") setFsCacheMaxSizeMb(data.fsCacheMaxSizeMb);
           setPxpipeEnabled(!!data.pxpipeEnabled);
           if (typeof data.pxpipeMinChars === "number") setPxpipeMinChars(data.pxpipeMinChars);
           refreshHeadroomStatus();
-          // PRD: run the PXPIPE health check automatically when the page opens
+          refreshFsCacheStatus();
           refreshPxpipeStatus().then(runPxpipeHealth);
         }
       } catch {}
     };
     loadSettings();
-  }, [refreshHeadroomStatus, refreshPxpipeStatus, runPxpipeHealth]);
+  }, [refreshHeadroomStatus, refreshFsCacheStatus, refreshPxpipeStatus, runPxpipeHealth]);
 
   const headroomRunning = !!headroomStatus.running;
   const headroomStatusLabel = headroomStatus.loading
@@ -485,6 +569,9 @@ export default function TokenSaverClient() {
     pxpipeHealthy || pxpipeStatus.running
       ? "bg-success/15 text-success"
       : "bg-warning/15 text-warning";
+
+  const blockStats = fsCacheStatus.blocks || { entries: 0, sizeBytes: 0, hits: 0, misses: 0, bytesSaved: 0, estTokensSaved: 0 };
+  const responseStats = fsCacheStatus.responses || { entries: 0, sizeBytes: 0, hits: 0, misses: 0, tokensSaved: 0 };
 
   return (
     <div className="space-y-6 p-6">
@@ -653,7 +740,88 @@ export default function TokenSaverClient() {
             </p>
           </div>
         )}
+
+        {/* Block/Context Compression Cache (Raw Filesystem) */}
         <div className="flex items-center justify-between pt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="font-medium">
+                Block/Context Compression Cache{" "}
+                <span className="text-xs font-normal text-primary">
+                  (Raw Filesystem)
+                </span>
+              </p>
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  blockCacheEnabled
+                    ? "bg-success/15 text-success"
+                    : "bg-surface-2 text-text-muted"
+                }`}
+              >
+                {blockStats.entries} blocks · {blockStats.hits} hits · ~{blockStats.estTokensSaved} tok saved
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  refreshFsCacheStatus();
+                  setShowFsCacheModal(true);
+                }}
+                className="text-xs text-primary underline hover:opacity-80"
+              >
+                Manage
+              </button>
+            </div>
+            <p className="text-sm text-text-muted mt-1">
+              Caches compressed tool outputs (tool_result) and message blocks as SHA-256 files on local disk so multi-turn agent conversations reuse previously compressed blocks instantly without re-compressing and keep upstream prompt caching (cache_control / prefix cache) intact.
+            </p>
+          </div>
+          <Toggle
+            checked={blockCacheEnabled}
+            onChange={() => handleBlockCacheEnabled(!blockCacheEnabled)}
+          />
+        </div>
+
+        {/* Full Response Cache (Raw Filesystem) */}
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <p className="font-medium">
+                Full Response Cache{" "}
+                <span className="text-xs font-normal text-primary">
+                  (Raw Filesystem)
+                </span>
+              </p>
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${
+                  responseCacheEnabled
+                    ? "bg-success/15 text-success"
+                    : "bg-surface-2 text-text-muted"
+                }`}
+              >
+                {responseStats.entries} responses · {responseStats.hits} hits · ~{responseStats.tokensSaved} tok saved
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  refreshFsCacheStatus();
+                  setShowFsCacheModal(true);
+                }}
+                className="text-xs text-primary underline hover:opacity-80"
+              >
+                Manage
+              </button>
+            </div>
+            <p className="text-sm text-text-muted mt-1">
+              Caches complete LLM responses (both non-streaming JSON and streaming SSE) on local disk keyed by canonical prompt, tools, and model parameters. Identical requests are served directly from the filesystem with 0 upstream tokens consumed.
+            </p>
+          </div>
+          <Toggle
+            checked={responseCacheEnabled}
+            onChange={() => handleResponseCacheEnabled(!responseCacheEnabled)}
+          />
+        </div>
+
+        <div className="flex items-center justify-between pt-4 mt-4 border-t border-border gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <p className="font-medium">
               Compress LLM output{" "}
@@ -832,6 +1000,124 @@ export default function TokenSaverClient() {
         </div>
         )}
       </Card>
+
+      {/* Raw Filesystem Token Cache Modal */}
+      <Modal
+        isOpen={showFsCacheModal}
+        title="Raw Filesystem Token Cache"
+        onClose={() => setShowFsCacheModal(false)}
+      >
+        <div className="flex flex-col gap-4">
+          {fsCacheStatus.cacheDir && (
+            <div className="flex flex-col gap-1">
+              <p className="text-xs text-text-muted">Storage directory</p>
+              <code className="rounded bg-surface-2 px-2 py-1 text-xs font-mono break-all">
+                {fsCacheStatus.cacheDir}
+              </code>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded border border-border p-3 flex flex-col gap-1">
+              <p className="text-xs font-semibold">Block/Context Cache</p>
+              <p className="text-xs text-text-muted">
+                Entries: <span className="text-text font-mono">{blockStats.entries}</span> ({formatBytes(blockStats.sizeBytes)})
+              </p>
+              <p className="text-xs text-text-muted">
+                Hits / Misses: <span className="text-text font-mono">{blockStats.hits} / {blockStats.misses}</span>
+              </p>
+              <p className="text-xs text-text-muted">
+                Saved: <span className="text-success font-mono">{formatBytes(blockStats.bytesSaved)} (~{blockStats.estTokensSaved} tok)</span>
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={fsCacheActionLoading}
+                onClick={() => handleClearFsCache("blocks")}
+                className="mt-1"
+              >
+                Clear Block Cache
+              </Button>
+            </div>
+
+            <div className="rounded border border-border p-3 flex flex-col gap-1">
+              <p className="text-xs font-semibold">Full Response Cache</p>
+              <p className="text-xs text-text-muted">
+                Entries: <span className="text-text font-mono">{responseStats.entries}</span> ({formatBytes(responseStats.sizeBytes)})
+              </p>
+              <p className="text-xs text-text-muted">
+                Hits / Misses: <span className="text-text font-mono">{responseStats.hits} / {responseStats.misses}</span>
+              </p>
+              <p className="text-xs text-text-muted">
+                Saved: <span className="text-success font-mono">~{responseStats.tokensSaved} tokens</span>
+              </p>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={fsCacheActionLoading}
+                onClick={() => handleClearFsCache("responses")}
+                className="mt-1"
+              >
+                Clear Response Cache
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium">Cache TTL (hours)</p>
+              <Input
+                value={String(fsCacheTtlHours)}
+                onChange={(e) => setFsCacheTtlHours(e.target.value)}
+                onBlur={handleFsCacheTtlBlur}
+                placeholder="24"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-text-muted">
+                Expired cache files are automatically evicted. Default: 24h.
+              </p>
+            </div>
+            <div className="flex flex-col gap-1">
+              <p className="text-sm font-medium">Max Disk Size (MB)</p>
+              <Input
+                value={String(fsCacheMaxSizeMb)}
+                onChange={(e) => setFsCacheMaxSizeMb(e.target.value)}
+                onBlur={handleFsCacheMaxSizeBlur}
+                placeholder="500"
+                className="font-mono text-sm"
+              />
+              <p className="text-xs text-text-muted">
+                Oldest cache files are pruned when exceeded. Default: 500 MB.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={() => refreshFsCacheStatus()}
+              variant="ghost"
+              fullWidth
+              disabled={fsCacheActionLoading}
+            >
+              Refresh Stats
+            </Button>
+            <Button
+              onClick={() => handleClearFsCache("all")}
+              variant="ghost"
+              fullWidth
+              disabled={fsCacheActionLoading}
+            >
+              Clear All Cache
+            </Button>
+            <Button
+              onClick={() => setShowFsCacheModal(false)}
+              fullWidth
+            >
+              Done
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={showHeadroomInstallModal}
