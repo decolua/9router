@@ -2,7 +2,7 @@ import { detectFormat, getTargetFormat, resolveTransport } from "../services/pro
 import { translateRequest } from "../translator/index.js";
 import { applyThinking, extractThinking, stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 import { FORMATS } from "../translator/formats.js";
-import { normalizeClaudePassthrough, anchorClaudeCache } from "../translator/formats/claude.js";
+import { normalizeClaudePassthrough, anchorClaudeCache, lastCacheableToolIndex } from "../translator/formats/claude.js";
 import { createStreamController } from "../utils/streamHandler.js";
 import { refreshWithRetry } from "../services/tokenRefresh.js";
 import { createRequestLogger } from "../utils/requestLogger.js";
@@ -21,6 +21,9 @@ import { handleNonStreamingResponse } from "./chatCore/nonStreamingHandler.js";
 import { handleStreamingResponse, buildOnStreamComplete } from "./chatCore/streamingHandler.js";
 import { detectClientTool, isNativePassthrough } from "../utils/clientDetector.js";
 import { dedupeTools } from "../utils/toolDeduper.js";
+import { toolFilter } from "../utils/toolFilter.js";
+import { disclosureTools, HARD_TOOL_CEILING } from "../utils/toolDisclosure.js";
+import { budgetToolsToContext } from "../utils/toolBudget.js";
 import { takeRenamedToolNames } from "../utils/opencodeFingerprint.js";
 import { injectCaveman } from "../rtk/caveman.js";
 import { injectPonytail } from "../rtk/ponytail.js";
@@ -61,7 +64,7 @@ export function stripContinuityFields(body) {
   return body;
 }
 
-export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides }) {
+export async function handleChatCore({ body, modelInfo, credentials, log, onCredentialsRefreshed, onRequestSuccess, onDisconnect, clientRawRequest, connectionId, userAgent, apiKey, ccFilterNaming, rtkEnabled, headroomEnabled, headroomUrl, headroomCompressUserMessages, headroomTimeoutMs, cavemanEnabled, cavemanLevel, ponytailEnabled, ponytailLevel, customPromptEnabled, customPrompt, pxpipeEnabled, pxpipeMinChars, pxpipeTimeoutMs, pxpipeTransform, onPxpipeEvent, sourceFormatOverride, providerThinking, providerOverrides, toolDisclosure }) {
   const { provider, model } = modelInfo;
   const requestStartTime = Date.now();
   // Stable per-session color so all lines of one CLI conversation share a tag
@@ -234,6 +237,56 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     if (stripped.length > 0) {
       translatedBody.tools = deduped;
       log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
+    }
+  }
+
+  // Progressive tool disclosure: static filter, BM25 relevance, and context-budget safeguards.
+  if (Array.isArray(translatedBody.tools) && translatedBody.tools.length > 0) {
+    const beforeN = translatedBody.tools.length;
+    const beforeBytes = log?.debug ? JSON.stringify(translatedBody.tools).length : 0;
+    if (tokenSaverEnabled) {
+      if (toolDisclosure?.filterEnabled) {
+        const filtered = toolFilter(translatedBody.tools, toolDisclosure);
+        if (filtered.length < translatedBody.tools.length) {
+          log?.debug?.("TOOLDISCLOSE", `filter: ${translatedBody.tools.length}→${filtered.length} tools`);
+          translatedBody.tools = filtered;
+        }
+      }
+      if (toolDisclosure?.disclosureEnabled) {
+        const { tools: disclosed, stats } = disclosureTools(translatedBody.tools, body, connectionId, toolDisclosure);
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `bm25: ${stats.before}→${stats.after} tools (-${stats.stripped})`);
+          translatedBody.tools = disclosed;
+        }
+      }
+      if (translatedBody.tools.length > HARD_TOOL_CEILING) {
+        const { tools: capped, stats } = disclosureTools(translatedBody.tools, body, connectionId, {
+          maxTools: HARD_TOOL_CEILING,
+          alwaysInclude: toolDisclosure?.alwaysInclude,
+        });
+        if (stats) {
+          log?.debug?.("TOOLDISCLOSE", `ceiling: ${stats.before}→${stats.after} tools (-${stats.stripped}, safety cap ${HARD_TOOL_CEILING})`);
+          translatedBody.tools = capped;
+        }
+      }
+    }
+    const caps = getCapabilitiesForModel(provider, model);
+    const budgeted = budgetToolsToContext(translatedBody.tools, translatedBody, connectionId, caps);
+    if (budgeted.stats?.changed) {
+      translatedBody.tools = budgeted.tools;
+      log?.debug?.("TOOLDISCLOSE", `context: ${budgeted.stats.before}→${budgeted.stats.after} tools; ${budgeted.stats.messageTokens} msg + ${budgeted.stats.toolTokensBefore} tool ≈ ${budgeted.stats.totalTokensBefore} tokens; budget ${budgeted.stats.inputBudgetTokens}${budgeted.stats.messagesOverBudget ? " (messages alone exceed budget)" : ""}`);
+    } else if (budgeted.stats?.messagesOverBudget) {
+      log?.warn?.("TOOLDISCLOSE", `context: messages alone ≈ ${budgeted.stats.messageTokens} tokens exceeds input budget ${budgeted.stats.inputBudgetTokens}; tool disclosure cannot solve history overflow`);
+    }
+    const outFormat = passthrough ? sourceFormat : targetFormat;
+    if (outFormat === FORMATS.CLAUDE && translatedBody.tools.length > 0 && (!passthrough || translatedBody.tools.length !== beforeN)) {
+      for (const t of translatedBody.tools) delete t.cache_control;
+      const anchor = lastCacheableToolIndex(translatedBody.tools);
+      if (anchor !== -1) translatedBody.tools[anchor].cache_control = { type: "ephemeral", ttl: "1h" };
+    }
+    if (log?.debug) {
+      const afterBytes = JSON.stringify(translatedBody.tools).length;
+      log.debug("TOOLDISCLOSE", `measure: ${beforeN} tools ${beforeBytes}B → ${translatedBody.tools.length} tools ${afterBytes}B`);
     }
   }
 
