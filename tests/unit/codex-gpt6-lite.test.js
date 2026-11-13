@@ -224,8 +224,8 @@ describe("Codex GPT-6 Sol/Luna transport", () => {
     const body = JSON.parse(options.body);
     expect(url).toBe("https://chatgpt.com/backend-api/codex/responses");
     expect(options.headers["x-openai-internal-codex-responses-lite"]).toBe("true");
-    expect(options.headers.version).toBe("0.159.0");
-    expect(options.headers["User-Agent"]).toBe("codex_cli_rs/0.159.0");
+    expect(options.headers.version).toBe("0.167.1");
+    expect(options.headers["User-Agent"]).toBe("codex_cli_rs/0.167.1");
     expect(body.model).toBe("gpt-6-luna");
     expect(body.instructions).toBe("");
     expect(body.input[0].type).toBe("additional_tools");
