@@ -23,10 +23,11 @@ export function tree(input) {
   // Cap overly long trees (JS-only safeguard; Rust has no cap)
   if (filtered.length > TREE_MAX_LINES) {
     const cut = filtered.length - TREE_MAX_LINES;
-    return filtered.slice(0, TREE_MAX_LINES).join("\n") + `\n... +${cut} more lines`;
+    return filtered.slice(0, TREE_MAX_LINES).join("\n") + `\n... +${cut} more lines\n`;
   }
 
-  return filtered.join("\n");
+  // Rust: filtered_lines.join("\n") + "\n"
+  return filtered.join("\n") + "\n";
 }
 
 tree.filterName = "tree";

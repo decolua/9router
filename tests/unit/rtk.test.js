@@ -144,12 +144,40 @@ describe("gitLog filter", () => {
     expect(out.length).toBeLessThanOrEqual(input.length);
   });
 
-  it("keeps commit header + subject in default git log, drops body detail", () => {
-    const input = makeGitLogDefault();
+  it("keeps commit header + subject + up to 3 body lines, counts the rest", () => {
+    const body = Array.from({ length: 6 }, (_, i) => `    body line ${i}`);
+    const input = [
+      "commit abc1234def5678abc1234def5678abc1234def5",
+      "Author: Dev One <dev1@example.com>",
+      "Date:   Sun Jul 6 10:00:00 2026 +0700",
+      "",
+      "    Add auth middleware",
+      "",
+      ...body
+    ].join("\n");
     const out = gitLog(input);
     expect(out).toContain("commit abc1234def5678abc1234def5678abc1234def5");
     expect(out).toContain("Add auth middleware");
-    expect(out).not.toContain("More body detail should be dropped.");
+    expect(out).toContain("body line 2");
+    expect(out).not.toContain("body line 3");
+    expect(out).toContain("[+3 lines omitted]");
+  });
+
+  it("drops Signed-off-by / Co-authored-by trailers", () => {
+    const input = [
+      "commit abc1234def5678abc1234def5678abc1234def5",
+      "Author: Dev One <dev1@example.com>",
+      "Date:   Sun Jul 6 10:00:00 2026 +0700",
+      "",
+      "    Add auth middleware",
+      "",
+      "    Signed-off-by: Someone <s@example.com>",
+      "    Co-authored-by: Other <o@example.com>"
+    ].join("\n");
+    const out = gitLog(input);
+    expect(out).not.toContain("Signed-off-by");
+    expect(out).not.toContain("Co-authored-by");
+    expect(out).not.toContain("lines omitted");
   });
 
   it("strips graph-only decoration but keeps commit subjects", () => {
@@ -202,7 +230,7 @@ describe("gitLog filter", () => {
     expect(out).not.toContain("diff --git a/src/main.js b/src/main.js");
   });
 
-  it("truncates beyond maxLines and reports skipped count", () => {
+  it("truncates beyond the commit cap and reports skipped count", () => {
     // Generate 50 commit lines but cap at 20
     const lines = [];
     for (let i = 0; i < 50; i++) {
@@ -211,8 +239,8 @@ describe("gitLog filter", () => {
     const input = lines.join("\n");
     const out = gitLog(input, 20);
     const outLines = out.split("\n").filter(l => l.length > 0);
-    expect(outLines.length).toBeLessThanOrEqual(21); // 20 commits + optional skipped note
-    expect(out).toContain("more lines");
+    expect(outLines.length).toBeLessThanOrEqual(21); // 20 commits + skipped note
+    expect(out).toContain("30 more commits");
   });
 
   it("preserves input when compressed output inflates", () => {
@@ -228,16 +256,99 @@ describe("RTK filters", () => {
     const input = makeLongDiff();
     const out = gitDiff(input, 500);
     expect(out).toContain("foo.js");
-    expect(out).toContain("lines truncated");
+    expect(out).toContain("100 additions truncated");
     expect(out.length).toBeLessThan(input.length);
   });
 
-  it("gitStatus groups by kind and produces compact output (Rust format)", () => {
+  it("gitDiff keeps the context lines immediately before a change", () => {
+    const input = [
+      "diff --git a/a.js b/a.js",
+      "--- a/a.js",
+      "+++ b/a.js",
+      "@@ -1,6 +1,6 @@",
+      " one",
+      " two",
+      " three",
+      "-old",
+      "+new",
+      " four",
+      " five"
+    ].join("\n");
+    const out = gitDiff(input, 500);
+    expect(out).toContain(" three");
+    expect(out).toContain("-old");
+    expect(out).toContain("+new");
+  });
+
+  it("gitDiff bounds a hunk by its header counts (trailer is not diff content)", () => {
+    const input = [
+      "diff --git a/a.js b/a.js",
+      "--- a/a.js",
+      "+++ b/a.js",
+      "@@ -1 +1 @@",
+      "-old",
+      "+new",
+      "-- ",
+      "2.39.2"
+    ].join("\n");
+    const out = gitDiff(input, 500);
+    expect(out).toContain("a.js");
+    expect(out).toContain("-old");
+    expect(out).toContain("+new");
+    // Hunk is spent after -old/+new, so the signature is not read as body
+    expect(out).not.toContain("2.39.2");
+  });
+
+  it("gitDiff handles combined (merge) diffs", () => {
+    const input = [
+      "diff --cc src/x.js",
+      "index 111,222..333",
+      "--- a/src/x.js",
+      "+++ b/src/x.js",
+      "@@@ -1,3 -1,3 +1,4 @@@",
+      "  keep",
+      " -parentOne",
+      " -parentTwo",
+      "++added",
+      "  tail"
+    ].join("\n");
+    const out = gitDiff(input, 500);
+    expect(out).toContain("src/x.js");
+    expect(out).toContain("@@@ -1,3 -1,3 +1,4 @@@");
+    expect(out).toContain("++added");
+  });
+
+  it("gitStatus: porcelain passes through, only the branch header changes", () => {
+    const input = [
+      "## main...origin/main",
+      "M  staged.rs",
+      " M modified.rs",
+      "A  added.rs",
+      "?? untracked.txt"
+    ].join("\n");
+    const out = gitStatus(input);
+    expect(out).toContain("* main...origin/main");
+    expect(out).toContain("M  staged.rs");
+    expect(out).toContain(" M modified.rs");
+    expect(out).toContain("?? untracked.txt");
+    // Upstream format_status_output no longer buckets entries
+    expect(out).not.toContain("Staged");
+    expect(out).not.toContain("Modified");
+    expect(out).not.toContain("Untracked");
+  });
+
+  it("gitStatus: branch-only porcelain gains the clean marker", () => {
+    expect(gitStatus("## main\n")).toBe("* main\nclean — nothing to commit");
+  });
+
+  it("gitStatus: plain status drops git hints and blank lines (upstream minimal filter)", () => {
     const input = makeGitStatus();
     const out = gitStatus(input);
-    expect(out).toContain("* main");
-    expect(out).toMatch(/~ Modified: \d+ files/);
+    expect(out).toContain("On branch main");
     expect(out).toContain("src/a.js");
+    expect(out).toContain("notes.txt");
+    expect(out).not.toContain('(use "git add');
+    expect(out).not.toMatch(/\n\n/);
     expect(out.length).toBeLessThan(input.length);
   });
 
@@ -261,18 +372,28 @@ describe("RTK filters", () => {
     expect(out.length).toBeLessThan(input.length);
   });
 
-  it("dedupLog collapses consecutive duplicates", () => {
+  it("dedupLog collapses runs of 3+ identical lines with an [xN] marker", () => {
     const input = Array(20).fill("repeated log line A").join("\n") + "\nunique\n" + Array(10).fill("another dup").join("\n");
     const out = dedupLog(input);
-    expect(out).toContain("repeated log line A");
-    expect(out).toContain("duplicate lines");
+    expect(out).toContain("repeated log line A\n[x20]");
+    expect(out).toContain("another dup\n[x10]");
+    expect(out).toContain("unique");
     expect(out.length).toBeLessThan(input.length);
+  });
+
+  it("dedupLog leaves pairs and blank runs untouched (upstream dedup rules)", () => {
+    const input = "same\nsame\n\n\n\nother";
+    expect(dedupLog(input)).toBe(input);
   });
 });
 
 describe("autoDetectFilter", () => {
   it("detects git diff", () => {
     expect(autoDetectFilter("diff --git a/x b/x\n@@ -1 +1 @@\n+a").filterName).toBe("git-diff");
+  });
+  it("detects a combined (merge) diff", () => {
+    const input = "diff --cc src/x.js\n@@@ -1,3 -1,3 +1,4 @@@\n  keep\n++added";
+    expect(autoDetectFilter(input).filterName).toBe("git-diff");
   });
   it("detects git status", () => {
     expect(autoDetectFilter("On branch main\n  modified:   x.js\n").filterName).toBe("git-status");
@@ -315,7 +436,19 @@ describe("RTK filters (extras)", () => {
     expect(out).toContain("1.2K");
     expect(out).toContain("5.5K");
     expect(out).not.toContain("drwx");
-    expect(out).toContain("Summary: 2 files, 1 dirs");
+    // Upstream compact_ls no longer emits the extension summary line
+    expect(out).not.toContain("Summary:");
+  });
+
+  it("ls: caps the listing at CAP_INVENTORY (50) entries", () => {
+    const rows = ["total 1200"];
+    for (let i = 0; i < 60; i++) {
+      rows.push(`-rw-r--r--  1 user staff 100 Jan  1 12:00 file${i}.js`);
+    }
+    const out = ls(rows.join("\n"));
+    const listing = out.split("\n");
+    expect(listing.filter(l => l.startsWith("file"))).toHaveLength(50);
+    expect(out).toContain("+10 more entries");
   });
 
   it("ls: filters noise dirs", () => {
@@ -341,12 +474,22 @@ describe("RTK filters (extras)", () => {
     expect(out).toContain("main.rs");
   });
 
-  it("smartTruncate: keeps head+tail, drops middle", () => {
-    const input = Array.from({ length: 400 }, (_, i) => `line ${i}`).join("\n");
+  it("smartTruncate: head-biased window keeps structural lines and marks the rest", () => {
+    const lines = [];
+    for (let i = 0; i < 400; i++) {
+      if (i === 200) lines.push("export function important(foo) {");
+      else lines.push(`line ${i}`);
+    }
+    const input = lines.join("\n");
     const out = smartTruncate(input);
+    const outLines = out.split("\n");
     expect(out).toContain("line 0");
-    expect(out).toContain("line 399");
-    expect(out).toContain("lines truncated");
+    // import/signature/`export`/brace lines survive past the soft head window
+    expect(out).toContain("export function important(foo) {");
+    expect(outLines.length).toBeLessThanOrEqual(300);
+    expect(outLines[outLines.length - 1]).toMatch(/^\[\d+ more lines\]$/);
+    // Head-biased: upstream smart_truncate keeps no tail
+    expect(out).not.toContain("line 399");
     expect(out.length).toBeLessThan(input.length);
   });
 

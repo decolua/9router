@@ -559,7 +559,7 @@ Set `X-9Router-Token-Saver: off` to bypass all token savers for one chat request
 
 Tool outputs (`git diff`, `grep`, `find`, `ls`, `tree`, log dumps...) often eat 30-50% of your prompt budget. RTK detects them and applies smart, lossless compression **before** the request hits the LLM:
 
-- **Filters:** `git-diff`, `git-status`, `grep`, `find`, `ls`, `tree`, `dedup-log`, `smart-truncate`, `read-numbered`, `search-list`
+- **Filters:** `git-diff`, `git-status`, `git-log`, `grep`, `find`, `ls`, `tree`, `build-output`, `dedup-log`, `smart-truncate`, `read-numbered`, `search-list`, `tsc`, `vitest`, `phpunit`
 - **Auto-detect:** No config needed — RTK peeks the first 1KB of each `tool_result` and picks the right filter.
 - **Safe by design:** If a filter fails, throws, or makes output bigger, RTK silently keeps the original text. Errors never break your request.
 - **Universal:** Works across all formats (OpenAI, Claude, Gemini, Cursor, Kiro, OpenAI Responses) because it runs **before** any format translation.

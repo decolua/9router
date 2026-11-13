@@ -1,43 +1,36 @@
-// Generic fallback: collapse consecutive duplicate lines + blank-line dedupe + hard line cap
-import { DEDUP_LINE_MAX } from "../constants.js";
+// Port of the upstream `dedup` method (rtk/engine/src/methods/dedup.rs).
+//
+// Adjacent-only, non-blank lines only, run >= 3: the line is kept once followed
+// by an explicit `[xN]` count. Shorter runs pass through untouched, blank-line
+// runs are exempt (the marker would cost more than it saves), and ordering is
+// preserved. The hard line cap is a 9router safeguard on top of the upstream
+// rules so a pathological blob cannot defeat the compressor.
+import { DEDUP_LINE_MAX, DEDUP_MIN_RUN } from "../constants.js";
 
 export function dedupLog(input) {
   const lines = input.split("\n");
   const out = [];
-  let prev = null;
-  let runCount = 0;
-  let blankStreak = 0;
+  let i = 0;
 
-  const flushRun = () => {
-    if (prev !== null && runCount > 1) {
-      out.push(`  ... (${runCount - 1} duplicate lines)`);
-    }
-  };
+  while (i < lines.length) {
+    const line = lines[i];
+    let run = 1;
+    while (i + run < lines.length && lines[i + run] === line) run += 1;
 
-  for (const line of lines) {
-    if (line.trim() === "") {
-      if (blankStreak < 1) out.push(line);
-      blankStreak += 1;
-      flushRun();
-      prev = null;
-      runCount = 0;
-      continue;
+    if (run >= DEDUP_MIN_RUN && line.trim() !== "") {
+      out.push(line);
+      out.push(`[x${run}]`);
+    } else {
+      for (let k = 0; k < run; k++) out.push(line);
     }
-    blankStreak = 0;
-    if (line === prev) {
-      runCount += 1;
-      continue;
-    }
-    flushRun();
-    out.push(line);
-    prev = line;
-    runCount = 1;
+    i += run;
+
     if (out.length >= DEDUP_LINE_MAX) {
       out.push(`... (truncated at ${DEDUP_LINE_MAX} lines)`);
       return out.join("\n");
     }
   }
-  flushRun();
+
   return out.join("\n");
 }
 
