@@ -65,7 +65,7 @@ export async function GET() {
 
 export async function POST(request) {
   try {
-    const { action, provider, model } = await request.json();
+    const { action, provider, model, connectionId } = await request.json();
 
     if (action !== "clearCooldown" || !provider || !model) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
@@ -73,26 +73,30 @@ export async function POST(request) {
 
     const connections = await getProviderConnections({ provider });
     const lockKey = `${MODEL_LOCK_PREFIX}${model}`;
-
-    await Promise.all(
-      connections
-        .filter((connection) => connection[lockKey])
-        .map((connection) =>
-          updateProviderConnection(connection.id, {
-            [lockKey]: null,
-            ...(connection.testStatus === "unavailable"
-              ? {
-                  testStatus: "active",
-                  lastError: null,
-                  lastErrorAt: null,
-                  backoffLevel: 0,
-                }
-              : {}),
-          }),
-        ),
+    const targets = connections.filter(
+      (connection) => connection[lockKey] && (!connectionId || connection.id === connectionId),
     );
 
-    return NextResponse.json({ ok: true });
+    if (targets.length === 0) {
+      return NextResponse.json({ error: "Cooldown not found" }, { status: 404 });
+    }
+
+    await Promise.all(targets.map((connection) => {
+      const hasOtherActiveLocks = getActiveModelLocks(connection).some((lock) => lock.key !== lockKey);
+      return updateProviderConnection(connection.id, {
+        [lockKey]: null,
+        ...(connection.testStatus === "unavailable" && !hasOtherActiveLocks
+          ? {
+              testStatus: "active",
+              lastError: null,
+              lastErrorAt: null,
+              backoffLevel: 0,
+            }
+          : {}),
+      });
+    }));
+
+    return NextResponse.json({ ok: true, cleared: targets.length });
   } catch (error) {
     console.error("[API] Failed to clear model cooldown:", error);
     return NextResponse.json(
