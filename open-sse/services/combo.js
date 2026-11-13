@@ -365,6 +365,7 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  resolveQuotaOrder = null,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
@@ -445,6 +446,12 @@ export async function handleComboChat({
       } catch (err) {
         log.warn("COMBO", `smart-router error, fallback to order: [${models.join(", ")}]`, { error: err?.message || String(err) });
       }
+    }
+  } else if (comboStrategy === "tokenmaxxing" && typeof resolveQuotaOrder === "function") {
+    try {
+      rotatedModels = await resolveQuotaOrder(models);
+    } catch (err) {
+      log.warn("COMBO", `tokenmaxxing error, fallback to order`, { error: err?.message || String(err) });
     }
   } else {
     // Apply rotation strategy if enabled

@@ -30,7 +30,8 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
   const excludeSet = excludeConnectionIds instanceof Set
     ? excludeConnectionIds
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
-  const preferredConnectionId = options?.preferredConnectionId || null;
+  let preferredConnectionId = options?.preferredConnectionId || null;
+  const preferBestId = options?.preferBestConnectionId || null; // soft: honors sticky round-robin
   const requestedModel = options?.requestedModel || model;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
@@ -145,6 +146,9 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     const providerOverride = (settings.providerStrategies || {})[providerId] || {};
     const strategy = providerOverride.fallbackStrategy || settings.fallbackStrategy || "fill-first";
 
+    // Soft preference only applies when round-robin stickiness is off; otherwise it picks the account at switch time.
+    if (preferBestId && strategy !== "round-robin") preferredConnectionId = preferBestId;
+
     let connection;
     // Pin to preferred connection if specified and available
     if (preferredConnectionId) {
@@ -186,7 +190,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
           return new Date(a.lastUsedAt) - new Date(b.lastUsedAt);
         });
 
-        connection = sortedByOldest[0];
+        connection = availableConnections.find((c) => c.id === preferBestId) || sortedByOldest[0];
 
         // Update lastUsedAt and reset count to 1 (await to ensure persistence)
         await updateProviderConnection(connection.id, {
