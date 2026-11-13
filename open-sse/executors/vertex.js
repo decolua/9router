@@ -3,6 +3,7 @@ import { PROVIDERS } from "../config/providers.js";
 import { getModelMeta } from "../config/providerModels.js";
 import { parseVertexSaJson, refreshVertexToken, refreshGoogleToken } from "../services/tokenRefresh.js";
 import { proxyAwareFetch } from "../utils/proxyFetch.js";
+import { stripThinkingSuffix } from "../translator/concerns/thinkingUnified.js";
 
 // Cache project IDs resolved from raw API keys { apiKey → projectId }
 const projectIdCache = new Map();
@@ -65,6 +66,7 @@ export class VertexExecutor extends BaseExecutor {
   }
 
   buildUrl(model, stream, urlIndex = 0, credentials = null) {
+    model = stripThinkingSuffix(model);
     const saJson = parseVertexSaJson(credentials?.apiKey);
     const adcJson = parseVertexAdcJson(credentials?.apiKey);
     const usesOAuth = !!saJson || !!adcJson || !!credentials?.accessToken;
