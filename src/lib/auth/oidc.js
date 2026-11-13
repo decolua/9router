@@ -50,7 +50,9 @@ export function isOidcConfigured(settings) {
 
 export async function getOidcRuntimeConfig() {
   const settings = await getSettings();
-  if (!["oidc", "both"].includes(settings.authMode) || !isOidcConfigured(settings)) return null;
+  const usesOidc = settings.authMode === "oidc"
+    || (["sso", "both"].includes(settings.authMode) && (settings.ssoType || "oidc") === "oidc");
+  if (!usesOidc || !isOidcConfigured(settings)) return null;
 
   const issuerUrl = trimTrailingSlashes(settings.oidcIssuerUrl);
   return {
@@ -59,6 +61,7 @@ export async function getOidcRuntimeConfig() {
     clientSecret: settings.oidcClientSecret.trim(),
     scopes: normalizeScopes(settings.oidcScopes),
     loginLabel: (settings.oidcLoginLabel || DEFAULT_LOGIN_LABEL).trim() || DEFAULT_LOGIN_LABEL,
+    allowedSubjects: normalizeOidcAllowedSubjects(settings.oidcAllowedSubjects),
   };
 }
 
@@ -220,8 +223,10 @@ export async function verifyOidcIdToken({
   const { payload } = await jwtVerify(idToken, jwks, {
     issuer,
     audience,
-    nonce,
   });
+  if (typeof nonce !== "string" || !nonce || payload.nonce !== nonce) {
+    throw new Error("OIDC nonce mismatch or missing nonce");
+  }
   return payload;
 }
 
@@ -231,4 +236,19 @@ export function pickOidcDisplayName(payload = {}) {
 
 export function pickOidcEmail(payload = {}) {
   return payload.email || "";
+}
+
+export function normalizeOidcAllowedSubjects(value) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((entry) => typeof entry === "string" ? entry.trim() : "").filter(Boolean))];
+}
+
+export function isOidcIdentityAllowed(payload = {}, allowedSubjects = []) {
+  const allowed = normalizeOidcAllowedSubjects(allowedSubjects);
+  if (allowed.length === 0) return false;
+  const sub = typeof payload.sub === "string" ? payload.sub : "";
+  if (sub && !sub.startsWith("email:") && allowed.includes(sub)) return true;
+  if (payload.email_verified !== true || typeof payload.email !== "string") return false;
+  const email = payload.email.trim().toLowerCase();
+  return !!email && allowed.some((entry) => entry.startsWith("email:") && entry.slice(6).toLowerCase() === email);
 }
