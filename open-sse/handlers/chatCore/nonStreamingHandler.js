@@ -10,6 +10,7 @@ import { parseSSEToOpenAIResponse } from "./sseToJsonHandler.js";
 import { unwrapClineEnvelope } from "../../shared/clineEnvelope.js";
 import { buildRequestDetail, extractRequestConfig, extractUsageFromResponse, saveUsageStats, formatDoneLine } from "./requestDetail.js";
 import { appendRequestLog, saveRequestDetail } from "@/lib/usageDb.js";
+import { recordModelSpeed, SPEED_MODE } from "../../services/modelSpeed.js";
 import { decloakToolNames } from "../../utils/claudeCloaking.js";
 import { restoreToolNames } from "../../utils/opencodeFingerprint.js";
 import { ROLE, RESPONSES_ITEM } from "../../translator/schema/index.js";
@@ -337,6 +338,7 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   reqLogger.logConvertedResponse(translatedResponse);
 
   const totalLatency = Date.now() - requestStartTime;
+  recordModelSpeed(provider, model, SPEED_MODE.JSON, usage?.completion_tokens ?? usage?.output_tokens, { total: totalLatency });
   saveRequestDetail(buildRequestDetail({
     provider, model, connectionId,
     latency: { ttft: totalLatency, total: totalLatency },
