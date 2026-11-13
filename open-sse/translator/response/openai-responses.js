@@ -9,6 +9,7 @@ import { buildUsage } from "../concerns/usage.js";
 import { fallbackToolCallId } from "../concerns/toolCall.js";
 import { reasoningDelta, extractReasoningText } from "../concerns/reasoning.js";
 import { ROLE, OPENAI_BLOCK, RESPONSES_ITEM, OPENAI_FINISH, MODEL_FALLBACK } from "../schema/index.js";
+import { ERROR_TYPES, DEFAULT_ERROR_MESSAGES } from "../../config/errorConfig.js";
 
 /**
  * Translate OpenAI chunk to Responses API events
@@ -51,6 +52,10 @@ export function openaiToOpenAIResponsesResponse(chunk, state) {
   if (!chunk) {
     return flushEvents(state);
   }
+
+  // An in-band failure has no choices. Report it instead of completing a
+  // truncated answer as if the upstream stream succeeded.
+  if (chunk.error) return failResponse(state, chunk.error);
 
   // Capture usage before the choices guard: OpenAI may send it in a trailer
   // whose choices array is empty.
@@ -475,6 +480,33 @@ function sendCompleted(state, emit) {
       }
     });
   }
+}
+
+// A Responses client needs a terminal failure event with string fields. Marking the
+// state complete here also prevents flushEvents() from reporting a false success.
+function failResponse(state, error) {
+  if (state.completedSent) return [];
+  state.completedSent = true;
+  const code = String(error.code || error.type || ERROR_TYPES[500].code);
+  return [{
+    event: "response.failed",
+    data: {
+      type: "response.failed",
+      sequence_number: ++state.seq,
+      response: {
+        id: state.responseId,
+        object: "response",
+        created_at: state.created,
+        status: "failed",
+        background: false,
+        error: {
+          code,
+          message: String(error.message || DEFAULT_ERROR_MESSAGES[500]),
+          type: String(error.type || code),
+        },
+      },
+    },
+  }];
 }
 
 function flushEvents(state) {
