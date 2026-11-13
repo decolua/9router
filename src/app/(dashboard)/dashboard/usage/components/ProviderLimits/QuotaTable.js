@@ -128,8 +128,8 @@ export default function QuotaTable({
   const pageStart = sortedQuotas.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const pageEnd = Math.min(page * PAGE_SIZE, sortedQuotas.length);
 
-  const cellPad = compact ? "py-1 px-1.5" : "py-2 px-3";
-  const nameText = compact ? "text-[11px]" : "text-sm";
+  const cellPad = compact ? "py-2 px-2 sm:py-1 sm:px-1.5" : "py-2.5 px-3 sm:py-2 sm:px-3";
+  const nameText = compact ? "text-xs sm:text-[11px]" : "text-sm";
   const resetPrimary = compact ? "text-[11px]" : "text-sm";
   const resetSecondary = compact ? "text-[10px] leading-tight" : "text-xs";
   const sortLabel = "Sorted by account remaining";
@@ -199,20 +199,44 @@ export default function QuotaTable({
           return (
             <div
               key={`${quota.name}-${quota.index}`}
-              className={`flex items-center gap-2 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors ${cellPad}`}
+              className={`flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-black/5 dark:border-white/5 hover:bg-black/[0.02] dark:hover:bg-white/[0.02] transition-colors sm:flex-nowrap ${cellPad}`}
             >
-              {/* Name */}
-              <div className="flex w-36 min-w-0 items-center gap-1.5">
+              {/* Name + mobile percentage/hide action */}
+              <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:w-36 sm:flex-none">
                 <span className="text-[10px] shrink-0">{colors.emoji}</span>
                 <span className={`${nameText} font-medium text-text-primary truncate`}>
                   {quota.name}
                 </span>
+                <span
+                  className={`ml-auto shrink-0 text-[11px] font-medium sm:hidden ${
+                    isUnlimited
+                      ? "text-green-600 dark:text-green-400"
+                      : isCreditBalance
+                      ? "text-blue-600 dark:text-blue-400"
+                      : colors.text
+                  }`}
+                >
+                  {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
+                </span>
+                {hasHideAction && (
+                  <button
+                    type="button"
+                    onClick={() => onHideQuota(quota)}
+                    className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5 sm:hidden"
+                    title="Hide this quota row"
+                    aria-label={`Hide quota ${quota.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[15px]">
+                      visibility_off
+                    </span>
+                  </button>
+                )}
               </div>
 
-              {/* Progress + used/total */}
-              <div className={`min-w-0 flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
+              {/* Progress + used/total (full-width row on mobile) */}
+              <div className={`order-last w-full min-w-0 sm:order-none sm:w-auto sm:flex-1 ${compact ? "space-y-1" : "space-y-1.5"}`}>
                 {!isUnlimited && !isCreditBalance && (
-                <div className={`${compact ? "h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
+                <div className={`${compact ? "h-1.5 sm:h-1" : "h-1.5"} rounded-full overflow-hidden border ${colors.bgLight} ${
                   quota.remaining === 0 ? "border-black/10 dark:border-white/10" : "border-transparent"
                 }`}>
                   <div
@@ -222,7 +246,7 @@ export default function QuotaTable({
                 </div>
                 )}
 
-                <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[10px]" : "text-xs"}`}>
+                <div className={`flex items-center justify-between gap-1 min-w-0 ${compact ? "text-[11px] sm:text-[10px]" : "text-xs"}`}>
                   <span
                     className="text-text-muted truncate"
                     title={
@@ -241,14 +265,24 @@ export default function QuotaTable({
                           quota.unit ? ` ${quota.unit}` : ""
                         }`}
                   </span>
-                  <span className={`font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text} shrink-0`}>
+                  <span className={`hidden sm:inline font-medium ${isUnlimited ? "text-green-600 dark:text-green-400" : isCreditBalance ? "text-blue-600 dark:text-blue-400" : colors.text} shrink-0`}>
                     {isUnlimited ? "Unlimited" : isCreditBalance ? "" : `${quota.remaining}%`}
+                  </span>
+                  <span
+                    className="shrink-0 text-text-muted sm:hidden"
+                    title={resetSecondaryText || ""}
+                  >
+                    {countdown !== "-" || resetDisplay
+                      ? countdown !== "-"
+                        ? countdownLabel
+                        : renderResetCell("")
+                      : "N/A"}
                   </span>
                 </div>
               </div>
 
-              {/* Reset time */}
-              <div className="min-w-0 shrink">
+              {/* Reset time (desktop) */}
+              <div className="hidden min-w-0 shrink sm:block">
                 {countdown !== "-" || resetDisplay ? (
                   compact ? (
                     <div
@@ -276,12 +310,12 @@ export default function QuotaTable({
                 )}
               </div>
 
-              {/* Hide action */}
+              {/* Hide action (desktop) */}
               {hasHideAction && (
                 <button
                   type="button"
                   onClick={() => onHideQuota(quota)}
-                  className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
+                  className="hidden sm:inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-text-muted transition-colors hover:bg-black/5 hover:text-text-primary dark:hover:bg-white/5"
                   title="Hide this quota row"
                   aria-label={`Hide quota ${quota.name}`}
                 >
