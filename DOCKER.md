@@ -100,6 +100,31 @@ docker rm -f 9router
 # re-run the quick start command
 ```
 
+### Automatic dashboard updates
+
+Do not mount `/var/run/docker.sock` into 9Router. That would give the container
+effective root access to the Docker host. Instead, configure a host-side watcher
+for a trigger file in the data volume and set this environment variable on the
+9Router service:
+
+```yaml
+environment:
+  DOCKER_UPDATE_TRIGGER_FILE: /app/data/update/docker-update.request
+```
+
+The watcher should remove the trigger, run the following commands, and retry
+transient registry failures before recreating the service:
+
+```bash
+docker compose pull 9router
+docker compose up -d --force-recreate 9router
+```
+
+With the trigger configured, the dashboard reports `updateMethod: docker-auto`
+and **Update Now** starts the host update, waits through the restart, then reloads
+when the new version is ready. Without it, the dashboard keeps the safe manual
+Docker Compose command flow.
+
 To pin a specific version instead of following `latest`, use a numbered image tag:
 
 ```bash
