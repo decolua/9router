@@ -338,18 +338,20 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
     store: false
   };
 
-  // Extract system message as instructions
+  // Extract system messages as instructions
   let hasSystemMessage = false;
+  const instructionParts = [];
   const messages = body.messages || [];
 
   for (const msg of messages) {
     if (msg.role === ROLE.SYSTEM || msg.role === ROLE.DEVELOPER) {
-      // Use the first instruction-bearing message as instructions.
+      // Every instruction-bearing message joins the instructions, in order. Chat Completions allows
+      // several system messages (a client may send tool guidance and an agent prompt separately);
+      // keeping only the first silently dropped the rest.
       // OpenAI recommends role="developer" for GPT-5/Codex as the system-level prompt.
-      if (!hasSystemMessage) {
-        result.instructions = extractInstructionsText(msg.content);
-        hasSystemMessage = true;
-      }
+      const text = extractInstructionsText(msg.content);
+      if (text) instructionParts.push(text);
+      hasSystemMessage = true;
       continue; // Skip instruction messages in input
     }
 
@@ -421,9 +423,7 @@ export function openaiToOpenAIResponsesRequest(model, body, stream, credentials)
   }
 
   // If no system message, leave instructions empty (will be filled by executor)
-  if (!hasSystemMessage) {
-    result.instructions = "";
-  }
+  result.instructions = hasSystemMessage ? instructionParts.join("\n\n") : "";
 
   // Convert tools format
   if (body.tools && Array.isArray(body.tools)) {
