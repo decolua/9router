@@ -137,6 +137,18 @@ import p134 from "./minimax-code.js";
 import p135 from "./minimax-code-global.js";
 import p136 from "./bedrock.js";
 import p137 from "./bedrock-xai.js";
+<<<<<<< HEAD
+=======
+import p138 from "./nous.js";
+import p140 from "./deepseek-web.js";
+import p143 from "./gemini-web.js";
+import p144 from "./muse-web.js";
+import p146 from "./chatgpt-web.js";
+import p147 from "./veoaifree-web.js";
+import p151 from "./uc-web.js";
+import p152 from "./subq.js";
+import p153 from "./avalai.js";
+>>>>>>> 87372642 (feat: add AvalAI provider with 50+ models)
 export default [
   p0,
   p1,
@@ -274,4 +286,16 @@ export default [
   p135,
   p136,
   p137,
+<<<<<<< HEAD
+=======
+  p138,
+  p140,
+  p143,
+  p144,
+  p146,
+  p147,
+  p151,
+  p152,
+  p153,
+>>>>>>> 87372642 (feat: add AvalAI provider with 50+ models)
 ];
