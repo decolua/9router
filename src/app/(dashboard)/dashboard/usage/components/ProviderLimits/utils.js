@@ -2,9 +2,24 @@ import { getModelsByProviderId } from "open-sse/config/providerModels.js";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 export const QUOTA_CACHE_KEY = "quotaCacheData";
-export const REFRESH_INTERVAL_MS = 60000;
+export const REFRESH_INTERVAL_MS = 300000;
 // Claude usage/quota endpoint rate-limits; poll it less often than other providers
 export const CLAUDE_REFRESH_INTERVAL_MS = 600000;
+
+// Auto-refresh ticks every REFRESH_INTERVAL_MS. Claude is polled every Nth tick so its
+// cadence stays near CLAUDE_REFRESH_INTERVAL_MS, but at least once per tick: a ratio
+// that rounds to 0 would make `tick % 0` NaN and stop Claude polling entirely.
+// A manual (forced) refresh polls every provider.
+export function shouldRefreshQuota(provider, tick, {
+  force = false,
+  baseMs = REFRESH_INTERVAL_MS,
+  claudeMs = CLAUDE_REFRESH_INTERVAL_MS,
+} = {}) {
+  if (force || provider !== "claude") return true;
+  const every = Math.max(1, Math.round(claudeMs / baseMs));
+  return tick % every === 0;
+}
+
 export const DEPLETED_QUOTA_THRESHOLD = 5;
 export const AUTO_REFRESH_STORAGE_KEY = "quotaAutoRefresh";
 export const CONNECTIONS_PAGE_SIZE = 20;
