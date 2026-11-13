@@ -338,6 +338,41 @@ describe("GrokCliExecutor", () => {
     }
   });
 
+  it("forwards reasoning effort for grok-4.6 (#3514)", () => {
+    expect(supportsGrokCliReasoningEffort("grok-4.6")).toBe(true);
+
+    // Effort carried by the request body...
+    const explicit = executor.transformRequest("grok-4.6", {
+      model: "grok-4.6",
+      input: "hi",
+      reasoning_effort: "xhigh",
+    }, true, { connectionId: "g46-explicit" });
+    expect(explicit.model).toBe("grok-4.6");
+    expect(explicit.reasoning).toEqual({ effort: "xhigh", summary: "concise" });
+    expect(explicit.reasoning_effort).toBeUndefined();
+
+    // ...and by the virtual model suffix.
+    for (const level of ["low", "medium", "high", "xhigh"]) {
+      const out = executor.transformRequest(`grok-4.6-${level}`, {
+        model: `grok-4.6-${level}`,
+        input: "hi",
+      }, true, { connectionId: `g46-${level}` });
+      expect(out.model).toBe("grok-4.6");
+      expect(out.reasoning).toEqual({ effort: level, summary: "concise" });
+    }
+  });
+
+  it("keeps the allowlist closed around grok-4.5 / grok-4.6", () => {
+    for (const model of ["grok-4.5", "grok-4.5-xhigh", "grok-4.6", "grok-4.6-xhigh"]) {
+      expect(supportsGrokCliReasoningEffort(model)).toBe(true);
+    }
+    // Non-reasoning models keep receiving no effort (#2538, #2539), and an
+    // unseen version stays fail-closed until it is verified against the proxy.
+    for (const model of ["grok-build", "grok-composer-2.5-fast", "grok-code-fast-1", "grok-4.7", "grok-45"]) {
+      expect(supportsGrokCliReasoningEffort(model)).toBe(false);
+    }
+  });
+
   it("drops stale tool_choice and normalizes converted custom choices", () => {
     const noTools = executor.transformRequest("grok-build", {
       model: "grok-build",
