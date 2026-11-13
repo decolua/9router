@@ -162,11 +162,15 @@ export const TTS_MODELS_CONFIG = {
   },
   gemini: {
     models: [
+      { id: "gemini-3.8-flash-tts",         name: "Gemini 3.8 Flash TTS",      type: "tts" },
+      { id: "gemini-3.8-flash-lite-tts",    name: "Gemini 3.8 Flash Lite TTS", type: "tts" },
       { id: "gemini-3.1-flash-tts-preview", name: "Gemini 3.1 Flash TTS", type: "tts" },
       { id: "gemini-2.5-flash-preview-tts", name: "Gemini 2.5 Flash TTS", type: "tts" },
       { id: "gemini-2.5-pro-preview-tts",   name: "Gemini 2.5 Pro TTS",   type: "tts" },
     ],
     voices: {
+      "gemini-3.8-flash-tts":         GEMINI_VOICES,
+      "gemini-3.8-flash-lite-tts":    GEMINI_VOICES,
       "gemini-3.1-flash-tts-preview": GEMINI_VOICES,
       "gemini-2.5-flash-preview-tts": GEMINI_VOICES,
       "gemini-2.5-pro-preview-tts":   GEMINI_VOICES,
