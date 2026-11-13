@@ -69,25 +69,38 @@ function writeJsonFile(sessionPath, filename, data) {
   }
 }
 
-// Mask sensitive data in headers (DISABLED - keep full token for testing)
+// Substring match, so `x-goog-api-key`, `proxy-authorization` and a provider's own
+// `*-token` header are all covered without listing each one.
+const SENSITIVE_HEADER_KEYS = ["authorization", "api-key", "cookie", "token"];
+
+// Mask sensitive data in headers.
+//
+// This was switched off "for testing" and the pass-through shipped, so with
+// ENABLE_REQUEST_LOGS=true every request wrote the upstream `Authorization` /
+// `x-api-key` header into 4_req_target.json and the client's own into
+// 1_req_client.json in clear text. The README points operators at that flag as the
+// way to debug a problem, so the ordinary sequence was: turn it on, reproduce,
+// attach logs/ to a ticket, and publish the OAuth token of every account that
+// passed through the gateway in that window.
+//
+// Enough of the value survives to tell two credentials apart, which is what the log
+// is for. A SHORT value is masked whole: the version that was commented out here let
+// anything 20 characters or under through untouched, and a short api key is still an
+// api key.
 function maskSensitiveHeaders(headers) {
   if (!headers) return {};
-  return { ...headers };
-  
-  // Old masking code (disabled):
-  // const masked = { ...headers };
-  // const sensitiveKeys = ["authorization", "x-api-key", "cookie", "token"];
-  // 
-  // for (const key of Object.keys(masked)) {
-  //   const lowerKey = key.toLowerCase();
-  //   if (sensitiveKeys.some(sk => lowerKey.includes(sk))) {
-  //     const value = masked[key];
-  //     if (value && value.length > 20) {
-  //       masked[key] = value.slice(0, 10) + "..." + value.slice(-5);
-  //     }
-  //   }
-  // }
-  // return masked;
+  const masked = { ...headers };
+
+  for (const key of Object.keys(masked)) {
+    const lowerKey = key.toLowerCase();
+    if (!SENSITIVE_HEADER_KEYS.some(sk => lowerKey.includes(sk))) continue;
+    const value = masked[key];
+    if (value === undefined || value === null) continue;
+    const text = String(value);
+    masked[key] = text.length > 20 ? text.slice(0, 10) + "..." + text.slice(-5) : "***";
+  }
+
+  return masked;
 }
 
 // No-op logger when logging is disabled
@@ -170,7 +183,11 @@ export async function createRequestLogger(sourceFormat, targetFormat, model) {
         timestamp: new Date().toISOString(),
         status,
         statusText,
-        headers: headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {},
+        // Masked like the request side: a provider response carries `set-cookie`, and a
+        // session cookie in logs/ is the same leak as a bearer token there.
+        headers: maskSensitiveHeaders(
+          headers ? (typeof headers.entries === "function" ? Object.fromEntries(headers.entries()) : headers) : {}
+        ),
         body
       });
     },
