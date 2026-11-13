@@ -6,7 +6,7 @@
  * open-sse/providers/capabilities.js.
  *
  * Fix:
- * - Add claude-opus-5.5 / -thinking / -agentic / -thinking-agentic to kiro.js
+ * - Advertise canonical claude-opus-5.5; keep legacy aliases routable at request time
  * - Add capability entries (vision, reasoning, search, 1M context, adaptive thinking)
  */
 
@@ -25,16 +25,16 @@ describe("Kiro registry — claude-opus-5.5 (#4410)", () => {
     expect(kiroSrc).toContain('"claude-opus-5.5"');
   });
 
-  it("includes claude-opus-5.5-thinking in kiro registry", () => {
-    expect(kiroSrc).toContain('"claude-opus-5.5-thinking"');
+  it("does not advertise duplicate claude-opus-5.5-thinking", () => {
+    expect(kiroSrc).not.toContain('"claude-opus-5.5-thinking"');
   });
 
-  it("includes claude-opus-5.5-agentic in kiro registry", () => {
-    expect(kiroSrc).toContain('"claude-opus-5.5-agentic"');
+  it("does not advertise duplicate claude-opus-5.5-agentic", () => {
+    expect(kiroSrc).not.toContain('"claude-opus-5.5-agentic"');
   });
 
-  it("includes claude-opus-5.5-thinking-agentic in kiro registry", () => {
-    expect(kiroSrc).toContain('"claude-opus-5.5-thinking-agentic"');
+  it("does not advertise duplicate claude-opus-5.5-thinking-agentic", () => {
+    expect(kiroSrc).not.toContain('"claude-opus-5.5-thinking-agentic"');
   });
 
   it("claude-opus-5 still present (regression guard)", () => {

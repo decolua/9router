@@ -2,8 +2,8 @@
  * Kiro model catalog fetcher.
  *
  * Calls AWS CodeWhisperer's `ListAvailableModels` endpoint to get the live
- * catalog for an authenticated Kiro account, then expands each upstream model
- * into 9router-shaped variants:
+ * catalog for an authenticated Kiro account, returns one canonical row per upstream model.
+ * Legacy request aliases remain supported:
  *
  *   {upstream}                          - base model
  *   {upstream}-thinking                 - same model, thinking on at request time
@@ -38,7 +38,7 @@ const catalogCache = new Map();
 
 /**
  * Strip the `-agentic` and/or `-thinking` suffixes from a synthetic id, if
- * any. Used only for display naming when a Kiro upstream id happens to look
+ * any. Used for the canonical catalog id when a Kiro upstream id happens to look
  * synthetic (defensive).
  */
 function stripSyntheticSuffixes(id) {
@@ -90,51 +90,6 @@ function buildKiroFingerprintHeaders(credentials) {
     "amz-sdk-invocation-id": uuidv4(),
     "Accept": "application/json"
   };
-}
-
-/**
- * Build the synthetic 9router variant set for a single upstream Kiro model.
- *
- * Returns objects shaped for `PROVIDER_MODELS` (`{ id, name }`) so they can
- * be slotted directly into the existing model registry.
- *
- * The `auto` model is special: Kiro picks the underlying model server-side,
- * so the chunked-write `-agentic` prompt is not meaningful (the prompt
- * targets coding-agent file writes). Match CLIProxyAPIPlus and skip
- * `-agentic` / `-thinking-agentic` for `auto`.
- */
-function buildVariants(upstream, displayName) {
-  const safeUpstream = stripSyntheticSuffixes(upstream);
-  const display = displayName || `Kiro ${safeUpstream}`;
-  const isAuto = safeUpstream === "auto";
-
-  const variants = [
-    {
-      id: safeUpstream,
-      name: display,
-      capabilities: { thinking: false, agentic: false }
-    },
-    {
-      id: `${safeUpstream}-thinking`,
-      name: `${display} (Thinking)`,
-      capabilities: { thinking: true, agentic: false }
-    }
-  ];
-
-  if (!isAuto) {
-    variants.push({
-      id: `${safeUpstream}-agentic`,
-      name: `${display} (Agentic)`,
-      capabilities: { thinking: false, agentic: true }
-    });
-    variants.push({
-      id: `${safeUpstream}-thinking-agentic`,
-      name: `${display} (Thinking + Agentic)`,
-      capabilities: { thinking: true, agentic: true }
-    });
-  }
-
-  return variants;
 }
 
 /**
@@ -217,8 +172,7 @@ function cacheKey(credentials) {
 }
 
 /**
- * Resolve the live Kiro model catalog for a credential and expand each entry
- * into 9router variants (`-thinking`, `-agentic`, `-thinking-agentic`).
+ * Resolve the live Kiro model catalog as canonical model rows.
  *
  * On any error (network, 4xx, 5xx), returns `null` so callers can fall back
  * to the static catalog without taking down the dashboard or `/v1/models`.
@@ -290,12 +244,13 @@ export async function resolveKiroModels(credentials, options = {}) {
   for (const m of raw) {
     if (!m || typeof m !== "object") continue;
     const upstreamId = m.modelId || m.id;
-    if (!upstreamId) continue;
+    if (typeof upstreamId !== "string" || !upstreamId) continue;
+    const id = stripSyntheticSuffixes(upstreamId);
+    if (expanded.some((model) => model.id === id)) continue;
     const display = formatDisplayName(m.modelName, upstreamId, m.rateMultiplier);
     const ctx = Number(m?.tokenLimits?.maxInputTokens) || 200_000;
-    for (const v of buildVariants(upstreamId, display)) {
-      expanded.push({
-        ...v,
+    expanded.push({
+        id, name: display, capabilities: { thinking: true, agentic: false },
         // Carry over context window + raw upstream metadata so the caller
         // (e.g. the dashboard models endpoint) can render it.
         contextLength: ctx,
@@ -303,7 +258,6 @@ export async function resolveKiroModels(credentials, options = {}) {
         upstreamModelId: upstreamId,
         description: m.description || ""
       });
-    }
   }
 
   catalogCache.set(key, {
