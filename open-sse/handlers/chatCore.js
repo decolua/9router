@@ -33,6 +33,7 @@ import { stripUnsupportedModalities } from "../translator/concerns/modality.js";
 import { prefetchRemoteImages } from "../translator/concerns/prefetch.js";
 import { defaultClaudeToolType, shouldDefaultClaudeToolType } from "../translator/concerns/toolCall.js";
 import { resolveSessionId } from "../utils/sessionManager.js";
+import { normalizeToolSchemasForProvider } from "../utils/toolSchemaCompatibility.js";
 
 /**
  * Core chat handler - shared between SSE and Worker
@@ -235,6 +236,10 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
       translatedBody.tools = deduped;
       log?.debug?.("TOOLDEDUP", `stripped ${stripped.length}: ${stripped.slice(0, 3).join(", ")}${stripped.length > 3 ? "..." : ""}`);
     }
+  }
+
+  if (Array.isArray(translatedBody.tools)) {
+    translatedBody.tools = normalizeToolSchemasForProvider(provider, translatedBody.tools, log);
   }
 
   // Token savers: applied at the final body just before dispatch

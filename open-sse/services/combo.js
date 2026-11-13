@@ -124,7 +124,7 @@ function trailingUserItems(arr) {
 
 // Detect which capabilities a request needs. Modalities (vision/pdf) are scanned
 // only on the current user turn; "search" is request-wide (lives in tools).
-// Returns a Set of: "vision" | "pdf" | "search".
+// Returns a Set of: "vision" | "pdf" | "search" | "tools".
 export function detectRequiredCapabilities(body) {
   const required = new Set();
   if (!body || typeof body !== "object") return required;
@@ -200,6 +200,12 @@ export function detectRequiredCapabilities(body) {
   for (const it of trailingUserItems(body.input)) scanContent(it.content);       // responses
   const contents = body.contents || body.request?.contents;                      // gemini / antigravity
   for (const c of trailingUserItems(contents)) scanContent(c.parts);
+
+  if (Array.isArray(body.tools) && body.tools.some((tool) => (
+    tool?.type === "function" || tool?.function || tool?.functionDeclarations
+  ))) {
+    required.add("tools");
+  }
 
   // search: temporarily disabled in auto-switch (feature not wired yet).
 
