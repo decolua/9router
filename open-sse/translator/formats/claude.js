@@ -13,6 +13,39 @@ import { DEFAULT_MAX_TOKENS } from "../../config/runtimeConfig.js";
 const CACHE_CONTROL_5M = { type: "ephemeral" };
 const CACHE_CONTROL_1H = { type: "ephemeral", ttl: "1h" };
 
+// Claude Code sends deferred MCP definitions as mid-session content blocks.
+// Kimi's Claude-compatible endpoint accepts those definitions in tools[], but
+// rejects the beta-only blocks themselves. Keep the original body untouched so
+// another account/provider attempt can translate it independently.
+export function normalizeDeferredTools(body) {
+  if (!Array.isArray(body?.messages)) return body;
+  const names = new Set((body.tools || []).map(tool => tool?.name));
+  let tools = body.tools;
+  let changed = false;
+  const messages = [];
+  for (const msg of body.messages) {
+    if (!Array.isArray(msg.content)) {
+      messages.push(msg);
+      continue;
+    }
+    const content = [];
+    for (const block of msg.content) {
+      if (block?.type !== CLAUDE_BLOCK.TOOL_ADDITION) {
+        content.push(block);
+        continue;
+      }
+      changed = true;
+      const definition = block.tool?.definition;
+      if (typeof definition?.name === "string" && definition.name && !names.has(definition.name)) {
+        tools = [...(tools || []), { ...definition }];
+        names.add(definition.name);
+      }
+    }
+    if (content.length) messages.push(content.length === msg.content.length ? msg : { ...msg, content });
+  }
+  return changed ? { ...body, messages, ...(tools !== body.tools ? { tools } : {}) } : body;
+}
+
 // Anthropic rejects a tool carrying BOTH defer_loading:true and cache_control
 // ("Tools defer_loading cannot use prompt caching", #3567). MCP clients put
 // deferred tools at the tail, which is exactly where the cache anchor lands.
