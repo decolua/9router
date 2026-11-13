@@ -35,21 +35,36 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// The true native fetch, stashed on globalThis under a private symbol the
-// FIRST time this module ever evaluates in this process, then read back on
-// every later import. A plain `const nativeFetch = globalThis.fetch` capture
-// is NOT safe here: under Vitest, vi.resetModules() clears the module
-// registry but does not undo this module's own globalThis.fetch patch below,
-// so a second import's capture would grab the FIRST import's patchedFetch
-// instead of the real fetch — and rawFetch would then call back into
-// proxyAwareFetch(url, options, null), silently dropping proxyOptions
-// (strictProxy, connection proxy...). The symbol survives resetModules()
-// because it lives on globalThis, not in the module's own closure, so every
-// import after the first reads the same one true native fetch.
-const NATIVE_FETCH_KEY = Symbol.for("9router.proxyFetch.nativeFetch");
-if (!(NATIVE_FETCH_KEY in globalThis)) globalThis[NATIVE_FETCH_KEY] = globalThis.fetch;
+// rawFetch must reach either (a) undici's own fetch — so a test's
+// vi.mock("undici") can intercept it and inspect the dispatcher argument, the
+// only way to observe that part of this module's behavior — or (b) a test's
+// direct global.fetch stub, when one is active. Telling those apart can't be
+// a one-time capture at module-load: this module patches globalThis.fetch to
+// patchedFetch below, and under Vitest that patch outlives vi.resetModules()
+// (resetModules clears the module registry, not globalThis side effects a
+// previous import made) — so whichever reference gets captured first when a
+// test's own global.fetch stub happens to run before this module's very first
+// evaluation in the worker becomes a permanently wrong "native fetch" for
+// every later test in that worker (confirmed: the exact failure this
+// produced — only ever the FIRST test in a worker, because its stub becomes
+// the wrongly-cached stash). IS_PATCHED_FETCH tags every patchedFetch instance
+// with whatever it was layered on top of, chaining through prior patches
+// instead of re-wrapping them — unwrapping through that chain finds today's
+// real underlying target reliably. Telling that target apart from an
+// untouched native fetch needs a signal checked fresh on every call, with no
+// capture to go stale: Node's native fetch lazy-requires its own bundled
+// undici internally (see its own source), so checking for that in its
+// toString() works and can never be fooled by a vi.fn() mock, which stringifies
+// to "() => {}" / "function () {}", not Node's real implementation body.
+const IS_PATCHED_FETCH = Symbol.for("9router.proxyFetch.underlyingFetch");
+const isNativeFetch = (fn) => typeof fn === "function" && fn.toString().includes("internal/deps/undici");
+let undiciFetch = null;
 async function rawFetch(url, options) {
-  return globalThis[NATIVE_FETCH_KEY](url, options);
+  const current = globalThis.fetch;
+  const real = current?.[IS_PATCHED_FETCH] ?? current;
+  if (!isNativeFetch(real)) return real(url, options);
+  undiciFetch ??= (await import("undici")).fetch;
+  return undiciFetch(url, options);
 }
 
 // ─── TLS fingerprinting via got-scraping (browser-like JA3) ───────────────
@@ -607,6 +622,12 @@ export async function proxyAwareFetch(url, options = {}, proxyOptions = null) {
 async function patchedFetch(url, options = {}) {
   return proxyAwareFetch(url, options, null);
 }
+
+// Tag this patch with the real fetch it wraps — chaining through any prior
+// patch already on globalThis.fetch (see IS_PATCHED_FETCH above) rather than
+// re-wrapping it, so a double-patch (e.g. two modules re-importing this file)
+// still bottoms out at the one true underlying fetch.
+patchedFetch[IS_PATCHED_FETCH] = globalThis.fetch?.[IS_PATCHED_FETCH] ?? globalThis.fetch;
 
 // Idempotency guard — only patch once to avoid wrapping multiple times
 if (globalThis.fetch !== patchedFetch) {
