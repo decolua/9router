@@ -129,6 +129,16 @@ tests/unit/windsurf-executor.test.js :: WindsurfExecutor class PROVIDERS.windsur
 tests/unit/kiro-external-idp.test.js :: Kiro external_idp (CLIProxyAPI) import and refresh adds CodeWhisperer external IdP headers and endpoint ordering
 tests/unit/xai-oauth-service.test.js :: xai/oauth service validates discovered endpoints are https x.ai URLs
 
+# Added 2026-11-13, confirmed live-network-dependent (same class as xai-oauth-service above,
+# not a sync regression): mimo-free.live.test.js's own file header says "Hits real endpoints
+# — no mocks. Free provider, safe to call." Reproduced deterministically 2/2 runs on a clean
+# worktree of this exact commit, with no code change anywhere near open-sse/executors/mimo-free.js
+# or this test file in the v0.5.116/v0.5.119 sync diffs (git log on the file shows one commit,
+# unrelated, from before this sync work started). The live MiMo bootstrap endpoint is currently
+# returning an HTML error page instead of JSON (upstream-side condition), not something this
+# fork's code controls. (The chat case is already tracked above/below as a separate live-call gap.)
+tests/unit/mimo-free.live.test.js :: MiMo Free bootstrap (live) bootstrap returns 200 with JWT
+
 # Real bug: /api/usage/stats serializes raw API keys as byApiKey property names (GHSA-vjc7).
 # Fixed by decolua/9router#4286.
 tests/unit/security-audit.test.js :: AUDIT-002: API key masking byApiKey object keys should use masked key, not raw key
