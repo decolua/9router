@@ -138,7 +138,7 @@ const LOG_BLACKLIST_URL_PARTS = [
 ];
 
 function getToolForHost(host) {
-  const h = (host || "").split(":")[0];
+  const h = String(host || "").split(":")[0].toLowerCase().replace(/\.$/, "");
   if (h === "api.individual.githubcopilot.com") return "copilot";
   if (h === "daily-cloudcode-pa.googleapis.com" || h === "cloudcode-pa.googleapis.com") return "antigravity";
   if (h === "q.us-east-1.amazonaws.com" || h === "codewhisperer.us-east-1.amazonaws.com" || h === "runtime.us-east-1.kiro.dev") return "kiro";

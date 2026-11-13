@@ -88,8 +88,15 @@ export function antigravityToOpenAIRequest(model, body, stream) {
 // and strip unsupported fields like enumDescriptions
 function normalizeSchemaTypes(schema) {
   if (!schema || typeof schema !== "object") return schema;
+  if (Array.isArray(schema)) return schema.map(normalizeSchemaTypes);
 
-  const result = Array.isArray(schema) ? [...schema] : { ...schema };
+  const result = { ...schema };
+  for (const key of ["minLength", "maxLength", "minItems", "maxItems", "minProperties", "maxProperties"]) {
+    const value = result[key];
+    if (typeof value === "string" && /^[0-9]+$/.test(value) && Number.isSafeInteger(Number(value))) {
+      result[key] = Number(value);
+    }
+  }
 
 
   if (typeof result.type === "string") {
@@ -100,16 +107,13 @@ function normalizeSchemaTypes(schema) {
   delete result.enumDescriptions;
 
 
-  if (result.properties) {
-    const normalized = {};
-    for (const [key, val] of Object.entries(result.properties)) {
-      normalized[key] = normalizeSchemaTypes(val);
+  for (const key of ["properties", "patternProperties", "$defs", "definitions"]) {
+    if (result[key] && typeof result[key] === "object" && !Array.isArray(result[key])) {
+      result[key] = Object.fromEntries(Object.entries(result[key]).map(([name, value]) => [name, normalizeSchemaTypes(value)]));
     }
-    result.properties = normalized;
   }
-
-  if (result.items) {
-    result.items = normalizeSchemaTypes(result.items);
+  for (const key of ["items", "additionalProperties", "allOf", "anyOf", "oneOf", "not", "if", "then", "else"]) {
+    if (result[key] && typeof result[key] === "object") result[key] = normalizeSchemaTypes(result[key]);
   }
 
   return result;
@@ -177,7 +181,9 @@ function convertContent(content) {
       toolResults.push({
         role: ROLE.TOOL,
         tool_call_id: part.functionResponse.id || `call_${part.functionResponse.name}`,
-        content: JSON.stringify(part.functionResponse.response?.result || part.functionResponse.response || {})
+        content: JSON.stringify(part.functionResponse.response?.result !== undefined
+          ? part.functionResponse.response.result
+          : part.functionResponse.response ?? {})
       });
     }
   }

@@ -5,6 +5,7 @@
 import { getCapabilitiesForModel } from "../../providers/capabilities.js";
 import { getThinkingLevels } from "../../providers/thinkingLevels.js";
 import { PROVIDERS } from "../../providers/index.js";
+import { FORMATS } from "../formats.js";
 import { LEVEL_TO_BUDGET, budgetToLevel, effortToBudget, effortToThinkingLevel } from "./thinking.js";
 
 // Map a target wire-format to its native thinking format (when capability has none).
@@ -141,6 +142,9 @@ function resolveFormat(targetFormat, model, provider) {
     ? PROVIDERS[provider]?.transports?.find((t) => t.format === targetFormat)?.thinkingFormat
     : null;
   if (transportFmt) return transportFmt;
+  // The Responses wire uses its own nested reasoning object, including for
+  // dynamically configured compatible providers without transport metadata.
+  if (targetFormat === FORMATS.OPENAI_RESPONSES && isOpenAICompatibleNode(provider)) return FORMATS.OPENAI_RESPONSES;
   const providerFmt = provider ? PROVIDERS[provider]?.thinkingFormat : null;
   if (providerFmt) return providerFmt;
   const caps = getCapabilitiesForModel(provider, model);
