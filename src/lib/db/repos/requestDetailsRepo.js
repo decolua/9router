@@ -13,6 +13,9 @@ let cachedConfigTs = 0;
 
 async function getObservabilityConfig() {
   if (cachedConfig && (Date.now() - cachedConfigTs) < CONFIG_CACHE_TTL_MS) return cachedConfig;
+  const retentionCap = Math.max(
+    parseInt(process.env.OBSERVABILITY_RETENTION_MAX_JSON_SIZE || "10240", 10), 1024
+  ) * 1024;
   try {
     const { getSettings } = await import("./settingsRepo.js");
     const settings = await getSettings();
@@ -25,6 +28,7 @@ async function getObservabilityConfig() {
         batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
         flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
         maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+        retentionMaxJsonSize: retentionCap,
       };
       cachedConfigTs = Date.now();
       return cachedConfig;
@@ -41,6 +45,7 @@ async function getObservabilityConfig() {
       batchSize: settings.observabilityBatchSize || parseInt(process.env.OBSERVABILITY_BATCH_SIZE || String(DEFAULT_BATCH_SIZE), 10),
       flushIntervalMs: settings.observabilityFlushIntervalMs || parseInt(process.env.OBSERVABILITY_FLUSH_INTERVAL_MS || String(DEFAULT_FLUSH_INTERVAL_MS), 10),
       maxJsonSize: (settings.observabilityMaxJsonSize || parseInt(process.env.OBSERVABILITY_MAX_JSON_SIZE || "5", 10)) * 1024,
+      retentionMaxJsonSize: retentionCap,
     };
   } catch {
     cachedConfig = {
@@ -49,6 +54,7 @@ async function getObservabilityConfig() {
       batchSize: DEFAULT_BATCH_SIZE,
       flushIntervalMs: DEFAULT_FLUSH_INTERVAL_MS,
       maxJsonSize: DEFAULT_MAX_JSON_SIZE,
+      retentionMaxJsonSize: retentionCap,
     };
   }
   cachedConfigTs = Date.now();
@@ -153,12 +159,16 @@ export async function saveRequestDetail(detail) {
   const id = detail.id || generateDetailId(detail.model);
   // Never queue conversation data: even shutdown flushes write metadata only.
   if (detail.promptRetentionContext) {
+    // Retention payloads live in process memory behind explicit per-key consent —
+    // they use the dedicated retention cap, not the small disk-observability cap,
+    // so real client payloads (Claude Code runs are 10-100KB+) stay renderable.
+    const cap = config.retentionMaxJsonSize || config.maxJsonSize;
     const payload = {
-      request: truncateField(detail.request, config.maxJsonSize),
-      providerRequest: truncateField(detail.providerRequest, config.maxJsonSize),
-      providerResponse: truncateField(detail.providerResponse, config.maxJsonSize),
-      response: truncateField(detail.response, config.maxJsonSize),
-      originalRequest: truncateOptionalField(getOriginalBody(detail.promptRetentionContext), config.maxJsonSize),
+      request: truncateField(detail.request, cap),
+      providerRequest: truncateField(detail.providerRequest, cap),
+      providerResponse: truncateField(detail.providerResponse, cap),
+      response: truncateField(detail.response, cap),
+      originalRequest: truncateOptionalField(getOriginalBody(detail.promptRetentionContext), cap),
       pxpipe: detail.pxpipe || undefined,
     };
     if (payload.request?.headers) payload.request = { ...payload.request, headers: sanitizeHeaders(payload.request.headers) };

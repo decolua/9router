@@ -1,5 +1,13 @@
 # Unreleased
 
+## Fixes
+- **Usage**: prompt-retention captures no longer break on large Anthropic `/v1/messages` requests. Retained payloads use a dedicated cap (`OBSERVABILITY_RETENTION_MAX_JSON_SIZE`, default 10MB) instead of the 5KB disk-observability limit, so Original/Client/Translated views stay renderable for real Claude Code bodies, and a client disconnect mid-stream now finalizes the capture instead of leaving the response placeholder empty forever.
+
+## Features
+- **Dashboard**: hide the 9Remote and 9English sidebar promo buttons via environment — `NINEROUTER_HIDE_PROMOS=true` hides both, `NINEROUTER_HIDE_9REMOTE=true` / `NINEROUTER_HIDE_9ENGLISH=true` hide one; the flags surface through `/api/settings`.
+- **Endpoint**: restructure the API keys management list — key names gain an inline rename editor (edit icon, Enter saves, Escape cancels; `PUT /api/keys/[id]` accepts a validated name) and delete refreshes the list and consent panel in place.
+- **Usage**: log prompt-retention consent changes with attribution (key name + masked key, never the raw key) — dashboard toggles, key creation, pause/delete revocations, database imports, and server restarts all land in a 200-entry activity ring shown as a collapsible panel on the API Endpoint page and mirrored to the server log as `[PromptRetention]` lines.
+
 - Add per-API-key opt-in chat prompt/request/response debugging retention, disabled for new and existing keys. Captures stay in process memory for at most one hour, bounded by observability record/JSON limits, and appear in Usage request details only for signed-in dashboard users. Enable “Retain prompts for debugging” on the API Endpoint page, or send `promptRetentionEnabled: true` when creating/updating a key. Enabling a key is sufficient; global observability/logging flags never grant consent.
 - Disabling retention, pausing/deleting a key, importing keys, or restarting clears captured payloads; in-flight requests cannot restore data after revocation. Disk request details now hold metadata only; startup strips legacy request-detail payloads. Automatic unbounded `logs/` request dumps are removed. Previously created log files, external backups, and copies already downloaded by dashboard users are not erased.
 

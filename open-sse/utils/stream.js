@@ -145,6 +145,12 @@ export function createSSEStream(options = {}) {
   };
 
   return new TransformStream({
+    // Client went away mid-stream: flush() never runs on a cancelled readable, so
+    // finalize now — otherwise the retained payload keeps the "[Streaming in
+    // progress...]" placeholder and the usage line never lands.
+    cancel(reason) {
+      finalizeStream();
+    },
     transform(chunk, controller) {
       if (!ttftAt) ttftAt = Date.now();
       const text = decoder.decode(chunk, { stream: true });
