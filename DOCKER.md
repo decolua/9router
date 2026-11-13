@@ -141,13 +141,24 @@ The `v` prefix is used only for the git tag; image tags omit it. A stable tag pu
 
 The workflow rejects SemVer build metadata such as `v1.2.3+build.7` because the `+` form is not a valid Docker image tag. The git tag and both `package.json` versions must match exactly.
 
-```bash
-# Use scripts/release.js (recommended)
-node scripts/release.js "Release title" "Notes"
+Prepare and publish with the release script (recommended):
 
-# Or manually
-git tag v0.5.81 && git push origin v0.5.81
+```bash
+# 1. Prepare: validates the version, requires a clean tree, rejects an existing tag,
+#    syncs root package.json + cli/package.json, commits only those manifests, and
+#    creates vX.Y.Z locally. Omit the version to reuse cli/package.json.
+bun run release -- 0.5.120
+
+# 2. Verify before pushing: requires both manifests to match, the tag to exist at
+#    HEAD, and the release manifests to be committed.
+bun run release -- --check
+
+# 3. Publish: pushing the tag is what triggers the Docker workflow. The script never
+#    pushes. Push the branch and tag atomically so the tagged commit cannot be split.
+git push --atomic origin master refs/tags/v0.5.120
 ```
+
+`prepublishOnly` runs the same `--check` before `npm run build` in `cli/`, so an npm publish of the CLI cannot ship a version that is not tagged at HEAD. Tags are never moved: an existing `vX.Y.Z` (including an already-published one) must be left alone; pick the next unused patch instead. To tag manually, use the same order (`git tag vX.Y.Z` locally, verify, then push the tag) and keep both `package.json` versions equal to the tag.
 
 To republish an existing tag, run the `Build and Push Docker Image` workflow manually and provide the exact tag, for example `v0.5.81`, in the `release_tag` input. Manual runs publish the numbered tag but leave `latest` unchanged by default:
 
