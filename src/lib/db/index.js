@@ -4,7 +4,7 @@ import { stringifyJson, parseJson } from "./helpers/jsonCol.js";
 import { keyAccessFromColumns, keyAccessToColumns, validateKeyAccessInput } from "@/shared/utils/keyAccess.js";
 import { KEY_ACCESS_UNRESTRICTED } from "@/shared/constants/keyAccess.js";
 import { normalizeQuotaAccess } from "@/shared/utils/quotaAccess.js";
-import { purgeRetainedPrompts } from "@/lib/promptRetention.js";
+import { purgeRetainedPrompts, recordRetentionChange } from "@/lib/promptRetention.js";
 
 // Settings
 export {
@@ -178,6 +178,9 @@ export async function importDb(payload) {
     }
   });
   purgeRetainedPrompts();
+  // Import replaces the whole database — all retained prompts are gone. Record it
+  // once (attribution to specific keys is lost with the DB, hence null key fields).
+  recordRetentionChange(null, null, null, false, "db-import");
 
   return await exportDb();
 }

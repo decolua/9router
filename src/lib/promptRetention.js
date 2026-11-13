@@ -1,8 +1,35 @@
 import { getAdapter } from "./db/driver.js";
 
 const RETENTION_MS = 60 * 60 * 1000;
+const RETENTION_EVENT_LIMIT = 200;
 // ponytail: process-local debugging only; use a shared TTL store if multi-process capture is needed.
-const state = globalThis.__promptRetention ??= { entries: new Map(), generations: new Map(), contexts: new WeakMap() };
+const state = globalThis.__promptRetention ??= { entries: new Map(), generations: new Map(), contexts: new WeakMap(), events: [] };
+
+/**
+ * Record a consent change for the prompt-retention debugging option.
+ * Newest first, capped ring; also printed to the server log. Attribution
+ * uses the key name and masked key — never the raw key.
+ */
+export function recordRetentionChange(keyId, keyName, maskedKey, enabled, source = "dashboard") {
+  const event = {
+    at: new Date().toISOString(),
+    keyId,
+    keyName: keyName || null,
+    maskedKey: maskedKey || null,
+    enabled: enabled === true,
+    source,
+  };
+  state.events.unshift(event);
+  if (state.events.length > RETENTION_EVENT_LIMIT) state.events.length = RETENTION_EVENT_LIMIT;
+  console.log(`[PromptRetention] ${event.enabled ? "ENABLED" : "DISABLED"} for key "${event.keyName ?? keyId}" (${event.maskedKey ?? "unknown key"}) via ${event.source} at ${event.at}`);
+  return event;
+}
+
+export function getRetentionEvents({ keyId, limit = 50 } = {}) {
+  let events = state.events;
+  if (keyId !== undefined && keyId !== null) events = events.filter((e) => e.keyId === keyId);
+  return events.slice(0, Math.max(1, Math.min(limit, RETENTION_EVENT_LIMIT)));
+}
 
 function removeEntry(id) {
   clearTimeout(state.entries.get(id)?.timer);
@@ -35,7 +62,7 @@ export async function createPromptRetentionContext(apiKey) {
   return context;
 }
 
-function maskKeyForDisplay(key) {
+export function maskKeyForDisplay(key) {
   if (typeof key !== "string" || !key) return null;
   return key.length <= 12 ? key.charAt(0) + "***" : key.slice(0, 8) + "***" + key.slice(-4);
 }

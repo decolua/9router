@@ -6,6 +6,7 @@ import { MIGRATIONS, latestVersion } from "./migrations/index.js";
 import { getMetaSync, setMetaSync } from "./helpers/metaStore.js";
 import { makeBackupDir, backupFile, backupDbLite, pruneOldBackups } from "./backup.js";
 import { getAppVersion } from "./version.js";
+import { recordRetentionChange } from "@/lib/promptRetention.js";
 import { parseJson, stringifyJson } from "./helpers/jsonCol.js";
 
 // Marker file: prevents re-importing legacy JSON when user wipes data.sqlite.
@@ -299,9 +300,14 @@ export async function runMigrationOnce(adapter) {
     try { fs.writeFileSync(MIGRATED_MARKER, new Date().toISOString()); } catch {}
     pruneOldBackups();
     console.log(`[DB][migrate] JSON → SQLite in ${Date.now() - t0}ms | legacy JSON kept at DATA_DIR | backup: ${backupDir}`);
+    recordRetentionChange(null, null, null, false, "restart");
     return;
   }
   scrubLegacyRequestPayloads(adapter);
+
+  // Retained prompts live in process memory only, so every server start wipes
+  // them. Record the consent loss once per boot so the activity log reflects it.
+  recordRetentionChange(null, null, null, false, "restart");
 
   // Track app version for informational purposes only. App version bumps no
   // longer trigger a DB backup — only real schema changes (SCHEMA_VERSION) do.
