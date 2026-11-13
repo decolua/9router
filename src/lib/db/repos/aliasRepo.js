@@ -29,6 +29,13 @@ export async function getCustomModels() {
   return Object.values(all);
 }
 
+// capabilities.js caches declared caps in memory so its request-path lookup
+// stays sync. Drop that cache whenever the underlying rows change, otherwise a
+// user toggling a flag would not see it take effect until restart. #4301
+function invalidateCustomCaps() {
+  globalThis.__9rCustomCapsInvalidate?.();
+}
+
 // Atomic upsert inside transaction to prevent duplicate races.
 // Re-adding an existing model updates caps/name/transport without resetting omitted fields.
 export async function addCustomModel({ providerAlias, id, type = "llm", name, caps, transport }) {
@@ -47,11 +54,13 @@ export async function addCustomModel({ providerAlias, id, type = "llm", name, ca
     db.run(`INSERT INTO kv(scope, key, value) VALUES('customModels', ?, ?)`, [k, value]);
     added = true;
   });
+  invalidateCustomCaps();
   return added;
 }
 
 export async function deleteCustomModel({ providerAlias, id, type = "llm" }) {
   await customKv.remove(customKey(providerAlias, id, type));
+  invalidateCustomCaps();
 }
 
 // mitmAlias: key=toolName, value=mappings object
