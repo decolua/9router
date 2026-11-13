@@ -1,11 +1,20 @@
 "use client";
 
+import ComboModelControl from "@/shared/components/ComboModelControl";
+import ComboRoutingSettingsModal from "@/shared/components/ComboRoutingSettingsModal";
+import { getSmartPolicyLabel } from "@/shared/utils/comboRouting";
+import { useTranslation } from "@/i18n/useTranslation";
+import SessionAffinityControl from "@/shared/components/SessionAffinityControl";
+import ModelReferenceLabel from "@/shared/components/ModelReferenceLabel";
+import AccountFallbackControl from "@/shared/components/AccountFallbackControl";
+import { parseModelReference } from "open-sse/utils/modelReference.js";
+import { ACCOUNT_FALLBACK_MODES } from "open-sse/config/accountRouting.js";
 import { useState, useEffect } from "react";
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
-import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Badge, SmartPolicyModal } from "@/shared/components";
+import { Card, Button, Modal, Input, CardSkeleton, ModelSelectModal, ConfirmModal, CapacityBadges, Select, Toggle, Tooltip } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import { useModelCaps } from "@/shared/hooks/useModelCaps";
 import { aggregateComboCapabilities } from "open-sse/providers/capabilities.js";
@@ -54,19 +63,8 @@ const STRATEGY_OPTIONS = [
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
-function getPolicyBadgeLabel(strategy = {}) {
-  const policy = strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart");
-  if (policy === "strict") return "Strict Lock";
-  if (policy === "per-turn") return "Per-Turn";
-  if (policy === "custom") {
-    const raw = strategy.confidenceThreshold;
-    const pct = Math.round((raw || 0.8) * (raw && raw <= 1 ? 100 : 1));
-    return `Custom (≥${pct || 80}%)`;
-  }
-  return "Smart (≥80%)";
-}
-
 export default function CombosPage() {
+  const t = useTranslation();
   const [combos, setCombos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -269,11 +267,12 @@ export default function CombosPage() {
   };
 
   const persistComboStrategies = async (updated) => {
-    await fetch("/api/settings", {
+    const res = await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comboStrategies: updated }),
     });
+    if (!res.ok) throw new Error("Failed to save combo settings");
     setComboStrategies(updated);
   };
 
@@ -337,21 +336,34 @@ export default function CombosPage() {
   };
 
   // Merge a per-combo strategy patch into settings.comboStrategies. Passing an empty
-  // patch (strategy back to default "fallback") drops the entry entirely.
+  // patch (strategy back to default "fallback" with no sticky/judge/router options) drops the entry entirely.
   const handleSetComboStrategy = async (comboName, patch) => {
     try {
       const updated = { ...comboStrategies };
       const next = { ...(updated[comboName] || {}), ...patch };
-      // Prune to keep settings clean: default fallback with no extras = no entry.
-      if (!next.fallbackStrategy || next.fallbackStrategy === "fallback") {
+      const hasCustomSettings =
+        (next.fallbackStrategy && next.fallbackStrategy !== "fallback") ||
+        Boolean(next.stickySession) ||
+        next.accountFallbackMode === ACCOUNT_FALLBACK_MODES.PREFER ||
+        Boolean(next.judgeModel) ||
+        Boolean(next.routerModel) ||
+        Boolean(next.smartPolicy) ||
+        next.sessionSticky === false ||
+        typeof next.confidenceThreshold === "number";
+
+      // Prune to keep settings clean: default fallback with no custom options = no entry.
+      if (!hasCustomSettings) {
         delete updated[comboName];
       } else {
+        if (!next.fallbackStrategy) next.fallbackStrategy = "fallback";
         updated[comboName] = next;
       }
 
       await persistComboStrategies(updated);
+      return true;
     } catch (error) {
       console.log("Error updating combo strategy:", error);
+      return false;
     }
   };
 
@@ -394,14 +406,17 @@ export default function CombosPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <p className="text-sm text-text-muted mt-1">
-            Group models under one name, then pick a strategy per combo:
+            One model name. Your models, accounts, and routing rules.
           </p>
+          <details className="mt-2 text-xs text-text-muted">
+            <summary className="w-fit cursor-pointer select-none font-medium transition-colors hover:text-primary">How routing works</summary>
           <ul className="text-sm text-text-muted mt-2 flex flex-col gap-1">
             <li><span className="font-medium text-text-main">Fallback</span> — tries models in order (next on failure)</li>
             <li><span className="font-medium text-text-main">Round Robin</span> — rotates models across requests to spread load</li>
             <li><span className="font-medium text-text-main">Smart Router</span> — queries a System One decision model to pick the optimal model before generation; supports Smart Switch (adaptive hysteresis), Strict Lock (1 task = 1 session, +0ms latency), and Per-Turn modes to maximize prompt-cache retention</li>
             <li><span className="font-medium text-text-main">Fusion</span> — queries all models in parallel, then a judge synthesizes one answer. Best quality, but costs the most: every request bills all panel models + the judge (N+1 calls)</li>
-          </ul>
+          </ul>          </details>
+
           <p className="hidden text-xs text-text-muted mt-3 max-w-2xl">
             <span className="font-medium text-text-main">Cursor / Claude Default</span> create combos named exactly like those clients&apos; model IDs (e.g. <code className="font-mono">composer-2.5</code>, <code className="font-mono">opus</code>), seeded with the matching <code className="font-mono">cu/…</code> or <code className="font-mono">cc/…</code> route so traffic can hit 9router without the prefix.
             {" "}Note: Cursor IDE itself often blocks built-in Composer / Grok from Override OpenAI Base URL (&quot;model does not support custom API&quot;); add them via Cursor&apos;s <span className="font-medium text-text-main">Add Custom Model</span> using the combo name, or pick a model Cursor allows through the custom endpoint.
@@ -416,8 +431,8 @@ export default function CombosPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search combos…"
-              aria-label="Search combos"
+              placeholder={t("Search combos…")}
+              aria-label={t("Search combos")}
               className="w-full rounded-[10px] border border-transparent bg-surface-2 py-2 pl-10 pr-9 text-sm text-text-main transition-all duration-150 ease-out placeholder-text-muted/70 focus:border-brand-500/40 focus:outline-none focus:ring-2 focus:ring-brand-500/30"
             />
             {searchQuery && (
@@ -491,15 +506,15 @@ export default function CombosPage() {
               />
               <span>
                 {someSelected
-                  ? `${selectedIds.length} selected`
-                  : `Select all (${filteredCombos.length})`}
+                  ? `${t("Selected")}: ${selectedIds.length}`
+                  : `${t("Select all")} (${filteredCombos.length})`}
               </span>
             </label>
 
             <div className="flex min-w-0 flex-wrap items-center gap-2">
               {normalizedQuery && (
                 <span className="text-xs text-text-muted">
-                  {filteredCombos.length} of {combos.length} shown
+                  {t("Shown")}: {filteredCombos.length} / {combos.length}
                 </span>
               )}
               {someSelected && (
@@ -637,8 +652,9 @@ function getRouterModelStatus(routerModel, activeProviders) {
   const effectiveModel = (typeof routerModel === "string" && routerModel.trim())
     ? routerModel.trim()
     : "oc/jev-1.13-free";
-  const slashIdx = effectiveModel.indexOf("/");
-  const prefix = slashIdx !== -1 ? effectiveModel.slice(0, slashIdx) : effectiveModel;
+  const { model, connectionId } = parseModelReference(effectiveModel);
+  const slashIdx = model.indexOf("/");
+  const prefix = slashIdx !== -1 ? model.slice(0, slashIdx) : model;
   const providerId = resolveProviderId(prefix);
   const providerDef = AI_PROVIDERS[providerId];
   const isNoAuth = !!providerDef?.noAuth;
@@ -647,7 +663,7 @@ function getRouterModelStatus(routerModel, activeProviders) {
     return { ready: true, label: "Ready (Free)", providerId };
   }
 
-  const isConnected = (activeProviders || []).some((c) => c.provider === providerId && c.isActive !== false);
+  const isConnected = (activeProviders || []).some((c) => c.provider === providerId && c.isActive !== false && (!connectionId || c.id === connectionId));
   if (isConnected) {
     return { ready: true, label: "Connected", providerId };
   }
@@ -656,14 +672,14 @@ function getRouterModelStatus(routerModel, activeProviders) {
 }
 
 function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], copied, onCopy, onEdit, onDelete, strategy = {}, onSetStrategy, selected = false, onToggleSelect }) {
-  const [showJudgeSelect, setShowJudgeSelect] = useState(false);
-  const [showRouterSelect, setShowRouterSelect] = useState(false);
-  const [showPolicyModal, setShowPolicyModal] = useState(false);
+  const t = useTranslation();
+  const [showRoutingSettings, setShowRoutingSettings] = useState(false);
   const current = strategy.fallbackStrategy || "fallback";
   const judge = strategy.judgeModel || "";
   const routerModel = strategy.routerModel || "";
   const isFusion = current === "fusion";
   const isSmart = current === "smart";
+  const routerStatus = isSmart ? getRouterModelStatus(routerModel, activeProviders) : null;
   // The synced catalog is server-only, so resolving here would fall back to the
   // generic patterns and under-report the limits. getCaps carries the server's
   // answer for /api/models.
@@ -671,8 +687,8 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
 
   return (
     <Card padding="sm" className={`group ${selected ? "ring-1 ring-primary/40 bg-primary/[0.03]" : ""}`}>
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
           <label className="flex shrink-0 items-center pt-1 sm:pt-0 cursor-pointer" title="Select combo">
             <input
               type="checkbox"
@@ -683,25 +699,31 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
               aria-label={`Select ${combo.name}`}
             />
           </label>
-          <div className="size-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+          <div className="hidden size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 sm:flex">
             <span className="material-symbols-outlined text-primary text-[18px]">layers</span>
           </div>
           <div className="min-w-0 flex-1">
-            <code className="block truncate font-mono text-sm font-medium">{combo.name}</code>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <code className="truncate font-mono text-sm font-semibold text-text-main">{combo.name}</code>
+              <span className="rounded-md bg-black/5 px-1.5 py-0.5 text-[10px] text-text-muted dark:bg-white/5">{combo.models.length} {combo.models.length === 1 ? "model" : "models"}</span>
+            </div>
             <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
               {combo.models.length === 0 ? (
                 <span className="text-xs text-text-muted italic">No models</span>
               ) : (
-                combo.models.slice(0, 3).map((model, index) => (
-                  <code key={index} className="inline-flex items-center gap-1 rounded bg-black/5 px-1.5 py-0.5 font-mono text-xs text-text-muted dark:bg-white/5">
-                    <span>{model}</span>
-                    <CapacityBadges caps={
-                      comboByName[model]
-                        ? aggregateComboCapabilities(comboByName[model], comboByName, getCaps)
-                        : getCaps?.(model)
-                    } />
-                  </code>
-                ))
+                combo.models.slice(0, 3).map((model, index) => {
+                  const { model: baseModel } = parseModelReference(model);
+                  return (
+                    <code key={index} className="inline-flex max-w-full items-center gap-2 rounded-lg border border-border/50 bg-black/[0.02] px-2 py-1 text-text-main dark:bg-white/[0.025]">
+                      <ModelReferenceLabel value={model} connections={activeProviders} />
+                      <CapacityBadges caps={
+                        comboByName[baseModel]
+                          ? aggregateComboCapabilities(comboByName[baseModel], comboByName, getCaps)
+                          : getCaps?.(baseModel)
+                      } />
+                    </code>
+                  );
+                })
               )}
               {combo.models.length > 3 && (
                 <span className="text-[10px] text-text-muted">+{combo.models.length - 3} more</span>
@@ -709,98 +731,17 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
             </div>
             {comboCaps && (
               <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
-                <span>ctx {fmtK(comboCaps.contextWindow)}</span>
+                <span>{t("ctx")} {fmtK(comboCaps.contextWindow)}</span>
                 <span className="opacity-40">·</span>
-                <span>max {fmtK(comboCaps.maxOutput)}</span>
+                <span>{t("max")} {fmtK(comboCaps.maxOutput)}</span>
               </div>
             )}
-            {/* Fusion: judge picker (Auto = first model) */}
-            {isFusion && (
-              <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                <span className="text-[11px] font-medium text-text-muted">Judge</span>
-                <button
-                  onClick={() => setShowJudgeSelect(true)}
-                  className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
-                  title="Pick the model that fuses panel answers"
-                >
-                  <span className="material-symbols-outlined text-[13px]">gavel</span>
-                  <span className="truncate">{judge || `Auto — ${combo.models[0] || "first model"}`}</span>
-                </button>
-                {judge && (
-                  <button
-                    onClick={() => onSetStrategy({ judgeModel: "" })}
-                    className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                    title="Reset judge to Auto"
-                  >
-                    <span className="material-symbols-outlined text-[13px]">close</span>
-                  </button>
-                )}
-              </div>
-            )}
-            {/* Smart: System One router picker and policy modal trigger */}
-            {isSmart && (() => {
-              const routerStatus = getRouterModelStatus(routerModel, activeProviders);
-              const policyLabel = getPolicyBadgeLabel(strategy);
-              return (
-                <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-medium text-text-muted">Router</span>
-                  <button
-                    onClick={() => setShowRouterSelect(true)}
-                    className="inline-flex max-w-full items-center gap-1 rounded border border-dashed border-primary/40 px-1.5 py-0.5 font-mono text-[11px] text-primary hover:border-primary hover:bg-primary/5 transition-colors"
-                    title="Pick the System One model that decides model routing"
-                  >
-                    <span className="material-symbols-outlined text-[13px]">psychology</span>
-                    <span className="truncate">{routerModel || "Auto — oc/jev-1.13-free"}</span>
-                  </button>
-                  {routerStatus.ready ? (
-                    <Badge variant="success" size="sm" dot>{routerStatus.label}</Badge>
-                  ) : (
-                    <span className="inline-flex items-center gap-1">
-                      <Badge variant="error" size="sm" dot>{routerStatus.label}</Badge>
-                      <Link
-                        href={`/dashboard/media-providers/systemone/${routerStatus.providerId}`}
-                        className="text-[10px] text-primary hover:underline font-medium"
-                        title="Configure in Media Providers"
-                      >
-                        Configure
-                      </Link>
-                    </span>
-                  )}
-                  <button
-                    onClick={() => setShowPolicyModal(true)}
-                    className="inline-flex items-center gap-1 rounded border border-border/70 bg-black/[0.02] dark:bg-white/[0.02] px-2 py-0.5 text-[11px] text-text-main hover:border-primary/50 hover:bg-primary/5 transition-colors"
-                    title="Configure routing policy and prompt cache retention"
-                  >
-                    <span className="material-symbols-outlined text-[13px] text-text-muted">tune</span>
-                    <span className="font-medium">{policyLabel}</span>
-                  </button>
-                  {routerModel && (
-                    <button
-                      onClick={() => onSetStrategy({ routerModel: "" })}
-                      className="p-0.5 rounded text-text-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
-                      title="Reset router to Auto"
-                    >
-                      <span className="material-symbols-outlined text-[13px]">close</span>
-                    </button>
-                  )}
-                </div>
-              );
-            })()}
+
           </div>
         </div>
 
         {/* Actions */}
-        <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center sm:gap-3 sm:shrink-0">
-          {/* Strategy selector — always visible */}
-          <div className="w-full sm:w-[200px]">
-            <Select
-              options={STRATEGY_OPTIONS}
-              value={current}
-              onChange={(e) => onSetStrategy({ fallbackStrategy: e.target.value })}
-              selectClassName="py-1.5 text-xs"
-            />
-          </div>
-
+        <div className="flex w-full justify-end sm:w-auto sm:shrink-0">
           <div className="grid grid-cols-3 gap-1 sm:flex">
             <button
               onClick={(e) => { e.stopPropagation(); onCopy(combo.name, `combo-${combo.id}`); }}
@@ -832,44 +773,23 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
         </div>
       </div>
 
-      {/* Judge model picker (single-select; combo members make natural judges too) */}
-      {showJudgeSelect && (
-        <ModelSelectModal
-          isOpen={showJudgeSelect}
-          onClose={() => setShowJudgeSelect(false)}
-          onSelect={(m) => { onSetStrategy({ judgeModel: m?.value || "" }); setShowJudgeSelect(false); }}
-          activeProviders={activeProviders}
-          title="Select Judge Model"
-          addedModelValues={judge ? [judge] : []}
-          closeOnSelect={true}
-        />
-      )}
+      <div className="mt-4 grid grid-cols-1 gap-3 border-t border-border/60 pt-4 md:grid-cols-3">
+        <div className="min-w-0 rounded-xl border border-border/60 bg-black/[0.015] p-3 dark:bg-white/[0.02]">
+          <div className="mb-2 flex min-h-5 items-center text-xs font-medium text-text-main">Routing strategy</div>
+          <Select aria-label={`${t("Routing strategy")}: ${combo.name}`} options={STRATEGY_OPTIONS} value={current}
+            onChange={event => onSetStrategy({ fallbackStrategy: event.target.value })}
+            selectClassName="min-h-10 py-2! text-xs! border-border/60! bg-surface!" />
+          <p className="mt-2 text-[11px] leading-relaxed text-text-muted">{current === "round-robin" ? "Distribute new requests across members." : isSmart ? "Let System One choose the right model." : isFusion ? "Combine answers from multiple models." : "Try the next member when a request fails."}</p>
+        </div>
+        <AccountFallbackControl comboName={combo.name} value={strategy.accountFallbackMode} onChange={value => onSetStrategy({ accountFallbackMode: value })} />
+        {isSmart || isFusion ? <ComboModelControl comboName={combo.name} isSmart={isSmart} model={isSmart ? routerModel : judge}
+          policyLabel={isSmart ? getSmartPolicyLabel(strategy, t) : null} routerStatus={routerStatus}
+          onSelectAuto={() => onSetStrategy({ [isSmart ? "routerModel" : "judgeModel"]: "" })} onConfigure={section => setShowRoutingSettings(section)}
+        /> : <SessionAffinityControl comboName={combo.name} enabled={strategy.stickySession === true} onChange={value => onSetStrategy({ stickySession: value })} />}
+      </div>
 
-      {/* System One Router model picker (single-select from systemone kind) */}
-      {showRouterSelect && (
-        <ModelSelectModal
-          isOpen={showRouterSelect}
-          onClose={() => setShowRouterSelect(false)}
-          onSelect={(m) => { onSetStrategy({ routerModel: m?.value || "" }); setShowRouterSelect(false); }}
-          activeProviders={activeProviders}
-          title="Select System One Router Model"
-          kindFilter="systemone"
-          addedModelValues={routerModel ? [routerModel] : []}
-          closeOnSelect={true}
-        />
-      )}
-
-      {/* Smart Router Policy Settings Modal */}
-      {showPolicyModal && (
-        <SmartPolicyModal
-          isOpen={showPolicyModal}
-          onClose={() => setShowPolicyModal(false)}
-          comboName={combo.name}
-          currentPolicy={strategy.smartPolicy || (strategy.sessionSticky === false ? "per-turn" : "smart")}
-          currentThreshold={strategy.confidenceThreshold ?? 80}
-          onSave={onSetStrategy}
-        />
-      )}
+      {showRoutingSettings && <ComboRoutingSettingsModal combo={combo} strategy={strategy} activeProviders={activeProviders}
+        initialSection={showRoutingSettings} getRouterStatus={model => getRouterModelStatus(model, activeProviders)} onSave={onSetStrategy} onClose={() => setShowRoutingSettings(false)} />}
     </Card>
   );
 }
@@ -902,6 +822,7 @@ function CapacityAdapterSection({ capacityAdapter, onChange, activeProviders, ge
 }
 
 function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) {
+  const t = useTranslation();
   const [showModelSelect, setShowModelSelect] = useState(false);
   const { enabled, roundRobin, models } = entry;
 
@@ -947,7 +868,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5">
-              <code className="font-mono text-sm font-medium">{cap.label}</code>
+              <code className="font-mono text-sm font-medium">{t(cap.label)}</code>
               <span className="text-[10px] text-text-muted">— {cap.desc}</span>
             </div>
           </div>
@@ -1079,7 +1000,7 @@ function CapacityAdapterCap({ cap, entry, onChange, activeProviders, getCaps }) 
   );
 }
 
-function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
+function ModelItem({ id, index, model, connections, isFirst, isLast, onEdit, onMoveUp, onMoveDown, onRemove }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id });
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -1141,7 +1062,7 @@ function ModelItem({ id, index, model, isFirst, isLast, onEdit, onMoveUp, onMove
           onClick={() => setEditing(true)}
           title="Click to edit"
         >
-          {model}
+          <ModelReferenceLabel value={model} connections={connections} />
         </div>
       )}
 
@@ -1318,6 +1239,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
                       id={uid}
                       index={index}
                       model={model}
+                      connections={activeProviders}
                       isFirst={index === 0}
                       isLast={index === modelItems.length - 1}
                       onEdit={(newVal) => {

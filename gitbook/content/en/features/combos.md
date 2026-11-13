@@ -581,6 +581,23 @@ Dashboard → Combos → Clone "premium-coding"
 
 ---
 
+## Account affinity and sticky sessions
+
+Choose an account in the model picker to add a member such as `openai/gpt-4o@11111111-1111-4111-8111-111111111111`. The suffix is a connection UUID, not an account label. Native model identifiers such as Cloudflare `@cf/...` and version suffixes remain intact. Connections with non-UUID legacy IDs can be selected on direct requests with the existing `x-connection-id` header.
+
+Each combo has an **Account fallback** setting:
+
+- **Selected account only** (`strict`, default): a pinned member uses only that account. If unavailable, the combo tries its next member.
+- **Prefer selected account** (`prefer`): a pinned member may use another permitted account of the same provider.
+
+Members using **All Accounts (Auto)** keep normal provider selection. Explicit account selection on direct requests is strict. API-key account restrictions apply to every retry and cannot be overridden by account headers or the prefer setting. A key granting only `model@A` does not grant another account or a bare model request; `model` plus `x-connection-id: A` is equivalent to that pinned request. An allowed combo grants its configured members; capacity-adapter additions still need their own permissions.
+
+For chat combos, **Sticky Session** retains the successful member and actual account for two hours after its last use. Round-robin distributes new conversations; fallback follows configured member order. When A fails and B answers, later turns stay on B even after A recovers. Empty/error responses do not create bindings. State is isolated per client API key, held in process memory, and capped at 5000 sessions; restarting the process clears it. Use a stable client session ID (for example `x-session-id`) for conversation affinity.
+
+Account selection also applies to images, speech, transcription, embeddings, and video. Video polling must echo the creation response's `x-9router-connection-id` as `x-connection-id`, so the job is read through its creating account. Existing restrictions on retrying potentially billed video creation remain unchanged.
+
+---
+
 ## Related
 
 - [Smart Routing](./smart-routing.md) - How auto fallback works

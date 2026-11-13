@@ -1,3 +1,5 @@
+import { parseModelReference } from "open-sse/utils/modelReference.js";
+import { accountSelectionOptions } from "@/sse/services/accountSelection.js";
 import { handleChat } from "@/sse/handlers/chat.js";
 import {
   clearAccountError,
@@ -240,7 +242,8 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   const authError = await validateGeminiNativeClientKey(request);
   if (authError) return authError;
 
-  const modelId = normalizeGeminiNativeModel(model);
+  const reference = parseModelReference(model);
+  const modelId = normalizeGeminiNativeModel(reference.model);
   if (!GEMINI_NATIVE_MODEL_PATTERN.test(modelId)) {
     return Response.json({ error: { message: "Invalid model" } }, { status: 400 });
   }
@@ -249,13 +252,14 @@ async function forwardGeminiNativeRequest(request, body, model, action) {
   // so restricted keys are checked here, before any credential lookup.
   const keyAccessDenied = await enforceKeyAccessResolved(await getKeyAccessContext(request), model, "gemini", modelId);
   if (keyAccessDenied) return keyAccessDenied;
+  const selection = await accountSelectionOptions({ provider: "gemini", model: modelId, connectionId: reference.connectionId }, request, { keyAccess: await getKeyAccessContext(request) });
   const excludeConnectionIds = new Set();
   const bodyText = JSON.stringify(body);
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId);
+    const credentials = await getProviderCredentials("gemini", excludeConnectionIds, modelId, selection);
     if (!credentials || credentials.allRateLimited) {
       console.log(`[GEMINI_NATIVE] exhausted model=${modelId} status=${lastStatus || Number(credentials?.lastErrorCode) || 503} error=${lastError || credentials?.lastError || "No active credentials for provider: gemini"}`);
       return Response.json(

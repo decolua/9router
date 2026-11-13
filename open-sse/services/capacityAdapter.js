@@ -1,3 +1,4 @@
+import { parseModelReference } from "../utils/modelReference.js";
 /**
  * Capacity Adapter — global fallback pools of models per input-modality capability
  * (vision / pdf / audioInput / videoInput).
@@ -79,7 +80,7 @@ export function getActiveAdapterStrategy(requiredCapabilities, settings) {
 function modelSatisfies(modelStr, requiredHard) {
   const slash = modelStr.indexOf("/");
   const provider = slash > 0 ? modelStr.slice(0, slash) : "";
-  const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
+  const model = parseModelReference(slash > 0 ? modelStr.slice(slash + 1) : modelStr).model;
   const caps = getCapabilitiesForModel(provider, model);
   return requiredHard.every((c) => caps[c] === true);
 }
@@ -165,7 +166,7 @@ export function withCapacityAdapterStripping(handleSingleModel, adapterModels) {
     if (adapterSet.has(modelStr)) {
       const slash = modelStr.indexOf("/");
       const provider = slash > 0 ? modelStr.slice(0, slash) : "";
-      const model = slash > 0 ? modelStr.slice(slash + 1) : modelStr;
+      const model = parseModelReference(slash > 0 ? modelStr.slice(slash + 1) : modelStr).model;
       const { contextWindow } = getCapabilitiesForModel(provider, model);
       body = stripHistoryForContext(body, contextWindow);
     }

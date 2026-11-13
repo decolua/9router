@@ -1,3 +1,5 @@
+import { parseModelReference } from "open-sse/utils/modelReference.js";
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -105,22 +107,25 @@ export async function handleFetch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderFetch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m, routing) => handleSingleProviderFetch(b, m, request, apiKey, settings, { ...routing, grantedByCombo: true }),
       log,
       comboName: providerInput,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      accountFallbackMode: comboStrategies[providerInput]?.accountFallbackMode,
     });
   }
 
   return handleSingleProviderFetch(body, providerInput, request, apiKey, settings);
 }
 
-async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderFetch(body, providerInput, request, apiKey, settings, routing = {}) {
   const targetUrl = body.url;
   const format = body.format;
   const maxCharacters = body.max_characters;
-  const providerId = resolveProviderId(providerInput);
+  const reference = parseModelReference(providerInput);
+  const providerId = resolveProviderId(reference.model);
+  const selection = await accountSelectionOptions({ provider: providerId, connectionId: reference.connectionId }, request, { ...routing, providerOnly: true, keyAccess: await getKeyAccessContext(request) });
   const resolvedProvider = AI_PROVIDERS[providerId];
 
   if (!resolvedProvider) {
@@ -171,7 +176,7 @@ async function handleSingleProviderFetch(body, providerInput, request, apiKey, s
   const fetchLockKey = `webfetch:${providerId}`;
 
   while (true) {
-    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey);
+    const credentials = await getProviderCredentials(providerId, excludeConnectionIds, fetchLockKey, selection);
 
     if (!credentials || credentials.allRateLimited) {
       if (credentials?.allRateLimited) {

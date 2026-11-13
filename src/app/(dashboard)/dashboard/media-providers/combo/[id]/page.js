@@ -4,12 +4,17 @@ import { useParams, notFound, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Card, Button, Input, Toggle, ModelSelectModal } from "@/shared/components";
+import AccountFallbackControl from "@/shared/components/AccountFallbackControl";
+import ModelReferenceLabel from "@/shared/components/ModelReferenceLabel";
+import { parseModelReference } from "open-sse/utils/modelReference.js";
+import { normalizeAccountFallbackMode } from "open-sse/config/accountRouting.js";
 import ProviderIcon from "@/shared/components/ProviderIcon";
 import { AI_PROVIDERS, MEDIA_PROVIDER_KINDS } from "@/shared/constants/providers";
 
 // Parse "providerId/model" or just "providerId" → { providerId, model }
 function parseModelEntry(entry) {
   if (typeof entry !== "string") return { providerId: "", model: "" };
+  entry = parseModelReference(entry).model;
   const idx = entry.indexOf("/");
   if (idx < 0) return { providerId: entry, model: "" };
   return { providerId: entry.slice(0, idx), model: entry.slice(idx + 1) };
@@ -53,6 +58,7 @@ export default function ComboDetailPage() {
   const [nameError, setNameError] = useState("");
   const [providers, setProviders] = useState([]);
   const [roundRobin, setRoundRobin] = useState(false);
+  const [accountFallbackMode, setAccountFallbackMode] = useState(normalizeAccountFallbackMode());
   const [showPicker, setShowPicker] = useState(false);
   const [logs, setLogs] = useState([]);
   const [testing, setTesting] = useState(false);
@@ -85,6 +91,7 @@ export default function ComboDetailPage() {
       setProviders(c.models || []);
       const s = settingsRes.ok ? await settingsRes.json() : {};
       setRoundRobin(s.comboStrategies?.[c.name]?.fallbackStrategy === "round-robin");
+      setAccountFallbackMode(normalizeAccountFallbackMode(s.comboStrategies?.[c.name]?.accountFallbackMode));
       const allLogs = logsRes.ok ? await logsRes.json() : [];
       setLogs(allLogs.filter((l) => typeof l === "string" && l.includes(c.name)).slice(0, 50));
     } catch { /* noop */ }
@@ -149,18 +156,25 @@ export default function ComboDetailPage() {
     await saveCombo({ models: next });
   };
 
-  const handleToggleRoundRobin = async (enabled) => {
-    setRoundRobin(enabled);
+  const updateRouting = async (patch) => {
     const settingsRes = await fetch("/api/settings", { cache: "no-store" });
     const s = settingsRes.ok ? await settingsRes.json() : {};
     const updated = { ...(s.comboStrategies || {}) };
-    if (enabled) updated[combo.name] = { fallbackStrategy: "round-robin" };
-    else delete updated[combo.name];
+    updated[combo.name] = { ...(updated[combo.name] || {}), ...patch };
     await fetch("/api/settings", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ comboStrategies: updated }),
     });
+  };
+
+  const handleToggleRoundRobin = async (enabled) => {
+    setRoundRobin(enabled);
+    await updateRouting({ fallbackStrategy: enabled ? "round-robin" : "fallback" });
+  };
+  const handleAccountFallback = async (mode) => {
+    setAccountFallbackMode(mode);
+    await updateRouting({ accountFallbackMode: mode });
   };
 
   const handleDelete = async () => {
@@ -268,12 +282,15 @@ export default function ComboDetailPage() {
             <Input label="Combo Name" value={name} onChange={(e) => { setName(e.target.value); validateName(e.target.value); }} onBlur={handleSaveName} error={nameError} />
             <p className="text-[10px] text-text-muted mt-0.5">Only letters, numbers, -, _ and .</p>
           </div>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium">Round Robin</p>
-              <p className="text-xs text-text-muted">Rotate providers across requests instead of strict fallback order.</p>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-border/60 bg-black/[0.015] p-3 dark:bg-white/[0.02]">
+              <div>
+                <p className="text-xs font-medium">Round Robin</p>
+                <p className="mt-2 text-[11px] leading-relaxed text-text-muted">Rotate members across requests. Turn off to try them in order.</p>
+              </div>
+              <Toggle checked={roundRobin} onChange={handleToggleRoundRobin} />
             </div>
-            <Toggle checked={roundRobin} onChange={handleToggleRoundRobin} />
+            <AccountFallbackControl comboName={combo.name} value={accountFallbackMode} onChange={handleAccountFallback} />
           </div>
         </div>
       </Card>
@@ -294,7 +311,7 @@ export default function ComboDetailPage() {
         ) : (
           <div className="flex flex-col gap-2">
             {providers.map((entry, idx) => {
-              const { providerId, model } = parseModelEntry(entry);
+              const { providerId } = parseModelEntry(entry);
               const p = AI_PROVIDERS[providerId];
               return (
                 <div key={`${entry}-${idx}`} className="flex items-center gap-3 p-2 rounded-lg bg-black/[0.02] dark:bg-white/[0.02]">
@@ -309,7 +326,7 @@ export default function ComboDetailPage() {
                   />
                   <div className="min-w-0 flex-1">
                     <div className="text-sm font-medium truncate">{p?.name || providerId}</div>
-                    {model && <code className="text-[10px] text-text-muted font-mono truncate block">{model}</code>}
+                    <ModelReferenceLabel value={entry} connections={connections} />
                   </div>
                   <div className="flex items-center gap-0.5">
                     <button onClick={() => handleMove(idx, -1)} disabled={idx === 0} className={`p-1 rounded ${idx === 0 ? "text-text-muted/20" : "text-text-muted hover:text-primary hover:bg-black/5"}`} title="Move up">

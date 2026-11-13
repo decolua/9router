@@ -17,6 +17,8 @@ async function setupDb() {
     createProviderNode,
     getModelInfo,
     cleanup() {
+      global._dbAdapter?.instance?.close?.();
+      delete global._dbAdapter;
       fs.rmSync(tempDir, { recursive: true, force: true });
     },
   };

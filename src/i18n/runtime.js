@@ -133,6 +133,7 @@ export async function initRuntimeI18n() {
   
   currentLocale = getLocaleFromCookie();
   await loadTranslations(currentLocale);
+  reloadCallbacks.forEach(callback => callback());
   
   // Process existing DOM
   processElement(document.body);

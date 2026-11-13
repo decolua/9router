@@ -1,3 +1,5 @@
+import { parseModelReference } from "open-sse/utils/modelReference.js";
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -85,20 +87,23 @@ export async function handleSearch(request) {
     return handleComboChat({
       body,
       models: comboModels,
-      handleSingleModel: (b, m) => handleSingleProviderSearch(b, m, request, apiKey, settings),
+      handleSingleModel: (b, m, routing) => handleSingleProviderSearch(b, m, request, apiKey, settings, { ...routing, grantedByCombo: true }),
       log,
       comboName: providerInput,
       comboStrategy,
-      comboStickyLimit
+      comboStickyLimit,
+      accountFallbackMode: comboStrategies[providerInput]?.accountFallbackMode,
     });
   }
 
   return handleSingleProviderSearch(body, providerInput, request, apiKey, settings);
 }
 
-async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings) {
+async function handleSingleProviderSearch(body, providerInput, request, apiKey, settings, routing = {}) {
   const query = body.query;
-  const providerId = resolveProviderId(providerInput);
+  const reference = parseModelReference(providerInput);
+  const providerId = resolveProviderId(reference.model);
+  const selection = await accountSelectionOptions({ provider: providerId, connectionId: reference.connectionId }, request, { ...routing, providerOnly: true, keyAccess: await getKeyAccessContext(request) });
   const resolvedProvider = AI_PROVIDERS[providerId];
 
   if (!resolvedProvider) {
@@ -170,12 +175,12 @@ async function handleSingleProviderSearch(body, providerInput, request, apiKey, 
     // Provider that actually owns the connection in use — differs from
     // providerId once we fall back, and error locks must be attributed to it.
     let credentialProviderId = providerId;
-    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey);
+    let credentials = await getProviderCredentials(providerId, excludeConnectionIds, searchLockKey, selection);
 
     // Fall back to the related chat provider's credentials when this search
     // provider has none of its own (one key, chat + search).
     if (!credentials && fallbackProviderId) {
-      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey);
+      credentials = await getProviderCredentials(fallbackProviderId, excludeConnectionIds, searchLockKey, selection);
       if (credentials) {
         credentialProviderId = fallbackProviderId;
         log.info("AUTH", `\x1b[32m${providerId} reusing ${fallbackProviderId} credentials\x1b[0m`);

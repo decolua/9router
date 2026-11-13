@@ -1,3 +1,4 @@
+import { accountSelectionOptions } from "../services/accountSelection.js";
 import {
   getProviderCredentials,
   markAccountUnavailable,
@@ -94,13 +95,15 @@ export async function handleEmbeddings(request) {
     log.info("ROUTING", `Provider: ${provider}, Model: ${model}`);
   }
 
+  const selection = await accountSelectionOptions(modelInfo, request, { keyAccess: await getKeyAccessContext(request) });
+
   // Credential + fallback loop (mirrors handleChat)
   const excludeConnectionIds = new Set();
   let lastError = null;
   let lastStatus = null;
 
   while (true) {
-    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model);
+    const credentials = await getProviderCredentials(provider, excludeConnectionIds, model, selection);
 
     // All accounts unavailable
     if (!credentials || credentials.allRateLimited) {

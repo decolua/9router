@@ -1,3 +1,4 @@
+import { ACCOUNT_FALLBACK_MODES } from "open-sse/config/accountRouting.js";
 import { NextResponse } from "next/server";
 import { getSettings, updateSettings } from "@/lib/localDb";
 import { applyOutboundProxyEnv } from "@/lib/network/outboundProxy";
@@ -38,6 +39,9 @@ export async function GET() {
 export async function PATCH(request) {
   try {
     const body = await request.json();
+    if (body.comboStrategies && Object.values(body.comboStrategies).some(entry => entry?.accountFallbackMode !== undefined && !Object.values(ACCOUNT_FALLBACK_MODES).includes(entry.accountFallbackMode))) {
+      return NextResponse.json({ error: "Invalid account fallback mode" }, { status: 400 });
+    }
 
     // Strip protected secrets before any internal handling sets them
     for (const key of PROTECTED_SETTING_KEYS) delete body[key];
