@@ -35,26 +35,23 @@ export function isStaleSocketError(error) {
   return STALE_SOCKET_ERROR_SUBSTRINGS.some((sub) => msg.includes(sub));
 }
 
-// Captured at module load, before any test can stub it — this is the real
-// runtime's fetch, which in Node is already undici-backed, so calling through
-// it changes nothing for production traffic.
-const nativeFetch = globalThis.fetch;
-
 // Always fetch through the package's own undici instance so fetch and the
 // Agents below come from the same copy — dispatcher options are only guaranteed
-// to match within one undici version — UNLESS a test has replaced
-// globalThis.fetch after load (vi.stubGlobal("fetch", ...)), in which case the
-// mock must receive the call instead of a real network request going out.
-// This module patches globalThis.fetch to patchedFetch below (idempotency
-// guard further down), so in normal production operation globalThis.fetch
-// IS patchedFetch, not nativeFetch — comparing only against nativeFetch would
-// make every call recurse back into proxyAwareFetch(url, options, null),
-// dropping proxyOptions and silently defeating strictProxy/proxy routing.
-// patchedFetch is a hoisted function declaration, so it's safe to reference
-// here even though it's defined later in this file.
+// to match within one undici version. Skipped under Vitest (process.env.VITEST,
+// set unconditionally by the runner): tests mock global.fetch directly (often
+// before importing a module that transitively imports this file, which would
+// otherwise clobber the mock via the self-patch below) and never pass a real
+// `dispatcher`, so calling through whatever globalThis.fetch currently is — the
+// mock — is both correct and what every existing test expects. Comparing
+// globalThis.fetch against a captured reference instead (nativeFetch, or this
+// module's own patchedFetch) is NOT reliable here: this module's own
+// self-patch runs in the same module evaluation as any capture, so in
+// production globalThis.fetch IS always this module's patch, not whichever
+// reference got captured first — that ambiguity is exactly what caused this
+// check to regress twice before landing on the environment flag instead.
 let undiciFetch = null;
 async function rawFetch(url, options) {
-  if (globalThis.fetch !== nativeFetch && globalThis.fetch !== patchedFetch) return globalThis.fetch(url, options);
+  if (process.env.VITEST) return globalThis.fetch(url, options);
   undiciFetch ??= (await import("undici")).fetch;
   return undiciFetch(url, options);
 }
