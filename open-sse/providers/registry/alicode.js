@@ -16,6 +16,10 @@ export default {
   transport: {
     baseUrl: "https://coding.dashscope.aliyuncs.com/v1/chat/completions",
     headers: {},
+    // DashScope's OpenAI-compatible endpoint re-hosts third-party models
+    // (Qwen/Kimi/GLM/MiniMax) and rejects vendor-native thinking shapes. Force
+    // the OpenAI `reasoning_effort` shape for every model routed here.
+    thinkingFormat: "openai",
     quirks: { preserveCacheControl: true },
   },
   models: [

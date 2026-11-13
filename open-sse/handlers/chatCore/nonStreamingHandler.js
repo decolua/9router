@@ -1,5 +1,6 @@
 import { FORMATS } from "../../translator/formats.js";
 import { needsTranslation } from "../../translator/index.js";
+import { normalizeChunkedContent } from "../../translator/concerns/reasoning.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
 import { addBufferToUsage, filterUsageForFormat } from "../../utils/usageTracking.js";
@@ -269,6 +270,14 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
   // bare OpenAI body and usage tracking sees data.usage. No-op unless the
   // provider opts in via transport.quirks.clineEnvelope.
   responseBody = unwrapClineEnvelope(responseBody, provider);
+
+  // Mistral reasoning models return message.content as a list of thinking/text
+  // chunks instead of a plain string. Normalize to string content +
+  // reasoning_content before any consumer (translation, usage, logging) reads
+  // the body.
+  if (Array.isArray(responseBody?.choices)) {
+    for (const choice of responseBody.choices) normalizeChunkedContent(choice.message);
+  }
 
   reqLogger.logProviderResponse(providerResponse.status, providerResponse.statusText, providerResponse.headers, responseBody);
   if (onRequestSuccess) {
