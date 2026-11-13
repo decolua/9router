@@ -12,6 +12,7 @@ import {
   decodeMcpArgs,
 } from "../utils/cursorProtobuf.js";
 import { buildCursorHeaders } from "../utils/cursorChecksum.js";
+import { resolveCursorModels, resolveAutoModelSelection } from "../services/cursorModels.js";
 import { estimateUsage } from "../utils/usageTracking.js";
 import { SSE_DONE, SSE_HEADERS } from "../utils/sseConstants.js";
 import { chatChunkSse, sseChunk } from "../utils/sse.js";
@@ -238,13 +239,35 @@ function rejectExecRequest(execRequest) {
   return wrapExecClientMessage(id, execId, resultField, rejected);
 }
 
-function encodeKvClientMessage(kvId, resultField, resultPayload, metadata) {
+export function encodeKvClientMessage(kvId, resultField, resultPayload, metadata) {
   const parts = [];
   if (kvId) parts.push(encodeField(1, PROTOBUF_VARINT, kvId));
   parts.push(encodeField(resultField, PROTOBUF_LEN, resultPayload || new Uint8Array()));
   if (metadata && metadata.length) parts.push(encodeField(4, PROTOBUF_LEN, metadata));
   return wrapConnectRPCFrame(agentMessage(3, concatBuffers(...parts)));
 }
+
+// The AgentService h2 path bypasses proxyAwareFetch (Node http2 duplex, no
+// dispatcher), so the strict-proxy guarantee that proxyFetch enforces for
+// regular fetch never applies here. Until h2 proxying lands (see #3276),
+// honor just the policy side: when a proxy is intended AND strict AND cannot
+// be resolved for this request, fail closed instead of silently opening a
+// direct socket that exposes the host's real IP — the exact leak strict mode
+// exists to prevent (#4333). Non-strict callers keep today's direct behavior.
+const proxyIntentFailed = (proxyOptions) => {
+  if (proxyOptions?.strictProxy !== true) return false;
+  const proxyIntended = Boolean(
+    proxyOptions?.proxyPoolId
+    || proxyOptions?.enabled === true
+    || proxyOptions?.connectionProxyEnabled === true
+    || (proxyOptions?.url || proxyOptions?.connectionProxyUrl || "").trim().length > 0,
+  );
+  if (!proxyIntended) return false;
+  // A vercel/cloudflare-style relay rides on plain fetch, not this h2 path.
+  if (proxyOptions?.vercelRelayUrl) return false;
+  // Proxy intended and strict: the h2 transport below cannot carry it.
+  return true;
+};
 
 const CURSOR_STREAM_DEBUG = process.env.CURSOR_STREAM_DEBUG === "1";
 const debugLog = (...args) => {
@@ -352,6 +375,57 @@ function createErrorResponse(jsonError) {
     status: isRateLimit ? HTTP_STATUS.RATE_LIMITED : HTTP_STATUS.BAD_REQUEST,
     headers: { "Content-Type": "application/json" }
   });
+}
+
+// Long-session empty-turn recovery: Cursor occasionally answers a long
+// history replay with HTTP 200 and zero deltas (empty turn). One retry on a
+// tail-only frame recovers the session instead of failing the client turn.
+const CURSOR_EMPTY_TURN_MAX_RETRIES = (() => {
+  const value = Number(process.env.CURSOR_EMPTY_TURN_MAX_RETRIES);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 1;
+})();
+
+const CURSOR_TAIL_ONLY_THRESHOLD = (() => {
+  const value = Number(process.env.CURSOR_TAIL_ONLY_THRESHOLD);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 80;
+})();
+
+const CURSOR_EMPTY_TURN_RETRY_DELAY_MS = (() => {
+  const value = Number(process.env.CURSOR_EMPTY_TURN_RETRY_DELAY_MS);
+  return Number.isFinite(value) && value >= 0 ? Math.floor(value) : 400;
+})();
+
+/** Minimal tail for wedged long sessions — drops bulk history and tool XML. */
+export function tailOnlyCursorMessages(messages) {
+  if (!Array.isArray(messages) || messages.length === 0) return messages || [];
+  const systemMessages = messages.filter(
+    (message) => message?.role === ROLE.SYSTEM && !String(message?.content || "").includes("[9router]"),
+  );
+  const chatMessages = messages.filter((message) => message?.role !== ROLE.SYSTEM);
+  let anchor = chatMessages.length - 1;
+  for (let i = chatMessages.length - 1; i >= 0; i--) {
+    if (chatMessages[i]?.role === ROLE.USER || chatMessages[i]?.role === ROLE.TOOL) {
+      anchor = i;
+      break;
+    }
+  }
+  const tailStart = anchor > 0 && chatMessages[anchor - 1]?.role === ROLE.ASSISTANT ? anchor - 1 : anchor;
+  const tail = chatMessages.slice(Math.max(0, tailStart));
+  const note = {
+    role: ROLE.SYSTEM,
+    content: `[9router] Long session: ${messages.length} messages trimmed to the latest turn. Answer the current request; re-read files if needed.`,
+  };
+  return [...systemMessages, note, ...tail];
+}
+
+/**
+ * Retry an empty AgentService turn only when a long-session replay is the
+ * likely cause: upstream accepts the request, streams HTTP 200, and closes
+ * with zero deltas. A first-message empty turn is a protocol condition, not
+ * a wedged replay, and must surface to the client without retry.
+ */
+function shouldRetryEmptyTurn(messageCount) {
+  return messageCount >= CURSOR_TAIL_ONLY_THRESHOLD;
 }
 
 export class CursorExecutor extends BaseExecutor {
@@ -559,9 +633,18 @@ export class CursorExecutor extends BaseExecutor {
     };
   }
 
-  async executeAgent({ model, body, stream, credentials, signal, log }) {
+  async executeAgent({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     const agentEndpoint = PROVIDER_OAUTH.cursor?.agentEndpoint;
     if (!agentEndpoint) throw new Error("Cursor AgentService endpoint is not configured");
+
+    // Policy guard: the h2 duplex stream below cannot ride a proxy, so a
+    // strict proxy configuration must fail closed here rather than leak the
+    // real IP on a direct socket (see proxyIntentFailed above).
+    if (proxyIntentFailed(proxyOptions)) {
+      throw new Error(
+        "Cursor AgentService requires a strict proxy that this HTTP/2 transport cannot honor; refusing to open a direct connection"
+      );
+    }
 
     const url = `${agentEndpoint}${AGENT_RUN_PATH}`;
     const headers = this.buildHeaders(credentials);
@@ -570,15 +653,36 @@ export class CursorExecutor extends BaseExecutor {
       signal.addEventListener("abort", () => requestController.abort(signal.reason), { once: true });
     }
 
-    let session;
+    // Empty-turn recovery works on the original client history so each retry
+    // re-derives its own frame from a clean base (original vs tail-only).
+    const originalMessages = body.messages || [];
+    let workingMessages = originalMessages;
     const tools = body.tools || [];
+    // "Auto (Server Picks)" / "default" is a picker alias, not an AgentService
+    // model id — sending it verbatim yields an empty turn. Resolve it to the
+    // account's default agent-capable model from the live catalog before Run.
+    let runModel = model;
+    if (model === "default" || model === "auto") {
+      const catalog = await resolveCursorModels(credentials, { signal, log });
+      const selection = resolveAutoModelSelection(catalog?.models);
+      if (selection) {
+        log?.info?.("CURSOR", `auto model resolved: ${model} → ${selection.modelId} (${selection.matchedBy})`);
+        runModel = selection.modelId;
+      }
+    }
+
+    const openAgentSession = (frameMessages) => {
+      const session = this.openAgentHttp2Stream(url, headers, requestController.signal);
+      session.write(buildAgentRunFrame(frameMessages, runModel, tools, body.reasoning_effort || body.reasoning?.effort));
+      return session;
+    };
+
+    let session;
     try {
-      session = this.openAgentHttp2Stream(url, headers, requestController.signal);
-      session.write(buildAgentRunFrame(body.messages || [], model, tools, body.reasoning_effort || body.reasoning?.effort));
+      session = openAgentSession(workingMessages);
     } catch (error) {
       throw new Error(`Cursor AgentService request failed: ${error.message}`);
     }
-
     let responseHeaders;
     try {
       responseHeaders = await session.responseHeaders;
@@ -745,13 +849,65 @@ export class CursorExecutor extends BaseExecutor {
       }
     };
 
+    // One AgentService attempt on the current working frame. Returns sawContent
+    // so the retry policy can tell a wedged long replay from a protocol empty.
+    const runAgentTurn = async (onEvent) => {
+      finished = false;
+      emittedText = false;
+      thinkingAcc = "";
+      emittedVisible = 0;
+      pending = Buffer.alloc(0);
+      await consume(onEvent);
+      return { sawContent: emittedText };
+    };
+
+    // Wrap events so we never retry once real output has reached the client.
+    let outputStarted = false;
+    const makeWrappedEvent = (onEvent) => (event) => {
+      if (event.type === "text" || event.type === "thinking" || event.type === "tool_call") outputStarted = true;
+      onEvent(event);
+    };
+
+    // Retry loop: fresh h2 session per attempt. An empty turn on a long replay
+    // swaps to a tail-only frame; any other failure surfaces immediately.
+    // While a retry is still available the empty-turn error event is withheld:
+    // emitting it would close the SSE stream before recovery can run.
+    const runWithRetry = async (onEvent) => {
+      outputStarted = false;
+      const wrapped = makeWrappedEvent(onEvent);
+      let attempt = 0;
+      for (;;) {
+        let turnError = null;
+        const result = await runAgentTurn((event) => {
+          if (event.type === "error") turnError = event;
+          else wrapped(event);
+        });
+        if (turnError && shouldRetryEmptyTurn(originalMessages.length) && !outputStarted && attempt < CURSOR_EMPTY_TURN_MAX_RETRIES && !requestController.signal.aborted) {
+          attempt++;
+          log?.info?.("CURSOR", `empty_turn on ${originalMessages.length}-message session; retry ${attempt}/${CURSOR_EMPTY_TURN_MAX_RETRIES} with tail-only frame`);
+          workingMessages = tailOnlyCursorMessages(originalMessages);
+          session = openAgentSession(workingMessages);
+          const retryHeaders = await session.responseHeaders;
+          const retryStatus = Number(retryHeaders[":status"] || 0);
+          if (retryStatus !== 200) {
+            wrapped(turnError);
+            return result;
+          }
+          await new Promise((resolve) => setTimeout(resolve, CURSOR_EMPTY_TURN_RETRY_DELAY_MS));
+          continue;
+        }
+        if (turnError) wrapped(turnError);
+        return result;
+      }
+    };
+
     if (stream === false) {
       let content = "";
       let reasoning = "";
       let agentError = null;
       const toolCalls = [];
       let finishReason = "stop";
-      await consume((event) => {
+      await runWithRetry((event) => {
         if (event.type === "text") content += event.value;
         else if (event.type === "thinking") reasoning += event.value;
         else if (event.type === "tool_call") {
@@ -802,7 +958,10 @@ export class CursorExecutor extends BaseExecutor {
     const encoder = new TextEncoder();
     const responseStream = new ReadableStream({
       start(controller) {
-        consume((event) => {
+        // Defer terminal SSE until runWithRetry settles. Emitting stop on the
+        // first empty upstream turn wedges Cursor before the tail-only retry
+        // can recover the session.
+        runWithRetry((event) => {
           if (event.type === "text") {
             controller.enqueue(encoder.encode(chatChunkSse({ id: responseId, created, model, delta: { content: event.value } })));
           } else if (event.type === "thinking") {
@@ -853,7 +1012,7 @@ export class CursorExecutor extends BaseExecutor {
   async execute({ model, body, stream, credentials, signal, log, proxyOptions = null }) {
     if (isAgentCapableRequest(body)) {
       try {
-        return await this.executeAgent({ model, body, stream, credentials, signal, log });
+        return await this.executeAgent({ model, body, stream, credentials, signal, log, proxyOptions });
       } catch (error) {
         return {
           response: new Response(JSON.stringify({

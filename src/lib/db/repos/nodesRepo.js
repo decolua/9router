@@ -90,6 +90,7 @@ export async function deleteProviderNode(id) {
     if (!row) return;
     removed = rowToNode(row);
     db.run(`DELETE FROM providerNodes WHERE id = ?`, [id]);
+    db.run(`DELETE FROM kv WHERE scope = 'customModels' AND key LIKE ?`, [`${id}|%`]);
   });
   return removed;
 }

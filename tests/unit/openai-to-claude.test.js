@@ -166,6 +166,79 @@ describe("openaiToClaudeRequest", () => {
       expect(result.tool_choice).toBeUndefined();
     });
   });
+
+  describe("tool_result is_error", () => {
+    // Strict Anthropic parsers (notably Zed cloud.zed.dev/completions) require
+    // `is_error` as a non-optional bool on every tool_result block.
+    const toolHistory = (toolMsg) => ({
+      messages: [
+        { role: "user", content: "list files" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{
+            id: "call_1",
+            type: "function",
+            function: { name: "list_dir", arguments: "{}" },
+          }],
+        },
+        toolMsg,
+      ],
+    });
+
+    const toolResultsOf = (body) =>
+      openaiToClaudeRequest("claude-sonnet-4.5", body, true).messages
+        .flatMap((m) => (Array.isArray(m.content) ? m.content : []))
+        .filter((b) => b.type === "tool_result");
+
+    it("always emits is_error:false on OpenAI role=tool messages", () => {
+      const results = toolResultsOf(toolHistory({
+        role: "tool",
+        tool_call_id: "call_1",
+        content: "ok",
+      }));
+      expect(results).toHaveLength(1);
+      expect(results[0]).toMatchObject({
+        type: "tool_result",
+        tool_use_id: "call_1",
+        content: "ok",
+        is_error: false,
+      });
+      expect(Object.prototype.hasOwnProperty.call(results[0], "is_error")).toBe(true);
+    });
+
+    it("preserves is_error:true from OpenAI role=tool extensions", () => {
+      const results = toolResultsOf(toolHistory({
+        role: "tool",
+        tool_call_id: "call_1",
+        content: "boom",
+        is_error: true,
+      }));
+      expect(results[0].is_error).toBe(true);
+    });
+
+    it("always emits is_error on Claude-shaped tool_result passthrough", () => {
+      const results = toolResultsOf({
+        messages: [{
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "call_1", content: "ok" }],
+        }],
+      });
+      expect(results).toHaveLength(1);
+      expect(results[0].is_error).toBe(false);
+      expect(Object.prototype.hasOwnProperty.call(results[0], "is_error")).toBe(true);
+    });
+
+    it("maps status:error to is_error:true", () => {
+      const results = toolResultsOf(toolHistory({
+        role: "tool",
+        tool_call_id: "call_1",
+        content: "failed",
+        status: "error",
+      }));
+      expect(results[0].is_error).toBe(true);
+    });
+  });
 });
 
 describe("openaiToClaudeResponse", () => {

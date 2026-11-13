@@ -33,6 +33,7 @@ import {
   qoderJobTokenExchangeUrl,
   qoderUserInfoUrl,
   qoderInferenceBase,
+  QODER_STATIC_MODEL_CONFIGS,
 } from "../shared/qoder/constants.js";
 
 const FETCH_TIMEOUT_MS = 15_000;
@@ -258,10 +259,8 @@ async function fetchQoderCatalogRaw(credentials, signal, proxyOptions = null, re
     const key = entry.key;
     if (!key) continue;
 
-    // Always cache the config — chat needs model_config even for UI-hidden
-    // models (enable:false). Upstream still accepts chat for these keys.
+    // enable:false 的模型仍可在 IDE 使用，保留其配置并展示上游名称。
     rawConfigs.set(key, entry);
-    if (entry.enable === false) continue;
 
     const display = entry.display_name || key;
     const ctx = Number(entry.max_input_tokens) || 131_072;
@@ -367,6 +366,22 @@ export function routableQoderModels(catalog) {
   if (!catalog) return [];
   const out = [];
   const seen = new Set();
+
+  // Static fallback keys first (Sonus `smodel` / Cantus `cmodel`). The live
+  // catalog often omits them, yet the executor still routes them through
+  // QODER_STATIC_MODEL_CONFIGS — so they must not vanish from /v1/models just
+  // because the live catalog replaced the static provider list. A catalog entry
+  // for the same key always wins.
+  const catalogKeys = new Set([
+    ...(catalog.models || []).map((m) => m?.id),
+    ...(catalog.rawConfigs ? [...catalog.rawConfigs.keys()] : []),
+  ]);
+  for (const [key, cfg] of Object.entries(QODER_STATIC_MODEL_CONFIGS)) {
+    if (!key || seen.has(key) || catalogKeys.has(key)) continue;
+    seen.add(key);
+    out.push({ id: key, name: cfg.display_name || key, hidden: false });
+  }
+
   for (const m of catalog.models || []) {
     if (!m?.id || seen.has(m.id)) continue;
     seen.add(m.id);

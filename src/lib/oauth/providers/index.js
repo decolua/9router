@@ -31,6 +31,7 @@ import zed from "./zed.js";
 import glm from "./glm.js";
 import minimaxCode from "./minimax-code.js";
 import minimaxCodeGlobal from "./minimax-code-global.js";
+import nous from "./nous.js";
 
 // Provider configurations
 const PROVIDERS = {
@@ -61,6 +62,7 @@ const PROVIDERS = {
   glm,
   "minimax-code": minimaxCode,
   "minimax-code-global": minimaxCodeGlobal,
+  nous,
 };
 
 export { PROVIDERS };

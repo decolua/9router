@@ -50,8 +50,8 @@ describe("getCapabilitiesForModel", () => {
     }
   });
 
-  it("reports Claude Fable 5.1 as a permanent adaptive-thinking model", () => {
-    expect(getCapabilitiesForModel("claude", "claude-fable-5-1")).toMatchObject({
+  it("reports Claude Fable 5.2 as a permanent adaptive-thinking model", () => {
+    expect(getCapabilitiesForModel("claude", "claude-fable-5-2")).toMatchObject({
       ...claudeSonnet5Expected,
       thinkingCanDisable: false,
     });
@@ -248,5 +248,98 @@ describe("getCapabilitiesForModel — codebuddy-cn provider overrides", () => {
     const caps = getCapabilitiesForModel("unknown-provider", "mimo-v2.5");
     expect(caps.vision).toBe(true);
     expect(caps.thinkingFormat).toBe("deepseek");
+  });
+
+  it("opencode-go claude-haiku-5-5 uses adaptive thinking, other haiku ids stay budget", () => {
+    // OpenCode Go rejects `thinking.type.enabled` for this model (400) and asks for
+    // thinking.type.adaptive + output_config.effort, which claude-adaptive emits.
+    const haiku55 = getCapabilitiesForModel("opencode-go", "claude-haiku-5-5");
+    expect(haiku55.thinkingFormat).toBe("claude-adaptive");
+    expect(haiku55.reasoning).toBe(true);
+    expect(haiku55.vision).toBe(true);
+    // The upstream catalog reports context_length 1000000 for this id; without the
+    // explicit value the provider entry does NOT inherit MODEL_CAPABILITIES (it is
+    // spread over DEFAULT_CAPABILITIES only) and the model shows 200k. maxOutput is
+    // stated for the same reason: the override short-circuits before the catalog
+    // overlay, so the synced catalog's 128000 would never be applied otherwise.
+    expect(haiku55.contextWindow).toBe(1000000);
+    expect(haiku55.maxOutput).toBe(128000);
+
+    // The canonical 5.5 entry is adaptive everywhere else, while 4.5 keeps the
+    // extended-thinking shape the haiku pattern describes.
+    expect(getCapabilitiesForModel(undefined, "claude-haiku-5-5").thinkingFormat).toBe("claude-adaptive");
+    expect(getCapabilitiesForModel("claude", "claude-haiku-5-5").thinkingFormat).toBe("claude-adaptive");
+    expect(getCapabilitiesForModel("opencode-go", "claude-haiku-4-5-20251001").thinkingFormat).toBe("claude-budget");
+  });
+
+  it("commandcode claude-haiku-5-5 is pinned to the catalog limits, not the fallback", () => {
+    // The commandcode branch returns 1M/384k for every unlisted model — for this id
+    // that fallback happened to guess the context right, but only by accident: the
+    // provider catalog (GET api.commandcode.ai/provider/v1/models) reports
+    // context_length 1000000 with maxOutput 128000 (claude-haiku-4-5 stays 200000).
+    // The explicit entry pins maxOutput and keeps thinking on the commandcode path.
+    const caps = getCapabilitiesForModel("commandcode", "claude-haiku-5-5");
+    expect(caps.contextWindow).toBe(1000000);
+    expect(caps.maxOutput).toBe(128000);
+    expect(caps.thinkingFormat).toBe("commandcode");
+    expect(caps.vision).toBe(true);
+    // the generic fallback still governs unlisted commandcode models
+    expect(getCapabilitiesForModel("commandcode", "deepseek/deepseek-v4.1-flash")).toMatchObject({
+      contextWindow: 1000000,
+      maxOutput: 384000,
+    });
+  });
+});
+
+describe("OpenCode Free ids newer than the capability tables", () => {
+  // ids missing here fall through to DEFAULT_CAPABILITIES (reasoning: false),
+  // and applyThinking() then deletes the client's reasoning_effort — see #2690.
+  // Modalities/limits are taken verbatim from models.dev.
+  it("reports reasoning and the models.dev limits for space-bunny", () => {
+    expect(getCapabilitiesForModel(undefined, "space-bunny-free")).toMatchObject({
+      reasoning: true,
+      thinkingFormat: "openai",
+      contextWindow: 1048576,
+      maxOutput: 524288,
+    });
+    expect(getCapabilitiesForModel("opencode-go", "space-bunny")).toMatchObject({
+      reasoning: true,
+      contextWindow: 1048576,
+      maxOutput: 524288,
+    });
+  });
+
+  it("caps oc/deepseek-v4.1-flash-free at the real backend limit (~330k) instead of 1M", () => {
+    const caps = getCapabilitiesForModel("opencode", "deepseek-v4.1-flash-free");
+    // The OpenCode Free backend rejects requests above ~330k prompt tokens (issue #5097).
+    // The published context_length must not exceed the real window, otherwise clients
+    // (VS Code Copilot etc.) never compact and hard-fail mid-session.
+    expect(caps.contextWindow).toBeLessThanOrEqual(330000);
+    expect(caps.maxOutput).toBeLessThanOrEqual(caps.contextWindow);
+    // Vision and reasoning should still be reported correctly.
+    expect(caps.vision).toBe(true);
+    expect(caps.reasoning).toBe(true);
+  });
+
+  it("keeps per-id modalities and limits instead of a generic floor", () => {
+    // text-only, small context — a shared pattern rule would overstate both.
+    expect(getCapabilitiesForModel(undefined, "big-pickle")).toMatchObject({
+      reasoning: true,
+      vision: false,
+      contextWindow: 200000,
+      maxOutput: 32000,
+    });
+    expect(getCapabilitiesForModel(undefined, "ring-2.6-1t-free")).toMatchObject({
+      reasoning: true,
+      vision: false,
+      contextWindow: 262000,
+      maxOutput: 66000,
+    });
+    expect(getCapabilitiesForModel(undefined, "exo-free")).toMatchObject({
+      reasoning: true,
+      vision: true,
+      contextWindow: 1048576,
+      maxOutput: 131072,
+    });
   });
 });
