@@ -157,12 +157,21 @@ export function kiroToClaudeResponse(chunk, state) {
     });
   }
 
-  // Tool calls.
+  // Tool calls. Same remap guard as openai-to-claude.js: a new id on an
+  // occupied index means a new tool — never concatenate into the prior delta.
   if (delta.tool_calls) {
     if (!state.toolCalls) state.toolCalls = new Map();
     if (!state.toolArgBuffers) state.toolArgBuffers = new Map();
+    state.toolIdxRemap ??= new Map();
     for (const tc of delta.tool_calls) {
-      const idx = tc.index ?? 0;
+      const upstreamIdx = tc.index ?? 0;
+      let idx = state.toolIdxRemap.get(upstreamIdx) ?? upstreamIdx;
+      const existing = state.toolCalls.get(idx);
+      if (existing && tc.id && tc.id !== existing.id) {
+        idx = 0;
+        while (state.toolCalls.has(idx)) idx++;
+        state.toolIdxRemap.set(upstreamIdx, idx);
+      }
       if (tc.id) {
         stopThinkingBlock(state, results);
         stopTextBlock(state, results);

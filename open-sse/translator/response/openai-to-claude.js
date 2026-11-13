@@ -18,13 +18,28 @@ function sanitizeToolArgs(toolName, argsJson) {
       ? toolName.slice(CLAUDE_OAUTH_TOOL_PREFIX.length)
       : toolName;
     if (name === "Read") sanitizeReadArgs(args);
+    else if (FILE_PATH_TOOLS.has(name)) sanitizeFilePathArg(args);
     return JSON.stringify(args);
   } catch {
     return argsJson;
   }
 }
 
+const FILE_PATH_TOOLS = new Set(["Read", "Edit", "Write"]);
+
+function sanitizeFilePathArg(args) {
+  if (typeof args.file_path === "string" && args.file_path) return;
+  const alias = typeof args.path === "string" && args.path ? args.path
+    : typeof args.filePath === "string" && args.filePath ? args.filePath : null;
+  if (alias) {
+    args.file_path = alias;
+    if (typeof args.path === "string") delete args.path;
+    if (typeof args.filePath === "string") delete args.filePath;
+  }
+}
+
 function sanitizeReadArgs(args) {
+  sanitizeFilePathArg(args);
   if (typeof args.limit === "string" && /^\d+$/.test(args.limit)) args.limit = Number(args.limit);
   if (typeof args.offset === "string" && /^-?\d+$/.test(args.offset)) args.offset = Number(args.offset);
 
@@ -44,6 +59,13 @@ function isValidPdfPagesArg(filePath, pages) {
     filePath.toLowerCase().endsWith(".pdf") &&
     typeof pages === "string" &&
     /^\d+(?:-\d+)?$/.test(pages);
+}
+
+// Next unused integer key for a remapped tool call (keeps upstream + local idx apart)
+function nextFreeToolIdx(state) {
+  let idx = 0;
+  while (state.toolCalls.has(idx)) idx++;
+  return idx;
 }
 
 // Helper: stop thinking block if started
@@ -181,8 +203,28 @@ export function openaiToClaudeResponse(chunk, state) {
 
   // Tool calls
   if (delta?.tool_calls) {
+    // Upstream idx → local idx. Normally identity; when a second tool reuses an
+    // occupied index the entry is remapped, and later arg-only chunks (still
+    // carrying the stale upstream index) follow the remap to the new tool.
+    state.toolIdxRemap ??= new Map();
     for (const tc of delta.tool_calls) {
-      const idx = tc.index ?? 0;
+      const upstreamIdx = tc.index ?? 0;
+      let idx = state.toolIdxRemap.get(upstreamIdx) ?? upstreamIdx;
+
+      // Some upstreams (Gemini/OpenCode bridges, duplicated delta buffers) reuse
+      // index 0 for a second tool call or replay a stale buffer. A new id (or a
+      // new function name on a non-empty buffer) means a new tool — remap to a
+      // fresh key so its args never concatenate into the previous tool's delta.
+      const existing = state.toolCalls.get(idx);
+      if (existing && tc.id && tc.id !== existing.id) {
+        idx = nextFreeToolIdx(state);
+        state.toolIdxRemap.set(upstreamIdx, idx);
+      } else if (existing && tc.function?.name && existing.name &&
+        tc.function.name !== existing.name &&
+        (state.toolArgBuffers?.get(idx) || "").length > 0) {
+        idx = nextFreeToolIdx(state);
+        state.toolIdxRemap.set(upstreamIdx, idx);
+      }
 
       // GLM/fireworks repeats id+null-name on every arg chunk; open block once per idx
       if (tc.id && !state.toolCalls.has(idx)) {
