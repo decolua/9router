@@ -342,4 +342,10 @@ describe("OpenCode Free ids newer than the capability tables", () => {
       maxOutput: 131072,
     });
   });
+
+  it("marks Cloudflare Workers AI Mistral Small 3.1 as vision-capable, other Mistral stays text-only", () => {
+    expect(getCapabilitiesForModel("cloudflare-ai", "@cf/mistralai/mistral-small-3.1-24b-instruct").vision).toBe(true);
+    expect(getCapabilitiesForModel("cloudflare-ai", "@cf/moonshotai/kimi-k2.6").vision).toBe(true);
+    expect(getCapabilitiesForModel("cloudflare-ai", "@cf/meta/llama-3.2-3b-instruct").vision).toBe(false);
+  });
 });
