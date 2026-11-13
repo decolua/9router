@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import PropTypes from "prop-types";
-import { Card, Button, Input, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
+import { Card, Button, Input, Select, Modal, CardSkeleton, Toggle, ConfirmModal } from "@/shared/components";
 import { useCopyToClipboard } from "@/shared/hooks/useCopyToClipboard";
 import {
   TUNNEL_BENEFITS,
@@ -19,11 +19,60 @@ import StatusAlert from "./components/StatusAlert";
 import Tooltip from "./components/Tooltip";
 import SecurityWarning from "./components/SecurityWarning";
 import KeyAccessControls from "./components/KeyAccessControls";
+
+const EXPIRY_PRESET_OPTIONS = [
+  { value: "never", label: "Never (no expiration)" },
+  { value: "7d", label: "7 days" },
+  { value: "30d", label: "30 days" },
+  { value: "90d", label: "90 days" },
+  { value: "custom", label: "Custom date & time" },
+];
+
+function calculateExpiryIso(preset, customValue) {
+  if (preset === "never") return null;
+  if (preset === "custom") {
+    if (!customValue) return null;
+    const d = new Date(customValue);
+    return Number.isNaN(d.getTime()) ? null : d.toISOString();
+  }
+  const now = new Date();
+  if (preset === "7d") now.setDate(now.getDate() + 7);
+  else if (preset === "30d") now.setDate(now.getDate() + 30);
+  else if (preset === "90d") now.setDate(now.getDate() + 90);
+  return now.toISOString();
+}
+
+function toDatetimeLocal(isoStr) {
+  if (!isoStr) return "";
+  const d = new Date(isoStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function formatExpiry(key) {
+  if (!key.expiresAt) return { text: "No expiration", isExpired: false };
+  const expDate = new Date(key.expiresAt);
+  if (Number.isNaN(expDate.getTime())) return { text: "No expiration", isExpired: false };
+  const isExpired = expDate.getTime() <= Date.now();
+  const formatted = `${expDate.toLocaleDateString()} ${expDate.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
+  return {
+    text: isExpired ? `Expired (${formatted})` : `Expires ${formatted}`,
+    isExpired,
+  };
+}
+
 export default function APIPageClient({ machineId }) {
   const [keys, setKeys] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState("");
+  const [newKeyExpiryPreset, setNewKeyExpiryPreset] = useState("never");
+  const [newKeyCustomExpiry, setNewKeyCustomExpiry] = useState("");
+  const [editingKey, setEditingKey] = useState(null);
+  const [editKeyName, setEditKeyName] = useState("");
+  const [editKeyExpiryPreset, setEditKeyExpiryPreset] = useState("never");
+  const [editKeyCustomExpiry, setEditKeyCustomExpiry] = useState("");
   const [createdKey, setCreatedKey] = useState(null);
   const [confirmState, setConfirmState] = useState(null);
 
@@ -618,11 +667,12 @@ export default function APIPageClient({ machineId }) {
   const handleCreateKey = async () => {
     if (!newKeyName.trim()) return;
 
+    const expiresAt = calculateExpiryIso(newKeyExpiryPreset, newKeyCustomExpiry);
     try {
       const res = await fetch("/api/keys", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName.trim(), expiresAt }),
       });
       const data = await res.json();
 
@@ -630,10 +680,44 @@ export default function APIPageClient({ machineId }) {
         setCreatedKey(data.key);
         await fetchData();
         setNewKeyName("");
+        setNewKeyExpiryPreset("never");
+        setNewKeyCustomExpiry("");
         setShowAddModal(false);
       }
     } catch (error) {
       console.log("Error creating key:", error);
+    }
+  };
+
+  const handleOpenEditModal = (key) => {
+    setEditingKey(key);
+    setEditKeyName(key.name || "");
+    if (!key.expiresAt) {
+      setEditKeyExpiryPreset("never");
+      setEditKeyCustomExpiry("");
+    } else {
+      setEditKeyExpiryPreset("custom");
+      setEditKeyCustomExpiry(toDatetimeLocal(key.expiresAt));
+    }
+  };
+
+  const handleUpdateKey = async () => {
+    if (!editingKey || !editKeyName.trim()) return;
+
+    const expiresAt = calculateExpiryIso(editKeyExpiryPreset, editKeyCustomExpiry);
+    try {
+      const res = await fetch(`/api/keys/${editingKey.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: editKeyName.trim(), expiresAt }),
+      });
+      const data = await res.json();
+      if (res.ok && data.key) {
+        setKeys(prev => prev.map(k => k.id === editingKey.id ? { ...k, name: data.key.name, expiresAt: data.key.expiresAt } : k));
+        setEditingKey(null);
+      }
+    } catch (error) {
+      console.log("Error updating key:", error);
     }
   };
 
@@ -1050,9 +1134,20 @@ export default function APIPageClient({ machineId }) {
                       </button>
                     </div>
                   </div>
-                  <p className="text-xs text-text-muted mt-1">
-                    Created {new Date(key.createdAt).toLocaleDateString()}
-                  </p>
+                  <div className="flex items-center gap-2 mt-1 text-xs flex-wrap">
+                    <span className="text-text-muted">
+                      Created {new Date(key.createdAt).toLocaleDateString()}
+                    </span>
+                    <span className="text-text-muted/40">•</span>
+                    {(() => {
+                      const { text, isExpired } = formatExpiry(key);
+                      return (
+                        <span className={isExpired ? "text-red-500 font-medium" : "text-text-muted"}>
+                          {text}
+                        </span>
+                      );
+                    })()}
+                  </div>
                   {key.isActive === false && (
                     <p className="text-xs text-orange-500 mt-1">Paused</p>
                   )}
@@ -1090,6 +1185,13 @@ export default function APIPageClient({ machineId }) {
                     title={key.isActive ? "Pause key" : "Resume key"}
                   />
                   <button
+                    onClick={() => handleOpenEditModal(key)}
+                    className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded text-text-muted hover:text-text-main opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
+                    title="Edit key"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                  <button
                     onClick={() => handleDeleteKey(key.id)}
                     className="p-2 hover:bg-red-500/10 rounded text-red-500 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all"
                   >
@@ -1109,6 +1211,8 @@ export default function APIPageClient({ machineId }) {
         onClose={() => {
           setShowAddModal(false);
           setNewKeyName("");
+          setNewKeyExpiryPreset("never");
+          setNewKeyCustomExpiry("");
         }}
       >
         <div className="flex flex-col gap-4">
@@ -1118,15 +1222,83 @@ export default function APIPageClient({ machineId }) {
             onChange={(e) => setNewKeyName(e.target.value)}
             placeholder="Production Key"
           />
+          <Select
+            label="Expiration"
+            options={EXPIRY_PRESET_OPTIONS}
+            value={newKeyExpiryPreset}
+            onChange={(e) => setNewKeyExpiryPreset(e.target.value)}
+          />
+          {newKeyExpiryPreset === "custom" && (
+            <Input
+              label="Expiration Date & Time"
+              type="datetime-local"
+              value={newKeyCustomExpiry}
+              onChange={(e) => setNewKeyCustomExpiry(e.target.value)}
+              required
+            />
+          )}
           <div className="flex gap-2">
-            <Button onClick={handleCreateKey} fullWidth disabled={!newKeyName.trim()}>
+            <Button
+              onClick={handleCreateKey}
+              fullWidth
+              disabled={!newKeyName.trim() || (newKeyExpiryPreset === "custom" && !newKeyCustomExpiry)}
+            >
               Create
             </Button>
             <Button
               onClick={() => {
                 setShowAddModal(false);
                 setNewKeyName("");
+                setNewKeyExpiryPreset("never");
+                setNewKeyCustomExpiry("");
               }}
+              variant="ghost"
+              fullWidth
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit Key Modal */}
+      <Modal
+        isOpen={!!editingKey}
+        title="Edit API Key"
+        onClose={() => setEditingKey(null)}
+      >
+        <div className="flex flex-col gap-4">
+          <Input
+            label="Key Name"
+            value={editKeyName}
+            onChange={(e) => setEditKeyName(e.target.value)}
+            placeholder="Key Name"
+          />
+          <Select
+            label="Expiration"
+            options={EXPIRY_PRESET_OPTIONS}
+            value={editKeyExpiryPreset}
+            onChange={(e) => setEditKeyExpiryPreset(e.target.value)}
+          />
+          {editKeyExpiryPreset === "custom" && (
+            <Input
+              label="Expiration Date & Time"
+              type="datetime-local"
+              value={editKeyCustomExpiry}
+              onChange={(e) => setEditKeyCustomExpiry(e.target.value)}
+              required
+            />
+          )}
+          <div className="flex gap-2">
+            <Button
+              onClick={handleUpdateKey}
+              fullWidth
+              disabled={!editKeyName.trim() || (editKeyExpiryPreset === "custom" && !editKeyCustomExpiry)}
+            >
+              Save
+            </Button>
+            <Button
+              onClick={() => setEditingKey(null)}
               variant="ghost"
               fullWidth
             >
