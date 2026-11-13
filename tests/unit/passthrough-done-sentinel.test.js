@@ -14,6 +14,10 @@ const chunk = JSON.stringify({
 });
 
 async function run(sse) {
+  return runChunks([sse]);
+}
+
+async function runChunks(chunks) {
   const stream = createSSEStream({ mode: "passthrough", provider: "openai" });
   const writer = stream.writable.getWriter();
   const reader = stream.readable.getReader();
@@ -27,7 +31,7 @@ async function run(sse) {
     }
     return out;
   })();
-  await writer.write(new TextEncoder().encode(sse));
+  for (const sse of chunks) await writer.write(new TextEncoder().encode(sse));
   await writer.close();
   return readPromise;
 }
@@ -46,6 +50,23 @@ describe("passthrough [DONE] sentinel", () => {
     const out = await run(`data: ${chunk}\n\ndata: [DONE]\n\n`);
     expect(count(out)).toBe(1);
     expect(out.endsWith("data: [DONE]\n\n")).toBe(true);
+  });
+
+  it("normalizes an upstream sentinel written as data:[DONE] with no space", async () => {
+    const out = await run(`data: ${chunk}\n\ndata:[DONE]\n\n`);
+    expect(count(out)).toBe(1);
+    // The raw, unframed line must not be forwarded alongside the framed sentinel.
+    expect(out).not.toContain("data:[DONE]");
+    expect(out.endsWith("data: [DONE]\n\n")).toBe(true);
+  });
+
+  it("swallows the blank separator when [DONE] and its separator arrive in different chunks", async () => {
+    const out = await runChunks([`data: ${chunk}\n\ndata: [DONE]\n`, "\n"]);
+    expect(count(out)).toBe(1);
+    // The downstream terminal must stay exactly one framed frame; a forwarded
+    // separator would leave a stray trailing newline after it.
+    expect(out.endsWith("data: [DONE]\n\n")).toBe(true);
+    expect(out.endsWith("data: [DONE]\n\n\n")).toBe(false);
   });
 
   it("still appends a sentinel when upstream sent none", async () => {

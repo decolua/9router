@@ -7,13 +7,10 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
-<<<<<<< HEAD
 import { fetchDetailById, createEnrichmentState } from "./useDetailEnrichment";
 import RequestMessageAnalysisModal from "./RequestMessageAnalysisModal";
 import { hasAnalyzableRequestMessages } from "./requestMessageAnalysis";
-=======
 import { getInputTokens, getOutputTokens, getCachedTokens, getCacheCreationTokens } from "./tokenDisplay";
->>>>>>> master
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -383,11 +380,7 @@ export default function RequestDetailsTab() {
                       {detail.detailUnavailable ? "\u2014" : (getCacheCreationTokens(detail.tokens) > 0 ? getCacheCreationTokens(detail.tokens).toLocaleString() : "\u2014")}
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
-<<<<<<< HEAD
-                      {detail.detailUnavailable ? "\u2014" : (detail.tokens?.completion_tokens?.toLocaleString() || 0)}
-=======
-                      {getOutputTokens(detail.tokens).toLocaleString()}
->>>>>>> master
+                      {detail.detailUnavailable ? "\u2014" : getOutputTokens(detail.tokens).toLocaleString()}
                     </td>
                     <td className="p-4 text-sm text-text-muted">
                       <div className="flex flex-col gap-0.5">

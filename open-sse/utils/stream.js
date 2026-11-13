@@ -251,8 +251,11 @@ export function createSSEStream(options = {}) {
           let injectedUsage = false;
           let responsesTerminal = false;
 
-<<<<<<< HEAD
-          if (trimmed === "data: [DONE]") {
+          // Upstream sent the sentinel (with or without a space after "data:").
+          // Re-emit exactly one fully framed terminal frame instead of the raw
+          // line, then own the success terminal: the client-observable [DONE]
+          // must be delivered before finalizeStream() persists the detail.
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
             passthroughDoneSeen = true;
             streamDoneSent = true;
             const doneOutput = "data: [DONE]\n\n";
@@ -263,10 +266,11 @@ export function createSSEStream(options = {}) {
             finalizeStream();
             continue;
           }
-=======
-          // Upstream already sent the sentinel; flush() must not append a second one.
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
->>>>>>> master
+
+          // The blank separator line after an upstream [DONE] can arrive in the
+          // same chunk or the next one. The sentinel above already carried its
+          // own framing, so forwarding the separator would append stray newlines.
+          if (passthroughDoneSeen && !trimmed) continue;
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
