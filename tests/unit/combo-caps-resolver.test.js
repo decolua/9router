@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { aggregateComboCapabilities, getCapabilitiesForModel } from "../../open-sse/providers/capabilities.js";
 
 // A combo's limits are the conservative aggregate of its members: ctx = min,
-// maxOutput = max. Resolving those members needs the synced model catalog, which
+// maxOutput = min. Resolving those members needs the synced model catalog, which
 // is server-only (it reads a file), so the browser bundle falls back to the
 // generic patterns. The dashboard computed its badges there and under-reported:
 // /v1/models and pi-settings (both server-side) said 1M while the badge said 200k.
@@ -47,7 +47,7 @@ describe("aggregateComboCapabilities: resolveCaps override", () => {
     // Feeding a *smaller* value for one member must pull the aggregate down.
     const smaller = aggregateComboCapabilities(models, null, (id) => (id === "glm-cn/glm-5.3" ? { ...GLM53_FED, contextWindow: 64_000 } : null));
     expect(smaller.contextWindow).toBe(64_000);
-    expect(caps.maxOutput).toBe(384_000); // max across members, from deepseek
+    expect(caps.maxOutput).toBe(131_072); // min across members, from the fed GLM limits
   });
 
   it("passes the resolver into nested combos", () => {
