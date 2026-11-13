@@ -714,6 +714,15 @@ function ComboCard({ combo, getCaps, comboByName = {}, activeProviders = [], cop
                 <span>max {fmtK(comboCaps.maxOutput)}</span>
               </div>
             )}
+            {combo.customPrompt && (
+              <div className="mt-1 flex items-center gap-1.5 text-[10px] text-text-muted">
+                <span className="material-symbols-outlined text-[13px] text-primary">chat</span>
+                <span className="font-medium text-text-main">Prompt:</span>
+                <span className="truncate max-w-[280px] font-mono bg-black/5 dark:bg-white/5 px-1 py-0.5 rounded" title={combo.customPrompt}>
+                  {combo.customPrompt}
+                </span>
+              </div>
+            )}
             {/* Fusion: judge picker (Auto = first model) */}
             {isFusion && (
               <div className="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
@@ -1181,6 +1190,7 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   // Initialize state with combo values - key prop on parent handles reset on remount
   const [name, setName] = useState(combo?.name || "");
   const [models, setModels] = useState(combo?.models || []);
+  const [customPrompt, setCustomPrompt] = useState(combo?.customPrompt || "");
   const [showModelSelect, setShowModelSelect] = useState(false);
   const [saving, setSaving] = useState(false);
   const [nameError, setNameError] = useState("");
@@ -1271,7 +1281,11 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
   const handleSave = async () => {
     if (!validateName(name)) return;
     setSaving(true);
-    await onSave({ name: name.trim(), models });
+    await onSave({
+      name: name.trim(),
+      models,
+      customPrompt: customPrompt.trim() || null,
+    });
     setSaving(false);
   };
 
@@ -1343,6 +1357,24 @@ function ComboFormModal({ isOpen, combo, onClose, onSave, activeProviders, kindF
               <span className="material-symbols-outlined text-[16px]">add</span>
               Add Model
             </button>
+          </div>
+
+          {/* Custom System Prompt */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium">Custom System Prompt</label>
+              <span className="text-[10px] text-text-muted">Optional</span>
+            </div>
+            <textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              placeholder="System prompt override for this combo (leave empty to use default fallback)..."
+              rows={3}
+              className="w-full rounded-lg border border-black/10 dark:border-white/10 bg-black/[0.02] dark:bg-white/[0.02] p-2 font-mono text-xs text-text focus:border-primary/50 focus:outline-none resize-y"
+            />
+            <p className="text-[10px] text-text-muted mt-0.5">
+              Overrides the global custom prompt for requests routed to this combo.
+            </p>
           </div>
 
           {/* Actions */}
