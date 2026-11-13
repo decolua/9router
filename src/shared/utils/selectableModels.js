@@ -50,8 +50,15 @@ export const LIVE_CATALOG_PROVIDERS = ["cursor", "cline", "clinepass", "zed", "c
  */
 export const liveModelCaps = (model) => {
   if (!model) return undefined;
-  const { isVL, isReasoning, contextLength, maxTokens } = model;
-  if (isVL === undefined && isReasoning === undefined && contextLength === undefined && maxTokens === undefined) {
+  const { isVL, isReasoning, contextLength, maxTokens, thinking_levels } = model;
+  const hasLevels = Array.isArray(thinking_levels) && thinking_levels.length > 0;
+  if (
+    isVL === undefined &&
+    isReasoning === undefined &&
+    contextLength === undefined &&
+    maxTokens === undefined &&
+    !hasLevels
+  ) {
     return undefined;
   }
   return {
@@ -59,6 +66,7 @@ export const liveModelCaps = (model) => {
     reasoning: isReasoning === true,
     contextWindow: contextLength,
     maxOutput: maxTokens,
+    ...(hasLevels ? { thinking_levels } : {}),
   };
 };
 

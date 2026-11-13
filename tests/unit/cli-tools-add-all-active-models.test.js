@@ -203,3 +203,37 @@ describe("live per-account catalogs", () => {
     expect(liveModelCaps({ id: "zed-model", name: "Zed Model" })).toBeUndefined();
   });
 });
+
+describe("live rows carry the provider's capability data through to caps", () => {
+  it("passes thinking_levels on, so a card can map real levels", () => {
+    const groups = buildModelGroups({
+      connections: [{ id: "c1", provider: "commandcode", isActive: true }],
+      allConnections: [{ id: "c1", provider: "commandcode", isActive: true }],
+      liveModels: {
+        commandcode: [
+          {
+            id: "deepseek/deepseek-v4.1-flash-fast",
+            name: "DeepSeek V4.1 Flash Fast",
+            contextLength: 1000000,
+            isVL: true,
+            isReasoning: true,
+            thinking_levels: ["none", "low", "high", "max"],
+          },
+        ],
+      },
+    });
+
+    const row = groups.commandcode.models.find((m) => m.value === "cmc/deepseek/deepseek-v4.1-flash-fast");
+    expect(row.caps.thinking_levels).toEqual(["none", "low", "high", "max"]);
+  });
+
+  it("reports caps for a row that only carries levels", () => {
+    expect(liveModelCaps({ id: "m", thinking_levels: ["low", "high"] })).toEqual({
+      vision: false,
+      reasoning: false,
+      contextWindow: undefined,
+      maxOutput: undefined,
+      thinking_levels: ["low", "high"],
+    });
+  });
+});
