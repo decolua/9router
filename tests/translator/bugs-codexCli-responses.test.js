@@ -8,16 +8,18 @@ const R2O = (body) => translateRequest(FORMATS.OPENAI_RESPONSES, FORMATS.OPENAI,
 const O2R = (body) => translateRequest(FORMATS.OPENAI, FORMATS.OPENAI_RESPONSES, "m", body, true, null, null);
 
 describe("Codex CLI Responses → OpenAI", () => {
-  // openai-responses.js:103 — function_call with empty name skipped, can leave tool_calls: []
-  // KNOWN BUG: empty tool_calls array is rejected by OpenAI/Codex
-  it.fails("assistant has no empty tool_calls array when all names are empty", () => {
+  // openai-responses.js — function_call items with an empty name are skipped (#444).
+  // That used to leave `tool_calls: []` on the assistant turn, and OpenAI/Codex
+  // reject an empty tool_calls array. The turn now ends up with nothing in it, so
+  // it is not emitted at all rather than as `{role:"assistant", content:null}`.
+  it("emits no assistant message when every tool call has an empty name", () => {
     const out = R2O({
       input: [
         { type: "function_call", call_id: "c1", name: "", arguments: "{}" },
       ],
     });
-    const asst = out.messages.find((m) => m.role === "assistant" && m.tool_calls);
-    expect(asst?.tool_calls?.length ?? 0, "empty tool_calls[] produced").toBeGreaterThan(0);
+    const assistants = out.messages.filter((m) => m.role === "assistant");
+    expect(assistants, "assistant message with an empty turn").toHaveLength(0);
   });
 
   it("function_call arguments end up as a string", () => {
