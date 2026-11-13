@@ -99,15 +99,43 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
   const suffix = sufMatch ? sufMatch[0] : "";
   const baseId = suffix ? modelId.slice(0, sufMatch.index).trim() : modelId;
   const models = PROVIDER_MODELS[aliasOrId];
-
-  // Resolve requested thinking level from suffix or client request body
+  const isAntigravityHydrogen = aliasOrId === "ag" && typeof baseId === "string"
+    && /^gemini-4-hydrogen(?:-|$)/.test(baseId);
+  const clientEffort = clientBody?.reasoning_effort || clientBody?.output_config?.effort
+    || (typeof clientBody?.reasoning === "object" ? clientBody.reasoning?.effort : null);
   const rawSuffix = suffix ? suffix.slice(1, -1).trim().toLowerCase() : "";
-  let tier = rawSuffix === "xhigh" || rawSuffix === "max" ? "high" : rawSuffix === "minimal" ? "low" : rawSuffix;
+  const noThoughts = isAntigravityHydrogen && (!rawSuffix || rawSuffix === "none" || rawSuffix === "off")
+    && (["none", "off"].includes(rawSuffix)
+      || (typeof clientEffort === "string" && ["none", "off"].includes(clientEffort.toLowerCase()))
+      || clientBody?.thinking?.type === "disabled"
+      || clientBody?.thinkingConfig?.thinkingBudget === 0
+      || clientBody?.generationConfig?.thinkingConfig?.thinkingBudget === 0
+      || clientBody?.request?.generationConfig?.thinkingConfig?.thinkingBudget === 0);
+
+  // Choose xhigh only when the provider actually has a matching tiered model.
+  // Other families still map xhigh/max to their highest advertised (high) ID.
+  const requestedTier = (value) => {
+    if (noThoughts && (value === "none" || value === "off")) return "low";
+    if (value === "xhigh" || value === "max") {
+      return findModel(models, `${baseId}-xhigh`, aliasOrId) ? "xhigh" : "high";
+    }
+    return value === "minimal" ? "low" : value;
+  };
+  let tier = requestedTier(rawSuffix);
   if (!tier && clientBody && typeof clientBody === "object") {
-    const rawEffort = clientBody.reasoning_effort || clientBody.output_config?.effort || (typeof clientBody.reasoning === "object" ? clientBody.reasoning?.effort : null);
+    const rawEffort = clientEffort;
     if (typeof rawEffort === "string" && rawEffort) {
       const v = rawEffort.toLowerCase().trim();
-      tier = v === "xhigh" || v === "max" ? "high" : v === "minimal" ? "low" : v;
+      tier = noThoughts ? "low" : requestedTier(v);
+    } else if (noThoughts) {
+      tier = "low";
+    } else if (typeof (clientBody.thinkingConfig?.thinkingLevel
+      || clientBody.generationConfig?.thinkingConfig?.thinkingLevel
+      || clientBody.request?.generationConfig?.thinkingConfig?.thinkingLevel) === "string") {
+      const level = clientBody.thinkingConfig?.thinkingLevel
+        || clientBody.generationConfig?.thinkingConfig?.thinkingLevel
+        || clientBody.request.generationConfig.thinkingConfig.thinkingLevel;
+      tier = requestedTier(level.toLowerCase().trim());
     } else if (clientBody.thinking && typeof clientBody.thinking === "object") {
       const b = Number(clientBody.thinking.budget_tokens);
       if (Number.isFinite(b) && b > 0) {
@@ -124,7 +152,7 @@ export function getModelUpstreamId(aliasOrId, modelId, clientBody = null) {
     const presetMatch = resolvedId.match(/\([^()]+\)\s*$/);
     const presetSuffix = presetMatch?.[0] || "";
     const resolvedBase = presetSuffix ? resolvedId.slice(0, presetMatch.index).trim() : resolvedId;
-    return resolvedBase + (suffix || (presetSuffix && tier ? `(${tier})` : presetSuffix));
+    return resolvedBase + (noThoughts ? "(none)" : suffix || (presetSuffix && tier ? `(${tier})` : presetSuffix));
   }
   if (aliasOrId === "cx" && typeof baseId === "string" && baseId.endsWith(CODEX_REVIEW_SUFFIX)) {
     return baseId.slice(0, -CODEX_REVIEW_SUFFIX.length) + suffix;

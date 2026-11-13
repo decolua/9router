@@ -5,6 +5,7 @@
  */
 
 import { resolveConnectionProxyConfig } from "@/lib/network/connectionProxy";
+import { getModelUpstreamId } from "open-sse/config/providerModels.js";
 import { getAntigravityUsage } from "open-sse/services/usage/google.js";
 import * as log from "../utils/logger.js";
 
@@ -27,6 +28,21 @@ const STRIKE_THRESHOLD = 3;
 const STRIKE_BLOCK_MS = 15 * 60_000;
 const strikeCounts = new Map(); // "connectionId|model" → { count, windowStart (anchored at first strike) }
 const strikeBlocks = new Map(); // "connectionId|model" → blockedUntil ms
+
+/** Resolve the same tiered wire model used by chatCore before selecting an account. */
+export function getAntigravityQuotaModel(model, requestBody) {
+  if (!model) return model;
+  const upstreamId = getModelUpstreamId("ag", model, requestBody);
+  // Gemini 3.6/3.7 share one -tiered wire ID, but quotas are reported
+  // under distinct public tier names. Keep the selected thinking tier as key.
+  const fixedTier = model.match(/^(gemini-3\.[67]-flash)-(low|medium|high)(?:\([^()]+\))?$/);
+  if (fixedTier) {
+    const effectiveTier = upstreamId.match(/\((low|medium|high)\)\s*$/)?.[1]
+      || (/\((xhigh|max)\)\s*$/.test(upstreamId) ? "high" : fixedTier[2]);
+    return `${fixedTier[1]}-${effectiveTier}`;
+  }
+  return upstreamId.replace(/\([^()]+\)\s*$/, "");
+}
 
 /**
  * Re-apply active strike blocks onto a fresh quotas snapshot so the auth
@@ -88,6 +104,9 @@ export function getAntigravityModelQuota(quotas, model) {
   }
 
   // 2. Direct tier aliases if base model was passed
+  if (cleanModel === "gemini-4-hydrogen" && quotas["gemini-4-hydrogen-high"]) {
+    candidates.push(quotas["gemini-4-hydrogen-high"]);
+  }
   if (cleanModel === "gemini-4-argon" && quotas["gemini-4-argon-high"]) {
     candidates.push(quotas["gemini-4-argon-high"]);
   }

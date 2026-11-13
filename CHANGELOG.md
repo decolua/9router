@@ -1,3 +1,8 @@
+# Unreleased
+
+## Features
+- **Gemini 4 Hydrogen**: add the Gemini API model and Antigravity low/medium/high/xhigh tiers, with high as the default alias; route each tier against its own quota and preserve xhigh thinking on the Gemini wire
+
 # v0.5.119 (2026-11-11)
 
 ## Features

@@ -1,6 +1,6 @@
 import { getProviderConnections, validateApiKey, updateProviderConnection, getSettings, getProxyPools } from "@/lib/localDb";
 import { resolveConnectionProxyConfig, pickProxyPoolId } from "@/lib/network/connectionProxy";
-import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil } from "open-sse/services/accountFallback.js";
+import { formatRetryAfter, checkFallbackError, isModelLockActive, buildModelLockUpdate, getEarliestModelLockUntil, getModelLockKey, MODEL_LOCK_ALL } from "open-sse/services/accountFallback.js";
 import { MAX_RATE_LIMIT_COOLDOWN_MS } from "open-sse/config/errorConfig.js";
 import { resolveProviderId, FREE_PROVIDERS } from "@/shared/constants/providers.js";
 import { getAntigravityQuotaCache, getAntigravityModelQuota } from "./antigravityQuota.js";
@@ -32,6 +32,7 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     : (excludeConnectionIds ? new Set([excludeConnectionIds]) : new Set());
   const preferredConnectionId = options?.preferredConnectionId || null;
   const requestedModel = options?.requestedModel || model;
+  const quotaModel = options?.quotaModel || model;
   // Acquire mutex to prevent race conditions
   const currentMutex = selectionMutex;
   let resolveMutex;
@@ -81,21 +82,33 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
 
     // Antigravity quota cache is lazy: only populated after that account returns 409/429.
     const isAntigravity = providerId === "antigravity";
-    const antigravityQuotaCache = isAntigravity && model ? getAntigravityQuotaCache() : null;
+    const lockModel = isAntigravity ? quotaModel : model;
+    // Locks persisted by older versions used the public alias, not the quota tier.
+    // The applicable unlock time is the latest of its tier, legacy alias, and
+    // account-wide locks; unrelated tiers must not shorten a retry estimate.
+    const relevantLockUntil = (c) => {
+      if (!isAntigravity) return getEarliestModelLockUntil(c);
+      const keys = new Set([getModelLockKey(lockModel), MODEL_LOCK_ALL]);
+      if (lockModel !== model) keys.add(getModelLockKey(model));
+      const unlockAt = Math.max(0, ...[...keys].map((key) => Date.parse(c[key]) || 0));
+      return unlockAt > Date.now() ? new Date(unlockAt).toISOString() : null;
+    };
+    const lockedForRequest = (c) => isAntigravity ? !!relevantLockUntil(c) : isModelLockActive(c, lockModel);
+    const antigravityQuotaCache = isAntigravity && quotaModel ? getAntigravityQuotaCache() : null;
 
     // Filter out model-locked, excluded, and Antigravity quota-exhausted connections.
     const availableConnections = connections.filter(c => {
       if (excludeSet.has(c.id)) return false;
-      if (isModelLockActive(c, model)) return false;
+      if (lockedForRequest(c)) return false;
       const enabled = c.providerSpecificData?.enabledModels;
       if (providerId === "codex" && Array.isArray(enabled) && enabled.length && requestedModel && !enabled.includes(requestedModel)) return false;
       // Antigravity: skip if live quota exhausted for this model
-      if (isAntigravity && model && antigravityQuotaCache) {
+      if (isAntigravity && quotaModel && antigravityQuotaCache) {
         const connQuotas = antigravityQuotaCache.get(c.id);
-        const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
+        const quota = getAntigravityModelQuota(connQuotas, quotaModel) || connQuotas?.[quotaModel];
         if (quota && quota.remainingPercentage <= 0 && quota.resetAt && new Date(quota.resetAt).getTime() > Date.now()) {
           const account = c.id?.slice(0, 8) || "unknown";
-          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${model} — skip upstream until ${quota.resetAt}`);
+          log.info("AG_QUOTA", `${account} | CACHE_BLOCK ${quotaModel} — skip upstream until ${quota.resetAt}`);
           return false;
         }
       }
@@ -105,25 +118,28 @@ export async function getProviderCredentials(provider, excludeConnectionIds = nu
     log.debug("AUTH", `${provider} | available: ${availableConnections.length}/${connections.length}`);
     connections.forEach(c => {
       const excluded = excludeSet.has(c.id);
-      const locked = isModelLockActive(c, model);
+      const locked = lockedForRequest(c);
       if (excluded || locked) {
-        const lockUntil = getEarliestModelLockUntil(c);
-        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${model}) until ${lockUntil}` : ""}`);
+        const lockUntil = relevantLockUntil(c);
+        const lockedId = isModelLockActive(c, lockModel) ? lockModel : model;
+        log.debug("AUTH", `  → ${c.id?.slice(0, 8)} | ${excluded ? "excluded" : ""} ${locked ? `modelLocked(${lockedId}) until ${lockUntil}` : ""}`);
       }
     });
 
     if (availableConnections.length === 0) {
       // Find earliest persistent lock or lazy Antigravity quota-cache reset for retry timing.
-      const lockedConns = connections.filter(c => isModelLockActive(c, model));
-      const expiries = lockedConns.map(c => getEarliestModelLockUntil(c)).filter(Boolean);
-      if (isAntigravity && model && antigravityQuotaCache) {
-        connections.forEach((c) => {
+      const lockedConns = connections.filter(lockedForRequest);
+      const expiries = connections.filter((c) => !excludeSet.has(c.id)).map((c) => {
+        const lockAt = Date.parse(relevantLockUntil(c)) || 0;
+        let quotaAt = 0;
+        if (isAntigravity && quotaModel && antigravityQuotaCache) {
           const connQuotas = antigravityQuotaCache.get(c.id);
-          const quota = getAntigravityModelQuota(connQuotas, model) || connQuotas?.[model];
-          const resetAt = quota?.resetAt;
-          if (resetAt && new Date(resetAt).getTime() > Date.now()) expiries.push(resetAt);
-        });
-      }
+          const quota = getAntigravityModelQuota(connQuotas, quotaModel) || connQuotas?.[quotaModel];
+          if (quota?.remainingPercentage <= 0) quotaAt = Date.parse(quota.resetAt) || 0;
+        }
+        const availableAt = Math.max(lockAt, quotaAt);
+        return availableAt > Date.now() ? new Date(availableAt).toISOString() : null;
+      }).filter(Boolean);
       const earliest = expiries.sort()[0] || null;
       if (earliest) {
         const earliestConn = lockedConns[0];

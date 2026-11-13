@@ -1,4 +1,5 @@
 import { FORMATS } from "../../translator/formats.js";
+import { suppressGeminiThoughtText } from "../../translator/concerns/thinkingUnified.js";
 import { needsTranslation } from "../../translator/index.js";
 import { openAICompletionToClaudeMessage } from "../../translator/concerns/claudeMessage.js";
 import { ollamaBodyToOpenAI } from "../../translator/response/ollama-to-openai.js";
@@ -234,7 +235,7 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
 /**
  * Handle non-streaming response from provider.
  */
-export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
+export async function handleNonStreamingResponse({ providerResponse, provider, model, sourceFormat, targetFormat, body, stream, translatedBody, finalBody, suppressThoughtSummaries, requestStartTime, connectionId, apiKey, clientRawRequest, onRequestSuccess, reqLogger, toolNameMap, customToolNames, trackDone, appendLog, pxpipe, reqTag, log }) {
   trackDone();
   const contentType = providerResponse.headers.get("content-type") || "";
   let responseBody;
@@ -265,6 +266,13 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     }
   }
 
+  // Scrub before request logging and all client-format translations.
+  if (suppressThoughtSummaries) {
+    suppressGeminiThoughtText(responseBody);
+    for (const choice of responseBody?.choices || []) {
+      if (choice?.message) delete choice.message.reasoning_content;
+    }
+  }
   // Unwrap before any consumer reads choices/usage so non-stream clients get a
   // bare OpenAI body and usage tracking sees data.usage. No-op unless the
   // provider opts in via transport.quirks.clineEnvelope.

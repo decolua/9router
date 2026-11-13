@@ -79,9 +79,10 @@ export function extractThinking(body) {
     }
   }
 
-  // Gemini shape (top-level, generationConfig, or request envelope)
-  const tc = body.thinkingConfig || body.generationConfig?.thinkingConfig || body.request?.generationConfig?.thinkingConfig;
-  if (tc && typeof tc === "object") {
+  // Gemini shape (top-level, generationConfig, or request envelope). A config
+  // containing only includeThoughts is not an effort: keep looking for a level.
+  for (const tc of [body.thinkingConfig, body.generationConfig?.thinkingConfig, body.request?.generationConfig?.thinkingConfig]) {
+    if (!tc || typeof tc !== "object") continue;
     if (typeof tc.thinkingLevel === "string") return { mode: "level", level: tc.thinkingLevel.toLowerCase() };
     const tb = Number(tc.thinkingBudget);
     if (Number.isFinite(tb)) {
@@ -106,11 +107,47 @@ export function extractThinking(body) {
 // Besides the effort, records whether an OpenAI-shaped client wants the thinking
 // text itself: Claude returns it only with thinking.display "summarized", a field
 // OpenAI has no equivalent for, so the intent cannot survive translation on its own.
-export function captureThinking(body) {
+function hasNativeThoughtOptOut(body) {
+  return [body?.thinkingConfig, body?.generationConfig?.thinkingConfig, body?.request?.generationConfig?.thinkingConfig]
+    .some((config) => config?.includeThoughts === false);
+}
+
+// If the upstream ignores includeThoughts:false, remove only model-internal
+// text; keep signatures and function calls for tool-turn continuity.
+export function suppressGeminiThoughtText(body) {
+  for (const payload of [body, body?.response]) {
+    for (const candidate of payload?.candidates || []) {
+      for (const part of candidate?.content?.parts || []) {
+        if (part?.thought === true) delete part.text;
+      }
+    }
+  }
+  return body;
+}
+
+export function shouldSuppressHydrogenThoughts(provider, model, wireBody) {
+  return provider === "antigravity" && typeof model === "string"
+    && stripThinkingSuffix(model).startsWith("gemini-4-hydrogen")
+    && wireBody?.request?.generationConfig?.thinkingConfig?.includeThoughts === false;
+}
+
+export function captureThinking(body, model = "") {
+  const suppressSummaries = hasNativeThoughtOptOut(body);
   const cfg = extractThinking(body);
-  if (!cfg || cfg.mode === "none") return cfg;
+  if (!cfg) {
+    // A suppress-only native Gemini request has no effort to extract, but
+    // Hydrogen's default high tier still needs to keep its privacy choice.
+    return typeof model === "string" && stripThinkingSuffix(model).startsWith("gemini-4-hydrogen") && suppressSummaries
+      ? { mode: "auto", includeThoughts: false }
+      : null;
+  }
+  if (cfg.mode === "none") return cfg;
   const display = openAIThinkingDisplay(body);
-  return display ? { ...cfg, display } : cfg;
+  return {
+    ...cfg,
+    ...(display ? { display } : {}),
+    ...(suppressSummaries ? { includeThoughts: false } : {}),
+  };
 }
 
 function openAIThinkingDisplay(body) {
@@ -180,8 +217,9 @@ function normalizeOpenAILevel(level, supportedLevels) {
   return "xhigh";
 }
 
-function toGeminiThinkingLevel(cfg) {
+function toGeminiThinkingLevel(cfg, supportedLevels) {
   const raw = cfg.mode === "auto" ? "high" : (toLevel(cfg) || "high");
+  if (supportedLevels?.includes("xhigh") && (raw === "xhigh" || raw === "max")) return "xhigh";
   return effortToThinkingLevel(raw);
 }
 
@@ -243,6 +281,21 @@ function ensureGeminiOutputFloor(body, floor, caps) {
   if (!Number.isFinite(current) || current < target) {
     gc.maxOutputTokens = target;
   }
+}
+
+// Apply provider defaults without mutating the client's request. Both account
+// selection and chat translation must see the same effective thinking tier.
+export function withProviderThinking(body, providerThinking) {
+  const mode = providerThinking?.mode;
+  if (!mode || mode === "auto" || extractThinking(body)) return body;
+  if (mode === "on" && !body.thinking) {
+    return { ...body, thinking: { type: "enabled", budget_tokens: 10000 } };
+  }
+  if (mode === "off" && !body.thinking) {
+    return { ...body, thinking: { type: "disabled" } };
+  }
+  if (!body.reasoning_effort) return { ...body, reasoning_effort: mode };
+  return body;
 }
 
 // Strip every known thinking field from a body (used before re-applying / when unsupported).
@@ -317,11 +370,14 @@ function applyFormat(fmt, body, cfg, caps, supportedLevels, display, model = "",
       break;
     }
     case "gemini-level": {
-      let level = none ? "minimal" : toGeminiThinkingLevel(eff);
+      let level = none ? "minimal" : toGeminiThinkingLevel(eff, supportedLevels);
       // Models without a "minimal" tier (Gemini 4) reject it with 400 — clamp to the lowest supported level.
       const lowest = supportedLevels?.find((l) => l !== "none");
       if (supportedLevels?.length && lowest && !supportedLevels.includes(level)) level = lowest;
-      setGeminiThinking(body, { thinkingLevel: level, includeThoughts: level !== "minimal" });
+      // Hydrogen cannot disable thinking; low is its floor, but an explicit
+      // off request must not request thought summaries in the response.
+      const includeThoughts = level !== "minimal" && !(none && model.startsWith("gemini-4-hydrogen"));
+      setGeminiThinking(body, { thinkingLevel: level, includeThoughts });
       ensureGeminiOutputFloor(body, geminiLevelOutputFloor(level), caps);
       break;
     }
@@ -454,6 +510,7 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   if (!body || typeof body !== "object") return body;
 
   const { cleanModel, override } = parseSuffix(model);
+  const suppressSummaries = intent?.includeThoughts === false || hasNativeThoughtOptOut(body);
   const cfg = override || intent || extractThinking(body);
   const caps = getCapabilitiesForModel(provider, cleanModel);
 
@@ -472,5 +529,9 @@ export function applyThinking(targetFormat, model, body, provider = null, intent
   const display = typeof body.thinking?.display === "string" ? body.thinking.display : intent?.display;
   stripAll(body);
   applyFormat(fmt, body, cfg, caps, supportedLevels, display, cleanModel, isOpenAICompatibleNode(provider));
+  if (suppressSummaries && cleanModel.startsWith("gemini-4-hydrogen")) {
+    const thinkingConfig = body.request?.generationConfig?.thinkingConfig || body.generationConfig?.thinkingConfig;
+    if (thinkingConfig) thinkingConfig.includeThoughts = false;
+  }
   return body;
 }

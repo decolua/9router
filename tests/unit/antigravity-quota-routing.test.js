@@ -27,7 +27,7 @@ vi.mock("open-sse/services/usage/google.js", () => ({
 }));
 vi.mock("@/sse/utils/logger.js", () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn() }));
 
-const { getAntigravityQuotaCache, handleAntigravityQuotaError, refreshAntigravityQuota, clearAntigravityStrikes } = await import("@/sse/services/antigravityQuota.js");
+const { getAntigravityQuotaCache, getAntigravityQuotaModel, getAntigravityModelQuota, handleAntigravityQuotaError, refreshAntigravityQuota, clearAntigravityStrikes } = await import("@/sse/services/antigravityQuota.js");
 const { getProviderCredentials } = await import("@/sse/services/auth.js");
 
 const MODEL = "claude-opus-4-6-thinking";
@@ -356,6 +356,161 @@ describe("Antigravity quota-aware routing", () => {
         remainingPercentage: 0,
         resetAt: FUTURE_RESET,
       });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("uses the high-tier quota for the Hydrogen default alias", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    const highQuota = { remainingPercentage: 0, resetAt: FUTURE_RESET };
+    const firstAccountQuotas = {
+      "gemini-4-hydrogen-high": highQuota,
+      "gemini-4-hydrogen-medium": { remainingPercentage: 75, resetAt: FUTURE_RESET },
+    };
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-hydrogen-a", email: "a@example.com", isActive: true },
+      { id: "ag-hydrogen-b", email: "b@example.com", isActive: true },
+    ]);
+    getAntigravityQuotaCache().set("ag-hydrogen-a", firstAccountQuotas);
+    try {
+      expect(getAntigravityModelQuota(firstAccountQuotas, "gemini-4-hydrogen")).toMatchObject(highQuota);
+      const credentials = await getProviderCredentials("antigravity", null, "gemini-4-hydrogen");
+      expect(credentials.connectionId).toBe("ag-hydrogen-b");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["xhigh", 0, 75, "ag-hydrogen-b"],
+    ["xhigh", 75, 0, "ag-hydrogen-a"],
+    ["low", 0, 75, "ag-hydrogen-b"],
+  ])("selects the account for Hydrogen %s instead of the default high tier", async (effort, selectedRemaining, highRemaining, expectedId) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    const firstAccountQuotas = {
+      [`gemini-4-hydrogen-${effort}`]: { remainingPercentage: selectedRemaining, resetAt: FUTURE_RESET },
+      "gemini-4-hydrogen-high": { remainingPercentage: highRemaining, resetAt: FUTURE_RESET },
+    };
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-hydrogen-a", email: "a@example.com", isActive: true },
+      { id: "ag-hydrogen-b", email: "b@example.com", isActive: true },
+    ]);
+    getAntigravityQuotaCache().set("ag-hydrogen-a", firstAccountQuotas);
+    try {
+      const quotaModel = getAntigravityQuotaModel("gemini-4-hydrogen", { reasoning_effort: effort });
+      expect(quotaModel).toBe(`gemini-4-hydrogen-${effort}`);
+      const credentials = await getProviderCredentials("antigravity", null, "gemini-4-hydrogen", { quotaModel });
+      expect(credentials.connectionId).toBe(expectedId);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("applies a Hydrogen xhigh lock only to xhigh, not the public alias's other tiers", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getProviderConnections.mockResolvedValue([{
+      id: "ag-tier-locked", email: "a@example.com", isActive: true,
+      "modelLock_gemini-4-hydrogen-xhigh": FUTURE_RESET,
+    }]);
+    try {
+      const xhigh = await getProviderCredentials("antigravity", null, "gemini-4-hydrogen", {
+        quotaModel: "gemini-4-hydrogen-xhigh",
+      });
+      expect(xhigh.allRateLimited).toBe(true);
+      const low = await getProviderCredentials("antigravity", null, "gemini-4-hydrogen", {
+        quotaModel: "gemini-4-hydrogen-low",
+      });
+      expect(low.connectionId).toBe("ag-tier-locked");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each(["3.6", "3.7"])("keeps Gemini %s's fixed-tier quota and lock keys separate from the shared wire ID", async (version) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    const low = `gemini-${version}-flash-low`;
+    const high = `gemini-${version}-flash-high`;
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-shared-tier-a", email: "a@example.com", isActive: true },
+      { id: "ag-shared-tier-b", email: "b@example.com", isActive: true },
+    ]);
+    getAntigravityQuotaCache().set("ag-shared-tier-a", {
+      [low]: { remainingPercentage: 0, resetAt: FUTURE_RESET },
+      [high]: { remainingPercentage: 75, resetAt: FUTURE_RESET },
+    });
+    try {
+      expect(getAntigravityQuotaModel(low, {})).toBe(low);
+      expect(getAntigravityQuotaModel(high, {})).toBe(high);
+      expect(getAntigravityQuotaModel(`${high}(low)`, {})).toBe(low);
+      expect(getAntigravityQuotaModel(`${low}(xhigh)`, {})).toBe(high);
+      expect(getAntigravityQuotaModel(`gemini-${version}-flash-medium(max)`, {})).toBe(high);
+      expect((await getProviderCredentials("antigravity", null, low, {
+        quotaModel: getAntigravityQuotaModel(low, {}),
+      })).connectionId).toBe("ag-shared-tier-b");
+      expect((await getProviderCredentials("antigravity", null, high, {
+        quotaModel: getAntigravityQuotaModel(high, {}),
+      })).connectionId).toBe("ag-shared-tier-a");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps an account-wide lock active when a model-specific lock has expired", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getProviderConnections.mockResolvedValue([{
+      id: "ag-all-locked", email: "a@example.com", isActive: true,
+      "modelLock___all": FUTURE_RESET,
+      "modelLock_gemini-4-hydrogen-high": "2026-08-25T23:00:00.000Z",
+    }]);
+    try {
+      const blocked = await getProviderCredentials("antigravity", null, "gemini-4-hydrogen", {
+        quotaModel: "gemini-4-hydrogen-high",
+      });
+      expect(blocked.allRateLimited).toBe(true);
+      expect(blocked.retryAfter).toBe(FUTURE_RESET);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not advertise a different tier's earlier lock as the requested tier's retry time", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    const highUntil = "2026-08-26T01:00:00.000Z";
+    mocks.getProviderConnections.mockResolvedValue([{
+      id: "ag-two-locks", email: "a@example.com", isActive: true,
+      "modelLock_gemini-4-hydrogen-low": "2026-08-26T00:10:00.000Z",
+      "modelLock_gemini-4-hydrogen-high": highUntil,
+    }]);
+    try {
+      const blocked = await getProviderCredentials("antigravity", null, "gemini-4-hydrogen", {
+        quotaModel: "gemini-4-hydrogen-high",
+      });
+      expect(blocked.allRateLimited).toBe(true);
+      expect(blocked.retryAfter).toBe(highUntil);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("continues honoring an unexpired pre-upgrade Antigravity alias lock", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-26T00:00:00.000Z"));
+    mocks.getProviderConnections.mockResolvedValue([
+      { id: "ag-legacy-locked", email: "a@example.com", isActive: true, ["modelLock_gemini-4-carbon"]: FUTURE_RESET },
+      { id: "ag-legacy-free", email: "b@example.com", isActive: true },
+    ]);
+    try {
+      const credentials = await getProviderCredentials("antigravity", null, "gemini-4-carbon", {
+        quotaModel: "gemini-4-carbon-medium",
+      });
+      expect(credentials.connectionId).toBe("ag-legacy-free");
     } finally {
       vi.useRealTimers();
     }
