@@ -2,7 +2,8 @@ import { loadState, saveState, generateShortId } from "../shared/state.js";
 import { spawnQuickTunnel, killCloudflared, isCloudflaredRunning, setUnexpectedExitHandler } from "./cloudflared.js";
 import { clearPid } from "./pid.js";
 import { waitForHealth, probeUrlAlive } from "./healthCheck.js";
-import { WORKER_URL } from "./config.js";
+import { WORKER_URL, INSECURE_WORKER } from "./config.js";
+import { workerFetch } from "./workerFetch.js";
 import { getSettings, updateSettings } from "@/lib/localDb";
 
 const svc = {
@@ -20,10 +21,10 @@ let onUnexpectedExit = null;
 export function setTunnelUnexpectedExitCallback(cb) { onUnexpectedExit = cb; }
 
 async function registerTunnelUrl(shortId, tunnelUrl) {
-  await fetch(`${WORKER_URL}/api/tunnel/register`, {
+  await workerFetch(`${WORKER_URL}/api/tunnel/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ shortId, tunnelUrl })
+    body: JSON.stringify({ shortId, tunnelUrl }),
   });
 }
 
@@ -103,6 +104,9 @@ export async function enableTunnel(localPort = 20128) {
     // Suppress noise when spawn was deliberately killed (restart/disable superseded it)
     if (!/cloudflared killed|tunnel cancelled/.test(e.message)) {
       console.error(`[Tunnel] enable error: ${e.message}`);
+      if (/fetch failed|self signed|self-signed|certificate/i.test(e.message) && !INSECURE_WORKER) {
+        console.error("[Tunnel] hint: worker TLS rejected. Set TUNNEL_WORKER_INSECURE=1 to bypass cert check for the worker host.");
+      }
     }
     throw e;
   } finally {
