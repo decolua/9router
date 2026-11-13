@@ -2,7 +2,7 @@
 //
 // Two modes per key: UNRESTRICTED (default — exactly today's behaviour) or
 // RESTRICTED, where the key may call ONLY the combos and models in its allow
-// list. No wildcards, no deny mode. Matching is exact and case-insensitive, on
+// list. Exact entries and patterns are matched case-insensitively on
 // RESOLVED identities, so every spelling that routes to the same target is
 // treated the same and no spelling can route somewhere the list does not name:
 //
@@ -25,7 +25,7 @@
 import { getApiKeyByKey } from "@/lib/db/repos/apiKeysRepo.js";
 import { getCombos } from "@/lib/db/repos/combosRepo.js";
 import { getModelInfo, getComboModels } from "./model.js";
-import { resolveProviderId } from "@/shared/constants/providers.js";
+import { resolveProviderId, getProviderAlias } from "@/shared/constants/providers.js";
 import {
   KEY_ACCESS_COMBO_OWNER,
   KEY_ACCESS_PROVIDER_AS_MODEL_KINDS,
@@ -45,21 +45,8 @@ const canonicalModel = (provider, model) => lower(`${provider}/${model}`);
  * extractApiKey() only reads the first two, so using it here would let a
  * restricted key sent as x-goog-api-key look like "no key" (= unrestricted).
  */
-export function extractClientApiKey(request) {
-  const headers = request?.headers;
-  if (!headers?.get) return null;
-  const auth = headers.get("Authorization");
-  if (auth?.startsWith("Bearer ")) return auth.slice(7);
-  const xApiKey = headers.get("x-api-key");
-  if (xApiKey) return xApiKey;
-  const googKey = headers.get("x-goog-api-key");
-  if (googKey) return googKey;
-  try {
-    return new URL(request.url).searchParams.get("key") || null;
-  } catch {
-    return null;
-  }
-}
+export { extractClientApiKey } from "@/shared/utils/clientApiKey.js";
+import { extractClientApiKey } from "@/shared/utils/clientApiKey.js";
 
 /**
  * Access context for the request's key, or null when the request is
@@ -80,6 +67,57 @@ export async function getKeyAccessContext(request) {
   };
 }
 
+// Wildcard pattern entries (e.g. "oc/*", "*claude*", "*") match the model's
+// canonical spelling and the provider alias spelling, so a pattern may be written
+// with either the provider alias or the provider id. Non-wildcard entries
+// are handled strictly by the canonical set checks below.
+function matchesWildcardPattern(str, pattern) {
+  if (!pattern || typeof pattern !== "string") return false;
+  if (pattern.startsWith("/")) {
+    const match = /^\/(.+)\/([a-z]*)$/i.exec(pattern);
+    if (!match) return false;
+    try { return new RegExp(match[1], match[2] || "i").test(str); } catch { return false; }
+  }
+  const p = pattern.trim().toLowerCase();
+  if (!p.includes("*")) return false;
+  if (p === "*") return true;
+  const target = String(str || "").trim().toLowerCase();
+  const escaped = p.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`, "i").test(target);
+}
+
+function anyWildcardMatches(canonical, requested, patterns) {
+  if (!Array.isArray(patterns) || patterns.length === 0) return false;
+  const [provider, ...parts] = canonical.split("/");
+  const model = parts.join("/");
+  const targets = model ? [canonical, `${getProviderAlias(provider) || provider}/${model}`] : [canonical];
+  for (const p of patterns) {
+    if (targets.some((target) => matchesWildcardPattern(target, p))) return true;
+    if (p.startsWith("/") && model && matchesWildcardPattern(model, p)) return true;
+    // "alias/*" also covers the provider-id spelling (oc/* ≡ opencode/*)
+    const m = /^([^/*]+)\/\*$/.exec(String(p || "").trim().toLowerCase());
+    if (m) {
+      const id = resolveProviderId(m[1]);
+      if (id && canonical.startsWith(`${id}/`)) return true;
+    }
+  }
+  return false;
+}
+
+// Deny entries ("!pattern" / "-pattern") reject the model outright, even when
+// a positive rule would allow it. A bare deny term (no "*") also matches as a
+// substring of either spelling, so "-haiku" needs no asterisks.
+function isDeniedByRules(sets, requested, canonical) {
+  for (const deny of sets.deny) {
+    if (anyWildcardMatches(canonical, requested, [deny])) return true;
+    if (deny.startsWith("/")) continue;
+    const r = String(canonical || requested || "").toLowerCase();
+    const nameOnly = r.includes("/") ? r.split("/").slice(1).join("/") : r;
+    if (r.includes(deny.toLowerCase()) || nameOnly.includes(deny.toLowerCase())) return true;
+  }
+  return false;
+}
+
 // Resolve the allow list once per request: combo names, resolved model ids,
 // and resolved provider ids (for provider-as-model kinds).
 async function getAllowSets(ctx) {
@@ -88,7 +126,25 @@ async function getAllowSets(ctx) {
   const combos = new Set();
   const models = new Set();
   const providers = new Set();
+  const deny = [];
+  const patterns = [];
+  const resolvePattern = async (pattern) => {
+    if (!/^[^/*]+\/\*$/.test(pattern)) return pattern;
+    const info = await getModelInfo(pattern);
+    return info?.provider ? `${info.provider}/*` : pattern;
+  };
+  let positives = 0;
   for (const entry of ctx.allow) {
+    const trimmed = String(entry ?? "").trim();
+    if ((trimmed.startsWith("!") || trimmed.startsWith("-")) && trimmed.length > 1) {
+      deny.push(await resolvePattern(trimmed.slice(1)));
+      continue;
+    }
+    positives += 1;
+    if (trimmed.includes("*") || trimmed.startsWith("/")) {
+      patterns.push(await resolvePattern(trimmed));
+      continue;
+    }
     const key = lower(entry);
     if (comboNames.has(key)) {
       combos.add(key);
@@ -98,7 +154,9 @@ async function getAllowSets(ctx) {
     if (info?.provider && info.model) models.add(canonicalModel(info.provider, info.model));
     if (!entry.includes("/")) providers.add(lower(resolveProviderId(entry)));
   }
-  ctx._sets = { combos, models, providers };
+  // A deny-only list (no positive entries) allows everything not denied;
+  // an EMPTY list still denies everything.
+  ctx._sets = { combos, models, providers, deny, patterns, openExceptDenied: deny.length > 0 && positives === 0 };
   return ctx._sets;
 }
 
@@ -106,8 +164,12 @@ async function isModelStringAllowed(ctx, requested) {
   const sets = await getAllowSets(ctx);
   const info = await getModelInfo(requested);
   // provider null ⇔ an existing combo with no members (routes nowhere).
-  if (!info?.provider) return sets.combos.has(lower(requested));
-  return sets.models.has(canonicalModel(info.provider, info.model));
+  if (!info?.provider) return sets.combos.has(lower(requested)) || sets.openExceptDenied;
+  const canonical = canonicalModel(info.provider, info.model);
+  if (isDeniedByRules(sets, requested, canonical)) return false;
+  if (sets.openExceptDenied) return true;
+  if (sets.models.has(canonical)) return true;
+  return anyWildcardMatches(canonical, requested, sets.patterns);
 }
 
 export function keyAccessDeniedResponse(ctx, requested) {
@@ -125,8 +187,9 @@ export async function enforceKeyAccess(ctx, requested) {
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
   const comboModels = await getComboModels(requested);
+  if (comboModels && isDeniedByRules(sets, requested, requested)) return keyAccessDeniedResponse(ctx, requested);
   const allowed = comboModels
-    ? sets.combos.has(lower(requested))
+    ? (sets.combos.has(lower(requested)) || sets.openExceptDenied)
     : await isModelStringAllowed(ctx, requested);
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
@@ -142,7 +205,12 @@ export async function enforceKeyAccessResolved(ctx, requested, provider, model) 
   const label = requested || (provider ? `${provider}/${model ?? ""}` : "");
   if (!provider || !model) return keyAccessDeniedResponse(ctx, label);
   const sets = await getAllowSets(ctx);
-  return sets.models.has(canonicalModel(provider, model)) ? null : keyAccessDeniedResponse(ctx, label);
+  const canonical = canonicalModel(provider, model);
+  if (isDeniedByRules(sets, label, canonical)) return keyAccessDeniedResponse(ctx, label);
+  if (sets.models.has(canonical)) return null;
+  if (anyWildcardMatches(canonical, label, sets.patterns)) return null;
+  if (sets.openExceptDenied) return null;
+  return keyAccessDeniedResponse(ctx, label);
 }
 
 /**
@@ -153,9 +221,11 @@ export async function enforceKeyAccessProvider(ctx, requested, comboModels) {
   if (!ctx) return null;
   if (typeof requested !== "string" || !requested) return keyAccessDeniedResponse(ctx, String(requested ?? ""));
   const sets = await getAllowSets(ctx);
+  const provider = lower(resolveProviderId(requested));
+  if (isDeniedByRules(sets, requested, provider)) return keyAccessDeniedResponse(ctx, requested);
   const allowed = comboModels
-    ? sets.combos.has(lower(requested))
-    : sets.providers.has(lower(resolveProviderId(requested)));
+    ? (sets.combos.has(lower(requested)) || sets.openExceptDenied)
+    : (sets.providers.has(provider) || sets.openExceptDenied || anyWildcardMatches(provider, requested, sets.patterns));
   return allowed ? null : keyAccessDeniedResponse(ctx, requested);
 }
 
@@ -184,16 +254,19 @@ export async function filterModelsListForKey(ctx, list) {
   for (const entry of list) {
     if (!entry?.id) continue;
     if (entry.owned_by === KEY_ACCESS_COMBO_OWNER) {
-      if (sets.combos.has(lower(entry.id))) out.push(entry);
+      if (!isDeniedByRules(sets, entry.id, entry.id) && (sets.combos.has(lower(entry.id)) || sets.openExceptDenied)) out.push(entry);
       continue;
     }
     const info = await getModelInfo(entry.id);
     if (!info?.provider) continue;
     if (KEY_ACCESS_PROVIDER_AS_MODEL_KINDS.includes(entry.kind)) {
-      if (sets.providers.has(lower(info.provider))) out.push(entry);
+      if (isDeniedByRules(sets, entry.id, lower(info.provider))) continue;
+      if (sets.providers.has(lower(info.provider)) || sets.openExceptDenied || anyWildcardMatches(entry.id, entry.id, sets.patterns)) out.push(entry);
       continue;
     }
-    if (sets.models.has(canonicalModel(info.provider, info.model))) out.push(entry);
+    const canonical = canonicalModel(info.provider, info.model);
+    if (isDeniedByRules(sets, entry.id, canonical)) continue;
+    if (sets.models.has(canonical) || sets.openExceptDenied || anyWildcardMatches(canonical, entry.id, sets.patterns)) out.push(entry);
   }
   return out;
 }

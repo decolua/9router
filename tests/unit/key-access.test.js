@@ -234,3 +234,11 @@ describe("helpers: storage + validation", () => {
     expect(v({ restricted: true, allow: ["x".repeat(300)] }).ok).toBe(false);
   });
 });
+
+describe("compatible provider wildcards", () => {
+  it("resolves a node prefix before checking provider wildcards", async () => {
+    key("wild-node", { restricted: true, allow: ["mock/*"] });
+    expect(await status("sk-wild-node", "mock/glm-4")).toBe(200);
+    expect(await status("sk-wild-node", "openai/glm-4")).toBe(403);
+  });
+});

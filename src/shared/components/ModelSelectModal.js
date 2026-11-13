@@ -481,12 +481,14 @@ export default function ModelSelectModal({
     Object.entries(groups).forEach(([providerId, group]) => {
       const providerConns = filteredActiveProviders.filter((p) => p.provider === providerId);
       const explicitEnabled = [];
+      let hasExplicitSelection = false;
       for (const conn of providerConns) {
-        if (Array.isArray(conn.providerSpecificData?.enabledModels) && conn.providerSpecificData.enabledModels.length > 0) {
+        if (Array.isArray(conn.providerSpecificData?.enabledModels)) {
+          hasExplicitSelection = true;
           explicitEnabled.push(...conn.providerSpecificData.enabledModels);
         }
       }
-      if (explicitEnabled.length > 0) {
+      if (hasExplicitSelection) {
         const enabledSet = new Set(explicitEnabled);
         const alias = group.alias || getProviderAlias(providerId) || providerId;
         group.models = group.models.filter((m) =>
