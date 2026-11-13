@@ -6,6 +6,7 @@ import {
   setStickyComboModel,
   clearStickyComboSession,
   orderModelsByChoice,
+  resetAllModelCooldowns,
 } from "../../open-sse/services/combo.js";
 
 import {
@@ -32,6 +33,7 @@ function errResponse(status = 500, message = "error") {
 describe("System One Smart Combo Router", () => {
   beforeEach(() => {
     resetStickyComboStore();
+    resetAllModelCooldowns();
   });
 
   describe("extractPromptState", () => {

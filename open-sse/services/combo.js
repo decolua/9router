@@ -105,6 +105,116 @@ export function reorderByCapabilities(models, required) {
 }
 
 /**
+ * In-memory cooldown tracker for models that fail with rate limits (429) or transient 503s.
+ * Maps model string to unlock timestamp (epoch ms).
+ * @type {Map<string, number>}
+ */
+const comboModelCooldowns = new Map();
+
+/**
+ * Check if a model is currently in active cooldown
+ * @param {string} modelStr
+ * @returns {boolean}
+ */
+export function isModelInCooldown(modelStr) {
+  const expiry = comboModelCooldowns.get(modelStr);
+  if (!expiry) return false;
+  if (Date.now() >= expiry) {
+    comboModelCooldowns.delete(modelStr);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Mark a model in temporary cooldown
+ * @param {string} modelStr
+ * @param {number|string|null} retryAfter - ISO timestamp, ms duration, or null
+ * @param {number} [defaultMs=60000] - Default cooldown duration (ms)
+ */
+export function markModelCooldown(modelStr, retryAfter = null, defaultMs = 60000) {
+  let expiry = null;
+  if (typeof retryAfter === "number" && Number.isFinite(retryAfter) && retryAfter > 0) {
+    expiry = retryAfter > 1000000000000 ? retryAfter : Date.now() + retryAfter;
+  } else if (typeof retryAfter === "string" && retryAfter.trim()) {
+    const parsed = new Date(retryAfter).getTime();
+    if (Number.isFinite(parsed) && parsed > Date.now()) {
+      expiry = parsed;
+    }
+  }
+  if (!expiry || !Number.isFinite(expiry) || expiry <= Date.now()) {
+    expiry = Date.now() + defaultMs;
+  }
+  comboModelCooldowns.set(modelStr, expiry);
+}
+
+/**
+ * Clear cooldown for a model (e.g. upon successful response)
+ * @param {string} modelStr
+ */
+export function clearModelCooldown(modelStr) {
+  comboModelCooldowns.delete(modelStr);
+}
+
+/**
+ * Reset all model cooldowns (for tests / manual reset)
+ */
+export function resetAllModelCooldowns() {
+  comboModelCooldowns.clear();
+}
+
+/**
+ * Extract cooldown ms from response headers, error body, or error text
+ */
+export function extractCooldownMs(result, errorBody, errorText) {
+  if (errorBody?.retryAfter) {
+    const t = new Date(errorBody.retryAfter).getTime();
+    if (Number.isFinite(t) && t > Date.now()) return t - Date.now();
+  }
+  const headerSec = Number(result?.headers?.get?.("retry-after"));
+  if (Number.isFinite(headerSec) && headerSec > 0) {
+    return headerSec * 1000;
+  }
+  if (typeof errorText === "string") {
+    const match = errorText.match(/reset after (?:(\d+)h\s*)?(?:(\d+)m\s*)?(?:(\d+)s)?/i);
+    if (match) {
+      const h = Number(match[1] || 0);
+      const m = Number(match[2] || 0);
+      const s = Number(match[3] || 0);
+      const ms = (h * 3600 + m * 60 + s) * 1000;
+      if (ms > 0) return ms;
+    }
+  }
+  return null;
+}
+
+/**
+ * Reorder combo models by health status. Stable; never drops a model.
+ * Healthy models stay in front in their relative canonical order.
+ * Locked / cooldown models float to the tail, also preserving their relative canonical order.
+ * When a model's cooldown expires, it automatically regains its original position.
+ * @param {string[]} models - Array of model strings
+ * @param {Function} [isModelLockedFn] - Optional lock predicate: (modelStr) => boolean
+ * @returns {string[]}
+ */
+export function reorderByHealth(models, isModelLockedFn = isModelInCooldown) {
+  if (!Array.isArray(models) || models.length <= 1) return models;
+  const healthy = [];
+  const locked = [];
+  for (const m of models) {
+    if (isModelLockedFn && isModelLockedFn(m)) {
+      locked.push(m);
+    } else {
+      healthy.push(m);
+    }
+  }
+  if (locked.length > 0 && healthy.length > 0) {
+    return [...healthy, ...locked];
+  }
+  return models;
+}
+
+/**
  * Track rotation state per combo (for round-robin strategy)
  * @type {Map<string, { index: number, consecutiveUseCount: number }>}
  */
@@ -349,6 +459,7 @@ export function isZeroContentResponse(data) {
  * @param {boolean} [options.sessionSticky=true] - Keep chosen model across session requests to retain prompt cache
  * @param {number} [options.confidenceThreshold=0.8] - Minimum confidence required for model switch (0-1)
  * @param {Function|null} [options.resolveSmartChoice=null] - Smart router resolver callback: (body, models) => Promise<{ choice, probabilities, confidence } | null>
+ * @param {Function|null} [options.isModelLocked=null] - Optional lock predicate: (modelStr) => boolean; locked models float to the tail
  * @returns {Promise<Response>}
  */
 export async function handleComboChat({
@@ -365,6 +476,7 @@ export async function handleComboChat({
   sessionSticky = true,
   confidenceThreshold = 0.8,
   resolveSmartChoice = null,
+  isModelLocked = null,
 }) {
   let rotatedModels = models;
   let activeStickyModel = null;
@@ -462,6 +574,16 @@ export async function handleComboChat({
       rotatedModels = reordered;
     }
   }
+
+  // Health-aware floating: float currently locked / cooldown models to the end
+  // while strictly preserving relative canonical priority among models.
+  // Once a model's lock expires, it automatically recovers its original position.
+  const healthCheck = (m) => isModelInCooldown(m) || (typeof isModelLocked === "function" && isModelLocked(m));
+  const healthReordered = reorderByHealth(rotatedModels, healthCheck);
+  if (healthReordered[0] !== rotatedModels[0]) {
+    log.info("COMBO", `health-floating: [${healthReordered[0]}] promoted to front over locked models`);
+  }
+  rotatedModels = healthReordered;
   
   let lastError = null;
   let earliestRetryAfter = null;
@@ -519,11 +641,13 @@ export async function handleComboChat({
             }
           }
 
+          clearModelCooldown(modelStr);
           log.info("COMBO", `Model ${modelStr} succeeded`);
           return result;
         }
 
         if (peeked.outcome === "content") {
+          clearModelCooldown(modelStr);
           log.info("COMBO", `Model ${modelStr} succeeded${peeked.timedOut ? " (peek deadline; committed)" : ""}`);
           return peeked.response;
         }
@@ -557,8 +681,9 @@ export async function handleComboChat({
       // Extract error info from response
       let errorText = result.statusText || "";
       let retryAfter = null;
+      let errorBody = null;
       try {
-        const errorBody = await result.clone().json();
+        errorBody = await result.clone().json();
         errorText = errorBody?.error?.message || errorBody?.error || errorBody?.message || errorText;
         retryAfter = errorBody?.retryAfter || null;
       } catch {
@@ -575,22 +700,16 @@ export async function handleComboChat({
         try { errorText = JSON.stringify(errorText); } catch { errorText = String(errorText); }
       }
 
-      // Check if should fallback to next model
-      const { provider } = parseModel(modelStr);
-      const { shouldFallback, cooldownMs, requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
-
-      if (!shouldFallback && !requestScoped) {
-        log.warn("COMBO", `Model ${modelStr} failed (no fallback)`, { status: result.status });
-        return result;
-      }
-
       // A request-scoped 4xx (validation failure, unsupported parameter, context
       // overflow) says this member cannot serve THIS request — not that the
       // credential is unhealthy. Members run on different providers with
       // different validation, so the next member may well serve it. Advance
-      // without a cooldown, and without waiting: there is nothing to recover.
+      // without a cooldown, and remember the first such response so it can be
+      // returned to the caller if no member serves the request.
       // checkFallbackError() reports no account fallback here on purpose (a
       // request-scoped fault must not evict a healthy account from rotation).
+      const { provider } = parseModel(modelStr);
+      const { requestScoped } = checkFallbackError(result.status, errorText, 0, provider);
       if (requestScoped) {
         log.warn("COMBO", `Model ${modelStr} rejected the request (${result.status}), trying next`, { status: result.status });
         lastError = errorText || String(result.status);
@@ -599,16 +718,16 @@ export async function handleComboChat({
         continue;
       }
 
-      // For transient errors (503/502/504), wait for cooldown before falling through
-      // so a briefly-overloaded provider gets a chance to recover rather than being
-      // skipped immediately (fixes: combo falls through on transient 503)
-      if (cooldownMs && cooldownMs > 0 && cooldownMs <= 5000 &&
-          (result.status === 503 || result.status === 502 || result.status === 504)) {
-        log.info("COMBO", `Model ${modelStr} transient ${result.status}, waiting ${cooldownMs}ms before next`);
-        await new Promise(r => setTimeout(r, cooldownMs));
+      // Mark transiently failing / rate-limited models in temporary cooldown
+      // so subsequent requests float them to the tail and prioritize healthy models.
+      if (result.status === 429 || result.status === 503 || result.status === 502 || result.status === 504) {
+        const cooldownMs = extractCooldownMs(result, errorBody, errorText) || 60000;
+        markModelCooldown(modelStr, cooldownMs);
       }
 
-      // Fallback to next model
+      // Fallback to next model immediately with zero artificial delay.
+      // In a combo, different models belong to different providers, so transient
+      // failures or model-specific errors (400, 429, 500, etc.) must not block or abort fallback.
       lastError = errorText || String(result.status);
       if (!lastStatus) lastStatus = result.status;
       log.warn("COMBO", `Model ${modelStr} failed, trying next`, { status: result.status });
