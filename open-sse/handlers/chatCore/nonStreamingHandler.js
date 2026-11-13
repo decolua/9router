@@ -160,10 +160,15 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         completion_tokens: usage.candidatesTokenCount || 0,
         total_tokens: usage.totalTokenCount || 0
       };
+      if (usage.cachedContentTokenCount > 0) {
+        result.usage.prompt_tokens_details = { cached_tokens: usage.cachedContentTokenCount };
+      }
       if (usage.thoughtsTokenCount > 0) {
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
+    if (sourceFormat === FORMATS.CLAUDE) return openAICompletionToClaudeMessage(result);
+    if (sourceFormat === FORMATS.OPENAI_RESPONSES) return openAICompletionToResponses(result, customToolNames);
     return result;
   }
 
@@ -355,10 +360,22 @@ export async function handleNonStreamingResponse({ providerResponse, provider, m
     console.error("[RequestDetail] Failed to save:", err.message);
   });
 
+  const clientReqId = clientRawRequest?.headers?.["request-id"] ||
+                      clientRawRequest?.headers?.["x-request-id"] ||
+                      clientRawRequest?.headers?.["anthropic-request-id"];
+  const downstreamRequestId = (clientReqId && typeof clientReqId === "string" && clientReqId.trim())
+    ? clientReqId.trim()
+    : `req_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+
   return {
     success: true,
     response: new Response(JSON.stringify(restoreToolNames(translatedResponse, toolNameMap)), {
-      headers: { "Content-Type": "application/json", "Access-Control-Allow-Origin": "*", ...upstreamResponseHeaders(providerResponse.headers) }
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+        ...upstreamResponseHeaders(providerResponse.headers),
+        ...(isClaudeMessageResponse && { "request-id": downstreamRequestId })
+      }
     })
   };
 }
