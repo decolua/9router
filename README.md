@@ -1507,6 +1507,25 @@ Content-Type: application/json
 }
 ```
 
+### OpenAI / Codex Service Tier Modifiers
+
+Select a processing tier through the model ID on the `openai/` and `cx/` (`codex/`) providers:
+
+| Model ID example | Processing tier | Reasoning |
+|---|---|---|
+| `cx/gpt-6.1-sol(fast)` | Priority | From the request body |
+| `cx/gpt-6.1-sol(xhigh,fast)` | Priority | `xhigh` |
+| `openai/gpt-6.1-sol(high,standard)` | Standard | `high` |
+
+Use at most one reasoning modifier and one tier modifier, in either order. The tier
+modifier overrides the request body's `service_tier`; without it, existing tier
+handling is preserved. Modifiers are removed from the upstream model ID. Other
+providers do not receive an injected service tier.
+
+`fast` maps to `priority`; `standard` maps to `default` (Codex uses its existing
+standard-processing behavior by omitting the priority flag). Availability and billing
+follow the upstream provider's [Fast mode](https://developers.openai.com/api/docs/guides/fast-mode).
+
 ### List Models
 
 ```bash
