@@ -1,6 +1,6 @@
 ---
 name: 9router-web-search
-description: Web and X search via 9Router /v1/search using Tavily / Exa / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity / Xquik. Use when the user wants to search the web, find articles, or search public X posts.
+description: Web and X search via 9Router /v1/search using Tavily / Exa / Parallel / Brave / Serper / SearXNG / Google PSE / Linkup / SearchAPI / You.com / Perplexity / Xquik. Use when the user wants to search the web, find articles, or search public X posts.
 ---
 
 # 9Router — Web Search
@@ -99,6 +99,7 @@ All accept `query` + `max_results`. Optional fields vary:
 |---|---|---|
 | `tavily` | country, domain_filter, news topic | — |
 | `exa` | domain_filter (incl/excl), news category | — |
+| `parallel` | country (`uk` → `gb`), time_range, domain_filter (≤200; path prefixes except turbo; include overrides exclude), content_options.max_characters | `mode: turbo/fast/basic/advanced` (default fast), `objective` (≤5000), `session_id` (≤1000) in provider_options |
 | `brave-search` | country, language | — |
 | `serper` | country, language, news endpoint | — |
 | `perplexity` | country, language, domain_filter | — |
@@ -108,5 +109,7 @@ All accept `query` + `max_results`. Optional fields vary:
 | `youcom` | country, language, time_range, domain_filter, full_page | — |
 | `searxng` | language, time_range | Self-hosted, **noAuth** |
 | `xquik` | X/Twitter search operators, language, cursor pagination | `queryType: Latest/Top`, `cursor` (options) |
+
+Parallel supports only web search (not news), accepts 1–20 results. Queries over 200 characters become an objective plus a shortened search query; queries over 5000 are rejected. Language and offset are ignored. Fast/turbo cost $0.001/request; basic/advanced $0.005/request, plus $0.001 per result above 10.
 
 Provider IS the model — `"provider":"tavily" ≡ "model":"tavily"`.

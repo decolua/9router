@@ -172,6 +172,100 @@ function buildExaRequest(config, params) {
   };
 }
 
+const PARALLEL_MODES = new Set(["turbo", "fast", "basic", "advanced"]);
+
+/** Map 9router time_range to Parallel source_policy.after_date (YYYY-MM-DD). */
+function parallelAfterDate(timeRange) {
+  if (!timeRange || timeRange === "any") return undefined;
+  const from = new Date();
+  if (timeRange === "day") from.setUTCDate(from.getUTCDate() - 1);
+  else if (timeRange === "week") from.setUTCDate(from.getUTCDate() - 7);
+  else if (timeRange === "month" || timeRange === "year") {
+    const day = from.getUTCDate();
+    from.setUTCDate(1);
+    if (timeRange === "month") from.setUTCMonth(from.getUTCMonth() - 1);
+    else from.setUTCFullYear(from.getUTCFullYear() - 1);
+    const lastDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0)).getUTCDate();
+    from.setUTCDate(Math.min(day, lastDay));
+  }
+  else return undefined;
+  return from.toISOString().slice(0, 10);
+}
+
+function buildParallelRequest(config, params) {
+  if (params.searchType && params.searchType !== "web") throw new Error("Unsupported Parallel search type");
+  if (params.query.length > 5000) throw new Error("Parallel query must not exceed 5000 characters");
+  if (!Number.isInteger(params.maxResults) || params.maxResults < 1 || params.maxResults > 20) {
+    throw new Error("Parallel max_results must be an integer from 1 to 20");
+  }
+  if (params.domainFilter && (!Array.isArray(params.domainFilter) || params.domainFilter.length > 200 || params.domainFilter.some((d) => typeof d !== "string"))) {
+    throw new Error("Parallel domain_filter must contain at most 200 domains");
+  }
+  const { includes, excludes } = parseDomainFilter(params.domainFilter);
+  const domains = (list) => list.map((d) => {
+    const parsed = new URL(`https://${d.replace(/^https?:\/\//i, "")}`);
+    if (!parsed.hostname) throw new Error("Invalid Parallel domain filter");
+    return `${parsed.hostname}${parsed.pathname.replace(/\/$/, "")}`;
+  });
+  const requestedMode = getProviderSetting(params, "mode");
+  const mode = requestedMode && PARALLEL_MODES.has(requestedMode) ? requestedMode : "fast";
+  const objective = getProviderSetting(params, "objective") || (params.query.length > 200 ? params.query : undefined);
+  if (objective?.length > 5000) throw new Error("Parallel objective must not exceed 5000 characters");
+  const shortQuery = params.query.length > 200
+    ? params.query.slice(0, 200).replace(/\s+\S*$/, "").trim() || params.query.slice(0, 200)
+    : params.query;
+  const body = {
+    search_queries: [shortQuery],
+    ...(objective ? { objective } : {}),
+    mode,
+    advanced_settings: {
+      max_results: params.maxResults,
+    },
+  };
+
+  if (includes.length || excludes.length) {
+    body.advanced_settings.source_policy = {
+      ...(includes.length ? { include_domains: domains(includes) } : {}),
+      ...(excludes.length ? { exclude_domains: domains(excludes) } : {}),
+    };
+  }
+  if (mode === "turbo" && [...(body.advanced_settings.source_policy?.include_domains || []), ...(body.advanced_settings.source_policy?.exclude_domains || [])].some((d) => d.includes("/"))) {
+    throw new Error("Parallel turbo mode does not support path-prefix filters");
+  }
+  const maxChars = params.contentOptions?.max_characters;
+  if (maxChars !== undefined) {
+    if (!Number.isInteger(maxChars) || maxChars < 1) throw new Error("Parallel max_characters must be a positive integer");
+    body.advanced_settings.excerpt_settings = { max_chars_per_result: maxChars };
+  }
+
+  const afterDate = parallelAfterDate(params.timeRange);
+  if (afterDate) {
+    body.advanced_settings.source_policy = {
+      ...(body.advanced_settings.source_policy || {}),
+      after_date: afterDate,
+    };
+  }
+
+  if (params.country) {
+    const loc = params.country.toLowerCase();
+    body.advanced_settings.location = loc === "uk" ? "gb" : loc;
+  }
+
+  const sessionId = getProviderSetting(params, "session_id");
+  if (sessionId?.length > 1000) throw new Error("Parallel session_id must not exceed 1000 characters");
+  if (sessionId) body.session_id = sessionId;
+
+  return {
+    // Keep the stored key on the registry endpoint, never client baseUrl overrides.
+    url: config.baseUrl,
+    init: {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": params.token },
+      body: JSON.stringify(body),
+    },
+  };
+}
+
 function buildTavilyRequest(config, params) {
   const { includes, excludes } = parseDomainFilter(params.domainFilter);
   const body = {
@@ -452,6 +546,7 @@ const BUILDERS = {
   "brave-search": buildBraveRequest,
   "perplexity": buildPerplexityRequest,
   "exa": buildExaRequest,
+  "parallel": buildParallelRequest,
   "tavily": buildTavilyRequest,
   "google-pse": buildGooglePseRequest,
   "linkup": buildLinkupRequest,

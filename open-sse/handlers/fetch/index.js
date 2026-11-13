@@ -1,4 +1,4 @@
-// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, ollama, tinyfish
+// Web Fetch handler — dispatches to firecrawl, jina-reader, tavily, exa, parallel, ollama, tinyfish
 // Returns normalized shape across all providers
 import { HTTP_STATUS } from "../../config/runtimeConfig.js";
 
@@ -126,6 +126,15 @@ export async function handleFetchCore({ url, format, maxCharacters, provider, pr
     }
     if (provider === "exa") {
       return await runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt });
+    }
+    if (provider === "parallel") {
+      if (fmt !== "markdown") return { success: false, status: 400, error: `Unsupported Parallel format: ${fmt}` };
+      // 0/null mean "no limit" here, as in truncate() and the dashboard example; Parallel needs a positive cap.
+      if (maxCharacters != null && maxCharacters !== 0 && (!Number.isInteger(maxCharacters) || maxCharacters < 1)) {
+        return { success: false, status: 400, error: "Parallel maxCharacters must be a positive integer" };
+      }
+      const budget = Math.min(maxCharacters || providerConfig.maxCharacters, providerConfig.maxCharacters);
+      return await runParallel({ url, timeoutMs, apiKey, maxCharacters: budget, costPerQuery, startedAt, baseUrl: providerConfig.baseUrl });
     }
     if (provider === "ollama") {
       return await runOllama({
@@ -294,6 +303,59 @@ async function runExa({ url, fmt, timeoutMs, apiKey, maxCharacters, costPerQuery
       provider: "exa", url, title: first.title || null, format: fmt, text,
       costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs
     })
+  };
+}
+
+async function runParallel({ url, timeoutMs, apiKey, maxCharacters, costPerQuery, startedAt, baseUrl }) {
+  const upstreamStart = Date.now();
+  const extractUrl = baseUrl;
+  const r = await tryFetch(extractUrl, {
+    method: "POST",
+    redirect: "error",
+    headers: {
+      "content-type": "application/json",
+      ...(apiKey ? { "x-api-key": apiKey } : {})
+    },
+    body: JSON.stringify({
+      urls: [url],
+      advanced_settings: {
+        full_content: { max_chars_per_result: maxCharacters }
+      }
+    })
+  }, timeoutMs);
+
+  if (!r.ok) {
+    return { success: false, status: r.timeout ? 504 : 502, error: r.error };
+  }
+  const upstreamMs = Date.now() - upstreamStart;
+  const { json } = await readJsonOrText(r.res);
+  if (!r.res.ok) {
+    const message = json?.error?.message || `Parallel error: ${r.res.status}`;
+    return { success: false, status: r.res.status, error: `${message}${json?.error?.ref_id ? ` (ref_id: ${json.error.ref_id})` : ""}` };
+  }
+  const failure = json?.errors?.find((e) => e.url === url);
+  if (failure) {
+    const errorType = typeof failure.error_type === "string" && /^[a-z_]+$/.test(failure.error_type)
+      && !/rate|limit|capacity|quota|overload|too_many/.test(failure.error_type) ? failure.error_type : "unknown";
+    const targetStatus = Number.isInteger(failure.http_status_code) ? failure.http_status_code : "unknown";
+    return { success: false, status: 422,
+      error: `Parallel could not extract the requested URL (error_type: ${errorType}, target status: ${targetStatus})` };
+  }
+  const first = json?.results?.find((page) => page.url === url);
+  const excerpts = Array.isArray(first?.excerpts) ? first.excerpts.filter((e) => typeof e === "string" && e.trim()) : [];
+  const raw = typeof first?.full_content === "string" && first.full_content.trim() ? first.full_content : excerpts.join("\n\n");
+  if (!raw.trim()) {
+    return { success: false, status: 502, error: "Parallel returned no extractable content" };
+  }
+  const text = truncate(raw, maxCharacters);
+  return {
+    success: true,
+    data: {
+      ...buildData({ provider: "parallel", url, title: first.title,
+        format: "markdown", text,
+        costUsd: costPerQuery, responseMs: Date.now() - startedAt, upstreamMs }),
+      metadata: { author: null, published_at: first.publish_date || null, language: null },
+    }
   };
 }
 
