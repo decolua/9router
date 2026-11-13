@@ -6,7 +6,7 @@ vi.mock("@/lib/usageDb.js", () => ({
   saveRequestUsage: vi.fn(async () => {})
 }));
 
-const { FORMATS } = await import("../../open-sse/translator/formats.js");
+const { FORMATS, detectFormatByEndpoint } = await import("../../open-sse/translator/formats.js");
 const { translateNonStreamingResponse } = await import("../../open-sse/handlers/chatCore/nonStreamingHandler.js");
 const { handleForcedSSEToJson } = await import("../../open-sse/handlers/chatCore/sseToJsonHandler.js");
 
@@ -82,6 +82,55 @@ describe("non-stream Chat upstream for a Responses-API client (op-ericding bug)"
     const out = translateNonStreamingResponse(CHAT_TOOL_BODY, FORMATS.OPENAI, FORMATS.OPENAI);
     expect(out.object).toBe("chat.completion");
     expect(out.choices[0].message.tool_calls[0].function.name).toBe("shell");
+  });
+});
+
+describe("Responses mapping for Gemini-family upstreams", () => {
+  it("detects /v1/responses and returns native Responses JSON after Gemini normalization", () => {
+    expect(detectFormatByEndpoint("/v1/responses", { input: "Reply with exactly OK.", stream: false }))
+      .toBe(FORMATS.OPENAI_RESPONSES);
+
+    const body = {
+      responseId: "gemini-response-1",
+      modelVersion: "gemini-3.8-flash-high",
+      candidates: [{
+        content: { parts: [{ text: "OK" }] },
+        finishReason: "STOP"
+      }],
+      usageMetadata: { promptTokenCount: 4, candidatesTokenCount: 2, totalTokenCount: 6 }
+    };
+    const out = translateNonStreamingResponse(body, FORMATS.GEMINI, FORMATS.OPENAI_RESPONSES);
+
+    expect(out.object).toBe("response");
+    expect(out).not.toHaveProperty("choices");
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "message",
+      role: "assistant",
+      content: [expect.objectContaining({ type: "output_text", text: "OK" })]
+    }));
+    expect(out.usage).toEqual({ input_tokens: 4, output_tokens: 2, total_tokens: 6 });
+  });
+});
+
+describe("Responses mapping for Claude upstreams", () => {
+  it("returns native Responses JSON after Claude normalization", () => {
+    const body = {
+      id: "msg-claude-1",
+      model: "claude-3-5-sonnet",
+      content: [{ type: "text", text: "OK" }],
+      stop_reason: "end_turn",
+      usage: { input_tokens: 10, output_tokens: 5 }
+    };
+    const out = translateNonStreamingResponse(body, FORMATS.CLAUDE, FORMATS.OPENAI_RESPONSES);
+
+    expect(out.object).toBe("response");
+    expect(out).not.toHaveProperty("choices");
+    expect(out.output).toContainEqual(expect.objectContaining({
+      type: "message",
+      role: "assistant",
+      content: [expect.objectContaining({ type: "output_text", text: "OK" })]
+    }));
+    expect(out.usage).toEqual({ input_tokens: 10, output_tokens: 5, total_tokens: 15 });
   });
 });
 

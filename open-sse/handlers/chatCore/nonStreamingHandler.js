@@ -164,7 +164,11 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         result.usage.completion_tokens_details = { reasoning_tokens: usage.thoughtsTokenCount };
       }
     }
-    return result;
+    // Gemini-family upstreams are normalized to Chat Completions first. If the
+    // client used /v1/responses, finish the second hop to the Responses shape.
+    return sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? openAICompletionToResponses(result, customToolNames)
+      : result;
   }
 
   // Claude
@@ -220,7 +224,9 @@ export function translateNonStreamingResponse(responseBody, targetFormat, source
         total_tokens: (responseBody.usage.input_tokens || 0) + (responseBody.usage.output_tokens || 0)
       };
     }
-    return result;
+    return sourceFormat === FORMATS.OPENAI_RESPONSES
+      ? openAICompletionToResponses(result, customToolNames)
+      : result;
   }
 
   // Ollama
