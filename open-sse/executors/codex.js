@@ -60,6 +60,18 @@ function convertSystemToDeveloperRole(body) {
   }
 }
 
+// Responses treats the `id` on these four items as an optional reference to a
+// stored server-side item, not as part of the call itself. With store=false the
+// server cannot resolve that reference, so replaying a conversation that carries
+// one fails the whole request. `call_id` is the field that actually pairs a call
+// with its output, so the payload stays intact without the `id`.
+const STATELESS_CALL_ITEM_TYPES = new Set([
+  "function_call",
+  "function_call_output",
+  "custom_tool_call",
+  "custom_tool_call_output",
+]);
+
 // Strip server-generated item IDs (rs_/fc_/resp_/msg_) from input — avoids 404 with store=false
 function stripStoredItemReferences(body, preserveLitePrefix = false) {
   if (!Array.isArray(body.input)) return;
@@ -67,6 +79,14 @@ function stripStoredItemReferences(body, preserveLitePrefix = false) {
     if (typeof item === "string" && SERVER_ID_PATTERN.test(item)) return false;
     if (item && typeof item === "object" && !Array.isArray(item)) {
       if (item.type === "item_reference") return false;
+      // The prefix allowlist below only covers IDs the server minted with a known
+      // prefix. Call items also carry opaque replay IDs (`item_...`), numeric IDs,
+      // and nulls, none of which match it, so they are handled by type instead of
+      // by shape (#2923).
+      if (STATELESS_CALL_ITEM_TYPES.has(item.type)) {
+        if (Object.hasOwn(item, "id")) delete item.id;
+        return true;
+      }
       if (typeof item.id === "string" && SERVER_ID_PATTERN.test(item.id)
         && !(preserveLitePrefix && item.role === "developer" && item.id.startsWith("msg_"))) delete item.id;
     }
