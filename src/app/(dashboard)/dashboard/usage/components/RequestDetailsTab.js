@@ -7,9 +7,13 @@ import Drawer from "@/shared/components/Drawer";
 import Pagination from "@/shared/components/Pagination";
 import { cn } from "@/shared/utils/cn";
 import { AI_PROVIDERS, getProviderByAlias } from "@/shared/constants/providers";
+<<<<<<< HEAD
 import { fetchDetailById, createEnrichmentState } from "./useDetailEnrichment";
 import RequestMessageAnalysisModal from "./RequestMessageAnalysisModal";
 import { hasAnalyzableRequestMessages } from "./requestMessageAnalysis";
+=======
+import { getInputTokens, getOutputTokens, getCachedTokens, getCacheCreationTokens } from "./tokenDisplay";
+>>>>>>> master
 
 let providerNameCache = null;
 let providerNodesCache = null;
@@ -90,23 +94,6 @@ function CollapsibleSection({ title, children, defaultOpen = false, icon = null,
       )}
     </div>
   );
-}
-
-function getCachedTokens(tokens) {
-  return tokens?.cached_tokens || tokens?.cache_read_input_tokens || 0;
-}
-
-function getCacheCreationTokens(tokens) {
-  return tokens?.cache_creation_input_tokens || 0;
-}
-
-function getInputTokens(tokens) {
-  const prompt = tokens?.prompt_tokens || tokens?.input_tokens || 0;
-  // Canonical storage keeps prompt cache-inclusive. Legacy Claude rows may have
-  // stored prompt cache-exclusive; fall back to cache when it's larger so old
-  // rows don't under-report input.
-  const cache = getCachedTokens(tokens);
-  return prompt < cache ? cache : prompt;
 }
 
 export default function RequestDetailsTab() {
@@ -396,7 +383,11 @@ export default function RequestDetailsTab() {
                       {detail.detailUnavailable ? "\u2014" : (getCacheCreationTokens(detail.tokens) > 0 ? getCacheCreationTokens(detail.tokens).toLocaleString() : "\u2014")}
                     </td>
                     <td className="p-4 text-sm text-text-main text-right font-mono">
+<<<<<<< HEAD
                       {detail.detailUnavailable ? "\u2014" : (detail.tokens?.completion_tokens?.toLocaleString() || 0)}
+=======
+                      {getOutputTokens(detail.tokens).toLocaleString()}
+>>>>>>> master
                     </td>
                     <td className="p-4 text-sm text-text-muted">
                       <div className="flex flex-col gap-0.5">
@@ -503,7 +494,7 @@ export default function RequestDetailsTab() {
               <div>
                 <span className="text-text-muted">Output Tokens:</span>{" "}
                 <span className="text-text-main font-mono">
-                  {selectedDetail.tokens?.completion_tokens?.toLocaleString() || 0}
+                  {getOutputTokens(selectedDetail.tokens).toLocaleString()}
                 </span>
               </div>
             </div>

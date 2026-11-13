@@ -1,3 +1,43 @@
+# v0.5.119 (2026-11-11)
+
+## Features
+- **Synthetic**: add Synthetic (`syn`) — OpenAI-compatible upstream on `api.synthetic.new` with the always-on `hf:` models as a static fallback, model passthrough, live model discovery, and a usage tracker reading `GET /v2/quotas`
+- **Claude**: add Claude Fable 5.2 ($8/$40) as the Fable flagship and `claude-haiku-5-5` ($0.10/$0.50, 1M/128K); the advertised Claude Code version now auto-tracks the latest npm release (floor 2.1.322, pin with `CLAUDE_CLI_VERSION`), and the dashboard lists live models through the OAuth bearer
+- **Antigravity**: add Gemini 4 Carbon in low/medium/high tiers plus a bare alias resolving to medium, and track the tiers in the usage quota list
+- **CommandCode**: add `google/gemini-4-carbon` and `claude-fable-5-2`, and resolve the model list from the CLI's live catalog (`GET /provider/v1/models?view=client`) in the dashboard and `GET /v1/models`
+- **ClinePass**: add a quota tracker mapping the five-hour/weekly/monthly plan windows into the usage-limits dashboard
+- **Proxy Pools**: All/Enabled/Disabled status filter and Shift+click range selection; bulk actions and Select All now target only visible rows
+- **Models**: `/v1/models` publishes `thinking_levels`, and opencode settings derive the effort variants from the same source
+
+## Fixes
+- **Transport**: keep undici on 7.30.2 — undici 8 requires Node 22.19+, so 0.5.116 crashed every outbound `fetch` on older runtimes (`createZstdDecompress.bind` is undefined below Node 22.15). 7.30.2 carries the same security fixes and the stale-socket/happy-eyeballs transport work.
+- **Node floor**: declare `engines.node >= 20.18.1` in both packages (the root manifest had none, the CLI claimed `>=18`).
+- **SenseNova**: add `sensenova-intl` provider on `token.sensenova.ai` for international keys (the `.cn` host returns 401 Forbidden for them)
+- **Claude**: retire Fable 5.1 from the claude, GitHub Copilot and OpenCode Zen catalogs now that 5.2 replaces it; the capabilities and pricing rows stay so an existing `claude-fable-5-1` config still translates and bills correctly
+- **Claude**: rename `tool_reference` blocks when cloaking tools, so tool search stays enabled instead of 400-ing and resending every definition each turn
+- **Pricing**: bill gemini-4 models at their real rate ($2/$10 instead of the generic `gemini-*` $0.50/$3.00) across commandcode, antigravity and vertex ids
+- **Stream**: emit a single framed `[DONE]` sentinel in passthrough streams instead of `data: [DONE]data: [DONE]` (strict SSE clients errored out)
+- **OpenCode**: keep the selected Proxy Pool on the wreq-js transport, with the session cache keyed by proxy so rotation takes effect; retry the free-lane "overloaded" 429 with backoff and drop rejected session ids
+- **Qoder**: keep catalog entries marked `enable:false` (still usable in the IDE) and sync upstream display names
+- **Codex Image**: send GPT Image edits to the native `images/edits` endpoint, and fall back to `gpt-5.6-terra` when the account rejects `gpt-6-sol` before it locks the model
+- **Codex**: advertise Codex CLI 0.167.1 — the backend rejects `0.159.0` identities with 400
+- **STT**: build multipart bodies with undici's `FormData` so fetch serializes the file and model fields instead of sending `[object FormData]`
+- **Muse Web**: accept Cookie-Editor JSON exports for credentials, normalized on read
+- **Fal**: validate new API keys through the model catalog instead of failing with "Provider validation not supported"
+- **NVIDIA NIM**: strip the params NIM 400s on, enable `dropClientMetadata`, cap the connect timeout, add the current catalogue, and cool down degraded clusters for 15m
+- **Compatibility**: advertise zstd only when the runtime can decode it (Node < 22.15 returns raw compressed bytes)
+- **Translator**: always emit `tool_result.is_error` for the Zed Anthropic wire, which 400s without it
+- **Translator**: show SearXNG in the combo Web Search model picker by deriving the no-auth list from the full registry
+- **Antigravity**: drop `~optional` from tool schemas (400 Unknown name)
+- **Quota**: catch a Claude reset missed between auto-ping ticks and retry it after the failure cooldown
+- **Routing**: route bare `claude-*` ids to Claude OAuth when no anthropic connection is active
+- **Usage**: display Claude `output_tokens` in request details instead of 0
+- **Synthetic**: validate keys through `/v2/quotas` (the public `/openai/v1/models` answers 200 for any Bearer value, so a revoked key was stored as valid) and route the Test button through `validateUrl` instead of answering "Provider test not supported"
+- **Xiaomi Token Plan**: replace the retired catalog (`mimo-v2.5-pro/flash`, `mimo-v2-pro`, `mimo-v2-omni`, `mimo-v2-tts` and the `mimo-v2.5-pro-claude` alias) with `mimo-v2.6-pro`, `mimo-v2.6-flash`, `mimo-v2.5-asr` and the three TTS variants, whose ids resolve upstream
+- **Usage**: show usage for a MiniMax Code desktop lease connection (`authType: "mcode-lease"`) in Provider Limits and the usage route, and forward `authType` through the dispatch so lease mode is detected instead of answering "Usage API not implemented"
+- **Dashboard**: replace the custom model capability toggle with an explicit Model type selector (Chat / LLM by default) — enabling Speech to text no longer flips a chat model to STT and drops it from Available Models (#5602)
+- **UI**: link explicit input ids to their labels
+
 # v0.5.116 (2026-11-08)
 
 ## Features

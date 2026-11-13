@@ -157,6 +157,27 @@ export async function handleImageGenerationCore({
     }
   }
 
+  // Adapter may rewrite a rejected request once, before the failure locks the account
+  if (!providerResponse.ok && adapter.buildFallbackBody) {
+    const errorText = await providerResponse.clone().text().catch(() => "");
+    const fallbackBody = adapter.buildFallbackBody(requestBody, providerResponse.status, errorText);
+    if (fallbackBody) {
+      log?.warn?.("IMAGE", `${provider.toUpperCase()} | ${model} | retrying with fallback request`);
+      try {
+        const fallbackHeaders = adapter.buildHeaders(credentials, fallbackBody, model, body);
+        providerResponse = await fetch(url, {
+          method: "POST",
+          headers: fallbackHeaders,
+          body: serializeRequestBody(fallbackBody),
+        });
+        requestBody = fallbackBody;
+        headers = fallbackHeaders;
+      } catch {
+        log?.warn?.("IMAGE", `${provider.toUpperCase()} | fallback request failed`);
+      }
+    }
+  }
+
   if (!providerResponse.ok) {
     const { statusCode, message } = await parseUpstreamError(providerResponse);
     const errMsg = formatProviderError(new Error(message), provider, model, statusCode);
