@@ -2,6 +2,7 @@
 
 ## Fixes
 - **Usage**: prompt-retention captures no longer break on large Anthropic `/v1/messages` requests. Retained payloads use a dedicated cap (`OBSERVABILITY_RETENTION_MAX_JSON_SIZE`, default 10MB) instead of the 5KB disk-observability limit, so Original/Client/Translated views stay renderable for real Claude Code bodies, and a client disconnect mid-stream now finalizes the capture instead of leaving the response placeholder empty forever.
+- **Usage**: Original and Client views now show the system prompt. Anthropic `/v1/messages` carries it in a top-level `system` field (string or content-block array) that the message extractor ignored; it is prepended as the first system-role message, along with Responses `instructions` and Gemini `systemInstruction`. OpenAI-wire bodies (system already inside `messages[]`) are unchanged.
 
 ## Features
 - **Dashboard**: hide the 9Remote and 9English sidebar promo buttons via environment — `NINEROUTER_HIDE_PROMOS=true` hides both, `NINEROUTER_HIDE_9REMOTE=true` / `NINEROUTER_HIDE_9ENGLISH=true` hide one; the flags surface through `/api/settings`.
