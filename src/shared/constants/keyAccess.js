@@ -14,6 +14,18 @@ export const KEY_ACCESS_UNRESTRICTED = Object.freeze({ restricted: false, allow:
 // /v1/models entry kinds whose "model" is the provider itself (search/fetch).
 export const KEY_ACCESS_PROVIDER_AS_MODEL_KINDS = Object.freeze(["webSearch", "webFetch"]);
 
+// Allow-list entry suffix that grants every model of one provider: "openai/*".
+// The only wildcard form; it names a provider explicitly, so it can never be
+// confused with a model alias or a combo name.
+export const KEY_ACCESS_PROVIDER_WILDCARD_SUFFIX = "/*";
+
+/** Provider prefix of a "provider/*" entry, or null for any other entry. */
+export function keyAccessWildcardProvider(entry) {
+  if (typeof entry !== "string" || !entry.endsWith(KEY_ACCESS_PROVIDER_WILDCARD_SUFFIX)) return null;
+  const prefix = entry.slice(0, -KEY_ACCESS_PROVIDER_WILDCARD_SUFFIX.length).trim();
+  return prefix && !prefix.includes("/") ? prefix : null;
+}
+
 // /v1/models owner tag for combo entries.
 export const KEY_ACCESS_COMBO_OWNER = "combo";
 

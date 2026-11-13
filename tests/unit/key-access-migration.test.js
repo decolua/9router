@@ -81,6 +81,14 @@ describe("apiKeys access columns: upgrade from the previous schema", () => {
     expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: false, allow: [] });
   });
 
+  it("a key can be created already restricted", async () => {
+    writeLegacyDb(tempDir);
+    const { db } = await boot();
+    const created = await db.createApiKey("scoped", "machine-1", { restricted: true, allow: ["cx/*", " Main ", "main"] });
+    expect(created.access).toEqual({ restricted: true, allow: ["cx/*", "Main"] });
+    expect((await db.getApiKeyById(created.id)).access).toEqual({ restricted: true, allow: ["cx/*", "Main"] });
+  });
+
   it("export/import round-trips access; a backup without access restores unrestricted; malformed access is refused", async () => {
     writeLegacyDb(tempDir);
     const { db } = await boot();
