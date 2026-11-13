@@ -21,7 +21,6 @@ export default function KiroAuthModal({ isOpen, onMethodSelect, onClose }) {
   const [autoDetecting, setAutoDetecting] = useState(false);
   const [autoDetected, setAutoDetected] = useState(false);
   const [idcCredentials, setIdcCredentials] = useState(null);
-
   // Auto-detect token when import method is selected
   useEffect(() => {
     if (selectedMethod !== "import" || !isOpen) return;
