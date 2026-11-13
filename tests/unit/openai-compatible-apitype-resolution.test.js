@@ -1,9 +1,9 @@
 // Locks openai-compatible apiType resolution: the stored apiType on the
 // connection's providerSpecificData (kept in sync with the node) is
-// authoritative, and the node-ID substring is only a legacy fallback.
+// authoritative, and the fixed node-ID type marker is only a legacy fallback.
 //
 // Regression for: editing a node's apiType to "responses" had no effect because
-// runtime derived chat/responses from the immutable node ID string
+// runtime derived chat/responses from the immutable node ID marker
 // (`openai-compatible-<chat|responses>-<uuid>`) instead of the stored value.
 import { describe, it, expect } from "vitest";
 import { resolveOpenAICompatibleApiType, getTargetFormat } from "open-sse/services/provider.js";
@@ -19,19 +19,20 @@ function creds(apiType) {
 }
 
 describe("resolveOpenAICompatibleApiType", () => {
-  it("prefers stored apiType over the ID substring (edited node on a legacy -chat- ID)", () => {
+  it("prefers stored apiType over the ID marker (edited node on a legacy -chat- ID)", () => {
     expect(resolveOpenAICompatibleApiType(CHAT_ID, creds("responses"))).toBe("responses");
     expect(resolveOpenAICompatibleApiType(RESPONSES_ID, creds("chat"))).toBe("chat");
   });
 
-  it("falls back to the ID substring when apiType is absent", () => {
+  it("falls back to the fixed ID marker when apiType is absent", () => {
     expect(resolveOpenAICompatibleApiType(CHAT_ID, creds(undefined))).toBe("chat");
     expect(resolveOpenAICompatibleApiType(RESPONSES_ID, creds(undefined))).toBe("responses");
     expect(resolveOpenAICompatibleApiType(CHAT_ID, null)).toBe("chat");
     expect(resolveOpenAICompatibleApiType(RESPONSES_ID, null)).toBe("responses");
+    expect(resolveOpenAICompatibleApiType("openai-compatible-chat-custom-responses-node", null)).toBe("chat");
   });
 
-  it("ignores an invalid stored apiType and falls back to the ID", () => {
+  it("ignores an invalid stored apiType and falls back to the ID marker", () => {
     expect(resolveOpenAICompatibleApiType(RESPONSES_ID, creds("bogus"))).toBe("responses");
     expect(resolveOpenAICompatibleApiType(CHAT_ID, creds(""))).toBe("chat");
   });
@@ -66,7 +67,7 @@ describe("executor buildUrl endpoint path", () => {
         expect(ex.buildUrl("cx/gpt-5.6-sol", true, 0, creds("chat"))).toBe(`${BASE}/chat/completions`);
       });
 
-      it("falls back to the ID substring (legacy) when apiType is absent", () => {
+      it("falls back to the fixed ID marker (legacy) when apiType is absent", () => {
         expect(ex.buildUrl("cx/gpt-5.6-sol", true, 0, creds(undefined))).toBe(`${BASE}/chat/completions`);
         const exResp = new Ex(RESPONSES_ID);
         expect(exResp.buildUrl("m", true, 0, creds(undefined))).toBe(`${BASE}/responses`);
