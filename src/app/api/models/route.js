@@ -3,7 +3,7 @@ import { getModelAliases, setModelAlias, getCustomModels } from "@/models";
 import { getDisabledModels } from "@/lib/disabledModelsDb";
 import { AI_MODELS } from "@/shared/constants/config";
 import { getProviderAlias, ALIAS_TO_ID } from "@/shared/constants/providers";
-import { getCapabilitiesForModel } from "open-sse/providers/capabilities.js";
+import { getCapabilitiesWithSource } from "open-sse/providers/capabilities.js";
 
 // GET /api/models - Get models with aliases
 export async function GET() {
@@ -21,12 +21,13 @@ export async function GET() {
         const fullModel = `${m.provider}/${m.model}`;
         const providerAlias = getProviderAlias(m.provider) || m.provider;
         const routedModel = `${providerAlias}/${m.model}`;
-        const c = getCapabilitiesForModel(m.provider, m.model);
+        const { caps: c, capsSource } = getCapabilitiesWithSource(m.provider, m.model);
         return {
           ...m,
           fullModel,
           routedModel,
           alias: modelAliases[fullModel] || m.model,
+          capsSource,
           caps: {
             vision: c.vision,
             search: c.search,
@@ -56,7 +57,7 @@ export async function GET() {
     for (const m of customModels) {
       const fullModel = `${m.providerAlias}/${m.id}`;
       const providerId = ALIAS_TO_ID[m.providerAlias] || m.providerAlias;
-      const c = getCapabilitiesForModel(providerId, m.id);
+      const { caps: c, capsSource } = getCapabilitiesWithSource(providerId, m.id);
       models.push({
         provider: m.providerAlias,
         model: m.id,
@@ -64,6 +65,11 @@ export async function GET() {
         fullModel,
         routedModel: fullModel,
         alias: modelAliases[fullModel] || m.id,
+        capsSource: {
+          ...capsSource,
+          ...(Object.hasOwn(m.caps || {}, "contextWindow") ? { contextWindow: `custom:${fullModel}` } : {}),
+          ...(Object.hasOwn(m.caps || {}, "maxOutput") ? { maxOutput: `custom:${fullModel}` } : {}),
+        },
         caps: {
           vision: c.vision,
           search: c.search,
