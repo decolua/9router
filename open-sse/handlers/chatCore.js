@@ -167,6 +167,15 @@ export async function handleChatCore({ body, modelInfo, credentials, log, onCred
     stream = false;
   }
 
+  // Propagate the resolved stream decision when the client omitted `stream`.
+  // The decision above defaults to streaming, but same-format passthrough copies
+  // body.stream verbatim, so upstream sees no flag, answers with plain JSON, and
+  // the SSE path emits one raw JSON object + "data: [DONE]". Gemini-family bodies
+  // carry streaming in the URL, not the body (an unknown `stream` field is a 400).
+  if (typeof body.stream !== "boolean" && ![FORMATS.GEMINI, FORMATS.GEMINI_CLI, FORMATS.ANTIGRAVITY].includes(sourceFormat)) {
+    body.stream = stream;
+  }
+
   const reqLogger = await createRequestLogger(sourceFormat, targetFormat, model);
   if (clientRawRequest) reqLogger.logClientRawRequest(clientRawRequest.endpoint, clientRawRequest.body, clientRawRequest.headers);
   reqLogger.logRawRequest(body);
